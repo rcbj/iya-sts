@@ -212,6 +212,18 @@ async function ok(url, body, what) {
   return r.body;
 }
 
+// A SEALED KEY OF AN APPLICATION, collected the one way there is since
+// #446: `POST /admin-api/applications/reveal-secret` naming its attribute.
+// The answers that list the application carry it masked, as every GET does.
+async function revealed(application, attribute) {
+  log.debug("Entering revealed().");
+  const answer = await ok(realmApi + "/applications/reveal-secret",
+                          { application: application, secret: attribute },
+                          "revealed " + application + "'s " + attribute);
+  log.debug("Leaving revealed().");
+  return answer.value;
+}
+
 async function tokenRequest(fields) {
   log.debug("Entering tokenRequest().");
   const r = await fetch(TOKEN_ENDPOINT, {
@@ -333,9 +345,9 @@ async function test() {
   const view = await get(realmApi + "/applications?application=" +
                          encodeURIComponent(CLIENT));
   const fields = ((view.body.application || view.body).fields) || {};
-  const samlKey = fields.oauthSamlAssertionPrivateKey;
+  const samlKey = await revealed(CLIENT, "oauthSamlAssertionPrivateKey");
   const samlCert = fields.oauthSamlAssertionCertificate;
-  const jwtKey = fields.oauthAssertionPrivateKey;
+  const jwtKey = await revealed(CLIENT, "oauthAssertionPrivateKey");
   const jwtKid = fields.oauthAssertionKid;
 
   check("the RFC 7522 private key and certificate are on the application's " +
@@ -771,7 +783,8 @@ async function test() {
                              encodeURIComponent(AUTH_CLIENT));
   const authFields = ((authView.body.application ||
                        authView.body).fields) || {};
-  const authKey = authFields.oauthSamlAssertionPrivateKey;
+  const authKey = await revealed(AUTH_CLIENT,
+                                 "oauthSamlAssertionPrivateKey");
   const authCert = authFields.oauthSamlAssertionCertificate;
 
   // RFC 9700 MODE IN THIS REALM ONLY, which is what makes client
@@ -946,13 +959,26 @@ async function test() {
           assert.ok(JSON.stringify(apiView.body).indexOf("PRIVATE KEY") < 0);
         });
 
+  // THE PAGE IS THE STATIC CONSOLE'S SHELL SINCE #446, AND THE DATA IS
+  // BEHIND /admin-api: the document every `/admin/*` path answers carries
+  // nothing of this service's, and the page draws itself from
+  // GET /admin-api/pki, which refuses a caller with no token. `Authorization: none` keeps the suite's
+  // preloaded token off this one request.
   const page = await fetch(realmBase + "/admin/pki", { redirect: "manual" });
-  check("the console page is BEHIND THE GATE — it is reached through the " +
+  const pageText = await page.text();
+  const tokenless = await fetch(realmBase + "/admin-api/pki", {
+    redirect: "manual", headers: { authorization: "none" } });
+  check("the console page is the console's shell, and its data is BEHIND " +
+        "/admin-api's token, which the console gets through the " +
         "authorization code flow like every other page of that console",
         function () {
-          assert.ok(page.status === 303 || page.status === 302,
-            "/admin/pki answered " + page.status + " to a caller with no " +
-            "console session");
+          assert.ok(page.status === 200 && /<html/i.test(pageText) &&
+                    !/PRIVATE KEY|"persons"|"connections"/.test(pageText),
+            "/admin/pki answered " + page.status + " with " +
+            pageText.slice(0, 120));
+          assert.strictEqual(tokenless.status, 401,
+            "GET /admin-api/pki answered " + tokenless.status +
+            " to a caller with no token");
         });
 
   // -------------------------------------------------------------------------

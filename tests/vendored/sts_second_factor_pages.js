@@ -321,10 +321,13 @@ async function theSettingsAreOnTheirPages() {
   });
 
   // THE PAGES THEMSELVES, in a browser's shape. The JSON above proves the
-  // model; this proves that a person can reach a form. Where the console needs
-  // a session the launchers do not have, a redirect is the honest answer and
-  // the section says so rather than asserting markup it never received.
-  const drawn = await page("/admin/totp");
+  // model; this proves that a person can reach a form. Since #446 a page is
+  // drawn in the browser from its operation's answer, so it is drawn here
+  // the same way, signed in as the console (`console_signin.js`).
+  const consoleClient = await require("./console_signin.js")
+    .signInToTheConsole(base, usernameFor("sfp-reader"), log,
+                        { grant: "read" });
+  const drawn = await consoleClient.get("/admin/totp");
   if (drawn.status === 200) {
     check("and /admin/totp draws a form carrying those rows", function () {
       assert.ok(/totp\.window/.test(drawn.text),
@@ -332,7 +335,7 @@ async function theSettingsAreOnTheirPages() {
       assert.ok(/<form/i.test(drawn.text),
         "the page draws no form at all.");
     });
-    const drawnWeb = await page("/admin/webauthn");
+    const drawnWeb = await consoleClient.get("/admin/webauthn");
     check("and /admin/webauthn does the same, including the CTAP rows that " +
           "are the reason it says CTAP anywhere", function () {
       assert.strictEqual(drawnWeb.status, 200,

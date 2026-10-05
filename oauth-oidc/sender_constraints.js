@@ -100,6 +100,79 @@ const CERTIFICATE_CLIENT_METHODS = ['tls_client_auth',
 const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal'];
 
 // ---------------------------------------------------------------------------
+// THE ADMIN CONSOLE AS A PUBLIC CLIENT IS DPoP-BOUND, ALWAYS (#446,
+// 2026-10-05).
+//
+// The console is becoming a static application in the browser: a PUBLIC
+// client (`token_endpoint_auth_method: none`) that holds its own tokens,
+// where it was a confidential relying party run by this process
+// (`common/oidc_rp.ts`). rcbj's decision on #446 is that this is acceptable
+// only with the tokens bound to a key the browser cannot export, so for this
+// one client DPoP is not a setting:
+//
+//   * the token endpoint refuses a request from it that carries no DPoP
+//     proof (STS-OAUTH-0943), so it is never issued an unbound access token —
+//     and RFC 9449 section 5 already binds a public client's refresh token
+//     to the proof's key;
+//   * a resource refuses an access token issued to it that carries no
+//     `cnf.jkt` (STS-OAUTH-0944). A bound one presented without its proof is
+//     already refused by every resource, whatever any setting says.
+//
+// IT IS THE CLIENT'S ID AND ITS DECLARED METHOD, BOTH. While the seeded
+// entry is still confidential (`private_key_jwt`, which it is until the
+// console's cutover) nothing here applies to it, and no other public client
+// is touched: `oauth2.accessTokenRequireDpop` and
+// `oauth2.refreshTokenRequireDpop` remain the realm's own question. The
+// portal is NOT listed: it keeps its backend-for-frontend (#444, D9).
+// ---------------------------------------------------------------------------
+/**
+ * The hosted clients that are DPoP-bound whenever they are public clients:
+ * the admin console.
+ */
+const DPOP_BOUND_PUBLIC_CLIENTS = ['sts-admin-console'];
+
+/**
+ * Tells whether a client is one that must be DPoP-bound because it is the
+ * admin console running as a public client.
+ *
+ * @param clientId - the client
+ * @param method - the `token_endpoint_auth_method` its entry declares
+ * @returns true when every token issued to it must be DPoP-bound
+ */
+function dpopBoundPublicClient(clientId, method) {
+  log.debug("Entering dpopBoundPublicClient().");
+  const answer = String(method || '') === 'none' &&
+    DPOP_BOUND_PUBLIC_CLIENTS.indexOf(String(clientId || '')) >= 0;
+  log.debug("Leaving dpopBoundPublicClient(). " + answer);
+  return answer;
+}
+
+/**
+ * Refuses, at the token endpoint, a request from the admin console as a
+ * public client that carries no DPoP proof.
+ *
+ * @param opts - `clientId`, `method` (what the client's entry declares),
+ *   `dpopJkt` (the thumbprint of the proof's key, '' with no proof) and
+ *   `grant`
+ * @returns null, or `{ ok: false, errorCode, error, setting, description }`
+ */
+function publicClientIssuanceRefusal(opts) {
+  log.debug("Entering publicClientIssuanceRefusal().");
+  const o = opts || {};
+  if (!dpopBoundPublicClient(o.clientId, o.method) || o.dpopJkt) {
+    log.debug("Leaving publicClientIssuanceRefusal(). Nothing refused.");
+    return null;
+  }
+  log.debug("Leaving publicClientIssuanceRefusal(). No proof.");
+  return refusal('STS-OAUTH-0943', 'invalid_dpop_proof',
+    'the admin console is a public client',
+    'the admin console is a public client, and every token issued to it is ' +
+    'bound to a key it proves possession of (RFC 9449). The ' +
+    (String(o.grant || '') || 'token') + ' request carried no DPoP proof. ' +
+    'Send a DPoP header signed with the key the tokens are to be bound to.');
+}
+
+// ---------------------------------------------------------------------------
 // THE PREDICATES. Each is read PER REQUEST rather than cached, because all
 // five settings are `runtime: true` and therefore per trust realm: one realm
 // may demand DPoP while the next does not, and the realm is ambient.
@@ -426,13 +499,26 @@ function refreshRedemptionRefusal(opts) {
  * sender-constrained and that is not, whoever issued it.
  *
  * @param opts - `where`, `boundJkt`, `proofOk`, `boundThumbprint`,
- *   `certificate`, `certificateMatches` and `mtlsAvailable`
+ *   `certificate`, `certificateMatches`, `mtlsAvailable`, and `clientBound`
+ *   (true when the token was issued to a client `dpopBoundPublicClient()`
+ *   names)
  * @returns null, or `{ ok: false, errorCode, error, setting, description }`
  */
 function accessTokenRefusal(opts) {
   log.debug("Entering accessTokenRefusal().");
   const o = opts || {};
   const where = String(o.where || 'this resource');
+  // #446: the admin console as a public client holds only DPoP-bound tokens,
+  // whatever the two settings below say. An unbound one was not issued by
+  // the token endpoint as it stands, and is refused rather than believed.
+  if (o.clientBound && !o.boundJkt) {
+    log.debug("Leaving accessTokenRefusal(). The console's token is unbound.");
+    return refusal('STS-OAUTH-0944', 'invalid_token',
+      'the admin console is a public client',
+      where + ' accepts an access token issued to the admin console only ' +
+      'when it is DPoP-bound (RFC 9449), because the console is a public ' +
+      'client, and this token carries no cnf.jkt.');
+  }
   if (accessTokenDpopRequired()) {
     if (!o.boundJkt) {
       log.debug("Leaving accessTokenRefusal(). Token unbound.");
@@ -558,6 +644,9 @@ function state() {
  */
 module.exports = {
   MTLS_EXEMPT_CLIENTS,
+  DPOP_BOUND_PUBLIC_CLIENTS,
+  dpopBoundPublicClient,
+  publicClientIssuanceRefusal,
   mtlsExemptClient,
   rotationRequired,
   rotationSource,

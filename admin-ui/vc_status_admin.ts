@@ -193,81 +193,6 @@ class VcStatusAdmin {
                       'when they next fetch the list.' };
   }
 
-  private html(req: Req, json: Json, paging: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering VcStatusAdmin.html().");
-    const canWrite = admin.mayWrite(req);
-    const tiles = '<div class="tiles">' +
-      admin.tile(String(json.allocated), 'credentials with an index') +
-      admin.tile(String(json.valid), 'valid') +
-      admin.tile(String(json.suspended), 'suspended') +
-      admin.tile(String(json.invalid), 'revoked') +
-      admin.tile(String(json.size), 'indexes per list') +
-      '</div>';
-    const where = '<table class="grid"><tbody>' +
-      '<tr><th>Token Status List</th><td><a href="' +
-      admin.esc(json.tokenStatusList) + '"><code>' +
-      admin.esc(json.tokenStatusList) + '</code></a><br><small>' +
-      'application/statuslist+jwt, or application/statuslist+cwt by ' +
-      'Accept; ' + json.bits + ' bits per credential</small></td></tr>' +
-      '<tr><th>Aggregation</th><td><code>' + admin.esc(json.aggregation) +
-      '</code></td></tr>' +
-      '<tr><th>Bitstring Status Lists</th><td>' +
-      json.bitstring.map(function (u: string): string {
-        return '<code>' + admin.esc(u) + '</code>';
-      }).join('<br>') + '<br><small>application/vc+jwt</small></td></tr>' +
-      '<tr><th>Time to live</th><td>' + json.ttlS + ' s (<code>' +
-      'oid4vci.statusListTtlS</code>); valid for ' + json.lifetimeS +
-      ' s (<code>oid4vci.statusListLifetimeS</code>)</td></tr>' +
-      '</tbody></table>';
-    const about = admin.note(
-      '<p>Every credential this realm issues carries its index here: a ' +
-      'dc+sd-jwt and a jwt_vc_json in the Token Status List ' +
-      '(draft-ietf-oauth-status-list), a jwt_vc_json and an ldp_vc in the ' +
-      'two Bitstring Status Lists (W3C). One index, the same in every list. ' +
-      'A verifier fetches the list and reads the bit; this service\'s own ' +
-      'Verifier reads it directly.</p><p>A credential is shown ' +
-      '<strong>INVALID</strong> when it was revoked here, when an ' +
-      'administrator revoked it on <a href="/admin/tokens">Tokens</a>, or ' +
-      'when a global sign-out disowned it. INVALID is final. ' +
-      '<strong>SUSPENDED</strong> can be reinstated. Either stops the ' +
-      'credential signing anybody in at <code>/authn/wallet</code>.</p>',
-      'What this page is');
-    const nav = admin.pageNavPair(PAGE, {}, paging);
-    const rows = json.rows.map(function (r: Json): string {
-      const form = function (action: string, label: string): string {
-        log.debug("Entering form(). " + action);
-        log.debug("Leaving form().");
-        return '<form method="post" action="' + PAGE + '" class="inline">' +
-          '<input type="hidden" name="idx" value="' + r.idx + '">' +
-          '<input type="hidden" name="action" value="' + action + '">' +
-          '<button type="submit" id="vc-status-' + action + '-' + r.idx +
-          '">' + label + '</button></form>';
-      };
-      const controls = !canWrite || r.status === 'INVALID' ? '' :
-        (r.status === 'SUSPENDED' ? form('reinstate', 'Reinstate')
-                                  : form('suspend', 'Suspend')) +
-        form('revoke', 'Revoke');
-      return '<tr><td class="num">' + r.idx + '</td><td>' +
-        admin.esc(r.format) + '<br><small>' + admin.esc(r.configId) +
-        '</small></td><td><strong>' + admin.esc(r.status) + '</strong>' +
-        (r.status !== r.explicit ? '<br><small>set here: ' +
-         admin.esc(r.explicit) + '</small>' : '') + '</td><td>' +
-        (r.via ? admin.esc(r.via) + '<br><small>' +
-         admin.esc(new Date(r.changedAt).toISOString()) + '</small>' : '—') +
-        '</td><td><small>' +
-        admin.esc(new Date(r.expiresAt).toISOString()) + '</small></td><td>' +
-        controls + '</td></tr>';
-    }).join('');
-    log.debug("Leaving VcStatusAdmin.html().");
-    return tiles + about + where + '<h3>Credentials</h3>' + nav.head +
-      '<table class="grid"><thead><tr><th>Index</th><th>Format</th>' +
-      '<th>Status</th><th>Changed by</th><th>Expires</th><th></th></tr>' +
-      '</thead><tbody>' +
-      (rows || '<tr><td colspan="6">No credential issued here carries a ' +
-       'status yet.</td></tr>') + '</tbody></table>' + nav.foot;
-  }
-
   /**
    * Registers `GET /admin/vc-status` and its control.
    *
@@ -277,31 +202,6 @@ class VcStatusAdmin {
     const { log, admin, errorCodes, parseBody } = this.deps;
     const self = this;
     log.debug("Entering VcStatusAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      const view = self.statusView(req, req.query);
-      admin.respond(req, res, view.json, 'Credential status', PAGE,
-                    admin.messagesOf(req) +
-                    self.html(req, view.json, view.paging));
-      log.debug('Leaving GET ' + PAGE + '.');
-    });
-    app.post(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering POST ' + PAGE + '.');
-      if (!admin.mayWrite(req)) {
-        errorCodes.mark(res, 'STS-VC-0082');
-        admin.respondToAction(req, res, PAGE, { ok: false, errors: [
-          'This console session may read but not write.'] });
-        log.debug('Leaving POST ' + PAGE + '. Read-only.');
-        return;
-      }
-      const result = self.statusAction(parseBody(req),
-                                       'the admin console');
-      if (!result.ok) {
-        errorCodes.mark(res, 'STS-VC-0082');
-      }
-      admin.respondToAction(req, res, PAGE, result);
-      log.debug('Leaving POST ' + PAGE + '.');
-    });
     log.debug("Leaving VcStatusAdmin.registerRoutes().");
   }
 }

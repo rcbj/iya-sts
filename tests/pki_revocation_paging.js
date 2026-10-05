@@ -24,9 +24,7 @@
 //      can shorten a list below five, never lengthen it past five
 //      (2026-09-30).
 //   D. The pane draws the page's rows, a pager and a search box per list,
-//      and every Revoke form carries `back` and the list it is in;
-//      `pkiReturnTo()` sends the reader back to that list's search box, and
-//      only to a name this file writes.
+//      and every Revoke form carries `back` and the list it is in.
 //   E. Each list's search narrows it before it is paged, on a parameter of
 //      its own, and leaves the other lists alone (2026-09-30).
 //
@@ -152,10 +150,15 @@ async function run(t) {
           'and the whole revocation count');
   t.equal(model.totalRevoked, REVOKED_ISSUED + ORPHANS,
           'the model\'s total counts every authority\'s whole list');
+  // `param` and `noun` since #446: the paging control is drawn from this
+  // answer in the static console, and needs the parameter that moves the
+  // list and the noun its rows are counted in.
   t.equal(JSON.stringify(jose.issuedPaging),
           JSON.stringify({ page: 1, pages: ISSUED / PER, perPage: PER,
-                           firstRow: 1, lastRow: PER, total: ISSUED }),
-          'issuedPaging says what the page holds');
+                           firstRow: 1, lastRow: PER, total: ISSUED,
+                           param: 'ca-default-jose-issuedPage',
+                           noun: 'certificates' }),
+          'issuedPaging says what the page holds, and what moves it');
   t.equal(jose.orphansPaging.total, ORPHANS, 'orphansPaging too');
   t.check(r.calls.describeEntry <= 2 * PER,
           'describeEntry() ran for the rows of the page only, not the ' +
@@ -225,17 +228,20 @@ async function run(t) {
       one.orphansPaging.perPage === PER && one.issued.length <= PER;
   }), 'a `per` above five is held to five on every list');
 
+  // The list view is the page's renderer's since #446 (`admin-ui/web_pki.ts`).
+  const PkiPage = require('../admin-ui/web_pki');
   t.log.info('=== D. the pane and the way back ===');
   const query = { 'ca-default-jose-issuedPage': '2', personsPage: '4',
                   'ca-bogus': '7', 'evil-issuedPage': '2' };
-  const view = admin['keyPairListView'](query);
+  const view = PkiPage.keyPairListView(query);
   t.check(view['ca-default-jose-issuedPage'] === '2' &&
           view.personsPage === '4' && !('ca-bogus' in view) &&
           !('evil-issuedPage' in view),
           'the list view carries the authority lists\' parameters and no ' +
           'name this file does not write', JSON.stringify(view));
   const json = { revocation: admin['revocationModel'](query) };
-  const html = admin['revocationPane'](json, view);
+  // Drawn by the renderer from the model passed through JSON (#446).
+  const html = PkiPage.revocationPane(JSON.parse(JSON.stringify(json)), view);
   const revokeForms =
     (html.match(/name="action" value="revoke-certificate"/g) || []).length;
   const releaseForms = (html.match(/name="action" value="release-hold"/g) ||
@@ -263,16 +269,8 @@ async function run(t) {
   t.check(/name="list" value="ca-default-jose-issuedq"/.test(html) &&
           /name="back" value="\?[^"]*ca-default-jose-issuedPage=2/.test(html),
           'every form carries the list it is in and the page it is on');
-  t.equal(admin.pkiReturnTo({ back: '?ca-default-jose-issuedPage=2',
-                              list: 'ca-default-jose-issuedq' }),
-          '/admin/pki?ca-default-jose-issuedPage=2' +
-          '#find-ca-default-jose-issuedq',
-          'a revoke goes back to that page of that list, at its search box, ' +
-          'which is drawn however short the list is');
-  t.equal(admin.pkiReturnTo({ back: '?ca-default-jose-issuedPage=2',
-                              list: 'https://evil.example/' }),
-          '/admin/pki?ca-default-jose-issuedPage=2#pki-applications',
-          'and a list name this file does not write is not echoed');
+  // Where a revoke sent the browser back to went with the server-rendered
+  // console (#446): the static console stays on the page it was on.
 
   t.log.info('=== E. each list searched before it is paged ===');
   const searched = admin['revocationModel'](
@@ -306,10 +304,11 @@ async function run(t) {
   })[0].issued[0].serialHex, hex(4321), 'a serial finds its certificate');
   const nothing = { revocation: admin['revocationModel'](
     { 'ca-default-jose-issuedq': 'no such thing' }) };
-  const nothingView = admin['keyPairListView'](
+  const nothingView = PkiPage.keyPairListView(
     { 'ca-default-jose-issuedq': 'no such thing',
       'ca-default-jose-issuedPage': '4', personsPage: '2' });
-  const nothingHtml = admin['revocationPane'](nothing, nothingView);
+  const nothingHtml = PkiPage.revocationPane(
+    JSON.parse(JSON.stringify(nothing)), nothingView);
   t.check(nothingHtml.indexOf('matches the search above') >= 0,
           'a search that matches nothing says so');
   const form = (nothingHtml.match(
@@ -320,7 +319,7 @@ async function run(t) {
           form.indexOf('name="ca-default-jose-issuedPage"') < 0,
           'the box re-shows its term, carries the other lists\' state and ' +
           'starts its own list at page 1', form);
-  t.check(admin['keyPairListView'](
+  t.check(PkiPage.keyPairListView(
     { 'ca-default-jose-issuedq': 'x'.repeat(201) })[
     'ca-default-jose-issuedq'] === undefined,
           'a search longer than any field is not carried');

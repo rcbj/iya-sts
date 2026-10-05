@@ -511,19 +511,20 @@ async function test() {
       assert.ok(/no attestation sent/.test(portal.text),
                 portal.text.slice(0, 800));
     });
-  const cookie = await consoleSignIn.signInToTheConsole(realmBase,
+  // THE CONSOLE, AS IT IS SINCE THE #446 CUTOVER: signed in at the realm
+  // as the static console (PKCE, a DPoP-bound token for the realm's
+  // `/admin-api`), each page its operation's answer drawn by the console's
+  // own renderers (`console_signin.js`).
+  //
+  // The realm's console is OPENED first, as a browser opening it does: the
+  // shell's answer is what registers the realm's console callback
+  // (`oidc_rp.ensureConsoleCallback()`), and an authorization request naming
+  // it before then is refused as an unregistered redirect_uri.
+  await fetch(realmBase + "/admin", { redirect: "manual" });
+  const consoleClient = await consoleSignIn.signInToTheConsole(realmBase,
     CONSOLE_USER, log, { grant: "read" });
-  const consoleGet = async function (path) {
-    log.debug("Entering consoleGet(). " + path);
-    const r = await fetch(base + path,
-                          { redirect: "manual",
-                            headers: cookie ? { cookie: cookie } : {} });
-    const text = await r.text();
-    log.debug("Leaving consoleGet().");
-    return { status: r.status, text: text };
-  };
-  const row = await consoleGet(R + "/admin/users?user=" +
-                               encodeURIComponent(PERSON));
+  const row = await consoleClient.get("/admin/users?user=" +
+                                      encodeURIComponent(PERSON));
   check("the console's /admin/users row draws an Attestation column: " +
         "verified and trusted for one key, untrusted for the other",
     function () {
@@ -534,7 +535,7 @@ async function test() {
       assert.ok(/verified, untrusted/.test(row.text), "no untrusted key");
     });
   await reset("webauthn.attestationPolicy");
-  const page = await consoleGet(R + "/admin/webauthn");
+  const page = await consoleClient.get("/admin/webauthn");
   const api = await send(realmApi + "/webauthn");
   const status = (api.body && api.body.status) || {};
   check("/admin/webauthn and GET /admin-api/webauthn report the policy in " +

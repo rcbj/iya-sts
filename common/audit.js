@@ -595,6 +595,8 @@ const ACTIONS = [
   // every token request would otherwise produce a row saying nothing happened.
   { action: 'application.create', category: 'application',
     label: 'An application was seen for the first time' },
+  { action: 'application.secret-revealed', category: 'application',
+    label: 'A credential of an application was revealed to an administrator' },
   { action: 'application.update', category: 'application',
     label: 'An application recorded something new' },
   // Only ever from the console or the management API: no protocol path deletes
@@ -1808,7 +1810,13 @@ function recordHttp(req, res, detail) {
               "recorded.");
     return null;
   }
-  const actor = actorOfRequest(req);
+  // THE MANAGEMENT API'S CALLER IS THE SUBJECT OF ITS TOKEN (#446,
+  // 2026-10-05): `mgmt-api/admin_api.ts`'s gate leaves the subject it
+  // verified on `res.locals.apiCaller`, and that is who made this call —
+  // not whoever's sign-on cookie the request happened to carry, which is
+  // what the resolver reads. Nothing but that gate writes the member.
+  const caller = res.locals && res.locals.apiCaller;
+  const actor = (caller && String(caller.name || '')) || actorOfRequest(req);
   const posted = (action === 'admin.change' || action === 'api.change')
     ? actionOf(req) : '';
   const statusOutcome = outcomeOfStatus(res.statusCode);

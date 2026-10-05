@@ -176,8 +176,8 @@ startup, under `ou=applications` with everything else:
 
 | Entry | What it is | Realms |
 |---|---|---|
-| `sts-admin-console` | The admin console at `/admin`: a confidential OpenID Connect relying party on the authorization code grant, redirect URI `/admin/callback` | every realm |
-| `sts-user-portal` | The user portal at `/portal`: the same shape, redirect URI `/portal/callback` | every realm |
+| `sts-admin-console` | The admin console at `/admin`: a PUBLIC client on the authorization code grant with PKCE, its tokens always DPoP-bound and audienced to the realm's `/admin-api`, redirect URI `/admin/callback` | every realm |
+| `sts-user-portal` | The user portal at `/portal`: a confidential OpenID Connect relying party on the authorization code grant, redirect URI `/portal/callback` | every realm |
 | `sts-management-api` | The [management API](management-api.md): a confidential OAuth client on `client_credentials`, with `client_secret_basic`, scope `admin:read admin:write`, and no redirect URI | every realm |
 | `sts-debugger-api` | The [embedded protocol debugger's](admin-console.md#the-embedded-protocol-debugger) api: a resource server that defines one delegated permission, `urn:sts:debugger-api:debugger` | default realm, only while the debugger is embedded |
 | `sts-debugger-ui` | The embedded debugger's browser client: a relying party granted that permission | default realm, only while the debugger is embedded |

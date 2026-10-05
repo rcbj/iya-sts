@@ -46,6 +46,8 @@ import helpers = require('../common/helpers');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import InstanceSlot = require('../common/instance_slot');
+// The page's renderer (#446): a `web_` module, loadable in a browser.
+import ListenersPage = require('./web_listeners');
 
 type Req = any;
 type Res = any;
@@ -198,7 +200,8 @@ class ListenersAdmin {
    * @returns the view
    */
   listenersView(): Json {
-    const { log, config, realms, tlsServer, realmListeners } = this.deps;
+    const { log, config, realms, tlsServer, realmListeners,
+            admin } = this.deps;
     const self = this;
     log.debug("Entering ListenersAdmin.listenersView().");
     const realm = realms.current();
@@ -266,166 +269,25 @@ class ListenersAdmin {
       ownListener: own,
       listeners: own ? [] : listeners,
       process: self.described(tlsServer().policyFor()),
-      live: live
+      live: live,
+      // The settings the page's tabs draw, as every page that owns settings
+      // answers them (#446): the page is drawn from this view alone.
+      settings: admin.configSettingsJson(PAGE)
     };
     log.debug("Leaving ListenersAdmin.listenersView(). " + view.servedOn);
     return view;
   }
 
-  // One policy as table cells.
-  private policyCells(policy: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering ListenersAdmin.policyCells().");
-    if (!policy) {
-      log.debug("Leaving ListenersAdmin.policyCells(). Not TLS.");
-      return '<td colspan="4"><em>not TLS</em></td>';
-    }
-    const suites = policy.tls13Suites.map(function (one: Json): string {
-      return '<code>' + admin.esc(one.name) + '</code>' +
-        (one.postQuantum ? ' <small>(post-quantum safe)</small>' : '');
-    }).join('<br>');
-    log.debug("Leaving ListenersAdmin.policyCells().");
-    return '<td>' + admin.esc(policy.minVersion) +
-      (policy.tls12 ? '' : '<br><small>TLS 1.2 off</small>') +
-      (policy.pqcOnly ? '<br><strong>post-quantum only</strong>' : '') +
-      '</td><td>' + suites + '</td><td><small><code>' +
-      admin.esc(policy.groups) + '</code></small></td><td>' +
-      admin.esc(String(policy.clientAuth || '—')) + '</td>';
-  }
-
+  // DRAWN BY `web_listeners.ts` (#446): this page is converted for the static
+  // console, and its renderer is a module a browser can load. Until the
+  // cutover this process still draws it, handing the renderer the view passed
+  // THROUGH JSON, so it is held to what the API's caller receives.
   private html(json: Json): string {
-    const { log, admin } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering ListenersAdmin.html().");
-    const head = '<table class="grid"><thead><tr><th>Listener</th>' +
-      '<th>Port</th><th>Floor</th><th>TLS 1.3 suites</th><th>Groups</th>' +
-      '<th>Client certificate</th></tr></thead><tbody>';
-    let body = '';
-    if (json.ownListener) {
-      const own = json.ownListener;
-      body = admin.note('<p>Realm <code>' + admin.esc(json.realm) + '</code> ' +
-        'is served on a listener of its own, configured below in the Realm ' +
-        'listener group. Its TLS settings follow the process\'s unless set ' +
-        'here (<code>inherit</code>, or an empty suite list).</p>',
-        'This realm\'s own listener') +
-        head + '<tr id="listener-realm"><th>' + admin.esc(json.realm) +
-        '<br><small>' + admin.esc(own.publicBaseUrl) + ' · ' +
-        admin.esc(own.state) + (own.why ? ' — ' + admin.esc(own.why) : '') +
-        '</small></th><td>' + admin.esc(String(own.port)) + '</td>' +
-        self.policyCells(own.policy) + '</tr></tbody></table>';
-    } else {
-      body = admin.note('<p>' + (json.realm === 'default'
-        ? 'The default listeners, which every realm without a listener of ' +
-          'its own is served on.'
-        : 'Realm <code>' + admin.esc(json.realm) + '</code> has no listener ' +
-          'of its own, so it is served on the default listeners below, ' +
-          'under its <code>/realm/' + admin.esc(json.realm) + '</code> ' +
-          'prefix. Their settings are the service\'s and are changed in the ' +
-          'default realm; a listener of this realm\'s own is set up in the ' +
-          'Realm listener group (<code>listener.port</code>).') + '</p>' +
-        '<p>"Client certificate" is <strong>none</strong> (no ' +
-        'CertificateRequest), <strong>optional</strong> (asked for, not ' +
-        'required) or <strong>required</strong> (a handshake without one ' +
-        'that chains to the <a href="/admin/tls/trust">client ' +
-        'truststore</a> is refused). What a presented certificate is worth ' +
-        'to a protocol — RFC 8705, GET /tls/sign-in, the remote PEP — is on ' +
-        '<a href="/admin/tls">TLS / mutual TLS</a>. The TLS policy is ' +
-        'applied at the next handshake when a setting changes.</p>',
-        'Which listeners') + head +
-        json.listeners.map(function (row: Json): string {
-          return '<tr id="listener-' + admin.esc(row.id) + '"><th>' +
-            admin.esc(row.name) + '<br><small>' + admin.esc(row.what) +
-            '</small></th><td>' + admin.esc(String(row.port)) +
-            '<br><small><code>' + admin.esc(row.setting) + '</code></small>' +
-            '</td>' + self.policyCells(row.policy) + '</tr>';
-        }).join('') + '</tbody></table>';
-    }
-    const tiles = '<div class="tiles">' +
-      admin.tile(json.process.tls12 ? 'on' : 'off', 'TLS 1.2') +
-      admin.tile(String(json.process.tls13Suites.length), 'TLS 1.3 suites') +
-      admin.tile(json.process.pqcOnly ? 'on' : 'off', 'post-quantum only') +
-      admin.tile(String(json.live.length), 'TLS listeners live here') +
-      '</div>';
-    // TABS, AS AN APPLICATION'S PAGE HAS THEM (rcbj, 2026-10-02), AND ONE
-    // PER LISTENER SINCE #429 ("all of the settings ... to be per
-    // listener"): the overview; the service-wide defaults every listener
-    // inherits; then each TLS listener, its policy in force first and its own
-    // rows after. `admin.tabbedPanels()`, no script; a Save lands back on its
-    // tab. In a realm with a listener of its own, that listener and its
-    // Realm listener rows; in a realm without one, the default listeners,
-    // whose rows the realm cannot carry and the form draws read-only.
-    const settings = function (groups: string[]): string {
-      return admin.configFormsFor(PAGE, groups);
-    };
-    const inForce = function (policy: Json, pooling?: Json): string {
-      if (!policy && !pooling) {
-        return '';
-      }
-      const tlsRows: string[][] = !policy ? [] : [
-        ['Protocol', policy.tls12 ? 'TLS 1.2 and 1.3 (floor ' +
-                                     policy.minVersion + ')' : 'TLS 1.3 only'],
-         ['TLS 1.3 suites', policy.tls13Suites.map(function (one: Json) {
-           return one.name + (one.postQuantum ? ' (post-quantum safe)' : '');
-         }).join(', ')],
-         ['TLS 1.2 ciphers', policy.tls12 ? policy.tls12Ciphers.join(', ')
-                                           : '—'],
-         ['Post-quantum only', policy.pqcOnly ? 'yes' : 'no'],
-         ['Groups', policy.groups],
-         ['Signature algorithms', policy.signatureAlgorithms],
-         ['Client certificate', String(policy.clientAuth || '—')],
-         ['Client truststore', policy.truststore],
-         ['TLS session lifetime', policy.sessionTimeoutS + ' s'],
-         ['TLS session cache', policy.sessionCacheSize
-           ? policy.sessionCacheSize + ' session ID(s)'
-           : 'none (tickets only)']];
-      const httpRows: string[][] = !pooling ? [] : [
-        ['Idle connection kept', pooling.keepAliveTimeoutS + ' s'],
-        ['Request header timeout', pooling.headersTimeoutS + ' s'],
-        ['Requests per connection', pooling.maxRequestsPerSocket
-          ? String(pooling.maxRequestsPerSocket) : 'no limit'],
-        ['Open connections at most', pooling.maxConnections
-          ? String(pooling.maxConnections) : 'no limit']];
-      return '<h2>In force on this listener</h2><table class="grid"><tbody>' +
-        tlsRows.concat(httpRows).map(function (row) {
-          return '<tr><th>' + admin.esc(row[0]) + '</th><td><code>' +
-            admin.esc(String(row[1])) + '</code></td></tr>';
-        }).join('') + '</tbody></table>' +
-        admin.note('Each value is this listener\'s own where its row below ' +
-                   'sets one, and the service-wide default otherwise ' +
-                   '(<em>inherit</em>, an empty box, or -1 for a number).');
-    };
-    const panels: Json[] = [
-      { id: 'tab-listeners', label: json.ownListener ? 'This realm\'s listener'
-                                                     : 'Listeners',
-        html: body }
-    ];
-    if (json.ownListener) {
-      panels.push({ id: 'tab-realm-listener', label: 'Its settings',
-                    html: inForce(json.ownListener.policy,
-                                  json.ownListener.http) +
-                          settings(['Realm listener']) });
-    } else {
-      panels.push({ id: 'tab-defaults', label: 'Service-wide defaults',
-                    html: admin.note('What every TLS listener inherits unless ' +
-                                     'its own tab says otherwise.') +
-                          settings(['Listeners', 'HTTP connections',
-                                    'TLS']) });
-      // Every listener with settings of its own: the TLS ones, and the
-      // plain-HTTP revocation listener for its connection pooling (#429).
-      json.listeners.filter(function (row: Json): boolean {
-        return !!row.group && (row.tls || !!row.http);
-      }).forEach(function (row: Json): void {
-        panels.push({ id: 'tab-' + row.id, label: row.name,
-                      html: inForce(row.policy, row.http) +
-                            settings([row.group]) });
-      });
-      if (json.realm !== 'default') {
-        panels.push({ id: 'tab-realm-listener', label: 'Realm listener',
-                      html: settings(['Realm listener']) });
-      }
-    }
+    const drawn = ListenersPage.render(JSON.parse(JSON.stringify(json)));
     log.debug("Leaving ListenersAdmin.html().");
-    return tiles + admin.tabbedPanels('listeners', panels);
+    return drawn;
   }
 
   /**
@@ -437,13 +299,6 @@ class ListenersAdmin {
     const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering ListenersAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      const json = self.listenersView();
-      admin.respond(req, res, json, 'Listeners', PAGE,
-                    admin.messagesOf(req) + self.html(json));
-      log.debug('Leaving GET ' + PAGE + '.');
-    });
     log.debug("Leaving ListenersAdmin.registerRoutes().");
   }
 }

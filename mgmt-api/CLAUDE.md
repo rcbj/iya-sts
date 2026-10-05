@@ -172,6 +172,16 @@ difference. They share one response schema, `PageSettings`, which is also what
 the `settings` member of `/admin-api/saml2`, `/admin-api/saml11`,
 `/admin-api/scim` and the rest now carries — one shape a caller learns once.
 
+**THAT SHAPE GAINED `context` AND `sharedWith` (#446, 2026-10-05)**, which
+is everything the console's Settings block said that was not in it: the two
+appconfig file names the `appconfig` and `defaults` sources mean
+(`context.configFile`, null when none was named, and `context.defaultsFile`
+— `GET /admin-api/config`'s members of the same names), whether a value set
+here survives a restart (`context.persistsAppconfig`,
+`context.persistenceMode`), and, by group, the other console pages that draw
+the same group. The block is drawn from this member alone now
+(`admin-ui/web_settings.ts`); `admin-ui/CLAUDE.md`, *The settings block*.
+
 **Two of the paths are not the obvious ones**, and the collision is worth
 knowing before somebody "fixes" them: `/admin-api/oid4vci-settings` and
 `/admin-api/oid4vp-settings`, because `/admin-api/credential-claims` and
@@ -568,7 +578,8 @@ job holds a secret. **Who mints it depends on who started the service**: a
 launcher for a container it brought up, and `tests/tools/run-report.js` itself
 for the throwaway it starts — a distinction this file called "both launchers"
 until the coverage run that had neither. `tests/CLAUDE.md` argues it. It is still the way back in — through
-`adminApi.authRequired`, which restores the open API exactly. What is no longer
+`adminApi.authRequired`, which restores the open API exactly — in development
+mode only since #446 (below). What is no longer
 true by default is the third: anybody who can reach this port can no longer
 grant themselves both roles here.
 
@@ -1165,36 +1176,188 @@ no decider and every issuance is allowed whatever the register says.
 `enforced: false` means `roles.enforceIssuance` is off — the same outcome by a
 different route, and the way back if a policy edit locks something out.
 
-## THE POLICY SITS ABOVE THE ROLES, AND ONLY WHERE THIS API IS GATED AT ALL (2026-09-06)
+## THE OFF SWITCH IS DEVELOPMENT'S ALONE, AND THE SESSION FALLBACK IS GONE (#446, 2026-10-05)
 
-The product-mode middleware asks the two console roles and then, for a caller
-that holds one, asks `common/access_gate.ts`. Three things about that.
+**This section was *THE POLICY SITS ABOVE THE ROLES, AND ONLY WHERE THIS API IS
+GATED AT ALL* (2026-09-06)**, and described what product mode did with
+`adminApi.authRequired` off: `mode.gatesManagementApi()`, then the console's
+session and its two roles through `adminViews.gateStateFor()`, then
+`common/access_gate.ts` above them (#411 gave that branch its test). All of it
+is removed. rcbj's decision on #446:
 
-**IT IS THE LAYER ABOVE AND NOT A REPLACEMENT.** `admin.gateStateFor()` is still
-the one answer to *who may administer this service* — asking it rather than
-re-deriving it is what stops this file becoming a second one — and the subject
-handed to the policy is the SESSION that got the caller through it, never
-anything on the request. A PDP deciding faithfully about a subject the caller
-nominated is broken access control with extra steps.
+* **`adminApi.authRequired=false` is honoured in development mode only.** The
+  row carries the `onlyWhile` marker on `mode.opensManagementApi()`, so product
+  refuses the write (`STS-CORE-0103`) and reads a stored `false` as `true`,
+  logged once (`STS-CORE-0106`). `AdminApi.tokenRequired()` is the one reading,
+  and the gate, the index's `protected`, the OpenAPI document and the startup
+  banner all ask it — a report reading the stored value would say "open" about
+  an API that is refusing.
+* **Why**: the admin console is becoming a static application that calls this
+  API with the signed-in person's own token (#446). This API's gate is then the
+  console's only gate, so a setting that opened it would open the console too,
+  and there is no console session left to fall back on.
+* **A console session is not a credential here, in either mode.** The
+  sentence under *IT IS A DIFFERENT CREDENTIAL FROM THE CONSOLE'S* is now true
+  without an exception.
+* **The recovery path in product is `adminApi.clientSecret`**, pinned before
+  the start, so the seeded `sts-management-api` client can always mint a token.
+  The bootstrap paragraph above already says a deployment that does not set it
+  has an administrative surface it cannot reach; with the fallback gone that is
+  the whole of the way back in.
+* **`STS-API-0006`, `0007` and `0008` are retired**, kept in the table.
 
-**IT RUNS ONLY INSIDE THE `mode.gatesManagementApi()` BRANCH, and that is the
-argument this file has always made read one layer up.** In development this API
-is open by design: it is what the tests drive and the way back in when nobody
-holds a role, which a service that checks no password needs because there is no
-other way to bootstrap an administrator. Open means no credential, so no
-session, so no subject — and asking a policy whose built-in document refuses an
-unauthenticated subject would close exactly that door. **A POLICY LAYER MUST NOT
-BE THE THING THAT REMOVES THE RECOVERY PATH.**
+**The policy layer still runs wherever the token is required**, in both modes,
+with the subject taken from the verified token. With the switch off in
+development there is no credential, so no subject, and the policy is not
+asked: a policy whose built-in document refuses an unauthenticated subject
+would close the recovery path, and a policy layer must not be the thing that
+removes it.
 
-**ON AN UNEDITED PRODUCT DEPLOYMENT IT PERMITS**, because the built-in document
-asks for a role only where somebody has required one and the caller has already
-been shown to hold Admin Read or Admin Write. So turning product mode on does
-not acquire a second refusal nobody asked for; what it acquires is somewhere to
-put one.
+`tests/admin_api_auth_required_mode.js` holds it (it was
+`admin_api_session_gate.js`).
 
-The refusal says the caller PASSED the role check and names the roles they hold,
-because "you hold the role and the policy still says no" is the one state a
-reader would otherwise spend an afternoon on.
+## THE AUDIT ACTOR IS THE TOKEN'S SUBJECT (#446, 2026-10-05)
+
+Until #446 every row this API wrote named nobody. The comment at three call
+sites said why: *this API authenticates a CLIENT rather than a person, so an
+empty actor is the honest answer*. That was true while the only tokens it saw
+were `client_credentials` ones. The console is becoming a client of this API
+that presents the signed-in PERSON's token, so the subject the gate verifies
+is who did it.
+
+* **The gate writes `res.locals.apiCaller`** once the policy has allowed the
+  call: `{ kind, name, clientId, realm }`, from the same
+  `rolePermissions.effectiveRoles()` answer the roles were decided on. A
+  person's name, or the client's id on `client_credentials`.
+* **`callerNameOf(res)`** is what a handler passes as `actor`. It never reads
+  the request.
+* **`nameActor(req, res)` sets a JSON body's `actor` member**, in the route
+  wrapper, after the body has passed its schema. Eighteen places in
+  `admin-core/admin_actions.ts` read `body.actor` for the row an action
+  writes — the console puts its signed-in user there — and this API gave them
+  nothing: a closed schema refuses the member (400, `STS-API-0009`), so those
+  rows named nobody. It is set AFTER the schema so that a caller's own `actor`
+  is still refused wherever the schema is closed, and replaced wherever it is
+  open. Every handler reads its own body with `parseBody(req)`, which parses
+  `req.body` each time, so the one place that reaches all of them is the text
+  they parse. A body that is not JSON, and one its handler owns (a streamed
+  upload), is left alone; the HTTP row names the caller either way.
+* **`common/audit.js`'s HTTP row reads `res.locals.apiCaller` first**, before
+  the sign-on cookie's resolver: the credential that let the call in is the
+  token.
+* **With no token there is nobody to name.** That is development's open API
+  only (above), and its rows name nobody, as they always did.
+
+`tests/admin_api_actor.js` holds it.
+
+## EVERY PAGING ANSWER SAYS WHAT MOVES IT (#446, 2026-10-05)
+
+`adminViews.pagingJson()` answered `page`, `pages`, `perPage`, `firstRow`,
+`lastRow` and `total`. It answers `param` and `noun` as well: the query
+parameter that moves that list (`page`, or `jobsPage` for a list named
+`jobs`) and what its rows are counted in. The console's renderer was handed
+its own paging object and read them there; a page drawn from the API's answer
+alone could not draw the paging control. Additive: nothing was renamed, and
+`tests/pki_revocation_paging.js`, which pinned the exact answer, pins the two
+new members too.
+
+## A PAGE WITH NO FORM GETS AN OPERATION TOO, NOW (#446, 2026-10-05)
+
+Rule 7 asks for an operation per CONTROL, so the drill-downs that only draw
+something had none: the delegation pictures, the federation picture, the
+credential lineage. That was the rule read exactly, and it stops being
+enough when the console is a static client of this API: such a page shows
+things only this process knows.
+
+**`GET /admin-api/delegation/map` is the first, and the pattern for the
+rest.** It answers `AdminViews.delegationMapModel()`, in `admin-core/` as
+`tests/admin_actions_layer.js` requires of anything this API asks (it was
+written on the console first, and that test refused it): the page's own JSON
+(the graph, the filter, the counts) plus the three things the browser cannot
+work out —
+
+* `looks`, what each node IS (label, shape, identifier, console link), which
+  `delegationLooks()` asks the directory and the application registry — moved
+  to `admin-core/admin_views.ts` with `delegationNodeLook()`, the console's
+  methods of those names now delegates;
+* `svg`, the drawing, laid out by dagre on the server, with its links;
+* `summary`, the counts the filter's choices show.
+
+`format=svg` answers the document alone with no links, as the page's own
+`?format=svg` does. The five filter parameters are declared once
+(`delegationFilter`) for it and for `GET /admin-api/delegation`.
+
+**THE PAGE'S ROUTE IS NOT YET BUILT ON THE MODEL.** The model makes the same
+four calls the route makes; the route is left alone until its page is
+converted, when both become this one function.
+
+**STILL WITHOUT AN OPERATION**, each needing the same treatment:
+`/admin/delegation/chain`, `/application`, `/user`, `/allowed` and the picture
+on `/cluster`; `/admin/federation/map`; `/admin/tokens/credential`. Two the
+first inventory listed need none: the key-history rows already carry each
+certificate's PEM, and the PKI pane's export is `POST /admin-api/pki/export`.
+
+`tests/admin_api_delegation_map.js` holds it.
+
+## A TOKEN DIES WITH THE SIGN-ON SESSION IT WAS ISSUED ON (#446, 2026-10-05)
+
+The server-rendered console held a relying-party session that named the
+sign-on session it came from and ended with it, so a sign-out or an expiry
+closed the console at once. A console that is a client of this API holds a
+token instead, and a token is good until it expires unless somebody asks. The
+gate asks, straight after the revoked-or-disabled check
+(`AdminApi.endedSessionOf()`, 401 `invalid_token`, `STS-API-0126`).
+
+* **NO TOKEN CARRIES A SESSION IDENTIFIER**, and none was added. The token
+  registry was told which session an issuance ran on (`signJwt()`'s third
+  argument) and is asked by `jti` (`stats.sessionIdOfJti()`); the session is
+  asked of `authn/` through `oauth2.sessionIsLive()`. Both in the realm that
+  issued the token, which is where the code flow ran.
+* **IT IS FOR EVERY CLIENT, NOT THE CONSOLE'S ALONE.** An administrative token
+  a person was issued through a sign-in should not outlive that sign-in,
+  whichever application asked for it.
+* **A TOKEN ISSUED ON NO SESSION IS NOT REFUSED**: `client_credentials`, and
+  the API explorer's until the cutover. There is nothing to end.
+* **NOR IS ONE THE REGISTRY NO LONGER HOLDS.** The registry is capped and
+  drops the oldest, and a token it forgot answers no session and is honoured
+  until it expires. Refusing it would turn a cache's eviction into a
+  sign-out. The access token's own lifetime is the bound on that window.
+* **`oauth2` IS REQUIRED BY THIS MODULE FOR THAT ONE QUESTION.** It is built
+  at 9 and this at 19, so it is a cache hit that moves nothing.
+
+`tests/admin_api_session_bound.js` holds it: the same token before and after
+its session ends, a second session of the same person that goes on working,
+and a token issued on no session.
+
+## `GET /admin-api/me` — WHAT THE GATE DECIDED FOR THE CALLER (#446, 2026-10-05)
+
+The console is becoming a static application whose only knowledge of its
+reader is the access token it presents. What the server-rendered console
+learned from `adminViews.gateStateFor(req)` — who is signed in, which
+authority they are, what they hold, which pages `admin-ui/admin_scope.ts`
+hides from them, whether the roster is still open — this operation tells it.
+
+* **IT REPORTS THE GATE'S DECISION AND MAKES NONE.** The caller, scopes and
+  roles are the ones the gate left on `res.locals.apiCaller` for this very
+  request. `read` is "ADMIN_READ is among the roles the gate handed the access
+  policy" and `write` the same for ADMIN_WRITE, which are held ∩ carried
+  (#303). A second reading of the roster here could disagree with the gate
+  that has just let the request in.
+* **THE ROSTER IS ASKED FOR WHAT ONLY IT KNOWS**: whether the console is open
+  to anybody, and the bootstrap administrator's state (`console`). Asked for a
+  person only, in the token's realm; one that cannot be read reports itself
+  unavailable rather than failing the call.
+* **`authority` IS THE TOKEN'S REALM**: `service` for a default-realm token,
+  `realm` for a realm's own, as the gate's two keys decide (#32). `pages` is
+  the console's page list less what `adminScope.pageVisible()` hides from that
+  authority, so a realm administrator is not shown a service page.
+* **WITH NO TOKEN THERE IS NO CALLER** — development's open API — and both
+  `read` and `write` are true, which is what that state means.
+* **IT MIRRORS NO CONSOLE PAGE**, and its `mirrors` says so in words, as the
+  MDM feed's does: it is the banner and the navigation filter every page
+  draws.
+
+`tests/admin_api_me.js` holds it.
 
 ## `/admin-api/mfa`: A REPORT AND A RESET, AND DELIBERATELY NO ENROL (2026-09-10)
 

@@ -5151,6 +5151,34 @@ ordinary role (any member kind, edited on `/admin/roles`) and is seeded EMPTY
 `device:compliance` is gated like `admin:*`, at issuance and at
 `/admin-api`'s gate (held ∩ carried). No role is read off a scope now.
 
+**THE BOOTSTRAP ADMINISTRATOR'S CLAIM IS MADE AT ISSUANCE TOO (#446,
+2026-10-05).** That account holds no console role until it has claimed the
+console (#103, `admin-ui/CLAUDE.md` 8a), and the server-rendered console made
+the claim from its own callback. A console that is a static client of
+`/admin-api` has no callback on the server, so until the claim `heldRoles()`
+would narrow `admin:read` and `admin:write` off the token the console needs
+and nobody could ever claim it. `noteConsoleSignIn(subject, signIn)` makes the
+claim when the CONSOLE'S OWN CLIENT is being issued a gated permission, and the
+authorization endpoint calls it before it narrows.
+
+* **It is `admin_rbac.noteConsoleSignIn()`, so it is the same rule**: in
+  product only a `pwd` sign-in this service itself vouched for claims
+  anything. A federated sign-in, a Kerberos one or a security key as that
+  account claims nothing and is narrowed as before. Development closes the
+  window on any sign-in, as it did.
+* **Only the console's client.** Another application asking for `admin:read`
+  on that account's session is not a sign-in to the console.
+* **The realm is the ambient one**, where the code flow ran: a realm's own
+  `admin` closes that realm's window and no other (#32).
+* **Not at `tokenSet()`**: a redemption or a refresh has no sign-in in hand.
+  The claim was made when the code was issued, and `tokenSet()`'s narrowing
+  reads the roster after it.
+
+`tests/console_claim_at_issuance.js` holds the rule against the real roster.
+**The call from the authorization endpoint is not driven end to end by any
+test yet**: no client asks for the admin scopes through the code flow until
+the console's browser sign-in exists.
+
 ### Roles that belong to ONE application (#310, 2026-09-28)
 
 Entra's app roles, on rcbj's three decisions. **A role entry scoped by

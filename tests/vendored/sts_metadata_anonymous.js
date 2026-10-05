@@ -946,11 +946,18 @@ const CONTROLS = [
     why: "the XACML surface requires the built-in XACML_USER role, and the " +
          "refusal comes from the access policy rather than from a middleware " +
          "— which is why it is a 403 and not a 401" },
-  { path: "/admin/sts-metadata", expect: [302, 303],
-    why: "the console is an OIDC relying party and sends a stranger to " +
-         "/oauth2/authorize. THIS is the one that catches a " +
-         "redirect-following fetch: follow it and the sign-in screen answers " +
-         "200" }
+  // THE CONSOLE'S PAGE IS ITS SHELL SINCE #446: every `/admin/*` path
+  // answers the same static document, which signs in in the browser and
+  // carries none of this service's data — what the page draws comes from
+  // `/admin-api/sts-metadata`, behind the token. So the page answers a
+  // stranger 200 and the operation behind it refuses one.
+  { path: "/admin/sts-metadata", expect: [200],
+    why: "the static console's shell, which carries no data of this " +
+         "service's" },
+  { path: "/admin-api/sts-metadata", expect: [401],
+    headers: { Authorization: "none" },
+    why: "the operation the console's metadata page is drawn from is " +
+         "behind the management API's token, as every operation is" }
 ];
 
 // ---------------------------------------------------------------------------

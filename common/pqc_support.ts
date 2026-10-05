@@ -76,6 +76,7 @@ import pqcX509 = require('./vendored/pqc_x509');
 // key-wrapping forms and the HPKE suites — the X.509 registry does not use.
 import stsCrypto = require('./crypto');
 import InstanceSlot = require('./instance_slot');
+import PqcBadgeView = require('../admin-ui/web_pqc_badge');
 
 type PqcKind = 'pq' | 'composite' | 'kem' | 'hybrid';
 
@@ -381,23 +382,12 @@ class PqcSupport {
   sentence(info: PqcInfo | null | undefined): string {
     const { log } = this.deps;
     log.debug("Entering PqcSupport.sentence().");
-    if (!info) {
-      log.debug("Leaving PqcSupport.sentence().");
-      return '';
-    }
-    const text = ({
-      pq: 'Post-quantum key pair: ' + info.label,
-      composite: 'Composite post-quantum key pair: ' + info.label +
-                 ' — both halves must verify',
-      kem: 'Post-quantum key-establishment key: ' + info.label +
-           ' — it signs nothing',
-      hybrid: 'Hybrid: a classical key whose certificate carries an ' +
-              info.label
-    } as Record<string, string>)[info.kind] ||
-      'Post-quantum: ' + info.label;
     log.debug("Leaving PqcSupport.sentence().");
-    return text + (info.standard ? ' (' + info.standard + ')' : '');
+    // The badge renderer's (#446): a page drawn in a browser says it the
+    // same way.
+    return PqcBadgeView.sentence(info);
   }
+
 }
 
 // ---------------------------------------------------------------------------

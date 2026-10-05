@@ -502,26 +502,19 @@ async function checkConsole(t) {
           view.endpoints.getCaCert === 'https://x.test/enroll/scep' +
           '?operation=GetCACert', 'nine profiles and the device profile, five ' +
           'refused, absolute URLs');
-  const route = (app._router || app.router).stack.filter(function (one) {
-    return one.route && one.route.path === '/admin/scep' &&
-           one.route.methods.get;
-  })[0];
-  let pageJson = null;
-  const res = { headers: {}, locals: {},
-    set: function (k, v) { res.headers[k] = v; return res; },
-    status: function () { return res; },
-    type: function () { return res; },
-    send: function (body) { pageJson = body; return res; } };
-  route.route.stack[0].handle(Object.assign(fakeReq({ format: 'json',
-                                                      per: '1000' }),
-                                            { path: '/admin/scep',
-                                              originalUrl: '/admin/scep' }),
-                              res, function () {});
-  const page = JSON.parse(pageJson || '{}');
+  // THE PAGE IS THE OPERATION'S ANSWER, drawn (#446): asked of GET
+  // /admin-api/scep and drawn by its renderer, as the static console draws
+  // it.
+  const drawn = await require('./tools/console_page.js')
+    .consolePage(__dirname + '/..').draw('/admin/scep', { per: '1000' });
+  const page = JSON.parse(JSON.stringify(drawn.json || {}));
   delete page.protocolEndpoints;
   t.equal(JSON.stringify(Object.keys(page).sort()),
           JSON.stringify(Object.keys(view).sort()),
-          'GET /admin/scep?format=json is the view the API answers with');
+          'GET /admin-api/scep answers the view the page is drawn from');
+  t.check(drawn.status === 200 && drawn.html.indexOf(made.challenge) < 0 &&
+          /SCEP/.test(drawn.html),
+          'and the page drawn from it carries no challenge');
   const actionsRow = api.ROUTES.filter(function (one) {
     return one.actions;
   })[0];

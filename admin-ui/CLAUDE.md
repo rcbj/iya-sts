@@ -7256,3 +7256,257 @@ and the users resource's `mirrors` names `POST /admin/users/edit`.
 `tests/person_fields.js` holds all of it in process. The browser job opens a
 hidden form's tab by the id of the panel it is in, which works for a sub-tab
 too.
+
+## THE STATIC CONSOLE'S RENDERERS ARE THE `web_*.ts` MODULES (#446, 2026-10-05)
+
+This console is being converted into a static application that draws its
+pages in the browser from `/admin-api`'s JSON, as a public client of this
+service (#446; `rust/DESIGN.md` section 2). rcbj's decisions shape this
+directory:
+
+* **THE PAGES ARE NOT REWRITTEN.** A page here is a function from a view to a
+  string of markup already. Those functions are kept, moved into modules a
+  browser can load, and bundled with esbuild — no framework.
+* **ONE CUTOVER.** Until it, this process still serves every page. A converted
+  page is drawn by calling its `web_` renderer with the view passed THROUGH
+  JSON, so the renderer is held to drawing from what a caller of the API
+  receives. Nothing serves the bundle before the cutover, and converted pages
+  are exercised node-side only.
+
+### What a `web_` module is
+
+A file whose name begins `web_`. Most are in this directory; **a page drawn
+by a protocol family's own module has its renderer beside that module**
+(`oauth-oidc/web_grants.ts`, `oauth-oidc/web_oauth2_monitor.ts`,
+`ssf/web_ssf_transmitters.ts`, `debugger/web_debugger.ts`), as its page
+module always was, and imports the kit by its relative path.
+
+| File | What it is |
+|---|---|
+| `web_kit.ts` | The rendering kit: `esc()`, `tile()`, the prose helpers `note()`, `warn()`, `tip()`, `foldOf()` and what they stand on, and `whenText()`, `shortened()`, `clipped()`, `clippedValues()` `pageNavPair()`, `codeList()`, `perPageOptions()`, `perPageForm()`, `copyButton()`, `tabbedPanels()`, `pageParamsOf()`, `queryOne()`, `sectionSearchForm()`, `chooserPane()`, `chooserMatches()`, `listViewOf()`, `listViewFromBack()` (with `LIST_PARAMS`), `humanSeconds()`, `durationText()` and `span()`, all moved VERBATIM out of `AdminConsole`; and `queryWith()`, which is `admin-core/admin_views.ts`'s written out. The methods of those names in `admin.ts` are delegates. |
+| `web_mode.ts` | The body of `/admin/mode`, from `GET /admin-api/mode`'s answer. It was `ModeAdmin.html()`. |
+| `web_worker_pools.ts` | The body of `/admin/worker-pools`. It was `WorkerPoolsAdmin`'s four drawing methods. |
+| `web_database.ts` | The body of `/admin/database`, and the table of its `SECTIONS`, which `database_admin.ts` now reads from here: the table is what the page is drawn from, and this module may not require that one. |
+| `web_secrets.ts` | The body of `/admin/secrets`. |
+| `../oauth-oidc/web_grants.ts` | The body of `/admin/grants`, its Revoke form included. |
+| `../ssf/web_ssf_transmitters.ts` | The body of `/admin/ssf/transmitters`. |
+| `../oauth-oidc/web_oauth2_monitor.ts` | The body of `/admin/oauth2/monitor` — **the first page that takes the render context**: its paging links carry the query forward and its Withdraw carries the list parameters back. It owns `PAGE_PATH`, `STATES` and `BACK_PARAMS`, which `oauth2_monitor_console.ts` and `oauth2_monitor_admin.ts` read from it. |
+| `web_caches.ts` | The body of `/admin/caches`, the list and one store's entries. Its view gained a `title` and `scope` on each other node's row, which the page looked up in this process's registry while drawing. |
+| `web_listeners.ts` | The body of `/admin/listeners`, a tab per group of settings drawn by `SettingsForms.forms()` from the view's `settings`, which `listenersView()` carries since #446. |
+| `web_scheduler.ts` | The body of `/admin/scheduler`, the list and one run, its Run now buttons drawn only when `ctx.write` says so. It draws both lists' paging from the view's `jobsPaging` and `runsPaging` — the page had read two paging objects hidden from JSON — and its view carries `settings` unless the reader is a realm's own administrator. `firstOf()` and `STATE_WORDS` are its; `span()` is the kit's, which `Scheduler.span()` calls. |
+| `web_mail.ts`, `web_mail_outbox.ts` | The bodies of `/admin/mail` (the channel, or one template) and `/admin/mail/outbox` (the list, or one message), each a renderer of its own because each is a page of its own. The outbox's paging is drawn from `rowsPaging`; the page had read a paging object JSON never carried. |
+| `web_geolocation.ts` | The body of `/admin/geolocation`. **The map is laid out by the server and arrives in the view** as `drawing` (the SVG and its legend) with `noDataColour`, as `/admin-api/delegation/map` answers its picture: the outlines and the projection are `geo_map.ts`'s and stay on the server. `hrefOf()`, `countText()` (told the minimum count by the view), `WINDOW_LABELS` and `DEFAULT_WINDOW` are the renderer's, read back by `geolocation_admin.ts`. |
+| `../oauth-oidc/web_claims_providers.ts` | The body of `/admin/claim-providers`, the redirect URI read from the view's `redirectUri` (which the API always answered and the page computed again). |
+| `../oauth-oidc/web_provider_commands.ts` | The bodies of `/admin/commands` (`render()`) and `/admin/deliveries` (`deliveriesBody()`, whose state filter is the render context's), sharing the delivery row and its Retry form. |
+| `../oidfed/web_oidfed.ts` | The body of `/admin/oidfed`. Its view and `GET /admin-api/oidfed`'s are one function since #446 (`oidfedView()`, the federation view with the page's `settings`); a resolution the reader just asked for is drawn from the view's `resolution`, which only the action's redraw sets. |
+| `web_cells.ts` | The body of `/admin/cells`. `GET /admin-api/cells` takes `people` and `after` since #446 and answers the residents drill-down as `people`, as the page's JSON always did: the page and the operation answer `cellsPageView()`. |
+| `web_encryption.ts` | The body of `/admin/encryption`; the data keys' paging is drawn from `dataKeys.paging` (the page read a paging object JSON never carried) and their Rotate controls only when `ctx.write` says so. |
+| `web_risk.ts` | The bodies of `/admin/risk` (`render()`) and `/admin/risk-scoring` (`metricsHtml()`), sharing the timeline, the bars and the dates. Since #446 each row naming a person carries `userHref`, the realm-prefixed link the page used to build with `realms.href()`; the Risk view carries `settings` unless the reader is a realm's own administrator, and its paging is `assessmentsPaging` and `subjectsPaging` rather than two objects JSON never carried; the scoring view carries the score `bands`. `LEVEL_COLOURS` is the renderer's. |
+| `web_devices.ts` | The device register's three pages: `/admin/devices` (`render()`: the list or one device), `/admin/device-registration` (`registrationHtml()`) and `/admin/devices/monitor` (`monitorHtml()`). The drill-down draws its selects from the view's `vocabulary` and the monitor its legend from `complianceSources` (added in #446), where they read the register's constants; the list's paging is `devicesPaging`. |
+| `../acme/web_acme.ts`, `../est/web_est.ts`, `../scep/web_scep.ts` | Certificate enrollment's six pages: each family's Protocols page (`render()`) and its Monitoring page (`monitorBody()`). Their views' `settings` is the page's settings block since #446 — `admin_views.settingsBlockOf()`, a new public reader of the console's slot — where it was the group's bare rows; GNAP's view answers the block too. The server-only pages that show a secret once (a new EAB key, a server-generated private key) stay in the page modules: they answer an act, not a view. |
+| `../gnap/web_gnap.ts` | `/admin/gnap` (`render()`) and `/admin/gnap/monitor` (`monitorBody()`), which were drawn inside their routes. Its Copy buttons need `/admin/copy.js`, which `respond()` adds on this side and the static console's shell must load. |
+| `../xacml/web_xacml.ts` | Five of XACML's six pages — the overview (`render()`), policies, remote PEPs, decisions and the decision form — each drawn inside its route until #446. The overview reads the root policy's name from its view (`root`) where it asked the store. **The policy editor is not converted**: its forms are built from the policy parsed on the server (`editFormFor()`, `expressionForm()`), and moving it is a change to its view. The editor's server code calls this module's form helpers. |
+| `web_pki.ts` | The body of `/admin/pki`. Its view (`pkiJson()`, which `GET /admin-api/pki` answers) gained what the page read while drawing: `pageDefaults` (the key algorithm, organisation, leaf lifetime and alternative key algorithm the forms offer), `tierLabels`, `serviceScope`, `issuedShown` and `personsShown` (the rows each table shows, as indices into the whole lists), and `pqc` on every hierarchy, tree and object-store row naming a certificate. The revocation reasons are threaded from `revocation.reasons`. What a POST answers above the page — a banner, a private key handed over once — stays in the route. `keyPairListView()` is the renderer's, called back by the server. |
+| `web_crypto_metadata.ts` | `/admin/crypto-metadata` (`render()`, with a certificate's details over it from the view's `certificateDetails`), `/admin/keys` (`keysBody()`, whose view carries `settings` since #446) and `/admin/keys/history` (`renderHistory()`, which draws its pager from `paging`, the history's hidden `pagingRaw` removed). The envelopes link to the view's `standards`. |
+| `web_metrics.ts` | The body of `/admin/metrics`, drawn inside its route until #446, with `durationText()` and the three tables, whose `AdminConsole` methods delegate here. The first page moved by `tests/tools/convert-console-route.py`, the tool for pages drawn inside an `admin.ts` route. |
+| `web_token_lifetimes.ts` | The body of `/admin/token-lifetimes`. Its view carries the settings `context` (the files the Source column names) and `overridable` (which settings an application may override) since #446; the warnings are `tokenLifetimeWarningsFor()`, the three numbers handed in — `AdminConsole.tokenLifetimeWarnings()` still reads the settings for an application's page and calls it. |
+| `web_saml_assertions.ts` | The body of `/admin/saml-assertions`. Its view carries `rows` (the assertion settings table: key, unit, kind, profile, field), `seconds` (each lifetime in seconds) and the settings `context` since #446, which the page read from `admin_actions`, the settings and the process while it drew. |
+| `../scim/web_scim.ts`, `../ssf/web_ssf.ts` | `/admin/scim` (`body()`), `/admin/scim/monitor` (`monitorBody()`) and `/admin/ssf`, each drawn inside its route until #446. The SSF view carries the two menus each stream's forms offer, `statuses` and `eventTypes`, which the page asked the reporter for while it drew. |
+| `../ssf/web_caep_risc.ts` | `/admin/caep` (`caepBody()`), `/admin/risc` (`riscBody()`), `/admin/caep-sessions` (`caepSessionsBody()`) and `/admin/risc-accounts` (`riscAccountsBody()`) — the two list pages drawn from what `GET /admin-api/caep/sessions` and `/risc/accounts` answer, which gained each table's `shown` rows (and CAEP's `matched` counts) in #446, where the page filtered and paged the lists again — each with its chooser (`caepSessionChooser()`, `riscAccountChooser()`), drawn inside their routes until #446. The chooser itself is the kit's `chooserPane()` since then, with `chooserMatches()`. **And the two one-row pages** (`/admin/caep-sessions/session?id=`, `/admin/risc-accounts/account?id=`, `caepSessionBody()`, `riscAccountBody()`), drawn from the one-session and one-account answers `GET /admin-api/caep/sessions?session=` and `/risc/accounts?account=` already gave. **They introduced a row's `params`**: the page's `id` is the operation's `session` or `account`, and `WebPages.operationQuery()` translates; the console asks the same views through `withQuery()`. |
+| `web_policies.ts` | The body of `/admin/policies` with its seven section and form helpers, drawn inside its route until #446; its pager is the view's own `paging`, which is what the route recomputed. |
+| `../ssf/web_signals.ts` | The body of `/admin/signals`, drawn inside its route until #446. Its way back to the list is built by the kit's `listViewFromBack()`, which with `listViewOf()` and the `LIST_PARAMS` table is the kit's since then. |
+| `web_error_codes.ts` | The body of `/admin/error-codes`, which drew from the view's server-side half (`wantedSubsystem`, `shown`, a paging object) until #446 and now from the JSON the API answers: `filter`, `codes`, `subsystems`, `unregisteredSeen`, and `paging`, added. |
+| `web_applications.ts` | The application drill-down (`?application=`, `detail()`) and its tabs' sections. **Its answer carries `page`** (`admin_views.applicationPageData()`): the attribute notes, the configuration fields typed with the entry's values, CORS origins as matched, access types as read, the protocol rows, the editable-attribute menus, the DID document's facts, the mode flags and every section's state — with no credential: the credentials state loses its values and token, and the Credentials tab draws `revealControl()` buttons that post `reveal-secret`, whose console answer is the page with the value in its flash, once. A refused save's families are read off its body by the console (`state.declared`). And `/admin/applications/new` (`newApplicationBody()`, with the RFC 9728 import section and pane; its answer gained every field `fields`, typed by `admin_views.typedField()` — the console's `gridFieldTyped()` delegates there — and each saying whether the simplified view offers it, the field groups and family choices, the long-text attributes, the persistence facts and `resourceMetadataImport`; a posted form, a refused create and a loaded document ride on the page's view as `state`; the grid is the kit's `fieldGridOf()`, which `fieldGrid()` calls too), and `/admin/applications`, and the cells its drill-down shares with it (kind, protocols — given the register's `PROTOCOLS` from the answer — registered, and the client-secret mark) and `applicationsCaveat()`, a wire-time constant until #446. **The secret mark is judged in the view** (`admin_views.secretExpiryOf()`, a row's `secretExpiry`: `expired`, `soon` or nothing, and the instant), because it compares against the clock and a setting the page has neither of. The answer also carries `paging`, `kindCounts` for the kind menu, the authentication total and `protocols`. |
+| `web_authorization_servers.ts` | The body of `/admin/authorization-servers` and of its drill-down (`?profile=<id>`, `detail()`, whose answer now carries the effective `capabilities` and the member catalogue — `members`, `memberGroups` — its two menus are built from; `asMemberOptions()` moved with it), and the caveat both of its pages carry (`asCaveat()`, a wire-time constant until #446). The answer of `GET /admin-api/authorization-servers` carries `paging` and the two totals the tiles count across every profile, `overrideTotal` and `driftTotal`, where the page summed them over the register itself. |
+| `saml/web_saml.ts` | `/admin/saml2` and `/admin/saml11`, each with its drill-down (`?sp=<entityID>`, `?rp=<identifier>`), and the two sections the drill-downs share (signing certificates, consumed metadata). The 1.1 profile labels compare against the two browser-profile URIs written out here, since the module may not require `saml11_sso.ts`. The list's answer names the applications page's `kind` for these entries; the drill-downs carry `perApplicationEntityId` and `perApplicationProviderId`, so their first rows say whether the identity provider names itself per partner. |
+| `federation/web_federation.ts` | `/admin/federation` and its drill-down (`?relationship=<id>`, `detail()`), with the drill-down's four sections and `boolOf()` — the register's own reading of a stored boolean, copied so a switch is drawn as the register would act on it. **The drill-down's answer carries what the page drew from the register**: the field rows its lists and forms are built from, the schema, the labels of the values a select offers, the subject policy, whether it encrypts, the paths and the root-relative sign-in link (`loginHref`, kept root-relative for the reason the view's comment gives); the page reads `fields`, where the client secret is masked, as its record. And what both pages share: the state cell, the create form (given the roles and protocols from the answer), and the caveat and the links, wire-time constants until #446 (`federationCaveat()`, `federationLinks(base)`). The answer of `GET /admin-api/federation` carries `paging`, `roleCounts` for the role menu and the two totals the tiles count across every relationship. **And `/admin/federation/map`** (`map()`, `mapDrawing()`, `federationMapRow()`), from `GET /admin-api/federation/map` (`AdminViews.federationMapModel()`): the realm's relationships, the graph, the drawing laid out on the server, the filter's vocabulary, and the key as markup (`AdminViews.federationMapKey()`, moved from the console with `federationMapLooks()`). |
+| `spiffe/web_spiffe.ts` | `/admin/spiffe` — whose answer now carries the CA's authorities and federated bundles (`authorityState`), `serverApiAuthenticated` and the page's settings block as `settingsForms`, because its `settings` member is a list of readings an API caller already reads — and SPIFFE's registration entries, attested agents and brokers (`/admin/spiffe/entries`, `/agents`, `/brokers`), and the entry and agent drill-downs (`?entry=`, `?agent=`; `admin_views.spiffeEntryJson()`, `spiffeAgentJson()`). **`GET /admin-api/spiffe/entries` and `/agents` documented those two parameters and ignored them**, answering the list; they answer the one item now, `found: false` when it is not there, with the posture note — given whether the SPIRE Server API authenticates (`serverApiAuthenticated`) rather than asking `spiffeAuth` — and the create-entry form, given the `trustDomain`. Each answer's `paging` became the full paging object (it lacked the rows and the parameter the control is drawn from), and each entry carries its `selectorTexts`. |
+| `ldap/web_ldap.ts` | The nine `/admin/ldap/*` pages — applications, federations, SPIFFE, devices, roles, policies, PEPs, the directory and the service — as `LdapPage`, each drawn from its `GET /admin-api/ldap/*` answer. **Those answers carried credentials until #446** (client secrets, registration access tokens, a federation's client secret, assertion and DID private keys, TOTP seeds, recovery codes, `userPassword` hashes, as the entry held them): `ldap_server.js`'s `withoutSecrets()` now masks every attribute in its `SECRET_ATTRIBUTES` as `(set — not returned)` in `attributes`, `fields` and `entry.attributes`, rcbj's reveal-on-demand decision of 2026-10-05. An application row with a masked value links to its application page's credentials, where `reveal-secret` hands one back; **a federation's client secret has no reveal operation** and stays masked. Each answer gained `paging` and what its page reads (federations: `entryAttributes`, `roleShort`, `protocolLabel`, `enabled`, `enabledCount`; the directory: `originCounts`; the service: the two ports and `certificateProvenance`; roles: `builtInCatalogue`; policies and PEPs: `enabledCount`; SPIFFE: `selectorTexts`). `tests/application_reveal_secret.js` 4c holds that the applications and directory answers carry no secret. `WebKit.bullet()` is the SCIM pages' bullet, moved to the kit for both. |
+| `logout/web_logout.ts` | `/admin/logout`: the lookup, or an identity's live inventory with its filter, paging and controls, and the back-channel deliveries. The answer of `GET /admin-api/logout` carries, in every state, the settings, `hasReader`, the `kerberosRealm` an identity's principal is spelt in and `opensTestControls`; an identity's answer also its `family` filter and `key`. An identity named while no logout reader is installed draws the no-reader note, where the page threw before. |
+| `web_groups.ts` | The body of `/admin/groups` and of its drill-down (`?group=<dn>`, `detail()`), **the first page row with a `drill`**: the same operation answers one group when asked with the same query, so a drill-down is a second renderer on the row, chosen by `param`, and the bundle check draws it for an item `sample` picks off the list and for one that is not there. The group's answer carries `known` — only the people on that page who have authenticated here, for the users-page links — and `adminGroups`; `memberLink()`, `usersPageCell()` and `attributeTable()` moved here and the console delegates. Also what the two pages share — the listener warning and its three subjects, the rule cell, the caveat and the links, to which the console's `directoryListenerWarning()`, `groupLabel()` and `groupRuleCell()` delegate. **The caveat was a wire-time constant reading the two console groups from the configuration**; the answer of `GET /admin-api/groups` carries them now (`adminGroups`), with `paging` and `entryCount`, and the caveat is drawn from them. |
+| `web_rbac.ts` | `/admin/rbac`: who may use this console, its grants, the person chooser and the grant and revoke forms, and `rbacCaveat()` (a wire-time constant until #446). **The chooser is drawn from a slice**: the answer carries `candidatePane` — the matches for `personq`, `CHOOSER_HITS` from the clamped `personfrom`, by `kit.chooserPane()`'s own rule — because the candidates are every person in the realm, and `chooserPane()` takes a `slice` in place of the whole catalogue. Also `paging`, `known` (the page's people who have signed in here) and `roleChoices`. |
+| `web_realms.ts` | `/admin/realms` and its drill-down (`?realm=<id>`), with the retiring notice, the support table and `realmsCaveat()`. **The caveat was wire-time and read `persistence.status()`** once; the answer of `GET /admin-api/realms` carries `persistence` (`persistsRealms`, `mode`) and the caveat is drawn from it — as it carries `settings` (the console used to add them after the view), `defaultDomain`, `count` and the list's `paging`. **The drill-down has no GET operation of its own**: every row of the list's answer is that realm's `realmJson()`, so `detail()` picks its row by `?realm=` out of a list — the API's whole one in the browser, a list of the one realm in this process, which does not build every row because reading one mints that realm's key (the API makes them off the event loop first). The list carries `current` and `currentName` for it. |
+| `web_roles.ts` | The body of `/admin/roles`. The page and `GET /admin-api/roles` answer one view since #446 (`admin_views.rolesView(query)`: the register first, then `paging`, `shownRoles`, `applicationChoices`, the two menus and the settings), where the API answered the register alone. **The preview is composed in**: it is `GET /admin-api/roles/preview`, an operation of its own by design, and the page table's `compose` names it — the first page whose view is two answers. |
+| `../kerberos/web_kerberos_principals.ts` | The body of `/admin/kerberos/principals`, drawn inside its route until #446; its write controls follow the render context's `write`, where it read the gate's state. It is outside the parent project's locked Kerberos files. |
+| `../tls/web_tls_trust.ts` | The body of `/admin/tls/trust`, its "not installed" answer included — the first route with an early `respond()`, which the route tool turns into an early return. |
+| `../ssf/web_ssf_dead_letters.ts` | The body of `/admin/ssf/dead-letters` and its chart, with the colours and the section's reasoning, drawn inside its route until #446. `durationText()`, which it and Metrics share, is the kit's. |
+| `web_audit.ts` | The body of `/admin/audit` and its five cell helpers. It drew from the view's server-side half (the wanted filters, the rows, a paging object, the whole known-user set) until #446, and draws from the JSON the API answers now, which gained `paging`, `knownActors` (which actors on the page have a user page) and `settings`. |
+| `web_tokens.ts` | The body of `/admin/tokens`, the body of `/admin/tokens/set` (`setBody()`, from `GET /admin-api/tokens/set`, with `issuedRow()`; its Back link is built from the list view rather than the console's `upTo()`), and the fourteen cell helpers a set's row is drawn with (the console delegates to them, as the user and session drill-downs draw the same rows). It draws from the JSON `GET /admin-api/tokens` answers since #446 (`filter`, `sets`, `heldByFamily`, `families`, and `paging`, added), where it read the view's server-side half. |
+| `../oauth-oidc/web_consent.ts` | The body of `/admin/consent` with its two row helpers, drawn from the JSON `GET /admin-api/consent` answers since #446 (the register's members, a page of each list with its paging, and `applicationChoices`, added). |
+| `../logout/web_sessions.ts` | The body of `/admin/sessions` and its row and cell helpers, drawn from the JSON `GET /admin-api/sessions` answers since #446. That JSON gained the protocol filter's `protocols`, `paging`, `unauthenticatedKept` (the setting the page states), and the fields each unauthenticated row is drawn with; its relative times are measured from the view's own `at`. |
+| `web_protocol_settings.ts` | The thirteen pages `PROTOCOL_SETTINGS_PAGES` generates, drawn from the JSON their operations answer, which carries the lead and warnings as markup (`leadHtml`, `alsoHtml`) beside their plain text since #446. **Six have a status block**: TOTP's, recovery codes', WebAuthn's and Kerberos pre-authentication's are drawn here from the view's `status` (`STATUS`, by page; WebAuthn's JSON gained the FIDO metadata snapshot its attestation rows read, and Kerberos' block builds its JSON — the krbtgt key's state included — before drawing from it); Persistence's is drawn here too. **The cluster's is still drawn by the console** and handed in as `statusHtml`, and that page stays out of the page table. |
+| `oid4vc/web_vc_claims.ts` | `/admin/vc`, drawn from `GET /admin-api/credential-claims`: its attribute table and preview. **Each attribute's example is judged in the view** (`admin_views.vcExampleOf()`, a row's `example`: the value and where it comes from), which the console's `vcExampleCell()` used to work out from the persona while drawing. |
+| `web_claims.ts` | The three claim-set pages, `/admin/claims`, `/admin/saml-attributes` and `/admin/userinfo-claims`, and the sections they share. **The sections read the registers themselves** — `stats.claimSet()`, the attribute catalogue's selections, `groupClaims`, the release withholding — and take the page's answer now, which `claimSetsJson()` had nearly all of: it gained `withholding`, and each catalogue row `generated`. The UserInfo answer gained the typed `request` and the `inventedEmail` a note contrasts with the directory's. |
+| `web_config.ts` | The body of `/admin/config`, drawn from `configJson()` (which `GET /admin-api/config` answers) since #446: where each group is drawn comes from its `homes`, the warning from `homeProblems`, and its form from `settings`, added. |
+| `../oid4vc/web_vc_verifier_config.ts` | The body of `/admin/vc-verifier-config` and its five helpers, which read the verifier's configuration module while drawing until #446; they read the view now, which gained each format's wording and the requested claims outside the catalogue (`extras`, with their DCQL paths). |
+| `web_used_assertions.ts` | `/admin/used-assertions`, drawn from `GET /admin-api/used-assertions`, whose answer gained `paging` as an object beside the members it already spread. The route reads the view, which is asynchronous, and hands it to `usedAssertionsPage()`. |
+| `web_users.ts` | `/admin/users/new` (`newUserBody()`, from `GET /admin-api/users/new`, whose answer gained the `username`, each credential's `what`, every field the grid can draw — `fieldRows`, built by `admin_views.newUserFieldRows()`, each saying whether the simplified view offers it — the long-text attributes, `mailAvailable` and the persistence facts; a refused create's values ride on the page's view as `prefill`, never on the answer), and `/admin/users`, and its three cells (credential, second factor, source; `sourceCell()` given the registry's size rather than reading `stats`). The answer of `GET /admin-api/users` carries `paging`, `withActiveSession` and each row's `liveSessions` — counted in the view from the sign-on sessions by the rows' own identity key — and three facts the notes state: `personFieldCount`, `newUserContainer`, `registryKeeps`. |
+| `web_users.ts` (the person) | `/admin/users?user=` (`detail()`, the drill-down) and a name nothing knows (`unknown()`), with the page's thirteen sections moved beside it — the sessions and their tokens, the artifacts, how they authenticated, the directory entry, the second factors (`mfaSection()` with the e-mail factor, app passwords, verifications, devices and self-issued subjects), the key pairs, Kerberos, federation links, GNAP grants, the attribute grid and the controls. **The answer of `GET /admin-api/users?user=` gained `page`** (`admin_views.userPageData()`): the counts the tiles show, `back` and `params`, the credential store's report and three mechanisms' settings (`mfa`), the key-pair state without the private keys (`keyPairs`), the service-provider relationships a link may name, `person_editor.ts`'s field groups, who may act for them, and whether the risk standing was read (`riskAsked`). The unknown answer gained `registryKeeps`. **A credential leak closed with it**: the answer's `ldap` was the entry as stored — password hash, TOTP seed, recovery codes, private keys — and the directory reader slot now hands over `withoutSecrets()`'s copy (`tests/application_reveal_secret.js` 5). A refused form's values ride beside the answer as `state`, never in it. `WebKit.subTabbedPanels()` moved to the kit. |
+| `web_delegation.ts` | The delegation pages and the pieces they share (#446): a party, a row of the register, a box and a line of the picture, the two choosers, the policy and permission sections, and `drawing()` — the answer's `svg` with the two links under it. **The drawings stay laid out on the server**: dagre runs here, an answer carries `svg`, `drawing` and `looks`, and the key is markup drawn from `delegation_map.ts`'s glyphs (`AdminViews.delegationMapKey()`, the answer's `mapKey`). **`facts` is what `known` was**: the cells took the user keys the console had seen and asked `applications.get()` while drawing; an answer carries `facts` (`AdminViews.delegationFacts()`), `users` and `apps` for the names in it only. **The two choosers are searched and paged by the view** (`AdminViews.delegationChooser()`, `chooserPane()`'s `slice`), because the person catalogue is everybody this service has seen. **Every delegation page is drawn here, each from an operation of its own** (an `AdminViews.*Model()` the page and the operation share, each answering `format=svg` as the page does): `acts()` — `/admin/delegation` from `GET /admin-api/delegation`, whose answer is the page's model since #446 (the acts as before, `allowed`, `delegationPolicy`, the other six lists paged, the choosers and the two sections' views); `map()`; `chain()`, `application()`, `user()` (`/admin-api/delegation/chain`, `/application`, `/user`); `allowed()` and `cluster()` (`/delegation/allowed`, `/delegation/cluster`); `settings()` (`GET /admin-api/delegation-settings`, the register with `AdminViews.permissionsListStateOf()`); and `credential()` — `/admin/tokens/credential` from `GET /admin-api/tokens/credential` (`credentialLineageModel()`, each generation's `holder` and `originLabel`). The console's own copies of the shared pieces, thirty-four methods, were removed with the last of them. `tests/console_web_bundle.js` records one delegation act and draws the pages with example queries (`EXAMPLES`), so a chain, a person and a lineage are compared and not only the empty pages. |
+| `web_dashboard.ts` | `/admin`, the console index (#446): the totals, the guide — every page this reader may see, grouped as the sidebar is (`consoleGuide()`, `guideItem()`, `isNavGroup()`) — what the console deliberately does not do, and where the JSON is. Drawn from `GET /admin-api/status`, which answers `AdminConsole.dashboardJson()` since #446: `consoleJson()`'s totals and `sections` (`visibleSections()` for the caller's gate), `persistence` and `base`. `dashboardJson` is the fifth name `tests/admin_actions_layer.js` lets the API call on the console: the guide is the console describing its own pages. |
+| `web_sts_metadata.ts` | `/admin/sts-metadata` (#446): `sts_metadata.ts`'s `renderInner()` and its helpers, drawn from `GET /admin-api/sts-metadata` (`StsMetadata.pageJson()`: `metadataJson()` with the router's `rows`, `https`, `rfc9700`, the authorization servers served and the group order). The router is still read on the server — that is the page — and the operation requires `sts_metadata.ts` lazily, since it is built last. `tests/console_web_bundle.js` D-drift asks that answer for undocumented and stale paths in process, the check `tests/vendored/sts_metadata.js` makes over HTTP. |
+| `web_forms.ts` | Which `/admin-api` operation a console form is (#446, step 5). The static console has no server of its own, so a submitted form goes to the operation that mirrors it, read off `GET /admin-api`'s `operations` — every operation's `mirrors` (rule 7's declaration) and an action route's per-action path. A form resolves by its page and its `action` field, or by its page alone where one POST operation mirrors it, or by the action its page is named after (`POST /admin/keys/export`); anything else is null and the runtime refuses it rather than guess. `tests/console_web_bundle.js` F0 holds that every POST form a converted page draws resolves (378 form actions on 2026-10-05). |
+| `web_shell.ts` | The console's frame (#446, step 5): the sidebar (brand, realm chooser, the sections this reader may see), the head row (title, refresh, account menu), the trail, the gate's banner, a realm's removal banner, and the foot (persistence, the build, what the process runs as). `frame(shell, page)` draws it from the SHELL ANSWER, `AdminConsole.shellJson()` — `GET /admin-api/console` — and the page's own `title`, `active`, `up`, `inner` and realm-relative `path`. **`page()` draws through it** — the realm chooser in front of a bare `/admin` is the one server page left that does; the frame it replaced (`pageLegacy()`) and the byte-for-byte parity test that held the two equal were deleted after the cutover (#446). The shell answer keeps the old frame's two gates apart: `gate` for the banners (what a caller handed `page()`), `navAuthority` and `sections` from the request. The constants the frame draws with (`MAX_CRUMB`, `SIGNOUT_PATH`, `REALM_SWITCH_PATH`, `ACTIVE_NAV_FOCUS`) and the open-gate banner live here. `shellJson` is the sixth name the layer test lets the API call on the console. |
+| `web_runtime.ts`, `web_console.ts` | **The static console's runtime** (#446 step 5), bundled by `build-typescript.sh` as `admin-ui/console.js` from `web_console.ts`, which only hands `ConsoleRuntime` the browser's objects and starts it. Sign-in is the code flow with PKCE S256 at the authorization server of the realm the console was opened in, `resource` that realm's `/admin-api`; the verifier, state and return path cross the redirect in sessionStorage, the tokens are held in memory only (a reload signs in again, silently while the sign-on session lasts). DPoP on every request with a non-extractable P-256 key made per page load, `ath` on API proofs, a server's nonce kept and a `use_dpop_nonce` refusal retried once, the refresh token rotated with the same key. Pages are routed on the console's own paths and drawn by `WebPages.render()` in `WebShell.frame()` (the shell is `GET /admin-api/console`, whose gate is the TOKEN's — `AdminApi.consoleGateOf()` over `meJson()`); a POST form goes to `WebForms.resolve()`'s operation or is refused; an act's answer is drawn as `respondToAction()` drew it, a reveal on the page that asked, a file saved; the realm switcher moves in place. Every browser object arrives through the constructor, which is what `tests/console_runtime.js` drives. **Served since the cutover (step 6)**: `/admin` and `/admin/*` answer the shell document with this script (`AdminConsole.shellDocument()`), any other method 404. Two rules it keeps from the server's form parser: a `formaction`'s query and the pressed button's value each TAKE THE PLACE of a field of the same name (Generate secret is `action=generate-secret` beside a create form's hidden `action=create`), and `shapeFields()` sends a form as its operation's schema takes it — a `patternProperties` member (the field grid's boxes) kept, a column of `attribute` boxes carried into `attributes`; `tests/console_web_bundle.js` F1b fails on a value dropped on the way and F0b on a named button that would be sent as its form's action. |
+| `web_answers.ts` | **What a form's answer draws where a notice is not enough** (#446, the cutover): the three kinds of answer the deleted console handlers answered with a page. A secret shown once — a generated or reset password, an activation or reset link, an app password, a realm's bootstrap password, a keytab, an EAB key, a SCEP challenge, a private key (DID, RFC 8705 client certificate, a person's assertion key, a remote PEP's listener) — drawn in place, never on a URL or in the history (`once()`). A round trip that writes nothing — the grids' "+" and bin, the view switch — drawn again from what the form holds and never sent, because those forms' hidden `action` is the write (`roundTrip()`). A redraw from an answer — a refused create or edit with its boxes, Fill (`GET /admin-api/users/new?invent=`), Generate secret and a loaded RFC 9728 document in the new-application form, the PKI workbench's next draft (`workbench` on a pane action's answer), an OpenID Federation resolution (`redraw()`). `tests/console_answers.js` holds it. |
+| `web_explorer.ts` | `/admin/api-explorer` for the static console (#446), from `GET /admin-api/api-explorer`, whose answer gained `who` and `scope` (the token's subject and scopes, filled by the API's handler), `realmPrefix` and `script`. **No token is embedded**: the page carries `data-console-fetch` and `mgmt-api/admin_api_explorer.js` sends every call, the document included, through `window.stsConsoleFetch`, which the runtime answers with its DPoP-bound token and a proof by its key. The page names its script in `data-script` and the runtime loads it after drawing, since `innerHTML` runs none. The explorer's stylesheet lives here and `admin_api_docs.ts` reads it. |
+| `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
+| `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
+| `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |
+| `web_node_health.ts` | The body of `/admin/node-health`. It was `NodeHealthAdmin`'s nine drawing methods; it carries its own `MIB` and `round1()`, which the view's module has too, because it may not require that module. |
+| `web_settings.ts` | **The Settings block of every page that owns settings** — `forms()`, `section()`, `row()`, `orderedChoiceControl()`, `sourceNote()`, `sharedNote()` — from the `settings` member of that page's operation. Not a page: `web_pages.ts` carries it as `StsConsole.settings`. See *The settings block*, below. |
+| `web_pqc_badge.ts` | The post-quantum icon, its sentence and its legend, drawn from a classification a view carries (`kind`, `label`, `standard`). `pqc_badge.ts`'s `badge()` and `legend()`, and `common/pqc_support.ts`'s `sentence()`, call it; `badgeFor()`, which classifies a certificate, stays on the server. |
+| `web_certificate_dialog.ts` | The certificate details dialog and the link that opens it, drawn from `certificate_views.detailsView()`, which carries the key's classification as `pqc` since #446. `certificate_dialog.ts` keeps `requested()`, which reads a request, and calls this for the rest. |
+| `web_pages.ts` | The table of converted pages (path, title, operation, renderer), and the ENTRY of the browser bundle. |
+
+**A FORM IN A RENDERER IS STILL A FORM.** `web_grants.ts` draws
+`<form method="post" action="/admin/grants">` exactly as the page did. The
+static console's runtime will send it as the management API call that
+mirrors that console POST (the operation's `mirrors`), so the renderer does
+not change when the console does.
+
+**A `web_` MODULE MAY REQUIRE ANOTHER `web_` MODULE AND NOTHING ELSE.** No
+logger, no `config`, no `realms`, no store, nothing of node's: it runs in a
+browser too. Three things hold that:
+
+* `build-typescript.sh` runs esbuild FOR A BROWSER over `web_pages.ts`, so a
+  module that reaches a server module does not resolve and the image does not
+  build;
+* `tests/console_web_bundle.js` reads the sources for a require that is not
+  `./web_…` and for node's names;
+* the same test runs the built bundle in a context with no `require`,
+  `process`, `module` or `Buffer`.
+
+**THEY LOG NOTHING**, on the code style's two exemptions at once: they run in
+a browser, and the kit is the console's hot path (`note()` is called about
+three hundred times to draw `/admin/config`).
+
+**`WebKit.esc()` IS `helpers.xmlEscape()` WRITTEN OUT**, because the kit may
+not require it: an apostrophe is `&apos;`, where `common/html.ts` writes
+`&#39;`. The difference is invisible in a browser and visible in a byte
+comparison, and a page drawn by a `web_` module must be the page this console
+drew. The test compares the two functions.
+
+### The bundle
+
+`admin-ui/console.bundle.js`, written by `build-typescript.sh` inside an
+image build only, like every compiled file: an IIFE whose value is the global
+`StsConsole` (the `WebPages` class). It opens with the two SPDX lines, as a
+banner, because it is this repository's source in another shape; the service
+image's strip takes its comments with the rest. esbuild is
+`tests/package.json`'s, pinned exactly, and never reaches the service image.
+
+### Converting a page
+
+1. **The view carries everything the page shows.** Whatever the page's
+   renderer reads from this process — the directory, the registry, a setting,
+   a layout done on the server — becomes part of the JSON its `/admin-api`
+   operation answers. `GET /admin-api/delegation/map` is the worked example of
+   a hard one (`mgmt-api/CLAUDE.md`).
+2. **The renderer moves to a `web_` module**, taking its helpers from
+   `web_kit.ts`. A helper it needs that is still an `AdminConsole` method
+   moves to the kit first, verbatim, leaving a delegate.
+3. **The page's own module calls it through `JSON.parse(JSON.stringify(view))`**
+   until the cutover. `mode_admin.ts` is the pattern.
+4. **A row in `web_pages.ts`.** `tests/console_web_bundle.js` calls the
+   row's operation's HANDLER for the view and draws the page from that, so a
+   page whose operation lacks something the page draws fails there.
+
+**`tests/tools/convert-console-page.py` DOES STEP 2 AND 3** for a page whose
+renderer is already methods that take the view: it moves the named methods
+into a new `web_` file as static methods, drops what only a server has (the
+`deps` destructuring, every `log.debug()`), turns `admin.` into `kit.`, and
+leaves the entry method behind as the round-trip delegate. It refuses a
+helper the kit lacks rather than guessing, and it REPORTS every module-level
+name of the old file the moved code still reads (`STAYS BEHIND`). Each of
+those is a decision: a constant is copied, a table the page is drawn from
+moves with the renderer and is read back by the old module, a fact goes into
+the view.
+
+**NOT BUILT YET**: the runtime that signs in (authorization code, PKCE, a
+non-extractable DPoP key), fetches, routes and draws the shell; the static
+route that serves it; and every page `web_pages.ts`'s table does not list.
+
+**THE PAGING CONTROL IS DRAWN FROM THE PAGING A CALLER RECEIVES.**
+`pageNavPair(path, params, pg)` read two members of the console's own paging
+object that `pagingJson()` did not answer: `param`, the query parameter that
+moves the list, and `noun`, what its rows are counted in. Every paging answer
+carries both now (`admin-core/admin_views.ts`), so a renderer hands the kit
+`view.paging` and draws what the console drew — which
+`tests/console_web_bundle.js` holds, page by page of a list of 431 rows.
+
+### The render context
+
+**A RENDERER TAKES TWO THINGS: ITS VIEW, AND WHAT IS THE READER'S.**
+`render(view, ctx)`, where `ctx` is `WebKit.context(query, write)`:
+
+* `ctx.query` — the page's own query parameters. A paging link carries the
+  others forward (`pageNavPair(PAGE, ctx.query, paging)`), and a form that
+  has to come back to where the reader was builds its return from them.
+* `ctx.write` — whether the reader may write: `GET /admin-api/me`'s `write`
+  in the browser, `mayWrite(req)` here. It decides whether a control is
+  DRAWN. It refuses nothing: the operation behind the control checks the
+  role.
+
+`AdminConsole.renderContext(req)` builds it for a page module, with the
+query passed through JSON. **Nothing else belongs in it.** A fact about the
+service goes in the view, where a caller of the API can read it too; the
+context is only what differs between two readers of one answer. **A
+renderer may read nothing else of a request**, and the conversion tool
+refuses a method that does (a body, a header, a session).
+
+**THE NOTICE AND ERROR BANNER IS NOT IN A RENDERER.** `messagesOf(req)` draws
+what a redirect brought back after an action; in the static console the
+runtime that sent the action draws its result. A page module adds it
+outside `render()`, as `oauth2_monitor_admin.ts` does.
+
+### The settings block
+
+`configFormsFor(path)` is what forty-seven pages draw their settings with,
+and fifteen page modules outside `admin.ts` call it. **It is drawn by
+`web_settings.ts` now**, from the page's `settings` member —
+`configSettingsJson(path)`, which every one of those pages' operations
+already answered — passed through JSON. `AdminConsole.configFormsFor()` is
+that call; `configSection()`, `configRow()` and `orderedChoiceControl()`,
+which had no other caller, are `SettingsForms.section()`, `.row()` and
+`.orderedChoiceControl()` there with their comments (the `formaction` Reset,
+the description as the tooltip), and comments here that cite the old names
+mean those. `sourceNote()` stays as a method, because the token-lifetime and
+SAML assertion rows draw a Source column of their own.
+
+**THE BLOCK SAID THREE THINGS ABOUT THE PROCESS, AND THEY ARE IN THE VIEW
+NOW**, because a browser has no process:
+
+* `settings.context.configFile` and `.defaultsFile` — the files the Source
+  column and two notes name. `GET /admin-api/config` already answered both
+  under those names; `configFile` is null when `CONFIG_FILE` is unset.
+* `settings.context.persistsAppconfig` and `.persistenceMode` — which of the
+  two persistence notes is true.
+* `settings.sharedWith` — by group, the other pages that draw it
+  (`sharedSettingPages()`: `SETTING_HOMES` and NAV's labels). The sentence
+  is `SettingsForms.sharedNote()`'s.
+
+`settingsContext()` is the one function that answers the first two, so a
+block and the whole table cannot name two files.
+
+**THE TWO FALLBACKS FOR AN UNNAMED APPCONFIG FILE WERE NOT RECONCILED.** The
+lead says `env/local.js` and the Source column says "the appconfig file",
+as they did. This was a move, checked by bytes; making them agree is a
+change to the console and would be made as one.
+
+**HOW THE MOVE WAS CHECKED**: with the old methods still in place,
+`tests/console_web_bundle.js` (F) drew every settings page both ways — two
+overrides in force, each group alone as `/admin/listeners` draws them — and
+the two were equal on all forty-seven before `configFormsFor()` became a
+call. The same check stays, and holds the bundle to those bytes.
+
+**WHICH PAGES ARE NEXT IS DECIDED BY THE KIT.** Of the page modules outside
+`admin.ts`, two more need nothing the kit lacks: `claims_providers_admin`,
+whose renderer takes a callback address the view does not carry yet, and
+`provider_commands_admin`, which draws two pages. The helpers the others
+wait on, by how many page modules call them: the rest of the paging
+furniture (`perPageForm`, `perPageOptions`, `sectionSearchForm`), `upTo`
+and `messagesOf` (which belong to the shell). `pageNavPair`, `clipped` and
+the settings block are done. **A page that draws a settings block has it as
+`view.settings`** and calls `SettingsForms.forms(view.settings, PAGE)`.
+

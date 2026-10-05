@@ -22,6 +22,7 @@ libraries that decide things on its behalf.
 | `oauth2_monitor.ts` | **The counters behind `/admin/oauth2/monitor` (2026-09-13)**, in sections; pushed authorization requests are the first. |
 | `oauth2_monitor_console.ts` | **The view and action model of that page (2026-09-13)** — `monitorView()` and `monitorAction()` (`delete-pushed-request`), no route, no `res`, no markup; both doors render the same call (rule 7). `gnap/gnap_console.ts`'s arrangement, and one of the files `tests/admin_actions_layer.js` allows to require `admin-core/admin_views.ts`. |
 | `oauth2_monitor_admin.ts` | **THE ONE FILE HERE BESIDE `oauth2.ts` THAT REGISTERS ROUTES**: `GET` and `POST /admin/oauth2/monitor`, in the console's shell. Required at 18f in `common/protocol_stack.ts`, never from `oauth2.ts`, which would drag the console in front of the authorization server. |
+| `web_oauth2_monitor.ts`, `web_grants.ts` | **The renderers of `/admin/oauth2/monitor` and `/admin/grants` since #446**: `web_` modules a browser can load, each drawing its page from the management API's answer alone (`admin-ui/CLAUDE.md`, *The static console's renderers*). `web_oauth2_monitor.ts` owns the page's path, the filter's `STATES` and the `BACK_PARAMS` a Withdraw carries back, which `oauth2_monitor_console.ts` and `oauth2_monitor_admin.ts` read from it — a `web_` module may require no server module, so the table a page is drawn from lives with the renderer. |
 | `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.ts` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
 | `protected_resource_metadata.ts` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`) — the check and the resolution moved INTO `federation_http.ts` on 2026-09-17, when the back-channel delivery needed them too, and this module keeps its own refusal codes; section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
 | `jwt_access_token.ts` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
@@ -5059,3 +5060,61 @@ Tests: `tests/http_signatures.js` (the mechanism, RFC 9421's vectors including
 section 2.4's), `tests/fapi_http_signatures.js` (this policy, section by
 section), `tests/vendored/sts_fapi_http_signatures.js` (`local: true`, over
 HTTP with its own RFC 9421 signer and verifier).
+
+## 3cb. THE ADMIN CONSOLE AS A PUBLIC CLIENT (#446, 2026-10-05)
+
+The console is becoming a static application in the browser that calls
+`/admin-api` with the signed-in person's own token: a PUBLIC client, where it
+was a confidential relying party run by this process (`common/oidc_rp.ts`).
+rcbj reversed #444's D9 for the console on the condition that its tokens are
+bound to a key the browser cannot export. Two rules follow. Both are about
+that ONE client and neither is a setting.
+
+**UNTIL THE CUTOVER NEITHER APPLIES.** The seeded `sts-admin-console` entry
+still declares `private_key_jwt`. Each rule tests the client's id AND its
+declared method (`none`), so the confidential console, the portal and every
+other client are untouched, and the API explorer's unbound token still works.
+
+* **DPoP IS MANDATORY FOR IT** (`sender_constraints.js`:
+  `DPOP_BOUND_PUBLIC_CLIENTS`, `dpopBoundPublicClient()`).
+  * The token endpoint refuses a request from it with no DPoP proof
+    (`publicClientIssuanceRefusal()`, `STS-OAUTH-0943`, `invalid_dpop_proof`).
+    The check is in `tokenGrant()`'s `issue()` closure, which every grant
+    mints through, beside the role gate and #34's two settings.
+  * Its refresh token needs no new rule: RFC 9449 section 5 already binds a
+    public client's refresh token to the proof's key.
+  * A resource refuses an UNBOUND access token issued to it
+    (`accessTokenRefusal({ clientBound })`, `STS-OAUTH-0944`). `/admin-api`'s
+    gate passes `clientBound`, reading the client's entry in the realm that
+    issued the token, and only for a client the list names. A BOUND token
+    presented without its proof was already refused by every resource.
+  * `oauth2.accessTokenRequireDpop` and `oauth2.refreshTokenRequireDpop` stay
+    the realm's own question for everybody else (rule 3ao).
+* **IT IS THE ONE PUBLIC CLIENT A CONFIDENTIAL-ONLY FAPI PROFILE ALLOWS**
+  (`fapi.js`: `PUBLIC_CLIENT_EXEMPT`, `publicClientExempt()`).
+  `clientAuthenticationRefusal(method, clientId)` lets it past at the token
+  and PAR endpoints; the CIBA endpoint passes no client and so exempts
+  nobody. FAPI 1.0 Advanced and FAPI 2.0 support no public client, and
+  refusing it would leave such a realm with no console. **The console does
+  not conform to the profile there**: the two requirement rows
+  (`no-public-clients`, `confidential-only`) say so, and so do
+  `docs/oauth-security.md` and `docs/spec-departures.md`. This qualifies 3av's
+  *the hosted surfaces conforming*: the portal still does.
+
+**THE PORTAL IS IN NEITHER LIST.** It keeps its backend-for-frontend.
+`tests/sender_constraints.js` and `tests/fapi2_units.js` hold both lists to
+"the admin console, nothing else".
+
+**THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#103) IS MADE AT ISSUANCE**, by
+`issueAuthorizationResponse()` calling `rolePermissions.noteConsoleSignIn()`
+before it narrows the gated scopes, with the session's `amr` and
+`authn.latestAuthorityOf()`. `common/CLAUDE.md` (beside *A role authorizes
+permissions*) argues it. It changes nothing today: the server-rendered
+console's flow asks for no admin scope.
+
+**NOT DONE YET, AND OWED BEFORE THE CUTOVER**: the seed itself (the entry
+becoming `none`), the sign-in the browser runs (authorization code, PKCE, a
+WebCrypto key), and the registration-time check for the seeded row.
+
+`tests/console_public_client.js` holds the rule end to end, with the entry
+declared public in a child process.

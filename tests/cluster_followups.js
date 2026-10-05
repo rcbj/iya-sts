@@ -491,21 +491,24 @@ function childMain() {
            'E2b. the next create of a name, sent the moment the first was ' +
            'answered and before its claim is released, waits and runs rather ' +
            'than being refused as in progress', sequence.join(','));
-      const adminSource = fs.readFileSync(ROOT + '/admin-ui/admin.ts', 'utf8');
-      const handlers = ["app.post('/admin/users',",
-                        "app.post('/admin/users/new',",
-                        "app.post('/admin/groups',"];
+      // THE CONSOLE CREATES THROUGH /admin-api since the cutover (#446):
+      // its user and group forms are the users and groups operations, so
+      // what is held is that each of those claims a create's name first.
+      const apiSource = fs.readFileSync(ROOT + '/mgmt-api/admin_api.ts',
+                                        'utf8');
+      const handlers = ["route: BASE + '/users/:action'",
+                        "route: BASE + '/groups/:action'"];
       note(handlers.every(function (head) {
-        const at = adminSource.indexOf(head);
-        // The next registration, however deeply indented: since #50 the
-        // console registers its routes from a method. Not found is refused
-        // rather than read as "to the end of the file".
-        const after = /\n\s*app\./.exec(adminSource.slice(at + head.length));
+        const at = apiSource.indexOf(head);
+        // The next route row: not found is refused rather than read as
+        // "to the end of the file".
+        const after = /\n\s*\{ method: '/.exec(apiSource.slice(at +
+                                                         head.length));
         const next = after ? at + head.length + after.index : -1;
-        return at >= 0 && next > at && adminSource.slice(at, next)
-          .indexOf('createClaims.runClaimed(') >= 0;
-      }), 'E3. the console\'s user, new-user and group create handlers each ' +
-          'create through runClaimed()');
+        return at >= 0 && next > at && /self\.runClaimed\(res, request\.action === 'create'/
+          .test(apiSource.slice(at, next));
+      }), 'E3. the users and groups operations — which the console\'s user, ' +
+          'new-user and group forms are — each create through runClaimed()');
       const scimSource = fs.readFileSync(ROOT + '/scim/scim.ts', 'utf8');
       note((scimSource.match(/\.ingress\(claimingIngress\('(User|Group)'/g) ||
             []).length === 2,

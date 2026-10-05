@@ -770,9 +770,9 @@ no longer declares the scope an operation needs is refused 403
 (`STS-API-0123`). The seeded `sts-management-api` and `sts-admin-console` declare
 both, in every realm.
 
-`adminApi.authRequired=false` behaves differently by mode. **In development** it
-opens the API to anybody who can reach the port. **In product** it falls back to
-the console's own gate — a session and a role — plus the XACML policy.
+`adminApi.authRequired=false` is a development setting. **In development** it
+opens the API to anybody who can reach the port. **In product** it is refused
+on write and ignored where it is stored, so the token is always required.
 
 ## GNAP proves the key, and that is not a turnstile
 

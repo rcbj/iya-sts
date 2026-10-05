@@ -25,6 +25,10 @@ interface AttributeSourcesApiDeps {
   parseBody: typeof helpers.parseBody;
   errorCodes: typeof errorCodes;
   loadSources(): Json;
+  // The page's module, for the one view the page and the GET both answer
+  // (#446). Lazily, as `loadSources` is: this module is built before the
+  // console's pages are.
+  loadPage(): Json;
 }
 
 const BASE = '/admin-api';
@@ -126,6 +130,9 @@ class AttributeSourcesApi {
       errorCodes: errorCodes,
       loadSources: function (): Json {
         return require('./attribute_sources');
+      },
+      loadPage: function (): Json {
+        return require('./attribute_sources_admin');
       }
     };
   }
@@ -164,7 +171,8 @@ class AttributeSourcesApi {
    * @returns the route rows
    */
   buildRoutes(): Json[] {
-    const { log, parseBody, errorCodes, loadSources } = this.deps;
+    const { log, parseBody, errorCodes, loadSources,
+            loadPage } = this.deps;
     const self = this;
     log.debug("Entering AttributeSourcesApi.buildRoutes().");
     const idOnly = { type: 'object', properties: { id: SOURCE_PROPERTIES.id },
@@ -184,11 +192,14 @@ class AttributeSourcesApi {
         responseDescription: 'The register.',
         responseSchema: { type: 'object', additionalProperties: true,
                           description: '`sources`, `dialects`, `modes`, ' +
-                                       '`hostPatterns`, `refused`.' },
+                                       '`hostPatterns`, `refused`, and ' +
+                                       '`settings` — the page\'s settings ' +
+                                       'block, as every page that owns ' +
+                                       'settings answers it.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API attribute sources " +
                     "endpoint.");
-          self.sendJson(res, 200, loadSources().view());
+          self.sendJson(res, 200, loadPage().attributeSourcesView());
           log.debug("Leaving the management API attribute sources " +
                     "endpoint.");
         } },

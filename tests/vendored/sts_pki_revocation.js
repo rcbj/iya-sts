@@ -546,12 +546,26 @@ async function test() {
 
   log.info("=== G. the console page is gated, and the endpoints are not ===");
 
+  // THE PAGE IS THE STATIC CONSOLE'S SHELL SINCE #446, AND THE DATA IS
+  // BEHIND /admin-api: the document every `/admin/*` path answers carries
+  // nothing of this service's, and the page draws itself from
+  // GET /admin-api/pki, which refuses a caller with no token. `Authorization: none` keeps the suite's
+  // preloaded token off this one request.
   const page = await fetch(base + "/admin/pki", { redirect: "manual" });
-  check("/admin/pki is BEHIND THE GATE — it is reached through the " +
+  const pageText = await page.text();
+  const tokenless = await fetch(base + "/admin-api/pki", {
+    redirect: "manual", headers: { authorization: "none" } });
+  check("/admin/pki is the console's shell, and its data is BEHIND " +
+        "/admin-api's token, which the console gets through the " +
         "authorization code flow like every other page of that console",
         function () {
-          assert.ok(page.status === 303 || page.status === 302,
-            "status " + page.status);
+          assert.ok(page.status === 200 && /<html/i.test(pageText) &&
+                    !/PRIVATE KEY|"persons"|"connections"/.test(pageText),
+            "/admin/pki answered " + page.status + " with " +
+            pageText.slice(0, 120));
+          assert.strictEqual(tokenless.status, 401,
+            "GET /admin-api/pki answered " + tokenless.status +
+            " to a caller with no token");
         });
   check("and the revocation ENDPOINTS are not, which is the asymmetry that " +
         "matters: a relying party fetches a CRL before it has authenticated " +

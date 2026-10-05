@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4095** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4064** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 255
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 697
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 699
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 98
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -84,8 +84,8 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 46
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 88
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 220
-* [Management API (`STS-API`)](#sts-api) — 75
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 223
+* [Management API (`STS-API`)](#sts-api) — 76
 * [User portal (`STS-PORTAL`)](#sts-portal) — 83
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 150
@@ -484,7 +484,7 @@ Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistenc
 | `STS-CELL-0182` | A transfer question named a realm this service does not have; the session is not held away from home, the request is not served and nothing is released (#98). | — |
 | `STS-CELL-0183` | A request about a person homed in another jurisdiction was refused under the realm's hard geofence (cells.hardGeofence): the issuance policy answered serve-request with refuse, so it is neither served nor relayed (#98). | — |
 | `STS-CELL-0184` | Personal data of the people homed in this cell was withheld from a reader at a cell in another jurisdiction (a directory listing or a management-API call relayed with ?cell=): the issuance policy answered release-attributes with withhold (#98 D11). | — |
-| `STS-CELL-0190` | Server configuration -> Cells (/admin/cells) could not be drawn: the cell map or its peers could not be read; the page answers 500 and the reason is logged. | — |
+| `STS-CELL-0190` *(retired)* | Server configuration -> Cells (/admin/cells) could not be drawn: the cell map or its peers could not be read; the page answers 500 and the reason is logged. | — |
 | `STS-CELL-0191` | GET /admin-api/cells could not read the cell map; the call answers 500 server_error. | — |
 | `STS-CELL-0192` | POST /admin-api/cells/rehome failed without a refusal of its own (the move threw, or a refusal carried no code); the call answers an error and the person stays where they were homed. | — |
 | `STS-CELL-0193` | A person's creation from the console or /admin-api arrived relayed from another cell for a home that is not this cell (the two cells' settings disagree); it is refused 400 rather than relayed again, and nothing is created. | — |
@@ -524,7 +524,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0013` | The scheduler's tick failed unexpectedly; it is tried again at the next tick. | — |
 | `STS-SCHED-0014` | The scheduler's leader could not stand down; its lease expires on its own. | — |
 | `STS-SCHED-0015` | A per-process job's run in this process threw or rejected; its row for this process says so, and it runs again at its next slot. | — |
-| `STS-SCHED-0016` | A run was asked for that does not exist (an unknown run id). | — |
+| `STS-SCHED-0016` *(retired)* | A run was asked for that does not exist (an unknown run id). | — |
 | `STS-SCHED-0017` | Purging the scheduler's run history past its bound (scheduler.runHistoryCount, scheduler.runHistoryHours) failed; the rows stay until the next run of scheduler.history, and a start still skips the ones past their expiry. | — |
 | `STS-SCHED-0018` | A run of a realm job was not started, or its outcome not written, because its trust realm was removed; nothing is run for a removed realm, and nothing is written back into it. | — |
 
@@ -788,9 +788,9 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0098` | A key pair export named a keystore format that does not exist. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0099` | A key pair export found no key pair to export. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0100` | The keystore export of a key pair failed (for example a password PKCS#12 needs, or a format the key cannot take). | Console refusal page; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0101` | A PKI console action or export was attempted by a session without Admin Write. | HTTP 403 text/plain (export) or console refusal banner |
-| `STS-PKI-0102` | A PKI console action threw an unexpected exception. | Console refusal banner or page |
-| `STS-PKI-0103` | The PKI console key-pair export threw an unexpected exception. | Console refusal page |
+| `STS-PKI-0101` *(retired)* | A PKI console action or export was attempted by a session without Admin Write. | HTTP 403 text/plain (export) or console refusal banner |
+| `STS-PKI-0102` *(retired)* | A PKI console action threw an unexpected exception. | Console refusal banner or page |
+| `STS-PKI-0103` *(retired)* | The PKI console key-pair export threw an unexpected exception. | Console refusal page |
 | `STS-PKI-0104` | After the Root CA was replaced, a branch could not be rebuilt under it. | — |
 | `STS-PKI-0105` | A PKI console or API action was refused by the module behind it without a more specific code (a missing code at that module). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0106` | A person key-pair issue or removal named no person. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
@@ -2101,6 +2101,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0940` | A resource server refused a request whose fapi-2-request signature or Content-Digest did not hold, where the refusal carried no more specific STS-KEYS code (#178). | HTTP 401, invalid_request |
 | `STS-OAUTH-0941` | A resource server refused a signed request whose access token names no client registered here, so no key could verify the signature (#178). | HTTP 401, invalid_request |
 | `STS-OAUTH-0942` | A resource response that FAPI 2.0 HTTP Signatures should sign went out unsigned: the realm holds no key for oauth2.httpSignatureResponseAlg, the signature was refused, or the response had begun writing before it ended (#178). | none: the response is sent unsigned, and a client requiring a signature refuses it |
+| `STS-OAUTH-0943` | The admin console, declared as a public client, asked the token endpoint for tokens with no DPoP proof. Every token issued to it as a public client is bound to a key it proves (#446). | invalid_dpop_proof (HTTP 400) |
+| `STS-OAUTH-0944` | An access token issued to the admin console as a public client was presented at a resource carrying no cnf.jkt. Such a token is honoured only DPoP-bound (#446). | invalid_token (HTTP 401) |
 
 ## STS-SAML
 
@@ -3452,7 +3454,7 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0023` | A message was not queued because an address (the recipient's mail attribute or mail.from) is not one plain mailbox. | — |
 | `STS-MAIL-0024` | An address verification link was refused: used, expired, or sent to an address the entry no longer has. | HTTP 400 page on /portal/verify-email |
 | `STS-MAIL-0025` | A console or management API mail action was unknown or malformed. | HTTP 400 |
-| `STS-MAIL-0026` | A console session that may read but not write posted a mail action. | HTTP 400 |
+| `STS-MAIL-0026` *(retired)* | A console session that may read but not write posted a mail action. | HTTP 400 |
 | `STS-MAIL-0027` | A test message was asked for by an administrator whose own entry has no usable mail address. | HTTP 400 |
 | `STS-MAIL-0028` | The periodic mail summary line counted dead letters or deferred attempts since the last one. | — |
 | `STS-MAIL-0029` | The mail outbox sweep failed in a realm. | — |
@@ -3743,7 +3745,7 @@ Raised from: gnap/.
 | `STS-GNAP-0661` | A GNAP console or management API delete-resource-set names a resource set not registered in this realm. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-GNAP-0662` | A GNAP console or management API action is not one of revoke-grant and delete-resource-set. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-GNAP-0663` | The query string of a GNAP console page failed validation. | HTTP 400 text/plain |
-| `STS-GNAP-0664` | A GNAP console action form post failed validation. | Console error notice |
+| `STS-GNAP-0664` *(retired)* | A GNAP console action form post failed validation. | Console error notice |
 | `STS-GNAP-0665` | A GNAP management API action was refused and the refusal carried no more specific code. | HTTP 400 {ok: false, errors} |
 | `STS-GNAP-0700` | The approver of a GNAP grant could not be recorded for the Shared Signals subject scope; the approval went ahead. | — |
 | `STS-GNAP-0701` | A CAEP event about a GNAP grant or token could not be delivered. | — |
@@ -3846,7 +3848,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0011` | A compliance status, its source or a device status was outside its closed list (#164). | HTTP 400 (API) or a 303 with error= |
 | `STS-DEVICE-0012` | A device named an application that is not in the realm's directory (#164). | HTTP 400 (API) or a 303 with error= |
 | `STS-DEVICE-0013` | A POST to /admin/devices or /admin-api/devices named an action that does not exist (#218). | HTTP 400 (API) or a 303 with error= |
-| `STS-DEVICE-0014` | A console session with Admin Read only posted to /admin/devices (#218). | HTTP 303 with error= |
+| `STS-DEVICE-0014` *(retired)* | A console session with Admin Read only posted to /admin/devices (#218). | HTTP 303 with error= |
 | `STS-DEVICE-0015` | A WebAuthn key named for a device is not a security key its owner enrolled, or the device's owner is an application (#164). | HTTP 400 (API) or a 303 with error= |
 | `STS-DEVICE-0016` | A device enrolment challenge was refused: none was named, it is unknown or expired, it was issued to another session or person, or it was already answered (#164 phase 2). | HTTP 400 (JSON) or the page with the sentence |
 | `STS-DEVICE-0017` | A device key proof (a JWS over an enrolment challenge) is malformed, is signed with an algorithm not accepted, does not verify under the key in its own header, or carries the wrong typ, nonce, aud or iat (#164 phase 2). | HTTP 400 (JSON) or the page with the sentence |
@@ -3918,7 +3920,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0028` | A policy document was refused at write: it does not parse or fails XACML static type checking. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0029` | A policy write named an entry that is not 1 to 128 letters, digits, dot, dash or underscore. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0030` | A policy write asked to be the root while another policy already is. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
-| `STS-XACML-0031` | An XACML console action was refused because the console session holds Admin Read and not Admin Write. | 303 back to the page with error=…, or HTTP 400 { ok: false, why } for a JSON post |
+| `STS-XACML-0031` *(retired)* | An XACML console action was refused because the console session holds Admin Read and not Admin Write. | 303 back to the page with error=…, or HTTP 400 { ok: false, why } for a JSON post |
 | `STS-XACML-0032` | An XACML console or management API action named an action that does not exist. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0033` | An XACML repository or editor action named a policy that is not in the repository. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0034` | The editor was asked to edit a stored policy that does not load. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
@@ -4028,28 +4030,28 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-ADMIN-0001` | The admin console could not start a sign-in: its OIDC client entry (sts-admin-console) is missing, or declares a client secret method and has no secret. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
-| `STS-ADMIN-0002` | The admin console could not start a sign-in in product mode because the address it was reached at is not a registered redirect URI of sts-admin-console. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
-| `STS-ADMIN-0003` | A console request that cannot be redirected to sign in (a JSON caller, or a form POST) carried no console session. | HTTP 401 login_required |
-| `STS-ADMIN-0004` | A console sign-out was refused because the form did not carry this session's CSRF token. | HTTP 403 csrf |
+| `STS-ADMIN-0001` *(retired)* | The admin console could not start a sign-in: its OIDC client entry (sts-admin-console) is missing, or declares a client secret method and has no secret. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
+| `STS-ADMIN-0002` *(retired)* | The admin console could not start a sign-in in product mode because the address it was reached at is not a registered redirect URI of sts-admin-console. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
+| `STS-ADMIN-0003` *(retired)* | A console request that cannot be redirected to sign in (a JSON caller, or a form POST) carried no console session. | HTTP 401 login_required |
+| `STS-ADMIN-0004` *(retired)* | A console sign-out was refused because the form did not carry this session's CSRF token. | HTTP 403 csrf |
 | `STS-ADMIN-0005` | A console write (a non-GET request) was refused because it did not carry this session's CSRF token. | HTTP 403 csrf |
-| `STS-ADMIN-0006` | The access policy (the XACML access-control document) refused a console request for a person who holds the console role it needs. | HTTP 403 policy_denied |
-| `STS-ADMIN-0007` | A signed-in person without the Admin Read role tried to read a console page. | HTTP 403 insufficient_role |
-| `STS-ADMIN-0008` | A signed-in person without the Admin Write role tried to post a console form. | HTTP 403 insufficient_role |
-| `STS-ADMIN-0009` | A console request's query string failed validation (an over-long, repeated or malformed parameter). | HTTP 400 page |
-| `STS-ADMIN-0010` | The admin console's OIDC callback refused the authorization response (state, code redemption, ID Token verification or session establishment failed). | HTTP 400 page |
-| `STS-ADMIN-0011` | The admin console's OIDC callback threw rather than resolving; this is a defect in the relying-party code, not something a request can cause. | HTTP 500 page |
+| `STS-ADMIN-0006` *(retired)* | The access policy (the XACML access-control document) refused a console request for a person who holds the console role it needs. | HTTP 403 policy_denied |
+| `STS-ADMIN-0007` *(retired)* | A signed-in person without the Admin Read role tried to read a console page. | HTTP 403 insufficient_role |
+| `STS-ADMIN-0008` *(retired)* | A signed-in person without the Admin Write role tried to post a console form. | HTTP 403 insufficient_role |
+| `STS-ADMIN-0009` *(retired)* | A console request's query string failed validation (an over-long, repeated or malformed parameter). | HTTP 400 page |
+| `STS-ADMIN-0010` *(retired)* | The admin console's OIDC callback refused the authorization response (state, code redemption, ID Token verification or session establishment failed). | HTTP 400 page |
+| `STS-ADMIN-0011` *(retired)* | The admin console's OIDC callback threw rather than resolving; this is a defect in the relying-party code, not something a request can cause. | HTTP 500 page |
 | `STS-ADMIN-0012` | A console action was refused (its result was not ok) and the action named no more specific code. | HTTP 303 back to the page with error=, or HTTP 400 JSON |
-| `STS-ADMIN-0013` | An asynchronous console action (Shared Signals, CAEP, RISC or SPIFFE) rejected instead of resolving a refusal; it is answered as a refused action. | HTTP 303 back to the page with error=, or HTTP 400 JSON |
+| `STS-ADMIN-0013` *(retired)* | An asynchronous console action (Shared Signals, CAEP, RISC or SPIFFE) rejected instead of resolving a refusal; it is answered as a refused action. | HTTP 303 back to the page with error=, or HTTP 400 JSON |
 | `STS-ADMIN-0014` | A console inverted-hook slot was offered an incomplete filler at startup and refused it whole; the pages and operations behind it report the reader as not installed. | — |
 | `STS-ADMIN-0015` | The startup check of SETTING_HOMES found a settings group drawn on no page, drawn twice, unknown to config.js, or sent to a path that is not a console page. | — |
 | `STS-ADMIN-0016` | The new-user form's Fill with example data was refused because the service is running in product mode. | HTTP 200 form page with a warning, or HTTP 400 JSON |
 | `STS-ADMIN-0017` | The new-user form's Fill with example data was pressed with no username to seed the example person from. | HTTP 200 form page with a warning |
-| `STS-ADMIN-0018` | The new-user form was posted with an action other than create or fill. | HTTP 200 form page with a warning, or HTTP 400 JSON |
-| `STS-ADMIN-0019` | The admin console's Shared Signals receive endpoint refused a pushed Security Event Token and the receiver named no more specific code. | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
-| `STS-ADMIN-0020` | The realm switcher named a trust realm that is not defined; the browser was sent back to the current realm. | HTTP 303 to the current realm |
+| `STS-ADMIN-0018` *(retired)* | The new-user form was posted with an action other than create or fill. | HTTP 200 form page with a warning, or HTTP 400 JSON |
+| `STS-ADMIN-0019` *(retired)* | The admin console's Shared Signals receive endpoint refused a pushed Security Event Token and the receiver named no more specific code. | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
+| `STS-ADMIN-0020` *(retired)* | The realm switcher named a trust realm that is not defined; the browser was sent back to the current realm. | HTTP 303 to the current realm |
 | `STS-ADMIN-0021` | A console drill-down named a record that does not exist: an application, an authorization server profile, a trust realm, a federation relationship or a cache. | HTTP 200 page saying there is no such record |
-| `STS-ADMIN-0022` | The realm switcher was given a return path that is not a single-slash-rooted path (a possible open redirect); /admin was used instead. | HTTP 303 to /admin in the chosen realm |
+| `STS-ADMIN-0022` *(retired)* | The realm switcher was given a return path that is not a single-slash-rooted path (a possible open redirect); /admin was used instead. | HTTP 303 to /admin in the chosen realm |
 | `STS-ADMIN-0500` | An admin console control or management API action named an operation its resource does not have. | HTTP 400 (API JSON errors) or a 303 back to the console page with error= |
 | `STS-ADMIN-0501` | An admin action needs a module that is not loaded in this process (the logout reader, the directory or group writer, the Shared Signals reporters, the XACML pages, or the client-certificate truststore), so there is nothing to act on. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0502` | A token revoke or restore named no jti and no token to read one from. | HTTP 400 (API) or a 303 with error= |
@@ -4138,18 +4140,18 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0585` | The directory refused the group write behind a console role grant or revoke. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0586` | A console role revoke was refused because the person holds the role through a memberOf value on their own entry, which this console does not write. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0587` | The console roles' directory slot was offered a filler missing required functions and was not installed; the roles read as having no directory. | — |
-| `STS-ADMIN-0588` | A key pair export was refused because the caller does not hold Admin Write. | HTTP 403 |
+| `STS-ADMIN-0588` *(retired)* | A key pair export was refused because the caller does not hold Admin Write. | HTTP 403 |
 | `STS-ADMIN-0589` | A key pair export named a key this realm does not hold. | HTTP 400 (JSON or API) or a 303 with error= |
 | `STS-ADMIN-0590` | A key pair export was refused because the key has not been generated yet, or has no exportable encoding. | HTTP 400 (JSON or API) or a 303 with error= |
 | `STS-ADMIN-0591` | A key pair export asked for a format that key does not offer. | HTTP 400 (JSON or API) or a 303 with error= |
 | `STS-ADMIN-0592` | A key pair export found no PEM key pair for the key in this realm. | HTTP 400 (JSON or API) or a 303 with error= |
 | `STS-ADMIN-0593` | The key exporter refused an export (for example a PKCS#12 with no password, or a key it cannot read). | HTTP 400 (JSON or API) or a 303 with error= |
-| `STS-ADMIN-0594` | A key pair export threw unexpectedly. | HTTP 400 (JSON) or a 303 with error= |
+| `STS-ADMIN-0594` *(retired)* | A key pair export threw unexpectedly. | HTTP 400 (JSON) or a 303 with error= |
 | `STS-ADMIN-0595` | The crypto report was handed a malformed protocol family list and ignored it; its drift check does not run. | — |
 | `STS-ADMIN-0596` | This build of the admin console offers no crypto reporter slot, so the management API cannot mirror the crypto and key pages. | — |
 | `STS-ADMIN-0597` | The API explorer could not mint an access token for the reader; the page draws and Try it will be refused. | — |
-| `STS-ADMIN-0598` | The /admin/database page threw while being drawn. | HTTP 200 page saying it could not be drawn |
-| `STS-ADMIN-0599` | The /admin/secrets page threw while being drawn. | HTTP 200 page saying it could not be drawn |
+| `STS-ADMIN-0598` *(retired)* | The /admin/database page threw while being drawn. | HTTP 200 page saying it could not be drawn |
+| `STS-ADMIN-0599` *(retired)* | The /admin/secrets page threw while being drawn. | HTTP 200 page saying it could not be drawn |
 | `STS-ADMIN-0600` | The delegation map picture could not be laid out; the page drew without it. | — |
 | `STS-ADMIN-0601` | The federation map picture could not be laid out; the page drew without it. | — |
 | `STS-ADMIN-0602` | A Kerberos principals action named an action the page does not have. | HTTP 400 { ok: false, errors } / 303 with error= |
@@ -4166,9 +4168,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0640` | A certificate details view was asked for with a value that is not a SHA-256 certificate fingerprint (64 hexadecimal digits). | the page with a dialog saying so / HTTP 400 { ok: false, errors } |
 | `STS-ADMIN-0641` | A certificate details view named a fingerprint this service does not hold in the trust realm the request was reached in. | the page with a dialog saying so / HTTP 404 { ok: false, errors } |
 | `STS-ADMIN-0642` | A certificate this service holds could not be described or its chain could not be built. | the page with a dialog saying so / HTTP 500 { ok: false, errors } |
-| `STS-ADMIN-0643` | The used-assertion history page could not be drawn, because the store holding the history could not be read. | the page with a warning saying so |
+| `STS-ADMIN-0643` *(retired)* | The used-assertion history page could not be drawn, because the store holding the history could not be read. | the page with a warning saying so |
 | `STS-ADMIN-0644` | An RFC 9728 protected resource metadata import was refused (load-resource-metadata), where the library named no code of its own. | HTTP 400 (API), or /admin/applications/new redrawn with the reason |
-| `STS-ADMIN-0645` | A create from an imported RFC 9728 document was refused on /admin/applications/new, where the create named no code of its own, and the page was redrawn with the reason. | /admin/applications/new redrawn with the reason |
+| `STS-ADMIN-0645` *(retired)* | A create from an imported RFC 9728 document was refused on /admin/applications/new, where the create named no code of its own, and the page was redrawn with the reason. | /admin/applications/new redrawn with the reason |
 | `STS-ADMIN-0646` | A software statement was asked to be issued for an application that is not in the registry. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0647` | The client metadata given for a software statement to issue is not a JSON object, or the input validator refused it. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0648` | The client metadata given for a software statement to issue names a JWT claim or a member only registration assigns. | the caller's refusal (errors on a console or /admin-api reply) |
@@ -4179,20 +4181,20 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0702` | A withdrawal of a pushed authorization request carried no request_uri, or one longer than the store could ever hold. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
 | `STS-ADMIN-0703` | A withdrawal of a pushed authorization request named a value that is not in the urn:ietf:params:oauth:request_uri: namespace this service issues pushed request_uris from (RFC 9126 section 2.2). | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
 | `STS-ADMIN-0704` | A withdrawal named a request_uri this realm does not hold: it was never pushed here, it expired and was swept, or it was already withdrawn. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
-| `STS-ADMIN-0705` | An OAuth 2.0 monitoring console action threw; nothing is known to have changed and the log line carries the stack. | a 303 back to /admin/oauth2/monitor with error= |
+| `STS-ADMIN-0705` *(retired)* | An OAuth 2.0 monitoring console action threw; nothing is known to have changed and the log line carries the stack. | a 303 back to /admin/oauth2/monitor with error= |
 | `STS-ADMIN-0706` | The bootstrap administrator could not be created in the default realm, or could not be given both console roles, at startup. | none — logged |
 | `STS-ADMIN-0720` | Issuing an application a TLS client certificate was refused with no more specific code (the key algorithm, the label or the realm's certificate authority). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0721` | An application TLS client certificate's file password was too short, too long, or not the same twice. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0722` | An application TLS client certificate action named an application the registry does not hold. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0723` | Revoking an application's TLS client certificate was refused with no more specific code. | the caller's refusal (errors on a console or /admin-api reply) |
-| `STS-ADMIN-0724` | An asynchronous applications action on the console threw; nothing is known to have changed and the log line carries the stack. | the console's refusal (a redirect with the error) |
+| `STS-ADMIN-0724` *(retired)* | An asynchronous applications action on the console threw; nothing is known to have changed and the log line carries the stack. | the console's refusal (a redirect with the error) |
 | `STS-ADMIN-0780` | Resetting somebody's password was refused by the password policy or the store. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0781` | Issuing somebody a password reset link was refused (nobody by that name, or no store). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0782` | A password reset link was issued and the person's password could not be removed, so the link was withdrawn. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0783` | Disabling somebody's primary security keys was refused. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0784` | Disabling somebody's second factors was refused. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0785` | Requiring, or no longer requiring, a second factor of somebody was refused. | HTTP 400 (API) or a 303 with error= |
-| `STS-ADMIN-0786` | A realm administrator reached the console in a realm other than the one they signed in through, where they hold no role. | HTTP 403 on /admin |
+| `STS-ADMIN-0786` *(retired)* | A realm administrator reached the console in a realm other than the one they signed in through, where they hold no role. | HTTP 403 on /admin |
 | `STS-ADMIN-0787` | A realm administrator was refused a service-wide console page or action (the store, the listeners, the service Root, the realm registry, another realm). | HTTP 403 on /admin |
 | `STS-ADMIN-0788` | A realm administrator posted a setting that names the whole service rather than their realm. | HTTP 403 on /admin |
 | `STS-ADMIN-0789` | A new trust realm's bootstrap administrator could not be given its generated password in product mode. | none — logged |
@@ -4226,7 +4228,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0817` | A set-aud-sub act named no person or no client, a client_id with spaces, or an aud_sub over 255 characters or with control characters (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0819` | set-attribute, add-attribute or remove-attribute was refused and ldap/person_editor.ts named no more specific reason (#228). | HTTP 400 (API) or a 303 with error= |
-| `STS-ADMIN-0820` | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
+| `STS-ADMIN-0820` *(retired)* | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
 | `STS-ADMIN-0821` | A permission gated by role — admin:read, admin:write, or an application permission its resource lists in oauthRoleGatedPermission — was asked for on behalf of a person or an application no held role authorizes it for (for a person's console roles: no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim), and was left off the tokens (#302, #303). | none — the token is issued without that scope (RFC 6749 section 3.3) |
 | `STS-ADMIN-0822` | Every scope a request asked for was a permission gated by role that the subject's roles do not authorize, so nothing was left to issue (#302, #303). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
 | `STS-ADMIN-0823` | add-permission or remove-permission named a native role — ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — whose permission is fixed (#303, #309). | none (a console or management API refusal, HTTP 400) |
@@ -4248,6 +4250,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0839` | A person's update-fields was refused one or more attributes, possibly after saving others; the reply names what was saved and each refusal. | HTTP 400 (console and API) |
 | `STS-ADMIN-0840` | A settings save ticked none of an ordered choice's values (webauthn.algorithms on /admin/webauthn): an empty list is refused rather than saved, because the setting would fall back to a default nobody chose. | none (a console refusal, drawn on the page) |
 | `STS-ADMIN-0841` | set-delegation-semantics was refused: a value is neither delegation nor impersonation, nobody has that name, or the entry could not be written (#186). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0842` | reveal-secret found nothing to reveal: no such application, or it holds no client secret with that id, or no registration access token (#446). | none (a management API refusal, HTTP 400) |
+| `STS-ADMIN-0843` | A request other than GET reached /admin: the console is a static application since #446, and its acts are /admin-api operations. | none (HTTP 404) |
+| `STS-ADMIN-0844` | The static console's script, admin-ui/console.js, could not be read; the shell loads one that says so (#446). | none (logged) |
 
 ## STS-API
 
@@ -4262,9 +4267,9 @@ Raised from: mgmt-api/.
 | `STS-API-0003` | A management API access token had expired. | HTTP 401 invalid_token, WWW-Authenticate: Bearer error="invalid_token" |
 | `STS-API-0004` | A management API access token was audienced to a different resource server than /admin-api. | HTTP 403 forbidden |
 | `STS-API-0005` | The XACML access policy refused a management API request made with a valid token, usually because the token lacks the admin:read or admin:write scope the method needs. | HTTP 403 forbidden |
-| `STS-API-0006` | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. | HTTP 403 forbidden |
-| `STS-API-0007` | In product mode with the token gate off, a management API request arrived with nobody signed in. | HTTP 401 JSON (HTTP 403 page for a browser) |
-| `STS-API-0008` | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. | HTTP 403 forbidden (HTTP 403 page for a browser) |
+| `STS-API-0006` *(retired)* | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. Retired by #446: product mode ignores adminApi.authRequired=false, so the token is always required there and nothing falls back to a console session. | — |
+| `STS-API-0007` *(retired)* | In product mode with the token gate off, a management API request arrived with nobody signed in. Retired by #446, as STS-API-0006 was. | — |
+| `STS-API-0008` *(retired)* | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. Retired by #446, as STS-API-0006 was. | — |
 | `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member, a wrong type, or a value outside a closed set its enum declares — #86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0010` | A management API request schema would not compile at startup, so that operation runs unvalidated. | — |
 | `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.ts fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |
@@ -4332,6 +4337,7 @@ Raised from: mgmt-api/.
 | `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
 | `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0125` | A management API access token carried the admin scope an operation needs, and its subject — a person, or the application on a client_credentials token — no longer holds a role authorizing it in the realm that issued it (#302, #303). | HTTP 403 forbidden |
+| `STS-API-0126` | A management API access token was issued on a sign-on session that has since ended, by a sign-out or by running out, so the token is no longer honoured (#446). | invalid_token (HTTP 401) |
 
 ## STS-PORTAL
 

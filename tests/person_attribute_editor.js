@@ -69,7 +69,6 @@ function childMain() {
     const editor = require(ROOT + '/ldap/person_editor');
     const actions = require(ROOT + '/admin-core/admin_actions');
     const adminViews = require(ROOT + '/admin-core/admin_views');
-    const admin = require(ROOT + '/admin-ui/admin');
 
     await realms.run(realms.DEFAULT_REALM, async function () {
       const ctx = { via: 'api', actor: 'tester' };
@@ -328,8 +327,11 @@ function childMain() {
              /^uid=pae-alice,/.test(published.dn),
            '6. the person\'s JSON publishes attributeEditor with the values',
            JSON.stringify(titleRow));
-      const page = admin.usersView(req, undefined);
-      const inner = String((page && page.inner) || '');
+      // THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): GET /admin-api/users
+      // drawn by its renderer.
+      const page = await require(ROOT + '/tests/tools/console_page.js')
+        .consolePage(ROOT).draw('/admin/users', { user: 'pae-alice' });
+      const inner = String((page && page.html) || '');
       note(/id="attributes"/.test(inner) &&
              (/value="set-attribute"/.test(inner) ||
               /needs <strong>Admin Write<\/strong>/.test(inner)),

@@ -101,6 +101,7 @@ import usedAssertions = require('../common/used_assertions');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('../common/worker_channel');
+import WebKit = require('../admin-ui/web_kit');
 
 type Json = any;
 
@@ -838,7 +839,8 @@ class Scheduler {
     return text;
   }
 
-  // "4 min 12 s", "2 h 5 min", "90 d" — two units at most.
+  // "4 min 12 s", "2 h 5 min", "90 d" — two units at most. The kit's since
+  // #446, so the Scheduler page drawn in a browser says it the same way.
   /**
    * Formats a duration in at most two units, such as "4 min 12 s".
    *
@@ -847,21 +849,8 @@ class Scheduler {
    */
   static span(ms: number): string {
     helpers.log.debug("Entering Scheduler.span().");
-    const s = Math.max(0, Math.round(ms / 1000));
-    const units: Array<[number, string]> = [[86400, 'd'], [3600, 'h'],
-                                             [60, 'min'], [1, 's']];
-    const parts: string[] = [];
-    let left = s;
-    units.forEach(function (unit: [number, string]): void {
-      if (parts.length < 2 && (left >= unit[0] ||
-                               (unit[0] === 1 && !parts.length))) {
-        const n = Math.floor(left / unit[0]);
-        left -= n * unit[0];
-        parts.push(n + ' ' + unit[1]);
-      }
-    });
     helpers.log.debug("Leaving Scheduler.span().");
-    return parts.join(' ');
+    return WebKit.span(ms);
   }
 
   // -------------------------------------------------------------------------

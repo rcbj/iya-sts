@@ -56,7 +56,8 @@
 // **It is a DIFFERENT credential from the console's, not the same gate
 // widened**, and that distinction is the whole design: the console takes a
 // browser session, this takes a token. `adminApi.authRequired` is the off
-// switch and restores the open API exactly.
+// switch and restores the open API exactly — in development mode only since
+// #446 (2026-10-05); product ignores it turned off, see `tokenRequired()`.
 //
 // **THE THREE REASONS IT WAS OPEN ARE KEPT VERBATIM IN `mgmt-api/CLAUDE.md`**
 // rather than here, because they are now the argument for that off switch and
@@ -346,6 +347,29 @@ const addFormats: any = addFormatsModule;
 const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false,
                       verbose: true });
 addFormats(ajv);
+
+// THE FIELD GRID'S OWN SHAPE (#446), which the two `update-fields` actions
+// read beside a JSON `fields` object (`applicationFieldsFrom()`,
+// `fieldsCoveredBy()`): one box per value, `field.<attribute>.<n>`, or one
+// `field.<attribute>` holding a value per line, and `present` naming every
+// field the form drew so an emptied one is cleared. Declared so the static
+// console can send its form as drawn — a member a closed schema does not
+// name is one the console would have to leave out, and a box left out is a
+// value the reader typed and lost.
+const FIELD_GRID_MEMBERS = {
+  present: { type: ['string', 'array'], items: { type: 'string' },
+             description: 'The fields the console\'s form drew, by ' +
+                          'attribute name, space or comma separated or as a ' +
+                          'list: each one is cleared when the form carries ' +
+                          'no value for it.' }
+};
+const FIELD_GRID_PATTERN = {
+  '^field\\.': { type: ['string', 'array'], items: { type: 'string' },
+                   description: 'The console form\'s boxes: ' +
+                                '`field.<attribute>.<n>` one value each, in ' +
+                                'box order, or `field.<attribute>` with a ' +
+                                'value per line. Merged over `fields`.' }
+};
 
 // ---------------------------------------------------------------------------
 // THE COMPONENTS THE DOCUMENT DEFINES, SO A `$ref` INTO THEM RESOLVES.
@@ -2284,6 +2308,42 @@ class AdminApi {
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const closed = this.closedLists();
+    // THE DELEGATION FILTER, declared once: the acts (`/delegation`) and
+    // the picture of them (`/delegation/map`, #446) take the same five
+    // parameters, as the two console pages do.
+    const delegationFilter: any[] = [
+      { name: 'type', in: 'query', required: false,
+        schema: { type: 'string',
+                  enum: closed.delegationTypes },
+        description: 'One mechanism. The reply\'s `types` member ' +
+                     'describes each of them, with the specification it ' +
+                     'comes from and whether this service polices it.' },
+      { name: 'mode', in: 'query', required: false,
+        schema: { type: 'string', enum: closed.delegationModes },
+        description: 'The protocol-independent axis: whether what came ' +
+                     'out carries the chain. ' +
+                     'ANDed with `type`, so a mode ' +
+                     'that does not match the mechanism matches nothing.' },
+      { name: 'outcome', in: 'query', required: false,
+        schema: { type: 'string', enum: closed.delegationOutcomes },
+        description: 'Two rather than the audit log\'s three: a ' +
+                     'delegation is DECIDED rather than ' +
+                     'performed, so there is no third ' +
+                     'answer between issuing the credential and refusing ' +
+                     'to.' },
+      { name: 'protocol', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'The family, spelled as /admin-api/users spells it ' +
+                     '— `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free ' +
+                     'text rather than an enum, for the reason the audit ' +
+                     'log\'s `protocol` is.' },
+      { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Substring of ANY party of the chain (normalised ' +
+                     'name, presented form or application) or of either ' +
+                     'explanation, case-insensitive. One box over six ' +
+                     'fields, because the fact a caller has names one of ' +
+                     'them and not which column it is in.' }
+    ];
     const ROUTES: any[] = [
       { method: 'GET', path: BASE, tag: 'Service',
         operationId: 'getIndex',
@@ -2327,7 +2387,8 @@ class AdminApi {
             // missed, and `admin_api_spec.ts`'s own header argues why that
             // matters more for the document than for either sentence.
             // ------------------------------------------------------------
-            protected: config.value('adminApi.authRequired') === true,
+            // The value IN FORCE (#446): product ignores `false`.
+            protected: self.tokenRequired(),
             // THE EXPLORER IS A CONSOLE PAGE SINCE 2026-09-09 and this field
             // still names it, because a client that read it wants to know
             // where the explorer IS rather than which path space it is in.
@@ -2338,6 +2399,30 @@ class AdminApi {
             operations: self.operationSummaries()
           });
           log.debug("Leaving the management API index.");
+        } },
+
+      // THE SERVICE METADATA PAGE (#446): what `/admin/sts-metadata` is
+      // drawn from. LAZILY REQUIRED, like the explorer: `sts_metadata.ts` is
+      // built last of all because it reads the router, so a require of it
+      // here at load would run before the routes it lists exist.
+      { method: 'GET', path: BASE + '/sts-metadata', tag: 'Service',
+        operationId: 'getStsMetadata',
+        summary: 'Every protocol, endpoint and specification this serves',
+        description: 'Every protocol family, every endpoint the running ' +
+                     'router registers (read from the router on each ' +
+                     'request, so it cannot claim an endpoint that is not ' +
+                     'there or miss one that is), every specification, and ' +
+                     'the drift between the router and the descriptions — ' +
+                     'with the authorization servers this process has ' +
+                     'served. The same answer as the page\'s ' +
+                     '`?format=json`.',
+        mirrors: 'GET /admin/sts-metadata',
+        responseDescription: 'The metadata.',
+        handler: function (req, res) {
+          log.debug("Entering the management API metadata endpoint.");
+          self.sendJson(res, 200,
+                        require('../sts_metadata').pageJson(baseUrlOf(req)));
+          log.debug("Leaving the management API metadata endpoint.");
         } },
 
       { method: 'GET', path: BASE + '/openapi.json', tag: 'Service',
@@ -2654,12 +2739,26 @@ class AdminApi {
                      'served here), `sessions` (projections held here and ' +
                      'exports made from here) and `settings`.',
         mirrors: 'GET /admin/cells',
+        // THE PAGE'S DRILL-DOWN TOO (#446): with `people`, the answer also
+        // carries that cell's residents as `people` — what
+        // `GET /admin-api/cells/people` answers — so the page is drawn from
+        // one answer, as the console's own JSON always was.
+        parameters: [
+          { name: 'people', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cell whose residents to list, under its release ' +
+                         'policy.' },
+          { name: 'after', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'With `people`: the last name of the previous ' +
+                         'page.' }
+        ],
         responseDescription: 'The cell map.',
         responseSchema: { type: 'object',
           description: 'As described above.' },
         handler: function (req, res) {
           log.debug("Entering the management API cells endpoint.");
-          cellsAdmin.cellsView().then(function (view) {
+          cellsAdmin.cellsPageView(req.query).then(function (view) {
             self.sendJson(res, 200, view);
             log.debug("Leaving the management API cells endpoint.");
           }, function (e) {
@@ -3655,10 +3754,15 @@ class AdminApi {
             schema: { type: 'string',
                       enum: ['compliant', 'not-compliant', 'unknown'] },
             description: 'Only devices in this compliance state.' },
+          // THE THREE LEVELS `common/devices.ts` records (#446 found the
+          // third missing here, when the console's own filter, which offers
+          // all three, began reaching this operation): `bearer` is a
+          // remembered browser holding no key of its own.
           { name: 'attestation', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['attested', 'self-asserted'] },
-            description: 'Only attested, or self-asserted, devices.' },
+                      enum: ['attested', 'self-asserted', 'bearer'] },
+            description: 'Only attested, self-asserted or bearer devices ' +
+                         '(a remembered browser, with no key of its own).' },
           { name: 'keyKind', in: 'query', required: false,
             schema: { type: 'string',
                       enum: ['x509', 'jwk', 'webauthn', 'native-sso'] },
@@ -4722,6 +4826,49 @@ class AdminApi {
           log.debug("Leaving the management API key list endpoint.");
         } },
 
+      { method: 'GET', path: BASE + '/keys/history/certificate',
+        tag: 'Service',
+        operationId: 'getKeyHistoryCertificate',
+        summary: 'One signing key\'s certificate chain, as PEM',
+        description: 'The certificate a signing key was published with, and ' +
+                     'the chain to the realm\'s root, leaf first — a ' +
+                     'public document, and the half of a retired key worth ' +
+                     'keeping. Named by `unit` and `kid`, as GET ' +
+                     '/admin-api/keys/history lists them (#446: it was ' +
+                     '/admin/keys/history/certificate).',
+        mirrors: 'GET /admin/keys/history',
+        parameters: [
+          { name: 'unit', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The signing unit, `jose:RS256` and the like.' },
+          { name: 'kid', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The key\'s identifier.' }
+        ],
+        responseDescription: 'The chain, as application/pem-certificate-chain.',
+        handler: function (req, res) {
+          log.debug("Entering the management API key certificate endpoint.");
+          const q = req.query || {};
+          const pem = adminViews.signingHistoryCertificate(
+            String(q.unit || ''), String(q.kid || ''));
+          if (!pem) {
+            errorCodes.mark(res, 'STS-KEYS-0068');
+            self.sendJson(res, 404, { ok: false, errors: [
+              'This realm has no certificate recorded for that key.'] });
+            log.debug("Leaving the management API key certificate " +
+                      "endpoint. None held.");
+            return;
+          }
+          res.status(200)
+             .set('Content-Type', 'application/pem-certificate-chain')
+             .set('Cache-Control', 'no-store')
+             .set('Content-Disposition', 'attachment; filename="' +
+                  String(q.kid || 'certificate').replace(/[^A-Za-z0-9._-]/g,
+                                                        '_') + '.pem"')
+             .send(pem);
+          log.debug("Leaving the management API key certificate endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/keys/history', tag: 'Service',
         operationId: 'getKeyHistory',
         summary: 'Every signing key this realm has ever held',
@@ -5069,9 +5216,41 @@ class AdminApi {
           // have. (Since #50's R1 a require of it registers nothing —
           // `common/protocol_stack.ts` registers its routes at 19a — so only
           // the cycle is left of that argument, and it is enough.)
-          self.sendJson(res, 200,
-                        loadApiExplorer().explorerJson(req));
+          // WHO THE CALLS ARE MADE AS, for the static console's explorer
+          // (#446): the token this request carried, its subject and scopes.
+          const explorer = loadApiExplorer().explorerJson(req);
+          const caller = (res.locals && res.locals.apiCaller) || null;
+          if (caller) {
+            explorer.who = String(caller.name || '');
+            explorer.scope = (caller.scopes || []).join(' ');
+          }
+          self.sendJson(res, 200, explorer);
           log.debug("Leaving the API explorer operation.");
+        } },
+
+      // THE CONSOLE'S FRAME (#446): what the static console draws around
+      // every page — the sidebar, the banners, the foot — for this caller.
+      { method: 'GET', path: BASE + '/console', tag: 'Service',
+        operationId: 'getConsoleShell',
+        summary: 'What the console draws around every page, for this caller',
+        description: 'The gate as it stands for the caller and the labels ' +
+                     'of the roles it names, the trust realm and the ' +
+                     'realms to choose between, where the realm\'s root ' +
+                     'and the user portal are, the console sections the ' +
+                     'caller may see and every page\'s label, a realm\'s ' +
+                     'removal in progress, what this process runs as, what ' +
+                     'is persisted, and the build. The static console ' +
+                     'fetches it once after sign-in.',
+        mirrors: 'GET /admin',
+        responseDescription: 'The shell answer.',
+        handler: function (req, res) {
+          log.debug("Entering the management API console shell endpoint.");
+          // THE GATE IS THE TOKEN'S: the static console has no session of
+          // its own, so who is signed in, and what they may see, is what
+          // this API decided for the caller (`meJson()`).
+          const gate = self.consoleGateOf(self.meJson(req, res));
+          self.sendJson(res, 200, admin.shellJson(req, gate, gate));
+          log.debug("Leaving the management API console shell endpoint.");
         } },
 
       { method: 'GET', path: BASE + '/status', tag: 'Service',
@@ -5085,8 +5264,117 @@ class AdminApi {
         responseSchema: { $ref: '#/components/schemas/Status' },
         handler: function (req, res) {
           log.debug("Entering the management API status endpoint.");
-          self.sendJson(res, 200, admin.consoleJson());
+          // The dashboard's answer since #446: the totals as before, and
+          // the visible sections, persistence and the base URL beside them.
+          self.sendJson(res, 200, admin.dashboardJson(req));
           log.debug("Leaving the management API status endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // WHO AM I, AND WHAT MAY I DO HERE (#446, 2026-10-05).
+      //
+      // The console is becoming a static application whose only knowledge of
+      // its reader is the access token it presents. Everything the
+      // server-rendered console learned from `adminViews.gateStateFor(req)` —
+      // who is signed in, which authority they are, what they hold, which
+      // pages `admin_scope.ts` hides from them, whether the roster is still
+      // open — it has to be TOLD, and this is where. It answers what the gate
+      // above DECIDED for this request rather than deciding anything: the
+      // caller, scopes and roles are the ones the gate left on
+      // `res.locals.apiCaller`, so the answer cannot disagree with what the
+      // next call will be allowed.
+      //
+      // It mirrors no console page: it is the console's banner and the
+      // filter on its navigation, which every page draws.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/me', tag: 'Service',
+        operationId: 'getMe',
+        summary: 'Who the caller is here, and what they may do',
+        description: 'What this API\'s gate decided for the access token ' +
+                     'on this request: the token\'s subject (`caller`: a ' +
+                     'person, or a client on `client_credentials`), the ' +
+                     'realm that issued it and whether that makes the ' +
+                     'caller a `service` or a `realm` authority, the ' +
+                     'scopes it carries that its client still declares, ' +
+                     'the roles its subject holds NOW that those scopes ' +
+                     'carry, and so whether it may `read` and `write`. ' +
+                     '`console` reports the roster the answer was read ' +
+                     'from: whether it is still open to anybody, and the ' +
+                     'bootstrap administrator\'s state. `pages` is every ' +
+                     'console page this caller may reach; a realm ' +
+                     'authority is not given the service pages.\n\n' +
+                     'A role granted or revoked since the token was minted ' +
+                     'shows here at once, because the roles are read on ' +
+                     'every call. Where no token is required (development ' +
+                     'mode with `adminApi.authRequired` off) there is no ' +
+                     'caller, and both `read` and `write` are true.',
+        mirrors: 'no console page — what the gate decided for the caller; ' +
+                 'the console draws its banner and its navigation from it',
+        responseDescription: 'The caller, the authority, the roles and the ' +
+                             'pages.',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            tokenRequired: { type: 'boolean',
+              description: 'Whether this API requires an access token ' +
+                           'here: `adminApi.authRequired` as it is in ' +
+                           'force, which product mode reads as true.' },
+            caller: { type: ['object', 'null'],
+              description: 'The token\'s subject; null where no token ' +
+                           'is required.',
+              properties: {
+                kind: { type: 'string', enum: ['person', 'application'] },
+                name: { type: 'string' },
+                clientId: { type: 'string',
+                  description: 'The client the token was issued to.' }
+              } },
+            realm: { type: 'string',
+              description: 'The trust realm whose roster decides: the ' +
+                           'one that issued the token.' },
+            readingRealm: { type: 'string',
+              description: 'The trust realm this request was made in.' },
+            authority: { type: ['string', 'null'],
+              enum: ['service', 'realm', null],
+              description: '`service` for a default-realm token, which ' +
+                           'administers every realm; `realm` for a ' +
+                           'realm\'s own, confined to it.' },
+            scopes: { type: 'array', items: { type: 'string' } },
+            roles: { type: 'array', items: { type: 'string' } },
+            read: { type: 'boolean' },
+            write: { type: 'boolean' },
+            expiresAt: { type: ['integer', 'null'],
+              description: 'When the token stops being accepted, in ' +
+                           'seconds since the epoch.' },
+            mode: { type: 'string', enum: ['development', 'product'] },
+            readGroup: { type: 'string' },
+            writeGroup: { type: 'string' },
+            console: { type: 'object',
+              description: 'The roster the roles were read from.',
+              properties: {
+                available: { type: 'boolean',
+                  description: 'False where no directory is loaded.' },
+                open: { type: 'boolean',
+                  description: 'True while anybody who signs in holds ' +
+                               'both roles: development, before the ' +
+                               'bootstrap administrator has arrived.' },
+                empty: { type: 'boolean' },
+                windowOpens: { type: 'boolean',
+                  description: 'False in product mode, which never ' +
+                               'opens the console to anybody.' },
+                bootstrapPasswordRequired: { type: 'boolean',
+                  description: 'True for the bootstrap administrator ' +
+                               'before it has claimed the console with ' +
+                               'its password, in product mode.' },
+                bootstrap: { type: ['object', 'null'] }
+              } },
+            pages: { type: 'array', items: { type: 'string' },
+              description: 'The console pages this caller may reach.' }
+          }
+        },
+        handler: function (req, res) {
+          log.debug("Entering the management API me endpoint.");
+          self.sendJson(res, 200, self.meJson(req, res));
+          log.debug("Leaving the management API me endpoint.");
         } },
 
       { method: 'GET', path: BASE + '/metrics', tag: 'Metrics',
@@ -5357,13 +5645,49 @@ class AdminApi {
                      'acme\'s `ou=users` and a person created there ' +
                      'is invisible to every other realm.',
         mirrors: 'GET /admin/users/new',
+        parameters: [
+          { name: 'invent', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'A username: the answer carries `invented`, the ' +
+                         'attribute values this service would invent for ' +
+                         'that person, which the console\'s Fill button ' +
+                         'puts into every box nobody has typed in. **In ' +
+                         'development mode only** — elsewhere `invented` is ' +
+                         'null and `inventRefused` says why. It creates ' +
+                         'nobody.' }
+        ],
         responseDescription: 'The attribute catalogue, the credential ' +
                              'options, the container and the realm.',
         responseSchema: { $ref: '#/components/schemas/NewUserForm' },
         handler: function (req, res) {
           log.debug("Entering the management API new-user endpoint.");
           // STRAIGHT TO THE LAYER, like the new-application resource beside it.
-          self.sendJson(res, 200, adminViews.newUserJson(req));
+          const answer: any = adminViews.newUserJson(req);
+          // FILL (#446): what the server-rendered form's Fill button
+          // answered in its own POST, asked for here because the static
+          // console has no other door to it. Refused as well as undrawn in
+          // product: a control that is only hidden is not a control that
+          // is off.
+          if (req.query.invent !== undefined) {
+            const name = String(req.query.invent || '').trim();
+            if (!answer.offersExampleData) {
+              errorCodes.mark(res, 'STS-ADMIN-0016');
+              answer.invented = null;
+              answer.inventRefused = 'Example data is a development-mode ' +
+                'convenience and this service is running as a product ' +
+                '(global.mode=product), so nothing was filled in. Type what ' +
+                'you know.';
+            } else if (!name) {
+              errorCodes.mark(res, 'STS-ADMIN-0017');
+              answer.invented = null;
+              answer.inventRefused = 'Type a username first. The example ' +
+                'person is seeded FROM the username, so there is nothing ' +
+                'to invent until there is a name to invent it from.';
+            } else {
+              answer.invented = adminViews.inventedFieldValues(name);
+            }
+          }
+          self.sendJson(res, 200, answer);
           log.debug("Leaving the management API new-user endpoint.");
         } },
 
@@ -5393,17 +5717,24 @@ class AdminApi {
           return self.runClaimed(res, request.action === 'create'
             ? { username: String(request.username || request.user || '') }
             : null, function (held) {
-            // `via: 'api'` and whatever actor the caller named, for the audit
-            // rows the two second-factor clears write — the same honesty
-            // `rbacAction`'s caller keeps: this API authenticates a CLIENT
-            // rather than a person, so an empty actor is the true answer rather
-            // than an inconvenient one.
+            // `via: 'api'` and the subject of the token the gate verified,
+            // for the audit rows this action writes (#446). It was an empty
+            // actor while this API authenticated only clients; with no token
+            // (development's open API) it still is.
             const result = adminActions.usersAction(request,
-                                             { via: 'api', actor: '',
+                                             { via: 'api',
+                                               actor: self.callerNameOf(res),
                                                // The address a password reset
                                                // link is built on (2026-09-13).
                                                base: baseUrlOf(req) });
             held.settle(!!result.ok);
+            // A CREATE'S ACTIVATION LINK, ABSOLUTE as well (#446): it is
+            // pasted into a message, and the address it is built on —
+            // `global.publicBaseUrl` where one is pinned — is the server's
+            // to know, not a browser's.
+            if (result.ok && /^\//.test(String(result.activationUrl || ''))) {
+              result.activationLink = baseUrlOf(req) + result.activationUrl;
+            }
             if (!result.ok) {
               errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0030');
             }
@@ -6069,9 +6400,11 @@ class AdminApi {
                             description: 'Accepted for `user`.' },
                 fields: { type: 'object',
                           description: 'Attribute name to a string or an ' +
-                                       'array of strings; empty clears it.' }
+                                       'array of strings; empty clears it.' },
+                present: FIELD_GRID_MEMBERS.present
               },
-              required: ['user', 'fields'],
+              patternProperties: FIELD_GRID_PATTERN,
+              required: ['user'],
               examples: [{ user: 'alice',
                            fields: { title: 'Principal Engineer',
                                      mobile: ['+46 70 000 00 00'] } }],
@@ -8057,11 +8390,11 @@ class AdminApi {
           log.debug("Entering the management API admin roles action endpoint.");
           const body = parseBody(req);
           // `via: 'api'` and an empty actor, for the audit row. The console
-          // passes its signed-in user here; this API authenticates a CLIENT
-          // rather than a person and has no session to read, so an empty actor
-          // is the honest answer rather than an inconvenient one.
+          // passes its signed-in user here; this API passes the subject of
+          // the token its gate verified (#446), and nobody where no token was
+          // required.
           const result = adminActions.rbacAction(self.withAction(req, body),
-                                          { via: 'api', actor: '' });
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0034');
           }
@@ -8237,11 +8570,10 @@ class AdminApi {
                     "endpoint.");
           const body = parseBody(req);
           // `via: 'api'` and whatever actor the caller named, for the audit row
-          // — the same honesty `rbacAction`'s caller keeps: this API
-          // authenticates a CLIENT rather than a person, so an empty actor is
-          // the true answer rather than an inconvenient one.
+          // — `rbacAction`'s caller's rule: the subject of the token the
+          // gate verified (#446), and nobody where no token was required.
           const result = adminActions.mfaAction(self.withAction(req, body),
-                                         { via: 'api', actor: '' });
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0035');
           }
@@ -8338,6 +8670,59 @@ class AdminApi {
             },
             responseDescription: 'Whether a factor was turned off.' }
         ] },
+
+      // ONE CREDENTIAL'S LINEAGE (#446): the console page had no
+      // operation, having no form; see
+      // `AdminViews.credentialLineageModel()`.
+      { method: 'GET', path: BASE + '/tokens/credential', tag: 'Tokens',
+        operationId: 'getCredentialLineage',
+        summary: 'One credential and every generation behind it',
+        description: 'The credential a protocol identifier names (a ' +
+                     '`jti`, an `AssertionID`) and how it came to exist: ' +
+                     'one generation per exchange behind it, newest ' +
+                     'first, down to the issuance the line rests on — ' +
+                     'each with the act that produced it, the party that ' +
+                     'holds it (`holder`) and, at the origin, the grant or ' +
+                     'flow (`originLabel`). `walls` are the lines that ' +
+                     'stop at a credential this service cannot name; ' +
+                     '`truncated` says the walk stopped at ' +
+                     '`maxGenerations`. The graph and, as for ' +
+                     '`/delegation/map`, `looks`, the drawing (`svg`) and ' +
+                     'its size come with it.\n\nWith no `id` the answer ' +
+                     'names nothing (`counts: null`).\n\nWith ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/tokens/credential',
+        parameters: [
+          { name: 'id', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The credential\'s identifier, as the tokens ' +
+                         'table shows it.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The credential, its generations, the graph, ' +
+                             'every node\'s look and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API credential lineage " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.credentialLineageModel(req.query,
+                                                           { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API credential lineage " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.credentialLineageModel(req.query));
+          log.debug("Leaving the management API credential lineage " +
+                    "endpoint.");
+        } },
 
       { method: 'GET', path: BASE + '/tokens', tag: 'Tokens',
         operationId: 'getIssued',
@@ -10210,7 +10595,8 @@ class AdminApi {
           log.debug("Entering the management API federation action endpoint.");
           const body = parseBody(req);
           adminActions.federationAction(self.withAction(req, body),
-            { via: 'api', actor: 'admin-api', base: baseUrlOf(req) })
+            { via: 'api', actor: self.callerNameOf(res) || 'admin-api',
+              base: baseUrlOf(req) })
             .then(function (result) {
               if (!result.ok) {
                 errorCodes.mark(res, errorCodes.codeOf(result) ||
@@ -11506,7 +11892,24 @@ class AdminApi {
           // field arrives as whichever value came last and every other one is
           // silently gone. Ignored by every action but `create`, which is where
           // the vocabulary is validated.
-          const protocols = self.namesOf(req, body, 'protocol', 'protocols');
+          //
+          // A COMBINED CHOICE (`vc`) stands for the families it names, which
+          // is how the console's checkbox column posts it (#446: the static
+          // console sends that form here, where the console's own handler
+          // expanded it).
+          const protocols = applications.familiesOfChoices(
+            self.namesOf(req, body, 'protocol', 'protocols'));
+          // AN RFC 9728 DOCUMENT THE CREATE FORM LOADED (#446): the third
+          // tab's document, as the reader left it, into the attribute the
+          // create writes — what `/admin/applications/new`'s handler did
+          // before calling this action.
+          if (String(req.params.action || body.action || '') === 'create' &&
+              body.metadata) {
+            const stored = resourceMetadata.documentFromForm(body);
+            if (stored) {
+              body['field.oauthResourceMetadata'] = stored;
+            }
+          }
           const result = adminActions.applicationsAction(self.withAction(req,
               body),
                                                          protocols, {
@@ -11815,8 +12218,16 @@ class AdminApi {
               properties: {
                 application: { type: 'string' },
                 fields: { type: 'object' },
-                protocols: { type: 'array', items: { type: 'string' } }
+                protocols: { type: 'array', items: { type: 'string' } },
+                protocolsPresent: { type: ['string', 'boolean'],
+                                    description: 'Set by the console\'s ' +
+                                      'form, which draws the families as ' +
+                                      'checkboxes: `protocols` is then the ' +
+                                      'whole list, and none ticked means ' +
+                                      'none.' },
+                present: FIELD_GRID_MEMBERS.present
               },
+              patternProperties: FIELD_GRID_PATTERN,
               required: ['application'],
               examples: [{ application: 'my-web-app',
                            fields: { oauthRedirectUri: [
@@ -12040,6 +12451,40 @@ class AdminApi {
             },
             responseDescription: 'How many secrets are `left`, and the ' +
                                  'application as it now stands.' },
+
+          // A credential's value on demand (#446): the application page's
+          // folds, which no GET may carry.
+          { action: 'reveal-secret',
+            operationId: 'revealApplicationSecret',
+            summary: 'Hand back one credential of an application: a client ' +
+                     'secret by its id, the registration access token, or ' +
+                     'a sealed key by its attribute',
+            description: 'The one way to read a credential this registry ' +
+                         'holds: `GET /admin-api/applications` answers each ' +
+                         'secret\'s id and expiry and never its value. ' +
+                         '`secret` is a client secret\'s id (the ids are in ' +
+                         'the application\'s `credentials.clientSecret' +
+                         '.secrets`), `registration-access-token`, or the ' +
+                         'attribute of a sealed credential the application ' +
+                         'holds: `oauthAssertionPrivateKey` or ' +
+                         '`oauthSamlAssertionPrivateKey` (the RFC 7523 and ' +
+                         'RFC 7522 signing keys `/admin-api/pki/issue` put ' +
+                         'there), `gnapSymmetricKey`, `gnapMacaroonKey`. It ' +
+                         'needs `admin:write` and writes an audit row naming ' +
+                         'what was revealed — never the value. Nothing is ' +
+                         'changed.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' },
+                            secret: { type: 'string' } },
+              required: ['application', 'secret'],
+              examples: [{ application: 'my-web-app',
+                           secret: 'cs-0123456789ab' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The `value`, with the `application` and ' +
+                                 '`secret` it belongs to.' },
 
           // /admin/applications/new's *Generate Secret* button (2026-09-18).
           { action: 'generate-secret',
@@ -12588,8 +13033,8 @@ class AdminApi {
                          '3.3), or is not https, is refused; development ' +
                          'mode reports both in `warnings` and answers. A ' +
                          'malformed document is refused in both ' +
-                         'modes.\n\nThe console\'s upload posts ' +
-                         'the document as a multipart `file`; a JSON ' +
+                         'modes.\n\nThe console sends an uploaded ' +
+                         'document as `file` (its name and text); a JSON ' +
                          'caller sends `document` instead.',
             requestBodyRequired: true,
             requestBody: {
@@ -12603,7 +13048,14 @@ class AdminApi {
                        description: 'Where the document is published, ' +
                                     'usually `https://<host>' +
                                     resourceMetadata.WELL_KNOWN +
-                                    '[/<path>]`.' }
+                                    '[/<path>]`.' },
+                file: { type: 'object',
+                        properties: { name: { type: 'string' },
+                                      text: { type: 'string' } },
+                        required: ['text'], additionalProperties: false,
+                        description: 'An uploaded document: its file name ' +
+                                     'and its text, which is how the ' +
+                                     'console sends the file it was given.' }
               },
               examples: [{ document: {
                 resource: 'https://api.example.com',
@@ -13237,6 +13689,10 @@ class AdminApi {
                             'A new PolicySetId or PolicyId. Any URI.' },
                 description: { type: 'string',
                           description: 'The document\'s own <Description>.' },
+                version: { type: 'string',
+                          description: 'The document\'s Version: ' +
+                                       'dot-separated numbers, "1" or ' +
+                                       '"1.0". Empty leaves it as it is.' },
                 combiningAlgId: { type: 'string',
                           description: 'One of the rule-combining algorithms ' +
                                        'this editor offers; anything else is ' +
@@ -13332,7 +13788,18 @@ class AdminApi {
                 mustBePresent: { type: 'boolean',
                           description: 'Whether an absent attribute is an ' +
                                        'empty bag (false) or makes the whole ' +
-                                       'expression Indeterminate (true).' }
+                                       'expression Indeterminate (true).' },
+                referenceKind: { type: 'string',
+                          enum: ['designator', 'selector'],
+                          description: 'Whether the Match names its ' +
+                                       'attribute by an AttributeDesignator ' +
+                                       '(the default) or reads it with an ' +
+                                       'AttributeSelector\'s XPath `path`.' },
+                contextSelectorId: { type: 'string',
+                          description: 'A selector\'s ContextSelectorId.' },
+                issuer: { type: 'string',
+                          description: 'A designator\'s Issuer; empty ' +
+                                       'clears it.' }
               },
               required: ['policy', 'path'],
               examples: [{
@@ -15842,6 +16309,13 @@ class AdminApi {
                          'identifier, the profile, the key handle or a ' +
                          'declared issuer. `issuedPaging.total` is then the ' +
                          'count that matched, and `issuedSearch` echoes it.' },
+          { name: 'rows', in: 'query', required: false,
+            schema: { type: 'string', enum: ['all', 'shown'] },
+            description: '`shown` reads each key pair\'s certificate — its ' +
+                         '`pqc` member — for the rows of the requested ' +
+                         'pages only, which is what the console draws; the ' +
+                         'other rows carry no `pqc`. `all`, the default, ' +
+                         'reads every row\'s.' },
           { name: 'personsq', in: 'query', required: false,
             schema: { type: 'string', maxLength: 200 },
             description: 'Narrows the People table before it is paged: a ' +
@@ -15872,7 +16346,12 @@ class AdminApi {
                              'beside them.',
         handler: function (req, res) {
           log.debug("Entering the management API PKI endpoint.");
-          self.sendJson(res, 200, pkiAdmin.pkiView(req));
+          // `rows=shown` IS THE CONSOLE'S OWN CALL (#352, #446): each key
+          // pair's certificate is read for the rows the page's two tables
+          // draw and no others.
+          self.sendJson(res, 200, pkiAdmin.pkiView(req, undefined,
+            String(req.query.rows || '') === 'shown'
+              ? { shownOnly: true } : undefined));
           log.debug("Leaving the management API PKI endpoint.");
         } },
 
@@ -15980,7 +16459,14 @@ class AdminApi {
             if (!result.ok) {
               errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0055');
             }
-            self.sendJson(res, result.ok ? 200 : 400, result);
+            // A PANE ACTION'S NEXT DRAFT, as the workbench draws it (#446):
+            // the console draws the pane again from `workbench`, refused or
+            // not. `authoring.view()` carries no private key.
+            const answered = result && result.draft
+              ? Object.assign({}, result,
+                              { workbench: pkiAdmin.workbenchOf(result.draft) })
+              : result;
+            self.sendJson(res, result.ok ? 200 : 400, answered);
             log.debug("Leaving the management API PKI action endpoint.");
           }).catch(function (e) {
             errorCodes.mark(res, 'STS-API-0021');
@@ -16661,12 +17147,12 @@ class AdminApi {
             description: 'The same export `/admin/keys` uses ' +
                          '(`common/vendored/key_material.js`), so a `.p12` ' +
                          'from here imports identically into keytool, ' +
-                         'OpenSSL, Windows and macOS.\n\n**THE CONSOLE DOES ' +
-                         'NOT COME THROUGH HERE**: `POST /admin/pki/export` ' +
-                         'answers with the FILE, because that is what a ' +
-                         'browser asked for. This arm answers JSON with the ' +
-                         'bytes base64’d, which is what a machine asked for. ' +
-                         'One function underneath either way.\n\n**IT HANDS ' +
+                         'OpenSSL, Windows and macOS.\n\nThe answer is ' +
+                         'JSON with the bytes base64’d and named, and the ' +
+                         'console\'s Download button comes through here ' +
+                         'too since #446: it saves each named file as the ' +
+                         'attachment the server-rendered console sent.' +
+                         '\n\n**IT HANDS ' +
                          'OVER A PRIVATE KEY**, so like ' +
                          'every other such door here it needs ' +
                          '`admin:write` rather than `admin:read`.',
@@ -18193,47 +18679,388 @@ class AdminApi {
                      '/admin-api/users.\n\nWALK IT BY `seq`: ' +
                      'monotonic and never reused, including across a drop.',
         mirrors: 'GET /admin/delegation',
-        parameters: [
-          { name: 'type', in: 'query', required: false,
-            schema: { type: 'string',
-                      enum: closed.delegationTypes },
-            description: 'One mechanism. The reply\'s `types` member ' +
-                         'describes each of them, with the specification it ' +
-                         'comes from and whether this service polices it.' },
-          { name: 'mode', in: 'query', required: false,
-            schema: { type: 'string', enum: closed.delegationModes },
-            description: 'The protocol-independent axis: whether what came ' +
-                         'out carries the chain. ' +
-                         'ANDed with `type`, so a mode ' +
-                         'that does not match the mechanism matches nothing.' },
-          { name: 'outcome', in: 'query', required: false,
-            schema: { type: 'string', enum: closed.delegationOutcomes },
-            description: 'Two rather than the audit log\'s three: a ' +
-                         'delegation is DECIDED rather than ' +
-                         'performed, so there is no third ' +
-                         'answer between issuing the credential and refusing ' +
-                         'to.' },
-          { name: 'protocol', in: 'query', required: false,
-            schema: { type: 'string' },
-            description: 'The family, spelled as /admin-api/users spells it ' +
-                         '— `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free ' +
-                         'text rather than an enum, for the reason the audit ' +
-                         'log\'s `protocol` is.' },
-          { name: 'q', in: 'query', required: false, schema: { type: 'string' },
-            description: 'Substring of ANY party of the chain (normalised ' +
-                         'name, presented form or application) or of either ' +
-                         'explanation, case-insensitive. One box over six ' +
-                         'fields, because the fact a caller has names one of ' +
-                         'them and not which column it is in.' }
-        ].concat(this.pagingParameters()),
+        parameters: delegationFilter.concat(this.pagingParameters()),
         responseDescription: 'The matching acts, the distinct chains among ' +
                              'them, the configured Kerberos policy, and the ' +
                              'vocabulary the filters take.',
         responseSchema: { $ref: '#/components/schemas/DelegationList' },
         handler: function (req, res) {
           log.debug("Entering the management API delegation endpoint.");
-          self.sendJson(res, 200, adminViews.delegationView(req.query).json);
+          // The page's model since #446: the acts as before, and beside
+          // them what /admin/delegation draws (`allowed`,
+          // `delegationPolicy`, its other lists and the two choosers).
+          self.sendJson(res, 200, adminViews.delegationPageModel(req.query));
           log.debug("Leaving the management API delegation endpoint.");
+        } },
+
+      // THE PICTURE OF THOSE ACTS (#446, 2026-10-05). The console page had no
+      // operation — it has no form — and a console that is a static client
+      // of this API needs what only this process knows about it: what each
+      // box IS, where it GOES, and the drawing's markup. See
+      // `AdminViews.delegationMapModel()`.
+      { method: 'GET', path: BASE + '/delegation/map', tag: 'Delegation',
+        operationId: 'getDelegationMap',
+        summary: 'The delegation picture: the graph, each box, the drawing',
+        description: 'The same acts as `GET /admin-api/delegation`, with ' +
+                     'the time taken out and the parties shared: a party ' +
+                     'that is the intermediary of six chains is ONE node ' +
+                     'with six edges. Drawn from everything that MATCHED ' +
+                     'the filter, not from one page of it.\n\n`nodes` and ' +
+                     '`edges` are the graph. `looks` says what each node ' +
+                     'IS, by node id: its label, its shape, the identifier ' +
+                     'a protocol would present for it, and the console ' +
+                     'page it links to — which the directory and the ' +
+                     'application registry decide. `svg` is the drawing, ' +
+                     'laid out on the server, with its links in it; ' +
+                     '`drawing` is its size, and says so if the layout ' +
+                     'failed. `summary` carries the counts by mechanism, ' +
+                     'kind and outcome that the filter\'s choices show.' +
+                     '\n\nWith `format=svg` the answer is the SVG document ' +
+                     'alone, with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/map',
+        parameters: delegationFilter.concat([
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ]),
+        responseDescription: 'The graph, every node\'s look, the counts ' +
+                             'and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation map endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationMapModel(req.query,
+                                                       { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation map endpoint. " +
+                      "Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.delegationMapModel(req.query));
+          log.debug("Leaving the management API delegation map endpoint.");
+        } },
+
+      // THE FEDERATION PICTURE (#446): the console page had no operation,
+      // having no form; see `AdminViews.federationMapModel()`.
+      { method: 'GET', path: BASE + '/federation/map', tag: 'Federation',
+        operationId: 'getFederationMap',
+        summary: 'This realm\'s federation relationships, drawn',
+        description: 'Every federation relationship of the trust realm, ' +
+                     'filtered by `role`, `protocol` and text, as a graph ' +
+                     '— the partners, this service and the applications ' +
+                     'behind each relationship — with the relationships ' +
+                     'and their sign-ins, the drawing (`svg`, laid out on ' +
+                     'the server, with its links), its size, the filter\'s ' +
+                     'vocabulary and the key.\n\nWith `format=svg` the ' +
+                     'answer is the SVG document alone, with no links in ' +
+                     'it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/federation/map',
+        parameters: [
+          { name: 'role', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only relationships in this role.' },
+          { name: 'protocol', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only relationships in this protocol.' },
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Text anywhere in a relationship.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The relationships, the graph and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API federation map endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.federationMapModel(req.query,
+                                                       { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API federation map endpoint. " +
+                      "Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.federationMapModel(req.query));
+          log.debug("Leaving the management API federation map endpoint.");
+        } },
+
+      // ONE GROUP OF APPLICATIONS, DRAWN (#446): the console page had no
+      // operation, having no form; see `AdminViews.delegationClusterModel()`.
+      { method: 'GET', path: BASE + '/delegation/cluster', tag: 'Delegation',
+        operationId: 'getDelegationCluster',
+        summary: 'One group of applications joined by permissions, drawn',
+        description: 'The group an application is in — the applications ' +
+                     'reachable from it by following delegated ' +
+                     'permissions either way — as `GET ' +
+                     '/admin-api/permissions/groups?application=` answers ' +
+                     'it, with the group whole (`cluster`), its grants and ' +
+                     'permissions paged (`groupGrantsPage`, ' +
+                     '`groupPermissionsPage`), the graph and, as for ' +
+                     '`/delegation/map`, `looks`, the drawing (`svg`) and ' +
+                     'its size. With no application, or one the register ' +
+                     'does not hold, the groups are paged instead ' +
+                     '(`groupPage`).\n\nWith `format=svg` the answer is ' +
+                     'the SVG document alone, with no links in it, as ' +
+                     '`image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/cluster',
+        parameters: ([] as any[]).concat([
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The application\'s identifier, exactly.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ], self.pagingParameters()),
+        responseDescription: 'The group, its pages, the chooser\'s data ' +
+                             'and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation cluster " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationClusterModel(req.query,
+                                                           { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation cluster " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.delegationClusterModel(req.query));
+          log.debug("Leaving the management API delegation cluster " +
+                    "endpoint.");
+        } },
+
+      // THE ALLOWED MAPPINGS, DRAWN (#446): the console page had no
+      // operation, having no form; see `AdminViews.delegationAllowedModel()`.
+      { method: 'GET', path: BASE + '/delegation/allowed', tag: 'Delegation',
+        operationId: 'getDelegationAllowed',
+        summary: 'The configured delegated permissions, drawn, and groups',
+        description: 'Every delegated permission somebody configured — a ' +
+                     'client granted a permission a resource exposes — as ' +
+                     'a graph with, as for `/delegation/map`, `looks`, the ' +
+                     'drawing (`svg`) and its size. `groups` are the sets ' +
+                     'of applications the grants join, paged on ' +
+                     '`groupsPage` as `GET /admin-api/permissions/groups` ' +
+                     'summarises them; `shownGroups` are those groups in ' +
+                     'full and `clusters` all of them, which is what the ' +
+                     'page\'s chooser searches.\n\nWith `format=svg` the ' +
+                     'answer is the SVG document alone, with no links in ' +
+                     'it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/allowed',
+        parameters: ([] as any[]).concat(self.pagingParameters(), [
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ]),
+        responseDescription: 'The graph, the groups, the register and the ' +
+                             'drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API allowed delegation " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationAllowedModel(req.query,
+                                                           { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API allowed delegation " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.delegationAllowedModel(req.query));
+          log.debug("Leaving the management API allowed delegation " +
+                    "endpoint.");
+        } },
+
+      // PROTOCOLS → DELEGATION (#446): what the page draws, as the page
+      // answers it; see `AdminViews.delegationSettingsModel()`. The register
+      // alone is `GET /admin-api/permissions`.
+      { method: 'GET', path: BASE + '/delegation-settings',
+        tag: 'Delegation',
+        operationId: 'getDelegationSettings',
+        summary: 'The configured permissions register, as its page shows it',
+        description: 'The delegated permissions register searched and ' +
+                     'paged as the page shows it — `permq` and `grantq` ' +
+                     'search the permissions and the grants, ' +
+                     '`permissionsPage` and `grantsPage` page them ' +
+                     '(`listState`) — with every application in the ' +
+                     'registry for the two selects (`allApplications`) and ' +
+                     'the page\'s settings block. `allowed` is the register ' +
+                     'with its filter and paging, as the page answered it ' +
+                     'before.',
+        mirrors: 'GET /admin/delegation-settings',
+        parameters: [
+          { name: 'permq', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Part of a permission\'s resource.' },
+          { name: 'grantq', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Part of a grant\'s client or resource.' }
+        ].concat(this.pagingParameters()),
+        responseDescription: 'The register, its list state, the ' +
+                             'applications and the settings block.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation settings " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.delegationSettingsModel(req.query));
+          log.debug("Leaving the management API delegation settings " +
+                    "endpoint.");
+        } },
+
+      // EVERYTHING DONE IN ONE PERSON'S NAME (#446): the console page had
+      // no operation, having no form; see
+      // `AdminViews.delegationUserModel()`.
+      { method: 'GET', path: BASE + '/delegation/user', tag: 'Delegation',
+        operationId: 'getDelegationUser',
+        summary: 'Everything issued and delegated in one person\'s name',
+        description: 'The identity register and the delegation register ' +
+                     'UNIONED for one person: every credential issued ' +
+                     'naming them with the grant or flow that produced it ' +
+                     '(`credentials`, `flows`), their sign-ins, every act ' +
+                     'naming them in any role (`acts`), the graph and, as ' +
+                     'for `/delegation/map`, `looks`, the drawing (`svg`) ' +
+                     'and its size. `users` is everybody either register ' +
+                     'holds, which is what the page\'s chooser searches.' +
+                     '\n\nA name neither register holds is answered with ' +
+                     '`user: null`, not an error.\n\nWith `format=svg` the ' +
+                     'answer is the SVG document alone, with no links in ' +
+                     'it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/user',
+        parameters: [
+          { name: 'user', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The person, under any spelling this service has ' +
+                         'seen them under.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The person, their credentials, flows and ' +
+                             'acts, the graph, every node\'s look and the ' +
+                             'drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation user endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationUserModel(req.query,
+                                                        { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation user " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.delegationUserModel(req.query));
+          log.debug("Leaving the management API delegation user endpoint.");
+        } },
+
+      // ONE APPLICATION'S DELEGATIONS (#446): the console page had no
+      // operation, having no form; see
+      // `AdminViews.delegationApplicationModel()`.
+      { method: 'GET', path: BASE + '/delegation/application',
+        tag: 'Delegation',
+        operationId: 'getDelegationApplication',
+        summary: 'Everything delegated through one application or to it',
+        description: 'Every act an application took part in, in EITHER ' +
+                     'role — the intermediary acting for somebody and the ' +
+                     'target a credential is for — with the role it played ' +
+                     'in each (`rolesBySeq`), the graph of those acts and, ' +
+                     'as for `/delegation/map`, `looks`, the drawing ' +
+                     '(`svg`) and its size. `applications` is every ' +
+                     'application some act named, which is what the page\'s ' +
+                     'chooser searches.\n\nAn application no act names is ' +
+                     'answered with `application: null`, not an error: the ' +
+                     'store is capped and drops the oldest.\n\nWith ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/application',
+        parameters: [
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The application, as a protocol presented it or ' +
+                         'normalised.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The application, its acts, the graph, every ' +
+                             'node\'s look and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation application " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationApplicationModel(req.query,
+              { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation application " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.delegationApplicationModel(req.query));
+          log.debug("Leaving the management API delegation application " +
+                    "endpoint.");
+        } },
+
+      // ONE RELATIONSHIP, DRAWN ALONE (#446): the console page had no
+      // operation, having no form; see `AdminViews.delegationChainModel()`.
+      { method: 'GET', path: BASE + '/delegation/chain', tag: 'Delegation',
+        operationId: 'getDelegationChain',
+        summary: 'One delegation relationship: its acts, graph and drawing',
+        description: 'One chain — (mechanism, initial identity, ' +
+                     'intermediary, target) — named by its `chain` key, as ' +
+                     '`GET /admin-api/delegation` lists them in `chains`. ' +
+                     'The answer is the chain, every act on it (not ' +
+                     'paged), the graph of those acts and, as for ' +
+                     '`/delegation/map`, `looks`, the drawing (`svg`, laid ' +
+                     'out on the server, with its links) and its size.' +
+                     '\n\n**A KEY NO ACT IS HELD UNDER IS NOT AN ERROR**: ' +
+                     'the store is capped and drops the oldest, so the ' +
+                     'answer is `found: false` with `maxRecords`.\n\nWith ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/chain',
+        parameters: [
+          { name: 'chain', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The chain\'s key, `chainKey` on a chain of ' +
+                         '`GET /admin-api/delegation`.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The chain, its acts, the graph, every node\'s ' +
+                             'look and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation chain endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationChainModel(req.query,
+                                                         { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation chain " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.delegationChainModel(req.query));
+          log.debug("Leaving the management API delegation chain endpoint.");
         } },
 
       // THE WS-TRUST AND TOKEN-EXCHANGE DELEGATION POLICY (#108, 2026-09-23)
@@ -18803,7 +19630,7 @@ class AdminApi {
                           description: 'The role register, both relations.' },
         handler: function (req, res) {
           log.debug("Entering the management API roles endpoint.");
-          self.sendJson(res, 200, adminViews.rolesView());
+          self.sendJson(res, 200, adminViews.rolesView(req.query));
           log.debug("Leaving the management API roles endpoint.");
         } },
 
@@ -19857,7 +20684,11 @@ class AdminApi {
                             'Registration entries and their paging.' },
         handler: function (req, res) {
           log.debug("Entering the management API SPIFFE entries endpoint.");
-          self.sendJson(res, 200, adminViews.spiffeEntriesJson(req).json);
+          // `entry` names one, as the parameter above has always said.
+          const entry = String(req.query.entry || '').trim();
+          self.sendJson(res, 200,
+                        entry ? adminViews.spiffeEntryJson(entry)
+                              : adminViews.spiffeEntriesJson(req).json);
           log.debug("Leaving the management API SPIFFE entries endpoint.");
         } },
 
@@ -20164,7 +20995,11 @@ class AdminApi {
                           description: 'Attested agents and their paging.' },
         handler: function (req, res) {
           log.debug("Entering the management API SPIFFE agents endpoint.");
-          self.sendJson(res, 200, adminViews.spiffeAgentsJson(req).json);
+          // `agent` names one, as the parameter above has always said.
+          const agent = String(req.query.agent || '').trim();
+          self.sendJson(res, 200,
+                        agent ? adminViews.spiffeAgentJson(agent)
+                              : adminViews.spiffeAgentsJson(req).json);
           log.debug("Leaving the management API SPIFFE agents endpoint.");
         } },
 
@@ -20746,6 +21581,273 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
+  // IS AN ACCESS TOKEN REQUIRED ON THIS REQUEST? ONE READING, FOR THE GATE AND
+  // FOR EVERYTHING THAT REPORTS IT (#446, 2026-10-05).
+  //
+  // `adminApi.authRequired` is development-only when it is off: the row
+  // carries the `onlyWhile` marker on `mode.opensManagementApi()`, so the
+  // value IN FORCE in a product realm is `true` whatever is stored. The gate,
+  // the index's `protected`, the OpenAPI document's security section and the
+  // startup banner all ask this, because a report reading the stored value
+  // would say "open" about an API that is refusing.
+  //
+  // The mode is the AMBIENT realm's, as everywhere: a product realm of a
+  // development process requires the token under its own prefix.
+  // ---------------------------------------------------------------------------
+  /**
+   * Tells whether this API requires an access token here: the value of
+   * `adminApi.authRequired` in force, which product mode reads as true.
+   *
+   * @returns true when a token is required
+   */
+  tokenRequired(): boolean {
+    const { log, mode } = this.deps;
+    log.debug("Entering AdminApi.tokenRequired().");
+    const required = mode.valueInForce('adminApi.authRequired') === true;
+    log.debug("Leaving AdminApi.tokenRequired(). " + required);
+    return required;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A TOKEN DIES WITH THE SIGN-ON SESSION IT WAS ISSUED ON (#446, 2026-10-05).
+  //
+  // The server-rendered console held a relying-party session that named the
+  // sign-on session it came from and ended with it (`common/oidc_rp.ts`), so
+  // signing out, or a session running out, closed the console at once. A
+  // console that is a client of this API holds a TOKEN instead, and a token
+  // is good until it expires unless somebody asks — so this gate asks.
+  //
+  // No token carries a session identifier (`common/admin_stats.js`,
+  // `signJwt()`'s third argument): the token registry was told which session
+  // an issuance ran on, and is asked by `jti`. The session is then asked of
+  // `authn/`, through `oauth2.sessionIsLive()`, the one answer to "is this
+  // session live" a token-bearing door uses. Both in the realm that issued
+  // the token, which is where the code flow ran.
+  //
+  // TWO THINGS IT DELIBERATELY DOES NOT REFUSE. A token issued on NO session
+  // — `client_credentials`, and the API explorer's — has nothing to end. And
+  // a token the registry no longer holds (it is capped, and drops the oldest)
+  // answers no session and is honoured until it expires: refusing what the
+  // registry forgot would turn a cache's eviction into a sign-out.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the sign-on session a token was issued on when that session has
+   * ended.
+   *
+   * @param claims - the token's verified claims
+   * @param tokenRealm - the id of the realm that issued the token
+   * @returns the session's id, or '' when the token was issued on no session,
+   *   the registry does not hold it, or its session is live
+   */
+  endedSessionOf(claims, tokenRealm): string {
+    const { log, realms, stats } = this.deps;
+    log.debug("Entering AdminApi.endedSessionOf().");
+    const jti = String((claims && claims.jti) || '');
+    if (!jti) {
+      log.debug("Leaving AdminApi.endedSessionOf(). No jti.");
+      return '';
+    }
+    const ended = realms.run(realms.get(tokenRealm), function () {
+      const sid = String(stats.sessionIdOfJti(jti) || '');
+      return sid && !oauth2.sessionIsLive(sid) ? sid : '';
+    });
+    log.debug("Leaving AdminApi.endedSessionOf(). " +
+              (ended ? 'Ended.' : 'Live, or none.'));
+    return ended;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHO IS CALLING, FOR AN AUDIT ROW (#446, 2026-10-05).
+  //
+  // The gate leaves the verified token's subject on `res.locals.apiCaller`.
+  // With `adminApi.authRequired` off — development only — there is no token
+  // and so nobody to name, and this answers ''. It never reads the request:
+  // an actor a caller could nominate is not an audit trail.
+  // ---------------------------------------------------------------------------
+  /**
+   * Names the subject of the access token this request was let in on, for an
+   * audit row: a person's name, or the client's id.
+   *
+   * @param res - the response, whose locals the gate wrote
+   * @returns the name, or '' where no token was required
+   */
+  callerNameOf(res): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.callerNameOf().");
+    const caller = res && res.locals && res.locals.apiCaller;
+    const name = caller ? String(caller.name || '') : '';
+    log.debug("Leaving AdminApi.callerNameOf(). " + (name || '(nobody)'));
+    return name;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE CONSOLE'S GATE, AS THE TOKEN DECIDED IT (#446).
+  //
+  // The console's frame says who is signed in and with which roles, and
+  // draws the sidebar for that reader (`AdminConsole.shellJson()`). The
+  // server-rendered console read it off its own session; the static one has
+  // none — the token is the session — so the gate it is drawn from is
+  // `meJson()`'s answer in the shape `gateStateFor()` gives: a token is a
+  // session, its subject the username, and `ADMIN_READ` / `ADMIN_WRITE` the
+  // console's `read` and `write`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Describes the caller as the console's gate does, for the frame.
+   *
+   * @param me - `meJson()`'s answer
+   * @returns the gate state
+   */
+  consoleGateOf(me) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.consoleGateOf().");
+    const roles = (me.roles || []).map(function (role) {
+      return role === 'ADMIN_READ' ? 'read'
+        : (role === 'ADMIN_WRITE' ? 'write' : String(role).toLowerCase());
+    });
+    const held = me.console || {};
+    const enforced = !!me.tokenRequired;
+    log.debug("Leaving AdminApi.consoleGateOf().");
+    return {
+      enforced: enforced, available: !!held.available,
+      session: !!me.caller,
+      username: me.caller ? String(me.caller.name || '') : '',
+      authority: me.authority || null, identityRealm: me.realm || null,
+      readGroup: me.readGroup, writeGroup: me.writeGroup,
+      read: !!me.read, write: !!me.write, roles: roles,
+      open: enforced && !!held.open,
+      closed: enforced && !!held.empty && !held.open && !roles.length,
+      windowOpens: held.windowOpens !== false, empty: !!held.empty,
+      bootstrapPasswordRequired: enforced && !!held.bootstrapPasswordRequired,
+      bootstrap: held.bootstrap || null
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // `GET /admin-api/me`'S ANSWER (#446, 2026-10-05) — see the operation.
+  //
+  // THE ROLES ARE THE GATE'S, NOT A SECOND READING. `read` is "the gate would
+  // let a GET through" and `write` "anything else": ADMIN_READ and ADMIN_WRITE
+  // among the roles the gate handed the access policy, which are held ∩
+  // carried (#303). Asking the roster again here could answer differently
+  // from the gate that has just let this very request in.
+  //
+  // The roster IS asked for what only it knows and the gate does not decide
+  // on: whether the console is still open to anybody, and the bootstrap
+  // administrator's state — what the server-rendered console's banner said
+  // from `gateStateFor()`. Asked for a person only, in the token's realm; a
+  // roster that cannot be read reports itself unavailable rather than
+  // failing the call.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `GET /admin-api/me`'s answer from what the gate decided for this
+   * request.
+   *
+   * @param req - the request
+   * @param res - the response, whose locals the gate wrote
+   * @returns the caller, the authority, the scopes and roles, `read` and
+   *   `write`, the roster's state and the console pages the caller may reach
+   */
+  meJson(req, res) {
+    const { log, config, realms, mode, adminScope } = this.deps;
+    log.debug("Entering AdminApi.meJson().");
+    const caller = (res && res.locals && res.locals.apiCaller) || null;
+    const required = this.tokenRequired();
+    const realmId = caller ? String(caller.realm) : realms.currentId();
+    const authority = !caller ? null
+      : (realmId === realms.DEFAULT_ID ? 'service' : 'realm');
+    const roles = caller ? (caller.roles || []).slice(0) : [];
+    let roster = null;
+    if (caller && caller.kind === 'person') {
+      try {
+        roster = rbac.rolesOf(caller.name, realmId);
+      } catch (e) {
+        // A roster that cannot be read is reported as unavailable: this is a
+        // description of the caller, and the gate has already decided.
+        log.debug("Caught in AdminApi.meJson(): " + ((e && e.message) || e));
+        roster = null;
+      }
+    }
+    const scopeState = { authority: authority || undefined,
+                         identityRealm: realmId };
+    const json = {
+      tokenRequired: required,
+      caller: caller ? { kind: caller.kind, name: caller.name,
+                         clientId: caller.clientId } : null,
+      realm: realmId,
+      readingRealm: realms.currentId(),
+      authority: authority,
+      scopes: caller ? (caller.scopes || []).slice(0) : [],
+      roles: roles,
+      read: !required || roles.indexOf('ADMIN_READ') >= 0,
+      write: !required || roles.indexOf('ADMIN_WRITE') >= 0,
+      expiresAt: caller ? caller.expiresAt : null,
+      mode: mode.current(),
+      readGroup: config.value('admin.readGroup'),
+      writeGroup: config.value('admin.writeGroup'),
+      console: {
+        available: rbac.available(),
+        open: !!(roster && roster.open),
+        empty: !!(roster && roster.empty),
+        windowOpens: !roster || roster.windowOpens !== false,
+        bootstrapPasswordRequired: !!(roster && roster.claimPending),
+        bootstrap: (roster && roster.bootstrap) || null
+      },
+      pages: admin.consoleJson().pages.filter(function (path) {
+        return adminScope.pageVisible(scopeState, path);
+      })
+    };
+    log.debug("Leaving AdminApi.meJson(). " +
+              (caller ? caller.kind + ' ' + caller.name : 'no caller') +
+              ", read=" + json.read + ", write=" + json.write + ".");
+    return json;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ACTOR IS THE GATE'S ANSWER, NEVER THE CALLER'S (#446, 2026-10-05).
+  //
+  // Eighteen places in `admin-core/admin_actions.ts` read `body.actor` for
+  // the audit row an action writes — the console puts its signed-in user
+  // there — and until #446 this API gave them nothing: an operation's schema
+  // refuses a member it does not define, so those rows named nobody (and the
+  // few operations whose schema is open took whatever a caller sent). The
+  // route wrapper calls this after the body has passed its schema: where the
+  // gate verified a token, a JSON body's `actor` member is SET to that
+  // token's subject, replacing anything there. Every handler reads its own
+  // body with `parseBody(req)`, which parses `req.body` each time, so the
+  // one place that reaches all of them is the text they parse.
+  //
+  // A body that is not JSON, and one the handler owns (a streamed upload),
+  // is left alone: the HTTP row still names the caller. So is every request
+  // with no token, which only development's open API has.
+  // ---------------------------------------------------------------------------
+  /**
+   * Replaces a JSON request body's `actor` member with the subject of the
+   * verified access token, so an action's audit row names who called.
+   *
+   * @param req - the request, whose body text is rewritten
+   * @param res - the response, whose locals the gate wrote
+   */
+  nameActor(req, res): void {
+    const { log, parseBody } = this.deps;
+    log.debug("Entering AdminApi.nameActor().");
+    const name = this.callerNameOf(res);
+    if (!name || req.__adminApiHandlerOwnsBody ||
+        typeof req.body !== 'string' ||
+        !/json/i.test(String(req.headers['content-type'] || ''))) {
+      log.debug("Leaving AdminApi.nameActor(). Nothing to name.");
+      return;
+    }
+    const body = parseBody(req);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      log.debug("Leaving AdminApi.nameActor(). Not an object.");
+      return;
+    }
+    body.actor = name;
+    req.body = JSON.stringify(body);
+    log.debug("Leaving AdminApi.nameActor(). Named.");
+  }
+
+  // ---------------------------------------------------------------------------
   // WHAT THE OPENAPI DOCUMENT IS BUILT FROM, IN ONE PLACE.
   //
   // `admin_api_spec.ts` is a pure function over the route table and takes every
@@ -20772,16 +21874,15 @@ class AdminApi {
    * @returns `{ baseUrl, version, authRequired }`
    */
   specOptions(req) {
-    const { log, baseUrlOf, config } = this.deps;
+    const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminApi.specOptions().");
     const options = {
       baseUrl: baseUrlOf(req),
       version: VERSION,
-      // The one that was missing. `=== true` rather than a truthy test because
-      // this becomes a claim in a published document: an unset value is the
-      // setting's default, which config.js already resolves, and anything else
-      // here would be this file inventing a policy.
-      authRequired: config.value('adminApi.authRequired') === true
+      // The one that was missing. A boolean rather than a truthy test because
+      // this becomes a claim in a published document, and the value IN FORCE
+      // rather than the stored one (#446): product ignores `false`.
+      authRequired: this.tokenRequired()
     };
     log.debug("Leaving AdminApi.specOptions(). authRequired=" +
               options.authRequired);
@@ -20795,20 +21896,21 @@ class AdminApi {
   /**
    * Registers the access-token gate on the base path, ahead of every operation.
    *
-   * With `adminApi.authRequired` on it refuses a missing or unverifiable token
-   * with 401 and a token for another audience, issuer or without the needed
-   * permission with 403; the permission is decided by the XACML access policy.
+   * With `adminApi.authRequired` in force — always, in product mode — it
+   * refuses a missing or unverifiable token with 401 and a token for another
+   * audience, issuer or without the needed permission with 403; the permission
+   * is decided by the XACML access policy.
    *
    * @param app - the express app
    */
   registerGate(app: RouteApp): void {
-    const { log, config, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
-            mtls, dpop, senderConstraints, accessGate, mode, adminViews,
-            parseBody, adminScope, rolePermissions } = this.deps;
+    const { log, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
+            mtls, dpop, senderConstraints, accessGate,
+            rolePermissions } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.registerGate().");
     app.use(BASE, function (req, res, next) {
-      if (config.value('adminApi.authRequired')) {
+      if (self.tokenRequired()) {
         // THE ONE OPERATION THAT IS NOT AN ADMINISTRATOR'S (#164 phase 3):
         // the MDM feed takes `device:compliance` and its role, and nothing
         // else here takes that scope — see DevicesAdmin.mdmFeed().
@@ -20931,6 +22033,20 @@ class AdminApi {
             'That access token has been revoked, or the account it was ' +
             'issued to is disabled.'] });
         }
+        // AND A TOKEN WHOSE SIGN-ON SESSION HAS ENDED (#446, 2026-10-05) —
+        // see `endedSessionOf()`. `invalid_token`, as for a revoked one: to
+        // the caller it is the same fact, a credential that stopped being
+        // one, and the code says which.
+        const endedSession = self.endedSessionOf(claims, tokenRealm);
+        if (endedSession) {
+          errorCodes.mark(res, 'STS-API-0126');
+          res.set('WWW-Authenticate',
+                  'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+          return self.sendJson(res, 401, { error: 'invalid_token', errors: [
+            'That access token was issued on a sign-on session that has ' +
+            'since ended, by a sign-out or by running out. Sign in again ' +
+            'to be issued another.'] });
+        }
         // RFC 9068 SECTION 4, STEPS 1 AND 3, in its order: the TYPE before the
         // issuer, and both before the audience. Every token this service signs
         // is signed with this key, so without the header an ID Token audienced
@@ -21043,8 +22159,22 @@ class AdminApi {
         // #34's two settings, asked of this surface as of every other. The
         // answer is one function, so an operator who turns them on cannot find
         // that one door out of nine kept its own opinion.
+        // #446: a token issued to the admin console as a PUBLIC client is
+        // honoured only DPoP-bound — `senderConstraints` argues it. The
+        // client's entry is read in the realm that issued the token, and
+        // only for a client that rule names.
+        const issuedTo = String(claims.client_id || '');
+        const clientBound =
+          senderConstraints.DPOP_BOUND_PUBLIC_CLIENTS.indexOf(issuedTo) >= 0 &&
+          realms.run(realms.get(tokenRealm), function () {
+            // The registry's client view, whose shape is its own.
+            const entry: any = applications.clientConfigOf(issuedTo) || {};
+            return senderConstraints.dpopBoundPublicClient(
+              issuedTo, entry.token_endpoint_auth_method);
+          });
         const required = senderConstraints.accessTokenRefusal({
           where: 'the management API',
+          clientBound: clientBound,
           boundJkt: boundJkt,
           proofOk: proofOk,
           boundThumbprint: mtls.boundThumbprintOf(claims),
@@ -21177,124 +22307,54 @@ class AdminApi {
         // WHO CALLED, for an operation that records its caller (#164: the
         // MDM feed's reports name the feed's client).
         res.locals.apiClientId = String(claims.client_id || '');
+        // AND THE SUBJECT, WHICH IS THE AUDIT ACTOR (#446, 2026-10-05). Until
+        // then every row this API wrote named nobody — "this API
+        // authenticates a CLIENT rather than a person" — which was true while
+        // the only tokens it saw were `client_credentials` ones. The console
+        // is becoming a client of this API that presents the signed-in
+        // PERSON's token, so the subject the gate has just verified, and
+        // decided the roles of, is who did it: a person's name, or the
+        // client's id on `client_credentials`. Read by `callerNameOf()`, by
+        // the route wrapper (which hands it to every action as `actor`) and
+        // by `common/audit.js`'s HTTP row.
+        res.locals.apiCaller = {
+          kind: effective.subject.kind === 'application' ? 'application'
+                                                         : 'person',
+          name: String(effective.subject.name || ''),
+          clientId: String(claims.client_id || ''),
+          realm: tokenRealm,
+          // What the decision above was made on, for `GET /admin-api/me`:
+          // the scopes the token carries that its client still declares,
+          // the roles its subject holds now that those scopes carry, and
+          // when the token stops being accepted.
+          scopes: scopes.slice(0),
+          roles: held.slice(0),
+          expiresAt: claims.exp ? Number(claims.exp) : null
+        };
+        // ON THE REQUEST TOO (#446): the views a page is drawn from ask
+        // `adminViews.gateStateFor(req)` who is looking — a realm
+        // administrator's view leaves out what belongs to the service — and
+        // that read the console's own session. The static console has none;
+        // its token is the session, so the caller this gate verified is
+        // who they are asked about.
+        req.adminApiCaller = res.locals.apiCaller;
         return next();
       }
-      if (!mode.gatesManagementApi()) {
-        return next();
-      }
-      const gate = adminViews.gateStateFor(req);
-      // A REALM ADMINISTRATOR'S SESSION (2026-09-14, #32) holds nothing outside
-      // its realm — `gateStateFor()` has already said so — and in its realm is
-      // refused the service-wide operations, exactly as at the console's gate.
-      if (gate.authority === 'realm') {
-        const operation = self.consoleOperationOf(req);
-        const body = req.method === 'GET' || req.method === 'HEAD'
-          ? null : Object.assign({}, parseBody(req));
-        if (body && operation.action) {
-          body.action = operation.action;
-        }
-        const scoped = gate.outsideRealm
-          ? { detail: 'This session administers the "' + gate.identityRealm +
-                      '" realm and this request is for another.' }
-          : adminScope.refusalFor(gate, operation.path, body, req.query);
-        if (scoped) {
-          errorCodes.mark(res, 'STS-API-0112');
-          return self.sendJson(res, 403, { error: 'forbidden',
-                                           errors: [scoped.detail] });
-        }
-      }
-      // THE SAME TWO ROLES THE CONSOLE USES, and the same asymmetry: a GET
-      // needs Admin Read and anything else needs Admin Write. Asking `admin.js`
-      // rather than re-deriving it is what stops this becoming a second answer
-      // to who may administer this service — the mistake `logout.ts` exists to
-      // prevent one layer down.
-      const needed = req.method === 'GET' ? gate.read : gate.write;
-      if (needed) {
-        // -------------------------------------------------------------------
-        // AND THEN THE POLICY (2026-09-06), which is the layer ABOVE the roles
-        // and not a replacement for them.
-        //
-        // The two console roles decide who may administer this service and stay
-        // exactly where they are — `adminViews.gateStateFor()` is still the one
-        // answer to that, which is what stops this becoming a second one. What
-        // the gate adds is that a deployment can narrow this surface by POLICY,
-        // with the subject taken from the SESSION that got the caller through
-        // the check above and never from anything on the request.
-        //
-        // **IT RUNS ONLY WHERE THIS SURFACE IS GATED AT ALL**, which is the
-        // same `mode.gatesManagementApi()` branch above — reached only with
-        // `adminApi.authRequired` off, since the token branch answers first. In
-        // development that branch leaves this API open by design — there is no
-        // credential, so no session, so no subject — and asking a policy whose
-        // built-in document refuses an
-        // unauthenticated subject would close the door the tests drive and the
-        // door somebody locked out of the console gets back in through. A
-        // policy layer must not be the thing that removes the recovery path.
-        //
-        // On an unedited product deployment it permits: the built-in document
-        // asks for a role only where somebody has required one, and the caller
-        // has already been shown to hold Admin Read or Admin Write.
-        const policy = accessGate.check({
-          resource: accessGate.RESOURCE.MANAGEMENT_API,
-          action: req.method === 'GET' ? accessGate.ACTION.READ
-                                       : accessGate.ACTION.WRITE,
-          subject: { name: gate.username,
-                     authenticated: !!(gate.session &&
-                                       gate.session.authenticated !== false),
-                     roles: gate.roles || [],
-                     sessionId: gate.session ? gate.session.id : null },
-          context: { method: req.method, path: req.originalUrl || req.url }
-        });
-        if (!policy.allowed) {
-          log.info('admin-api: the access policy refused ' + req.method + ' ' +
-                   (req.originalUrl || req.url) + ' for ' +
-                   (gate.username || '(nobody)') + '. ' + policy.why);
-          errorCodes.mark(res, 'STS-API-0006');
-          return self.sendJson(res, 403, {
-            error: 'forbidden',
-            errors: ['The access policy refused this request. ' + policy.why +
-                     ' This is a POLICY decision rather than a missing role: ' +
-                     (gate.username || 'the caller') + ' holds ' +
-                     ((gate.roles && gate.roles.length)
-                       ? gate.roles.join(', ') : 'no role') +
-                     ' and passed the role check. The document is on ' +
-                     '/admin/xacml and xacml.enforceAccess turns the layer ' +
-                     'off.']
-          });
-        }
-        return next();
-      }
-      log.info('admin-api: product mode refused ' + req.method + ' ' +
-               (req.originalUrl || req.url) + ' — ' +
-               (gate.username ? gate.username + ' holds ' +
-                  (gate.roles.length ? gate.roles.join(', ') : 'no role')
-                : 'nobody is signed in') + '.');
-      const wantsHtml = /html/i.test(String(req.headers.accept || ''));
-      if (wantsHtml) {
-        errorCodes.mark(res, gate.username ? 'STS-API-0008' : 'STS-API-0007');
-        return res.status(403).type('html').send(
-          '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
-          '<title>Forbidden</title></head><body><h1>403 Forbidden</h1>' +
-          '<p>This service is in <strong>product mode</strong>, where the ' +
-          'management API requires the same sign-in and roles the console ' +
-          'does. <a href="/admin">Sign in</a>.</p></body></html>');
-      }
-      errorCodes.mark(res, gate.username ? 'STS-API-0008' : 'STS-API-0007');
-      return self.sendJson(res, gate.username ? 403 : 401, {
-        error: 'forbidden',
-        errors: ['This service is in product mode, where ' + BASE +
-                 ' requires ' +
-                 'the same sign-in and the same two roles /admin does — ' +
-                 (req.method === 'GET' ? gate.readGroup : gate.writeGroup) +
-                 ' for a ' + req.method + '. ' +
-                 (gate.username
-                   ? 'You are signed in as ' + gate.username + ' and hold ' +
-                     (gate.roles.length ? gate.roles.join(', ') : 'no role') +
-                     '.'
-                   : 'Nobody is signed in on this request.') +
-                 ' In development mode this API is open, which is what the ' +
-                 'tests drive and the way back in when nobody holds a role.']
-      });
+      // ---------------------------------------------------------------------
+      // THE SETTING IS OFF, WHICH ONLY DEVELOPMENT MODE CAN BE (#446,
+      // 2026-10-05): `tokenRequired()` reads it as the mode lets it be, and
+      // product reads `false` as `true`. So this line is the open API of
+      // development — what a test drives, and the way back in when nobody
+      // can mint a token — and nothing else reaches it.
+      //
+      // UNTIL #446 PRODUCT FELL BACK, HERE, TO THE CONSOLE'S SESSION AND ITS
+      // TWO ROLES (#411; STS-API-0006, 0007 and 0008, all retired). The
+      // console is becoming a static application that calls this API with
+      // the signed-in person's own token, so there is no console session to
+      // fall back to, and a setting that opened this gate would open the
+      // console with it. `common/mode.js`'s `opensManagementApi()` argues it.
+      // ---------------------------------------------------------------------
+      return next();
     });
     log.debug("Leaving AdminApi.registerGate().");
   }
@@ -21384,6 +22444,10 @@ class AdminApi {
           self.sendJson(res, 400, { ok: false, errors: checked.errors });
           return undefined;
         }
+        // AFTER the schema, so a caller's own `actor` is judged by the
+        // operation's schema as it always was — refused, wherever the schema
+        // is closed — and what the actions read is the gate's answer (#446).
+        self.nameActor(req, res);
         return entry.handler(req, res);
       });
     });
@@ -21447,6 +22511,11 @@ const DEVICE_COMPLIANCE_PATH = '/device-compliance';
 import accessGate = require('../common/access_gate');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 import mode = require('../common/mode');
+// THE AUTHORIZATION SERVER, for the one question the gate asks it (#446):
+// whether the sign-on session a token was issued on is still live. Built at
+// 9 and this module at 19, so this is a cache hit that moves nothing; since
+// #50's R1 a require of a converted module registers no route either.
+import oauth2 = require('../oauth-oidc/oauth2');
 import InstanceSlot = require('../common/instance_slot');
 
 // ---------------------------------------------------------------------------
@@ -21571,7 +22640,7 @@ function startupBanner(operations: number): string {
          '/openapi.json and an explorer that calls it is on the console, ' +
          'at /admin/api-explorer (it was ' + BASE + '/docs until ' +
          '2026-09-09). ' +
-         (config.value('adminApi.authRequired')
+         (mode.valueInForce('adminApi.authRequired') === true
            ? 'It REQUIRES an OAuth 2.0 access token (adminApi.authRequired): ' +
              'audience ' +
              (config.sourceOf('adminApi.audience') === 'default'
@@ -21587,10 +22656,10 @@ function startupBanner(operations: number): string {
              'role, and it is only still that if the secret was pinned ' +
              'before the start — a secret minted per start is readable only ' +
              'through the API it unlocks.'
-           : 'It is NOT protected (adminApi.authRequired is off) — and the ' +
-             'console is gated unconditionally, so this is the surface to ' +
-             'reach for when nobody holds a console role: POST ' + BASE +
-             '/rbac/grant.');
+           : 'It is NOT protected (adminApi.authRequired is off, which ' +
+             'only development mode honours) — and the console is gated ' +
+             'unconditionally, so this is the surface to reach for when ' +
+             'nobody holds a console role: POST ' + BASE + '/rbac/grant.');
   log.debug("Leaving startupBanner().");
   return text;
 }
@@ -21669,5 +22738,10 @@ export = {
   /**
    * Forwards to `AdminApi.operationSummaries()` on the installed instance.
    */
-  operationSummaries: slot.forward('operationSummaries')
+  operationSummaries: slot.forward('operationSummaries'),
+  /**
+   * Forwards to `AdminApi.checkRequestBody()` on the installed instance: a
+   * test asks it what a body sent to an operation would be refused for.
+   */
+  checkRequestBody: slot.forward('checkRequestBody')
 };

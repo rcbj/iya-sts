@@ -88,6 +88,8 @@ import InstanceSlot = require('../common/instance_slot');
 import nodeSnapshots = require('../cluster/node_snapshots');
 import workerThreads = require('worker_threads');
 import config = require('../common/config');
+// The page's renderer (#446): a `web_` module, loadable in a browser.
+import WorkerPoolsPage = require('./web_worker_pools');
 
 type Req = any;
 type Res = any;
@@ -454,173 +456,16 @@ class WorkerPoolsAdmin {
     return snapshots().scrub(answer);
   }
 
-  // The page for every node: the cluster's totals and a section per node.
+  // DRAWN BY `web_worker_pools.ts` (#446): this page is converted for the
+  // static console, and its renderer is a module a browser can load. Until the
+  // cutover this process still draws it, handing the renderer the view passed
+  // THROUGH JSON, so it is held to what the API's caller receives.
   private clusterHtml(json: Json): string {
-    const { log, admin } = this.deps;
-    const self = this;
-    log.debug("Entering WorkerPoolsAdmin.clusterHtml().");
-    const c = json.cluster || {};
-    const nodes: Json[] = json.nodes || [];
-    const own = nodes.filter(function (n: Json): boolean {
-      return n.self;
-    })[0];
-    if (!c.clustered || nodes.length < 2) {
-      const first = own || nodes[0];
-      const html = admin.note(admin.esc(c.text || ''), 'Cluster') +
-        (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
-        (first && first.view && first.view.pools ? this.html(first.view)
-                                                 : '');
-      log.debug("Leaving WorkerPoolsAdmin.clusterHtml(). One node.");
-      return html;
-    }
-    const t = json.totals;
-    const html = '<h2 id="cluster">Cluster</h2><p>' + admin.esc(c.text) +
-      '</p>' + (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
-      '<table class="grid"><thead><tr><th>Pool</th><th>Worker threads</th>' +
-      '<th>Busy</th><th>Free</th><th>Started</th><th>Crashed</th>' +
-      '<th>Nodes on</th></tr></thead><tbody>' +
-      t.pools.map(function (p: Json): string {
-        return '<tr><td>' + admin.esc(p.title) + '</td><td>' +
-          admin.esc(p.currentWorkers) + '</td><td>' +
-          admin.esc(p.busyWorkers) + '</td><td>' +
-          admin.esc(p.freeWorkers) + '</td><td>' + admin.esc(p.forked) +
-          '</td><td>' + admin.esc(p.crashed) +
-          (p.failedStarts ? ' (' + admin.esc(p.failedStarts) + ' never ' +
-                            'started)' : '') + '</td><td>' +
-          admin.esc(p.nodesOn) + '</td></tr>';
-      }).join('') + '</tbody></table><p><small>' + admin.esc(t.text) +
-      '</small></p>' +
-      '<table class="grid"><thead><tr><th>Node</th><th>State</th>' +
-      '<th>Age</th></tr></thead><tbody>' +
-      nodes.map(function (n: Json): string {
-        return '<tr><td><a href="#node-' + admin.esc(n.name) + '">' +
-          admin.esc(n.name) + '</a>' + (n.self ? ' (this node)' : '') +
-          '</td><td>' + admin.esc(n.state) + '</td><td>' +
-          (n.ageSeconds === null ? '—' : admin.esc(n.ageSeconds) + ' s') +
-          '</td></tr>';
-      }).join('') + '</tbody></table>' +
-      nodes.map(function (n: Json): string {
-        const head = '<h2 id="node-' + admin.esc(n.name) + '">Node ' +
-          admin.esc(n.name) + (n.self ? ' (this node)' : '') + '</h2><p>' +
-          '<strong>' + admin.esc(n.state) + '</strong>: ' +
-          admin.esc(n.stateText) + '</p>';
-        if (!n.view || !Array.isArray(n.view.pools)) {
-          return head;
-        }
-        let body = '';
-        try {
-          body = self.html(n.view);
-        } catch (e) {
-          log.debug("Caught in WorkerPoolsAdmin.clusterHtml(): " +
-                    ((e && e.message) || e));
-          // A snapshot from another version of this page may lack a figure
-          // this one draws; the node is still listed, and says so.
-          return head + admin.warn('This node\'s snapshot could not be ' +
-                                   'drawn: ' + admin.esc((e && e.message) ||
-                                                         e) + '.');
-        }
-        // Another node's sections carry its name in their anchors, so the
-        // page's own `id="pool-request"` and the rest stay this node's.
-        return head + (n.self ? body
-          : body.replace(/ id="/g, ' id="' + admin.esc(n.name) + '-'));
-      }).join('');
-    log.debug("Leaving WorkerPoolsAdmin.clusterHtml().");
-    return html;
-  }
-
-  // A figure, or a dash for one that does not exist yet.
-  private ms(value: unknown): string {
     const { log } = this.deps;
-    log.debug("Entering WorkerPoolsAdmin.ms().");
-    log.debug("Leaving WorkerPoolsAdmin.ms().");
-    return value === null || value === undefined ? '—' : value + ' ms';
-  }
-
-  // The seven figures of one pool, as a table of two columns.
-  private figures(p: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering WorkerPoolsAdmin.figures().");
-    const r = p.restarts;
-    const t = p.responseTime;
-    const row = function (label: string, value: string, why: string):
-      string {
-      log.debug("Entering row().");
-      log.debug("Leaving row().");
-      return '<tr><th>' + admin.esc(label) + '</th><td>' + value +
-        '</td><td><small>' + why + '</small></td></tr>';
-    };
-    const html = '<table class="grid"><tbody>' +
-      row('Current workers', admin.esc(p.currentWorkers),
-          'worker threads started now, ' + admin.esc(p.readyWorkers) +
-          ' of them ready') +
-      row('Busy', admin.esc(p.busyWorkers), 'with a request in flight') +
-      row('Free', admin.esc(p.freeWorkers), 'ready and idle') +
-      row('Maximum workers', admin.esc(p.maxWorkers),
-          '<code>' + admin.esc(p.setting) + '</code>') +
-      row('Initial workers', admin.esc(p.initialWorkers),
-          'what the pool was started with') +
-      row('Restarts and crashes',
-          admin.esc(r.crashed) + ' crashed' +
-          (r.failedStarts ? ' (' + admin.esc(r.failedStarts) + ' never ' +
-                            'started)' : '') + ', ' +
-          admin.esc(r.replaced) + ' replaced, ' +
-          admin.esc(r.stopped) + ' stopped',
-          admin.esc(r.forked) + ' started in all; a crash is an exit ' +
-          'nobody asked for') +
-      row('Average response time',
-          this.ms(t.averageMs) + ' (recent ' +
-            this.ms(t.recentAverageMs) + ')',
-          admin.esc(t.answered) + ' answered, dispatch to answer; ' +
-          'worst ' + this.ms(t.maxMs)) +
-      '</tbody></table>';
-    log.debug("Leaving WorkerPoolsAdmin.figures().");
-    return html;
-  }
-
-  private html(json: Json): string {
-    const { log, admin } = this.deps;
-    const self = this;
-    log.debug("Entering WorkerPoolsAdmin.html().");
-    const tiles = '<div class="tiles">' +
-      json.pools.map(function (p: Json): string {
-        return admin.tile(p.state === 'off' ? 'off'
-                                            : String(p.currentWorkers),
-                          p.title);
-      }).join('') + '</div>';
-    const about = admin.note(
-      '<p>' + admin.esc(json.scopeText) + '</p><p>Every figure is read from ' +
-      'the pool\'s own module when the page is drawn, and counts from when ' +
-      'this process started. The sizes are Global settings on ' +
-      '<a href="/admin/config">Configuration</a>; this page changes ' +
-      'nothing.</p>', 'What this page is');
-    const sections = json.pools.map(function (p: Json): string {
-      const head = '<h2 id="pool-' + admin.esc(p.id) + '">' +
-        admin.esc(p.title) + '</h2><p><code>' + admin.esc(p.module) +
-        '</code> · <code>' + admin.esc(p.setting) + '</code> · <strong>' +
-        admin.esc(p.state) + '</strong>: ' + admin.esc(p.stateText) + '</p>';
-      if (p.state === 'off') {
-        return head;
-      }
-      let detail = '';
-      if (p.workers.length) {
-        detail = '<h3>Worker threads</h3><table class="grid"><thead><tr>' +
-          '<th>Thread</th><th>Slot</th><th>State</th><th>In flight</th>' +
-          '<th>Served</th><th>Up</th></tr></thead><tbody>' +
-          p.workers.map(function (w: Json): string {
-            return '<tr><td>' + admin.esc(w.threadId) + '</td><td>' +
-              admin.esc(w.slot === null ? '—' : w.slot) + '</td><td>' +
-              (w.retiring ? 'stopping' : !w.ready ? 'starting'
-                                       : w.busy ? 'busy' : 'free') +
-              '</td><td>' + admin.esc(w.inFlight) + '</td><td>' +
-              admin.esc(w.served) + '</td><td>' +
-              (w.upSeconds === null ? '—' : admin.esc(w.upSeconds) + ' s') +
-              '</td></tr>';
-          }).join('') + '</tbody></table>';
-      }
-      return head + self.figures(p) + detail;
-    }).join('');
-    log.debug("Leaving WorkerPoolsAdmin.html().");
-    return tiles + about + sections;
+    log.debug("Entering WorkerPoolsAdmin.clusterHtml().");
+    const drawn = WorkerPoolsPage.render(JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving WorkerPoolsAdmin.clusterHtml().");
+    return drawn;
   }
 
   /**
@@ -636,29 +481,6 @@ class WorkerPoolsAdmin {
     // is registered by the hand-over, in every process that loads the page.
     this.deps.snapshots().provide('workerPools', function (): Promise<Json> {
       return self.localView();
-    });
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      self.workerPoolsView({ node: req.query && req.query.node
-                                     ? String(req.query.node) : '' })
-        .then(function (json: Json): void {
-          if (json.notFound) {
-            errorCodes.mark(res, 'STS-CORE-0126');
-            res.status(404).type('text/plain')
-              .send('There is no node named ' + json.notFound + '.');
-            return;
-          }
-          admin.respond(req, res, json, 'Worker pools', PAGE,
-                        admin.messagesOf(req) + self.clusterHtml(json));
-        }).catch(function (e: any): void {
-        log.debug("Caught in GET " + PAGE + ": " + ((e && e.message) || e));
-        log.error(errorCodes.tag('STS-WORKER-0044') + 'The worker pools ' +
-                  'report could not be built: ' + ((e && e.message) || e));
-        errorCodes.mark(res, 'STS-WORKER-0044');
-        res.status(500).type('text/plain')
-          .send('The worker pools report could not be built.');
-      });
-      log.debug('Leaving GET ' + PAGE + '.');
     });
     log.debug("Leaving WorkerPoolsAdmin.registerRoutes().");
   }

@@ -439,6 +439,30 @@ new certificate (section 7.1), and the new tokens bind to it.
 `tls_client_certificate_bound_access_tokens` is advertised only where the port
 is TLS.
 
+### The admin console as a public client
+
+The admin console is being converted to a static application that runs in the
+browser and holds its own tokens (a public client,
+`token_endpoint_auth_method` `none`). Until that conversion is finished the
+seeded `sts-admin-console` client is still a confidential client, and nothing
+in this section applies to it.
+
+Once it is a public client, two rules apply to it and to no other client.
+Neither is a setting:
+
+* **Every token issued to it is DPoP-bound.** The token endpoint refuses a
+  request from it that carries no DPoP proof (`invalid_dpop_proof`). Its
+  refresh token is bound to the same key, as RFC 9449 section 5 requires for
+  any public client. The management API refuses an access token issued to it
+  that carries no `cnf.jkt`.
+* **It is the one public client a confidential-only FAPI profile allows.**
+  FAPI 1.0 Advanced and FAPI 2.0 support no public client. In a realm with one
+  of those profiles on, the console may still sign in. **The console does not
+  conform to the profile in that realm.** Every other client is held to the
+  profile, and the console's tokens are still sender-constrained.
+
+The user portal is not affected. It stays a confidential client.
+
 ### Requiring a sender constraint — five settings
 
 Neither mode requires DPoP or mutual TLS. OAuth 2.1 section 4.3.1 lets a public

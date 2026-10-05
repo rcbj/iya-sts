@@ -109,7 +109,7 @@ function obeys(place, k, what) {
   log.debug("Leaving obeys().");
 }
 
-async function theLiveWindow(cookie) {
+async function theLiveWindow(consoleClient) {
   log.debug("Entering theLiveWindow().");
   log.info("=== 1. the live window ===");
   const r = await api("");
@@ -122,7 +122,7 @@ async function theLiveWindow(cookie) {
           assert.ok(Number.isInteger(v.minimumCount) && v.minimumCount >= 1,
                     JSON.stringify(v.minimumCount));
           assert.ok(typeof v.liveSessions === "number", JSON.stringify(v));
-          if (cookie) {
+          if (consoleClient) {
             // This job's console sign-in is one of them.
             assert.ok(v.liveSessions >= 1, JSON.stringify(v).slice(0, 400));
             assert.ok(v.total.people !== null || v.total.suppressed,
@@ -194,16 +194,13 @@ async function theRefusals() {
   log.debug("Leaving theRefusals().");
 }
 
-async function thePage(cookie) {
+// THE PAGE, AS THE STATIC CONSOLE DRAWS IT (#446): its operation's answer
+// drawn by the console's own renderers (`console_signin.js`'s `get()`), since
+// every `/admin/*` path answers the same document at the cutover.
+async function thePage(consoleClient) {
   log.debug("Entering thePage().");
   log.info("=== 4. the page ===");
-  if (!cookie) {
-    log.info("  (the console gate is off in this stack: the page is " +
-             "checked without a session)");
-  }
-  const headers = cookie ? { Cookie: cookie } : {};
-  const world = await call("GET", base + "/admin/geolocation?window=30d",
-                           { headers: headers });
+  const world = await consoleClient.get("/admin/geolocation?window=30d");
   check("Monitoring → Geolocation is drawn with the map inline, no script " +
         "on it, and the outlines credited", function () {
           assert.strictEqual(world.status, 200, world.text.slice(0, 300));
@@ -217,8 +214,7 @@ async function thePage(cookie) {
           assert.ok(world.text.indexOf("Made with Natural Earth") >= 0,
                     "the outlines are not credited");
         });
-  const fr = await call("GET", base + "/admin/geolocation?country=FR",
-                        { headers: headers });
+  const fr = await consoleClient.get("/admin/geolocation?country=FR");
   check("a country's page has the zoom trail back through its continent",
         function () {
           assert.strictEqual(fr.status, 200, fr.text.slice(0, 300));
@@ -226,8 +222,8 @@ async function thePage(cookie) {
                     fr.text.indexOf('id="geo-zoom-world"') >= 0,
                     "no zoom trail");
         });
-  const json = await call("GET", base + "/admin/geolocation?format=json&" +
-                          "window=7d", { headers: headers });
+  const json = await consoleClient.get("/admin/geolocation?format=json&" +
+                                       "window=7d");
   const viaApi = await api("window=7d");
   check("?format=json is the management API's answer (rule 7)",
         function () {
@@ -237,9 +233,9 @@ async function thePage(cookie) {
               assert.deepStrictEqual(json.body[k], viaApi.body[k], k);
             });
         });
-  const bad = await call("GET", base + "/admin/geolocation?continent=" +
-                         "atlantis", { headers: headers });
-  check("a refused query is a 400 page", function () {
+  const bad = await consoleClient.get("/admin/geolocation?continent=" +
+                                      "atlantis");
+  check("a refused query is a 400 answer", function () {
     assert.strictEqual(bad.status, 400, bad.text.slice(0, 300));
   });
   log.debug("Leaving thePage().");
@@ -248,12 +244,12 @@ async function thePage(cookie) {
 async function main() {
   log.debug("Entering main().");
   const admin = "geo-admin-" + STAMP;
-  const cookie = await signin.signInToTheConsole(base, admin, log,
-                                                 { grant: "read" });
-  await theLiveWindow(cookie || "");
+  const consoleClient = await signin.signInToTheConsole(base, admin, log,
+                                                        { grant: "read" });
+  await theLiveWindow(consoleClient);
   await everyWindowAndLevel();
   await theRefusals();
-  await thePage(cookie || "");
+  await thePage(consoleClient);
   log.info("sts_admin_geolocation: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

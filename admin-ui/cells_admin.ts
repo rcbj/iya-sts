@@ -44,6 +44,8 @@ import InstanceSlot = require('../common/instance_slot');
 import cells = require('../common/cells');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
+// The page's renderer (#446): a `web_` module, loadable in a browser.
+import CellsPage = require('./web_cells');
 
 type Req = any;
 type Res = any;
@@ -425,137 +427,38 @@ class CellsAdmin {
   // -------------------------------------------------------------------------
   // THE PAGE.
   // -------------------------------------------------------------------------
-  private html(json: Json, people: Json | null): string {
-    const { log, admin } = this.deps;
+  // THE PAGE'S VIEW, AND `GET /admin-api/cells`' (#446): the cell map, and
+  // with `?people=` that cell's residents as `people`.
+  /**
+   * Returns the view the page is drawn from and the API operation answers.
+   *
+   * @param query - the query; `people` and `after` name a residents page
+   * @returns the view
+   */
+  async cellsPageView(query: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering CellsAdmin.cellsPageView().");
+    const q = query || {};
+    const asked = String(q.people || '');
+    const both = await Promise.all([
+      this.cellsView(),
+      asked ? this.peopleOf(asked, String(q.after || ''))
+        : Promise.resolve(null)
+    ]);
+    log.debug("Leaving CellsAdmin.cellsPageView().");
+    return Object.assign({}, both[0], both[1] ? { people: both[1] } : {});
+  }
+
+  // DRAWN BY `web_cells.ts` (#446): this page is converted for the static
+  // console, and its renderer is a module a browser can load. Until the
+  // cutover this process still draws it, handing the renderer the view passed
+  // THROUGH JSON, so it is held to what the API's caller receives.
+  private html(json: Json): string {
+    const { log } = this.deps;
     log.debug("Entering CellsAdmin.html().");
-    const esc = admin.esc;
-    const tiles = '<div class="tiles">' +
-      admin.tile(json.multi ? json.cell : '(one)', 'this cell') +
-      admin.tile(json.jurisdiction || '—', 'its jurisdiction') +
-      admin.tile(String(json.peers.length), 'other cells') +
-      admin.tile(json.store.globalReplicaLagMs === null ? '—'
-                   : String(json.store.globalReplicaLagMs) + ' ms',
-                 'global replica lag') +
-      '</div>';
-    const about = admin.note(
-      '<p>This service is deployed as <strong>cells</strong>: a copy of the ' +
-      'whole stack per region, each in one legal jurisdiction. A person is ' +
-      'homed in one cell and their entry exists only there; realms, ' +
-      'settings, applications, policies and keys are the global tier every ' +
-      'cell reads. No cell\'s address is published anywhere — this page ' +
-      'names cells, never where they are.</p><p>A request that belongs to ' +
-      'another cell is relayed there whole; a person homed elsewhere signs ' +
-      'in at home; a session may be held away from home only where the ' +
-      'transfer policy permits it (issue #98).</p>',
-      'What this page is');
-    const single = json.multi ? '' : admin.note(
-      '<p><code>cells.id</code> is empty: this is <strong>single-cell ' +
-      'mode</strong>, the whole service in one deployment and one ' +
-      'database, exactly as before cells existed.</p>', 'Single-cell mode');
-    // THE REGIONAL CONSOLES (#361): each cell's own console, through its
-    // own load balancer — the one place a cell's address is drawn, by
-    // rcbj's decision. An ABSOLUTE URL, so the realm rewrite leaves it
-    // alone; the console there is its own sign-in, on its own host.
-    const consoleCell = function (c: Json): string {
-      if (!c.consoleUrl) {
-        return '<span class="sub">none configured</span>';
-      }
-      const href = String(c.consoleUrl) + '/admin';
-      return '<a href="' + esc(href) + '">' + esc(href) + '</a>' +
-        (c.self ? ' <small>(this cell\'s own)</small>' : '');
-    };
-    const map = '<h2>The cells</h2><table class="grid"><thead><tr>' +
-      '<th>Cell</th><th>Jurisdiction</th><th>Reachable</th><th>People ' +
-      'held</th><th>Its own console</th></tr></thead><tbody>' +
-      [{ id: json.cell, jurisdiction: json.jurisdiction, self: true,
-         consoleUrl: json.consoleUrl }]
-        .concat(json.peers).map(function (c: Json): string {
-          const held = (json.store.peoplePerCell || []).filter(function (
-            row: Json): boolean {
-            return row.cell === c.id;
-          }).reduce(function (n: number, row: Json): number {
-            return n + row.people;
-          }, 0);
-          return '<tr><th>' + esc(c.id || '(this one)') +
-            (c.self ? ' <small>(this cell)</small>' : '') + '</th><td>' +
-            esc(c.jurisdiction || '') + '</td><td>' +
-            (c.self ? 'yes' : c.reachable ? 'yes, ' + c.answeredMs + ' ms'
-                                          : '<strong>no</strong> — ' +
-                                            esc(c.error || '')) +
-            '</td><td>' + held + '</td><td>' + consoleCell(c) +
-            '</td></tr>';
-        }).join('') + '</tbody></table>' +
-      '<p class="sub">Each cell\'s own console is reached through that ' +
-      'cell\'s load balancer, under a name of its own, and signs in there: ' +
-      'what it shows is that cell. The shared public name goes to whichever ' +
-      'cell is nearest. Every cell\'s members are also on ' +
-      '<a href="/admin/cluster">Cluster</a>, asked over the inter-cell ' +
-      'channel.</p>';
-    const store = '<h2>The store</h2><table class="grid"><tbody>' +
-      '<tr><th>Tiered</th><td>' + (json.store.tiered ? 'yes: the global ' +
-        'tier\'s database and this cell\'s own' : 'no') + '</td></tr>' +
-      '<tr><th>Routing index</th><td>' + esc(JSON.stringify(
-        json.store.routing || {})) + '</td></tr>' +
-      '<tr><th>Sessions held here for people homed elsewhere</th><td>' +
-      json.sessions.projections + '</td></tr>' +
-      '<tr><th>Sessions exported from here</th><td>' +
-      json.sessions.exports + '</td></tr>' +
-      '<tr><th>Requests relayed from here</th><td>' +
-      json.placement.relayed + '</td></tr>' +
-      '<tr><th>Inter-cell listener</th><td>' +
-      (json.channel.listening ? 'port ' + json.channel.port
-                              : esc(json.channel.listenError ||
-                                    'not listening')) + '</td></tr>' +
-      '<tr><th>Operations</th><td><small>' +
-      esc(json.channel.operations.join(', ')) + '</small></td></tr>' +
-      '</tbody></table>';
-    const options = json.peers.map(function (c: Json): string {
-      return '<option value="' + esc(c.id) + '">' + esc(c.id) + ' (' +
-        esc(c.jurisdiction) + ')</option>';
-    }).join('');
-    const ask = json.multi && json.peers.length
-      ? '<h2>Another cell\'s residents</h2><p>This console lists the ' +
-        'people homed in THIS cell. Another cell\'s are asked of that cell, ' +
-        'which answers only where its release policy permits its people to ' +
-        'be listed from here.</p><form method="get" action="' + PAGE + '">' +
-        '<select name="people">' + options + '</select> ' +
-        '<button type="submit">List</button></form>'
-      : '';
-    let listed = '';
-    if (people) {
-      listed = people.refused
-        ? admin.warn('<p>Cell <code>' + esc(people.cell) + '</code>: ' +
-                     esc(people.refused) + '</p>')
-        : '<table class="grid"><thead><tr><th>Login name</th>' +
-          '<th>Display name</th><th>entryUUID</th></tr></thead><tbody>' +
-          (people.people || []).map(function (p: Json): string {
-            return '<tr><td>' + esc(p.name) + '</td><td>' +
-              esc(p.displayName) + '</td><td><code>' + esc(p.uuid) +
-              '</code></td></tr>';
-          }).join('') + '</tbody></table>' +
-          (people.next ? '<p><a href="' + PAGE + '?people=' +
-                         encodeURIComponent(people.cell) + '&amp;after=' +
-                         encodeURIComponent(people.next) + '">Next ' +
-                         'page</a></p>' : '');
-    }
-    // RE-HOMING (§8.8): an administrator's act, drawn only where there is
-    // somewhere to move a person to.
-    const rehome = json.multi && json.peers.length
-      ? '<h2>Move a person\'s home</h2><p>Moves a person homed in THIS ' +
-        'cell to another: everything they hold is ended first, their entry, ' +
-        'devices and group memberships go to the other cell with their ' +
-        'entryUUID kept, their credentials are sealed again under that ' +
-        'cell\'s key, and they are taken out of this one. The other cell ' +
-        'must be in a jurisdiction this realm may place people in.</p>' +
-        '<form method="post" action="' + PAGE + '">' +
-        '<input type="hidden" name="action" value="rehome">' +
-        '<label>Login name <input name="username" required></label> ' +
-        '<label>To <select name="target">' + options + '</select></label> ' +
-        '<button type="submit">Move</button></form>'
-      : '';
+    const drawn = CellsPage.render(JSON.parse(JSON.stringify(json)));
     log.debug("Leaving CellsAdmin.html().");
-    return tiles + about + single + map + store + ask + listed + rehome +
-      admin.configFormsFor(PAGE);
+    return drawn;
   }
 
   /**
@@ -568,53 +471,6 @@ class CellsAdmin {
     const { log, admin } = this.deps;
     const self = this;
     log.debug("Entering CellsAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      const asked = String((req.query && req.query.people) || '');
-      Promise.all([
-        self.cellsView(),
-        asked ? self.peopleOf(asked, String((req.query && req.query.after) ||
-                                            '')) : Promise.resolve(null)
-      ]).then(function (both: Json[]) {
-        const json = Object.assign({}, both[0],
-                                   both[1] ? { people: both[1] } : {});
-        admin.respond(req, res, json, 'Cells', PAGE,
-                      admin.messagesOf(req) + self.html(both[0], both[1]));
-        log.debug('Leaving GET ' + PAGE + '.');
-      }, function (err: any) {
-        log.error(errorCodes.tag('STS-CELL-0190') + 'cells: ' + PAGE +
-                  ' could not be drawn: ' + ((err && err.message) || err));
-        errorCodes.mark(res, 'STS-CELL-0190');
-        res.status(500).type('text/plain').send('The cell map could not ' +
-                                                'be read.\n');
-      });
-    });
-    app.post(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering POST ' + PAGE + '.');
-      if (!admin.mayWrite(req)) {
-        admin.respondToAction(req, res, PAGE, { ok: false, errors: [
-          'This console session may read but not write.'] });
-        log.debug('Leaving POST ' + PAGE + '. Read-only.');
-        return;
-      }
-      const body = helpers.parseBody(req) || {};
-      if (String(body.action || '') !== 'rehome') {
-        admin.respondToAction(req, res, PAGE, { ok: false, errors: [
-          'Unknown action.'] });
-        log.debug('Leaving POST ' + PAGE + '. Unknown action.');
-        return;
-      }
-      // The console's signed-in administrator, as every other console act
-      // names its actor (`admin-core/admin_views.ts`' gateStateFor()).
-      const state = require('../admin-core/admin_views').gateStateFor(req);
-      self.rehomeAction(String(body.username || ''),
-                        String(body.target || ''),
-                        String((state && state.username) || 'administrator'))
-        .then(function (result: Json) {
-          admin.respondToAction(req, res, PAGE, result);
-          log.debug('Leaving POST ' + PAGE + '.');
-        });
-    });
     const channel = require('../common/cell_channel');
     channel.registerOp('cell-ping', function () {
       return { cell: cells.id(), jurisdiction: cells.jurisdiction(),
@@ -661,6 +517,7 @@ export = {
   PAGE: PAGE,
   // For `mgmt-api/admin_api.ts` (rule 7).
   cellsView: slot.forward('cellsView'),
+  cellsPageView: slot.forward('cellsPageView'),
   peopleOf: slot.forward('peopleOf'),
   // For admin-ui/admin.ts's Cluster page and GET /admin-api/cluster (#361).
   peerClusters: slot.forward('peerClusters'),

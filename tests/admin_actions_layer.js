@@ -179,7 +179,15 @@ function checkOneLayerIsALibrary(t, layer) {
   // the request (headers, cookies, the body, a session) is the console's.
   const reads = (code.match(/(?:^|[^.\w$])req\.[a-zA-Z]+/g) || [])
     .map(function (r) { return r.trim(); });
-  const illegal = reads.filter(function (r) { return !/req\.query$/.test(r); });
+  // ONE MORE SINCE THE CUTOVER (#446): `req.adminApiCaller`, the caller
+  // `/admin-api`'s gate verified and left on the request. It is not a header
+  // or a cookie: it is the gate's answer to "who is asking", which the
+  // views' `gateStateFor()` reads so a realm administrator's token is drawn
+  // the realm administrator's view — the static console has no session to
+  // read instead.
+  const illegal = reads.filter(function (r) {
+    return !/req\.(query|adminApiCaller)$/.test(r);
+  });
   if (/admin_actions/.test(layer)) {
     t.check(reads.length === 0,
             'and it never touches req either — an action takes a parsed body',
@@ -284,7 +292,7 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 // (4) THE FORWARDS (`FORWARDED` above). One statement, one writer.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// AND THE FOUR THAT STAY. This is the finish line, written down.
+// AND THE FEW THAT STAY. This is the finish line, written down.
 //
 // The management API calls exactly these on the console module and nothing
 // else. Three of them are the console describing ITSELF — which pages it has,
@@ -301,9 +309,16 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 // 2026-09-30 (#361): it is the same answer after the row's `prepare` step
 // (a page whose settings read the cell's own state first), and it calls
 // `protocolSettingsJsonFor()` itself. Still the console describing itself.
+//
+// `dashboardJson` JOINED IT ON 2026-10-05 (#446): `GET /admin-api/status` is
+// what the console index is drawn from, and the index's guide is the
+// sidebar's SECTIONS filtered by the gate — the console describing which of
+// its own pages this reader may see. `consoleJson()`'s totals are inside it.
+// `shellJson` with it, for `GET /admin-api/console`: the console's frame —
+// its sections, its labels, its banners — for the caller.
 // ---------------------------------------------------------------------------
 const MAY_STAY_ON_THE_CONSOLE = ['consoleJson', 'configJson',
-  'preparedSettingsJsonFor', 'listField'];
+  'preparedSettingsJsonFor', 'listField', 'dashboardJson', 'shellJson'];
 
 function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
   log.debug("Entering checkOnlyTheConsolesOwnKnowledgeIsLeft().");
@@ -319,7 +334,7 @@ function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
           'it calls only the console\'s own knowledge (' + called.join(', ') +
           ')',
           'everything else it needs comes from admin-core/. A name here that ' +
-          'is not one of the four is the API reading through the console ' +
+          'is not on that list is the API reading through the console ' +
           'again, which is the coupling this directory exists to remove: ' +
           'found ' + (unexpected.join(', ') || 'none'));
 

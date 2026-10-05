@@ -33,13 +33,16 @@
 //      across pages, because two pages that each show the same row look
 //      perfectly well paged one at a time.
 //   4. **A WITHDRAWAL IS REFUSED AT THE AUTHORIZATION ENDPOINT** — through the
-//      API and through a real console form carrying the console's CSRF token —
-//      and the 303 comes back to the filter the reader was on.
+//      API and through the console's Withdraw form, which since the #446
+//      cutover is the static console's token sending that form to its
+//      operation (`console_signin.js`'s `act()`), answered as the operation
+//      answers rather than with a 303.
 //   5. **THE NEGATIVES**: an unknown request_uri and a value outside the
 //      namespace refused 400 with no error code in the reply, an unknown
 //      action refused naming the one there is, a query the page does not
-//      accept refused, a form with no CSRF token refused by the gate, and the
-//      API refused to a caller holding nothing.
+//      accept refused, and the API refused to a caller holding nothing. (A
+//      form with no CSRF token went with the server-rendered console: the
+//      static console holds no session to forge, only a DPoP-bound token.)
 //
 // **WHAT IT DOES NOT ASSERT, AND WHY.** A session holding Admin READ and not
 // Admin Write being refused the Withdraw button: when this was written,
@@ -104,8 +107,9 @@ const PREFIX = "urn:ietf:params:oauth:request_uri:";
 const PAGE = "/admin/oauth2/monitor";
 
 // A section that stops being called takes its assertions with it and the run
-// still says "passed"; this is the floor that notices.
-const FLOOR = 43;
+// still says "passed"; this is the floor that notices. 42 since the #446
+// cutover took the CSRF-less form's refusal with the console's session.
+const FLOOR = 42;
 
 var checks = 0;
 function check(what, fn) {
@@ -488,102 +492,77 @@ async function theApiWithdraws(held) {
 async function theConsoleWithdraws(held) {
   log.debug("Entering theConsoleWithdraws().");
   log.info("=== 4. /admin/oauth2/monitor in the console ===");
+  // THE PAGE IS THE STATIC CONSOLE SINCE #446: every `/admin/*` path answers
+  // the same document, which signs in in the browser and holds nothing of
+  // this service's state — so a reader with no token is shown none of it.
   const anonymous = await send(base + PAGE);
-  check("the page is behind the console's gate", function () {
-    assert.ok(anonymous.status === 302 || anonymous.status === 303,
-      "status " + anonymous.status);
+  check("the page, asked with no token, is the console's document and " +
+        "carries none of what the page shows", function () {
+    assert.strictEqual(anonymous.status, 200, "status " + anonymous.status);
+    assert.ok(/console\.js/.test(anonymous.raw), anonymous.raw.slice(0, 200));
+    assert.ok(anonymous.raw.indexOf(held.a[1]) < 0,
+              "a held request_uri is in the console's document");
   });
-  const cookie = await consoleSignIn.signInToTheConsole(base, OPERATOR, log,
-                                                        { grant: "write" });
-  const withSession = { headers: cookie ? { cookie: cookie } : {} };
+  const consoleClient = await consoleSignIn.signInToTheConsole(base,
+    OPERATOR, log, { grant: "write" });
   const who = "client_id=" + encodeURIComponent(CLIENT_A);
-  const page = await send(base + PAGE + "?" + who, withSession);
-  check("signed in, the page answers 200 in the console's shell",
-        function () {
-          assert.strictEqual(page.status, 200,
-            page.status + " " + page.raw.slice(0, 300));
-          assert.ok(/text\/html/.test(page.headers.get("content-type")));
-          assert.ok(/no-store/.test(page.headers.get("cache-control")));
+  const query = { client_id: CLIENT_A };
+  const answered = await consoleClient.page(PAGE, query);
+  const page = await consoleClient.draw(PAGE, query);
+  check("signed in, the page's operation answers 200, no-store, and the " +
+        "page is drawn from it", function () {
+          assert.strictEqual(answered.status, 200,
+            answered.status + " " + answered.text.slice(0, 300));
+          assert.ok(/no-store/.test(answered.headers.get("cache-control")));
+          assert.ok(page.html.length > 200, page.html.slice(0, 200));
         });
   check("it draws the RFC 9126 section, every counter's label, and the two " +
         "pushed requests still held — each request_uri WHOLE in the markup",
         function () {
-          assert.ok(page.raw.indexOf("Pushed authorization requests " +
-                                     "(RFC 9126)") >= 0);
-          assert.ok(page.raw.indexOf("authorization requests pushed (201)") >=
+          assert.ok(page.html.indexOf("Pushed authorization requests " +
+                                      "(RFC 9126)") >= 0);
+          assert.ok(page.html.indexOf("authorization requests pushed (201)") >=
                     0);
-          assert.ok(page.raw.indexOf("request_uris deleted by an " +
-                                     "administrator") >= 0);
-          assert.ok(page.raw.indexOf(held.a[1]) >= 0, "held.a[1] not drawn");
-          assert.ok(page.raw.indexOf(held.a[2]) >= 0, "held.a[2] not drawn");
-          assert.ok(page.raw.indexOf(held.a[0]) < 0,
+          assert.ok(page.html.indexOf("request_uris deleted by an " +
+                                      "administrator") >= 0);
+          assert.ok(page.html.indexOf(held.a[1]) >= 0, "held.a[1] not drawn");
+          assert.ok(page.html.indexOf(held.a[2]) >= 0, "held.a[2] not drawn");
+          assert.ok(page.html.indexOf(held.a[0]) < 0,
             "the withdrawn request_uri is still drawn");
-          assert.ok(page.raw.indexOf("client_secret_basic") >= 0);
+          assert.ok(page.html.indexOf("client_secret_basic") >= 0);
         });
-  check("with no script on it, and a Withdraw form per row carrying the " +
-        "console's CSRF token", function () {
-          assert.ok(!/<script/i.test(page.raw), "a <script> element");
-          assert.ok(/name="action" value="delete-pushed-request"/.test(
-            page.raw));
-          assert.ok(/name="csrf_token" value="[^"]+"/.test(page.raw),
-            "no CSRF token in the forms");
-        });
-  const pageJson = await send(base + PAGE + "?format=json&" + who,
-                              withSession);
+  check("with no script in it, and a Withdraw form per row", function () {
+    assert.ok(!/<script/i.test(page.html), "a <script> element");
+    assert.ok(/name="action" value="delete-pushed-request"/.test(page.html));
+  });
   const apiJson = await getApi("/oauth2/monitor?" + who);
-  check("?format=json is the same model GET /admin-api/oauth2/monitor " +
+  check("the page is drawn from the model GET /admin-api/oauth2/monitor " +
         "answers (rule 7)", function () {
-          assert.strictEqual(pageJson.status, 200, pageJson.raw.slice(0, 200));
-          assert.deepStrictEqual(Object.keys(pageJson.body).sort(),
+          assert.deepStrictEqual(Object.keys(page.json).sort(),
                                  Object.keys(apiJson.body).sort());
-          assert.strictEqual(pageJson.body.sections[0].pushedRequests.total,
+          assert.strictEqual(page.json.sections[0].pushedRequests.total,
                              apiJson.body.sections[0].pushedRequests.total);
         });
-  const paged = await send(base + PAGE + "?per=1&" + who, withSession);
+  const paged = await consoleClient.draw(PAGE, { client_id: CLIENT_A,
+                                                 per: "1" });
   check("per=1 draws a pager over the two held requests", function () {
-    assert.ok(/page 1 of 2 — pushed requests/.test(paged.raw),
-      (paged.raw.match(/page \d+ of \d+[^<]*/g) || []).join(" | "));
+    assert.ok(/page 1 of 2 — pushed requests/.test(paged.html),
+      (paged.html.match(/page \d+ of \d+[^<]*/g) || []).join(" | "));
   });
-  const badQuery = await send(base + PAGE + "?state=everything", withSession);
+  const badQuery = await consoleClient.page(PAGE, { state: "everything" });
   check("a state the page does not know is refused 400 before anything is " +
         "read", function () {
-          assert.strictEqual(badQuery.status, 400, badQuery.raw.slice(0, 200));
+          assert.strictEqual(badQuery.status, 400, badQuery.text.slice(0, 200));
         });
 
-  const csrf = (page.raw.match(/name="csrf_token" value="([^"]+)"/) ||
-                [])[1] || "";
-  function form(fields) {
-    return send(base + PAGE, {
-      method: "POST",
-      headers: Object.assign({ "Content-Type":
-                                 "application/x-www-form-urlencoded" },
-                             withSession.headers),
-      body: new URLSearchParams(fields).toString()
-    });
-  }
-  const noToken = await form({ action: "delete-pushed-request",
-                               request_uri: held.a[1] });
-  check("a Withdraw posted WITHOUT the CSRF token is refused by the gate and " +
-        "withdraws nothing", function () {
-          assert.strictEqual(noToken.status, 403,
-            noToken.status + " " + noToken.raw.slice(0, 200));
-        });
-  const pressed = await form({ action: "delete-pushed-request",
-                               request_uri: held.a[1],
-                               back: "?" + who + "&per=5&next=//evil.test",
-                               csrf_token: csrf });
-  check("pressing Withdraw answers a 303 back to the filter the reader was " +
-        "on, with a notice, and nothing from `back` the page does not own",
-        function () {
-          assert.strictEqual(pressed.status, 303,
-            pressed.status + " " + pressed.raw.slice(0, 300));
-          assert.ok(/notice=/.test(pressed.location), pressed.location);
-          assert.ok(pressed.location.indexOf(
-            "client_id=" + encodeURIComponent(CLIENT_A)) >= 0,
-            pressed.location);
-          assert.ok(pressed.location.indexOf("evil") < 0, pressed.location);
-          assert.ok(/^\/admin\/oauth2\/monitor\?/.test(pressed.location),
-            pressed.location);
+  const pressed = await consoleClient.act(PAGE, {
+    action: "delete-pushed-request", request_uri: held.a[1] });
+  check("pressing Withdraw is answered by the operation: 200, ok, with the " +
+        "sentence the console draws in its notice", function () {
+          assert.strictEqual(pressed.status, 200,
+            pressed.status + " " + pressed.text.slice(0, 300));
+          assert.ok(pressed.json && pressed.json.ok === true,
+                    pressed.text.slice(0, 300));
         });
   const after = (await parSection(who)).pushedRequests;
   check("the store holds one request for " + CLIENT_A + " now", function () {
@@ -596,14 +575,16 @@ async function theConsoleWithdraws(held) {
           assert.strictEqual(refusedHere.status, 400);
           assert.ok(/invalid_request_uri/.test(refusedHere.raw));
         });
-  const again = await form({ action: "delete-pushed-request",
-                             request_uri: held.a[1], csrf_token: csrf });
-  check("withdrawing it a second time comes back with an error notice, not " +
-        "a notice of success", function () {
-          assert.strictEqual(again.status, 303, again.raw.slice(0, 200));
-          assert.ok(/error=/.test(again.location), again.location);
-          assert.ok(!/STS-/.test(again.location),
-            "an error code reached the browser: " + again.location);
+  const again = await consoleClient.act(PAGE, {
+    action: "delete-pushed-request", request_uri: held.a[1] });
+  check("withdrawing it a second time is refused with a reason, not " +
+        "answered as a success, and no error code reaches the browser",
+        function () {
+          assert.strictEqual(again.status, 400, again.text.slice(0, 200));
+          assert.ok(again.json && again.json.ok === false,
+                    again.text.slice(0, 200));
+          assert.ok(!/STS-[A-Z]+-\d{4}/.test(again.text),
+            "an error code reached the browser: " + again.text);
         });
   log.debug("Leaving theConsoleWithdraws().");
 }

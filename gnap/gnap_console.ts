@@ -141,14 +141,14 @@ class GnapConsole {
     return errorCodes.mark(result, code);
   }
 
-  private settingsJson(): any[] {
-    const { log, config } = this.deps;
+  private settingsJson(): any {
+    const { log, adminViews } = this.deps;
     log.debug("Entering GnapConsole.settingsJson().");
-    const group = config.groups().filter(function (one) {
-      return one.group === 'GNAP';
-    })[0];
     log.debug("Leaving GnapConsole.settingsJson().");
-    return group ? group.settings : [];
+    // THE PAGE'S SETTINGS BLOCK (#446), as every page that owns settings
+    // answers it — the page is drawn from this view alone. It was the GNAP
+    // group's bare rows until then.
+    return adminViews.settingsBlockOf('/admin/gnap');
   }
 
   private grantRow(grant: any) {

@@ -13,7 +13,7 @@ same commit that changes the decision it records.
 | `/admin-api` and its OpenAPI document | Node (`mgmt-api/`) | **Rust**, same contract |
 | The scheduler, every scheduled job, every cache, the store, the cluster | Node | **Rust**, in the runtime process |
 | Remote XACML PEP (`xacml-pep/`) | Node container | **Rust**, `xacml-pep` binary, same container contract |
-| Admin console `/admin`, user portal `/portal` | Node, in the service process, calling ~73 modules in process | **TypeScript single-page applications**, compiled to static files when the image is built, **served by the runtime**, talking to it **only through the management API** (owner, 2026-10-05). No Node process at runtime |
+| Admin console `/admin`, user portal `/portal` | Node, in the service process, calling ~73 modules in process | **TypeScript single-page applications**, compiled to static files when the image is built, **served by the runtime**, talking to it **only through the management API** (owner, 2026-10-05). No Node process at runtime. **The console's source and build stay Node.js / TypeScript for good, and it is converted on the Node service first (#446)** |
 | Embedded debugger (`debugger/`) | Parent project's build output served by Node | **Unchanged.** It is another project's artifact. The runtime starts it as a child process, as today. |
 | `tests/vendored/` (the protocol half of the suite) | Runs against a URL | **Unchanged.** It is the oracle for equivalent behaviour. |
 
@@ -44,9 +44,10 @@ sequence of phases, each of which leaves a service that passes the suite
          │  listeners · TLS · realm layer · CSP · every protocol family │
          │  /admin-api  /account-api  · scheduler · caches · store      │
          │  /admin/*, /portal/*  ── the two SPAs' static files          │
-         │  the SPAs' backend-for-frontend: OIDC client, token holder   │
+         │  the portal's backend-for-frontend: OIDC client, token holder│
          └──────────────────────────────▲──────────────────────────────┘
-                                        │ same origin, session cookie
+                                        │ same origin; console: DPoP-bound
+                                        │ token, portal: session cookie
                      ┌──────────────────┴──────────────────┐
                      │  browser: console SPA · portal SPA   │
                      │  (TypeScript, built at image build)  │
@@ -58,20 +59,46 @@ sequence of phases, each of which leaves a service that passes the suite
   runtime serves at `/admin/` and `/portal/` (owner, 2026-10-05). There is no
   Node process at runtime. The paths, the origin and the cookies stay as they
   are today, so the OIDC redirect URIs and the suite's URLs do not move.
+  **The console is converted on the Node service first (#446)**, which
+  serves the same static files on the same paths — **done on
+  `feature/446` (2026-10-05)**: `/admin` and `/admin/*` answer one document
+  and `/admin/console.js`, and every page and form goes through
+  `/admin-api`. Its source and its build
+  stay Node.js / TypeScript for good; only its output is in the runtime's
+  image. The build tool is esbuild, as a bundler, with no front-end
+  framework (owner, 2026-10-05): the console's existing renderers are kept.
 * **The SPAs talk to the runtime only through the management API**
   (`/admin-api`, `/account-api`, section 5). Everything they show comes from
   an API response, and everything they change goes through an API call.
-* **The tokens never reach the browser (decision D9).** The runtime is the
-  SPAs' backend-for-frontend, as the IETF's *OAuth 2.0 for Browser-Based
-  Applications* recommends: the console and portal stay confidential OIDC
-  clients of the runtime's own authorization server, as today
-  (`private_key_jwt`, PKCE), the runtime holds the person's access and
+* **The console is a public client, and its tokens are bound to a key the
+  browser cannot export (decision D9, REVERSED for the console by the owner
+  the day it was made, #446).** The console runs the authorization code
+  flow with PKCE and no client credential, holds its access and refresh
+  tokens in memory only, and proves possession of a DPoP key (RFC 9449) on
+  every call. The key is a WebCrypto key generated as non-extractable, so a
+  script injected into the page can use a token while the page is open and
+  cannot take one away. Refresh tokens rotate and are bound to the same
+  key. `/admin-api`'s gate is unchanged — it already verifies `cnf.jkt` —
+  and the roles it enforces are the person's. No cookie carries authority
+  on `/admin-api`, so the console has no CSRF token. Three things follow,
+  each the owner's decision:
+  * In a realm with a FAPI profile on, the seeded console client is the one
+    public client `fapi.js` allows, and the console is documented as not
+    conforming there.
+  * `adminApi.authRequired=false` is honoured in development mode only,
+    because the API's gate is now the console's only gate.
+  * The console's static files are public, so nothing secret is built into
+    them.
+* **The portal's tokens never reach the browser (decision D9, as first
+  made).** The runtime is the portal's backend-for-frontend, as the IETF's
+  *OAuth 2.0 for Browser-Based Applications* recommends: the portal stays a
+  confidential OIDC client of the runtime's own authorization server, as
+  today (`private_key_jwt`, PKCE), the runtime holds the person's access and
   refresh tokens server-side against an `HttpOnly`, `SameSite`, `Secure`
-  session cookie, and an API call from the SPA carries that cookie and is
+  session cookie, and an API call from the portal carries that cookie and is
   answered with the PERSON's token's authority — never a credential of the
-  console's own. So the roles the API enforces are the person's, as they are
-  on the console today, and a script injected into the page has no token to
-  steal. A cookie-carried call that changes state also carries a CSRF token.
+  portal's own. A script injected into the page has no token to steal. A
+  cookie-carried call that changes state also carries a CSRF token.
 * **The SPAs run script, and nothing else here does (decision D10).** Every
   page of this service works without JavaScript today (`script-src 'none'`,
   thirteen argued exceptions). A single-page application cannot, so `/admin/`
@@ -297,9 +324,10 @@ actions take `(body, actor)` and are shared with the API.
 1. **The console calls `/admin-api` with the signed-in operator's access
    token.** The console is already an OIDC relying party of this service
    (`common/oidc_rp.ts`). Its authorization request adds the `admin:read` /
-   `admin:write` scopes and the API's audience. The backend-for-frontend
-   (section 2, D9) holds that token and presents it on the SPA's behalf,
-   refreshed with the relying-party session and ended with it.
+   `admin:write` scopes and the API's audience. **The console holds that
+   token itself, as a public client, bound to its DPoP key (section 2, D9
+   as reversed, #446)**; the token names the sign-on session it came from
+   and stops working when that session ends.
    **The API's gate is unchanged**: held roles ∩ carried scopes, checked at
    every call, so a role revoked after minting stops working at once. The
    audit `actor` becomes the token's subject. **This is the same security
@@ -333,9 +361,13 @@ actions take `(body, actor)` and are shared with the API.
    `utoipa` from the same declarations, must equal it, except for the
    operations a phase adds.
 
-The SPAs are written against the Rust runtime's API, family by family, as
-each family's operations land there; they are pure API clients from their
-first commit. The suite's Selenium jobs (`sts_admin_console.js`,
+**The console is converted first, on the Node service (#446, owner,
+2026-10-05)**: every page becomes a pure client of Node's `/admin-api`,
+which is expanded until no page needs anything else. The Rust runtime then
+inherits a finished console and an OpenAPI document that is complete. The
+portal is written against the Rust runtime's API, family by family, as each
+family's operations land there; it is a pure API client from its first
+commit. The suite's Selenium jobs (`sts_admin_console.js`,
 `sts_xacml_editor.js`) are adapted to pages drawn in the browser, and the
 rule-7 parity jobs keep walking the console's page list.
 
@@ -452,7 +484,7 @@ the vectors are checked in.
 | **D6** | **The in-process half of the suite** (`tests/*.js`, about 150k lines) does not run against Rust. | Rewrite each file as Rust tests in the phase that moves what it tests, and delete it from `tests/` in that commit, with `tests/CLAUDE.md`'s table updated |
 | **D7** | **`/account-api`** as a second API rather than more `/admin-api` operations. | Accept it. A person acting on their own entry is a different authority from an operator acting on anyone's, and one API holding both would put that difference in a parameter |
 | **D8** | **The embedded debugger** stays the parent project's Node build, run as a child process. | Accept it |
-| **D9** | **Where the SPAs' tokens live.** | **DECIDED by the owner, 2026-10-05: a backend-for-frontend in the runtime** — the tokens stay server-side behind a session cookie (section 2) |
+| **D9** | **Where the SPAs' tokens live.** | **DECIDED by the owner, 2026-10-05, and REVERSED FOR THE CONSOLE the same day (#446)**: the console is a public client whose tokens are in the browser, in memory, bound to a non-extractable DPoP key; it is exempt from FAPI's confidential-client rule; and `adminApi.authRequired=false` is development-only. **The portal keeps the first decision**: a backend-for-frontend in the runtime, the tokens server-side behind a session cookie (section 2) |
 | **D10** | **Script on the console and portal.** | **DECIDED by the owner, 2026-10-05: `script-src 'self'` on `/admin/` and `/portal/` only**, reversing the works-without-script rule for those two surfaces (section 2) |
 
 ## 10. How each phase is proved
@@ -489,7 +521,7 @@ The order follows dependency: nothing is ported before what it calls.
 | **1** | **The workspace and its conventions; `sts-xacml` (the engine, held to the vendored OASIS suite, 454/455 today); the `xacml-pep` binary replacing the Node container.** | The PEP is the one component that can be replaced END TO END with no coexistence machinery: it is already a separate container with an HTTP contract (`/xacml/pep/*`, `POST /xacml/pip`, mTLS), and `tests/vendored/sts_xacml_remote_pep.js` already holds that container to it. It proves the conventions on something real, and the engine crate is reused by the runtime in phase 6 |
 | **2** | `sts-core` (settings, error codes, mode, logging), `sts-crypto` complete with the vector tests, `sts-pki`. | Every family depends on them. Nothing in production calls them yet |
 | **3** | `sts-store` (memory, ldif, postgres), `sts-cluster` (membership, leases, fencing, claims, `Scheduler`), `sts-cache`, `sts-http`, the `sts-runtime` binary and image, realms, and the `/admin-api` operations every suite job sets itself up with (realms, users, groups, applications, settings). | Every later phase's suite jobs stand on these |
-| **4** | First families, the self-contained ones: `pki` (revocation and `/crypto/metadata`), `oidfed`, `ssf`, `scim`, `xacml` (the PDP side), the enrollment trio. Each with its jobs, caches and `/admin-api` operations. The console and portal pages of each family switch to API calls in Node in the same phase. | Small surfaces, few session interactions |
+| **4** | First families, the self-contained ones: `pki` (revocation and `/crypto/metadata`), `oidfed`, `ssf`, `scim`, `xacml` (the PDP side), the enrollment trio. Each with its jobs, caches and `/admin-api` operations. The portal pages of each family switch to API calls in Node in the same phase; the console's pages switch under #446, on its own schedule. | Small surfaces, few session interactions |
 | **5** | `sts-directory`: the directory and LDAP on 389/636. | Almost everything reads the directory; it moves before the big families |
 | **6** | `sts-authn` (the session), `sts-oauth`, `logout`. | The centre of the service. The largest phase, and likely split |
 | **7** | SAML 2.0 and 1.1, WS-Trust, WS-Federation, federation. | The XML families, on the XML-DSig port |

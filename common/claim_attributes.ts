@@ -1121,7 +1121,10 @@ class ClaimAttributes {
         sets[id] = this.isSelected(id, row.ldap);
       });
       return { ldap: row.ldap, claim: row.claim.join('.'), label: row.label,
-               schema: row.schema, sets: sets };
+               schema: row.schema, sets: sets,
+               // Whether a person's value is GENERATED where the entry has
+               // none, which the console's catalogue table says (#446).
+               generated: !!row.from };
     });
     log.debug("Leaving ClaimAttributes.catalogueRows(). " + out.length +
               " row(s).");

@@ -16047,8 +16047,14 @@ function internalApplications() {
       realmScope: 'every',
       description: 'seeded at startup: this service\'s own admin console at ' +
                    '/admin (applications.seedInternal)',
+      // `admin:read admin:write` WITH THE REST since the cutover (#446): the
+      // console asks for them on every sign-in, and asking an administrator
+      // whether their own console may use the API it is drawn from is a
+      // question with one answer. The scopes are still narrowed to the roles
+      // the person holds.
       attributes: { oauthGlobalConsent: ['openid', 'profile', 'email',
-                                         'offline_access'] },
+                                         'offline_access', 'admin:read',
+                                         'admin:write'] },
       registration: {
         client_id: 'sts-admin-console',
         client_name: 'Admin console',
@@ -16061,11 +16067,17 @@ function internalApplications() {
         post_logout_redirect_uris: [base + '/admin'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        // `admin:read admin:write` (#110): the API explorer mints the reader
-        // a token as this client, carrying the scopes their console roles
-        // grant, and /admin-api asks whether the client declared them.
+        // `admin:read admin:write` (#110): the console asks for both, and
+        // /admin-api asks whether the client declared them; issuance narrows
+        // them to the roles the person holds.
         scope: 'openid profile email offline_access admin:read admin:write',
-        token_endpoint_auth_method: 'private_key_jwt'
+        // A PUBLIC CLIENT SINCE THE CUTOVER (#446, rcbj's decision 1): the
+        // console is a static application signing in in the browser with
+        // PKCE, so it holds no credential — and every token issued to it is
+        // DPoP-bound to a key the browser cannot export
+        // (`sender_constraints.js`, DPOP_BOUND_PUBLIC_CLIENTS). It was
+        // private_key_jwt while the server signed in for it.
+        token_endpoint_auth_method: 'none'
       } },
     // THE USER PORTAL, ADDED 2026-09-06 WITH THE MOVE ONTO THE CODE FLOW. It
     // was the admin console's row with one difference, `realmScope: 'every'`,

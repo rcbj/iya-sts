@@ -160,20 +160,14 @@ function stateOf(unit, kid) {
   return k ? k.state : "";
 }
 
-// A console form post, with the CSRF token taken off the page it posts to.
-async function consolePost(cookie, page, path, form) {
+// A console form post: since the static console (#446) the page is drawn
+// from its operation's answer and the form is sent to the operation it
+// mirrors (`console_signin.js`), as the console sends it — a checkbox
+// column as the list it is. Answers the drawn page and the reply.
+async function consolePost(consoleClient, page, path, form) {
   log.debug("Entering consolePost(). " + path);
-  const drawn = await call("GET", base + page, { headers: { Cookie: cookie } });
-  const csrf = (drawn.text.match(/name="csrf_token" value="([^"]+)"/) ||
-                [])[1] || "";
-  assert.ok(csrf, "precondition: " + page + " drawn for this session should " +
-                  "carry a CSRF token; it answered " + drawn.status);
-  const reply = await call("POST", base + path, {
-    headers: { Cookie: cookie,
-               "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(Object.assign({ csrf_token: csrf }, form))
-      .toString()
-  });
+  const drawn = await consoleClient.get(page);
+  const reply = await consoleClient.act(path, form);
   log.debug("Leaving consolePost().");
   return { reply: reply, page: drawn };
 }
@@ -283,25 +277,25 @@ async function main() {
   // --- 3. the console ------------------------------------------------------------
   log.info("=== 3. the console ===");
   const admin = "keys-admin-" + STAMP;
-  const cookie = await signin.signInToTheConsole(base, admin, log,
-                                                 { grant: "write" });
-  const posted = await consolePost(cookie || "", "/admin/keys",
-    "/admin/keys/rotate", { action: "rotate", units: "xml:RS256" });
+  const consoleClient = await signin.signInToTheConsole(base, admin, log,
+                                                        { grant: "write" });
+  const posted = await consolePost(consoleClient, "/admin/keys",
+    "/admin/keys/rotate", { action: "rotate", units: ["xml:RS256"] });
   check("/admin/keys draws the Rotation section and its two forms",
         function () {
           assert.ok(/id="keys-rotate-selected"/.test(posted.page.text) &&
                     /id="keys-emergency"/.test(posted.page.text),
                     posted.page.text.slice(0, 200));
         });
-  check("and its Rotate form queues a run and lands on its page",
+  // The form is the operation since #446: 202 and the run it queued, where
+  // the server-rendered console answered a 303 to the run's page.
+  const consoleRun = String((posted.reply.json || {}).runId || "");
+  check("and its Rotate form queues a run and answers it",
         function () {
-          assert.strictEqual(posted.reply.status, 303,
+          assert.strictEqual(posted.reply.status, 202,
                              posted.reply.text.slice(0, 300));
-          assert.ok(/\/admin\/scheduler\?run=m-/.test(posted.reply.location),
-                    posted.reply.location);
+          assert.ok(/^m-/.test(consoleRun), posted.reply.text.slice(0, 300));
         });
-  const consoleRun = decodeURIComponent(
-    (posted.reply.location.match(/run=([^&]+)/) || [])[1] || "");
   const consoleDone = await finished("", consoleRun);
   check("and that run succeeds", function () {
     assert.strictEqual(consoleDone.state, "succeeded",

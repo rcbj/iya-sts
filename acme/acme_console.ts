@@ -206,18 +206,18 @@ class AcmeConsole {
   }
 
   /**
-   * Returns the ACME settings group, as the console draws it.
+   * Returns the page's settings block.
    *
-   * @returns the settings
+   * @returns the block
    */
-  settingsJson() {
-    const { log, config } = this.deps;
+  settingsJson(): any {
+    const { log, adminViews } = this.deps;
     log.debug("Entering AcmeConsole.settingsJson().");
-    const group = config.groups().filter(function (one) {
-      return one.group === 'ACME';
-    })[0];
     log.debug("Leaving AcmeConsole.settingsJson().");
-    return group ? group.settings : [];
+    // THE PAGE'S SETTINGS BLOCK (#446), as every page that owns settings
+    // answers it — the page is drawn from this view alone. It was the ACME
+    // group's bare rows until then.
+    return adminViews.settingsBlockOf('/admin/acme');
   }
 
   /**

@@ -45,7 +45,6 @@ function childMain() {
   };
   (async function () {
     require(ROOT + '/common/protocol_stack');
-    const admin = require(ROOT + '/admin-ui/admin');
     const adminViews = require(ROOT + '/admin-core/admin_views');
     const stats = require(ROOT + '/common/admin_stats');
     const helpers = require(ROOT + '/common/helpers');
@@ -58,11 +57,18 @@ function childMain() {
     stats.recordAuthentication({ presented: NAME, protocol: 'test',
                                  method: 'a probe' });
     const sub = String(helpers.subjectForName(NAME));
+    // THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): GET /admin-api/users
+    // (which reads the person's standing first) drawn by its renderer.
+    const WebPages = require(ROOT + '/admin-ui/web_pages');
+    const WebKit = require(ROOT + '/admin-ui/web_kit');
+    const drawer = require(ROOT + '/tests/tools/console_page.js')
+      .consolePage(ROOT);
     const draw = async function () {
       const req = { query: { user: NAME }, headers: {}, cookies: {},
                     method: 'GET', path: '/admin/users', url: '/admin/users' };
       const risk = await adminViews.riskFor(req.query);
-      return { page: admin.usersView(req, risk),
+      const drawn = await drawer.draw('/admin/users', { user: NAME });
+      return { page: { inner: drawn.html },
                json: adminViews.userDetailJson(req, NAME, risk) };
     };
     const jsonOf = function (view) {
@@ -129,8 +135,10 @@ function childMain() {
             }),
             'C2. and that page narrows its assessments to them');
     // Without a standing read, no badge: nobody asked.
-    const unread = admin.usersView({ query: { user: NAME }, headers: {},
-      cookies: {}, method: 'GET', path: '/admin/users', url: '/admin/users' });
+    const unread = { inner: WebPages.render('/admin/users',
+      JSON.parse(JSON.stringify(adminViews.usersJson({ query: { user: NAME },
+        headers: {}, cookies: {}, method: 'GET', path: '/admin/users',
+        url: '/admin/users' }))), WebKit.context({ user: NAME }, true)) };
     t.check(!/class="risk-badge"/.test(unread.inner),
             'C3. a caller that read no standing draws no badge');
     fs.writeFileSync(OUT, JSON.stringify(findings));

@@ -409,12 +409,8 @@ async function runBody(t) {
             'NO PRIVATE KEY IS IN THE MODEL, EITHER PROFILE — a person\'s ' +
             'has no read door, so the page says whether one is held and ' +
             'nothing more');
-    t.equal(admin.userReturnTo({ back: '?user=evil&q=a%0d%0aX' }, ALICE,
-                               '#credentials'),
-            '/admin/users?q=a%0D%0AX&user=' + encodeURIComponent(ALICE) +
-            '#credentials',
-            'the way back to the person\'s page is REBUILT from the name, ' +
-            'with a `user` in `back` ignored and the list state re-encoded');
+    // The way back to the person's page after a form went with the
+    // server-rendered console (#446): the static console stays on the page.
 
     const takeSaml = await pkiAdmin.pkiAction({
       action: 'revoke', target: 'person', purpose: 'saml', identifier: ALICE });

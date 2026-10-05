@@ -79,7 +79,7 @@ files did not change; the paths did.
 | `tls/` | The certificate three sockets share, the client truststore, the sighting on the main port, the client's JA4 TLS fingerprint (`client_hello.ts`, #62) and `GET /tls/sign-in`. **It owned the 8443 and 9443 listeners until 2026-09-16 and owns no socket now.** `tls/CLAUDE.md`. |
 | `oid4vc/` | OpenID4VCI, OpenID4VP and DID Core, the wallet sign-in at `/authn/wallet` (`vc_signin.ts`, the W3C Digital Credentials API included), and the status lists every credential names (`vc_status.ts`). `oid4vc/CLAUDE.md`. |
 | `admin-core/` | What both admin surfaces DO, in a directory neither owns: `admin_actions.js`, `admin_views.js`, `certificate_views.js`. It requires route-registering modules, so it may be required at 18 or later and is not in `common/`. `admin-core/CLAUDE.md`. |
-| `admin-ui/` | The console at `/admin`, its gate and two roles, every setting drawn on its protocol's page (`SETTING_HOMES`), the two server-laid-out drawings, and the pages that report on this service itself — `/admin/crypto-metadata`, `/admin/pki`, `/admin/secrets`, `/admin/api-explorer`. `admin-ui/CLAUDE.md`. |
+| `admin-ui/` | The console at `/admin`, its gate and two roles, every setting drawn on its protocol's page (`SETTING_HOMES`), the two server-laid-out drawings, and the pages that report on this service itself — `/admin/crypto-metadata`, `/admin/pki`, `/admin/secrets`, `/admin/api-explorer`. **Being converted into a static application over `/admin-api` (#446): the `web_*.ts` files are its renderers, loadable in a browser, and may require nothing but each other.** `admin-ui/CLAUDE.md`. |
 | `mgmt-api/` | `/admin-api` — every console control, reachable by a machine (rule 7), gated by an OAuth 2.0 access token — its generated OpenAPI document, and the explorer's assets. `mgmt-api/CLAUDE.md`. |
 | `tests/` | **The only test directory**: `tests/*.js` is the in-process half (`npm test`), `tests/vendored/` the protocol half driven over HTTP against a container built from this tree, with `MANIFEST.js` the count and the record of which jobs are copies and which are `local: true`; `tools/`, `Dockerfile` and `run-tests-in-container.sh` are tooling, not tests. `tests/CLAUDE.md`. |
 | `xacml/` | XACML 3.0 and ALFA — the engine (held to the vendored OASIS suite, Apache-2.0), the `ou=policies` repository, the PIP, the embedded PEPs that decide this service's own issuance and access, the PAP console, and the PDP side of the remote PEP. `xacml/CLAUDE.md`. |
@@ -97,7 +97,7 @@ files did not change; the paths did.
 | `rust/` | **The Rust conversion of the runtime (#444, 2026-10-05)**: `rust/DESIGN.md` is the design — a replacement built family by family and proved by the protocol suite, the console and portal as TypeScript SPAs served by the runtime, every cryptographic option mapped, the phases and the owner's decisions. **What runs today is the remote XACML PEP** (`bins/xacml-pep`) on the engine crate (`crates/sts-xacml`, the OASIS suite at 454/455 as the Node engine) and `crates/sts-core` (the bunyan log, the version). The Node service runs none of it. |
 | `postgres/` | Four files the database container runs, never this service: TLS setup, TLS enforcement, the schema and the least-privilege `sts_app` role. `postgres/CLAUDE.md`. |
 | `docs/` | The GitHub Pages site — how to USE this service. `docs/CLAUDE.md`. |
-| `types/`, `tsconfig.json`, `tsconfig.build.json`, `build-typescript.sh` | **THE TYPESCRIPT CONVERSION (#50, 2026-09-16)**: `types/` is declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` — since 2026-09-16 every directory the service runs from, and `server.js`, all but the vendored copies, beside the `.ts` files (`sts_metadata.ts` at the root among them), which are always checked — and `tests/typecheck.js` runs it and holds the list. `build-typescript.sh` compiles — inside an image build only — each `x.ts` to `x.js` beside it (`tsconfig.build.json`), and with `--strip` removes the sources for the service image — and, since #365, every comment from the `.js` it ships (`tests/tools/strip-comments.js`: line numbers kept, token streams proved; the repository and the tests image keep them). The decisions for the rest of the conversion are on issue #50. |
+| `types/`, `tsconfig.json`, `tsconfig.build.json`, `build-typescript.sh` | **THE TYPESCRIPT CONVERSION (#50, 2026-09-16)**: `types/` is declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` — since 2026-09-16 every directory the service runs from, and `server.js`, all but the vendored copies, beside the `.ts` files (`sts_metadata.ts` at the root among them), which are always checked — and `tests/typecheck.js` runs it and holds the list. `build-typescript.sh` compiles — inside an image build only — each `x.ts` to `x.js` beside it (`tsconfig.build.json`), **bundles the admin console's `admin-ui/web_*.ts` renderers for a browser with esbuild (`admin-ui/console.bundle.js`, #446)**, and with `--strip` removes the sources for the service image — and, since #365, every comment from the `.js` it ships (`tests/tools/strip-comments.js`: line numbers kept, token streams proved; the repository and the tests image keep them). The decisions for the rest of the conversion are on issue #50. |
 | `env/` | The appconfig files, each a layer over the generated `defaults.js`. `env/CLAUDE.md`. |
 
 At the package root there are exactly two modules, and both earn it:
@@ -150,13 +150,13 @@ the exceptions, and each is argued where it lives.
 |---|---|---|
 | `/scim/v2` | a credential in any of RFC 7644 section 2's six schemes; the OAuth ones need `scim:read` or `scim:write` | `scim/CLAUDE.md` |
 | the SPIRE Server API | an X509-SVID over mutual TLS, authorized against SPIRE's per-method table | `spiffe/CLAUDE.md` |
-| `/admin` | a session of its own, got through the OIDC code flow, and one of two roles held through directory groups | `admin-ui/CLAUDE.md` |
+| `/admin` | since #446 a STATIC page whose data is `/admin-api`'s: an access token got through the code flow with PKCE as the public client `sts-admin-console`, always DPoP-bound, and one of two roles held through directory groups | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
 | `/federation/acs/{id}` | a signature verifying against the relationship's certificate — **not a turnstile, cannot be made permissive** | `federation/CLAUDE.md` |
 | `/authn/spnego` | a Kerberos ticket verified against a real long-term key — **not a refusal at all** | `kerberos/CLAUDE.md` |
 | the SPIFFE Broker API (`spiffe.brokerPort`) | an X509-SVID over mutual TLS naming a broker in `spiffe.brokers`, and a reference type that broker may use; the workload it references is attested here (#170) | `spiffe/CLAUDE.md` |
 | `/xacml/pep/*`, `POST /xacml/pip` | a verified client certificate whose subject DN resolves to an entry holding `REMOTE_PEPS` | `xacml/CLAUDE.md` |
 | `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies`, `GET /xacml/protected` | the same chain, holding `XACML_USER` | `xacml/CLAUDE.md` |
-| `/admin-api` | an OAuth 2.0 access token audienced to it, with `admin:read` / `admin:write`, issued to a client that declares them (#110); `adminApi.authRequired` restores the open API | `mgmt-api/CLAUDE.md` |
+| `/admin-api` | an OAuth 2.0 access token audienced to it, with `admin:read` / `admin:write`, issued to a client that declares them (#110); `adminApi.authRequired` restores the open API, in development mode only (#446) | `mgmt-api/CLAUDE.md` |
 | `/oauth2/introspect` | client authentication — for an RFC 9701 JWT response in every mode, for RFC 7662 JSON in product mode only | `oauth-oidc/CLAUDE.md` (3ai) |
 | the debugger listener (`debugger.port`) | an access token audienced to `urn:sts:debugger-api:` carrying the debugger permission — issued to console administrators only — or the debugger client's session holding one; four landing paths excepted. **Cannot be turned off** | `debugger/CLAUDE.md` |
 
@@ -322,13 +322,22 @@ outside it:
 
 ## This service's own two surfaces are clients of its own authorization server
 
-`/admin` and `/portal` are **OpenID Connect relying parties** of this service
-(since 2026-09-06): seeded confidential clients, a real back-channel HTTP request
-to `/oauth2/token`, a relying-party session that names the sign-on session it
-came from and dies with it, and a Sign out on each that ends both.
-`common/CLAUDE.md` (`oidc_rp.js`) carries the design, the realm split and the
-`Location`-header bug; `authn/CLAUDE.md` the two kinds of session;
-`admin-ui/CLAUDE.md` and `portal/CLAUDE.md` the gate exemptions and sign-out.
+`/portal` is an **OpenID Connect relying party** of this service (since
+2026-09-06): a seeded confidential client, a real back-channel HTTP request to
+`/oauth2/token`, a relying-party session that names the sign-on session it came
+from and dies with it, and a Sign out that ends both. `common/CLAUDE.md`
+(`oidc_rp.js`) carries the design, the realm split and the `Location`-header
+bug; `authn/CLAUDE.md` the two kinds of session; `portal/CLAUDE.md` the gate
+exemptions and sign-out.
+
+**`/admin` was one too until the cutover of #446 (2026-10-05), and is now a
+STATIC application**: every `/admin/*` path answers one document and
+`/admin/console.js`, which signs in IN THE BROWSER as the public client
+`sts-admin-console` (the code flow with PKCE S256, `resource` the realm's
+`/admin-api`), holds a DPoP-bound token in memory only, renews it with the
+refresh grant, and draws every page from its `/admin-api` operation and sends
+every form there. The console holds no session of its own; its Sign out is
+`/logout`. `admin-ui/CLAUDE.md` (`web_runtime.ts`) argues it.
 
 ## What an authenticated identity is
 
@@ -616,6 +625,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3bx | Cells (#98): `cells.ts`, `cell_channel.ts`, `cell_locator.ts`, `cell_routing.ts`, `cell_placement.ts`, `cell_sessions.ts` — one service as several cells in several jurisdictions, the placement of every route, the channel between cells, and a session held away from home | `common/CLAUDE.md`, `persistence/CLAUDE.md` |
 | 3bz | The access-type catalogue and the per-right GNAP question (#432 phases 3 and 4): `oauthAuthorizationDetailsType` extended into ONE catalogue RFC 9396 and GNAP read (`authorization_details.ts`'s `conformance()`, `gnap/gnap_rights.ts`), `issue-gnap-right` asked per access right through `xacml_gnap_right_verdicts.ts` with keep / narrow / refuse and a lifetime, the built-in rules replacing the bearer, protected-scope, gnapAllowedAccess and reference checks, `derivableFrom` filling `derivableBeyond()`, introspection filtered per resource server | `gnap/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | 3ca | `http_signatures.ts`, FAPI 2.0 HTTP Signatures (#178, draft of 26 June 2026): a `fapi-2-request` signature verified at every resource server in every setting with the token's client's registered key, `oauth2.httpSignatures` and `oauthHttpSignedRequests` deciding when one is required and when responses are signed, responses signed by the realm key with `;req` over the request; RFC 9421/9530 in `common/crypto.js` section 14 | `oauth-oidc/CLAUDE.md` |
+| 3cb | The admin console as a public client (#446): DPoP mandatory for that one client at the token endpoint and at `/admin-api`, and the one public client a confidential-only FAPI profile allows; neither applies while the seeded entry is confidential | `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -658,7 +668,7 @@ repository where failing to open something stops the process.
 ## `frame-ancestors` is the one CSP clause a page may not drop
 
 RFC 9700 section 4.14. `app.js` sets the policy on every response, and a
-growing number of routes relax it — the thirteen kinds of scripted page below, and others
+growing number of routes relax it — the twelve kinds of scripted page below, and others
 that widen `img-src`, `style-src`, `frame-src` or `connect-src` — by SETTING
 THE WHOLE HEADER, so each of them could lose the framing clause with nothing
 failing: the page works, the script runs, and the protection is gone.
@@ -693,23 +703,25 @@ argues it.
 silently.
 
 
-## Thirteen kinds of page here have a script on them, and each is the same exception
+## Twelve kinds of page here have a script on them, and each is the same exception
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. Thirteen kinds of page need a script and each takes the SAME shape of
+than merely unlikely. Twelve kinds of page need a script and each takes the SAME shape of
 exception — `script-src 'self'` naming one resource, never `'unsafe-inline'` —
-and **each but the OP iframe and the Copy buttons carries a REAL SUBMIT BUTTON
-as well**, because with the script blocked the button is the whole mechanism.
-The OP iframe has no person in front of it and nothing to submit, and a Copy
-button submits nothing either; their arguments are their rows.
+and **each but the OP iframe and the admin console carries a REAL SUBMIT
+BUTTON as well**, because with the script blocked the button is the whole
+mechanism. The OP iframe has no person in front of it and nothing to submit,
+and the console IS a script — an application that reaches this service only
+through `/admin-api` — so with script blocked it says so and does nothing;
+their arguments are their rows.
 
 | Page | Script | Argued in |
 |---|---|---|
 | `/authn/webauthn` | `/authn/webauthn.js` | `authn/CLAUDE.md` |
 | WS-Federation's sign-in response | `/wsfed/autopost.js` | `ws-federation/CLAUDE.md` |
 | `response_mode=form_post` | `/oauth2/autopost.js` | `oauth-oidc/CLAUDE.md` |
-| `/admin/api-explorer` — the one console page with a script of its own (the Protocols pages share the copy script) | the explorer | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
+| `/admin` and every `/admin/*` path — **the admin console, a static application since #446 (2026-10-05)** | `/admin/console.js` — the console's runtime: it signs in (PKCE, a DPoP key WebCrypto will not export), draws every page from its `/admin-api` operation, sends every form there, writes a Copy button's URL to the clipboard, and loads the API explorer's own script (`/admin/api-explorer/explorer.js`) when that page is drawn. **No submit button stands in for it**: a form has nowhere to post but the API, which takes a token a page without script cannot hold, so the shell's `<noscript>` says the console needs its script and nothing else is drawn. `connect-src 'self'` beside `script-src 'self'` | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
 | `/portal/keys` | `/authn/webauthn.js` — the SAME resource, not a copy | `portal/CLAUDE.md` |
@@ -717,7 +729,6 @@ button submits nothing either; their arguments are their rows.
 | `/portal/devices`, **only while a WebAuthn link ceremony is armed** (#164 phase 2) | `/authn/webauthn.js` in `get` mode — a fresh assertion links a platform credential to a device; the page's key-proof form beside it runs no script | `portal/CLAUDE.md` |
 | `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | the sign-in screen `/authn/login`, **only while `risk.fingerprinting` is on in the realm** (#62 P6, off by default) | `/authn/fingerprint.js` — FingerprintJS (MIT, served with its notice) computing a browser identifier, which no markup can; the form works with it blocked, the field simply empty | `authn/CLAUDE.md`, `risk/CLAUDE.md` |
-| every Protocols page's *Endpoints* section (2026-10-01), **only on a page that draws a Copy button** | `/admin/copy.js` — `navigator.clipboard.writeText()`, with the select-and-`execCommand('copy')` fallback the parent project's `copyField()` uses outside a secure context; writing to the clipboard on a click is what no markup can do. The buttons are drawn `hidden` and the script reveals them, so with script blocked the page is the page it was, the URLs still selectable text — the second page with no submit button, because nothing is submitted | `admin-ui/CLAUDE.md` |
 | `/oauth2/check_session` (#121, 2026-09-23, off by default) | `/oauth2/check_session.js` — it answers a relying party's `postMessage`, which no markup can; so it is the one page here with **NO submit button**, and with script off a relying party's question simply goes unanswered | `oauth-oidc/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on

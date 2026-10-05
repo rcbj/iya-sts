@@ -201,18 +201,18 @@ class EstConsole {
   }
 
   /**
-   * Returns the EST settings group's rows.
+   * Returns the page's settings block.
    *
    * @returns the settings
    */
-  settingsJson() {
-    const { log, config } = this.deps;
+  settingsJson(): any {
+    const { log, adminViews } = this.deps;
     log.debug("Entering EstConsole.settingsJson().");
-    const group = config.groups().filter(function (one) {
-      return one.group === 'EST';
-    })[0];
     log.debug("Leaving EstConsole.settingsJson().");
-    return group ? group.settings : [];
+    // THE PAGE'S SETTINGS BLOCK (#446), as every page that owns settings
+    // answers it — the page is drawn from this view alone. It was the EST
+    // group's bare rows until then.
+    return adminViews.settingsBlockOf('/admin/est');
   }
 
   // Who is acting, for `createdBy` / `by` and the principal. The console's

@@ -706,8 +706,9 @@ If the console is ever closed to everybody, `/admin-api` is the way back out:
 it is gated by a credential of its own (`adminApi.authRequired`, an OAuth 2.0
 access token rather than a console session), so getting back in means holding
 that token and calling `POST /admin-api/rbac/grant`. In development, turning
-that one setting off restores an open API; in
-product it gates `/admin-api` by the console's own session and roles instead.
+that one setting off restores an open API. Product ignores the setting turned
+off: pin `adminApi.clientSecret` before the start, so that a token can always
+be minted.
 
 Renaming a role group does not move anybody: the members stay in the old group,
 which stops granting anything the moment the name changes.
@@ -1103,7 +1104,7 @@ curl -s localhost:8081/admin-api/config | jq
 Every row, with its value, where the value came from, its type, its prose, and
 whether it can be set at runtime — the whole table, whichever page edits it. It
 also carries `homes`: which console page draws each group.
-`GET /admin/config?format=json` answers the same whole table.
+The console's settings page is drawn from that same answer.
 
 **In the console each group is on the page for the protocol it configures** —
 `/admin/kerberos`, `/admin/ldap`, `/admin/saml2`, `/admin/scim`, and so on.
@@ -1691,7 +1692,7 @@ turnstile proving somebody typed a name that holds a role.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `admin.readGroup` | `ADMIN_READ_GROUP` | `admin-read` | yes | The cn of the directory group whose members may READ the console — every page, and every ?format=json view of one. It is an ordinary group under ou=groups, so an ldapmodify, a SCIM PATCH and the /admin/rbac screen are three doors onto the same membership. |
+| `admin.readGroup` | `ADMIN_READ_GROUP` | `admin-read` | yes | The cn of the directory group whose members may READ the console — every page, and every /admin-api read it is drawn from. It is an ordinary group under ou=groups, so an ldapmodify, a SCIM PATCH and the /admin/rbac screen are three doors onto the same membership. |
 | `admin.writeGroup` | `ADMIN_WRITE_GROUP` | `admin-write` | yes | The cn of the directory group whose members may POST a console form — revoke a token, add a claim, change a setting, grant a role. |
 | `admin.openWhenEmpty` | `ADMIN_OPEN_WHEN_EMPTY` | `true` | yes | **Development mode only** — product never opens the console to anybody, whatever this says, and until the bootstrap administrator has claimed the console its roles are honoured only from a password sign-in. In development: ON, anybody who signs in holds both roles UNTIL the bootstrap administrator (`admin.bootstrapUsername`) first signs in to `/admin`, and the console says so in a banner on every page; OFF, only members of the two role groups from the start. A process that never seeded the bootstrap administrator keeps the older rule: open while NEITHER role group has a member. |
 | `admin.bootstrapUsername` | `STS_ADMIN_BOOTSTRAP_USERNAME` | `admin` | **restart** — the account is seeded once, before the listener binds | The default realm's bootstrap administrator: made at startup if absent, a member of both console roles, forced to choose a new password at its first sign-in, and impossible to delete or rename. In product mode it is also who gets the generated password, logged once, when nobody holds a credential. |

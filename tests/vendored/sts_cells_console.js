@@ -6,22 +6,24 @@
 // ===========================================================================
 // THE ADMIN CONSOLE AT CELL B (#98, 2026-09-28).
 //
-// The console is an OpenID Connect relying party of this service's own
-// authorization server (common/oidc_rp.ts, console_signin.js), and every
-// address it builds is the service's ONE public name — cell A's, here. A
-// browser the network sends to cell B instead reaches cell B under that
-// name; the job is that browser, by answering every hop the public name
-// names AT CELL B (the test-only resolver override, #98 section 9). For an
-// administrator homed at cell B:
+// Since the #446 cutover the console is a STATIC PAGE that signs in in the
+// browser, as the public client `sts-admin-console`: the code flow with
+// PKCE S256 at the authorization server of the origin it was opened at, a
+// DPoP-bound token for that origin's `/admin-api`, and every page drawn
+// from its operation's answer (console_signin.js does the same at one
+// service). A browser the network sends to cell B opens the console THERE;
+// the job is that browser, and answers every hop a Location names on the
+// service's public name — cell A's, here — AT CELL B (the test-only
+// resolver override, #98 section 9). For an administrator homed at cell B:
 //
-//   1. `GET /admin/cells` at cell B with no session starts the console's
-//      authorization request, the administrator signs in at cell B — the
-//      offered second factor ignored, as console_signin.js does (#246) — and
-//      the callback establishes the console's own session: its back-channel
-//      token request goes to the public name, which is cell A, and the code
-//      minted at cell B is relayed home by its locator.
-//   2. `/admin/cells`, drawn by cell B, names cell B as this cell and cell A
-//      in its jurisdiction, reachable.
+//   1. `GET /admin/cells` at cell B answers the console's document; the
+//      console's authorization request is made at cell B, the administrator
+//      signs in there — the offered second factor ignored, as
+//      console_signin.js does (#246) — and the code that comes back to the
+//      console's callback is redeemed at cell B for a DPoP-bound token.
+//   2. `/admin/cells`, drawn at cell B from its operation's answer by the
+//      console's own renderers, names cell B as this cell and cell A in its
+//      jurisdiction, reachable.
 //
 // `local: true`: this repository's own console, against a stack only this
 // repository's launcher builds. It declines to run in every mode but
@@ -79,19 +81,121 @@ function atB(cells, url) {
   return out;
 }
 
-// The console's sign-in, walked at cell B. Answers every hop and the jar.
+// A DPoP key and its RFC 9449 proofs (ES256, r || s), as the console's page
+// makes one per load; console_signin.js holds the same few lines.
+function dpopKey() {
+  log.debug("Entering dpopKey().");
+  const pair = nodeCrypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = pair.publicKey.export({ format: "jwk" });
+  const publicJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
+  const state = { nonce: "" };
+  log.debug("Leaving dpopKey().");
+  return {
+    keepNonce: function (response) {
+      const nonce = response.headers.get("dpop-nonce");
+      if (nonce) {
+        state.nonce = nonce;
+      }
+    },
+    proof: function (method, url, accessToken) {
+      const enc = function (obj) {
+        return Buffer.from(JSON.stringify(obj)).toString("base64url");
+      };
+      const claims = { jti: nodeCrypto.randomBytes(16).toString("base64url"),
+                       htm: method, htu: String(url).replace(/[?#].*$/, ""),
+                       iat: Math.floor(Date.now() / 1000) };
+      if (accessToken) {
+        claims.ath = nodeCrypto.createHash("sha256").update(accessToken)
+          .digest("base64url");
+      }
+      if (state.nonce) {
+        claims.nonce = state.nonce;
+      }
+      const input = enc({ typ: "dpop+jwt", alg: "ES256", jwk: publicJwk }) +
+                    "." + enc(claims);
+      return input + "." + nodeCrypto.sign("sha256", Buffer.from(input),
+        { key: pair.privateKey, dsaEncoding: "ieee-p1363" })
+        .toString("base64url");
+    }
+  };
+}
+
+// A DPoP-bound request, retried once with the server's nonce.
+async function dpopFetch(key, method, url, token, init) {
+  log.debug("Entering dpopFetch(). " + method + " " + url);
+  let r = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const headers = Object.assign({ dpop: key.proof(method, url, token) },
+                                  (init && init.headers) || {});
+    if (token) {
+      headers.authorization = "DPoP " + token;
+    }
+    r = await fetch(url, Object.assign({}, init || {},
+                                       { method: method, headers: headers }));
+    key.keepNonce(r);
+    const retry = r.status === 400 || r.status === 401
+      ? /use_dpop_nonce/.test(String(r.headers.get("www-authenticate") || "") +
+                              (r.status === 400 ? await r.clone().text()
+                                                : ""))
+      : false;
+    if (!retry) {
+      break;
+    }
+  }
+  log.debug("Leaving dpopFetch(). " + r.status);
+  return r;
+}
+
+// The console's renderers as a browser loads them (console_signin.js's
+// arrangement): the image build's `admin-ui/console.bundle.js`, run with no
+// require, process or Buffer.
+function consoleBundle() {
+  log.debug("Entering consoleBundle().");
+  const fs = require("fs");
+  const path = require("path");
+  const vm = require("vm");
+  const code = fs.readFileSync(path.join(__dirname, "..", "..", "admin-ui",
+                                         "console.bundle.js"), "utf8");
+  log.debug("Leaving consoleBundle().");
+  return vm.runInContext(code + "\n;StsConsole;", vm.createContext({}),
+                         { filename: "console.bundle.js" });
+}
+
+// The console's sign-in, walked at cell B, as its page makes it there.
+// Answers every hop, the jar and the token.
 async function signInAtB(cells) {
   log.debug("Entering signInAtB().");
   const jar = new kit.Jar();
   const hops = [];
-  let at = cells.b + "/admin/cells";
+  const key = dpopKey();
+  const origin = new URL(cells.b).origin;
+  const opened = await kit.browse(jar, cells.b + "/admin/cells");
+  hops.push({ url: cells.b + "/admin/cells", status: opened.status,
+              location: opened.location, set: opened.set });
+  const pair = kit.pkce();
+  const state = nodeCrypto.randomBytes(16).toString("base64url");
+  const redirectUri = origin + "/admin/callback";
+  const resource = origin + "/admin-api";
+  let at = origin + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: "sts-admin-console",
+    redirect_uri: redirectUri, scope: "openid admin:read admin:write",
+    state: state, code_challenge: pair.challenge,
+    code_challenge_method: "S256", resource: resource }).toString();
   let signedIn = false;
-  for (let i = 0; i < 16; i++) {
+  let code = "";
+  for (let i = 0; i < 16 && !code; i++) {
     const r = await kit.browse(jar, at);
     hops.push({ url: at, status: r.status, location: r.location,
                 set: r.set });
     if (r.status >= 300 && r.status < 400 && r.location) {
       at = atB(cells, r.location);
+      const back = new URL(at);
+      if (/\/admin\/callback$/.test(back.pathname)) {
+        // THE CONSOLE'S CALLBACK is its own page: what it does with the
+        // code — the token request — is done below, as its page does it.
+        hops.push({ url: at, status: 0, location: "", set: [] });
+        code = back.searchParams.get("code") || "";
+      }
       continue;
     }
     const fields = kit.signInFields(r.text);
@@ -126,11 +230,33 @@ async function signInAtB(cells) {
       continue;
     }
     log.debug("Leaving signInAtB(). Stopped on " + r.status + ".");
-    return { jar: jar, hops: hops, last: r, at: at };
+    return { jar: jar, hops: hops, opened: opened, token: "", key: key,
+             last: r };
   }
-  log.debug("Leaving signInAtB(). Too many hops.");
-  return { jar: jar, hops: hops, last: { status: 0, text: "too many hops" },
-           at: at };
+  let token = "";
+  let answered = { status: 0, text: "no code came back" };
+  if (code) {
+    const tokenUrl = origin + "/oauth2/token";
+    const r = await dpopFetch(key, "POST", tokenUrl, "", {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code", code: code,
+        redirect_uri: redirectUri, client_id: "sts-admin-console",
+        code_verifier: pair.verifier, resource: resource }).toString() });
+    hops.push({ url: tokenUrl, status: r.status, location: "", set: [] });
+    const text = await r.text();
+    answered = { status: r.status, text: text };
+    try {
+      token = JSON.parse(text).access_token || "";
+    } catch (e) {
+      log.debug("Caught in signInAtB(): " + ((e && e.message) || e));
+      // Not JSON: the refusal's text is reported as it came.
+      token = "";
+    }
+  }
+  log.debug("Leaving signInAtB().");
+  return { jar: jar, hops: hops, opened: opened, token: token, key: key,
+           last: answered, origin: origin };
 }
 
 async function test() {
@@ -172,18 +298,38 @@ async function test() {
             return new URL(h.url).host === bHost;
           }), trail);
         });
-  check("the console's own session is established", function () {
-    assert.ok(walked.jar.get("sts_admin"), "no sts_admin cookie; " + trail +
-      " " + walked.last.status + " " + kit.said(walked.last.text));
-  });
+  check("the console's code is redeemed at cell B for its DPoP-bound token",
+        function () {
+          assert.ok(walked.token, "no token; " + trail + " " +
+            walked.last.status + " " + kit.said(walked.last.text));
+        });
 
   log.info("=== 2. /admin/cells, drawn at cell B ===");
-  const page = walked.last;
-  check("GET /admin/cells at cell B answers the page", function () {
-    assert.strictEqual(page.status, 200, page.status + " at " + walked.at +
-      " " + kit.said(page.text));
-    assert.ok(/\/admin\/cells$/.test(new URL(walked.at).pathname),
-              walked.at);
+  check("GET /admin/cells at cell B answers the console's document",
+        function () {
+          assert.strictEqual(walked.opened.status, 200,
+                             kit.said(walked.opened.text));
+          assert.ok(/console\.js/.test(walked.opened.text),
+                    kit.said(walked.opened.text));
+        });
+  // THE PAGE, as the console draws it at cell B: its operation asked with
+  // the console's token, the answer drawn by the console's renderers.
+  const table = consoleBundle();
+  const row = table.pageFor("/admin/cells");
+  const operationUrl = walked.origin + row.operation;
+  const asked = await dpopFetch(walked.key, "GET", operationUrl,
+                                walked.token, {});
+  const answer = await asked.json().catch(function () {
+    return null;
+  });
+  const page = { status: asked.status,
+                 text: asked.status === 200 && answer
+                   ? table.render("/admin/cells", answer,
+                                  table.kit.context({}, false)) || ""
+                   : "" };
+  check("its operation answers at cell B and the page is drawn", function () {
+    assert.strictEqual(page.status, 200, page.status + " at " +
+                       operationUrl);
     assert.ok(/<h2>The cells<\/h2>/.test(page.text), kit.said(page.text));
   });
   check("it names " + cells.ids.b + " as this cell, in " +

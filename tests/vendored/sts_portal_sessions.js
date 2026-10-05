@@ -61,6 +61,7 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor, runStamp } = require("./random_username.js");
+const signin = require("./console_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -200,13 +201,14 @@ function browser(name) {
   return self;
 }
 
-// A BARE `/portal` OR `/admin` DRAWS THE REALM CHOOSER once a service has
-// trust realms (2026-09-14, #32), and the suite nearly always has some. The
-// chooser's own `?realm=default` is what a script names to skip it, so every
-// door this file signs in through, or asks whether a browser is anybody, names
-// it. `sts_realm_administrators.js` asserts the chooser itself.
+// A BARE `/portal` DRAWS THE REALM CHOOSER once a service has trust realms
+// (2026-09-14, #32), and the suite nearly always has some. The chooser's own
+// `?realm=default` is what a script names to skip it, so every portal door
+// this file signs in through, or asks whether a browser is anybody, names it.
+// `sts_realm_administrators.js` asserts the chooser itself. The console has
+// no chooser since the cutover (#446): every `/admin` path answers the same
+// static shell, and the console signs in where it was opened.
 const PORTAL_DOOR = "/portal?realm=default";
-const ADMIN_DOOR = "/admin?realm=default";
 
 async function get(path) {
   log.debug("Entering get().");
@@ -276,11 +278,13 @@ async function ensurePerson(who) {
 // jobs are also signing in to.
 //
 // **IT IS THE SURFACE'S OWN SESSION SINCE 2026-09-06 AND NOT THE SIGN-ON
-// SESSION.** Signing in at `/admin` now produces two rows: the sign-on session
-// the identity provider holds, and the RELYING PARTY session the console holds,
-// derived from it. The one a door CREATED is the second, so that is the one
-// these assertions are about — and `signOnIdOf()` beside it is how a test
-// reaches the other when it means the other.
+// SESSION.** Signing in at `/portal` produces two rows: the sign-on session
+// the identity provider holds, and the RELYING PARTY session the portal holds,
+// derived from it. (The console did the same until the cutover, #446; it
+// holds a token now and makes only the sign-on session — section 1.) The
+// one a door CREATED is the second, so that is the one these assertions are
+// about — and `signOnIdOf()` beside it is how a test reaches the other when
+// it means the other.
 //
 // **AND A COOKIE IS `<sid>.<handle>` SINCE 2026-09-14**, not the bare id: the
 // handle rotates on every re-authentication and the sid never does
@@ -482,44 +486,53 @@ async function follow(b, r, hops) {
 
 // ---------------------------------------------------------------------------
 // 1. THE ADMIN CONSOLE.
+//
+// **THE CONSOLE HOLDS NO SESSION OF ITS OWN SINCE THE CUTOVER (#446).** It
+// was a relying party with a session derived from the sign-on session — two
+// rows per sign-in. It is a static page now that signs in in the browser as
+// the public client `sts-admin-console`, with PKCE, and holds a DPoP-bound
+// access token; the only session a sign-in makes is the identity provider's.
+// `console_signin.js` signs in exactly as the page does, and the browser this
+// answers holds the sign-on cookie that walk set, and the console's client.
 // ---------------------------------------------------------------------------
+async function signInToConsole(who) {
+  log.debug("Entering signInToConsole(). who=" + who);
+  await ensurePerson(who);
+  await grantConsoleRead(who);
+  const client = await signin.signInToTheConsole(base, who, log);
+  const b = browser(who);
+  String(client.cookie || "").split("; ").forEach(function (pair) {
+    const name = pair.split("=")[0];
+    if (name) {
+      b.jar[name] = pair.slice(name.length + 1);
+    }
+  });
+  b.cookie = b.cookieHeader();
+  b.console = client;
+  log.debug("Leaving signInToConsole(). " + signOnIdOf(b));
+  return b;
+}
+
 async function theConsoleSignInCreatesASession() {
   log.debug("Entering theConsoleSignInCreatesASession().");
   log.info("=== the admin console: sign in, and the session is listed ===");
   const before = (await liveSessions(OPERATOR)).length;
-  const b = await signInAt("/admin/sessions", OPERATOR);
-  const id = sessionIdOf(b);
+  const b = await signInToConsole(OPERATOR);
+  const id = signOnIdOf(b);
 
   const row = await rowFor(id);
-  check("signing in at /admin creates a session the management API lists",
-    function () {
+  check("signing in to the console creates a session the management API " +
+        "lists", function () {
       assert.ok(row,
                 "no row for session " + id + " in GET /admin-api/sessions");
     });
   check("it names the person who signed in", function () {
     assert.strictEqual(row.username, OPERATOR);
   });
-  check("IT IS THE CONSOLE'S OWN SESSION AND NOT THE SIGN-ON SESSION, which " +
-        "is what moving this surface onto the authorization code flow " +
-        "bought: the console is a relying party and holds a session of its " +
-        "own, derived from the one the identity provider holds", function () {
-      assert.strictEqual(row.kind, "Admin console session");
-    });
-  check("it names the client that holds it — an ordinary entry in the " +
-        "registry, which is what the console signs in AS", function () {
-      assert.strictEqual(row.rpClientId, "sts-admin-console");
-    });
-  check("AND THE SIGN-ON SESSION IT WAS DERIVED FROM, which is the join that " +
-        "makes a sign-out reach both", function () {
-      assert.strictEqual(row.derivedFrom, signOnIdOf(b));
-    });
-
-  const signOn = await rowFor(signOnIdOf(b));
-  check("that sign-on session is listed too, as a SECOND row of a different " +
-        "kind — one store, two kinds of thing, told apart by a field rather " +
-        "than by a register of their own", function () {
-      assert.ok(signOn, "no row for sign-on session " + signOnIdOf(b));
-      assert.strictEqual(signOn.kind, "Browser sign-on session");
+  check("IT IS THE SIGN-ON SESSION — the console's sign-in makes no session " +
+        "of its own since the cutover (#446): the page holds a token, and " +
+        "the identity provider holds the one session", function () {
+      assert.strictEqual(row.kind, "Browser sign-on session");
     });
   check("and somebody actually authenticated for it — the field that tells " +
         "it from a Continue-without-signing-in session", function () {
@@ -527,22 +540,109 @@ async function theConsoleSignInCreatesASession() {
     });
 
   const after = await liveSessions(OPERATOR);
-  check("THE COUNT WENT UP BY EXACTLY TWO, which is the whole shape of this " +
-        "change in one number: an identity provider session and an " +
-        "application session, where before there was one row doing both jobs",
-    function () {
-      assert.strictEqual(after.length, before + 2);
+  check("THE COUNT WENT UP BY EXACTLY ONE, which is the shape of the " +
+        "cutover in one number: the identity provider's session and no " +
+        "console session beside it", function () {
+      assert.strictEqual(after.length, before + 1);
+      assert.ok(after.every(function (one) {
+        return one.kind !== "Admin console session";
+      }), JSON.stringify(after.map(function (one) {
+        return one.kind;
+      })));
     });
 
-  // The console is REACHABLE now, which is the half a list cannot show: a row
-  // in a register and a working credential are different claims.
-  const page = await b.go("GET", "/admin/sessions");
-  check("and the console it was signed in to now answers 200 rather than " +
-        "redirecting", function () {
-      assert.strictEqual(page.status, 200);
+  // The console is REACHABLE, which is the half a list cannot show: a row in
+  // a register and a working credential are different claims. Its credential
+  // is the token, and `/admin/sessions` is drawn from this operation.
+  const page = await b.console.api("GET", "/admin-api/sessions?per=1");
+  check("and the console's token reads GET /admin-api/sessions, the page " +
+        "it was signed in to", function () {
+      assert.strictEqual(page.status, 200,
+                         page.status + " " + String(page.text).slice(0, 200));
     });
   log.debug("Leaving theConsoleSignInCreatesASession().");
   return b;
+}
+
+// THE CONSOLE'S SIGN OUT (#446). The shell's Sign out sends the browser to
+// the protocol-independent `/logout`, whose Global logout form ends the
+// sign-on session — and with it everything issued on it. The claim is not
+// that a page says so: it is that the session leaves the register, that the
+// console's refresh token is refused afterwards, and that the browser, still
+// holding its cookie, starts the next authorization request at the sign-in
+// screen rather than coming straight back in.
+async function theConsoleSignOutEndsIt(b, who) {
+  log.debug("Entering theConsoleSignOutEndsIt().");
+  log.info("=== " + who + " signs out of the console at /logout ===");
+  const signOnId = signOnIdOf(b);
+  assert.ok(signOnId && await rowFor(signOnId),
+    "precondition: " + who + "'s sign-on session should be listed");
+
+  const page = await b.go("GET", "/logout");
+  const global = /<form[^>]+action="[^"]*\/logout"[^>]*>((?:(?!<\/form>)[\s\S])*?name="scope" value="global"[\s\S]*?)<\/form>/
+    .exec(page.text);
+  check("/logout draws the Global logout form the console's Sign out " +
+        "leads to", function () {
+      assert.ok(page.status === 200 && global,
+        "/logout answered " + page.status + ": " +
+        String(page.text).slice(0, 300));
+    });
+  const fields = {};
+  const hidden = /<input type="hidden" name="([^"]+)" value="([^"]*)"/g;
+  let m = hidden.exec(global ? global[1] : "");
+  while (m) {
+    fields[m[1]] = m[2];
+    m = hidden.exec(global[1]);
+  }
+  const out = await b.go("POST", "/logout", form(fields));
+  check("pressing it answers", function () {
+    assert.ok(out.status === 200 || out.status === 303 || out.status === 302,
+      "POST /logout answered " + out.status);
+  });
+
+  const gone = await rowFor(signOnId);
+  check("THE SIGN-ON SESSION IS GONE FROM GET /admin-api/sessions, which is " +
+        "what an operator looking at /admin/sessions sees", function () {
+      assert.strictEqual(gone, null,
+        "session " + signOnId + " is still listed after the sign-out");
+    });
+
+  const renewed = await b.console.refresh();
+  check("AND THE CONSOLE'S REFRESH TOKEN IS REFUSED — a sign-out that left " +
+        "the page able to renew its token would sign nobody out of the " +
+        "console", function () {
+      assert.notStrictEqual(renewed.status, 200,
+        "the refresh grant answered 200 after the sign-out: " +
+        JSON.stringify(renewed.json).slice(0, 200));
+    });
+
+  // THE COOKIE BUYS NOTHING EITHER: a new authorization request from the
+  // same browser ends at the sign-in screen, not at the console's callback.
+  const authorize = await b.go("GET", "/oauth2/authorize?" + form({
+    response_type: "code", client_id: "sts-admin-console",
+    redirect_uri: base + "/admin/callback",
+    scope: "openid admin:read admin:write", state: "after-signout",
+    code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+    code_challenge_method: "S256", resource: base + "/admin-api" }));
+  check("and the console's next authorization request ends at the SIGN-IN " +
+        "SCREEN: the authorization endpoint has no session to answer with",
+    function () {
+      assert.ok(/\/authn\/login\?authn=/.test(authorize.location),
+        "the authorization endpoint answered " + authorize.status + " to " +
+        authorize.location + " rather than sending the browser to the " +
+        "sign-in screen");
+    });
+
+  const audit = await get("/audit?per=200");
+  const ended = audit.body.events.filter(function (e) {
+    return String(e.action || "") === "session.end" &&
+           String(e.target || "") === signOnId;
+  });
+  check("and the sign-out is in the audit log naming that session",
+    function () {
+      assert.ok(ended.length > 0, "no session.end row naming " + signOnId);
+    });
+  log.debug("Leaving theConsoleSignOutEndsIt().");
 }
 
 // ---------------------------------------------------------------------------
@@ -947,23 +1047,19 @@ async function noPageLinksToABareSignInScreen() {
     });
   }
 
-  // THE CONSOLE'S 401, which is the one of the three that is not a GET: a form
-  // posted after the session expired. Its link has to be an ABSOLUTE URL in the
-  // DEFAULT realm as well, which is asserted here rather than assumed because
-  // app.js rewrites root-relative hrefs into whatever realm is being read.
+  // THE CONSOLE'S 401 WENT WITH ITS HANDLERS AT THE CUTOVER (#446): a form
+  // is sent to `/admin-api` by the page, which signs in again itself, so a
+  // POST to a console path has no handler to answer it — it is a 404, and a
+  // 404 draws no sign-in link at all.
   const refused = await b.go("POST", "/admin/tokens",
                              form({ action: "revoke-kind" }));
-  if (refused.status === 401) {
-    check("the console's refusal for a form posted with an expired session " +
-          "offers a REAL way back — an absolute URL that mints a pending " +
-          "record, not the screen itself", function () {
-        assert.ok(!/href="\/authn\/login"/.test(refused.text),
-          "the console's 401 links to a bare /authn/login");
-        assert.ok(/<a href="https?:\/\/[^"]+\/admin"/.test(refused.text),
-          "the console's 401 carries no absolute link back to the default " +
-          "realm's console: " + String(refused.text).slice(0, 400));
-      });
-  }
+  check("a form posted to a console path is answered 404, with no link to " +
+        "a bare /authn/login", function () {
+      assert.strictEqual(refused.status, 404,
+        "POST /admin/tokens answered " + refused.status);
+      assert.ok(!/href="\/authn\/login"/.test(refused.text),
+        "the 404 links to a bare /authn/login");
+    });
   log.debug("Leaving noPageLinksToABareSignInScreen().");
 }
 
@@ -1512,7 +1608,8 @@ async function test() {
 
   check("both sessions are live at once and are DIFFERENT sessions — one " +
         "store does not mean one session", function () {
-      assert.notStrictEqual(sessionIdOf(operator), sessionIdOf(owner));
+      assert.notStrictEqual(signOnIdOf(operator), signOnIdOf(owner));
+      assert.notStrictEqual(signOnIdOf(operator), sessionIdOf(owner));
     });
 
   const intruder = await oneUserCannotReachAnother(owner);
@@ -1524,8 +1621,11 @@ async function test() {
   // that nothing above is signed out from underneath it.
   await theSignOutButtonEndsBothSessions(PORTAL_DOOR, "/portal",
                                          usernameFor("portal-signout"));
-  await theSignOutButtonEndsBothSessions(ADMIN_DOOR, "/admin",
-                                         usernameFor("console-signout"));
+  // The console's is `/logout` since the cutover (#446): it holds no
+  // session of its own for a button of its own to end.
+  const consoleSignout = usernameFor("console-signout");
+  await theConsoleSignOutEndsIt(await signInToConsole(consoleSignout),
+                                consoleSignout);
   await signingOutInvalidatesIt(newcomer, NEWCOMER, PORTAL_DOOR);
 
   // SECTION 7 RUNS BEFORE THE THREE SIGN-OUTS BELOW, in a browser of its own,
@@ -1545,7 +1645,7 @@ async function test() {
             sessionIdOf(intruderAgain));
   await signingOutInvalidatesIt(intruderAgain, INTRUDER, PORTAL_DOOR);
   await signingOutInvalidatesIt(owner, OWNER, PORTAL_DOOR);
-  await signingOutInvalidatesIt(operator, OPERATOR, "/admin/sessions");
+  await theConsoleSignOutEndsIt(operator, OPERATOR);
 
   // A FLOOR ON THE COUNT, for sts_admin_console.js's reason: a section that
   // stops being called takes its assertions with it and the run still says

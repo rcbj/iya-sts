@@ -242,26 +242,17 @@ function jobOf(json, id, realm) {
   })[0] || null;
 }
 
-// A console form post, with the CSRF token taken off the page it posts to.
-async function consolePost(cookie, path, form) {
+// A console form post: since the cutover (#446) the operation the form at
+// `path` is, sent as the console sends it (`console_signin.js`'s `act()`).
+async function consolePost(client, path, form) {
   log.debug("Entering consolePost(). " + path);
-  const drawn = await call("GET", base + path, { headers: { Cookie: cookie } });
-  const csrf = (drawn.text.match(/name="csrf_token" value="([^"]+)"/) ||
-                [])[1] || "";
-  assert.ok(csrf, "precondition: " + path + " drawn for this session should " +
-                  "carry a CSRF token; it answered " + drawn.status);
-  const reply = await call("POST", base + path, {
-    headers: { Cookie: cookie,
-               "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(Object.assign({ csrf_token: csrf }, form))
-      .toString()
-  });
+  const reply = await client.act(path, form);
   log.debug("Leaving consolePost().");
   return reply;
 }
 
 // ---------------------------------------------------------------------------
-async function thePageAndTheApiAgree(cookie) {
+async function thePageAndTheApiAgree(consoleClient) {
   log.debug("Entering thePageAndTheApiAgree().");
   log.info("=== 1. the page and the API list the same jobs ===");
   // THE TWO READINGS ARE TAKEN AGAIN UNTIL THEY AGREE (2026-09-27), at most
@@ -298,8 +289,7 @@ async function thePageAndTheApiAgree(cookie) {
   for (let attempt = 1; attempt <= 5; attempt++) {
     const readStarted = Date.now();
     json = await report();
-    pageJson = await call("GET", base + "/admin/scheduler?format=json" +
-                                "&per=200", { headers: { Cookie: cookie } });
+    pageJson = await consoleClient.get("/admin/scheduler?format=json&per=200");
     readEndedMs = Date.now();
     readGapMs = readEndedMs - readStarted;
     // EVERY PAGE, as report() reads the API's (2026-09-23): a comparison of
@@ -309,9 +299,8 @@ async function thePageAndTheApiAgree(cookie) {
     const pagesOf = Number(((pageJson.body || {}).jobsPaging || {}).pages) ||
                     1;
     for (let page = 2; page <= pagesOf; page++) {
-      const more = await call("GET", base + "/admin/scheduler?format=json" +
-                              "&per=200&jobsPage=" + page,
-                              { headers: { Cookie: cookie } });
+      const more = await consoleClient.get("/admin/scheduler?format=json" +
+                                    "&per=200&jobsPage=" + page);
       pageJson.body.jobs = pageJson.body.jobs.concat((more.body || {}).jobs ||
                                                      []);
     }
@@ -323,12 +312,10 @@ async function thePageAndTheApiAgree(cookie) {
     // big enough to hold them: without this it failed on `signing.rotate`,
     // which sorts onto the second page, about a page that was drawing exactly
     // what it should. The JSON fetch above already asks the same way.
-    html = await call("GET", base + "/admin/scheduler?per=200",
-                            { headers: { Cookie: cookie } });
+    html = await consoleClient.get("/admin/scheduler?per=200");
     for (let page = 2; page <= pagesOf; page++) {
-      const more = await call("GET", base + "/admin/scheduler?per=200" +
-                              "&jobsPage=" + page,
-                              { headers: { Cookie: cookie } });
+      const more = await consoleClient.get("/admin/scheduler?per=200&jobsPage=" +
+                                    page);
       html.text += more.text;
     }
     ids = json.jobs.map(function (j) { return j.id + "@" + j.realm; })
@@ -448,7 +435,7 @@ async function aLeaderTicks() {
   return json;
 }
 
-async function runNow(cookie) {
+async function runNow(consoleClient) {
   log.debug("Entering runNow().");
   log.info("=== 3. Run now, through the API and the console ===");
   const before = await report();
@@ -477,16 +464,15 @@ async function runNow(cookie) {
           assert.strictEqual(done.trigger, "manual");
           assert.ok(done.nodeName || done.host, JSON.stringify(done));
         });
-  const viaConsole = await consolePost(cookie, "/admin/scheduler",
+  const viaConsole = await consolePost(consoleClient, "/admin/scheduler",
                                        { action: "run", job: target });
-  // A form is answered as a form is: 303, to the run's own page.
-  const consoleRunId = decodeURIComponent(
-    (viaConsole.location.match(/[?&]run=([^&]+)/) || [])[1] || "");
-  check("the console's Run now form queues one too, and lands on its run",
+  // The form is the operation since the cutover (#446): 202, with the run.
+  const consoleRunId = String((viaConsole.json || {}).runId || "");
+  check("the console's Run now form queues one too, and answers its run",
         function () {
-          assert.strictEqual(viaConsole.status, 303,
+          assert.strictEqual(viaConsole.status, 202,
                              viaConsole.text.slice(0, 300));
-          assert.ok(consoleRunId, "the redirect was " + viaConsole.location);
+          assert.ok(consoleRunId, viaConsole.text.slice(0, 300));
         });
   await until("the console's run to finish", async function () {
     const r = await api("GET", "/admin-api/scheduler?run=" +
@@ -506,15 +492,9 @@ async function adminReadRunsNothing() {
   log.debug("Entering adminReadRunsNothing().");
   log.info("=== 4. Admin Read runs nothing ===");
   const reader = "sched-read-" + STAMP;
-  const cookie = await signin.signInToTheConsole(base, reader, log,
-                                                 { grant: "read" });
-  if (cookie === null) {
-    log.info("  (the console gate is off in this stack; nothing to refuse)");
-    log.debug("Leaving adminReadRunsNothing(). Gate off.");
-    return;
-  }
-  const page = await call("GET", base + "/admin/scheduler",
-                          { headers: { Cookie: cookie } });
+  const consoleClient = await signin.signInToTheConsole(base, reader, log,
+                                                        { grant: "read" });
+  const page = await consoleClient.get("/admin/scheduler");
   check("an Admin Read session reads the page", function () {
     assert.strictEqual(page.status, 200, "it answered " + page.status);
   });
@@ -522,14 +502,12 @@ async function adminReadRunsNothing() {
     assert.ok(page.text.indexOf(">Run now</button>") < 0,
               "a Run now button is drawn for Admin Read");
   });
-  const refused = await consolePost(cookie, "/admin/scheduler",
+  const refused = await consolePost(consoleClient, "/admin/scheduler",
                                     { action: "run",
                                       job: "scheduler.history" });
   check("and its form post is refused", function () {
-    assert.ok(refused.status === 403 ||
-              (refused.status === 303 && /[?&]error=/.test(refused.location)),
-              "it answered " + refused.status + " " + refused.location + " " +
-              refused.text.slice(0, 200));
+    assert.strictEqual(refused.status, 403, "it answered " + refused.status +
+                       " " + refused.text.slice(0, 200));
   });
   log.debug("Leaving adminReadRunsNothing().");
 }
@@ -716,12 +694,11 @@ async function aRemovedRealmsJobsGo() {
 async function main() {
   log.debug("Entering main().");
   const admin = "sched-admin-" + STAMP;
-  const cookie = await signin.signInToTheConsole(base, admin, log,
-                                                 { grant: "write" });
-  const jar = cookie || "";
+  const consoleClient = await signin.signInToTheConsole(base, admin, log,
+                                                        { grant: "write" });
   await aLeaderTicks();
-  await thePageAndTheApiAgree(jar);
-  await runNow(jar);
+  await thePageAndTheApiAgree(consoleClient);
+  await runNow(consoleClient);
   await adminReadRunsNothing();
   await aRealmTokenIsConfined();
   await theClusterAgrees();

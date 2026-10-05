@@ -377,25 +377,26 @@ function childMain() {
                                                   newest.signals[0].device }));
 
       // --- H. the page -------------------------------------------------------
-      const riskAdmin = require(ROOT + '/admin-ui/risk_admin');
       let html = '';
       try {
-        const RiskAdmin = riskAdmin.RiskAdmin;
-        const inst = new RiskAdmin(RiskAdmin.defaultDeps());
-        // The page draws its two pagers off `riskView()`'s raw paging (the
+        // The page draws its two pagers off `riskView()`'s paging (the
         // Risk page's paging, which reached develop beside #164), so the
-        // view handed in carries them as `riskView()` does.
+        // view handed in carries them as `riskView()` does — as the paging
+        // JSON the API answers, which the page's renderer draws from since
+        // #446 (`admin-ui/web_risk.ts`).
         const adminViews = require(ROOT + '/admin-core/admin_views');
-        const drawn = { assessments: view.assessments, subjects: [],
-                        signals: view.signals };
-        Object.defineProperty(drawn, 'assessmentsPagingRaw', {
-          value: adminViews.pagingOf({}, view.assessments.total,
-                                     { name: 'assessments',
-                                       noun: 'assessments' }) });
-        Object.defineProperty(drawn, 'subjectsPagingRaw', {
-          value: adminViews.pagingOf({}, 0, { name: 'subjects',
-                                              noun: 'people' }) });
-        html = inst.assessmentsHtml({ query: {} }, drawn);
+        const RiskPage = require(ROOT + '/admin-ui/web_risk');
+        const drawn = {
+          assessments: view.assessments, subjects: [],
+          signals: view.signals,
+          assessmentsPaging: adminViews.pagingJson(adminViews.pagingOf({},
+            view.assessments.total, { name: 'assessments',
+                                      noun: 'assessments' })),
+          subjectsPaging: adminViews.pagingJson(adminViews.pagingOf({}, 0,
+            { name: 'subjects', noun: 'people' }))
+        };
+        html = RiskPage.assessmentsHtml({ query: {}, write: false },
+                                        JSON.parse(JSON.stringify(drawn)));
       } catch (e) {
         html = 'threw: ' + (e && e.message);
       }

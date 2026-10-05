@@ -588,9 +588,14 @@ class CertificateViews {
     }
     log.debug("Leaving CertificateViews.detailsView(). " + model.chain.length +
               " link(s).");
+    // The key's post-quantum classification (#446), which the dialog's icon
+    // is drawn from: a renderer in a browser parses no certificate.
     return Object.assign({ ok: true,
                            realm: this.scopeOfRealm() || realms.DEFAULT_ID,
-                           appearances: entry.appearances.slice() }, model);
+                           appearances: entry.appearances.slice(),
+                           pqc: this.pqcOf(model.certificate &&
+                                           model.certificate.pem) || null },
+                         model);
   }
 
   // ---------------------------------------------------------------------------

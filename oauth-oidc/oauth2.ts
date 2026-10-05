@@ -7768,6 +7768,18 @@ class OAuth2Server {
     // tokenSet() asks again, as the backstop. See
     // `common/role_permissions.ts`.
     if (rolePermissions.asksForGated(scope)) {
+      // THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#446), made here when the
+      // console's own client asks, because a console that is a static client
+      // of /admin-api has no callback of its own to make it from. Asked
+      // BEFORE the narrowing, which reads the roster the claim changes. A
+      // no-op for every other client and every other person; see
+      // `role_permissions.ts`'s `noteConsoleSignIn()`.
+      rolePermissions.noteConsoleSignIn(person, {
+        clientId: query.client_id,
+        amr: amr,
+        signInAuthority: self.deps.authn.latestAuthorityOf(
+          sessionId ? self.deps.authn.sessionById(String(sessionId)) : null)
+      });
       const narrowed = rolePermissions.narrowScope(scope, person,
         { clientId: query.client_id, grant: 'authorization_code' });
       if (narrowed.emptied) {
@@ -13053,8 +13065,10 @@ class OAuth2Server {
 
     // FAPI (#138): a confidential client authenticates with mTLS,
     // private_key_jwt or client_secret_jwt, never a plain secret.
+    // The admin console as a public client is the one exception (#446):
+    // `fapi.js` argues it, and is told which client this is.
     const fapiAuth = fapi.clientAuthenticationRefusal(
-      clientObservation.method);
+      clientObservation.method, client.client_id);
     if (fapiAuth) {
       if (presented.basic) {
         res.set('WWW-Authenticate', self.basicChallenge());
@@ -13423,6 +13437,21 @@ class OAuth2Server {
       // is not sender-constrained. Here for the same reason, and reading
       // `withRefresh` — the grant's own answer to "is a refresh token about to
       // be minted" — rather than a list of grants kept beside it.
+      // #446: the admin console as a public client is issued nothing that
+      // is not bound to a key it proved — a rule about that one client and
+      // not a setting. Here, where every grant mints, for the reason the
+      // checks beside it are.
+      const consoleProblem = senderConstraints.publicClientIssuanceRefusal({
+        clientId: opts.client_id,
+        method: clientObservation.method,
+        dpopJkt: dpopJkt,
+        grant: grant
+      });
+      if (consoleProblem) {
+        log.debug("Leaving issue(). The admin console, as a public client, " +
+                  "sent no DPoP proof.");
+        throw new SenderConstraintRefused(log, consoleProblem);
+      }
       if (opts.withRefresh !== false) {
         const constraint = senderConstraints.refreshIssuanceRefusal({
           grant: grant,
@@ -16594,8 +16623,10 @@ class OAuth2Server {
                       { 'WWW-Authenticate': self.basicChallenge() } : null);
     }
     const observation = await bcp.observeClientAuthentication(authentication);
-    // FAPI (#138): the confidential client authentication methods it allows.
-    const fapiAuth = fapi.clientAuthenticationRefusal(observation.method);
+    // FAPI (#138): the confidential client authentication methods it allows
+    // — and the admin console as a public client, its one exception (#446).
+    const fapiAuth = fapi.clientAuthenticationRefusal(observation.method,
+                                                      clientId);
     if (fapiAuth) {
       log.debug("Leaving OAuth2Server.parRequest(). FAPI refused the " +
                 "client's authentication method.");

@@ -12,13 +12,19 @@
 // scope table as a table, the chooser's decision). This is the half that is
 // only true of a running service:
 //
-//   1. THE CHOOSER. A bare `/admin` or `/portal` with realms defined asks which
-//      realm; `?realm=<id>` redirects under that realm's prefix, an unknown id
-//      is refused, `?realm=default` and a deep link sign in where they are.
+//   1. THE CHOOSER. A bare `/portal` with realms defined asks which realm;
+//      `?realm=<id>` redirects under that realm's prefix, an unknown id is
+//      refused, `?realm=default` and a prefixed path sign in where they are.
+//      The console has no chooser since the #446 cutover: every `/admin`
+//      address answers the static console's document, which signs in at the
+//      realm its own prefix names and switches realms in place.
 //   2. A REALM ADMINISTRATOR IS CONFINED. Signed in through a realm they read
 //      that realm's pages, do not see or reach the service pages, cannot write
 //      a per-process setting, create a realm or replace the service Root, and
-//      are refused the default realm's console and any other realm's.
+//      are refused the default realm's console and any other realm's. Since
+//      the #446 cutover each of those is the console's `/admin-api` call made
+//      with the token the realm's console holds (`console_signin.js`), and the
+//      navigation is `GET /admin-api/console`'s sections.
 //   3. THE SERVICE ADMINISTRATOR IS NOT. Signed in through the default realm
 //      they reach the service pages under a realm's prefix as well as at the
 //      root.
@@ -80,15 +86,6 @@ const REALM_PERSON = usernameFor("realm-admin");
 const SERVICE_PERSON = usernameFor("service-admin");
 
 var checks = 0;
-// The href of the account menu's first link, the "My account" one.
-function myAccountHref(html) {
-  log.debug("Entering myAccountHref().");
-  const found = /class="usermenupanel">[\s\S]*?<a href="([^"]*)"/.exec(
-    String(html || ""));
-  log.debug("Leaving myAccountHref().");
-  return found ? found[1].replace(/&amp;/g, "&") : "";
-}
-
 function check(what, fn) {
   log.debug("Entering check().");
   fn();
@@ -153,44 +150,68 @@ async function ensureRealm(id, name) {
   log.debug("Leaving ensureRealm().");
 }
 
-// The console's navigation column alone. A page's own prose may link to a
-// service page by name — the Tokens page mentions Persistence — and what is
-// hidden from a realm administrator is the NAVIGATION, which is the claim.
-function navOf(html) {
-  log.debug("Entering navOf().");
-  const found = /<nav aria-label="Admin console sections">([\s\S]*?)<\/nav>/
-    .exec(String(html || ""));
-  log.debug("Leaving navOf(). " + (found ? "found" : "absent"));
-  return found ? found[1] : "";
+// THE CONSOLE'S DOCUMENT FIRST, as a browser opening it loads it: serving it
+// under a realm's prefix is what registers that realm's console callback
+// (#446), so the sign-in that follows has a redirect URI to come back to.
+async function consoleIn(prefix, username) {
+  log.debug("Entering consoleIn(). " + prefix);
+  const shell = await call("GET", base + prefix + "/admin");
+  assert.strictEqual(shell.status, 200, "GET " + prefix + "/admin answered " +
+                     shell.status);
+  const consoleClient = await consoleSignIn.signInToTheConsole(base + prefix,
+    username, log);
+  log.debug("Leaving consoleIn().");
+  return consoleClient;
 }
 
-// A console page read with a session. `json` asks for the page's JSON half.
-async function page(cookie, path, json) {
-  log.debug("Entering page(). " + path);
-  const headers = { Cookie: cookie };
-  if (json) {
-    headers.Accept = "application/json";
-  }
-  const reply = await call("GET", base + path, { headers: headers });
+// A CONSOLE READ AS THE STATIC CONSOLE MAKES IT (#446): the operation a page
+// is drawn from, with the console's token. `prefix` is the realm whose
+// operation is asked — the token's own realm, or another one, which is the
+// point of half the checks below — and `consolePath` the page,
+// `/admin/tokens`, whose operation is the `/admin-api` path of the same name.
+async function page(consoleClient, prefix, consolePath) {
+  log.debug("Entering page(). " + prefix + consolePath);
+  const reply = await consoleClient.api("GET", base + prefix + "/admin-api" +
+                                        consolePath.slice("/admin".length));
   log.debug("Leaving page().");
-  return reply;
+  return { status: reply.status, body: reply.json || {},
+           text: reply.text || "" };
 }
 
-// A console form post, with the CSRF token taken off a page the same session
-// was drawn.
-async function consolePost(cookie, realmPrefix, path, form) {
+// The frame's answer, `GET /admin-api/console`, for the realm `prefix` names:
+// the sections the navigation is drawn from, the account link, the footer's
+// facts.
+async function shellOf(consoleClient, prefix) {
+  log.debug("Entering shellOf(). " + prefix);
+  const reply = await consoleClient.api("GET", base + prefix +
+                                        "/admin-api/console");
+  assert.strictEqual(reply.status, 200, "GET " + prefix +
+    "/admin-api/console answered " + reply.status + " " +
+    String(reply.text).slice(0, 200));
+  log.debug("Leaving shellOf().");
+  return reply.json || {};
+}
+
+// The console paths a shell answer's sections name.
+function navPaths(shell) {
+  log.debug("Entering navPaths().");
+  const out = [];
+  const re = /"path":"(\/admin[^"]*)"/g;
+  const text = JSON.stringify(shell.sections || []);
+  let m = re.exec(text);
+  while (m) {
+    out.push(m[1]);
+    m = re.exec(text);
+  }
+  log.debug("Leaving navPaths(). " + out.length);
+  return out;
+}
+
+// A console form, as the static console sends it: the operation it is
+// (`console_signin.js`'s `act()`), in the realm the client signed in to.
+async function consolePost(consoleClient, path, form) {
   log.debug("Entering consolePost(). " + path);
-  const drawn = await page(cookie, realmPrefix + "/admin/tokens", false);
-  const csrf = (drawn.text.match(/name="csrf_token" value="([^"]+)"/) ||
-                [])[1] || "";
-  assert.ok(csrf, "precondition: a console page drawn for this session " +
-                  "should carry a CSRF token; it answered " + drawn.status);
-  const reply = await call("POST", base + path, {
-    headers: { Cookie: cookie, Accept: "application/json",
-               "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(Object.assign({ csrf_token: csrf }, form))
-      .toString()
-  });
+  const reply = await consoleClient.act(path, form);
   log.debug("Leaving consolePost().");
   return reply;
 }
@@ -241,17 +262,29 @@ async function theChooserAsksWhichRealm() {
         assert.ok(!unknown.location, "it redirected to " + unknown.location);
       });
     const here = await call("GET", base + surface + "?realm=default");
-    check("?realm=default signs in where it is: an authorization request",
+    // THE CONSOLE SIGNS IN IN THE BROWSER since the #446 cutover: past the
+    // chooser `/admin` answers the static console's document, whose script
+    // starts the authorization request; the portal still redirects to it.
+    check("?realm=default signs in where it is: an authorization request" +
+          (surface === "/admin" ? ", started by the console's document" : ""),
       function () {
+        if (surface === "/admin") {
+          assert.ok(here.status === 200 &&
+                    /<script src="\/admin\/console\.js"/.test(here.text),
+            "it answered " + here.status + " " + here.text.slice(0, 200));
+          return;
+        }
         assert.ok(/\/oauth2\/authorize\?/.test(here.location),
           "it answered " + here.status + " -> " + here.location);
       });
   }
   const deep = await call("GET", base + "/admin/tokens");
-  check("a deep link is never asked: /admin/tokens starts a sign-in",
+  check("a deep link is never asked: /admin/tokens is the console's " +
+        "document, which signs in where it is",
     function () {
-      assert.ok(/\/oauth2\/authorize\?/.test(deep.location),
-        "it answered " + deep.status + " -> " + deep.location);
+      assert.ok(deep.status === 200 &&
+                /<script src="\/admin\/console\.js"/.test(deep.text),
+        "it answered " + deep.status + " " + deep.text.slice(0, 200));
     });
   const prefixed = await call("GET", base + "/realm/" + REALM + "/portal");
   check("a surface already under a realm prefix is never asked",
@@ -285,73 +318,78 @@ async function aRealmAdministratorIsConfined() {
                        " Admin Write in " + REALM + " answered " +
                        grant.status + " " + grant.text.slice(0, 200));
   }
-  const cookie = await consoleSignIn.signInToTheConsole(base + R,
-                                                        REALM_PERSON, log);
-  assert.ok(cookie, "the console gate is off, so there is nothing to confine");
+  const consoleClient = await consoleIn(R, REALM_PERSON);
 
-  const own = await page(cookie, R + "/admin/tokens?format=json", true);
+  const own = await page(consoleClient, R, "/admin/tokens?per=1");
   check("their own realm's pages answer", function () {
     assert.strictEqual(own.status, 200, "it answered " + own.status);
   });
-  const drawn = await page(cookie, R + "/admin/tokens", false);
-  const nav = navOf(drawn.text);
+  const shell = await shellOf(consoleClient, R);
+  const nav = navPaths(shell);
   check("the navigation does not offer a service page", function () {
-    // The page being drawn is a span in its own navigation, not a link, so
-    // the precondition names a neighbour.
-    assert.ok(/\/admin\/users"/.test(nav),
-      "precondition: the navigation column was not found on the page");
-    assert.ok(!/href="[^"]*\/admin\/persistence"/.test(nav),
-      "the navigation links to /admin/persistence");
-    assert.ok(!/href="[^"]*\/admin\/secrets"/.test(nav),
-      "the navigation links to /admin/secrets");
+    assert.ok(nav.indexOf("/admin/users") >= 0,
+      "precondition: the sections name no /admin/users: " + nav.join(" "));
+    assert.ok(nav.indexOf("/admin/persistence") < 0,
+      "the navigation names /admin/persistence");
+    assert.ok(nav.indexOf("/admin/secrets") < 0,
+      "the navigation names /admin/secrets");
   });
   // THE ACCOUNT LINK GOES WHERE THEIR ACCOUNT IS. It named the default
   // realm's portal for everybody until 2026-09-16, which for a realm
   // administrator is a portal where they are nobody.
   check("their My account link is their own realm's portal", function () {
-    const link = myAccountHref(drawn.text);
-    assert.ok(new RegExp(R + "/portal$").test(link),
-      "the link is " + JSON.stringify(link));
+    assert.ok(new RegExp(R + "/portal$").test(String(shell.portalHref || "")),
+      "the link is " + JSON.stringify(shell.portalHref));
   });
+  // NOR ARE THEY HANDED the database host and the secret-store paths the
+  // footer draws for a service administrator: since the #446 cutover the
+  // frame is drawn in their browser from this answer, so what is not drawn
+  // must not be in it either.
   check("nor the runtime footer's database host and secret-store paths",
     function () {
-      assert.ok(!/secret store: key-encryption key/.test(drawn.text),
-        "the footer draws the secret-store facts");
+      const facts = shell.runtime || {};
+      assert.ok(!facts.database && !facts.keyEncryptionKey &&
+                !facts.databasePassword,
+        "the console's answer carries the runtime facts: " +
+        JSON.stringify(facts).slice(0, 200));
     });
   for (const service of ["/admin/persistence", "/admin/secrets",
-                         "/admin/tls/trust", "/admin/api-explorer"]) {
-    const refused = await page(cookie, R + service + "?format=json", true);
+                         "/admin/api-explorer"]) {
+    const refused = await page(consoleClient, R, service);
     check("a service page is refused under their own prefix: " + service,
       function () {
         assert.strictEqual(refused.status, 403,
           "it answered " + refused.status);
       });
   }
-  const root = await page(cookie, "/admin/tokens?format=json", true);
+  // THEIR TOKEN IS THEIR REALM'S: the default realm's API is not its
+  // audience, and neither is any other realm's.
+  const root = await page(consoleClient, "", "/admin/tokens?per=1");
   check("the default realm's console is refused — they administer another " +
         "realm", function () {
-    assert.strictEqual(root.status, 403, "it answered " + root.status);
-    assert.ok(/outside_realm/.test(root.text), root.text.slice(0, 200));
+    assert.ok(root.status === 401 || root.status === 403,
+      "it answered " + root.status + " " + root.text.slice(0, 200));
   });
-  const other = await page(cookie, "/realm/" + OTHER +
-                           "/admin/tokens?format=json", true);
+  const other = await page(consoleClient, "/realm/" + OTHER,
+                           "/admin/tokens?per=1");
   check("so is any other realm's console", function () {
-    assert.strictEqual(other.status, 403, "it answered " + other.status);
+    assert.ok(other.status === 401 || other.status === 403,
+      "it answered " + other.status);
   });
 
-  const perProcess = await consolePost(cookie, R, R + "/admin/config",
+  const perProcess = await consolePost(consoleClient, "/admin/config",
     { action: "set-many", "scheduler.runHistoryCount": "3" });
   check("a per-process setting is refused, because a realm write of one " +
         "lands process-wide", function () {
     assert.strictEqual(perProcess.status, 403,
       "it answered " + perProcess.status + " " + perProcess.text.slice(0, 200));
   });
-  const created = await consolePost(cookie, R, R + "/admin/realms",
+  const created = await consolePost(consoleClient, "/admin/realms",
     { action: "create", id: "rc-" + STAMP, name: "Should not exist" });
   check("creating a realm is refused", function () {
     assert.strictEqual(created.status, 403, "it answered " + created.status);
   });
-  const rootCa = await consolePost(cookie, R, R + "/admin/pki",
+  const rootCa = await consolePost(consoleClient, "/admin/pki",
     { action: "build-root" });
   check("replacing the service Root is refused", function () {
     assert.strictEqual(rootCa.status, 403, "it answered " + rootCa.status);
@@ -384,36 +422,33 @@ async function theServiceAdministratorIsNot() {
                          grant.status + " " + grant.text.slice(0, 200));
       granted = true;
     }
-    const cookie = await consoleSignIn.signInToTheConsole(base,
-                                                          SERVICE_PERSON, log);
-    for (const path of ["/admin/persistence",
-                        "/realm/" + REALM + "/admin/persistence",
-                        "/realm/" + OTHER + "/admin/tokens"]) {
-      const reply = await page(cookie, path + "?format=json", true);
-      check("the service administrator reads " + path, function () {
-        assert.strictEqual(reply.status, 200, "it answered " + reply.status);
-      });
+    const consoleClient = await consoleIn("", SERVICE_PERSON);
+    for (const where of [["", "/admin/persistence"],
+                         ["/realm/" + REALM, "/admin/persistence"],
+                         ["/realm/" + OTHER, "/admin/tokens?per=1"]]) {
+      const reply = await page(consoleClient, where[0], where[1]);
+      check("the service administrator reads " + where[0] + where[1],
+        function () {
+          assert.strictEqual(reply.status, 200, "it answered " +
+                             reply.status + " " + reply.text.slice(0, 200));
+        });
     }
-    const drawn = await page(cookie, "/realm/" + REALM + "/admin/tokens",
-                             false);
+    const shell = await shellOf(consoleClient, "/realm/" + REALM);
     check("and, reading a realm, is linked to the DEFAULT realm's portal, " +
           "where a service administrator's account is", function () {
-      const link = myAccountHref(drawn.text);
-      assert.ok(/:\/\/[^/]+\/portal$/.test(link),
-        "the link is " + JSON.stringify(link));
+      assert.ok(/:\/\/[^/]+\/portal$/.test(String(shell.portalHref || "")),
+        "the link is " + JSON.stringify(shell.portalHref));
     });
     check("and is offered the service pages in a realm's navigation",
       function () {
-        assert.ok(/href="[^"]*\/admin\/persistence"/.test(navOf(drawn.text)),
-          "the navigation does not link to /admin/persistence");
+        assert.ok(navPaths(shell).indexOf("/admin/persistence") >= 0,
+          "the navigation does not name /admin/persistence");
       });
 
     log.info("=== the same username, signed in through the realm ===");
     const R = "/realm/" + REALM;
-    const same = await consoleSignIn.signInToTheConsole(base + R,
-                                                        SERVICE_PERSON, log);
-    const collided = await page(same, R + "/admin/persistence?format=json",
-                                true);
+    const same = await consoleIn(R, SERVICE_PERSON);
+    const collided = await page(same, R, "/admin/persistence");
     check("A NAME IS NOT AN AUTHORITY: the service administrator's username " +
           "signed in through the realm is that realm's person, and is " +
           "refused a service page", function () {
