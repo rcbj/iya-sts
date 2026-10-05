@@ -5208,7 +5208,13 @@ class AdminViews {
       filter: { sessions: state.wanted || null,
                 applications: appState.wanted || null },
       paging: { sessions: this.pagingJson(state.page.paging),
-                applications: this.pagingJson(appState.page.paging) }
+                applications: this.pagingJson(appState.page.paging) },
+      // The rows each table's page shows and how many each filter matched
+      // (#446): the page draws its two tables from this answer.
+      shown: { sessions: state.page.shown,
+               applications: appState.page.shown },
+      matched: { sessions: state.matched.length,
+                 applications: appState.matched.length }
     });
   }
 
@@ -5352,7 +5358,11 @@ class AdminViews {
       filter: { accounts: state.wanted || null,
                 applications: appState.wanted || null },
       paging: { accounts: this.pagingJson(state.page.paging),
-                applications: this.pagingJson(appState.page.paging) }
+                applications: this.pagingJson(appState.page.paging) },
+      // The rows each table's page shows (#446): the page draws its two
+      // tables from this answer.
+      shown: { accounts: state.page.shown,
+               applications: appState.page.shown }
     });
   }
 

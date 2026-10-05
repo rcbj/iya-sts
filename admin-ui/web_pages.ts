@@ -122,6 +122,11 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return CaepRiscPage.caepBody(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/caep-sessions', title: 'CAEP sessions',
+    operation: '/admin-api/caep/sessions',
+    render: function (view: Json, ctx?: Json): string {
+      return CaepRiscPage.caepSessionsBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/cells', title: 'Cells', operation: '/admin-api/cells',
     render: CellsPage.render },
   { path: '/admin/claim-providers', title: 'Claims Providers',
@@ -226,6 +231,11 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/risc',
     render: function (view: Json, ctx?: Json): string {
       return CaepRiscPage.riscBody(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/risc-accounts', title: 'RISC accounts',
+    operation: '/admin-api/risc/accounts',
+    render: function (view: Json, ctx?: Json): string {
+      return CaepRiscPage.riscAccountsBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/risk', title: 'Risk', operation: '/admin-api/risk',
     render: RiskPage.render },
