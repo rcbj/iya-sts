@@ -7704,6 +7704,13 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. Mirrors GET /admin/federation/map (#446): the ' +
           'relationships filtered by role, protocol and text, the graph, ' +
           'the drawing and its key. `format=svg` answers the SVG alone.' },
+  { path: '/admin-api/console', group: 'Management API',
+    name: 'What the console draws around every page',
+    specs: [],
+    what: 'NON-SPEC. The console\'s frame for the caller (#446): the gate ' +
+          'and its role labels, the realm and the realms to choose from, ' +
+          'the sections the caller may see, every page\'s label, a ' +
+          'removal in progress, the runtime, persistence and the build.' },
   { path: '/admin-api/sts-metadata', group: 'Management API',
     name: 'Every protocol, endpoint and specification this serves',
     specs: ['openapi'],

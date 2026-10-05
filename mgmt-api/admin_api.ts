@@ -5150,6 +5150,27 @@ class AdminApi {
           log.debug("Leaving the API explorer operation.");
         } },
 
+      // THE CONSOLE'S FRAME (#446): what the static console draws around
+      // every page — the sidebar, the banners, the foot — for this caller.
+      { method: 'GET', path: BASE + '/console', tag: 'Service',
+        operationId: 'getConsoleShell',
+        summary: 'What the console draws around every page, for this caller',
+        description: 'The gate as it stands for the caller and the labels ' +
+                     'of the roles it names, the trust realm and the ' +
+                     'realms to choose between, where the realm\'s root ' +
+                     'and the user portal are, the console sections the ' +
+                     'caller may see and every page\'s label, a realm\'s ' +
+                     'removal in progress, what this process runs as, what ' +
+                     'is persisted, and the build. The static console ' +
+                     'fetches it once after sign-in.',
+        mirrors: 'GET /admin',
+        responseDescription: 'The shell answer.',
+        handler: function (req, res) {
+          log.debug("Entering the management API console shell endpoint.");
+          self.sendJson(res, 200, admin.shellJson(req));
+          log.debug("Leaving the management API console shell endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/status', tag: 'Service',
         operationId: 'getStatus',
         summary: 'What this service is and how much it has done',

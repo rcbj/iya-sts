@@ -306,9 +306,11 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 // what the console index is drawn from, and the index's guide is the
 // sidebar's SECTIONS filtered by the gate — the console describing which of
 // its own pages this reader may see. `consoleJson()`'s totals are inside it.
+// `shellJson` with it, for `GET /admin-api/console`: the console's frame —
+// its sections, its labels, its banners — for the caller.
 // ---------------------------------------------------------------------------
 const MAY_STAY_ON_THE_CONSOLE = ['consoleJson', 'configJson',
-  'preparedSettingsJsonFor', 'listField', 'dashboardJson'];
+  'preparedSettingsJsonFor', 'listField', 'dashboardJson', 'shellJson'];
 
 function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
   log.debug("Entering checkOnlyTheConsolesOwnKnowledgeIsLeft().");
