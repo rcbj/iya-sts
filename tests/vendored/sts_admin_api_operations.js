@@ -3213,10 +3213,27 @@ async function theIssuedListGroupsByIssuance() {
   assert.ok(mySet.members.length >= 2,
     "and hold every credential of that reply; it holds " +
     mySet.members.length + " (" + mySet.kinds.join(", ") + ").");
-  assert.ok(mySet.members.some(function (m) { return m.jti === minted.idJti; }),
+  const idMember = mySet.members.filter(function (m) {
+    return m.jti === minted.idJti;
+  })[0];
+  assert.ok(idMember,
     "INCLUDING THE ID TOKEN, which is the member that makes this a grouping " +
     "rather than a rename: it was issued by the same call and is the one a " +
     "reader most often wants beside the access token.");
+  // AND RECORDED AS ONE (#163). An ID Token has carried no `typ` claim since
+  // #118, so the register cannot read its kind off the payload: the issuer
+  // states it out of band. For half an hour on 2026-09-22 it did not, every
+  // ID Token was registered as `other (typ=none)`, and the only symptom was
+  // the `?kind=id_token` filter below coming back without this set — which
+  // read as a flaky filter for three runs. Asserting the member's kind HERE
+  // names the cause where it is, and the filter below can only fail for a
+  // reason of its own.
+  assert.strictEqual(idMember.kind, "id_token",
+    "THE ID TOKEN MUST BE REGISTERED AS AN ID TOKEN. Its jti " +
+    minted.idJti + " is in the set, recorded as kind " +
+    JSON.stringify(idMember.kind) + " — the issuer has stopped stating the " +
+    "kind to the register (oauth2.ts's idToken(), `{ kind: 'id_token' }`), " +
+    "and no `typ` claim is there to fall back on.");
   assert.ok(mySet.setId,
     "the entry should carry the issuer's own set id, which is what says the " +
     "grouping was STATED rather than guessed from these fields.");
@@ -3252,8 +3269,18 @@ async function theIssuedListGroupsByIssuance() {
   const found = byKind.body.sets.filter(function (set) {
     return set.setKey === mySet.setKey;
   })[0];
+  // The counts go in the message (#163): "something is missing" took three
+  // runs to characterise, and what came back is what says which half failed.
+  const withIdToken = byKind.body.sets.filter(function (set) {
+    return set.members.some(function (m) { return m.kind === "id_token"; });
+  }).length;
   assert.ok(found,
-    "?kind=id_token should find the set CONTAINING an ID Token.");
+    "?kind=id_token should find the set CONTAINING an ID Token, " +
+    mySet.setKey + "; it answered " + byKind.status + " with " +
+    byKind.body.sets.length + " set(s) on page " + byKind.body.page + " of " +
+    byKind.body.pages + " (" + byKind.body.matched + " matched), " +
+    withIdToken + " of them holding an ID Token, and filter " +
+    JSON.stringify(byKind.body.filter) + ".");
   assert.ok(found.members.some(function (m) {
     return m.kind === "access_token";
   }),
