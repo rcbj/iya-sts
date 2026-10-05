@@ -2974,8 +2974,6 @@ class AdminViews {
     const paged = this.pagedRows(q, view.rows, { noun: 'generations' });
     view.rows = paged.shown;
     view.paging = this.pagingJson(paged.paging);
-    Object.defineProperty(view, 'pagingRaw',
-                          { value: paged.paging, enumerable: false });
     log.debug("Leaving AdminViews.signingHistoryView(). " + view.rows.length +
               " of " + view.total + ".");
     return view;

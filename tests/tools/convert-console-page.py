@@ -328,7 +328,9 @@ for doc, start, end, name in sorted(spans, reverse=True):
             "    return drawn;",
             "  }"]
     else:
-        del lines[doc:end + 2]
+        # The method, and the blank line after it when there is one: the
+        # last method of a class is followed by the class's own brace.
+        del lines[doc:end + (2 if lines[end + 1] == '' else 1)]
 out = '\n'.join(lines)
 web_rel = os.path.relpath(root + '/' + web_file[:-3],
                           os.path.dirname(root + '/' + source))

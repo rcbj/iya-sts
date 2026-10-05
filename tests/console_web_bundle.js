@@ -415,8 +415,16 @@ function childMain() {
     const operations = adminApi.operationSummaries().map(function (one) {
       return one.method + ' ' + one.path;
     });
+    // A page of the console, or a page drawn under one of its tabs
+    // (`/admin/keys/history` under Key pairs).
+    const consolePage = function (path) {
+      return consolePages.indexOf(path) >= 0 ||
+        consolePages.some(function (one) {
+          return path.indexOf(one + '/') === 0;
+        });
+    };
     const untrue = WebPages.PAGES.filter(function (page) {
-      return consolePages.indexOf(page.path) < 0 ||
+      return !consolePage(page.path) ||
              operations.indexOf('GET ' + page.operation) < 0 ||
              typeof page.render !== 'function' || !page.title;
     }).map(function (page) { return page.path; });

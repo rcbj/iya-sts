@@ -36,6 +36,7 @@ import CachesPage = require('./web_caches');
 import CellsPage = require('./web_cells');
 import ClaimsProvidersPage =
   require('../oauth-oidc/web_claims_providers');
+import CryptoMetadataPage = require('./web_crypto_metadata');
 import DatabasePage = require('./web_database');
 import DebuggerPage = require('../debugger/web_debugger');
 import DevicesPage = require('./web_devices');
@@ -96,6 +97,8 @@ const PAGES: WebPage[] = [
     render: ClaimsProvidersPage.render },
   { path: '/admin/commands', title: 'OpenID Provider Commands',
     operation: '/admin-api/commands', render: ProviderCommandsPage.render },
+  { path: '/admin/crypto-metadata', title: 'Cryptography',
+    operation: '/admin-api/crypto', render: CryptoMetadataPage.render },
   { path: '/admin/database', title: 'Database',
     operation: '/admin-api/database', render: DatabasePage.render },
   { path: '/admin/debugger', title: 'Protocol debugger',
@@ -138,6 +141,15 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/grants', title: 'Grants', operation: '/admin-api/grants',
     render: GrantsPage.render },
+  { path: '/admin/keys', title: 'Key pairs', operation: '/admin-api/keys',
+    render: function (view: Json, ctx?: Json): string {
+      return CryptoMetadataPage.keysBody(ctx || WebKit.context(), view);
+    } },
+  { path: '/admin/keys/history', title: 'Key pair history',
+    operation: '/admin-api/keys/history',
+    render: function (view: Json, ctx?: Json): string {
+      return CryptoMetadataPage.renderHistory(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/listeners', title: 'Listeners',
     operation: '/admin-api/listeners', render: ListenersPage.render },
   { path: '/admin/mail', title: 'Mail', operation: '/admin-api/mail',
