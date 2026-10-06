@@ -137,11 +137,14 @@ it was written. A new file here, or a new variable in a launcher, that holds a
 value the console would refuse will stop the stack at start — which is the
 point, and the message says which line.
 
-## The three issuer names are not set in `local.js` (#480)
+## The three issuer names are set in no file here (#480, #494)
 
 `saml.issuer`, `wstrust.issuer` and `wsfed.entityId` were set to
 `urn:wstrust:mock:sts` in `local.js`, the image's default, so a product
-deployment signed with the placeholder. They are unset there now.
-Development still gets the placeholder, the shipped default. Product gets
-the SAML 2.0 entityID (`common/issuer_names.ts`). `docker-tests.js` and
-`test.js` keep the placeholder for the suites.
+deployment signed with the placeholder; #480 unset them there. #494 unset
+them in `docker-tests.js` and `test.js` as well, and emptied the shipped
+default, so the suites run the rule a deployment signs under: in either
+mode an unset name is the realm's SAML 2.0 entityID, and a registered
+application's own (`<entityID>:<application>`) for a token to it
+(`common/issuer_names.ts`). A file that sets one chooses it for every
+application.

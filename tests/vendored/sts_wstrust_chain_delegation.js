@@ -52,9 +52,9 @@
 // restricted to, delegates to R, and the actor is S. Here S, the actor and
 // the requester are one tier at every hop. Nothing is set on the person.
 //
-// THE ISSUER (#480): every assertion's Issuer is, in product, the entityID
-// its AppliesTo's own `/saml2/metadata/{sp}` names (per SP, as SAML SSO
-// names itself), and in development the STS's placeholder name.
+// THE ISSUER (#480, #494): every assertion's Issuer is, in EITHER mode, the
+// entityID its AppliesTo's own `/saml2/metadata/{sp}` names (per SP, as SAML
+// SSO names itself) — the same name its `/wsfed/metadata/{rp}` names.
 //
 // WHAT IT ASSERTS, in the OAuth jobs' four layers:
 //
@@ -160,9 +160,8 @@ async function test() {
         "wstrustAppliesTo and samlEntityId, and the three requesters " +
         "delegate to the next tier only", function () {});
 
-  // THE ISSUER EACH ASSERTION MUST CARRY (#480): in product the entityID
-  // each AppliesTo's own SAML metadata names; in development the STS's
-  // placeholder name.
+  // THE ISSUER EACH ASSERTION MUST CARRY (#480, #494): in either mode the
+  // entityID each AppliesTo's own SAML metadata names.
   const issuers = [];
   for (let i = 0; i < cast.tiers.length; i++) {
     issuers.push(await kit.samlIssuerFor(base, cast.tiers[i], product));

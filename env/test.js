@@ -181,20 +181,12 @@ var config = {
     seedInternal: true
   },
 
-  // --- SAML --------------------------------------------------------------
-  saml: {
-    issuer: "urn:wstrust:mock:sts"
-  },
-
-  // --- WS-Trust ----------------------------------------------------------
-  wstrust: {
-    issuer: "urn:wstrust:mock:sts"
-  },
-
-  // --- WS-Federation -----------------------------------------------------
-  wsfed: {
-    entityId: "urn:wstrust:mock:sts"
-  },
+  // --- SAML, WS-Trust, WS-Federation: NAMES NOT SET HERE (#494) ---------
+  // `saml.issuer`, `wstrust.issuer` and `wsfed.entityId` held the
+  // development placeholder `urn:wstrust:mock:sts` here until #494, so the
+  // suite never ran the rule a deployment signs under. Unset, in either mode,
+  // they are the realm's SAML 2.0 entityID — per application for a
+  // registered one (`common/issuer_names.ts`).
 
   // --- TLS ---------------------------------------------------------------
   tls: {

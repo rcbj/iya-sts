@@ -26,6 +26,9 @@
 //                            the signed federation metadata, at the path AD FS
 //                            publishes it at, because that is where every client
 //                            looks first
+//   GET  /wsfed/metadata/{rp} ONE registered relying party's own metadata
+//                            (#494), naming the entityID its assertions are
+//                            issued under; the shared document above stays
 //   GET|POST /wsfed/rp       a mock RELYING PARTY: non-spec, the default `wreply`,
 //                            and where the sign-in response can be verified check
 //                            by check without a second service
@@ -122,8 +125,9 @@ import InstanceSlot = require('../common/instance_slot');
 // TWO settings here, and they are not the same one. wsfed.entityId names
 // THIS identity provider in the federation metadata; saml.issuer is who
 // signed an assertion, which is what the relying party below checks a
-// presented one against. They shared a value until config.js split them and
-// still default to the same string.
+// presented one against. They shared a value until config.js split them, and
+// unset both are the SAML entityID (#494) — per application for a registered
+// relying party (`common/issuer_names.ts`).
 import config = require('../common/config');
 // #480: the names this service signs under, in one place (a library).
 import IssuerNames = require('../common/issuer_names');
@@ -275,6 +279,12 @@ const PASSIVE_PATH = '/wsfed';
 const MECHANISM_MARKER = 'sts_mechanism_retry';
 
 const RP_PATH = '/wsfed/rp';
+
+// ONE RELYING PARTY'S OWN METADATA (#494), as `/saml2/metadata/{sp}` is one
+// service provider's: `/wsfed/metadata/{rp}`, the segment the application's
+// identifier (its wtrealm) or its slug (`saml2_sso.slugOf()`, the one handle
+// for an application every per-application path here shares).
+const METADATA_PATH = '/wsfed/metadata';
 
 // THIS PROFILE NO LONGER HOLDS AN INTERRUPTED SIGN-IN, and the store that did
 // is worth a line rather than a silent deletion. `pendingSignIns` was a
@@ -1352,6 +1362,19 @@ class WsFederation {
         'holds a role is on <a href="/admin/roles">/admin/roles</a>.</p>');
     }
 
+    // NO NAME TO SIGN UNDER (#494): product, `saml2.entityId` empty and
+    // `saml.issuer` unset. SAML SSO refuses the same state (STS-SAML-0004);
+    // an assertion with an empty Issuer is one no relying party can match
+    // to the metadata it was configured from. Asked before the registry
+    // records an issuance that did not happen.
+    const issuerProblem = IssuerNames.problem('saml.issuer');
+    if (issuerProblem) {
+      errorCodes.mark(res, 'STS-WSFED-0020');
+      log.debug("Leaving WsFederation.issueSignInResponse(). No issuer.");
+      return this.wsfedError(res, 503, 'This identity provider has no name',
+                             issuerProblem);
+    }
+
     // THE APPLICATION. wtrealm is WS-Federation's name for the relying party,
     // and this is the point at which this service has decided to issue it a
     // token — every refusal above answered instead. It is recorded here rather
@@ -1400,6 +1423,15 @@ class WsFederation {
     const user = session.user;
     const methods = this.authnMethodsFor(session);
     const authnInstant = new Date((session.authTime || 0) * 1000).toISOString();
+    // THE ISSUER THIS RELYING PARTY SEES (#494): its own entityID where its
+    // wtrealm is a REGISTERED application — `<entityID>:<application>`, the
+    // name SAML SSO and WS-Trust give the same application, and the one its
+    // `/wsfed/metadata/{rp}` publishes — and the shared entityID for a
+    // wtrealm nobody registered. One function decides it for all three
+    // protocols (`common/issuer_names.ts`). The application is the entry
+    // filed under the wtrealm itself, as everything else on this path
+    // (return addresses, the lifetime override, the role gate) reads it.
+    const issuer = IssuerNames.samlIssuer(realm);
     // THE ASSERTION LIFETIME, which was this literal `60` until 2026-08-27 and
     // is now a setting with a per-relying-party override. `realm` is the
     // wtrealm — the string this registry files a WS-Federation application
@@ -1417,6 +1449,7 @@ class WsFederation {
     if (tokenType === SAML2_TOKEN_TYPE) {
       assertion = buildSamlAssertion(user.username, realm, lifetimeMin, {
         authnContextClassRef: methods.saml2,
+        issuer: issuer,
         // The full claim URI in one Name, which is SAML 2.0's shape, with the
         // NameFormat that says so. SAML 1.1 splits the same URI in two.
         attributes: this.claimsFor(user, methods.saml2, authnInstant).map(
@@ -1432,7 +1465,8 @@ class WsFederation {
         lifetimeMin: lifetimeMin,
         authnMethod: methods.saml11,
         authnInstant: authnInstant,
-        attributes: this.claimsFor(user, methods.saml11, authnInstant)
+        attributes: this.claimsFor(user, methods.saml11, authnInstant),
+        issuer: issuer
       });
     }
     const trustVersion = String(params.trust ||
@@ -1753,7 +1787,12 @@ class WsFederation {
       'href="/FederationMetadata/2007-06/FederationMetadata.xml">' +
       '/FederationMetadata/2007-06/FederationMetadata.xml</a> — the signed ' +
       'federation metadata, which is what a relying party should be ' +
-      'configured from.</li></ul><h2>Sign-in request parameters (section ' +
+      'configured from.</li><li><code>' + METADATA_PATH + '/{rp}</code> — ' +
+      'one registered relying party\'s own metadata (#494), naming the ' +
+      'entityID its assertions are issued under: <code>&lt;entityID&gt;:' +
+      '&lt;application&gt;</code>, the name SAML 2.0 and WS-Trust give the ' +
+      'same application. A wtrealm nobody registered gets the shared one.' +
+      '</li></ul><h2>Sign-in request parameters (section ' +
       '13.2.1)</h2><table><thead><tr><th>Parameter</th><th>What this service ' +
       'does with it</th></tr></thead><tbody>' +
       [['wa', 'Required. <code>wsignin1.0</code>, <code>wsignout1.0</code> ' +
@@ -1817,6 +1856,60 @@ class WsFederation {
     return inner;
   }
 
+  // THE REGISTERED RELYING PARTY A METADATA PATH SEGMENT NAMES (#494), or ''.
+  // Its identifier, or its slug — `saml2_sso.slugOf()`, reached LAZILY
+  // because that module is built after this one, and only at request time,
+  // when the composition root has installed it. A segment naming an entry
+  // that merely turned up, or nothing, is '': such a wtrealm is issued
+  // under the SHARED entityID, which the shared document already publishes,
+  // so there is no per-application name for a document to carry.
+  private relyingPartyOfSegment(segment): string {
+    const { applications, log } = this.deps;
+    log.debug("Entering WsFederation.relyingPartyOfSegment().");
+    const text = String(segment == null ? '' : segment).trim();
+    if (!text) {
+      log.debug("Leaving WsFederation.relyingPartyOfSegment(). Empty.");
+      return '';
+    }
+    let identifier = applications.get(text) ? text : '';
+    if (!identifier) {
+      const slugOf = require('../saml/saml2_sso').slugOf;
+      const match = applications.list().filter(function (row) {
+        return slugOf(row.identifier) === text;
+      })[0];
+      identifier = match ? String(match.identifier) : '';
+    }
+    const out = IssuerNames.registeredApplication(identifier);
+    log.debug("Leaving WsFederation.relyingPartyOfSegment(). " +
+              (out || 'None registered.'));
+    return out;
+  }
+
+  // THE METADATA ROUTES' ONE ANSWER (#494): the document — the shared one
+  // for no application — or a 503 where there is no name to publish under
+  // (STS-WSFED-0020: product, `saml2.entityId` empty and `wsfed.entityId`
+  // unset; an `entityID=""` document is one no relying party can be
+  // configured from, which is SAML SSO's STS-SAML-0004 reasoning).
+  private sendMetadata(req, res, application?) {
+    const { baseUrlOf, errorCodes, log } = this.deps;
+    log.debug("Entering WsFederation.sendMetadata().");
+    const problem = IssuerNames.problem('wsfed.entityId');
+    if (problem) {
+      errorCodes.mark(res, 'STS-WSFED-0020');
+      res.status(503).type('text/plain').set('Cache-Control', 'no-store')
+         .send(problem + '\n');
+      log.debug("Leaving WsFederation.sendMetadata(). No entityID.");
+      return;
+    }
+    // no-store like every other document here that carries the signing key:
+    // in development mode the key is regenerated on every start, so a cached
+    // copy describes a key that is gone and the failure looks like a broken
+    // signature rather than a stale document.
+    res.status(200).type('application/xml').set('Cache-Control', 'no-store')
+       .send(this.federationMetadata(baseUrlOf(req), application));
+    log.debug("Leaving WsFederation.sendMetadata().");
+  }
+
   // --- federation metadata (section 3.1) -------------------------------------
   // At AD FS's path, because that is where every relying party in this
   // ecosystem looks and the specification names no path at all.
@@ -1840,9 +1933,11 @@ class WsFederation {
    * Served unsigned, and logged (STS-WSFED-0015), when it cannot be signed.
    *
    * @param base - the base URL the request reached
+   * @param application - #494: a registered relying party's identifier, for
+   * its own document naming its own entityID; none for the shared one
    * @returns the XML document
    */
-  federationMetadata(base) {
+  federationMetadata(base, application?) {
     const { STS, config, documentSettings, errorCodes, genId, log, logArtifact,
             mode, stsCrypto, xmlEscape } = this.deps;
     log.debug("Entering WsFederation.federationMetadata().");
@@ -1879,7 +1974,8 @@ class WsFederation {
     const xml =
       '<?xml version="1.0" encoding="UTF-8"?>' +
       '<EntityDescriptor xmlns="' + SAML_METADATA_NS + '" ID="' + id + '"' +
-        ' entityID="' + xmlEscape(IssuerNames.wsfedEntityId()) + '">' +
+        ' entityID="' +
+        xmlEscape(IssuerNames.wsfedEntityId(application)) + '">' +
         '<RoleDescriptor ' +
         'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' +
           ' xmlns:fed="' + WSFED_NS + '"' +
@@ -2136,8 +2232,14 @@ class WsFederation {
 
     const issuer = isSaml11 ? (assertion.getAttribute('Issuer') || '') :
                    textByLocal(assertion, 'Issuer');
-    add('the issuer is this service', issuer === IssuerNames.samlIssuer(),
-        issuer || '(none)');
+    // #494: the name this service gives THIS relying party — its own
+    // entityID if its realm is a registered application, else the shared
+    // one — so the check is the one a relying party configured from its own
+    // metadata makes.
+    const expectedIssuer = IssuerNames.samlIssuer(realm);
+    add('the issuer is this service', issuer === expectedIssuer,
+        (issuer || '(none)') +
+        (issuer === expectedIssuer ? '' : ', expected ' + expectedIssuer));
 
     const conditions = firstByLocal(assertion, 'Conditions');
     const audience = conditions ? textByLocal(conditions, 'Audience') : '';
@@ -2204,8 +2306,9 @@ class WsFederation {
   // (rule 1). Called once, by `common/protocol_stack.ts` through the
   // module's `registerRoutes(app)` (#50, R1).
   /**
-   * Registers `/wsfed`, `/wsfed/autopost.js`, the federation metadata and the
-   * mock relying party; called by the composition root at this module's place
+   * Registers `/wsfed`, `/wsfed/autopost.js`, the federation metadata (the
+   * shared document and one per registered relying party) and the mock
+   * relying party; called by the composition root at this module's place
    * in the route order.
    *
    * @param app - the express app
@@ -2240,14 +2343,39 @@ class WsFederation {
     app.get('/FederationMetadata/2007-06/FederationMetadata.xml',
             (req, res) => {
       log.debug("Entering the WS-Federation metadata endpoint.");
-      const base = baseUrlOf(req);
-      // no-store like every other document here that carries the signing key:
-      // in development mode the key is regenerated on every start, so a cached
-      // copy describes a key that is gone and the failure looks like a broken
-      // signature rather than a stale document.
-      res.status(200).type('application/xml').set('Cache-Control', 'no-store')
-         .send(this.federationMetadata(base));
+      this.sendMetadata(req, res);
       log.debug("Leaving the WS-Federation metadata endpoint.");
+    });
+
+    // ONE REGISTERED RELYING PARTY'S OWN DOCUMENT (#494). The same
+    // document as the shared one but for its entityID, which is the name
+    // this relying party's assertions carry — `<entityID>:<application>`
+    // while `saml2.perApplicationEntityId` is on. A segment naming no
+    // REGISTERED application is a 404 in BOTH modes, where SAML's
+    // `/saml2/metadata/{sp}` answers for anything in development: an
+    // unregistered wtrealm is issued under the shared entityID, so a
+    // per-application document for it would publish a name no assertion
+    // carries. The 404 is sent here, text/plain and no-store, not Express's
+    // own body — the path IS routed (the root CLAUDE.md).
+    app.get(METADATA_PATH + '/:rp', (req, res) => {
+      log.debug("Entering the per-relying-party WS-Federation metadata " +
+                "endpoint.");
+      const rp = this.relyingPartyOfSegment(req.params.rp);
+      if (!rp) {
+        errorCodes.mark(res, 'STS-WSFED-0019');
+        res.status(404).type('text/plain').set('Cache-Control', 'no-store')
+           .send('There is no WS-Federation relying party registered here ' +
+                 'as "' + String(req.params.rp) + '", so it has no ' +
+                 'metadata of its own: a wtrealm nobody registered is ' +
+                 'issued under the shared entityID, published at ' +
+                 '/FederationMetadata/2007-06/FederationMetadata.xml.\n');
+        log.debug("Leaving the per-relying-party WS-Federation metadata " +
+                  "endpoint. 404.");
+        return;
+      }
+      this.sendMetadata(req, res, rp);
+      log.debug("Leaving the per-relying-party WS-Federation metadata " +
+                "endpoint.");
     });
 
     app.get(RP_PATH, (req, res) => {

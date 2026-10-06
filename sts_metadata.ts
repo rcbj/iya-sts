@@ -7169,6 +7169,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'There is deliberately no IDPSSODescriptor: this service has no ' +
           'SAML 2.0 Web SSO profile, and advertising one would be a relying ' +
           'party\'s first configuration attempt and its first 404.' },
+  { path: '/wsfed/metadata/:rp', group: 'WS-Federation',
+    name: 'Federation metadata for ONE relying party',
+    specs: ['ws-federation', 'xmldsig', 'saml11', 'saml2'],
+    what: 'THE SAME DOCUMENT, PER APPLICATION (#494): its entityID is the ' +
+          'name this registered relying party\'s assertions are issued ' +
+          'under — <entityID>:<application> while ' +
+          'saml2.perApplicationEntityId is on, the name SAML 2.0 SSO and ' +
+          'WS-Trust give the same application — so a relying party is ' +
+          'configured from a document naming its own issuer. The segment is ' +
+          'the application\'s identifier (its wtrealm) or its slug. A ' +
+          'segment naming no REGISTERED application is a 404 in both modes ' +
+          '(STS-WSFED-0019): an unregistered wtrealm is issued under the ' +
+          'shared entityID, which the shared document publishes. no-store.' },
   { path: '/wsfed/rp', group: 'WS-Federation', name: 'Mock relying party ' +
                                                      '(not a spec endpoint)',
     specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig'],

@@ -10601,6 +10601,13 @@ const PROTOCOL_SETTINGS_PAGES = [
            'service\'s own name and they share a default rather than being ' +
            'one setting: they were one until they had to differ, which is ' +
            'the kind of thing that is discovered the hard way.',
+           '<strong>Unset, both are the SAML 2.0 entityID, in either mode ' +
+           '(#494)</strong>, and an assertion for a REGISTERED AppliesTo ' +
+           'carries that application\'s own entityID — ' +
+           '<code>&lt;entityID&gt;:&lt;application&gt;</code> while ' +
+           '<code>saml2.perApplicationEntityId</code> is on, the name SAML ' +
+           'SSO and WS-Federation give it. A JWT\'s <code>iss</code> is the ' +
+           'realm\'s OAuth issuer.',
            '<strong>Nothing about a request is checked.</strong> An ' +
            '<code>OnBehalfOf</code> or <code>ActAs</code> element names ' +
            'anybody and gets an assertion for them — this service polices no ' +
@@ -10622,7 +10629,10 @@ const PROTOCOL_SETTINGS_PAGES = [
            'attributes are configured next door.</strong> ' +
            '<code>saml.issuer</code> is on <a href="/admin/saml11">SAML ' +
            '1.1</a> and <a href="/admin/saml2">SAML 2.0</a>, and it is the ' +
-           'same setting in both places; <a ' +
+           'same setting in both places — unset, the SAML 2.0 entityID, and ' +
+           'for a REGISTERED wtrealm that application\'s own (#494), which ' +
+           'its own metadata at <code>/wsfed/metadata/{rp}</code> ' +
+           'publishes; <a ' +
            'href="/admin/saml-attributes">Custom SAML attributes</a> decides ' +
            'what the assertion carries. This page links to them rather than ' +
            'drawing a third form onto one value.',

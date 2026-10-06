@@ -9721,8 +9721,8 @@ const CODES = [
     spec: 'SOAP Fault wst:InvalidRequest (WS-Trust 1.4 section 11)' },
   { code: 'STS-WSTRUST-0026',
     summary: 'Product mode: a JWT inside OnBehalfOf/ActAs does not verify ' +
-      'with this STS\'s own key, or was not issued by this STS ' +
-      '(its iss is not wstrust.issuer) (#477).',
+      'with this STS\'s own key, or was not issued by this realm (its iss ' +
+      'is not the realm\'s OAuth issuer, #480) (#477).',
     spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
       '11' },
   { code: 'STS-WSTRUST-0027',
@@ -9734,6 +9734,11 @@ const CODES = [
     summary: 'Product mode: a JWT inside OnBehalfOf/ActAs names, in its sub, ' +
       'nobody this directory holds (#477).',
     spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
+  { code: 'STS-WSTRUST-0029',
+    summary: 'A SAML token was asked for with no name to sign it under: ' +
+      'product mode, saml2.entityId empty and saml.issuer unset (#494).',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section ' +
       '11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
@@ -9814,6 +9819,16 @@ const CODES = [
       'rested on a sign-in mechanism the relying party does not allow ' +
       '(appAuthnMechanism, #457).',
     spec: 'HTTP 403 page' },
+  { code: 'STS-WSFED-0019',
+    summary: '/wsfed/metadata/{rp} named no registered relying party, which ' +
+      'has no metadata of its own: an unregistered wtrealm is issued under ' +
+      'the shared entityID (#494).',
+    spec: 'HTTP 404, text/plain' },
+  { code: 'STS-WSFED-0020',
+    summary: 'A WS-Federation sign-in or metadata document had no name to ' +
+      'issue or publish under: product mode, saml2.entityId empty and ' +
+      'saml.issuer or wsfed.entityId unset (#494).',
+    spec: 'HTTP 503 page or text/plain' },
   // ===== FED ===============================================================
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +

@@ -234,7 +234,7 @@ The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `wstrust.issuer` | `STS_WSTRUST_ISSUER` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` (development); the SAML 2.0 entityID in product, unset | yes | The name `GET /sts` publishes. A SAML token carries `saml.issuer`, and a JWT the realm's OAuth issuer. |
+| `wstrust.issuer` | `STS_WSTRUST_ISSUER` (or `STS_ISSUER`) | *(empty)*: the SAML 2.0 entityID | yes | The name `GET /sts` publishes; unset, in either mode, the realm's `saml2.entityId` (#480, #494). A SAML token carries `saml.issuer` — for a registered AppliesTo, that application's own entityID — and a JWT the realm's OAuth issuer. |
 | `wstrust.tokenLifetimeMin` | `STS_WSTRUST_TOKEN_LIFETIME_MIN` | `60` | yes | Token lifetime when the RST carries no `wst:Lifetime`. |
 | `wstrust.maxTokenLifetimeMin` | `STS_WSTRUST_MAX_TOKEN_LIFETIME_MIN` | `1440` | yes | The ceiling a requested `wst:Lifetime` is clamped to, in both modes. |
 | `wstrust.jwtAlgorithm` | `STS_WSTRUST_JWT_ALGORITHM` | `RS256` | yes | The JWT's `alg`: `RS256`–`RS512`, `PS256`–`PS512`, `ES256`–`ES512` or `EdDSA`. |
@@ -277,11 +277,14 @@ changed on `/admin/wstrust` or with `POST /admin-api/config/set`.
   rather than any assertion at all.
 * **Two issuer settings, and disagreement is reported rather than
   reconciled.** `wstrust.issuer` names the STS and `saml.issuer` the signer of
-  an assertion; `GET /sts` and the startup log say when they differ. **In
-  product, unset, both are the SAML 2.0 entityID** (#480). A WS-Trust
-  assertion whose AppliesTo a registered application answers to carries that
-  application's own entityID where `saml2.perApplicationEntityId` is on, the
-  one its `/saml2/metadata/{sp}` names, as SAML SSO does.
+  an assertion; `GET /sts` and the startup log say when they differ. **Unset,
+  in either mode, both are the SAML 2.0 entityID** (#480, #494). A WS-Trust
+  assertion — SAML 2.0 or SAML 1.1 — whose AppliesTo a REGISTERED
+  application answers to carries that application's own entityID where
+  `saml2.perApplicationEntityId` is on: the one its `/saml2/metadata/{sp}`
+  and `/wsfed/metadata/{rp}` name, so SAML SSO, WS-Trust and WS-Federation
+  give one application one name. An AppliesTo nobody registered gets the
+  shared entityID. The JWT's `iss` stays the realm's OAuth issuer.
 * **A JWT needs a directory entry.** A bare name as `sub` would be inherited by
   a person created later under that name.
 

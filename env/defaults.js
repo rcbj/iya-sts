@@ -680,7 +680,7 @@ var config = {
 
   // --- SAML ------------------------------------------------------------
   saml: {
-    issuer: "urn:wstrust:mock:sts",                         // Assertion issuer
+    issuer: "",                                             // Assertion issuer
     clockSkewS: 0,                                          // Assertion clock skew (s)
     signatureAlgorithm: "rsa-sha256",                       // XML signature algorithm
     canonicalizationAlgorithm: "exclusive",                 // XML canonicalization
@@ -736,18 +736,18 @@ var config = {
 
   // --- WS-Trust --------------------------------------------------------
   wstrust: {
-    issuer: "urn:wstrust:mock:sts", // Token issuer
-    tokenLifetimeMin: 60,           // Token lifetime (minutes)
-    maxTokenLifetimeMin: 1440,      // Longest lifetime a request may ask for (minutes)
-    jwtAlgorithm: "RS256",          // JWT signature algorithm
-    jwtCertificateHeader: "x5u"     // JWT certificate header
+    issuer: "",                  // Token issuer
+    tokenLifetimeMin: 60,        // Token lifetime (minutes)
+    maxTokenLifetimeMin: 1440,   // Longest lifetime a request may ask for (minutes)
+    jwtAlgorithm: "RS256",       // JWT signature algorithm
+    jwtCertificateHeader: "x5u"  // JWT certificate header
   },
 
   // --- WS-Federation assertions ----------------------------------------
   wsfed: {
-    assertionLifetimeMin: 60,         // Assertion lifetime (minutes)
-    entityId: "urn:wstrust:mock:sts", // Entity ID
-    mockRpContextTtlMin: 30           // Mock relying party wctx lifetime (minutes)
+    assertionLifetimeMin: 60, // Assertion lifetime (minutes)
+    entityId: "",             // Entity ID
+    mockRpContextTtlMin: 30   // Mock relying party wctx lifetime (minutes)
   },
 
   // --- TLS -------------------------------------------------------------
