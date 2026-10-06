@@ -497,6 +497,16 @@ async function go(driver, url) {
   const bare = hash < 0 ? url : url.slice(0, hash);
   await driver.get(bare);
   const seen = await waitForResponse(bare, from);
+  // THE SIGN-IN SCREEN, MET AGAIN: see typeTheSignIn(). The console sends
+  // the browser back to this page once it is signed in.
+  const landed = await driver.getCurrentUrl();
+  if (signedInAs && landed.indexOf("/authn/login") >= 0 &&
+      bare.indexOf("/admin") >= 0) {
+    log.info("[sign-in] " + bare + " met the sign-in screen: this browser's " +
+             "one sign-on cookie was taken by an earlier section; signing " +
+             "in again as " + signedInAs + ".");
+    await typeTheSignIn(driver, signedInAs);
+  }
   // THE CONSOLE IS A STATIC APPLICATION SINCE #446: every /admin path
   // answers the same document, and the PAGE is drawn by its script from the
   // page's /admin-api operation — after a sign-in in the browser where the
@@ -1181,7 +1191,7 @@ async function settleAfterSubmit(driver, from, method) {
 // so that a page which draws neither still fails the assertion that wanted one.
 function outcomeOf(url, which) {
   log.debug("Entering outcomeOf().");
-  const found = String(url).match(new RegExp("[?&]" + which + "=([^&]*)"));
+  const found = String(url).match(new RegExp("[?&]" + which + "=([^&#]*)"));
   log.debug("Leaving outcomeOf().");
   return found ? decodeURIComponent(found[1].replace(/\+/g, " ")) : "";
 }
@@ -1264,6 +1274,22 @@ async function signIn(driver, username) {
     log.debug("Leaving signIn(). No sign-in screen.");
     return false;
   }
+  signedInAs = username;
+  await typeTheSignIn(driver, username);
+  log.debug("Leaving signIn(). Signed in.");
+  return true;
+}
+
+// WHO THE BROWSER IS SIGNED IN AS, for a sign-in screen met again (go()).
+let signedInAs = "";
+
+// THE SIGN-IN SCREEN, FILLED AND PRESSED, through to a drawn console page.
+// Split out of signIn() for go(): the browser has ONE sign-on cookie for the
+// whole origin (`authn/CLAUDE.md`), so a section that signs somebody else in
+// in this browser leaves the console's next page load at the screen — as it
+// would a person, who signs in again. Nothing is granted here.
+async function typeTheSignIn(driver, username) {
+  log.debug("Entering typeTheSignIn(). username=" + username);
   const field = await driver.findElement(By.css("input[name='username']"));
   await field.clear();
   await field.sendKeys(username);
@@ -1289,7 +1315,7 @@ async function signIn(driver, username) {
         !!document.querySelector('.pagehead');
       return onConsole ? 'drawn' : '';
     `).catch(function (e) {
-      log.debug("Caught in signIn(): " + ((e && e.message) || e));
+      log.debug("Caught in typeTheSignIn(): " + ((e && e.message) || e));
       return '';
     });
     if (at === 'offer' && !ignored) {
@@ -1309,8 +1335,7 @@ async function signIn(driver, username) {
     "rather than on the console. The account's password was typed; if it " +
     "did not open the console, the screen or the console's sign-in is " +
     "broken rather than the credential.");
-  log.debug("Leaving signIn(). Signed in.");
-  return true;
+  log.debug("Leaving typeTheSignIn().");
 }
 
 async function clearSession(driver) {
@@ -2313,9 +2338,16 @@ async function theNewUserPageDescribesAPerson(driver) {
       "THE ENTRY HOLDS THE PASSWORD IN THE CLEAR. credentials.js hashes it " +
       "with scrypt precisely so that a directory read is not a credential " +
       "dump, and this page is the newest door onto that function.");
-    assert.ok(/^\$scrypt\$/.test(held),
-      "and it should be a scrypt hash; it starts " +
+    // A CREDENTIAL IS NEVER IN A GET (#446): /admin-api/ldap/directory
+    // says a userPassword is set without returning it, so this job cannot
+    // see the hash's form — the in-process tests hold that it is scrypt.
+    // What it can see is that the password it was shown is nowhere in the
+    // entry the API answers.
+    assert.ok(held === "(set — not returned)" || /^\$scrypt\$/.test(held),
+      "and it should be withheld, or at most a scrypt hash; it starts " +
       JSON.stringify(String(held).slice(0, 12)));
+    assert.ok(JSON.stringify(passwordEntry).indexOf(String(shown)) < 0,
+      "THE GENERATED PASSWORD IS IN THE DIRECTORY ENTRY THE API ANSWERS.");
   });
 
   // ------------------------------------------------------------------
@@ -2334,7 +2366,14 @@ async function theNewUserPageDescribesAPerson(driver) {
       "the create should have shown a /portal/activate link for " +
       toActivate + "; it showed " + JSON.stringify(link));
   });
-  const opened = await go(driver, String(link).trim());
+  // FETCHED, NOT BROWSED (#446): the link is unauthenticated, and the
+  // browser is the console's — a page load off the console drops the
+  // static console's token held in memory, and the way back is a fresh
+  // sign-in this browser is not set up for mid-job. The answer is what the
+  // check is about, and a fetch is a request with no session at all, which
+  // is what the person the link is for will make.
+  const opened = await fetch(new URL(String(link).trim(), root("/")).href,
+                             { redirect: "manual" });
   check("and spending it reaches the setup screen", function () {
     assert.strictEqual(opened.status, 200,
       "THE LINK THIS PAGE HANDED OVER DOES NOT WORK. It answered " +
@@ -4724,7 +4763,9 @@ async function theCredentialsSectionIsPressed(driver) {
     log.debug("Leaving onThePage().");
     return u.pathname === "/realm/" + REALM + "/admin/applications" &&
            u.searchParams.get("application") === APP &&
-           u.hash === "#credentials";
+           // The section, or the static console's tab that holds it: an
+           // act returns to the fragment its form was pressed under (#446).
+           (u.hash === "#credentials" || u.hash === "#tab-credentials");
   };
   const formFor = async function (action, purpose) {
     log.debug("Entering formFor(). action=" + action);
@@ -4755,15 +4796,13 @@ async function theCredentialsSectionIsPressed(driver) {
   // The secret is a RECORD on the entry (2026-10-01); compare the secrets
   // themselves, newest first, or an array compared by reference always
   // "changed".
+  // A CREDENTIAL IS NEVER IN A GET (#446): the API answers each secret's id
+  // and expiry (`credentials.clientSecret.secrets`) and its value only to
+  // `reveal-secret`. A Regenerate replaces every secret, so the ids change.
   const secretsOn = function (entry) {
-    return [].concat((entry.fields || {}).oauthClientSecret || [])
-      .map(function (value) {
-        try {
-          return JSON.parse(value).secret;
-        } catch (e) {
-          log.debug("Caught in secretsOn(): " + ((e && e.message) || e));
-          return String(value);
-        }
+    return (((entry.credentials || {}).clientSecret || {}).secrets || [])
+      .map(function (one) {
+        return String(one.id || "");
       }).join(" ");
   };
   const secretBefore = secretsOn(await entryOf(APP));
@@ -4774,6 +4813,15 @@ async function theCredentialsSectionIsPressed(driver) {
   await fillAndPress(driver, regenerate, {});
   const afterRegenerate = await driver.getCurrentUrl();
   const secretAfter = secretsOn(await entryOf(APP));
+  // The value itself, as an operator asks for it, for the address check.
+  const revealed = secretAfter
+    ? await apiPostJson(root("/realm/" + REALM +
+                             "/admin-api/applications/reveal-secret"),
+                        { application: APP,
+                          secret: secretAfter.split(" ")[0] })
+    : null;
+  const secretValue = revealed && revealed.body ? String(revealed.body.value ||
+                                                         "") : "";
   check("Regenerate replaced the secret and came back to the section, with " +
         "no secret in the address", function () {
     assert.strictEqual(outcomeOf(afterRegenerate, "error"), "",
@@ -4781,7 +4829,11 @@ async function theCredentialsSectionIsPressed(driver) {
     assert.ok(onThePage(afterRegenerate), "landed on " + afterRegenerate);
     assert.ok(secretAfter && secretAfter !== secretBefore,
       "the secret on the entry did not change");
-    assert.ok(afterRegenerate.indexOf(secretAfter) < 0,
+    assert.ok(secretValue.length >= 20,
+      "reveal-secret did not hand back the new secret: " +
+      JSON.stringify(revealed && revealed.body).slice(0, 200));
+    assert.ok(afterRegenerate.indexOf(secretValue) < 0 &&
+              afterRegenerate.indexOf(encodeURIComponent(secretValue)) < 0,
       "the new secret is in the URL");
   });
 
@@ -4911,9 +4963,16 @@ async function theFieldGridIsPressed(driver) {
            d = d.parentElement && d.parentElement.closest('details')) {
         d.open = true;
       }
+      // THE NOTICE STRIP IS STICKY at the top of the window (\`.flash\`), so
+      // a button scrolled to the top edge is under it: brought to the
+      // middle, where a person scrolling to it would see it.
+      arguments[0].scrollIntoView({ block: 'center' });
     `, button, values || {});
     const from = mark();
-    const leaving = await driver.findElement(By.css("html"));
+    // THE CONSOLE'S FRAME, NOT THE DOCUMENT (#446): a round trip — the view
+    // switch, +, the trash can — is drawn in place by the static console,
+    // which replaces the frame and never loads a document.
+    const leaving = await driver.findElement(By.css(".shell"));
     await button.click();
     await pageReplaced(driver, leaving, 20000);
     await settleAfterSubmit(driver, from, "POST");
@@ -5078,11 +5137,15 @@ async function theFieldGridIsPressed(driver) {
   });
   await press(GROW, "", {});
   const editGrown = await state();
-  const grownOnEdit = await onThePath("/admin/applications/edit");
+  // A ROUND TRIP IS DRAWN IN PLACE since #446: the address stays the
+  // application's page, where the server-rendered console posted to
+  // /admin/applications/edit and drew the answer there.
+  const grownOnEdit = await onThePath("/admin/applications/edit") ||
+                      await onThePath("/admin/applications");
   check("+ on the application page redraws with an empty box and writes " +
         "nothing", function () {
     assert.ok(grownOnEdit,
-      "+ did not redraw through /admin/applications/edit");
+      "+ left the application's page");
     assert.deepStrictEqual(editGrown.boxes, [URI_B, ""],
       JSON.stringify(editGrown.boxes));
   });
@@ -5192,7 +5255,9 @@ async function thePersonCredentialsSectionIsPressed(driver) {
     log.debug("Leaving onThePage().");
     return u.pathname === "/realm/" + REALM + "/admin/users" &&
            u.searchParams.get("user") === person &&
-           u.hash === "#credentials";
+           // The section, or the static console's tab that holds it: an
+           // act returns to the fragment its form was pressed under (#446).
+           (u.hash === "#credentials" || u.hash === "#tab-credentials");
   };
   const formFor = async function (action, purpose) {
     log.debug("Entering formFor(). action=" + action);
@@ -5249,8 +5314,13 @@ async function thePersonCredentialsSectionIsPressed(driver) {
   check("Issue answered with a PAGE carrying the private key once, the " +
         "certificate, and a way back to THIS person in THIS realm",
         function () {
+    // A SECRET SHOWN ONCE IS DRAWN IN PLACE since #446 — never on an
+    // address, never in the history — so the browser is still where the
+    // form was, this person's page in this realm.
     assert.ok(new URL(issuedAt).pathname ===
-              "/realm/" + REALM + "/admin/pki/person", "landed on " + issuedAt);
+              "/realm/" + REALM + "/admin/users" &&
+              new URL(issuedAt).searchParams.get("user") === person,
+              "the key page moved the browser: it is at " + issuedAt);
     assert.ok(/The private key, once/.test(issuedText) &&
               /BEGIN (RSA |EC )?PRIVATE KEY/.test(issuedText),
       "the key page does not show the private key");
