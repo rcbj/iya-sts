@@ -353,6 +353,16 @@ const JOBS = [
     local: true },
   { file: 'sts_wstrust_chain_delegation.js', browser: false,
     local: true },
+  // AND AGAIN WITH JWT RESPONSE TOKENS (#473): every RST asks for
+  // urn:ietf:params:oauth:token-type:jwt and each hop presents the JWT the
+  // last produced. The JWT is held to RFC 9068 (typ at+jwt, its claims,
+  // verified against /oauth2/jwks) and RFC 8693 (act for ActAs, nested,
+  // `iss` in every entry, urn:sts:client: in product; none for
+  // OnBehalfOf). They need #476 and #477.
+  { file: 'sts_wstrust_jwt_chain_impersonation.js', browser: false,
+    local: true },
+  { file: 'sts_wstrust_jwt_chain_delegation.js', browser: false,
+    local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
@@ -1575,11 +1585,12 @@ const LOCAL_HELPERS = [
   // and the delegation register and graph read back. Nothing from the
   // service.
   'token_exchange_chain_kit.js',
-  // WHAT THE TWO WS-TRUST CHAIN JOBS SHARE (#473): the four tiers and the
+  // WHAT THE FOUR WS-TRUST CHAIN JOBS SHARE (#473): the four tiers and the
   // requesters' service accounts, the UsernameToken sign-in, the
-  // OnBehalfOf / ActAs requests, an assertion read and its signature
-  // verified as a relying party would, and the register read back. It
-  // takes the protocol-independent half from token_exchange_chain_kit.js.
+  // OnBehalfOf / ActAs requests, an assertion or a JWT read and its
+  // signature verified as a relying party would, and the register read
+  // back. It takes the protocol-independent half from
+  // token_exchange_chain_kit.js.
   'wstrust_chain_kit.js'
 ];
 

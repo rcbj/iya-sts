@@ -104,7 +104,20 @@
 // is different at every hop by design. Inventing either would assert a
 // fixture rather than the protocol, so there is none.
 //
-// Each job passes a TAG (`wsimp`, `wsdel`) and gets entries of its own. The
+// **6. A SECOND PAIR ASKS FOR JWTs** (rcbj: "another set of these tests
+// with JWTs as the response token type", following RFC 9068 and RFC 8693
+// "for response token JWT structure and contents" and nowhere else). Same
+// tiers, same requesters, same exchange: `castFor(tag, "jwt")` makes every
+// RST ask for `urn:ietf:params:oauth:token-type:jwt`. Each hop presents the
+// token the hop before produced, exactly as its RSTR carried it: a JWT in a
+// `wsse:BinarySecurityToken`. The JWT is then read as its relying party
+// reads one: `typ`, its claims and `act` (`assertChainJwt()`), its signature
+// against the realm's PUBLISHED key set (`GET /oauth2/jwks`), and its issuer
+// against the one `GET /sts` names. Those jobs need #476 (the JWT's claims)
+// and #477 (a JWT accepted inside OnBehalfOf / ActAs).
+//
+// Each job passes a TAG (`wsimp`, `wsdel`, `wjimp`, `wjdel`) and gets
+// entries of its own. The
 // two jobs differ in the semantics their tiers allow, and
 // `appDefaultDelegationSemantics` holds one value. The OAuth jobs' `-imp` and
 // `-del` entries carry OAuth configuration and the same single-valued
@@ -145,6 +158,12 @@ const WSSE_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-" +
     "wssecurity-secext-1.0.xsd";
 const WST_NS = "http://docs.oasis-open.org/ws-sx/ws-trust/200512";
 const WST14_NS = "http://docs.oasis-open.org/ws-sx/ws-trust/200802";
+// The two token types an RST asks for here: WS-Security's SAML token
+// profile's SAML 2.0 URI, and the JWT URI this STS answers a JWT for (RFC
+// 8693 section 3's, which WS-Trust takes as an opaque wst:TokenType).
+const SAML2_TOKEN_TYPE = "http://docs.oasis-open.org/wss/oasis-wss-saml-" +
+    "token-profile-1.1#SAMLV2.0";
+const JWT_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:jwt";
 
 // ---------------------------------------------------------------------------
 // THE CAST: `token_exchange_chain_kit.js`'s, so the names and the `next`
@@ -154,9 +173,12 @@ const WST14_NS = "http://docs.oasis-open.org/ws-sx/ws-trust/200802";
 // account, generated per process and SET every run, so a rerun replaces the
 // last run's.
 // ---------------------------------------------------------------------------
-function castFor(tag) {
+// `tokenType` is what every RST of the cast asks for: "saml" (the default)
+// or "jwt" (#473's second pair).
+function castFor(tag, tokenType) {
   log.debug("Entering castFor(). tag=" + tag);
   const cast = chain.castFor(tag);
+  cast.tokenType = tokenType === "jwt" ? JWT_TOKEN_TYPE : SAML2_TOKEN_TYPE;
   cast.tiers.forEach(function (tier) {
     tier.appliesTo = "https://" + tier.identifier + ".example.com";
     tier.password = tier.next
@@ -345,9 +367,10 @@ function usernameToken(user, password) {
     "</wsse:Password></wsse:UsernameToken>";
 }
 
-// An Issue in SOAP 1.2: the requester's UsernameToken, the AppliesTo, and
-// the delegated assertion in `element` (OnBehalfOf, ActAs, or none).
-function rst(user, password, appliesTo, element, assertion) {
+// An Issue in SOAP 1.2: the requester's UsernameToken, the token type, the
+// AppliesTo, and the delegated token in `element` (OnBehalfOf, ActAs, or
+// none) — an assertion, or the BinarySecurityToken a JWT came in.
+function rst(user, password, tokenType, appliesTo, element, assertion) {
   log.debug("Entering rst(). " + user + " " + (element || "Issue"));
   let inner = "";
   if (element === "ActAs") {
@@ -362,8 +385,7 @@ function rst(user, password, appliesTo, element, assertion) {
     usernameToken(user, password) + "</wsse:Security></s:Header><s:Body>" +
     '<wst:RequestSecurityToken xmlns:wst="' + WST_NS + '">' +
     "<wst:RequestType>" + WST_NS + "/Issue</wst:RequestType>" +
-    "<wst:TokenType>http://docs.oasis-open.org/wss/oasis-wss-saml-token-" +
-    "profile-1.1#SAMLV2.0</wst:TokenType>" +
+    "<wst:TokenType>" + tokenType + "</wst:TokenType>" +
     '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/' +
     'policy"><wsa:EndpointReference xmlns:wsa="http://www.w3.org/2005/08/' +
     'addressing"><wsa:Address>' + xmlText(appliesTo) + "</wsa:Address>" +
@@ -371,7 +393,11 @@ function rst(user, password, appliesTo, element, assertion) {
     "</wst:RequestSecurityToken></s:Body></s:Envelope>";
 }
 
-async function sts(base, body, what) {
+// The RSTR, read for what the cast asked for: a SAML 2.0 assertion, or a
+// JWT in the wsse:BinarySecurityToken this STS carries one in. Either way
+// the RSTR's own wst:TokenType must be the one asked for, and `inner` is
+// the element the next hop presents in its OnBehalfOf / ActAs as it came.
+async function sts(base, body, what, tokenType) {
   log.debug("Entering sts(). " + what);
   const r = await call("POST", base + "/sts", body,
                        { "Content-Type": "application/soap+xml",
@@ -382,12 +408,28 @@ async function sts(base, body, what) {
     .exec(r.text);
   assert.ok(m, what + ": the RSTR carries no RequestedSecurityToken: " +
             r.text.slice(0, 500));
-  const assertion = m[1].trim();
-  assert.ok(/^<saml:Assertion[\s>]/.test(assertion), what + ": the " +
-    "requested token is not a SAML 2.0 assertion: " +
-    assertion.slice(0, 200));
-  log.debug("Leaving sts().");
-  return { rstr: r.text, assertion: assertion };
+  const answered = (/<wst:TokenType>([^<]+)<\/wst:TokenType>/.exec(r.text) ||
+                    [])[1];
+  assert.strictEqual(answered, tokenType, what + ": the RSTR's " +
+                     "wst:TokenType");
+  const expires = (/<wsu:Expires>([^<]+)<\/wsu:Expires>/.exec(r.text) ||
+                   [])[1];
+  const inner = m[1].trim();
+  if (tokenType === JWT_TOKEN_TYPE) {
+    const jwt = /^<wsse:BinarySecurityToken([^>]*)>([^<]+)<\/wsse:BinarySecurityToken>$/
+      .exec(inner);
+    assert.ok(jwt && jwt[1].indexOf('ValueType="' + JWT_TOKEN_TYPE + '"') >=
+              0, what + ": the requested token is not a JWT in a " +
+              "BinarySecurityToken: " + inner.slice(0, 200));
+    log.debug("Leaving sts(). A JWT.");
+    return { rstr: r.text, inner: inner, jwt: jwt[2].trim(),
+             expires: expires || "" };
+  }
+  assert.ok(/^<saml:Assertion[\s>]/.test(inner), what + ": the " +
+    "requested token is not a SAML 2.0 assertion: " + inner.slice(0, 200));
+  log.debug("Leaving sts(). An assertion.");
+  return { rstr: r.text, inner: inner, assertion: inner,
+           expires: expires || "" };
 }
 
 // THE SIGN-IN (decision 2): bob's UsernameToken, for webapp1's registered
@@ -395,10 +437,10 @@ async function sts(base, body, what) {
 async function signIn(base, cast) {
   log.debug("Entering signIn().");
   await preparePerson(base, cast);
-  const out = await sts(base, rst(cast.user, cast.password,
+  const out = await sts(base, rst(cast.user, cast.password, cast.tokenType,
                                   cast.webapp.appliesTo, "", ""),
                         cast.user + "'s sign-in to " +
-                        cast.webapp.identifier);
+                        cast.webapp.identifier, cast.tokenType);
   log.info("[sign-in] " + cast.user + " signed in to " +
            cast.webapp.identifier + " with a UsernameToken, AppliesTo " +
            cast.webapp.appliesTo + ".");
@@ -407,15 +449,16 @@ async function signIn(base, cast) {
 }
 
 // ONE HOP: `tier`, authenticated as its own service account, presents
-// `assertion` in `element` and asks for the next tier's registered
-// identifier.
-async function exchange(base, cast, tier, element, assertion) {
+// `inner` — the token the hop before produced, as it came — in `element`
+// and asks for the next tier's registered identifier.
+async function exchange(base, cast, tier, element, inner) {
   log.debug("Entering exchange(). " + tier.identifier + " " + element);
   const next = tierNamed(cast, tier.next);
   const out = await sts(base, rst(tier.identifier, tier.password,
-                                  next.appliesTo, element, assertion),
+                                  cast.tokenType, next.appliesTo, element,
+                                  inner),
                         tier.identifier + "'s <" + element + "> for " +
-                        next.appliesTo);
+                        next.appliesTo, cast.tokenType);
   log.debug("Leaving exchange().");
   return out;
 }
@@ -661,6 +704,198 @@ function validateAtTarget(xml, certPem, audience, skewMs) {
 }
 
 // ---------------------------------------------------------------------------
+// A JWT, READ AS ITS RELYING PARTY READS ONE (#473's second pair). RFC 9068
+// and RFC 8693 govern the JWT's STRUCTURE AND CONTENTS and nothing else
+// (rcbj): the header's `typ`, the claim set and `act`. The exchange that
+// produced it is WS-Trust's, read above.
+//
+// The signature is checked against the realm's PUBLISHED key set
+// (`GET /oauth2/jwks`, where the JWT's `kid` is published) with node's own
+// crypto, and the issuer against the one the STS names on `GET /sts`.
+// ---------------------------------------------------------------------------
+function jwtParts(token, what) {
+  log.debug("Entering jwtParts(). " + what);
+  const parts = String(token || "").split(".");
+  assert.strictEqual(parts.length, 3, what + " is not a compact JWS");
+  const out = {
+    token: token,
+    header: JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8")),
+    claims: JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"))
+  };
+  log.debug("Leaving jwtParts().");
+  return out;
+}
+
+async function jwks(base) {
+  log.debug("Entering jwks().");
+  const r = await call("GET", base + "/oauth2/jwks");
+  assert.ok(r.status === 200 && r.json && Array.isArray(r.json.keys),
+            "GET /oauth2/jwks: " + r.status + " " + r.text.slice(0, 200));
+  log.debug("Leaving jwks(). " + r.json.keys.length + " key(s).");
+  return r.json.keys;
+}
+
+// The issuer a WS-Trust client is told about: `GET /sts` names it.
+async function publishedIssuer(base) {
+  log.debug("Entering publishedIssuer().");
+  const r = await call("GET", base + "/sts", undefined, { Accept: "*/*" });
+  const named = (/Issuer:\s*(\S+)/.exec(r.text) || [])[1] || "";
+  assert.ok(r.status === 200 && named, "GET /sts names no issuer: " +
+            r.status + " " + r.text.slice(0, 200));
+  log.debug("Leaving publishedIssuer(). " + named);
+  return named;
+}
+
+// Whether a client's own subject is `urn:sts:client:<id>` at the service:
+// RFC 9700 mode, which product implies and a realm or the process may turn
+// on (oauth2.rfc9700, or OAuth 2.1 mode, which implies it). The form the
+// service's OAuth tokens give a client actor (#471), and so the form its
+// WS-Trust JWTs do since #476.
+async function clientSubjectsNamespaced(base, product) {
+  log.debug("Entering clientSubjectsNamespaced().");
+  if (product) {
+    log.debug("Leaving clientSubjectsNamespaced(). Product.");
+    return true;
+  }
+  const on = function (value) {
+    log.debug("Entering on().");
+    log.debug("Leaving on().");
+    return value === true || String(value) === "true";
+  };
+  const answer = on(await registry.setting(base, "oauth2.rfc9700")) ||
+    on(await registry.setting(base, "oauth2.oauth21"));
+  log.debug("Leaving clientSubjectsNamespaced(). " + answer);
+  return answer;
+}
+
+const JWS_HASHES = { RS256: "sha256", RS384: "sha384", RS512: "sha512",
+                     PS256: "sha256", PS384: "sha384", PS512: "sha512",
+                     ES256: "sha256", ES384: "sha384", ES512: "sha512" };
+
+// The JWS signature over the key the set publishes under its `kid`.
+function verifyWithJwks(parsed, keys, what) {
+  log.debug("Entering verifyWithJwks(). " + what);
+  const alg = String(parsed.header.alg || "");
+  const jwk = keys.filter(function (k) {
+    return k.kid === parsed.header.kid;
+  })[0];
+  assert.ok(jwk, what + "'s kid " + parsed.header.kid + " is not in the " +
+            "realm's published key set");
+  const segments = parsed.token.split(".");
+  const data = Buffer.from(segments[0] + "." + segments[1]);
+  const signature = Buffer.from(segments[2], "base64url");
+  const key = crypto.createPublicKey({ key: jwk, format: "jwk" });
+  let ok;
+  if (alg === "EdDSA") {
+    ok = crypto.verify(null, data, key, signature);
+  } else {
+    assert.ok(JWS_HASHES[alg], what + " is signed with " + alg + ", which " +
+              "this relying party does not verify");
+    const options = { key: key };
+    if (/^PS/.test(alg)) {
+      options.padding = crypto.constants.RSA_PKCS1_PSS_PADDING;
+      options.saltLength = Number(alg.slice(2)) / 8;
+    }
+    if (/^ES/.test(alg)) {
+      options.dsaEncoding = "ieee-p1363";
+    }
+    ok = crypto.verify(JWS_HASHES[alg], data, options, signature);
+  }
+  assert.strictEqual(ok, true, what + "'s signature does not verify with " +
+                     "the published key " + jwk.kid);
+  log.debug("Leaving verifyWithJwks().");
+}
+
+// What every JWT in the chain is held to. `expect`: { what, audience,
+// issuer, sub (the person's subject, once known), clientId ('' for none),
+// act (the whole expected chain, or undefined for none), notJtis,
+// expires (the RSTR's wst:Lifetime Expires) }. Answers the parsed JWT.
+function assertChainJwt(cast, out, keys, expect) {
+  log.debug("Entering assertChainJwt(). " + expect.what);
+  const parsed = jwtParts(out.jwt, expect.what);
+  const h = parsed.header;
+  const c = parsed.claims;
+  // RFC 9068 section 2.1.
+  assert.strictEqual(h.typ, "at+jwt", expect.what + "'s header typ is " +
+    JSON.stringify(h.typ) + "; RFC 9068 section 2.1 has \"at+jwt\"");
+  verifyWithJwks(parsed, keys, expect.what);
+  // RFC 9068 section 2.2: iss, exp, aud, sub, client_id, iat, jti.
+  assert.strictEqual(c.iss, expect.issuer, expect.what + "'s iss");
+  assert.ok(Number.isInteger(c.iat) && Number.isInteger(c.exp) &&
+            c.exp > c.iat, expect.what + "'s iat / exp: " + c.iat + " / " +
+            c.exp);
+  // WS-Trust's own lifetime and the JWT's are one decision: the RSTR's
+  // wst:Lifetime Expires is `exp`, to the second.
+  assert.ok(Math.abs(c.exp * 1000 - Date.parse(out.expires)) <= 2000,
+            expect.what + "'s exp " + new Date(c.exp * 1000).toISOString() +
+            " is not the RSTR's wst:Lifetime Expires " + out.expires);
+  assert.deepStrictEqual([].concat(c.aud), [expect.audience], expect.what +
+    " should be addressed to exactly " + expect.audience + ", the " +
+    "registered identifier it was asked for by: aud=" +
+    JSON.stringify(c.aud));
+  assert.ok(/^urn:uuid:/.test(String(c.sub || "")), expect.what + "'s sub " +
+            c.sub + " is not this service's subject for a person");
+  if (expect.sub) {
+    assert.strictEqual(c.sub, expect.sub, expect.what + " is about " +
+                       c.sub + " and the chain is about " + expect.sub);
+  }
+  assert.strictEqual(c.name, cast.user, expect.what + " names " + c.name);
+  assert.ok(typeof c.jti === "string" && c.jti.length >= 16, expect.what +
+            "'s jti " + c.jti);
+  (expect.notJtis || []).forEach(function (one) {
+    assert.notStrictEqual(c.jti, one, expect.what + " reuses the jti of " +
+                          "the token it was exchanged for");
+  });
+  if (expect.clientId) {
+    assert.strictEqual(c.client_id, expect.clientId, expect.what + " was " +
+      "issued to " + c.client_id + " rather than the requester " +
+      expect.clientId + " (RFC 9068 section 2.2, RFC 8693 section 4.3)");
+  } else {
+    // THE EXCEPTION: a person asking for themselves has no client.
+    assert.strictEqual(c.client_id, undefined, expect.what + " names a " +
+      "client_id (" + c.client_id + ") and nobody but the person asked");
+  }
+  // No scope: an RST asks for none (an exception, not an omission).
+  assert.strictEqual(c.scope, undefined, expect.what + " carries scope " +
+                     JSON.stringify(c.scope) + " and an RST asks for none");
+  assert.deepStrictEqual(c.act, expect.act, expect.what + " should carry " +
+    "act " + JSON.stringify(expect.act) + " (RFC 8693 section 4.1: the " +
+    "current actor outermost) and carries " + JSON.stringify(c.act));
+  // RFC 8693 section 4.4: none, since the person names no delegate.
+  assert.strictEqual(c.may_act, undefined, expect.what + " carries may_act " +
+                     JSON.stringify(c.may_act));
+  log.info("[jwt] " + expect.what + ": typ=" + h.typ + ", kid=" + h.kid +
+           ", sub=" + c.sub + ", aud=" + JSON.stringify(c.aud) +
+           ", client_id=" + c.client_id + ", act=" + JSON.stringify(c.act) +
+           ", jti=" + c.jti);
+  log.debug("Leaving assertChainJwt().");
+  return parsed;
+}
+
+// The target's own validation of a JWT: the published key, `typ`, its own
+// identifier in `aud`, the issuer the STS publishes, and the clock.
+function validateJwtAtTarget(token, keys, audience, issuer, skewMs) {
+  log.debug("Entering validateJwtAtTarget().");
+  const parsed = jwtParts(token, "the token at the target");
+  verifyWithJwks(parsed, keys, "the token at the target");
+  assert.strictEqual(parsed.header.typ, "at+jwt");
+  assert.strictEqual(parsed.claims.iss, issuer, "iss " + parsed.claims.iss +
+                     " is not the issuer GET /sts names, " + issuer);
+  assert.ok([].concat(parsed.claims.aud).indexOf(audience) >= 0,
+            "the target's identifier is not in aud: " +
+            JSON.stringify(parsed.claims.aud));
+  const now = Date.now();
+  assert.ok(parsed.claims.exp * 1000 > now - skewMs, "the token has expired");
+  assert.ok(parsed.claims.iat * 1000 <= now + skewMs, "iat is in the future");
+  if (parsed.claims.nbf !== undefined) {
+    assert.ok(parsed.claims.nbf * 1000 <= now + skewMs, "nbf is in the " +
+              "future");
+  }
+  log.debug("Leaving validateJwtAtTarget().");
+  return parsed;
+}
+
+// ---------------------------------------------------------------------------
 // THE REGISTER. Each act is found by the ID of the assertion it PRODUCED,
 // which is the assertion this job received, so neither a pool of other jobs
 // nor a rerun of this one can be mistaken for it, and no `seq` is read.
@@ -684,7 +919,8 @@ function actProducing(acts, id, what) {
 }
 
 // One act, for one hop. `expect`: { type, mode, semantics, requester,
-// target, appliesTo, consumedId, producedId, product }.
+// target, appliesTo, consumedId, producedId, producedKind, product } —
+// `producedKind` "SAML 2.0 assertion" when absent, "JWT" for a JWT.
 function assertAct(cast, act, expect) {
   log.debug("Entering assertAct(). " + expect.requester);
   assert.strictEqual(act.protocol, "WS-Trust", "protocol " + act.protocol);
@@ -737,7 +973,8 @@ function assertAct(cast, act, expect) {
     JSON.stringify(consumed));
   const produced = act.produced || [];
   assert.ok(produced.length === 1 &&
-            produced[0].kind === "SAML 2.0 assertion" &&
+            produced[0].kind === (expect.producedKind ||
+                                  "SAML 2.0 assertion") &&
             produced[0].identifier === expect.producedId,
     "the act should record producing the assertion " + expect.producedId +
     " and records " + JSON.stringify(produced));
@@ -762,15 +999,16 @@ function noteStaleNotes(act, element, product) {
       /Nothing in the token this service issues carries that/
         .test(String(act.note || ""))) {
     out.push("the act's note says nothing in an ActAs token carries the " +
-             "composite fact, and the assertion it produced names its " +
-             "delegates in a Delegation Restriction (#186)");
+             "composite fact, and the token it produced names its " +
+             "delegates (#186: a SAML Delegation Restriction, or a JWT's " +
+             "act)");
   }
   const delegated = (act.consumed || []).filter(function (one) {
     return one.kind === "delegated token";
   })[0];
   if (product && delegated &&
       /signature and Conditions are not checked/.test(delegated.note)) {
-    out.push("the consumed assertion's note says its signature and " +
+    out.push("the consumed token's note says its signature and " +
              "Conditions are not checked, and a product service verifies " +
              "both (checkedAssertion())");
   }
@@ -783,6 +1021,12 @@ function noteStaleNotes(act, element, product) {
 
 module.exports = {
   AC_PASSWORD: AC_PASSWORD,
+  JWT_TOKEN_TYPE: JWT_TOKEN_TYPE,
+  jwks: jwks,
+  publishedIssuer: publishedIssuer,
+  clientSubjectsNamespaced: clientSubjectsNamespaced,
+  assertChainJwt: assertChainJwt,
+  validateJwtAtTarget: validateJwtAtTarget,
   AC_UNSPECIFIED: AC_UNSPECIFIED,
   serviceBase: chain.serviceBase,
   isProduct: chain.isProduct,
