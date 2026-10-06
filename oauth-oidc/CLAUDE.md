@@ -2710,7 +2710,31 @@ the person's own `stsMayAct` (`delegationPolicy.mayActClaimFor()`).
 
 **`act` NESTS** (section 4.1): the subject_token's own `act` goes beneath the new
 actor, and an impersonation of a token that already carried `act` keeps it —
-dropping it would launder a delegated token into an ordinary one. **AND THE
+dropping it would launder a delegated token into an ordinary one.
+
+**AND THE CHAIN BEGINS WITH THE ORIGINAL CLIENT (#443, 2026-10-06).** The first
+exchange of a token had no prior `act` to keep, so the client the person signed
+in to was in no token of the chain: two hops read `{sub: esb1, act: {sub:
+apigw1}}`, with webapp1 nowhere. The token-chaining profile #443 cites (MITRE PR
+21-1421, *Token and Identity Chaining Between Protected Resources in a Single
+ICAM Ecosystem Using OAuth Token Exchange*, the "ENA" profile) says what to put
+there: where the subject_token carries no `act`, "add a nested act claim
+containing a sub claim with the identity of the client that presented the access
+token ... (found in the access token's client_id claim)". So a DELEGATION whose
+subject_token has no `act` nests `{sub: <its client_id>}` (else `azp`) beneath
+the new actor — `OAuth2Server.originalClientAct()` — and every later hop carries
+it down by the rule above: `{sub: esb1, act: {sub: apigw1, act: {sub:
+webapp1}}}`. Four limits, each argued there: only off a subject_token this realm
+signed and verified (a foreign `client_id` names another server's client, an
+assertion's is the exchanging client's); in the form a client's own subject
+takes in the mode (`urn:sts:client:<id>` in RFC 9700 mode, so product — the
+form the actors above it have when they act by client_credentials tokens);
+nothing when the original client IS the actor; and **delegation only** — the
+profile has no impersonation (its exchanging party is always named), and RFC
+8693 section 1.1's impersonation names nobody, so it starts no chain. The
+profile's `iss` in each entry is not added. The entry is informational, as
+every nested `act` is: `may_act`, the delegation policy and the register read
+the current actor, which stays outermost. **AND THE
 SCOPE MAY NOT WIDEN**: `body.scope || subject.scope` was never compared with
 what the subject granted, and #110's `scopeRefusal()` and `tokenSet()`'s
 narrowing hold a scope to the CLIENT's declaration, not to the subject's grant.

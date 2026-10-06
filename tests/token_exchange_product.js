@@ -41,8 +41,10 @@
 //      an unusable exchange_semantics (0795, every mode); a protected
 //      subject (0618); an unregistered, two, or no audience (0793, 0792,
 //      0794); a self exchange; may_act naming somebody else (0620, every
-//      mode); `act` NESTING; a wider scope (0621) and a narrower one; and
-//      stsMayAct putting may_act on the token issued.
+//      mode); `act` NESTING, beginning with the ORIGINAL CLIENT where the
+//      subject token carries no `act` and that client is not the actor
+//      (#443); a wider scope (0621) and a narrower one; and stsMayAct
+//      putting may_act on the token issued.
 //   8. DEVELOPMENT: the same, each refusal ISSUED and the act's row saying
 //      it WOULD have been refused — except 0795 and 0620, refused all the
 //      same — and a wider scope issued.
@@ -265,12 +267,26 @@ function childMain() {
            P + 'a2. the actor_token\'s subject is the actor: S itself, ' +
            'exchanging through another client — `act.sub` is its sub',
            r.status + ' ' + JSON.stringify([claims.act, frontSub]));
-      // b. The same, actor = R holding the token S was handed.
+      // a3. The original client is not nested beneath ITSELF (#443): S
+      // exchanged the token it was issued, so the chain begins with S.
+      note(r.status === 200 && claims.act && !claims.act.act,
+           P + 'a3. the actor IS the client the subject token was issued ' +
+           'to: nothing nested beneath it (#443)',
+           r.status + ' ' + JSON.stringify(claims.act));
+      // b. The same, actor = R holding the token S was handed — and the
+      // chain BEGINS with S, the client that token was issued to (#443), in
+      // the form a client's subject takes in the mode.
       r = await by('txp-back', aliceToken(), { audience: BACK });
       claims = r.json.access_token ? claimsOf(r.json.access_token) : {};
-      note(r.status === 200 && claims.act && claims.act.sub === 'txp-back',
+      const originalS = m === 'product' ? 'urn:sts:client:txp-front'
+                                        : 'txp-front';
+      note(r.status === 200 && claims.act && claims.act.sub === 'txp-back' &&
+           JSON.stringify(claims.act.act) ===
+             JSON.stringify({ sub: originalS }),
            P + 'b. DELEGATION by R, holding the token S was handed: issued, ' +
-           '`act` naming R', r.status + ' ' + r.text.slice(0, 300));
+           '`act` naming R with the original client ' + originalS +
+           ' nested beneath it (#443)', r.status + ' ' +
+           JSON.stringify(claims.act) + ' ' + r.text.slice(0, 300));
       // c. RESOURCE-BASED: R accepts the actor by name.
       r = await by('txp-rbcd', aliceToken('txp-rbcd'), { audience: BACK });
       note(r.status === 200, P + 'c. appAllowedToActOnBehalfOf on R allows ' +
@@ -354,9 +370,11 @@ function childMain() {
         { act: { sub: 'txp-prior-actor' } }), { audience: BACK });
       claims = r.json.access_token ? claimsOf(r.json.access_token) : {};
       note(r.status === 200 && claims.act && claims.act.sub === 'txp-front' &&
-           claims.act.act && claims.act.act.sub === 'txp-prior-actor',
+           claims.act.act && claims.act.act.sub === 'txp-prior-actor' &&
+           !claims.act.act.act,
            P + 'n. `act` NESTS: the new actor outermost, the ' +
-           'subject_token\'s actor beneath it (RFC 8693 section 4.1)',
+           'subject_token\'s actor beneath it (RFC 8693 section 4.1), and ' +
+           'no original client added under a chain already there (#443)',
            r.status + ' ' + JSON.stringify(claims.act));
       // o. A wider scope.
       r = await by('txp-front', aliceToken('txp-front', { scope: 'api' }),
