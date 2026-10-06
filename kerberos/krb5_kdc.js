@@ -731,11 +731,21 @@ function ticketFlagsForReferral(presented) {
 //
 // Two more asymmetries that matter and are easy to miss:
 //
-//   * **Classic requires the evidence ticket to be FORWARDABLE; RBCD does
-//     not.** And a forwardable ticket out of S4U2Self is granted only to an
-//     account with TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. So classic
-//     delegation needs that flag and RBCD does not need it either — one of the
-//     reasons RBCD is the easier path.
+//   * **BOTH mechanisms require the evidence ticket to be FORWARDABLE**
+//     (#492, 2026-10-06). [MS-SFU] 3.2.5.2.1 refuses non-forwardable evidence
+//     for classic delegation (STATUS_NO_MATCH) and 3.2.5.2.3 for
+//     resource-based delegation (STATUS_ACCOUNT_RESTRICTION) — the second
+//     since the CVE-2020-16996 update (its footnote 27), which closed the
+//     path by which a protected user's non-forwardable ticket reached a back
+//     end through RBCD. Samba's KDC (`mssfu.c`) and MIT's
+//     (`check_tgs_s4u2proxy()`) refuse it for both, and Samba's
+//     `test_rbcd_non_forwardable` expects exactly that of Windows. Until #492
+//     this KDC let RBCD through with non-forwardable evidence, which is what
+//     the commonly repeated "RBCD needs no forwardable evidence" described
+//     before 2020. A forwardable ticket out of S4U2Self is granted where the
+//     issuance policy allows the service to impersonate and the user is not
+//     protected (#186, standing for TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION
+//     and NOT_DELEGATED).
 //   * **RBCD additionally requires PA-PAC-OPTIONS with the RBCD bit**, and
 //     [MS-SFU] says a KDC MUST answer KDC_ERR_BADOPTION without it. That error
 //     mentions nothing about padata, so it is refused here with an explanation.
@@ -1291,11 +1301,31 @@ async function resolveS4u(ctx) {
     });
   }
 
-  // Classic needs FORWARDABLE evidence; RBCD does not, and that asymmetry is
-  // real.
+  // FORWARDABLE EVIDENCE, FOR BOTH MECHANISMS (#492): [MS-SFU] 3.2.5.2.1
+  // for classic and 3.2.5.2.3 for resource-based delegation (the
+  // CVE-2020-16996 update); Samba and MIT refuse it for both. Asked after
+  // the mechanism is known, so the refusal names the one that was asked.
   const evidenceForwardable =
     (evidencePart.flags || []).indexOf(msgs.TICKET_FLAG.FORWARDABLE) !== -1;
-  if (classicAllowed && !rbcdAllowed && !evidenceForwardable) {
+  if (!classicAllowed && rbcdAllowed && !evidenceForwardable) {
+    log.info('krb5: REFUSING S4U2Proxy — resource-based delegation with ' +
+             'evidence that is not forwardable');
+    log.debug("Leaving resolveS4u().");
+    return refuseS4u(intent, 13, {
+      errorCode: 'STS-KRB-0199',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ctx.answeringRealm,
+      sname: body.sname,
+      eText: 'the evidence ticket is not forwardable, and [MS-SFU] section ' +
+             '3.2.5.2.3 refuses resource-based constrained delegation with ' +
+             'it too (STATUS_ACCOUNT_RESTRICTION, the CVE-2020-16996 ' +
+             'update). A ticket from S4U2Self is forwardable only when ' +
+             'the requesting service allows impersonation ' +
+             '(appDelegationSemantics) and the user is not protected ' +
+             '(stsNotDelegated, a protected group).'
+    });
+  }
+  if (classicAllowed && !evidenceForwardable) {
     log.info('krb5: REFUSING S4U2Proxy — the evidence ticket is not ' +
              'forwardable');
     log.debug("Leaving resolveS4u().");
@@ -1310,8 +1340,8 @@ async function resolveS4u(ctx) {
              'impersonation (appDelegationSemantics, Active Directory\'s ' +
              'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION) and the user is not ' +
              'protected, so this usually means one of those on ' +
-             requesterName + ' — note that resource-based delegation would ' +
-             'not have needed it.'
+             requesterName + '. Resource-based delegation needs it too ' +
+             '([MS-SFU] 3.2.5.2.3).'
     });
   }
 
@@ -1323,7 +1353,8 @@ async function resolveS4u(ctx) {
   const proxyDecision = krb5Delegation().decide({
     mechanism: 'proxy', requester: ticketPart.cname.name,
     subject: evidencePart.cname.name, subjectRealm: evidencePart.crealm,
-    target: body.sname.name, realm: ctx.answeringRealm
+    target: body.sname.name, realm: ctx.answeringRealm,
+    rbcd: !classicAllowed && rbcdAllowed
   });
   if (!proxyDecision.allowed) {
     log.info('krb5: REFUSING S4U2Proxy — the issuance policy refused it: ' +
@@ -1358,8 +1389,16 @@ async function resolveS4u(ctx) {
     resourceBased: resourceBased,
     classic: classicAllowed,
     // The audit trail that goes into the PAC: this service is now one of the
-    // services the client has been delegated through.
-    transited: [requesterName],
+    // services the client has been delegated through — named WITH ITS REALM
+    // (#489), `SPN@REALM`, as Samba (`samba_kdc_update_delegation_info_blob()`,
+    // `krb5_unparse_name()`) and MIT (`update_delegation_info()`) write a
+    // transited service and as Samba's s4u_tests expect of Windows
+    // (`host/<service1>@<REALM>`), so a reader across realms can tell two
+    // services of one name apart. S4U2proxyTarget, below, stays the bare
+    // name: both write it with KRB5_PRINCIPAL_UNPARSE_NO_REALM and [MS-SFU]
+    // 3.2.5.2.4 calls it "the name of Service 2", whose realm the ticket's
+    // own srealm already says.
+    transited: [requesterName + '@' + ticketPart.crealm],
     // For /admin/delegation, recorded by handleTgsReq() once the ticket exists.
     // `authorizedBy` names the ATTRIBUTE AND THE ACCOUNT IT IS ON, in the same
     // words as the log line above — the two halves nobody can reconstruct from
@@ -3810,9 +3849,28 @@ async function answerTgsReq(request, state) {
         'S4U2Self ticket is NOT forwardable and cannot be used as evidence ' +
         'for classic constrained delegation');
     }
-  } else if (s4u.mode === 'proxy' &&
-             flags.indexOf(msgs.TICKET_FLAG.FORWARDABLE) === -1) {
-    flags.push(msgs.TICKET_FLAG.FORWARDABLE);
+  } else if (s4u.mode === 'proxy') {
+    // THE S4U2PROXY TICKET'S FORWARDABLE FLAG (#492). [MS-SFU] 3.2.5.2.4
+    // says nothing of it, so RFC 4120 section 3.3.3 decides, as it does in
+    // MIT (`get_ticket_flags()`) and Heimdal (`tgs_make_reply()`):
+    // forwardable when the request asked for it AND the requester's TGT is
+    // forwardable — the evidence already is, or the request was refused
+    // above — and NOT for a user nobody may delegate ([MS-SFU] 3.2.1's
+    // DelegationNotAllowed: "prevent ... FORWARDABLE ticket flags in tickets
+    // for the principal"). Until #492 the flag was added whatever the request
+    // or the TGT said. A forwardable last hop is not a licence to go on:
+    // whether sp1 may delegate is its own entry's question at the next
+    // S4U2Proxy, which needs this flag as evidence and nothing more.
+    const askedForwardable = (body.kdcOptions || []).indexOf(
+      msgs.KDC_OPTION.FORWARDABLE) !== -1;
+    const tgtForwardable = flags.indexOf(msgs.TICKET_FLAG.FORWARDABLE) !== -1;
+    flags = flags.filter(function (f) {
+      return f !== msgs.TICKET_FLAG.FORWARDABLE;
+    });
+    if (askedForwardable && tgtForwardable &&
+        !krb5Delegation().isProtected(clientName.name, clientRealm)) {
+      flags.push(msgs.TICKET_FLAG.FORWARDABLE);
+    }
   }
   if (wantsForwarded && flags.indexOf(msgs.TICKET_FLAG.FORWARDED) === -1) {
     // The flag is the RECORD that this happened: a service receiving a ticket

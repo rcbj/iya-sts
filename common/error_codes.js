@@ -11671,6 +11671,12 @@ const CODES = [
     spec: 'RFC 8062 sections 4.1 and 4.2: KDC_ERR_C_PRINCIPAL_UNKNOWN (6), ' +
       'KDC_ERR_BADOPTION (13), KDC_ERR_POLICY (12), KDC_ERR_ETYPE_NOSUPP ' +
       '(14)' },
+  { code: 'STS-KRB-0199',
+    summary: 'Resource-based constrained delegation was refused because the ' +
+      'evidence ticket is not forwardable (the S4U2Self service does not ' +
+      'allow impersonation, or the user is protected) (#492).',
+    spec: '[MS-SFU] 3.2.5.2.3: KDC_ERR_BADOPTION (13), ' +
+      'STATUS_ACCOUNT_RESTRICTION' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',

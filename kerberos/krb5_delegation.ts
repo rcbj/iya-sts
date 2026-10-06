@@ -249,7 +249,8 @@ class Krb5Delegation {
    * the front end to the back end.
    *
    * @param question - `{ mechanism: 'self' | 'proxy', requester, subject,
-   *   subjectRealm, target, realm }`, names as components
+   *   subjectRealm, target, realm, rbcd? }`, names as components; `rbcd`
+   *   says resource-based delegation permitted a proxy request
    * @returns `delegation_policy.decide()`'s decision
    */
   decide(question: Json): Json {
@@ -268,7 +269,10 @@ class Krb5Delegation {
                               question.subjectRealm || question.realm),
       source: question.mechanism === 'self' ? [] : [requesterId],
       targets: [targetId],
-      targetKind: 'audience'
+      targetKind: 'audience',
+      // #490: the row in Kerberos's words.
+      mechanism: question.mechanism === 'self' ? 'S4U2Self' : 'S4U2Proxy',
+      rbcd: !!question.rbcd
     });
     log.debug("Leaving Krb5Delegation.decide(). " + decision.allowed);
     return decision;

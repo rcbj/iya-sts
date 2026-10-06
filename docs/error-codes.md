@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4149** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4150** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 18
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 198
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 199
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -2727,6 +2727,7 @@ Raised from: kerberos/.
 | `STS-KRB-0196` | A PKINIT request offered no RFC 8636 KDF this KDC uses, or none at all while krb5.pkinitLegacyKdf is off (#179). | RFC 8636 section 6: KDC_ERR_NO_ACCEPTABLE_KDF (100) |
 | `STS-KRB-0197` | The KDC held no PKINIT certificate for the realm, or could not sign its reply (#179). | none (logged); KDC_ERR_CLIENT_NOT_TRUSTED (62) to the client |
 | `STS-KRB-0198` | An anonymous PKINIT request was refused — anonymous PKINIT off, no anonymous KDC option, a service other than the realm's TGS or no AES enctype — or an anonymous ticket was presented to the TGS, which it may not buy from (#179). | RFC 8062 sections 4.1 and 4.2: KDC_ERR_C_PRINCIPAL_UNKNOWN (6), KDC_ERR_BADOPTION (13), KDC_ERR_POLICY (12), KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0199` | Resource-based constrained delegation was refused because the evidence ticket is not forwardable (the S4U2Self service does not allow impersonation, or the user is protected) (#492). | [MS-SFU] 3.2.5.2.3: KDC_ERR_BADOPTION (13), STATUS_ACCOUNT_RESTRICTION |
 
 ## STS-LDAP
 

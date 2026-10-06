@@ -33,19 +33,31 @@
 //      semantics, apigw1 allowing impersonation and delegation to esb1,
 //      esb1 delegation to sp1.
 //   2. THE WIRE: every KDC reply decoded — for bob, to the SPN asked for,
-//      the nonce echoed — and the S4U2Self ticket and the one apigw1 hands
-//      on FORWARDABLE.
+//      the nonce echoed — and every ticket FORWARDABLE, sp1's included:
+//      each request asked for it and each front end's TGT is forwardable
+//      (RFC 4120 3.3.3, #492).
 //   3. THE TARGET'S VALIDATION: each tier opens the AP-REQ it is handed with
 //      its own key, finds bob, verifies the PAC's server signature, and
 //      reads S4U_DELEGATION_INFO ([MS-PAC] 2.9): absent on the S4U2Self
 //      ticket (nothing was delegated through anybody yet), transited
-//      [apigw1] at esb1 and [apigw1, esb1] at sp1. webapp1 is on no list:
-//      it never held a Kerberos credential of bob's.
+//      [apigw1] at esb1 and [apigw1, esb1] at sp1, each `SPN@REALM`, the
+//      target its bare SPN (#489). webapp1 is on no list: it never held a
+//      Kerberos credential of bob's.
 //   4. THE REGISTER AND THE PICTURE: the `krb5-s4u2self` act (mode
 //      impersonation, its ticket FORWARDABLE by the issuance policy) and one
 //      `krb5-s4u2proxy-classic` act per hop (mode delegation), each policed,
-//      for bob, with the policy's ALLOWED sentence. Then the graph: esb1 is
-//      ONE box (#468).
+//      for bob, with the policy's ALLOWED sentence in Kerberos's words —
+//      S4U2Self or S4U2Proxy, the evidence ticket, the SPN (#490). Then the
+//      graph: esb1 is ONE box (#468).
+//
+// ONE IMPERSONATION ROW, THEN DELEGATION ROWS — AND THAT IS [MS-SFU]'S MODEL
+// (#491). The OAuth impersonation chain is impersonation at every hop,
+// because a token exchanged with no actor_token carries nothing of the
+// chain. Kerberos names the mechanisms: S4U2Self is protocol transition (an
+// impersonation) and S4U2Proxy is constrained delegation, whatever made its
+// evidence — and its ticket does carry the chain, in S4U_DELEGATION_INFO.
+// So the register records apigw1's S4U2Self as impersonation and the two
+// S4U2Proxy hops as delegation, and the console says why under the mode.
 //
 // In development and product mode alike (GET /admin-api/mode); the KDC
 // enforces the delegation policy in both. The entries are left behind; a
@@ -110,7 +122,7 @@ async function test() {
     log.info("=== " + tier.stem + " delegates to " + tier.next.stem +
              " (S4U2Proxy) ===");
     const r = await kit.s4u2proxy(K, cast, tier, held.ticket);
-    kit.assertReply(K, cast, r, tier.next, !!tier.next.next,
+    kit.assertReply(K, cast, r, tier.next, true,
                     tier.stem + "'s ticket to " + tier.next.stem);
     held = await kit.accept(K, cast, tier.next, r);
     transited.push(tier);
