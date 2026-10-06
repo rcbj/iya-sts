@@ -279,6 +279,13 @@ function run(t) {
           !/fg-search|fgfind/.test(plainCell),
           '4g. the grid draws a search on the cells it is offered on — five ' +
           'Adds after a search — and none on any other');
+  // #462: a cell holding a search is drawn OPEN by its class, because the
+  // redraw a Find makes takes focus with it and `:focus-within` alone
+  // closed the cell on the press that filled it.
+  t.check(/class="fg-cell fg-search fg-search-open/.test(groupCell) &&
+          !/fg-search-open/.test(delegateCell),
+          '4g-ii. a cell with results is drawn open (fg-search-open), one ' +
+          'without is not (#462)');
   t.check(Object.keys(applications.FIELD_SEARCHES).sort().join(',') ===
             'appAllowedToActOnBehalfOf,appAllowedToDelegateTo,' +
             'appDelegationSubjectGroup',

@@ -1741,6 +1741,11 @@ class WebKit {
     // The cell's id is what "+" and the bin come back to (withReturnAnchors()).
     return '<div id="fgc-' + WebKit.esc(row.attribute) + '" class="fg-cell' +
       (searchKind ? ' fg-search' : '') +
+      // OPEN WHILE IT HOLDS A SEARCH (#462): the redraw a Find makes takes
+      // focus with it, so the open state is drawn rather than left to
+      // `:focus-within` (see the stylesheet).
+      (searchKind && (opts.finds || {})[row.attribute]
+        ? ' fg-search-open' : '') +
       (conditional
         ? ' ' + WebKit.esc(WebKit.familyClasses(row.families)) : '') + '"' +
       (searchKind ? ' tabindex="-1"' : '') + '>' +

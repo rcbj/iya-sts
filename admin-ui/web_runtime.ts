@@ -1327,9 +1327,58 @@ class ConsoleRuntime {
     this.view.json = Object.assign({}, this.view.json, {
       state: { draft: drafted, finds: finds } });
     this.drawView(null, '');
-    const box = this.env.document.getElementById('fgq-' + asked.attribute);
-    if (box && box.focus) {
-      box.focus();
+    // THE CELL STAYS OPEN BY ITS CLASS (`fg-search-open`, #462), drawn from
+    // `finds`; focus in its box is a convenience on top, so typing can go
+    // on. Put back after the drawing has settled: `draw()` re-navigates to
+    // the fragment (`targetFragment()`), and a focus given before that is
+    // lost to it, which is what closed the cell under #459.
+    const doc = this.env.document;
+    const attribute = asked.attribute;
+    const refocus = function () {
+      const box = doc.getElementById('fgq-' + attribute);
+      if (box && box.focus) {
+        box.focus({ preventScroll: true });
+      }
+    };
+    refocus();
+    if (this.env.window && this.env.window.setTimeout) {
+      this.env.window.setTimeout(refocus, 0);
+    }
+  }
+
+  // A FIELD'S SEARCH CLOSES WHEN THE READER MOVES TO ANOTHER FIELD (#462,
+  // rcbj: "if they move to another field, minimize it back"). On `focusin`
+  // anywhere, every open search cell that does not contain the newly
+  // focused element loses `fg-search-open` — and its results leave the
+  // page's state, so the next redraw (a "+" in another cell) does not open
+  // it again. `focusin` rather than `focusout` or `blur`: those fire when a
+  // result's Add or Next is clicked in a browser that focuses buttons, and
+  // in one that does not, nothing moves at all, which is right.
+  /**
+   * Closes every open field search but the one focus moved into.
+   *
+   * @param target - the element that received focus
+   * @returns nothing
+   */
+  closeOtherSearches(target: Json): void {
+    const doc = this.env.document;
+    const open = doc.querySelectorAll ? doc.querySelectorAll('.fg-search-open')
+                                      : [];
+    const state = this.view && this.view.json && this.view.json.state;
+    const finds = Object.assign({}, (state && state.finds) || {});
+    let closed = false;
+    for (let i = 0; i < open.length; i++) {
+      const cell = open[i];
+      if (target && cell.contains && cell.contains(target)) {
+        continue;
+      }
+      cell.classList.remove('fg-search-open');
+      delete finds[String(cell.id || '').replace(/^fgc-/, '')];
+      closed = true;
+    }
+    if (closed && state) {
+      this.view.json = Object.assign({}, this.view.json, {
+        state: Object.assign({}, state, { finds: finds }) });
     }
   }
 
@@ -1627,6 +1676,9 @@ class ConsoleRuntime {
     });
     this.env.document.addEventListener('submit', function (event) {
       self.onSubmit(event);
+    });
+    this.env.document.addEventListener('focusin', function (event) {
+      self.closeOtherSearches(event && event.target);
     });
     if (this.env.window) {
       // THE EXPLORER'S WAY TO CALL (`admin_api_explorer.js`): this
