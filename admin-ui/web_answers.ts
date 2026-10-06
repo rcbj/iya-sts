@@ -221,6 +221,147 @@ class WebAnswers {
   }
 
   // ---------------------------------------------------------------------------
+  // 2a. A FIELD'S SEARCH (#459): the application page's Find, Previous,
+  // Next and Add beside `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`
+  // (other applications) and `appDelegationSubjectGroup` (groups).
+  //
+  // THE FIELD GRID'S OWN MODEL, NOT A SECOND ONE. "+" and the bin are submit
+  // buttons that draw the form again with every box kept; these are too, and
+  // they differ only in that the redraw needs data — so the runtime asks
+  // `GET /admin-api/applications` or `GET /admin-api/groups` (the lists the
+  // Applications and Groups pages draw, rule 7: no console-only data path)
+  // with `per=5`, and draws the answer under the box. Nothing is written: an
+  // Add puts the value in a new box of the list, and the tab's Save writes
+  // it, as it writes a box "+" made. These functions are pure, so the
+  // parsing and the address are tested without a browser.
+  // ---------------------------------------------------------------------------
+  /**
+   * Whether a press is one of a field search's buttons.
+   *
+   * @param page - the console path the form posts to
+   * @param fields - the form's fields, the submitter's among them
+   * @returns true for Find, Previous, Next and Add on an application's grid
+   */
+  static isFieldSearch(page: string, fields: Json): boolean {
+    return page === '/admin/applications/edit' &&
+      (WebAnswers.has(fields, 'fgsearch') || WebAnswers.has(fields, 'fgadd'));
+  }
+
+  // `fgsearch` is `<attribute>` (Find: page one) or `<attribute>|<page>`
+  // (Previous, Next); `fgadd` is `<attribute>|<value>`. An attribute name
+  // holds no `|`, so the FIRST one splits and a value may hold more.
+  /**
+   * Reads which search a press asks for.
+   *
+   * @param fields - the form's fields
+   * @returns `{ attribute, query, page, add }`; `add` is '' unless Add
+   */
+  static fieldSearchOf(fields: Json): Json {
+    const pressed = WebAnswers.has(fields, 'fgadd')
+      ? WebAnswers.one(fields, 'fgadd') : WebAnswers.one(fields, 'fgsearch');
+    const bar = pressed.indexOf('|');
+    const attribute = bar < 0 ? pressed : pressed.slice(0, bar);
+    const rest = bar < 0 ? '' : pressed.slice(bar + 1);
+    const adding = WebAnswers.has(fields, 'fgadd');
+    const shown = Number(WebAnswers.one(fields, 'fgpage.' + attribute)) || 1;
+    return {
+      attribute: attribute,
+      query: WebAnswers.one(fields, 'fgfind.' + attribute).trim(),
+      // An Add keeps the page it was pressed on; the answer is clamped, so a
+      // page the Add emptied comes back as the last one.
+      page: adding ? shown : Math.max(1, Math.floor(Number(rest)) || 1),
+      add: adding ? rest : ''
+    };
+  }
+
+  /**
+   * The form's fields with a value put in a new box of a list, after the
+   * boxes it holds — or as they were when a box already holds it.
+   *
+   * @param fields - the form's fields
+   * @param attribute - the list
+   * @param value - the value
+   * @returns the fields to draw
+   */
+  static withValueAdded(fields: Json, attribute: string,
+                        value: string): Json {
+    const out = Object.assign({}, fields);
+    const prefix = 'field.' + attribute + '.';
+    let next = 0;
+    let held = false;
+    Object.keys(out).forEach(function (key) {
+      if (key.indexOf(prefix) !== 0) {
+        return;
+      }
+      const n = Number(key.slice(prefix.length));
+      if (isFinite(n) && n >= next) {
+        next = n + 1;
+      }
+      if (WebAnswers.one(out, key).trim() === value) {
+        held = true;
+      }
+    });
+    if (value && !held) {
+      out[prefix + next] = value;
+    }
+    return out;
+  }
+
+  /**
+   * The address of a field search's page of results.
+   *
+   * @param kind - `applications` or `groups`
+   * @param asked - `fieldSearchOf()`'s answer
+   * @param exclude - what to leave out: the application itself (for an
+   *   application search) and what the list already holds
+   * @returns the `/admin-api` path and query
+   */
+  static fieldSearchPath(kind: string, asked: Json, exclude: string[]): string {
+    const params = new URLSearchParams();
+    if (asked.query) {
+      params.append('q', asked.query);
+    }
+    params.append('per', String(kit.FIND_PER_PAGE));
+    params.append('page', String(asked.page || 1));
+    exclude.forEach(function (one) {
+      if (one) {
+        params.append('exclude', one);
+      }
+    });
+    return '/admin-api/' + (kind === 'groups' ? 'groups' : 'applications') +
+      '?' + params.toString();
+  }
+
+  /**
+   * A field search's results, as the grid draws them, from the list's
+   * answer.
+   *
+   * @param kind - `applications` or `groups`
+   * @param asked - `fieldSearchOf()`'s answer
+   * @param answer - the list operation's JSON, or null when it failed
+   * @returns `{ kind, query, page, pages, matched, rows, failed }`, each row
+   *   `{ value, label }`
+   */
+  static fieldSearchFound(kind: string, asked: Json, answer: Json): Json {
+    const ok = !!answer && (kind === 'groups' ? Array.isArray(answer.groups)
+      : Array.isArray(answer.applications));
+    const rows = !ok ? [] : kind === 'groups'
+      ? answer.groups.map(function (one) {
+        return { value: String(one.dn), label: String(one.cn || '') };
+      })
+      : answer.applications.map(function (one) {
+        return { value: String(one.identifier),
+                 label: one.name && one.name !== one.identifier
+                   ? String(one.name) : '' };
+      });
+    return { kind: kind, query: asked.query,
+             page: ok ? Number(answer.page) || 1 : 1,
+             pages: ok ? Number(answer.pages) || 1 : 1,
+             matched: ok ? Number(answer.matched) || 0 : 0,
+             rows: rows, failed: !ok };
+  }
+
+  // ---------------------------------------------------------------------------
   // 3. THE REDRAWS
   // ---------------------------------------------------------------------------
   /**

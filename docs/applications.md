@@ -309,7 +309,24 @@ by kind, page with `?page=` and `?per=`, and `?application=<id>` drills into
 one: every attribute of its directory entry with what the published schema says
 each attribute *is*, paged under `?attributesPage=`. `?format=json` returns the
 same data, and `GET /admin-api/applications` is the same view with the same
-parameters.
+parameters — and one more, `exclude` (repeatable), the identifiers to leave
+out of the match before it is paged.
+
+**Finding the other application of a delegation.** On an application's
+Configuration tab, *Every protocol*, the `appAllowedToDelegateTo` and
+`appAllowedToActOnBehalfOf` cells each carry a search: the same match as this
+page's filter (a substring of the identifier or the name), five results a page
+with Previous and Next, leaving out the application itself and what the list
+already holds, and an **Add** beside each result that puts its identifier in
+the list (written by the tab's Save). `appDelegationSubjectGroup` has the same
+search over the realm's **groups** — the Groups page's match (a substring of the
+DN or the name), backed by `GET /admin-api/groups`, which takes `exclude` too
+(group DNs, compared as LDAP compares a DN) — and Add puts the group's DN in the
+list. Each cell grows to show its search while you work in it and shrinks back
+when you move to another field. Neither application list
+may name the application itself — its identifier, an identifier it answers to,
+or an audience it registered: the console and the API refuse that value
+(`STS-REG-0335`), since both lists name the *other* party of a delegation.
 
 **"Every attribute" is meant literally.** The drill-down shows the whole entry,
 including the operational attributes `createTimestamp` and `modifyTimestamp`
