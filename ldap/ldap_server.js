@@ -14860,6 +14860,14 @@ function ldapAddNow(req, res, next) {
     }
   }
   const addedEntry = putEntry(dn, attributes, { origin: 'ldap add' });
+  // An application added over the socket WITH credentials (#221): each is
+  // announced as created, as the registry announces its own.
+  if (isUnder(addedEntry.dn, applicationsDn()) &&
+      normalizeDn(addedEntry.dn) !== normalizeDn(applicationsDn())) {
+    applications.noteDirectoryWrite(null, attributeSnapshot(addedEntry),
+                                    { actor: boundDnOf(req),
+                                      via: 'an LDAP add' });
+  }
   if (addedPassword.password) {
     credentials.passwordWritten(addedPassword.name, addedPassword.password);
     notePasswordWritten(req, addedEntry.dn, addedPassword.name, 'create');
@@ -15015,6 +15023,11 @@ server.del('', function (req, res, next) {
   } else if (!deletedPerson && isUnder(stored.dn, applicationsDn()) &&
              normalizeDn(stored.dn) !== normalizeDn(applicationsDn())) {
     noteApplicationRemoved(stored, 'an LDAP delete');
+  } else if (!deletedPerson && isUnder(stored.dn, spiffeEntriesDn()) &&
+             normalizeDn(stored.dn) !== normalizeDn(spiffeEntriesDn())) {
+    // #221: a registration entry deleted here, not through the registry,
+    // is reported as the registry reports its own (P5's gap).
+    spiffeRegistry.noteEntryRemovedOutside(stored, boundDnOf(req));
   }
   // Note what is NOT done here: the DN is left in any group that lists it as a
   // member. See the header — referential integrity is a directory feature and
@@ -15239,6 +15252,17 @@ function ldapModifyNow(req, res, next) {
     // still a password changed (#237).
     notePasswordWritten(req, stored.dn, usernameOfEntry(stored),
                         passwordBefore === undefined ? 'create' : 'update');
+  }
+  // AN APPLICATION'S CREDENTIALS WRITTEN OVER THE SOCKET (#221, the gap P5
+  // left): a client secret, its keys or a certificate an administrator's
+  // `ldapmodify` changed are announced as the registry announces its own —
+  // the same comparison, in `applications.noteDirectoryWrite()`.
+  if (isUnder(stored.dn, applicationsDn()) &&
+      normalizeDn(stored.dn) !== normalizeDn(applicationsDn())) {
+    applications.noteDirectoryWrite(beforeModify,
+                                    attributeSnapshot(stored),
+                                    { actor: boundDnOf(req),
+                                      via: 'an LDAP modify' });
   }
   // `pwdReset` SET BY A WRITE OF THE SOCKET (#237). An administrator's
   // `ldapmodify` of it forces the person to change their password at the

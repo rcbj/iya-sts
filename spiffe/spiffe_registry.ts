@@ -1096,6 +1096,41 @@ class SpiffeRegistry {
     log.debug('Leaving SpiffeRegistry.signalRegistrationRemoved().');
   }
 
+  // A REGISTRATION ENTRY DELETED OVER THE LDAP SOCKET (#221, the gap P5
+  // left): the directory removed it itself, so `deleteEntry()` never ran.
+  // What follows the removal is the same — the holder's identity marked
+  // revoked where this was the last entry naming it, and the
+  // credential-change — told from the entry as it was.
+  /**
+   * Reports a registration entry the directory deleted without the registry —
+   * an LDAP delete over the socket — as `deleteEntry()` reports its own.
+   *
+   * @param entry - the stored entry as it was
+   * @param actor - the bound DN that deleted it, or ''
+   */
+  noteEntryRemovedOutside(entry, actor) {
+    const { log, stats } = this.deps;
+    log.debug('Entering SpiffeRegistry.noteEntryRemovedOutside().');
+    const existing = this.recordFromEntry(entry);
+    if (!existing || !existing.spiffeId) {
+      log.debug('Leaving SpiffeRegistry.noteEntryRemovedOutside(). Not an ' +
+                'entry.');
+      return;
+    }
+    const remaining = this.entriesForSpiffeId(existing.spiffeId).length;
+    if (!remaining) {
+      stats.recordCredentialStatus(existing.spiffeId, 'revoked', {
+        reason: 'the last SPIFFE registration entry naming this identity (' +
+                existing.id + ') was deleted over LDAP, so no further SVID ' +
+                'can be issued for it here. Nothing was revoked — SPIFFE has ' +
+                'no revocation — and any SVID already issued verifies until ' +
+                'it expires.'
+      });
+    }
+    this.signalRegistrationRemoved(existing, existing.id, remaining, actor);
+    log.debug('Leaving SpiffeRegistry.noteEntryRemovedOutside().');
+  }
+
   /**
    * Deletes a registration entry, and audits it.
    *
@@ -1875,6 +1910,7 @@ export = {
   createEntry: slot.forward('createEntry'),
   updateEntry: slot.forward('updateEntry'),
   deleteEntry: slot.forward('deleteEntry'),
+  noteEntryRemovedOutside: slot.forward('noteEntryRemovedOutside'),
   noteSvidIssued: slot.forward('noteSvidIssued'),
   allAgents: slot.forward('allAgents'),
   agentById: slot.forward('agentById'),

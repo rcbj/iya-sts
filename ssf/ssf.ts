@@ -5541,7 +5541,8 @@ class SharedSignals {
   /**
    * Sends a CAEP event about a registered device (a compliance change, a risk
    * level change, or a credential change for a device key or secret), with a
-   * complex subject naming the device and, for a person's device, its owner.
+   * complex subject naming the device and its owner: a person, or (#221) an
+   * application.
    *
    * @param asked - `type`, `act`, `deviceId`, `username`, `values`,
    * `initiatingEntity` and the reasons
@@ -5568,9 +5569,14 @@ class SharedSignals {
       return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
     }
     const username = String(o.username || '');
+    // AN APPLICATION'S DEVICE (#221) names the application as the owner,
+    // with the `application` member a person's device has as `user`.
+    const application = username ? '' : String(o.application || '');
     const subject = subjects.complexSubject({
       user: username ? { format: 'iss_sub', iss: this.issuerFor(null),
                          sub: subjectForName(username) || username } : null,
+      application: application ? subjects.applicationMember(application)
+                               : null,
       device: this.deviceSubjectOf(deviceId) });
     log.debug('Leaving SharedSignals.emitDeviceEvent().');
     return this.emitProtocolEvent({

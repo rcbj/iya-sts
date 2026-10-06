@@ -1405,6 +1405,20 @@ class Devices {
     return owner && owner.kind === 'person' ? String(owner.name || '') : '';
   }
 
+  // The owner's identifier where the owner is an APPLICATION, else '' — the
+  // `application` member of the device's Shared Signals subject (#221, the
+  // gap P5 left: until then an application's device was sent with no owner
+  // at all).
+  private applicationOf(device: Device): string {
+    const { log } = this.deps;
+    log.debug("Entering Devices.applicationOf().");
+    const owner = device.ownerKind === 'application'
+      ? this.ownerOf(device.owner) : null;
+    log.debug("Leaving Devices.applicationOf().");
+    return owner && owner.kind === 'application' ? String(owner.name || '')
+                                                 : '';
+  }
+
   // One call to `ssf/account_signals.ts`, fired and forgotten: it never
   // throws and never rejects by contract, and this is belt and braces so a
   // defect there cannot undo a change already written here.
@@ -1433,6 +1447,7 @@ class Devices {
     this.deps.log.debug("Entering Devices.deviceNotice().");
     this.deps.log.debug("Leaving Devices.deviceNotice().");
     return Object.assign({ deviceId: device.id, username: this.personOf(device),
+                           application: this.applicationOf(device),
                            ownerKind: device.ownerKind,
                            deviceLabel: device.label }, extra);
   }
