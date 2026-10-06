@@ -43,6 +43,11 @@
 //   G. SPIFFE: a registration entry removed is credential-change about the
 //      workload — `update` while another entry names it, `delete` for the
 //      last — with a plain `uri` subject.
+//   H. WHAT P5 LEFT (#221): an application's credential written over the
+//      LDAP SOCKET (a modify, and an add carrying one) is announced as the
+//      registry announces its own, by admin; a SPIFFE registration entry
+//      deleted over the socket is reported as the registry's own delete; and
+//      an APPLICATION'S DEVICE names its owner with the `application` member.
 //
 // In a child process, because it loads the protocol stack.
 // `tests/vendored/sts_application_signals.js` holds a rotation over the wire.
@@ -460,6 +465,84 @@ function childMain() {
            'G1. a registration entry removed is credential-change about ' +
            'the workload: update while another names it, delete for the last',
            brief(got) + ' ' + JSON.stringify([one.errors, two.errors]));
+
+      // ================================================================
+      // H. WHAT P5 LEFT.
+      // ================================================================
+      const ADMIN_DN = 'uid=admin,ou=users,' + ldap.baseDn();
+      const appDn = 'cn=' + applications.labelFor(APP) + ',' +
+                    ldap.applicationsDn();
+      from = mark();
+      const modified = await Promise.resolve(ldap.performOperation('modify',
+        { dn: appDn, boundDn: ADMIN_DN, channel: 'ldaps',
+          changes: [{ operation: 'replace', modification: {
+            type: 'oauthJwks', values: [JSON.stringify(jwks('as-ldap'))] } }]
+        }));
+      await settle();
+      got = about(from, 'credential-change', APP);
+      note(modified.ok !== false && got.length === 1 &&
+           got[0].payload.credential_type ===
+             'urn:iya:sts:credential-type:jwk' &&
+           got[0].payload.initiating_entity === 'admin',
+           'H1. an LDAP modify of an application\'s jwks is announced as a ' +
+           'jwk credential-change by admin, under the application',
+           brief(got) + ' ' + JSON.stringify(modified));
+      const ADDED = 'as-ldap-added';
+      from = mark();
+      const addedApp = await Promise.resolve(ldap.performOperation('add', {
+        dn: 'cn=' + ADDED + ',' + ldap.applicationsDn(), boundDn: ADMIN_DN,
+        channel: 'ldaps',
+        attributes: [
+          { type: 'objectClass', values: ['top', 'stsApplication'] },
+          { type: 'cn', values: [ADDED] },
+          { type: 'appIdentifier', values: [ADDED] },
+          { type: 'oauthJwks', values: [JSON.stringify(jwks('as-add'))] }]
+      }));
+      await settle();
+      got = about(from, 'credential-change', ADDED);
+      note(addedApp.ok !== false && got.length === 1 &&
+           got[0].payload.change_type === 'create',
+           'H2. an application ADDED over the socket with keys is a create',
+           brief(got) + ' ' + JSON.stringify(addedApp));
+      const three = registry.createEntry({ spiffeId: spiffeId,
+        parentId: 'spiffe://' + td + '/spire/server',
+        selectors: [{ type: 'unix', value: 'uid:223' }] }, 'test', td,
+        'test');
+      const entryDn = (registry.entryById(three.id) || {}).dn || '';
+      from = mark();
+      const ldapDeleted = await Promise.resolve(ldap.performOperation('del', {
+        dn: entryDn, boundDn: ADMIN_DN, channel: 'ldaps' }));
+      await settle();
+      got = workload(seen.slice(from));
+      note(three.ok && entryDn && ldapDeleted.ok !== false && got.length === 1 &&
+           got[0].payload.change_type === 'delete' &&
+           got[0].payload.initiating_entity === 'admin',
+           'H3. a registration entry deleted over the socket is reported as ' +
+           'the registry\'s own delete', brief(got) + ' ' +
+           JSON.stringify(ldapDeleted));
+      const devices = require(ROOT + '/common/devices');
+      const device = devices.create({ ownerKind: 'application', owner: APP,
+                                      label: 'as-app-device' }, 'as-admin');
+      from = mark();
+      // `compliant`: a new device's `unknown` is `not-compliant` on the
+      // wire, so only this is a change a receiver is told of.
+      const complied = device.ok
+        ? devices.setCompliance(device.device.id, 'compliant', 'admin',
+                                'as-admin')
+        : null;
+      await settle();
+      got = seen.slice(from).filter(function (one) {
+        return one.subject && one.subject.device;
+      });
+      note(device.ok && got.length >= 1 && got.every(function (one) {
+             return !one.subject.user && one.subject.application &&
+                    one.subject.application.id === APP;
+           }),
+           'H4. an application\'s device names its owner with the ' +
+           'application member, and no user', brief(got) + ' ' +
+           JSON.stringify(device.errors || device.error || '') + ' ' +
+           JSON.stringify(complied && { ok: complied.ok,
+                                        signalled: complied.signalled }));
     });
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

@@ -10181,6 +10181,51 @@ function noteCredentialWrite(record, how) {
   log.debug("Leaving noteCredentialWrite(). Queued.");
 }
 
+// ---------------------------------------------------------------------------
+// A WRITE THAT DID NOT COME THROUGH save() (#221, the gap P5 left): an LDAP
+// add or modify of an application entry over the socket, which the directory
+// commits itself. The directory hands the entry's attributes as they were and
+// as they are, and the SAME comparison save() makes decides what moved — one
+// queue, so an act that also passed through save() is announced once. A
+// delete is not handed here: the application is gone, and RISC
+// account-purged (`noteApplicationRemoved()` in ldap_server.js) says so.
+// ---------------------------------------------------------------------------
+/**
+ * Announces the credential changes of an application entry written over the
+ * LDAP socket, compared as `save()` compares them.
+ *
+ * @param before - the entry's attributes before the write, or null for an add
+ * @param after - its attributes after the write
+ * @param how - `actor` (the bound DN, which makes the entity `admin`) and
+ *   `via`
+ */
+function noteDirectoryWrite(before, after, how) {
+  log.debug("Entering noteDirectoryWrite().");
+  try {
+    const now = recordFromAttributes(after || {});
+    const was = before ? recordFromAttributes(before) : null;
+    if (!now.identifier && was) {
+      now.identifier = was.identifier;
+    }
+    if (!now.identifier) {
+      log.debug("Leaving noteDirectoryWrite(). No identifier.");
+      return;
+    }
+    Object.defineProperty(now, CREDENTIAL_SNAPSHOT, {
+      value: was ? credentialSnapshotOf(was.fields)
+                 : credentialSnapshotOf({}),
+      enumerable: false, writable: true, configurable: true });
+    noteCredentialWrite(now, how || {});
+  } catch (e) {
+    log.debug("Caught in noteDirectoryWrite(): " + ((e && e.message) || e));
+    log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: whether an ' +
+             'LDAP write moved an application\'s credentials could not be ' +
+             'decided, so no credential-change is sent: ' +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving noteDirectoryWrite().");
+}
+
 // Sends what the queued writes changed, each inside its realm. Answers the
 // number of events handed over (for a test).
 /**
@@ -16848,6 +16893,7 @@ module.exports = {
   storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,
   // #221 P5: the application credential-change diff, for its test.
   flushCredentialWrites: flushCredentialWrites,
+  noteDirectoryWrite: noteDirectoryWrite,
   credentialSnapshotOf: credentialSnapshotOf,
   frontchannelOriginProblem: frontchannelOriginProblem,
   backchannelSchemeProblem: backchannelSchemeProblem,

@@ -2488,8 +2488,11 @@ same way, through `pairwise_subjects.deviceIdFor()`:
 * an ephemeral client is told no device, and the member is dropped;
 * a public client is told the register's id.
 
-An application's device has no `user` member and is sent as it is: pairwise
-subjects protect End-Users. `oauth-oidc/CLAUDE.md` 3bo argues the claim.
+An application's device has no `user` member: since #221 it carries an
+`application` member naming its owner (format `opaque`, the application's
+identifier — the member every other event about the application carries),
+and its device id is sent as it is, because pairwise subjects protect
+End-Users. `oauth-oidc/CLAUDE.md` 3bo argues the claim.
 
 **RISK SCORING SETS A DEVICE'S LEVEL** (#164 phase 5): after a sign-in the
 person's own device proved, the device takes that sign-in's level, so the
@@ -2609,12 +2612,17 @@ about the application, with or without a session.
 * **No mail notice**: the security-notice mails are a person's
   (`AccountSignals.notPersonal()`).
 
-**NOT DONE:** an LDAP socket write of an application's credential attribute
-does not go through `applications.js` and is not announced (a raw write of a
-PERSON's credential attribute is refused since #237; an application's is
-not); a SPIFFE registration entry deleted over the LDAP socket rather than
-the registry is not either; a GNAP client's key (`gnapKey`) is GNAP's own and
-ends its grants instead.
+**AND OVER THE LDAP SOCKET** (#221, closing what P5 left): an add or modify of
+an application entry over the socket is committed by the directory itself,
+not through `save()`, so the directory hands the entry's attributes as they
+were and as they are to `applications.noteDirectoryWrite()` — the SAME
+comparison and the same queue, so an act that also passed through `save()` is
+announced once, and the bound DN makes the entity `admin`. A delete is not:
+the application is gone, and RISC `account-purged` says so. A SPIFFE
+registration entry deleted over the socket is reported through
+`spiffe_registry.noteEntryRemovedOutside()` exactly as `deleteEntry()` reports
+its own. A GNAP client's key (`gnapKey`) is GNAP's own and ends its grants
+instead.
 
 `tests/application_signals.js` holds every row in process (the recorder sits
 on `ssf_streams.ts`'s three filters, so the real emitters build each event);
