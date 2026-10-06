@@ -905,6 +905,19 @@ async function pageReplaced(driver, element, ms) {
 // the control in the same state, which is why this trade is available here and
 // would not be on a page with scripts.
 // ---------------------------------------------------------------------------
+// A CLICK THE NOTICE STRIP CANNOT TAKE (#446). The static console's
+// `.flash` strip is sticky at the top of the window, so an element scrolled
+// to the top edge is under it and the strip receives the click
+// (ElementClickInterceptedError). Brought to the middle first, as press()
+// does, where a person scrolling to it would see it.
+async function clickInView(driver, element) {
+  log.debug("Entering clickInView().");
+  await driver.executeScript(
+    "arguments[0].scrollIntoView({ block: 'center' });", element);
+  await element.click();
+  log.debug("Leaving clickInView().");
+}
+
 async function fillAndPress(driver, formIndex, values, options) {
   log.debug("Entering fillAndPress(). form=" + formIndex);
   const opts = options || {};
@@ -980,8 +993,16 @@ async function fillAndPress(driver, formIndex, values, options) {
   // panel it is in, as a person clicking the tab does. It is opened BEFORE
   // anything is typed: Chrome will not type into a field it does not display
   // (`ElementNotInteractableError`, an application's drill-down, b2b64e4b).
+  // A FORM IN A CLOSED <details> (#446) is reached by opening it, as a
+  // person clicking its summary does — the static console draws an entry's
+  // one-attribute forms folded. Opened here and again on every look below,
+  // because a tab change redraws the page and brings them back closed.
   const opened = await driver.executeScript(`
     const f = document.forms[arguments[0]];
+    for (let d = f && f.closest('details'); d;
+         d = d.parentElement && d.parentElement.closest('details')) {
+      d.open = true;
+    }
     const panel = f && f.closest('.subpanel, .tabpanel');
     if (panel && panel.id && !f.checkVisibility()) {
       location.hash = panel.id;
@@ -996,6 +1017,10 @@ async function fillAndPress(driver, formIndex, values, options) {
     await driver.wait(async function () {
       return await driver.executeScript(`
         const f = document.forms[arguments[0]];
+        for (let d = f && f.closest('details'); d;
+             d = d.parentElement && d.parentElement.closest('details')) {
+          d.open = true;
+        }
         return !!f && f.checkVisibility() &&
                !!document.querySelector('.pagehead');
       `, formIndex).catch(function (e) {
@@ -1074,7 +1099,7 @@ async function fillAndPress(driver, formIndex, values, options) {
                 ((e && e.message) || e));
       return null;
     });
-  await button.click();
+  await clickInView(driver, button);
   if (leaving) {
     await pageReplaced(driver, leaving, 20000).catch(function (e) {
       log.debug("Caught waiting for the page to be replaced (a download " +
@@ -1260,6 +1285,13 @@ async function signIn(driver, username) {
   await ensurePerson(root("/admin-api"), username);
   await grantTheWriter(username);
   await clearSession(driver);
+  // NOBODY IS SIGNED IN NOW, AND go() MUST NOT SAY OTHERWISE (#446). go()
+  // signs a browser that meets the sign-in screen back in as `signedInAs` —
+  // which here is still the PREVIOUS person, so a switch to a reader signed
+  // the writer straight back in and the reader's form post was answered 200
+  // as the writer. Cleared, go() leaves the screen for this function to
+  // fill in as `username`.
+  signedInAs = "";
   // THE CONSOLE SIGNS IN IN THE BROWSER SINCE #446: the document is the
   // static console, whose script sends a browser holding no token to the
   // authorization endpoint, which sends one with no sign-on session to the
@@ -3077,6 +3109,9 @@ async function theSignOutButtonSignsYouOut(driver) {
 
   // AND THE SIGN-ON SESSION IS GONE TOO. The browser is sent through the whole
   // flow again — /admin, /oauth2/authorize — and where it STOPS is the claim.
+  // Nobody is signed in now, and go() must not sign anybody back in when it
+  // meets the screen (#446): that screen is what this check is for.
+  signedInAs = "";
   const again = await open(driver, root("/admin/metrics"));
   check("the console is closed again, at the SIGN-IN SCREEN", function () {
     assert.ok(/\/authn\/login/.test(again.url || ""),
@@ -6188,9 +6223,11 @@ async function theTwoDrawingsAreServerSide(driver) {
                images: document.querySelectorAll('img, image').length,
                // The console's own script runs every page since #446; what
                // is counted is any OTHER — a graph library, say.
+               // A string test, not a regex: this script is a template
+               // literal, which would eat a regex's backslashes.
                scripts: Array.from(document.scripts).filter(function (one) {
-                 return !/\/admin\/console\.js$/
-                   .test(one.getAttribute('src') || '');
+                 return !(one.getAttribute('src') || '')
+                   .endsWith('/admin/console.js');
                }).length,
                // The sentence render() puts where the drawing goes when the
                // LAYOUT threw. It is a 200 with everything else on the page
@@ -7109,10 +7146,19 @@ async function grantOnThePicker(driver, person, role) {
   const link = await driver.findElement(By.css(
       "form#find-personq + .chooser ul.hits a[href=\"" +
       hit.href.replace(/"/g, '\\"') + "\"]"));
-  await link.click();
+  await clickInView(driver, link);
+  // THE ADDRESS CHANGES BEFORE THE PAGE IS DRAWN (#446): the static console
+  // routes on the new address and then redraws in place, so what is waited
+  // for is the grant form itself, not the `person=` in the address.
   await driver.wait(async function () {
-    return (await driver.getCurrentUrl()).indexOf("person=") >= 0;
-  }, 10000);
+    return (await driver.getCurrentUrl()).indexOf("person=") >= 0 &&
+      await driver.executeScript(
+        "return !!document.getElementById('grant-picked');");
+  }, 10000).catch(function (e) {
+    log.debug("Caught waiting for the grant form: " +
+              ((e && e.message) || e));
+    return null;
+  });
   const picker = await driver.executeScript(`
     const person = arguments[0];
     const forms = Array.from(document.forms);
