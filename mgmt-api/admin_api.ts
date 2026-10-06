@@ -5282,7 +5282,10 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API status endpoint.");
           // The dashboard's answer since #446: the totals as before, and
-          // the visible sections, persistence and the base URL beside them.
+          // the visible sections, persistence and the base URL beside them —
+          // which since #454 only its console twin,
+          // `GET /admin-api/console/dashboard`, answers: this operation names
+          // them in `consoleMembers` and `sendJson()` takes them off.
           self.sendJson(res, 200, admin.dashboardJson(req));
           log.debug("Leaving the management API status endpoint.");
         } },
