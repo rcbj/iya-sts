@@ -3052,6 +3052,21 @@ const SCHEMA = {
             'service commonly answers to several SPNs — HTTP/host and ' +
             'HTTP/host.example.com — and a real KDC holds them all against ' +
             'one account.' },
+    // #493: THIS SERVICE'S OWN PAC CLAIMS, one JSON array of rows of the
+    // realm's Kerberos PAC claims shape (`name`, `type` and `value`, or
+    // `name`, `type`, `attribute` and `multi`). Added to a SERVICE TICKET for
+    // one of this application's SPNs, winning by name over what the TGT
+    // carried (admin_stats.kerberosApplicationPacClaims(), the KDC's
+    // claimsForTicket()). The 2026-10-01 pattern of the five sets above, and
+    // kept off the field grid for their reason.
+    { name: 'krb5ClaimsPac', kind: 'single',
+      from: 'the console\'s Kerberos PAC claims section',
+      what: 'THIS SERVICE\'S OWN PAC CLAIMS, as a JSON array of rows like ' +
+            'the realm\'s Kerberos PAC claims page. Added to the claims a ' +
+            'service ticket for one of this application\'s SPNs carries ' +
+            '(those of the TGT it was issued from), an application row ' +
+            'replacing the claim of the same name. Only while ' +
+            'krb5.pacClaims is on.' },
     // #186: UNCONSTRAINED DELEGATION is Kerberos's alone, and OFF unless set.
     { name: 'krb5TrustedForDelegation', kind: 'single', from: 'by hand',
       what: 'TRUE or FALSE, default FALSE: this Kerberos service is TRUSTED ' +
@@ -4086,6 +4101,8 @@ const EDITABLE = {
   wstrustJwtScope: 'multi',
   krb5ServicePrincipalName: 'multi',
   krb5TrustedForDelegation: 'set',
+  // #493: one JSON array, like the five claim sets below.
+  krb5ClaimsPac: 'set',
   oid4vpClientId: 'multi',
   // The four that are ONLY ever declared — nothing in this service writes them.
   federationPartnerId: 'multi',
@@ -4483,7 +4500,8 @@ const CLAIM_ROW_SETS = {
   oauthClaimsIdToken: 'id_token',
   oauthClaimsUserinfo: 'userinfo',
   saml2CustomAttributes: 'saml2',
-  saml11CustomAttributes: 'saml11'
+  saml11CustomAttributes: 'saml11',
+  krb5ClaimsPac: 'kerberos-pac'
 };
 
 /**
@@ -5286,7 +5304,9 @@ function gridExcludedAttributes() {
                // text box.
                'oauthClaimsAccessToken', 'oauthClaimsIdToken',
                'oauthClaimsUserinfo', 'saml2CustomAttributes',
-               'saml11CustomAttributes'].concat(
+               'saml11CustomAttributes',
+               // And the Kerberos PAC claims section (#493).
+               'krb5ClaimsPac'].concat(
                  // And their attribute selections (#495), drawn as the
                  // catalogue's checkboxes.
                  CLAIM_SELECTION_ATTRIBUTES);
@@ -15557,6 +15577,8 @@ function buildListing(backing) {
     byClientId: new Map(),
     byAudience: new Map(),
     byAppliesTo: { wstrustAppliesTo: new Map(), samlEntityId: new Map() },
+    // #493: the KDC finds the application a service ticket is for by SPN.
+    byServicePrincipal: new Map(),
     byPermission: new Map(),
     byPermissionBase: new Map()
   };
@@ -15575,6 +15597,9 @@ function buildListing(backing) {
       valuesOf(fields[attribute]).forEach(function (value) {
         indexInto(listing.byAppliesTo[attribute], String(value), item);
       });
+    });
+    valuesOf(fields.krb5ServicePrincipalName).forEach(function (value) {
+      indexInto(listing.byServicePrincipal, String(value), item);
     });
     permissionsOf(item.record).forEach(function (one) {
       if (one.id && !listing.byPermission.has(one.id)) {
@@ -16651,6 +16676,47 @@ function forAppliesTo(appliesTo) {
 }
 
 // ---------------------------------------------------------------------------
+// WHICH APPLICATION ANSWERS TO THIS KERBEROS SERVICE PRINCIPAL NAME (#493).
+//
+// The KDC names the service a ticket is for as `service/host@REALM`, which is
+// the identifier this registry files a Kerberos service under when it first
+// sees one — but an operator may have registered the service under another
+// identifier and listed the SPN on `krb5ServicePrincipalName`, so this asks
+// that attribute when `get()` answers nothing. Matched exactly, as a ticket's
+// sname and realm are.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the application whose `krb5ServicePrincipalName` lists an SPN,
+ * matched exactly.
+ *
+ * @param spn - the service principal name, `service/host@REALM`
+ * @returns the view, or null
+ */
+function forServicePrincipal(spn) {
+  log.debug("Entering forServicePrincipal(). spn=" + spn);
+  const wanted = String(spn == null ? '' : spn).trim();
+  if (!wanted) {
+    log.debug("Leaving forServicePrincipal(). Nothing was asked for.");
+    return null;
+  }
+  const found = lookedUp('byServicePrincipal', wanted);
+  if (!found.length) {
+    log.debug("Leaving forServicePrincipal(). None has registered it.");
+    return null;
+  }
+  if (found.length > 1) {
+    log.warn(errorCodes.tag('STS-REG-0026') +
+             'applications: ' + found.length + ' applications have ' +
+             'registered the SPN "' + wanted + '" (' +
+             found.map(function (row) { return row.identifier; }).join(', ') +
+             '). The first is the one a service ticket is issued against. ' +
+             'An SPN names one service; remove it from the others.');
+  }
+  log.debug("Leaving forServicePrincipal(). " + found[0].identifier + ".");
+  return found[0];
+}
+
+// ---------------------------------------------------------------------------
 // THE ROLES AN APPLICATION REQUIRES.
 //
 // The one reader of `appRequiredRole`, so that "absent means EVERYBODY" is a
@@ -17550,6 +17616,7 @@ module.exports = {
   // wstrust.js's delegation act. Its header says why it reads two attributes
   // where the other two read one.
   forAppliesTo: forAppliesTo,
+  forServicePrincipal: forServicePrincipal,
   // ---------------------------------------------------------------------------
   // THE DELEGATED PERMISSION HALF. Everything a reader of ONE entry needs; what
   // needs two entries is common/app_permissions.ts, which requires this module

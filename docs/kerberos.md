@@ -44,7 +44,8 @@ client cannot guess.
   or subkey in a TGS-REQ, an AP-REQ or FAST armor is refused (`STS-KRB-0157`,
   `0158`, `0159`), and a write naming 23 is refused (`STS-CORE-0103`).
 * **A signed [MS-PAC]** in every ticket, built under `krb5.domainSid`, with
-  `krb5.logonServer` as the LogonServer.
+  `krb5.logonServer` as the LogonServer — and, while `krb5.pacClaims` is on,
+  the client's **claims** (#493, [PAC claims](#pac-claims) below).
 * **Renewable tickets**, bounded by `krb5.ticketLifetimeSeconds` and
   `krb5.renewLifetimeSeconds` (Active Directory's ten hours and seven days).
 * **Cross-realm referrals**, in development mode, to a second realm
@@ -529,11 +530,51 @@ tools now run against this KDC in the suite (`sts_kerberos_samba.js`,
 What stays different from Active Directory, and why, is listed with each
 exception in `tests/vendored/sts_kerberos_samba.js` and on #204.
 
+### PAC claims
+
+**`PAC_CLIENT_CLAIMS_INFO`** ([MS-PAC] 2.11, buffer type 13) is what a service
+doing claims-based access control — Windows' Dynamic Access Control — reads
+beside the SIDs. While **`krb5.pacClaims`** is on in a realm (off by default;
+a runtime setting, per realm), every ticket this KDC builds carries one
+(#493):
+
+* **Where the claims come from** is the sixth claim set, `kerberos-pac`,
+  configured on **Protocols → Kerberos → PAC claims** (`/admin/kerberos/claims`,
+  `GET` and `POST /admin-api/kerberos/claims/{action}`). A row is a fixed value
+  (with `${placeholders}`) or a directory attribute of the person, and every
+  row has a **type**: `string`, `int64`, `uint64` or `boolean`, the four
+  [MS-ADTS] 2.2.18 claim types. The person's realm-wide **roles** go in as a
+  string claim under the rows (named by `roles.claimName`); nothing is added
+  to the logon information's extra SIDs.
+* **The claim id** is `ad://ext/<name>:<hex>`, Active Directory's form, with
+  the hex the first 16 hexadecimal digits of SHA-256 over the UTF-8 name — the
+  same id on every node, after every restart and in every realm. A row whose
+  name is already a whole `ad://ext/<name>:<hex>` id keeps it, for a claim
+  type an existing forest defines. The page and the API show each row's id.
+* **A TGT** carries the realm's set. **A service ticket carries what its TGT
+  carried** — read out of the TGT's PAC, not re-evaluated — **with the rows of
+  the application that registered the service's SPN** (`krb5ClaimsPac`, on its
+  Configuration tab, Kerberos v5, *PAC claims*) **added and winning by name**.
+  **S4U2Self** carries the impersonated person's claims, evaluated for them;
+  **S4U2Proxy** and a **cross-realm** re-sign carry the claims buffer they
+  arrived with byte for byte, unless the target service's application has rows
+  of its own, which are merged in the same way.
+* **Never compressed** on output. A claims set from another realm compressed
+  with XPRESS Huffman is decoded; LZNT1 and plain XPRESS, which no KDC uses
+  for claims, are reported rather than decoded.
+* A value that is not its type at issuance leaves that claim out
+  (`STS-KRB-0200`); a set over 64 KiB, or one that will not encode, leaves the
+  buffer out (`STS-KRB-0201`, `0202`). Neither refuses the ticket. A change to
+  the set reaches holders of live tickets as CAEP `token-claims-change`.
+* Device claims (type 15) are decoded when they arrive and never produced:
+  they need compound identity (FAST armor naming a computer).
+
 ### Not implemented
 
 PKINIT's RSA key transport and DH key reuse, anonymous tickets in the TGS
-exchange, OTP PIN change and hashed OTP values, kpasswd, request signatures, SID filtering (see [the PAC](#the-pac) below), claims and device info in the
-PAC, and rotation of an inter-realm trust key. DES is decoded and never
+exchange, OTP PIN change and hashed OTP values, kpasswd, request signatures, SID filtering (see [the PAC](#the-pac) below), device info and device
+claims in the PAC (a device claims buffer from another realm is decoded and
+carried), compression of a claims set this KDC writes, and rotation of an inter-realm trust key. DES is decoded and never
 produced: Windows Server 2025 removed it and it is not coming back. The **AP
 exchange** is not missing from the KDC — it belongs to a service rather than to
 a KDC, and it lives in the [protected service](#the-protected-service).
@@ -582,6 +623,7 @@ modes**, and a replay is refused in both. See
 | `krb5.ticketLifetimeSeconds` | `KRB5_TICKET_LIFETIME_S` | `36000` | yes | The longest a ticket is valid. |
 | `krb5.renewLifetimeSeconds` | `KRB5_RENEW_LIFETIME_S` | `604800` | yes | How far `renew-till` reaches for a renewable ticket. |
 | `krb5.logonServer` | `KRB5_LOGON_SERVER` | `DC01` | yes | The LogonServer name in every PAC. |
+| `krb5.pacClaims` | `KRB5_PAC_CLAIMS` | `false` | yes | Whether every ticket's PAC carries the client's claims (PAC_CLIENT_CLAIMS_INFO, [MS-PAC] 2.11): the realm's Kerberos PAC claims and the person's realm-wide roles in a TGT, and a service ticket's TGT claims with the claims of the application that registered its SPN added. Never compressed. See `docs/kerberos.md`, *PAC claims*. |
 | `krb5.maxRequestBytes` | `KRB5_MAX_REQUEST_BYTES` | `131072` | yes | The most a client may send on one TCP connection before it is closed. |
 | `krb5.udpMaxReplyBytes` | `KRB5_UDP_MAX_REPLY_BYTES` | `1465` | yes | A larger UDP reply is answered `KRB_ERR_RESPONSE_TOO_BIG`. |
 | `krb5.serviceMaxTokenBytes` | `KRB5_SERVICE_MAX_TOKEN_BYTES` | `65536` | yes | The largest token the acceptor and SPNEGO accept. |
@@ -795,7 +837,8 @@ inside `AD-IF-RELEVANT`, so a reader that looks for ad-type 128 at the top
 level finds nothing. A TGT gets two signatures and a service ticket four
 (sections 2.8.2 and 2.8.3).
 
-Claims and device info are not produced, and **SID filtering across a trust is
+Client claims are produced while `krb5.pacClaims` is on ([PAC
+claims](#pac-claims)); device info is not, and **SID filtering across a trust is
 not implemented** — a re-signed PAC keeps every SID it arrived with, which is
 the one place this KDC is more permissive than a real one in a way that
 matters.

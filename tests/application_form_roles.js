@@ -72,6 +72,8 @@ const LEFT_TO_THEIR_OWN_CONTROL = [
   'oauthClaimAttributesAccessToken', 'oauthClaimAttributesIdToken',
   'oauthClaimAttributesUserinfo', 'saml2ClaimAttributes',
   'saml11ClaimAttributes', 'vcCredentialClaimAttributes',
+  // And a Kerberos service's own PAC claims (#493).
+  'krb5ClaimsPac',
   // A secret destination's write credential (#221 P3): write-only, set on
   // Directory → Secret destinations.
   'secretDestCredential'

@@ -910,6 +910,7 @@ var config = {
     ticketLifetimeSeconds: 36000,                                  // Ticket lifetime (s)
     renewLifetimeSeconds: 604800,                                  // Renewable lifetime (s)
     logonServer: "DC01",                                           // PAC logon server
+    pacClaims: false,                                              // PAC client claims (PAC_CLIENT_CLAIMS_INFO)
     maxRequestBytes: 131072,                                       // Largest KDC request over TCP (bytes)
     udpMaxReplyBytes: 1465,                                        // Largest KDC reply over UDP (bytes)
     serviceMaxTokenBytes: 65536,                                   // Largest AP-REQ the acceptor reads (bytes)

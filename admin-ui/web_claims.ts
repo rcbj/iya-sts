@@ -1173,6 +1173,133 @@ class ClaimsPage {
           'value above is invented from the username &mdash; the same ' +
           'invented person every time, across restarts.'));
   }
+
+  // ---------------------------------------------------------------------------
+  // THE KERBEROS PAC CLAIMS PAGE (#493), `/admin/kerberos/claims`, drawn from
+  // `GET /admin-api/kerberos/claims`. The sixth set of the same store, with
+  // the two things only a PAC claim has: a TYPE on every row (the four of
+  // [MS-ADTS] 2.2.18.2) and a claim ID, `ad://ext/<name>:<hex>`, derived from
+  // the row's name and shown beside it so a service's access rule can be
+  // written against it. No catalogue half: a row that reads the directory
+  // names its attribute itself.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws `/admin/kerberos/claims`: the PAC claim set with its claim ids, the
+   * forms that change it and one person's preview.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/kerberos/claims`
+   * @returns the body as HTML
+   */
+  static kerberosClaimsBody(ctx, json) {
+    const set = json.sets[0];
+    const setId = set.id;
+    const pageUrl = '/admin/kerberos/claims?user=' +
+                    encodeURIComponent(json.preview.user);
+    const typeOptions = function () {
+      return json.types.map(function (type) {
+        return '<option value="' + kit.esc(type) + '">' + kit.esc(type) +
+               '</option>';
+      }).join('');
+    };
+    const rows = set.claims.map(function (claim) {
+      return '<tr><td><code>' + kit.esc(claim.name) + '</code><br><span ' +
+        'class="sub"><code>' + kit.esc(claim.claimId) + '</code></span></td>' +
+        '<td>' + kit.esc(claim.type || 'string') + '</td><td>' +
+        (claim.attribute
+          ? '&larr; <code>' + kit.esc(claim.attribute) + '</code><span ' +
+            'class="sub"> directory attribute' +
+            (claim.multi ? ', every value' : '') + '</span>'
+          : '<code>' + kit.esc(claim.value) + '</code>') + '</td><td>' +
+        (ctx.write
+          ? '<form method="post" action="' + kit.esc(pageUrl) +
+            '" class="inline"><input type="hidden" name="action" ' +
+            'value="remove"><input type="hidden" name="set" value="' +
+            kit.esc(setId) + '"><input type="hidden" name="name" value="' +
+            kit.esc(claim.name) + '"><button class="secondary">Remove' +
+            '</button></form>'
+          : '') + '</td></tr>';
+    }).join('');
+    const preview = json.preview.claims.length
+      ? '<table><tr><th>Claim id</th><th>Type</th><th>Values</th>' +
+        '<th>From</th></tr>' + json.preview.claims.map(function (claim) {
+          return '<tr><td><code>' + kit.esc(claim.id) + '</code></td><td>' +
+            kit.esc(claim.type) + '</td><td><code>' +
+            kit.esc(claim.values.join(', ')) + '</code></td><td>' +
+            kit.esc(claim.from) + '</td></tr>';
+        }).join('') + '</table>'
+      : '<p class="sub">Nothing: no row has a value for this person and ' +
+        'they hold no realm-wide role.</p>';
+    return (json.enabled
+      ? kit.note('<strong>On in this realm</strong> (<code>' +
+        kit.esc(json.setting) + '</code>): every ticket the KDC builds ' +
+        'carries these claims in its PAC, as PAC_CLIENT_CLAIMS_INFO ' +
+        '([MS-PAC] 2.11).')
+      : kit.warn('<strong>Off in this realm</strong> (<code>' +
+        kit.esc(json.setting) + '</code>): no ticket carries a claims ' +
+        'buffer, whatever is configured here. Turn it on on <a ' +
+        'href="/admin/kerberos">Kerberos settings</a>.')) +
+      kit.note('What a ticket\'s PAC tells a service doing claims-based ' +
+        'access control about the person, beside the SIDs. A TGT carries ' +
+        'this set; a service ticket carries what its TGT carried, with the ' +
+        'rows of the application that registered the service principal ' +
+        'name added and winning by name — set on that application\'s ' +
+        'Configuration tab, Kerberos v5, PAC claims. ' +
+        kit.esc(json.precedence) + ' Nothing already issued changes: a ' +
+        'ticket is sealed, and carries its claims until it expires. Never ' +
+        'compressed.') +
+      '<h2>' + kit.esc(set.label) + ' <code>' + kit.esc(setId) + '</code>' +
+      '</h2><table><tr><th>Name and claim id</th><th>Type</th><th>Value' +
+      '</th><th></th></tr>' + (rows || '<tr><td colspan="4">No claim is ' +
+        'configured; tickets carry only the person\'s roles, if they hold ' +
+        'any.</td></tr>') + '</table>' +
+      kit.note('A claim id is ' + kit.esc(json.idFormat)) +
+      (ctx.write
+        ? '<form method="post" action="' + kit.esc(pageUrl) + '"><div ' +
+          'class="formrow"><input type="hidden" name="action" value="add">' +
+          '<input type="hidden" name="set" value="' + kit.esc(setId) + '">' +
+          '<label for="kn">Name</label><input type="text" id="kn" ' +
+          'name="name" size="20" placeholder="department">' +
+          '<label for="kt">Type</label><select id="kt" name="type">' +
+          typeOptions() + '</select><label for="kv">Value</label>' +
+          '<input type="text" id="kv" name="value" size="28" ' +
+          'placeholder="${username}"><button>Add</button></div></form>' +
+          '<form method="post" action="' + kit.esc(pageUrl) + '"><div ' +
+          'class="formrow"><input type="hidden" name="action" ' +
+          'value="add-attribute-claim"><input type="hidden" name="set" ' +
+          'value="' + kit.esc(setId) + '"><label for="kan">Name</label>' +
+          '<input type="text" id="kan" name="name" size="20"><label ' +
+          'for="kaa">from the attribute</label><input type="text" id="kaa" ' +
+          'name="attribute" size="20" placeholder="e.g. departmentNumber" ' +
+          'list="kac"><datalist id="kac">' +
+          json.attributeChoices.map(function (one) {
+            return '<option value="' + kit.esc(one.attribute) + '">';
+          }).join('') + '</datalist><label><input type="checkbox" ' +
+          'name="multi" value="true"> every value</label><label ' +
+          'for="kat">as</label><select id="kat" name="type">' +
+          typeOptions() + '</select><button>Add</button></div></form>' +
+          (set.claims.length
+            ? '<form method="post" action="' + kit.esc(pageUrl) +
+              '" class="inline"><input type="hidden" name="action" ' +
+              'value="clear"><input type="hidden" name="set" value="' +
+              kit.esc(setId) + '"><button class="secondary">Clear this ' +
+              'set</button></form>'
+            : '')
+        : '') +
+      kit.note('A value may use the placeholders ' +
+        kit.codeList(json.placeholders) + '. A fixed value is held to its ' +
+        'type when it is added; one with a placeholder, or a directory ' +
+        'value, that is not its type at issuance leaves that claim out of ' +
+        'the ticket and is logged.') +
+      '<h2>What a TGT would carry</h2>' +
+      '<form method="get" action="/admin/kerberos/claims"><div ' +
+      'class="formrow"><label for="kuser">For</label><input type="text" ' +
+      'id="kuser" name="user" size="20" value="' +
+      kit.esc(json.preview.user) + '"><button class="secondary">Show' +
+      '</button></div></form>' + preview +
+      kit.note('Built by the function the KDC calls for a TGT. A service ' +
+        'ticket adds its application\'s rows to these.');
+  }
 }
 
 export = ClaimsPage;

@@ -228,10 +228,14 @@ const CLAIM_ENTRY = {
     multi: { type: 'boolean',
              description: 'An attribute claim: every value (a JSON array; ' +
                           'several AttributeValues) rather than the first.' },
-    type: { type: 'string', enum: ['string', 'number', 'boolean', 'json'],
+    type: { type: 'string',
+            enum: ['string', 'number', 'boolean', 'json', 'int64', 'uint64'],
             description: 'An attribute claim in a JWT or UserInfo set: the ' +
-                         'JSON type each value becomes. A value that is not ' +
-                         'one is left out. Ignored by the SAML sets.' }
+                         'JSON type each value becomes (string, number, ' +
+                         'boolean, json). A value that is not one is left ' +
+                         'out. Ignored by the SAML sets. In the Kerberos PAC ' +
+                         'set (#493) EVERY row has one, of string, int64, ' +
+                         'uint64 and boolean — the PAC claim type.' }
   },
   required: ['name'],
   additionalProperties: false
@@ -3445,6 +3449,40 @@ const SCHEMAS = {
                      'pointing back at the operation that caused it.'
       },
     }, CLAIM_SET_PROPS)),
+
+  KerberosPacClaims: openObject(
+    'The `kerberos-pac` claim set (#493): the claims a Kerberos ticket\'s ' +
+    'PAC carries in PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11) while ' +
+    '`krb5.pacClaims` is on.',
+    {
+      enabled: { type: 'boolean',
+                 description: 'Whether this realm\'s KDC writes the buffer ' +
+                              '(`krb5.pacClaims`). Off, no ticket carries ' +
+                              'claims, whatever the set holds.' },
+      setting: { type: 'string' },
+      types: { type: 'array', items: { type: 'string' },
+               description: 'The four PAC claim types a row may name.' },
+      placeholders: { description: 'The ${...} substitutions a value may ' +
+                                   'use.' },
+      idFormat: { type: 'string',
+                  description: 'How a row\'s name becomes its claim id.' },
+      precedence: { type: 'string' },
+      sets: { type: 'array',
+              items: openObject('The one set.', {
+                id: { type: 'string' },
+                label: { type: 'string' },
+                claims: { type: 'array',
+                          description: 'Its rows, each with `claimId`.',
+                          items: { type: 'object' } }
+              }) },
+      attributeChoices: { type: 'array', items: { type: 'object' } },
+      preview: openObject('What one person\'s next TGT would carry.', {
+        user: { type: 'string' },
+        claims: { type: 'array', items: { type: 'object' },
+                  description: 'Each `name`, `id`, `type`, `values` and ' +
+                               '`from` (roles, value or attribute).' }
+      })
+    }),
 
   UserInfoClaimSets: openObject(
     'The `userinfo` claim set — what every UserInfo response carries — and ' +

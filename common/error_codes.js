@@ -11692,6 +11692,28 @@ const CODES = [
       'allow impersonation, or the user is protected) (#492).',
     spec: '[MS-SFU] 3.2.5.2.3: KDC_ERR_BADOPTION (13), ' +
       'STATUS_ACCOUNT_RESTRICTION' },
+  { code: 'STS-KRB-0200',
+    summary: 'A Kerberos PAC claim was left out of a ticket: its value — a ' +
+      'placeholder expanded, or a directory attribute — is not its type ' +
+      '(int64, uint64, boolean, or an empty or NUL-bearing string) (#493). ' +
+      'The ticket is issued with the rest.',
+    spec: 'none (logged at warn; [MS-ADTS] 2.2.18.2 CLAIM_TYPE)' },
+  { code: 'STS-KRB-0201',
+    summary: 'A ticket\'s PAC client claims encoded to more than the 64 KiB ' +
+      'a ticket may carry; the ticket was issued with no claims buffer ' +
+      '(#493).',
+    spec: 'none (logged; [MS-PAC] 2.11)' },
+  { code: 'STS-KRB-0202',
+    summary: 'A ticket\'s PAC client claims could not be read or encoded; ' +
+      'the ticket was issued with no claims buffer, or without the ' +
+      'application\'s own claims (#493).',
+    spec: 'none (logged; [MS-PAC] 2.11)' },
+  { code: 'STS-KRB-0203',
+    summary: 'A PAC presented to the KDC carries a client claims buffer that ' +
+      'does not decode (a compression format other than XPRESS Huffman, or ' +
+      'malformed NDR); the ticket being built carries none of those claims ' +
+      '(#493).',
+    spec: 'none (logged at warn; [MS-PAC] 2.11, [MS-ADTS] 2.2.18)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -18637,6 +18659,11 @@ const CODES = [
     summary: 'remove-conferring-client named a client that does not confer ' +
       'the role (#454).',
     spec: '' },
+  { code: 'STS-ADMIN-0848',
+    summary: 'A directory-attribute catalogue action (attributes, ' +
+      'attributes-all, attributes-clear) was asked of the Kerberos PAC ' +
+      'claim set, which has no catalogue half (#493).',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -19018,6 +19045,11 @@ const CODES = [
     summary: 'An unknown action was asked at a management API address ' +
       'whose form helpers moved to /admin-api/console (#454); the ' +
       'refusal names the actions the address still declares.',
+    spec: 'HTTP 400' },
+  { code: 'STS-API-0131',
+    summary: 'A management API request to change the Kerberos PAC claim ' +
+      'set was refused (#493); the refusal\'s own code names why when it ' +
+      'has one.',
     spec: 'HTTP 400' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
@@ -20132,6 +20164,19 @@ const CODES = [
       'by DN (#461). Each names the OTHER party of a delegation.',
     spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
       '{ ok: false, errors }' },
+  { code: 'STS-REG-0336',
+    summary: 'A Kerberos PAC claim row\'s name is neither letters, digits, ' +
+      '".", "_" and "-" (which become ad://ext/<name>:<hex>) nor a whole ' +
+      'ad://ext/<name>:<hex> claim id (#493).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0337',
+    summary: 'A Kerberos PAC claim row named a type that is not string, ' +
+      'int64, uint64 or boolean (#493).',
+    spec: 'HTTP 400 (console and API); [MS-ADTS] 2.2.18.2' },
+  { code: 'STS-REG-0338',
+    summary: 'A Kerberos PAC claim row\'s fixed value is not its type: not ' +
+      'an integer in range, not true or false, or an empty string (#493).',
+    spec: 'HTTP 400 (console and API)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

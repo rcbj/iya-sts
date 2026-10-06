@@ -9720,10 +9720,27 @@ What is this directory's is where it is decided and what an app password is.
 
 ### An application's own claim sets (2026-10-01)
 
-Each of `admin_stats.js`'s five claim sets may also be configured on an
+Each of `admin_stats.js`'s claim sets may also be configured on an
 APPLICATION: one JSON array of rows per set on its entry
 (`APP_CLAIM_ATTRIBUTES`: `oauthClaimsAccessToken`, `oauthClaimsIdToken`,
-`oauthClaimsUserinfo`, `saml2CustomAttributes`, `saml11CustomAttributes`).
+`oauthClaimsUserinfo`, `saml2CustomAttributes`, `saml11CustomAttributes`,
+and since #493 `krb5ClaimsPac`).
+
+**THE SIXTH SET, `kerberos-pac` (#493, 2026-10-06)**, is the claims a Kerberos
+ticket's PAC carries (`kind: 'kerberos'`, on `/admin/kerberos/claims` and
+`/admin-api/kerberos/claims`). It shares `checkClaimEntries()`, the
+`claims.change` audit row, `claimsAction()` and the CAEP announcement, and
+differs in three ways: every row carries a PAC TYPE (`PAC_CLAIM_TYPES`:
+string, int64, uint64, boolean — a fixed value is held to it at the write,
+`STS-REG-0338`), its name must make a claim id (`STS-REG-0336`;
+`pacClaimId()` derives `ad://ext/<name>:<first 16 hex of SHA-256>`), and it
+has NO catalogue half (`STS-ADMIN-0848`). The KDC reads it through
+`kerberosPacClaims()` (a TGT: the set and the person's realm-wide roles as a
+string claim) and `kerberosApplicationPacClaims()` (an SPN's own rows, found by
+`applications.forServicePrincipal()`), and merges by claim id itself
+(`kerberos/CLAUDE.md`, *PAC CLIENT CLAIMS*). A ticket that carried claims is
+recorded with `claimSet: 'kerberos-pac'` and its username, so
+`liveClaimBearers()` lists it.
 `jwtClaims()` and `samlAttributes()` read `effectiveClaimSet(id, context)`
 instead of `claimSet(id)`. That is the realm's rows, with the application's
 **added and winning by name** (rcbj's choice), so an application with none

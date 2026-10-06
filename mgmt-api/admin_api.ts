@@ -1439,6 +1439,11 @@ class AdminApi {
             name: { type: 'string' },
             value: { type: 'string',
                      description: 'May carry a ${...} placeholder.' },
+            type: { type: 'string', enum: ['string', 'int64', 'uint64',
+                                           'boolean'],
+                    description: 'The Kerberos PAC set only (#493): the ' +
+                                 'PAC claim type. Defaults to string; ' +
+                                 'ignored by the other sets.' },
             nameFormat: { type: 'string',
                           description: 'The SAML 2.0 set only.' },
             namespace: { type: 'string',
@@ -1482,9 +1487,13 @@ class AdminApi {
             multi: { type: 'boolean',
                      description: 'Every value rather than the first.' },
             type: { type: 'string',
-                    enum: ['string', 'number', 'boolean', 'json'],
-                    description: 'The JSON type of each value, in a JWT or ' +
-                                 'UserInfo set. Ignored by the SAML sets.' },
+                    enum: (family.attributeTypes ||
+                           ['string', 'number', 'boolean', 'json']).slice(),
+                    description: family.attributeTypes
+                      ? 'The PAC claim type each value becomes; a value ' +
+                        'that is not one leaves the claim out of the ticket.'
+                      : 'The JSON type of each value, in a JWT or ' +
+                        'UserInfo set. Ignored by the SAML sets.' },
             nameFormat: { type: 'string',
                           description: 'The SAML 2.0 set only.' },
             namespace: { type: 'string',
@@ -1660,7 +1669,13 @@ class AdminApi {
           additionalProperties: false
         },
         responseDescription: 'An empty `attributes`, and what was `removed`.' }
-    ];
+    ].filter(function (row) {
+      // A family with no catalogue half (the Kerberos PAC set, #493) has no
+      // `attributes*` operations: claimsAction() refuses them for it.
+      return !family.noCatalogue ||
+             ['attributes', 'attributes-all', 'attributes-clear']
+               .indexOf(row.action) < 0;
+    });
     log.debug("Leaving AdminApi.claimSetActions(). " + rows.length +
               " action(s).");
     return rows;
@@ -10406,6 +10421,69 @@ class AdminApi {
         },
         actions: this.claimSetActions(SAML_CLAIM_FAMILY) },
 
+      // -----------------------------------------------------------------------
+      // THE KERBEROS PAC HALF OF THE SAME STORE (#493): the sixth set, the
+      // claims a ticket's PAC_CLIENT_CLAIMS_INFO carries, on its own page
+      // under Protocols → Kerberos. Same action function, same audit row,
+      // same CAEP announcement; no catalogue half (its rows name their
+      // attribute and their PAC type themselves).
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/kerberos/claims', tag: 'Kerberos',
+        operationId: 'getKerberosPacClaims',
+        summary: 'The claims a Kerberos ticket\'s PAC carries',
+        description: 'The `kerberos-pac` claim set — the claims this ' +
+                     'realm\'s KDC writes into PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11) ' +
+                     'while `krb5.pacClaims` is on — with each row\'s claim ' +
+                     'id, the four PAC claim types and the claims one ' +
+                     'person\'s next TGT would carry, built by the function ' +
+                     'the KDC calls.\n\nA TGT carries this set, with the ' +
+                     'person\'s realm-wide roles under it as a string claim. ' +
+                     'A service ticket carries what its TGT carried, with ' +
+                     'the rows of the application whose ' +
+                     'krb5ServicePrincipalName names the service added and ' +
+                     'winning by name (that application\'s Configuration ' +
+                     'tab, `krb5ClaimsPac`). A claim id is ' +
+                     '`ad://ext/<name>:<hex>`, the hex derived from the name ' +
+                     '(`idFormat`). Nothing already issued changes.',
+        mirrors: 'GET /admin/kerberos/claims',
+        parameters: [
+          { name: 'user', in: 'query', required: false,
+            schema: { type: 'string', default: 'alice' },
+            description: 'Whose claims to preview: `preview.claims` is what ' +
+                         'their next TGT would carry.' }
+        ],
+        responseDescription: 'The PAC set, its claim ids, the setting and ' +
+                             'the preview.',
+        responseSchema: { $ref: '#/components/schemas/KerberosPacClaims' },
+        handler: function (req, res) {
+          log.debug("Entering the management API Kerberos PAC claims " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.kerberosClaimsJson(
+                          adminViews.claimsPreviewUser(req.query)));
+          log.debug("Leaving the management API Kerberos PAC claims " +
+                    "endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/kerberos/claims/:action',
+        tag: 'Kerberos',
+        mirrors: 'POST /admin/kerberos/claims',
+        handler: function (req, res) {
+          log.debug("Entering the management API Kerberos PAC claims action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          const result = adminActions.claimsAction(self.withAction(req, body),
+                                                   [],
+                                            stats.KERBEROS_CLAIM_SET_IDS);
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0131');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API Kerberos PAC claims action " +
+                    "endpoint.");
+        },
+        actions: this.claimSetActions(KERBEROS_CLAIM_FAMILY) },
+
       { method: 'GET', path: BASE + '/credential-claims',
         tag: 'Credential claims',
         operationId: 'getCredentialClaims',
@@ -12850,7 +12928,9 @@ class AdminApi {
                      'SAML attributes',
             description: 'Adds a row to one of the application\'s own claim ' +
                          'sets — `access_token`, `id_token`, `userinfo`, ' +
-                         '`saml2` or `saml11` — or replaces its row of the ' +
+                         '`saml2`, `saml11` or `kerberos-pac` (#493: added ' +
+                         'to a service ticket for one of its SPNs) — or ' +
+                         'replaces its row of the ' +
                          'same name. At issuance the application\'s rows are ' +
                          'ADDED to the realm\'s set and win by name. A row is ' +
                          'a typed value (`value`, with `${placeholders}`) or a ' +
@@ -12869,13 +12949,19 @@ class AdminApi {
                 application: { type: 'string' },
                 set: { type: 'string',
                        enum: ['access_token', 'id_token', 'userinfo', 'saml2',
-                              'saml11'] },
+                              'saml11', 'kerberos-pac'] },
                 name: { type: 'string' },
                 value: { type: 'string' },
                 attribute: { type: 'string' },
                 multi: { type: 'boolean' },
                 type: { type: 'string',
-                        enum: ['string', 'number', 'boolean', 'json'] },
+                        enum: ['string', 'number', 'boolean', 'json',
+                               'int64', 'uint64'],
+                        description: 'The JSON type of an attribute row in ' +
+                                     'the three JSON sets; in `kerberos-pac` ' +
+                                     '(#493) every row\'s PAC claim type, ' +
+                                     'of string, int64, uint64 and ' +
+                                     'boolean.' },
                 nameFormat: { type: 'string' },
                 namespace: { type: 'string' }
               },
@@ -12905,7 +12991,7 @@ class AdminApi {
                 application: { type: 'string' },
                 set: { type: 'string',
                        enum: ['access_token', 'id_token', 'userinfo', 'saml2',
-                              'saml11'] },
+                              'saml11', 'kerberos-pac'] },
                 name: { type: 'string' }
               },
               required: ['application', 'set', 'name'],
@@ -23356,6 +23442,24 @@ const SAML_CLAIM_FAMILY = {
          attributes: 'setSamlDirectoryAttributes',
          all: 'selectAllSamlDirectoryAttributes',
          none: 'clearSamlDirectoryAttributes' }
+};
+
+// The sixth family (#493): the Kerberos PAC set. `noCatalogue` drops the
+// three `attributes*` operations (the set has no catalogue half) and
+// `attributeTypes` is the four PAC claim types an attribute row may name.
+const KERBEROS_CLAIM_FAMILY = {
+  sets: stats.KERBEROS_CLAIM_SET_IDS,
+  noun: 'claim',
+  carrier: 'ticket',
+  example: 'kerberos-pac',
+  reserved: false,
+  noCatalogue: true,
+  attributeTypes: ['string', 'int64', 'uint64', 'boolean'],
+  ids: { add: 'addKerberosPacClaim',
+         addAttribute: 'addKerberosPacAttributeClaim',
+         remove: 'removeKerberosPacClaim',
+         clear: 'clearKerberosPacClaims',
+         replace: 'replaceKerberosPacClaims' }
 };
 
 // Filled by `AdminApi.wire()` (#50, R2), in this order, with the request
