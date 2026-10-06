@@ -52,7 +52,9 @@
 //
 //   * the sign-in's JWT has NO `client_id`. bob asked for it with his own
 //     UsernameToken, and a person asking for themselves has no client;
-//   * no JWT has `scope`, because an RST asks for none;
+//   * `scope` is the AppliesTo's `wstrustJwtScope` (#485), judged as an
+//     OAuth access token's: its declared `chain.read` kept, its undeclared
+//     `chain.undeclared` left off in product (kept in development);
 //   * `iss` is the STS's own (`wstrust.issuer`), which publishes no OAuth
 //     metadata to compare with;
 //   * no SAML: the Delegation Restriction is the SAML pair's.
@@ -163,7 +165,8 @@ async function test() {
         function () {
     first = kit.assertChainJwt(cast, signedIn, keys, {
       what: cast.user + "'s sign-in JWT", audience: cast.webapp.appliesTo,
-      issuer: issuer, clientId: "", act: undefined });
+      issuer: issuer, clientId: "", act: undefined,
+      product: product });
   });
 
   const requesters = cast.requesters;
@@ -185,6 +188,7 @@ async function test() {
         what: tier.identifier + "'s ActAs JWT", audience: next.appliesTo,
         issuer: issuer, sub: first.claims.sub, clientId: tier.identifier,
         act: expected,
+        product: product,
         notJtis: tokens.map(function (one) {
           return one.claims.jti;
         }) }));

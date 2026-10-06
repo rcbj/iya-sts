@@ -118,6 +118,10 @@ import applications = require('../common/applications');
 // `error_codes`, so a require from here moves no route and closes no cycle.
 // See `common/issuance_gate.js`; an unfilled decider answers "allowed".
 import gate = require('../common/issuance_gate');
+// #485: the OAuth 2.0 scope policy a WS-Trust JWT's configured scopes are
+// judged by. A LIBRARY (rule 3) whose requires are libraries this module
+// or the issuance gate already loads, so it closes no cycle.
+import scopePolicy = require('../common/scope_policy');
 // The delegation register (/admin/delegation). Two of the eight mechanisms that
 // page knows are this module's — OnBehalfOf and ActAs — and they are the two
 // where nothing is checked at all, which is a fact the page states beside the
@@ -193,6 +197,7 @@ interface WsTrustDeps {
   subjectForName: Helpers['subjectForName'];
   hasSubjectResolver: Helpers['hasSubjectResolver'];
   userFor: Helpers['userFor'];
+  scopePolicy: typeof scopePolicy;
 }
 
 // The express app's registration methods, as `registerRoutes()` uses them.
@@ -292,7 +297,8 @@ class WsTrust {
       textByLocal: helpers.textByLocal,
       subjectForName: helpers.subjectForName,
       hasSubjectResolver: helpers.hasSubjectResolver,
-      userFor: helpers.userFor
+      userFor: helpers.userFor,
+      scopePolicy: scopePolicy
     };
   }
 
@@ -439,6 +445,17 @@ class WsTrust {
     if (clientId) {
       claims.client_id = clientId;
     }
+    // THE APPLICATION'S CONFIGURED SCOPES (#485, `wstrustJwtScope`), in
+    // RFC 9068 section 2.2.3's `scope`, judged as an OAuth access token's
+    // are — `scopePolicy.narrow()`, the token endpoint's own backstop, with
+    // the application as the client: its `oauthAllowedScope`, the protected
+    // scopes and the issuance policy's per-scope question, and one audit
+    // row (STS-OAUTH-0579) naming what was left off. None configured, or
+    // none left: no `scope` at all.
+    const scope = this.configuredScope(application);
+    if (scope) {
+      claims.scope = scope;
+    }
     // #186: the parties that acted, as RFC 8693 section 4.1's `act` — the
     // most recent outermost, each earlier one nested beneath it — which is
     // the same chain an assertion carries as Delegation Restriction. #476:
@@ -518,6 +535,28 @@ class WsTrust {
     log.debug("Leaving WsTrust.applicationClaims(). " +
               Object.keys(out).length + " claim(s).");
     return out;
+  }
+
+  // `wstrustJwtScope` on the application, narrowed by the scope policy
+  // (#485). '' when nothing is configured or nothing survives.
+  private configuredScope(application) {
+    const { applications, scopePolicy, log } = this.deps;
+    log.debug("Entering WsTrust.configuredScope().");
+    const app: any = application ? applications.get(application) : null;
+    const held = app && app.fields
+      ? [].concat(app.fields.wstrustJwtScope || []).map(String)
+        .map(function (one) { return one.trim(); })
+        .filter(function (one) { return !!one; })
+      : [];
+    if (!held.length) {
+      log.debug("Leaving WsTrust.configuredScope(). None configured.");
+      return '';
+    }
+    const kept = scopePolicy.narrow(held.join(' '),
+                                    this.clientIdOf(application),
+                                    { grant: 'wstrust' });
+    log.debug("Leaving WsTrust.configuredScope(). \"" + kept + "\".");
+    return String(kept || '').trim();
   }
 
   // THE APPLICATION A TOKEN IS FOR (#483): the one registered for the

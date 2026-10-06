@@ -97,7 +97,12 @@ Some claims are left out on purpose:
 
 * **No `client_id` for a person's own token.** A person who asks for a token
   about themselves with their own UsernameToken has no client.
-* **No `scope`.** An RST asks for none.
+* **No `scope` unless the application configures it.** An RST asks for
+  none. The AppliesTo's application may list OAuth 2.0 scopes on
+  `wstrustJwtScope` (Configuration → WS-Trust). They are judged as an
+  access token's are, with the application as the client: its
+  `oauthAllowedScope` in product, and the issuance policy. What is left off
+  is audited.
 * **No `auth_time`, `acr` or `amr`.** RFC 9068 makes them optional.
 
 `iss` is `wstrust.issuer` and not an OAuth authorization server's issuer.
