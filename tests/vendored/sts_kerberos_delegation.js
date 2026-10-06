@@ -28,7 +28,8 @@
 //      non-forwardable evidence refused; the forwardable flag set on its own
 //      evidence by the requester (CVE-2020-17049) refused; evidence forged
 //      with the requester's key refused; the protected person refused over
-//      resource-based delegation by the policy.
+//      resource-based delegation, whose S4U2Self ticket is not forwardable
+//      ([MS-SFU] 3.2.5.2.3, #492).
 //   3. The protected person's TGT is not forwardable and cannot be
 //      forwarded; krb5TrustedForDelegation puts ok-as-delegate on a
 //      service's tickets and nothing else does.
@@ -373,9 +374,11 @@ async function proxySection(w, ev) {
     refusedWith(r, 41);
   });
   r = await s4u2proxy(w.tgts.front, ev.protectedEvidence, "rbcd", true);
-  check("2h. the protected person over resource-based delegation: refused " +
-        "by the policy, KDC_ERR_POLICY", function () {
-    refusedWith(r, 12);
+  check("2h. the protected person over resource-based delegation: their " +
+        "S4U2Self ticket is not forwardable, which [MS-SFU] 3.2.5.2.3 " +
+        "refuses — KDC_ERR_BADOPTION (#492)", function () {
+    refusedWith(r, 13);
+    assert.ok(/3\.2\.5\.2\.3/.test(r.error.eText), r.error.eText);
   });
   log.debug("Leaving proxySection().");
 }

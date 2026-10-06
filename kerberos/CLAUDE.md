@@ -311,6 +311,40 @@ policy. rcbj's decisions on #186, each load-bearing:
   (PA-PAC-OPTIONS for RBCD, forwardable evidence for classic), and the
   policy's other rules (a protected user, subject groups, semantics,
   authority) refuse with `KDC_ERR_POLICY` (`STS-KRB-0177`).
+* **THE MODE IS THE MECHANISM'S, AS [MS-SFU] NAMES IT (#491, 2026-10-06).**
+  [MS-SFU] 1.3 calls S4U2Self protocol transition and S4U2Proxy constrained
+  delegation, and the register records them so whatever chain they belong
+  to: a protocol-transition chain (S4U2Self, then S4U2Proxy hops) has ONE
+  impersonation row and delegation rows after it, where the OAuth 2.0
+  impersonation chain is impersonation at every hop. That is right rather
+  than a mismatch — an S4U2Proxy ticket carries the chain in its PAC
+  (S4U_DELEGATION_INFO), and an exchanged token with no `act` carries none —
+  and the console's Kerberos rows say it under their mode
+  (`web_delegation.ts`'s `kerberosModeNote()`), as `docs/delegation.md` and
+  the chain jobs' headers do.
+* **FORWARDABLE EVIDENCE FOR BOTH ROUTES, AND THE REPLY'S FLAG (#492).**
+  [MS-SFU] 3.2.5.2.1 refuses non-forwardable evidence for classic delegation
+  and 3.2.5.2.3, since the CVE-2020-16996 update, for resource-based too;
+  Samba (`mssfu.c`), MIT (`check_tgs_s4u2proxy()`) and Samba's
+  `test_rbcd_non_forwardable` (written against Windows) agree. RBCD with
+  non-forwardable evidence is `KDC_ERR_BADOPTION`, `STS-KRB-0199`; it was
+  allowed until #492. [MS-SFU] 3.2.5.2.4 says nothing of the reply's flags,
+  so RFC 4120 section 3.3.3 decides as in MIT and Heimdal: forwardable when
+  the request asks for it and the front end's TGT is forwardable, and never
+  for a protected user ([MS-SFU] 3.2.1, DelegationNotAllowed). It was added
+  unconditionally until then. A protected user's evidence is never
+  forwardable, so the policy's own protected-user refusal (`STS-KRB-0177`,
+  `KDC_ERR_POLICY`) is no longer what a protected user meets at S4U2Proxy:
+  the evidence refusal comes first.
+* **S4U_DELEGATION_INFO NAMES (#489).** Each transited service is written
+  `SPN@REALM` and the S4U2proxyTarget is the bare SPN — what Samba
+  (`samba_kdc_update_delegation_info_blob()`) and MIT
+  (`update_delegation_info()`) write and Samba's s4u_tests expect of
+  Windows (`host/<service1>@<REALM>`). [MS-PAC] 2.9 fixes no syntax. Both are
+  built in `krb5_kdc.js` (`resolveS4u()`'s `transited`, `answerTgsReq()`'s
+  `delegationInfo`); the vendored PAC codec only encodes what it is given,
+  and was not changed. An evidence ticket from before #489 keeps its bare
+  entries, and the new one is appended after them.
 * **ENTRIES ONLY.** `krb5_principals.js` keeps no delegation field on a
   principal. The fixture definitions' rules are SEEDS (`delegationSeeds()`),
   written onto the services' entries by `krb5_delegation.ts` the first time a

@@ -23,14 +23,17 @@
 //      with PA-PAC-OPTIONS and refused without; non-forwardable evidence
 //      refused; a FORWARDABLE FLAG SET BY THE REQUESTER on its own evidence
 //      (CVE-2020-17049) refused; EVIDENCE FORGED with the requester's key
-//      refused; a protected user refused by the policy over resource-based
-//      delegation, which needs no forwardable evidence.
+//      refused; resource-based delegation with evidence that is not
+//      forwardable refused too ([MS-SFU] 3.2.5.2.3, #492), a protected
+//      user's included; the reply FORWARDABLE only when asked for (#492);
+//      the PAC's S4U_DELEGATION_INFO naming the transited service WITH its
+//      realm and the target without (#489).
 //   C. FORWARDED TGTs and ok-as-delegate: a protected user's TGT is not
 //      forwardable and cannot be forwarded; krb5TrustedForDelegation puts
 //      ok-as-delegate on a service's tickets and its absence does not.
 //   D. THE ENTRIES ARE THE TRUTH: the seeds are on them, and an edit to one
 //      changes the very next answer; the act is on Monitoring → Delegation
-//      and in its picture.
+//      and in its picture, in Kerberos's words (#490).
 //
 // IN PROCESS because the evidence ticket has to be opened and resealed with
 // the front end's key, which only the inside holds. Refusals are enforced
@@ -46,6 +49,7 @@ const applications = require('../common/applications');
 const principals = require('../kerberos/krb5_principals.js');
 const kdc = require('../kerberos/krb5_kdc.js');
 const kcrypto = require('../kerberos/krb5_crypto.js');
+const kpac = require('../kerberos/krb5_pac.js');
 const wire = require('./vendored/krb5_wire.js');
 
 const log = require('bunyan').createLogger({ name: 'kerberos_delegation',
@@ -134,6 +138,22 @@ async function resealed(ticket, service, change) {
   return out;
 }
 
+// The PAC's S4U_DELEGATION_INFO of a ticket, opened with its service's key
+// the way the service would; null where there is none.
+async function delegationInfoOf(ticket, service) {
+  log.debug("Entering delegationInfoOf().");
+  const principal = principals.find(service.name, REALM);
+  const profile = kcrypto.etypeById(ticket.encPart.etype);
+  const key = await principals.longTermKey(principal, ticket.encPart.etype);
+  const part = msgs.readEncTicketPart(await profile.decrypt(key,
+    kcrypto.KEY_USAGE.KDC_REP_TICKET, ticket.encPart.cipher));
+  const pacs = kpac.findPacs(part.authorizationData || []);
+  const entry = pacs.length ? kpac.bufferOfType(kpac.parsePac(pacs[0].bytes),
+    kpac.TYPE.DELEGATION_INFO) : null;
+  log.debug("Leaving delegationInfoOf().");
+  return entry ? entry.parsed : null;
+}
+
 async function selfSection(t, tgts) {
   log.debug("Entering selfSection().");
   t.log.info('=== A. S4U2Self ===');
@@ -207,6 +227,24 @@ async function proxySection(t, tgts, ev) {
   t.check(r.ok && r.client.name.join('/') === 'alice',
           'B1. classic: the front end\'s appAllowedToDelegateTo names the ' +
           'back end — a ticket to it as alice', String(r.error || ''));
+  t.check(forwardable(r), 'B1b. asked for FORWARDABLE with a forwardable ' +
+          'TGT and evidence: the ticket is forwardable (RFC 4120 3.3.3, ' +
+          '#492)', JSON.stringify(r.ok ? r.flagNames : String(r.error)));
+  const info = r.ok ? await delegationInfoOf(r.ticket, spn('backend'))
+    : null;
+  t.check(!!info && info.s4u2proxyTarget === 'HTTP/backend.' + DOMAIN &&
+          JSON.stringify(info.transitedServices) ===
+            JSON.stringify(['HTTP/frontend.' + DOMAIN + '@' + REALM]),
+          'B1c. S4U_DELEGATION_INFO: the target as its bare SPN, the ' +
+          'transited front end WITH its realm, as Samba and MIT write them ' +
+          '(#489)', JSON.stringify(info));
+  r = await wire.tgsExchange(T, tgts.front, spn('backend'), REALM, {
+    kdcOptions: [msgs.KDC_OPTION.CNAME_IN_ADDL_TKT],
+    additionalTickets: [ev.evidence], notForwardable: true });
+  t.check(r.ok && !forwardable(r), 'B1d. the same request NOT asking for ' +
+          'FORWARDABLE: issued, not forwardable — the flag is no longer ' +
+          'added whatever the request said (#492)',
+          JSON.stringify(r.ok ? r.flagNames : String(r.error)));
   r = await s4u2proxy(tgts.front, ev.evidence, spn('web'));
   t.check(refused(r, 13) && /appAllowedToDelegateTo/.test(r.error.eText),
           'B2. to a back end nothing names: KDC_ERR_BADOPTION, the refusal ' +
@@ -245,10 +283,33 @@ async function proxySection(t, tgts, ev) {
           'nothing this KDC signed says who it is about (STS-KRB-0176)',
           String(r.error));
   r = await s4u2proxy(tgts.front, ev.sensitiveEvidence, spn('rbcd'), true);
-  t.check(refused(r, 12) && /protected/.test(r.error.eText),
-          'B8. a protected user over resource-based delegation — which needs ' +
-          'no forwardable evidence — is refused by the issuance policy: ' +
-          'KDC_ERR_POLICY (STS-KRB-0177)', String(r.error));
+  t.check(refused(r, 13) && /3\.2\.5\.2\.3/.test(r.error.eText),
+          'B8. a protected user over resource-based delegation: their ' +
+          'S4U2Self ticket is not forwardable, and [MS-SFU] 3.2.5.2.3 ' +
+          'refuses that evidence — KDC_ERR_BADOPTION (STS-KRB-0199, #492)',
+          String(r.error));
+  // B9: resource-based delegation from a service that may not impersonate,
+  // whose S4U2Self evidence is therefore not forwardable. The back end
+  // accepts it for this one request.
+  const rbcdId = 'HTTP/rbcd.' + DOMAIN + '@' + REALM;
+  const notrustedId = 'HTTP/notrusted.' + DOMAIN + '@' + REALM;
+  const added = applications.updateApplication(rbcdId, {
+    attribute: 'appAllowedToActOnBehalfOf', mode: 'add',
+    value: notrustedId });
+  t.check(added.ok, 'precondition: the RBCD back end accepts the ' +
+          'non-impersonating service', JSON.stringify(added));
+  try {
+    r = await s4u2proxy(tgts.notrusted, ev.weakEvidence, spn('rbcd'), true);
+    t.check(refused(r, 13) && /3\.2\.5\.2\.3/.test(r.error.eText),
+            'B9. resource-based delegation with evidence that is not ' +
+            'forwardable: KDC_ERR_BADOPTION (STS-KRB-0199) — allowed until ' +
+            '#492, refused by [MS-SFU] 3.2.5.2.3, Samba and MIT',
+            String(r.error));
+  } finally {
+    applications.updateApplication(rbcdId, {
+      attribute: 'appAllowedToActOnBehalfOf', mode: 'remove',
+      value: notrustedId });
+  }
   log.debug("Leaving proxySection().");
 }
 
@@ -320,6 +381,34 @@ async function entriesSection(t, tgts, ev) {
           'D4. the Kerberos acts are on Monitoring → Delegation and in its ' +
           'picture', view.filtered.length + ' act(s), ' + nodes.length +
           ' node(s)');
+  // #490: Kerberos rows in Kerberos's words — the mechanism, the evidence
+  // ticket and the SPN — and never RFC 8693's subject token.
+  const issued = function (type) {
+    log.debug("Entering issued().");
+    log.debug("Leaving issued().");
+    return view.filtered.filter(function (row) {
+      return row.type === type && row.outcome === 'issued';
+    })[0] || null;
+  };
+  const words = ['krb5-s4u2self', 'krb5-s4u2proxy-classic',
+                 'krb5-s4u2proxy-rbcd'].map(function (type) {
+    return String((issued(type) || {}).authorizedBy || '');
+  });
+  t.check(words[0].indexOf(', the service the ticket is for (S4U2Self, ' +
+                           'protocol transition') >= 0 &&
+          words[1].indexOf(', the service the requested SPN names ' +
+                           '(S4U2Proxy, classic constrained delegation; ' +
+                           'the evidence ticket was issued to "HTTP/' +
+                           'frontend.') >= 0 &&
+          words[2].indexOf('(S4U2Proxy, resource-based constrained ' +
+                           'delegation; the evidence ticket was issued ' +
+                           'to "') >= 0 &&
+          words.every(function (one) {
+            return one.indexOf('subject token') < 0;
+          }),
+          'D4c. the Kerberos rows say S4U2Self or S4U2Proxy (classic or ' +
+          'resource-based), the evidence ticket and the requested SPN, and ' +
+          'never "subject token" (#490)', JSON.stringify(words));
   // #186: the CONFIGURED pairs are on the same picture, DASHED until an act
   // has crossed one (relation `may-delegate`, `used`).
   const configured = [].concat(view.graph.edges || []).filter(function (one) {
