@@ -313,7 +313,11 @@ async function test() {
                           { identifier: CLIENT, purpose: "jwt" },
                           "issued a key pair");
   let view = await applicationView(CLIENT);
-  const issuedPrivate = view.fields.oauthAssertionPrivateKey;
+  // NO GET CARRIES A CREDENTIAL (#446): the issued private half is read
+  // with reveal-secret, the one door a sealed key comes out of.
+  const issuedPrivate = (await ok(realmApi + "/applications/reveal-secret",
+    { application: CLIENT, secret: "oauthAssertionPrivateKey" },
+    "revealed the issued private key")).value;
   const issuedPair = keyPairOf(view, "jwt");
   check("the read model says the JWT key pair was ISSUED here and that this " +
         "service holds its private half", function () {

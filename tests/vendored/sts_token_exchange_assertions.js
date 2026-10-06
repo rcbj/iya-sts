@@ -260,6 +260,18 @@ async function setup() {
   };
   const idp = await fieldsOf(SAML_IDP);
   const other = await fieldsOf(OTHER);
+  // NO GET CARRIES A CREDENTIAL (#446): an issued private key is read with
+  // reveal-secret, the one door a sealed key comes out of.
+  const revealedKey = async function (identifier) {
+    log.debug("Entering revealedKey().");
+    const answer = await ok(realmApi + "/applications/reveal-secret",
+      { application: identifier, secret: "oauthSamlAssertionPrivateKey" },
+      "revealed " + identifier + "'s RFC 7522 private key");
+    log.debug("Leaving revealedKey().");
+    return answer.value;
+  };
+  idp.oauthSamlAssertionPrivateKey = await revealedKey(SAML_IDP);
+  other.oauthSamlAssertionPrivateKey = await revealedKey(OTHER);
   const md = await call("GET", realmBase +
                         "/.well-known/oauth-authorization-server");
   TOKEN = String(md.json.token_endpoint || realmBase + "/oauth2/token");
