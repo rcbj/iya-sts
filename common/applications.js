@@ -5479,6 +5479,41 @@ const FIELD_GROUPS = [
     families: ['secret-destination'] }
 ];
 
+// ---------------------------------------------------------------------------
+// SECTIONS WITHIN A GROUP (#463, rcbj 2026-10-06): fields of one sub-tab drawn
+// under a heading of their own, after the rest of it and saved by the same
+// Save. The first is the delegation policy's seven per-application facts,
+// which sat among the Every protocol fields with nothing to say they were one
+// subject. `krb5TrustedForDelegation` is not here: it is Kerberos's, on that
+// sub-tab, shown only for an application declared for it (rcbj).
+// ---------------------------------------------------------------------------
+/**
+ * The headed sections fields are drawn under inside their group, each with
+ * the attributes it holds, in drawing order.
+ */
+const FIELD_SECTIONS = [
+  { id: 'delegation', label: 'Delegation / Impersonation',
+    attributes: ['appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
+                 'appNotDelegated', 'appDelegationSemantics',
+                 'appDefaultDelegationSemantics', 'appDelegationSubjectGroup',
+                 'appMayAct'] }
+];
+
+/**
+ * Says which headed section a field is drawn under, if any.
+ *
+ * @param name - the attribute
+ * @returns the section row, or null
+ */
+function fieldSectionOf(name) {
+  log.debug("Entering fieldSectionOf().");
+  const found = FIELD_SECTIONS.filter(function (one) {
+    return one.attributes.indexOf(name) >= 0;
+  })[0] || null;
+  log.debug("Leaving fieldSectionOf(). " + (found ? found.id : 'None.'));
+  return found;
+}
+
 /**
  * Says which protocol families a field belongs to.
  *
@@ -5577,7 +5612,11 @@ function applicationFields() {
       families: scope.families,
       everyFamily: scope.everyFamily,
       declaration: declared.indexOf(row.name) >= 0,
-      group: group.id
+      group: group.id,
+      // The headed section inside the group it is drawn under (#463), or
+      // none.
+      section: (fieldSectionOf(row.name) || { id: '' }).id,
+      sectionLabel: (fieldSectionOf(row.name) || { label: '' }).label
     };
   });
   log.debug("Leaving applicationFields(). " + rows.length + " field(s).");
@@ -17248,6 +17287,7 @@ module.exports = {
   // The console's field grid (2026-09-30): every field, typed, with the
   // families and group each is drawn under.
   applicationFields: applicationFields,
+  FIELD_SECTIONS: FIELD_SECTIONS,
   PAGE_TAB_ATTRIBUTES: PAGE_TAB_ATTRIBUTES,
   FIELD_GROUPS: FIELD_GROUPS,
   FAMILY_CHOICES: FAMILY_CHOICES,
