@@ -371,6 +371,17 @@ const JOBS = [
     local: true },
   { file: 'sts_wstrust_saml11_chain_delegation.js', browser: false,
     local: true },
+  // AND IN KERBEROS (#486): the same four tiers as service principals,
+  // reached over MS-KKDCP. Impersonation is protocol transition — apigw1's
+  // S4U2Self for a user who signed in to webapp1 without Kerberos, then
+  // S4U2Proxy to esb1 and sp1 — and delegation is bob's own ticket to
+  // webapp1 presented by S4U2Proxy at every hop, the PAC's
+  // S4U_DELEGATION_INFO naming webapp1, apigw1 and esb1 at sp1. `local:
+  // true`: the scenario is ours. Their entries are left standing.
+  { file: 'sts_kerberos_chain_impersonation.js', browser: false,
+    local: true },
+  { file: 'sts_kerberos_chain_delegation.js', browser: false,
+    local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
@@ -1599,7 +1610,14 @@ const LOCAL_HELPERS = [
   // signature verified as a relying party would, and the register read
   // back. It takes the protocol-independent half from
   // token_exchange_chain_kit.js.
-  'wstrust_chain_kit.js'
+  'wstrust_chain_kit.js',
+  // WHAT THE TWO KERBEROS CHAIN JOBS SHARE (#486): the four service
+  // principals and their keys, the S4U2Self and S4U2Proxy requests over
+  // krb5_wire.js, each ticket opened by the tier it is for (the AP-REQ, the
+  // PAC's server signature, S4U_DELEGATION_INFO), and the register read
+  // back. It takes the protocol-independent half from
+  // token_exchange_chain_kit.js.
+  'kerberos_chain_kit.js'
 ];
 
 // ---------------------------------------------------------------------------
