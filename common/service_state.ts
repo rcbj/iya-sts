@@ -184,6 +184,16 @@ class ServiceState {
     log.debug("Entering ServiceState.start().");
     log.debug("Leaving ServiceState.start().");
     return persistence.start().then(function (started) {
+      // THE SEQUENCE NUMBERS' FIRST BLOCKS (#465), leased the moment the
+      // store is open and before anything is recorded on it, so the audit
+      // log and the delegation register number their rows uniquely across
+      // every process from the first one. NEVER FATAL: without a shared
+      // store, or when the lease fails, each keeps its own counter and the
+      // allocator says so (common/seq_allocator.ts).
+      return require('./seq_allocator').start().then(function () {
+        return started;
+      });
+    }).then(function (started) {
     // THE SIGNING KEYS, AFTER THE STORE AND BEFORE ANYTHING SIGNS.
     //
     // It is a second asynchronous step in the same chain for the same reason

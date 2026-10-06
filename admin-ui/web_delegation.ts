@@ -4197,11 +4197,13 @@ class DelegationPage {
           'Delegation</a> if that is losing something you need.'
         : '. The cap is ' + json.maxRecords + ' acts and nothing has ' +
           'been dropped yet.') +
-      ' The <strong>#</strong> column is a sequence number and is ' +
-      'monotonic and never reused, including across a drop, so ' +
-      '<code>?format=json</code>\'s <code>oldestSeq</code> and ' +
-      '<code>newestSeq</code> let a caller poll this without guessing what ' +
-      'it missed.') +
+      ' The <strong>#</strong> column is a sequence number, unique across ' +
+      'every process of this service and never reused, and rising within ' +
+      'each process; it is not one order across processes, so a caller ' +
+      'polling this resumes by time (<code>at</code>) with ' +
+      '<code>seq</code> as the tie-break. <code>?format=json</code>\'s ' +
+      '<code>oldestSeq</code> and <code>newestSeq</code> are the oldest ' +
+      'and newest acts\' numbers.') +
 
       '<h2>The chains</h2>' +
       kit.note('The same acts with the time and the credentials taken ' +

@@ -2387,6 +2387,21 @@ function originStatus() {
     : null;
 }
 
+// THIS PROCESS'S ORIGIN AS A STRING (#465), for the audit log and the
+// delegation register to stamp on the rows they record: the stable origin it
+// adopted in the store, or '' where the store has no origins.
+/**
+ * Returns this process's origin in the store, or ''.
+ *
+ * @returns the origin
+ */
+function originId() {
+  log.debug("Entering originId().");
+  log.debug("Leaving originId().");
+  return originAdoption && originAdoption.origin
+    ? String(originAdoption.origin) : '';
+}
+
 function openStore(chosen, resolvedUrl, globalUrls) {
   log.debug('Entering openStore(). mode=' + chosen);
   try {
@@ -3951,6 +3966,7 @@ function currentDriver() {
 }
 
 module.exports = {
+  originId: originId,
   currentDriver: currentDriver,
   materializeEntry: materializeEntry,
   dematerializeEntry: dematerializeEntry,

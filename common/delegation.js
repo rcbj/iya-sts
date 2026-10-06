@@ -111,6 +111,48 @@ const stats = require('./admin_stats');
 const replication = require('../persistence/persistence_replication');
 
 // ---------------------------------------------------------------------------
+// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY:
+// this file is in the parent project's in-process Kerberos COPY closure
+// (kerberos/CLAUDE.md), and a top-level require would owe it two more files.
+// `seq_allocator` hands out a number unique across every process of the
+// service; the origin is this process's stable name in the store, or '' with
+// no shared store. Neither throws: a failure is the caller's own counter and
+// an empty origin.
+// ---------------------------------------------------------------------------
+const seqAllocator = {
+  next: function next(name, local) {
+    log.debug("Entering next().");
+    let allocator = null;
+    try {
+      allocator = require('./seq_allocator');
+    } catch (e) {
+      log.debug("Caught in next(): " + ((e && e.message) || e));
+      allocator = null;
+    }
+    log.debug("Leaving next().");
+    return allocator ? allocator.next(name, local) : local();
+  }
+};
+
+/**
+ * This process's stable origin in the store, or '' without a shared store.
+ *
+ * @returns the origin
+ */
+function processOrigin() {
+  log.debug("Entering processOrigin().");
+  let origin = '';
+  try {
+    origin = String(require('../persistence/persistence').originId() || '');
+  } catch (e) {
+    log.debug("Caught in processOrigin(): " + ((e && e.message) || e));
+    origin = '';
+  }
+  log.debug("Leaving processOrigin().");
+  return origin;
+}
+
+// ---------------------------------------------------------------------------
 // THE TWO AXES, AND WHY THE PROTOCOL-INDEPENDENT ONE IS `mode` RATHER THAN THE
 // TYPE.
 //
@@ -584,10 +626,17 @@ function recordUnguarded(info) {
   }
   const outcome = OUTCOMES.indexOf(String(info.outcome || '')) >= 0
     ? String(info.outcome) : 'issued';
-  seq++;
   recorded++;
   const record = {
-    seq: seq,
+    // UNIQUE ACROSS EVERY PROCESS OF THE SERVICE (#465): from this process's
+    // block leased from the store, or this module's own counter where there is
+    // one writer. See common/seq_allocator.ts.
+    seq: seqAllocator.next('delegation', function () {
+      seq++;
+      return seq;
+    }),
+    // WHICH PROCESS RECORDED IT (#465), the tie-break merged() sorts on.
+    origin: processOrigin(),
     at: Date.now(),
     protocol: String(info.protocol || (known ? known.protocol : '')),
     type: type,
@@ -646,9 +695,11 @@ function recordUnguarded(info) {
 // ever sees more than this process's own acts. Two consequences, and they are
 // audit.js's two:
 //
-//   * **`seq` IS ONLY MONOTONIC WITHIN ONE PROCESS.** It always was — it is a
-//     per-realm counter assigned here — and with several processes it is per
-//     process as well. The sort below is by TIME, because time is the only
+//   * **`seq` IS UNIQUE ACROSS PROCESSES, AND RISES WITHIN EACH ONE (#465).**
+//     Each process numbers from blocks it leased from the store
+//     (`common/seq_allocator.ts`), so no two acts share a number — but two
+//     processes hold different blocks, so the numbers are not one order
+//     across them. The sort below is by TIME, because time is the only
 //     ordering two processes share.
 //   * **THE CAP IS PER PROCESS**, so three workers hold up to three times
 //     `delegation.maxRecords` between them. That is the honest behaviour
@@ -676,14 +727,15 @@ function merged() {
       all = all.concat(rows);
     }
   });
-  // BY TIME, and stably by sequence within one millisecond so that two acts a
-  // process recorded in one tick keep the order it recorded them in. There is
-  // no `origin` on a delegation row to break the tie with — audit.js has one —
-  // so two processes that recorded in the same millisecond sort by their own
-  // sequences, which is arbitrary between them and stable within each.
+  // BY TIME, and stably by origin and sequence within one millisecond so
+  // that two acts a process recorded in one tick keep the order it recorded
+  // them in. Every row carries `origin` since #465, as audit.js's do.
   all.sort(function (a, b) {
     if ((a.at || 0) !== (b.at || 0)) {
       return (a.at || 0) - (b.at || 0);
+    }
+    if ((a.origin || '') !== (b.origin || '')) {
+      return String(a.origin || '') < String(b.origin || '') ? -1 : 1;
     }
     return (a.seq || 0) - (b.seq || 0);
   });
@@ -762,8 +814,11 @@ function summary() {
     recorded: recorded, dropped: dropped,
     maxRecords: maxRecords(),
     chains: Object.keys(chains).length,
+    // THE OLDEST AND NEWEST ACTS' NUMBERS, by time, out of every process's
+    // acts (#465). `newestSeq` was this process's own counter, which named an
+    // act only this process held and, with several, no act at all.
     oldestSeq: all.length ? all[0].seq : 0,
-    newestSeq: seq,
+    newestSeq: all.length ? all[all.length - 1].seq : 0,
     byType: byType, byMode: byMode, byOutcome: byOutcome, byProtocol: byProtocol
   };
   log.debug("Leaving summary(). " + out.held + " act(s) over " + out.chains +
