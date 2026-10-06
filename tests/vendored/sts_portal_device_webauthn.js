@@ -344,7 +344,10 @@ async function pressAction(driver, action) {
 async function signIn(driver, withKey) {
   log.debug("Entering signIn(). withKey=" + withKey);
   await driver.manage().deleteAllCookies();
-  await driver.get(url("/portal"));
+  // `?realm=default` past the realm chooser: a bare /portal draws it once
+  // any trust realm exists (#32), which in a full run every earlier job has
+  // made sure of — sts_portal_backup_codes' PORTAL_DOOR, for its reason.
+  await driver.get(url("/portal?realm=default"));
   await waitFor(driver, async function () {
     return (await path(driver)).indexOf("/authn/login") >= 0;
   }, "an unauthenticated browser at /portal was never shown the sign-in " +
