@@ -979,9 +979,12 @@ class WebKit {
       'class="formrow"><input type="hidden" ' +
       'name="' + WebKit.esc(key) + '" value="' + WebKit.esc(value) + '">' +
       carried +
-      '<label for="per">Rows per table</label>' +
-      '<select id="per" name="per">' + WebKit.perPageOptions(perPage) +
-      '</select><button class="secondary">Apply</button>' +
+      '<label for="per"' + WebKit.tip('How many rows each table below ' +
+        'shows on a page.') + '>Rows per table</label>' +
+      '<select id="per" name="per"' + WebKit.tip('How many rows each table ' +
+        'below shows on a page.') + '>' + WebKit.perPageOptions(perPage) +
+      '</select><button class="secondary"' + WebKit.tip('Redraw the tables ' +
+        'at this size, each from its first page.') + '>Apply</button>' +
       WebKit.note('Every table below is paged separately and they share this ' +
       'size. Changing it starts each of them at its first page.' +
       (extraNote ? ' ' + extraNote : '')) +
