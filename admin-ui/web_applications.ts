@@ -1727,7 +1727,11 @@ class ApplicationsPage {
         })) +
         kit.fieldGridOf(mine, config.groups, values,
                            { redraw: '/admin/applications/edit',
-                             showSet: true, protocols: config.protocols }) +
+                             showSet: true, protocols: config.protocols,
+                             // The lists with a search, and the last
+                             // search's results for each (#459).
+                             searches: config.fieldSearches || {},
+                             finds: (state && state.finds) || {} }) +
         saveButton('Save ' + group.label) + '</form></div>';
     }).join('');
     const bar = '<nav class="tabbar subbar" aria-label="Configuration">' +
@@ -1743,8 +1747,11 @@ class ApplicationsPage {
       'set, and an empty one is cleared; a list has the values taken out ' +
       'removed and the values put in added. A list shows one box per value, ' +
       'with + to add one and the bin to delete one; every box that is there ' +
-      'must hold a value. A field with a fixed set of values offers them to ' +
-      'choose from. These write the same entry an <code>ldapmodify</code> ' +
+      'must hold a value. The delegation lists on <em>Every protocol</em> ' +
+      'open a search when you work in them — other applications, or the ' +
+      'realm\'s groups — five results a page, each with an Add. A field ' +
+      'with a fixed set of values offers them to choose from. These ' +
+      'write the same entry an <code>ldapmodify</code> ' +
       'writes, and RFC 9700 mode reads it on the very next request. The ' +
       'web origins allowed to call it (CORS, <code>appCorsOrigin</code>) ' +
       'are not here: they are edited on the <a href="#tab-origins">Browser ' +

@@ -8525,7 +8525,21 @@ class AdminViews {
     const info = groupReader('');
     const wantedText = String(req.query.q || '').trim();
     const needle = wantedText.toLowerCase();
+    // DNs LEFT OUT OF THE MATCH (#459), before the paging, for the
+    // application page's search for `appDelegationSubjectGroup`: the groups
+    // its list already holds. A DN is compared as LDAP compares one — case
+    // and the spaces after a comma do not matter.
+    const dnKey = function (dn) {
+      return String(dn).trim().toLowerCase().replace(/\s*,\s*/g, ',');
+    };
+    const excluded = [].concat(req.query.exclude === undefined
+                                 ? [] : req.query.exclude)
+      .map(dnKey)
+      .filter(function (one) { return one !== ''; });
     const filtered = info.groups.filter(function (group) {
+      if (excluded.indexOf(dnKey(group.dn)) >= 0) {
+        return false;
+      }
       if (!needle) {
         return true;
       }
@@ -8562,7 +8576,8 @@ class AdminViews {
           canWrite: !!groupWriter,
           membershipValues: totalMembers, dangling: totalDangling,
           settings: configSettingsJson('/admin/groups'),
-          filter: { q: wantedText || null },
+          filter: { q: wantedText || null,
+                    exclude: excluded.length ? excluded : null },
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
           baseDn: info.baseDn, groupsDn: info.groupsDn, usersDn: info.usersDn,
@@ -8748,7 +8763,18 @@ class AdminViews {
     const wantedText = String(req.query.q || '').trim();
     const wantedKind = String(req.query.kind || '').trim();
     const needle = wantedText.toLowerCase();
+    // IDENTIFIERS LEFT OUT OF THE MATCH (#459), exactly as spelled, BEFORE
+    // the paging — so a page still holds `per` rows. The application page's
+    // search for the two delegation lists sends the application itself and
+    // what its list already holds, neither of which it could add.
+    const excluded = [].concat(req.query.exclude === undefined
+                                 ? [] : req.query.exclude)
+      .map(function (one) { return String(one).trim(); })
+      .filter(function (one) { return one !== ''; });
     const filtered = all.filter(function (row) {
+      if (excluded.indexOf(row.identifier) >= 0) {
+        return false;
+      }
       // Recorded OR declared, the union the Kind column shows — a filter
       // that dropped a row showing the kind asked for would be lying.
       if (wantedKind && row.kinds.indexOf(wantedKind) < 0 &&
@@ -8805,7 +8831,8 @@ class AdminViews {
           applicationCount: all.length, matched: filtered.length,
           shown: paged.shown.length,
           registered: registeredCount,
-          filter: { q: wantedText || null, kind: wantedKind || null },
+          filter: { q: wantedText || null, kind: wantedKind || null,
+                    exclude: excluded.length ? excluded : null },
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
           container: applications.containerDn ? applications.containerDn() :
@@ -9078,7 +9105,10 @@ class AdminViews {
         groups: applications.FIELD_GROUPS,
         familyChoices: applications.FAMILY_CHOICES,
         protocols: applications.PROTOCOLS,
-        longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || []
+        longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
+        // The lists the grid offers a search on, and what each searches
+        // (#459): `applications` or `groups`.
+        fieldSearches: applications.FIELD_SEARCHES || {}
       },
       cors: listOf('appCorsOrigin').map(function (stored) {
         return { stored: stored,

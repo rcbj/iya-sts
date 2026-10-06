@@ -8303,6 +8303,90 @@ function delegationAttributeProblem(attribute, value) {
 }
 
 // ---------------------------------------------------------------------------
+// AN APPLICATION MAY NOT NAME ITSELF IN ITS OWN DELEGATION LISTS (#459, rcbj
+// 2026-10-06). `appAllowedToDelegateTo` and `appAllowedToActOnBehalfOf` name
+// the OTHER party of a delegation — the target an intermediary may obtain a
+// token for, the intermediary a target accepts — and an application acting
+// for somebody towards itself is not a delegation at all: it is the
+// application's own token, which needs no entry here. A value naming the
+// entry it is on is therefore always a mistake, and it is refused where it is
+// written rather than left to read as a permission it does not grant.
+//
+// WHAT "ITSELF" MEANS is what `delegation_policy.ts`'s resolution would turn
+// the value back into this entry by: its `appIdentifier`, any identifier it
+// answers to in any family (`identifiersOf()` — a client_id, an entityID, an
+// SPN …), and an audience it registered (`oauthAudience`, which
+// `forAudience()` resolves). Compared EXACTLY, as every one of those lookups
+// compares — an identifier here is case-sensitive.
+//
+// BOTH MODES and every console and API door: `updateApplication()`'s `add`
+// and `set` (so `set-attribute` and `update-fields` too) and
+// `createApplication()`. An `ldapmodify` is not policed, as for every other
+// attribute here (`ldap/CLAUDE.md`), and READS ARE NOT FILTERED: a
+// self-reference written that way grants nothing, since the policy's question
+// is always about two different parties, so hiding it would only hide what
+// the entry holds. STS-REG-0335.
+// ---------------------------------------------------------------------------
+/**
+ * The attributes whose values name another application of the realm, and
+ * may not name the application they are on (#459). The console's field grid
+ * offers an application search on each.
+ */
+const APPLICATION_REFERENCE_ATTRIBUTES = ['appAllowedToDelegateTo',
+                                          'appAllowedToActOnBehalfOf'];
+
+/**
+ * The list attributes the console's field grid offers a search on (#459),
+ * and what each searches: the realm's applications for the two lists of
+ * identifiers, its groups for `appDelegationSubjectGroup`, whose values are
+ * group DNs. One table, so the console and this module cannot disagree
+ * about which cells have one.
+ */
+const FIELD_SEARCHES = {
+  appAllowedToDelegateTo: 'applications',
+  appAllowedToActOnBehalfOf: 'applications',
+  appDelegationSubjectGroup: 'groups'
+};
+
+/**
+ * Checks that a value of `appAllowedToDelegateTo` or
+ * `appAllowedToActOnBehalfOf` does not name the application it is written
+ * on.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @param identifier - the application's identifier
+ * @param fields - the application's fields (what it answers to)
+ * @returns the refusal sentence, or ''
+ */
+function selfReferenceProblem(attribute, value, identifier, fields) {
+  log.debug("Entering selfReferenceProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (APPLICATION_REFERENCE_ATTRIBUTES.indexOf(attribute) < 0 || !text) {
+    log.debug("Leaving selfReferenceProblem(). Not asked.");
+    return '';
+  }
+  const own = [String(identifier || '').trim()];
+  identifiersOf(fields || {}).forEach(function (row) {
+    row.values.forEach(function (one) {
+      own.push(String(one).trim());
+    });
+  });
+  valuesOf((fields || {}).oauthAudience).forEach(function (one) {
+    own.push(String(one).trim());
+  });
+  if (own.indexOf(text) < 0) {
+    log.debug("Leaving selfReferenceProblem(). Another application.");
+    return '';
+  }
+  log.debug("Leaving selfReferenceProblem(). It names itself.");
+  return attribute + ': "' + text + '" names this application itself. ' +
+         'It lists the OTHER applications of a delegation, and an ' +
+         'application acting towards itself is not one.';
+}
+
+// ---------------------------------------------------------------------------
 // RFC 8705: WHAT A CLIENT MAY REGISTER ABOUT ITS CERTIFICATE (2026-09-13).
 //
 // Section 2.1.2's five subject parameters, of which a `tls_client_auth` client
@@ -12189,6 +12273,25 @@ function createApplication(detail) {
     return errorCodes.mark({ ok: false, errors: [methodsProblem] },
                            'STS-REG-0207');
   }
+  // THE DELEGATION LISTS MAY NOT NAME THE NEW APPLICATION ITSELF (#459),
+  // read against the identifier and the identifiers this create is about to
+  // write, for familyRefusal()'s reason: the entry does not exist yet.
+  const selfProblems = [];
+  APPLICATION_REFERENCE_ATTRIBUTES.forEach(function (name) {
+    valuesOf(given.fields[name]).forEach(function (one) {
+      const problem = selfReferenceProblem(name, one, identifier,
+                                           given.fields);
+      if (problem) {
+        selfProblems.push(problem);
+      }
+    });
+  });
+  if (selfProblems.length) {
+    log.debug("Leaving createApplication(). A delegation list names the " +
+              "application itself.");
+    return errorCodes.mark({ ok: false, errors: selfProblems },
+                           'STS-REG-0335');
+  }
   // The strict overrides' parse (2026-10-01), for the same reason.
   const strictProblems = Object.keys(given.fields).map(function (name) {
     return strictOverrideProblem(name, valuesOf(given.fields[name])[0]);
@@ -12695,6 +12798,15 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). Not a usable delegation " +
                 "policy value.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0194');
+    }
+  }
+  // Nor may the two delegation lists name the application itself (#459).
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = selfReferenceProblem(attribute, value, identifier,
+                                         loaded.record.fields);
+    if (problem) {
+      log.debug("Leaving updateApplication(). It names itself.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0335');
     }
   }
   // RFC 9126's one, on a SET that carries a value.
@@ -17091,6 +17203,9 @@ module.exports = {
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,
   pushedAuthorizationAttributeProblem: pushedAuthorizationAttributeProblem,
   delegationAttributeProblem: delegationAttributeProblem,
+  selfReferenceProblem: selfReferenceProblem,
+  APPLICATION_REFERENCE_ATTRIBUTES: APPLICATION_REFERENCE_ATTRIBUTES,
+  FIELD_SEARCHES: FIELD_SEARCHES,
   mtlsMetadataProblem: mtlsMetadataProblem,
   mtlsAttributeProblem: mtlsAttributeProblem,
   gnapMtlsTrustFor: gnapMtlsTrustFor,

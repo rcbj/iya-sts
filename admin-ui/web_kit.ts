@@ -906,6 +906,9 @@ class WebKit {
   // resource cannot come to show different twenties. `admin_views.ts` reads
   // it from here (#446).
   static readonly CHOOSER_HITS = 20;
+  // A FIELD SEARCH'S PAGE (#459): five results, as rcbj asked, so the
+  // results fit the grid cell they open in.
+  static readonly FIND_PER_PAGE = 5;
 
   // The per-page select, written once because five surfaces offer it and a
   // sixth written by hand is the one that forgets to add a hand-typed size to
@@ -1723,10 +1726,24 @@ class WebKit {
       !(opts.showSet && held.some(function (one) {
         return String(one).trim() !== '';
       }));
+    // A LIST WITH A SEARCH (#459): the search under its boxes, and a cell
+    // that opens while focus is inside it (`.fg-search`, see the stylesheet).
+    // `tabindex="-1"` makes the cell itself focusable, so a click on its
+    // blank space — or on a button a browser does not focus on click —
+    // keeps focus inside it rather than closing it under the pointer.
+    const searchKind = row.type === 'array' && opts.searches
+      ? String(opts.searches[row.attribute] || '') : '';
+    if (searchKind) {
+      control += WebKit.fieldSearchOf(row.attribute, searchKind,
+                                      (opts.finds || {})[row.attribute],
+                                      opts.redraw);
+    }
     // The cell's id is what "+" and the bin come back to (withReturnAnchors()).
     return '<div id="fgc-' + WebKit.esc(row.attribute) + '" class="fg-cell' +
+      (searchKind ? ' fg-search' : '') +
       (conditional
-        ? ' ' + WebKit.esc(WebKit.familyClasses(row.families)) : '') + '">' +
+        ? ' ' + WebKit.esc(WebKit.familyClasses(row.families)) : '') + '"' +
+      (searchKind ? ' tabindex="-1"' : '') + '>' +
       // A label names one control; a list and a radio group are several, so
       // their name is a heading of the cell rather than a label.
       (row.type === 'array' || row.type === 'boolean'
@@ -1738,6 +1755,91 @@ class WebKit {
       (row.type === 'array' ? ' &middot; a list' : '') +
       (row.sensitive ? ' &middot; a credential' : '') + '</span>' +
       control + '</div>';
+  }
+
+  // A FIELD'S SEARCH (#459), drawn under a list's boxes: a box and Find,
+  // and — after a Find — a page of at most FIND_PER_PAGE results, each with
+  // an Add, and Previous / Next. Every button is a submit button posting to
+  // the grid's redraw route, the "+" and bin's model: the runtime runs the
+  // search (`WebAnswers.fieldSearchOf()`, `ConsoleRuntime.fieldSearch()`)
+  // and nothing is written until the tab's Save. The box and the results
+  // show only while the cell is in use (`:focus-within`, the stylesheet),
+  // so a cell nobody is working in is the size it always was.
+  /**
+   * Draws a list field's search: the box, Find, and the page of results.
+   *
+   * @param attribute - the list's attribute
+   * @param kind - `applications` or `groups`, what the search finds
+   * @param found - the last search's results for this list, or nothing
+   * @param redraw - the route the grid's round trips post to
+   * @returns the search as HTML
+   */
+  static fieldSearchOf(attribute, kind, found, redraw) {
+    const groups = kind === 'groups';
+    const noun = groups ? 'group' : 'application';
+    const action = WebKit.esc(redraw + '#fgc-' + attribute);
+    const button = function (name, value, label, tipText, cls?, off?) {
+      return '<button type="submit" class="secondary ' + (cls || '') +
+        '" name="' + name + '" value="' + WebKit.esc(value) +
+        '" formaction="' + action + '" formnovalidate' +
+        WebKit.tip(tipText) + (off ? ' disabled' : '') + '>' +
+        WebKit.esc(label) + '</button>';
+    };
+    const box = '<div class="fg-item fg-findrow"><input type="search" ' +
+      'id="fgq-' + WebKit.esc(attribute) + '" name="fgfind.' +
+      WebKit.esc(attribute) + '" data-fg-find="' + WebKit.esc(attribute) +
+      '" value="' + WebKit.esc(found ? found.query : '') + '" ' +
+      'placeholder="Find ' + (groups ? 'a group' : 'an application') +
+      '" aria-label="' + WebKit.esc('Find ' + (groups ? 'a group' :
+        'another application') + ' for ' + attribute) + '"' +
+      WebKit.tip(groups
+        ? 'Type part of a group\'s DN or name and press Find (or Enter): ' +
+          'the realm\'s groups are matched as the Groups page\'s filter ' +
+          'matches them, ' + WebKit.FIND_PER_PAGE + ' to a page, leaving ' +
+          'out the groups this list already holds.'
+        : 'Type part of an application\'s identifier or name and press ' +
+          'Find (or Enter): the realm\'s applications are matched as the ' +
+          'Applications page\'s filter matches them, ' +
+          WebKit.FIND_PER_PAGE + ' to a page, leaving out this application ' +
+          'itself, which this list may not name, and the applications it ' +
+          'already holds.') + '>' +
+      button('fgsearch', attribute, 'Find',
+             'Search the realm\'s ' + noun + 's for what is in the box. ' +
+             'An empty box lists them all. Nothing is saved.', 'fg-findbtn') +
+      '</div>';
+    if (!found) {
+      return '<div class="fg-find">' + box + '</div>';
+    }
+    const rows = found.failed
+      ? '<span class="state-none">The search could not be run: /admin-api ' +
+        'did not answer it.</span>'
+      : !found.rows.length
+        ? '<span class="state-none">No other ' + noun + ' matches' +
+          (found.query ? ' &ldquo;' + WebKit.esc(found.query) + '&rdquo;'
+                       : '') + '.</span>'
+        : found.rows.map(function (one) {
+          return '<div class="fg-hit"><span class="fg-hit-name">' +
+            WebKit.shortened(one.value, 60) +
+            (one.label ? ' ' + WebKit.esc(one.label) : '') + '</span>' +
+            button('fgadd', attribute + '|' + one.value, 'Add',
+                   'Put ' + one.value + ' in this list, as a new box. It ' +
+                   'is written when you press this tab\'s Save.',
+                   'fg-add') + '</div>';
+        }).join('');
+    const pager = found.failed || found.pages <= 1 ? ''
+      : '<div class="fg-pager">' +
+        button('fgsearch', attribute + '|' + (found.page - 1), 'Previous',
+               'The previous ' + WebKit.FIND_PER_PAGE + ' results.',
+               'fg-prev', found.page <= 1) +
+        '<span class="fg-pageof">page ' + found.page + ' of ' +
+        found.pages + ' &middot; ' + found.matched + ' found</span>' +
+        button('fgsearch', attribute + '|' + (found.page + 1), 'Next',
+               'The next ' + WebKit.FIND_PER_PAGE + ' results.',
+               'fg-next', found.page >= found.pages) + '</div>';
+    return '<div class="fg-find">' + box + '<div class="fg-found" ' +
+      'aria-live="polite"><input type="hidden" name="fgpage.' +
+      WebKit.esc(attribute) + '" value="' + found.page + '">' + rows +
+      pager + '</div></div>';
   }
 
   // A STRING AS BASE64 OF ITS UTF-8 BYTES (#446), for a `data:` link a page

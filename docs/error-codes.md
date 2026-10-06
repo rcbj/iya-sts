@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4142** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4143** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 80
 * [User portal (`STS-PORTAL`)](#sts-portal) — 83
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 150
+* [Registries (`STS-REG`)](#sts-reg) — 151
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -4703,6 +4703,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0294` | An access type was not declared on an application: no such application, or the definition built from the fields does not read (the access-type catalogue's grammar, #432). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0295` | An access type could not be taken off an application: it declares no type of that name (#432). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0334` | A gnapOwnerLookupUri is not an https URL template with a host, no user information, query or fragment, and {identifier} exactly once as a whole path segment (#432 phase 5). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0335` | A write of appAllowedToDelegateTo or appAllowedToActOnBehalfOf was refused: the value names the application it is written on — its identifier, an identifier it answers to, or an audience it registered (#459). Both lists name the OTHER party of a delegation. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 
 ## STS-DBG
 

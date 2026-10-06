@@ -20058,6 +20058,13 @@ const CODES = [
       'host, no user information, query or fragment, and {identifier} ' +
       'exactly once as a whole path segment (#432 phase 5).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0335',
+    summary: 'A write of appAllowedToDelegateTo or appAllowedToActOnBehalfOf ' +
+      'was refused: the value names the application it is written on — ' +
+      'its identifier, an identifier it answers to, or an audience it ' +
+      'registered (#459). Both lists name the OTHER party of a delegation.',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

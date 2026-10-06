@@ -7902,7 +7902,19 @@ class AdminApi {
             schema: { type: 'string' },
             description: 'One group\'s DN. Returns the drill-down.' },
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
-            description: 'Substring of the DN or the name, case-insensitive.' }
+            description: 'Substring of the DN or the name, case-insensitive.' },
+          // #459: the application page's search for
+          // `appDelegationSubjectGroup`, which leaves out the groups its
+          // list already holds — before the paging, so a page of five is
+          // five.
+          { name: 'exclude', in: 'query', required: false,
+            schema: { type: 'array', items: { type: 'string' } },
+            style: 'form', explode: true,
+            description: 'A group DN to leave out of the match, compared as ' +
+                         'LDAP compares a DN (case and the spaces after a ' +
+                         'comma do not matter); repeat it for several. ' +
+                         'Applied before the paging, so a page still holds ' +
+                         '`per` rows. Ignored when `group` is given.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'members',
             description: 'The membership values of the group named by ' +
@@ -12015,6 +12027,22 @@ class AdminApi {
                          'openid scope is also a relying party — so these ' +
                          'are not disjoint sets and the counts in the ' +
                          'reply\'s `kinds` member do not sum to the total.' },
+          // #459: the application page's search for its two delegation
+          // lists, which may not offer the application itself or what the
+          // list already holds — left out BEFORE the paging, so a page of
+          // five is five, which a filter in the browser could not promise.
+          { name: 'exclude', in: 'query', required: false,
+            schema: { type: 'array', items: { type: 'string' } },
+            style: 'form', explode: true,
+            description: 'An identifier to leave out of the match, exactly ' +
+                         'as spelled; repeat it for several ' +
+                         '(`exclude=a&exclude=b`). Applied before the ' +
+                         'paging, so a page still holds `per` rows. The ' +
+                         'console\'s application search for ' +
+                         '`appAllowedToDelegateTo` and ' +
+                         '`appAllowedToActOnBehalfOf` sends the application ' +
+                         'itself and the values its list already holds. ' +
+                         'Ignored when `application` is given.' },
           { name: 'attributesPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of the attribute list, on the ' +

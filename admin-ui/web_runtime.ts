@@ -1146,6 +1146,22 @@ class ConsoleRuntime {
     const fields = ConsoleRuntime.fieldsOf(data);
     const action = Array.isArray(fields.action) ? fields.action[0]
                                                 : String(fields.action || '');
+    // ENTER IN A FIELD'S SEARCH BOX SEARCHES (#459). Enter presses the
+    // form's first submit button — the hidden default, which is Save — and
+    // somebody who typed a name to look for has not asked to save the tab.
+    const typedIn = this.env.document && this.env.document.activeElement;
+    const findIn = typedIn && typedIn.getAttribute
+      ? String(typedIn.getAttribute('data-fg-find') || '') : '';
+    if (findIn && (!submitter || /\bdefault-submit\b/.test(
+      String(submitter.className || '')))) {
+      fields.fgsearch = findIn;
+    }
+    // A FIELD'S SEARCH (#459) is a round trip that needs data: the list
+    // operation's page of five, drawn under the box. It writes nothing.
+    if (page && this.view && WebAnswers.isFieldSearch(page, fields)) {
+      await this.fieldSearch(fields);
+      return;
+    }
     // A ROUND TRIP WRITES NOTHING: "+", a bin, a view switch. Drawn again
     // here from what the form holds, and never sent — each of those forms'
     // hidden `action` is the write (`web_answers.ts`).
@@ -1271,6 +1287,50 @@ class ConsoleRuntime {
     await this.go(back + (back.indexOf('?') < 0 ? '?' : '&') + key + '=' +
                   encodeURIComponent(message) +
                   String(this.env.location.hash || ''));
+  }
+
+  // A FIELD'S SEARCH (#459): `WebAnswers` reads the press and builds the
+  // address; here the list operation is asked and the page drawn again with
+  // every box as it was (and, for an Add, one more), the results in the
+  // cell's state, and the focus put back in the search box — the cell is
+  // open while focus is inside it (`:focus-within`), and a redraw replaces
+  // the element that had it.
+  /**
+   * Runs a field search's Find, Previous, Next or Add and draws the result.
+   *
+   * @param fields - the form's fields, the pressed button's among them
+   * @returns nothing
+   */
+  async fieldSearch(fields: Json): Promise<void> {
+    const asked = WebAnswers.fieldSearchOf(fields);
+    const config = (this.view.json && this.view.json.page &&
+                    this.view.json.page.config) || {};
+    const kind = String((config.fieldSearches || {})[asked.attribute] || '');
+    if (!kind) {
+      return;
+    }
+    const drafted = asked.add
+      ? WebAnswers.withValueAdded(fields, asked.attribute, asked.add)
+      : fields;
+    const held = kit.gridValuesFromDraft(drafted)[asked.attribute] || [];
+    // AN APPLICATION SEARCH LEAVES OUT THE APPLICATION ITSELF, which neither
+    // list may name (STS-REG-0335); both leave out what the list holds.
+    const exclude = (kind === 'applications'
+      ? [String(fields.application || '')] : []).concat(held);
+    const answer = await this.apiJson('GET',
+      WebAnswers.fieldSearchPath(kind, asked, exclude));
+    const found = WebAnswers.fieldSearchFound(kind, asked,
+      answer && answer.status === 200 ? answer.json : null);
+    const before = (this.view.json && this.view.json.state) || {};
+    const finds = Object.assign({}, before.finds || {});
+    finds[asked.attribute] = found;
+    this.view.json = Object.assign({}, this.view.json, {
+      state: { draft: drafted, finds: finds } });
+    this.drawView(null, '');
+    const box = this.env.document.getElementById('fgq-' + asked.attribute);
+    if (box && box.focus) {
+      box.focus();
+    }
   }
 
   /**
