@@ -342,6 +342,17 @@ const JOBS = [
     local: true },
   { file: 'sts_token_exchange_chain_delegation.js', browser: false,
     local: true },
+  // THE SAME FOUR TIERS IN SAML ASSERTIONS OVER WS-TRUST (#473, 2026-10-06):
+  // a UsernameToken sign-in to the web application, then three RSTs, once
+  // with <wst:OnBehalfOf> (impersonation, no delegate on any assertion) and
+  // once with <wst14:ActAs> (delegation, the SAML Delegation Restriction
+  // naming every requester least to most recent, the web application
+  // first). Every AppliesTo the next tier's registered identifier. `local:
+  // true`: the scenario is ours. Their entries are left standing.
+  { file: 'sts_wstrust_chain_impersonation.js', browser: false,
+    local: true },
+  { file: 'sts_wstrust_chain_delegation.js', browser: false,
+    local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
@@ -1563,7 +1574,13 @@ const LOCAL_HELPERS = [
   // User-Agent, the client_credentials and exchange requests, introspection,
   // and the delegation register and graph read back. Nothing from the
   // service.
-  'token_exchange_chain_kit.js'
+  'token_exchange_chain_kit.js',
+  // WHAT THE TWO WS-TRUST CHAIN JOBS SHARE (#473): the four tiers and the
+  // requesters' service accounts, the UsernameToken sign-in, the
+  // OnBehalfOf / ActAs requests, an assertion read and its signature
+  // verified as a relying party would, and the register read back. It
+  // takes the protocol-independent half from token_exchange_chain_kit.js.
+  'wstrust_chain_kit.js'
 ];
 
 // ---------------------------------------------------------------------------
