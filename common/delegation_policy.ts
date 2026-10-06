@@ -652,7 +652,9 @@ class DelegationPolicy {
         target + ', so there is nothing to read its roles or relationships ' +
         'from.',
       'no-target': 'The request names no target (' + noTarget + '), and ' +
-        'only a self exchange defaults to the subject token\'s own audience.',
+        'only a self ' + (question.protocol === 'WS-Trust'
+          ? 'request defaults to the presented token\'s own audience.'
+          : 'exchange defaults to the subject token\'s own audience.'),
       'subject': subject + ' is protected — its entry says it is never ' +
         'delegated, it is in a protected group (delegation.protectedGroups, ' +
         'the console roster), or it is outside the groups ' + actor +
@@ -675,7 +677,9 @@ class DelegationPolicy {
           'appAllowedToDelegateTo, nor does R accept it ' +
           '(appAllowedToActOnBehalfOf).'
         : 'Nothing allows this delegation to ' + target + ': the actor ' +
-          'must be the application the subject token was issued for or ' +
+          'must be the application ' + (question.protocol === 'WS-Trust'
+            ? 'the token inside <wst14:ActAs> was issued for'
+            : 'the subject token was issued for') + ' or ' +
           'the target, and that application must delegate to the target ' +
           '(appAllowedToDelegateTo on it, or appAllowedToActOnBehalfOf on ' +
           'the target).'),
@@ -704,11 +708,25 @@ class DelegationPolicy {
       out = 'nothing was needed: "' + facts.actor.id + '" acts for nobody ' +
             'but itself.';
     } else {
+      // EACH PROTOCOL IN ITS OWN VOCABULARY (#481). RFC 8693's words —
+      // "the subject token was issued for" — were written on every row,
+      // and a WS-Trust row has no subject token: it has the token inside
+      // <wst:OnBehalfOf> or <wst14:ActAs> (the element is the semantics
+      // asked for) and an AppliesTo the target was resolved from. Every
+      // other protocol keeps the sentence it had.
+      const wsTrust = question.protocol === 'WS-Trust';
+      const element = question.requested === 'impersonation'
+        ? '<wst:OnBehalfOf>' : '<wst14:ActAs>';
+      const source = !facts.source.id ? ''
+        : wsTrust
+          ? ' (the token inside ' + element + ' was issued for "' +
+            facts.source.id + '")'
+          : ' (the subject token was issued for "' + facts.source.id + '")';
       out = 'the issuance policy allowed ' + decision.semantics + ' by "' +
             facts.actor.id + '" for "' + facts.subject.id + '" to "' +
-            decision.audience + '"' + (facts.source.id
-              ? ' (the subject token was issued for "' + facts.source.id +
-                '")' : '') +
+            decision.audience + '"' +
+            (wsTrust ? ', the application the AppliesTo names' : '') +
+            source +
             (question.mayActNamesActor
               ? '; the subject named this actor in may_act' : '') + '.';
     }

@@ -950,11 +950,19 @@ function assertAct(cast, act, expect) {
             what.indexOf("wstrustAppliesTo") >= 0,
     "the act's target should say which AppliesTo resolved, on " +
     "wstrustAppliesTo: \"" + what + "\"");
+  // In WS-Trust's own words (#481): the application the AppliesTo names,
+  // and the token inside the element, which was issued for the requester
+  // itself (each tier presents what was addressed to it) — not RFC 8693's
+  // "subject token".
+  const element = expect.type === "wstrust-actas" ? "<wst14:ActAs>"
+                                                  : "<wst:OnBehalfOf>";
   const allowed = "the issuance policy allowed " + expect.semantics +
       " by \"" + expect.requester + "\" for \"" + cast.user + "\" to \"" +
-      expect.target + "\"";
-  assert.ok(String(act.authorizedBy || "").indexOf(allowed) === 0,
-    "the act should say \"" + allowed + " …\" and says \"" +
+      expect.target + "\", the application the AppliesTo names (the " +
+      "token inside " + element + " was issued for \"" + expect.requester +
+      "\").";
+  assert.ok(String(act.authorizedBy || "") === allowed,
+    "the act should say \"" + allowed + "\" and says \"" +
     act.authorizedBy + "\". \"WOULD HAVE BEEN REFUSED\" means the policy " +
     "this job provisioned is not the one the service read.");
   assert.strictEqual(act.reason, "", "an issued act carries a refusal " +

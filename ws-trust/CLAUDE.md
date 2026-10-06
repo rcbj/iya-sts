@@ -122,6 +122,13 @@ for how `soapFault()` places it. The codes by refusal kind:
 `targets`, `unregistered-target`, `no-target`) `0024`, the rest (a protected
 subject, may_act) `0018`.
 
+**THE ROW SPEAKS WS-TRUST (#481).** `authorizedBy` on a WS-Trust act reads,
+for example, `the issuance policy allowed delegation by "esb" for "alice" to
+"back", the application the AppliesTo names (the token inside <wst14:ActAs>
+was issued for "esb").` It names the AppliesTo and the token inside the
+element. RFC 8693's "subject token" was written on every row until #481,
+and the OAuth 2.0 and Kerberos rows keep the sentence they had.
+
 **ENFORCED IN PRODUCT** (`mode.authorizesDelegation()`); development issues and
 the act says "WOULD HAVE BEEN REFUSED in product: …". A refused act is recorded
 with `outcome: refused` before the fault is answered, so it is on
