@@ -508,6 +508,39 @@ class WsTrust {
     return out;
   }
 
+  // WHAT WAS CHECKED OF THE TOKEN A DELEGATION CONSUMED, for the act's row
+  // (#479). It said "Its signature and Conditions are not checked" in every
+  // mode, which is development's sentence: product verifies an assertion
+  // inside OnBehalfOf / ActAs against this realm's own certificate and its
+  // Conditions (`checkedAssertion()`), and a JWT against this realm's key,
+  // its issuer and its `exp` (#477), and refuses one that fails. The note
+  // now follows the mode and the kind of token. The identifier is read in
+  // either, so the lineage can be followed back through it.
+  private consumedNote(via, tokenKind) {
+    const { mode, log } = this.deps;
+    log.debug("Entering WsTrust.consumedNote(). " + tokenKind);
+    const jwt = tokenKind === 'JWT';
+    const lead = 'the token inside <wst:' + via + '>, which is what this ' +
+      'request is delegating WITH';
+    const lineage = '; its identifier is read so that the lineage of what ' +
+      'came out can be followed back through it';
+    let out;
+    if (!mode.verifiesCredentials()) {
+      out = lead + '. In development mode it is NOT verified: its ' +
+        'signature and ' + (jwt ? 'expiry' : 'Conditions') + ' are not ' +
+        'checked' + lineage;
+    } else if (jwt) {
+      out = lead + ': a JWT, VERIFIED with this realm\'s own key, its ' +
+        'issuer this security token service\'s and its exp not passed' +
+        lineage;
+    } else {
+      out = lead + ': a SAML assertion, VERIFIED against this realm\'s ' +
+        'own signing certificate, inside its Conditions' + lineage;
+    }
+    log.debug("Leaving WsTrust.consumedNote().");
+    return out;
+  }
+
   // The application a party authenticated as, by the name it presented:
   // the entry of that identifier, else the one registering it as a
   // client_id. Null for a person, or a name nothing registers.
@@ -1170,7 +1203,7 @@ class WsTrust {
                 checked.subject + " via " + element + ".");
       return { subject: checked.subject, element: element,
                both: !!(oboEl && actAsEl),
-               tokenId: this.delegatedTokenId(obo),
+               tokenId: this.delegatedTokenId(obo), tokenKind: 'assertion',
                audiences: this.delegatedAudiences(obo),
                delegates: this.delegatedDelegates(obo) };
     }
@@ -1182,7 +1215,8 @@ class WsTrust {
     log.debug("Leaving WsTrust.delegatedSubject(). " + named + " via " +
               element + ".");
     return { subject: named, element: element, both: !!(oboEl && actAsEl),
-             tokenId: tokenId, audiences: this.delegatedAudiences(obo),
+             tokenId: tokenId, tokenKind: 'assertion',
+             audiences: this.delegatedAudiences(obo),
              delegates: this.delegatedDelegates(obo) };
   }
 
@@ -1290,6 +1324,7 @@ class WsTrust {
     log.debug("Leaving WsTrust.delegatedJwt(). " + (subject ||
               'delegated-subject') + ".");
     return { subject: subject || 'delegated-subject', element: element,
+             tokenKind: 'JWT',
              tokenId: String(claims.jti || ''), audiences: audiences,
              delegates: this.delegatesInAct(claims.act) };
   }
@@ -1475,6 +1510,8 @@ class WsTrust {
           // is what lets /admin/tokens/credential walk a chain of these hops
           // back to the sign-in that started it. See delegatedTokenId().
           tokenId: delegatedBy.tokenId || '',
+          // #479: an assertion or a JWT, for the act's consumed-token note.
+          tokenKind: delegatedBy.tokenKind || '',
           // #186: S — the audiences the delegated assertion is restricted
           // to, the application it was issued for.
           audiences: delegatedBy.audiences || [],
@@ -2159,11 +2196,7 @@ class WsTrust {
           : [] as any[]).concat(auth.delegation.tokenId
           ? [{ kind: 'delegated token',
                identifier: auth.delegation.tokenId,
-               note: 'the token inside <wst:' + via + '>, which is what this ' +
-                     'request is delegating WITH. Its signature and ' +
-                     'Conditions are not checked; the identifier is read so ' +
-                     'that the lineage of what came out can be followed back ' +
-                     'through it' }]
+               note: this.consumedNote(via, auth.delegation.tokenKind) }]
           : []),
         produced: [{
           kind: tok.tokenType === SAML2_TOKEN_TYPE ? 'SAML 2.0 assertion'
