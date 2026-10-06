@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4153** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4155** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 80
 * [User portal (`STS-PORTAL`)](#sts-portal) — 83
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 151
+* [Registries (`STS-REG`)](#sts-reg) — 153
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -4710,6 +4710,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0211` | A client secret was not added: its lifetime or description is not one this service accepts. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0212` | A sealed client secret will not open under this process's key-encryption key — it was written under a different one — so it authenticates nothing until it is replaced. | none (logged; the token endpoint answers invalid_client) |
 | `STS-REG-0213` | A client secret could not be sealed, so it was not written: storing it in the clear where keys persist would put a working client credential in every directory dump. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0214` | An application carries its own directory-attribute selection for a claim set or for its Verifiable Credentials (oauthClaimAttributes*, saml2ClaimAttributes, saml11ClaimAttributes, vcCredentialClaimAttributes) that is not a JSON array of catalogue attribute names; it is ignored at issuance and the realm's selection is issued (#495). | none (logged at issuance; nothing is refused) |
+| `STS-REG-0215` | An application's own directory-attribute selection was refused: an unknown claim set, an attribute the catalogue does not hold, a value that is not a JSON array of names, or an application not declared for the set's protocol (#495). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0294` | An access type was not declared on an application: no such application, or the definition built from the fields does not read (the access-type catalogue's grammar, #432). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0295` | An access type could not be taken off an application: it declares no type of that name (#432). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0334` | A gnapOwnerLookupUri is not an https URL template with a host, no user information, query or fragment, and {identifier} exactly once as a whole path segment (#432 phase 5). | none (a console or management API refusal, HTTP 400) |

@@ -1651,7 +1651,11 @@ class ApplicationsPage {
       });
     });
     const groups = config.groups.filter(function (group) {
-      return shown.some(function (one) { return one.group === group.id; });
+      return shown.some(function (one) { return one.group === group.id; }) ||
+        // The Verifiable Credentials sub-tab carries the credential claims
+        // section (#495) for an OpenID4VCI client, whose fields are all on
+        // the OAuth one.
+        (group.id === 'vc' && declared.indexOf('oid4vci') >= 0);
     });
     const saveButton = function (label) {
       return '<div class="formrow"><button type="submit"' +
@@ -1715,14 +1719,27 @@ class ApplicationsPage {
           ? ApplicationsPage.applicationTokenLifetimesSection(row) +
             ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
               ['access_token', 'id_token', 'userinfo'], 'cfg-oauth-claims',
-              'Custom claims')
+              'Custom claims') +
+            // And the ticked catalogue beside the rows (#495).
+            ApplicationsPage.applicationClaimSelectionSection(ctx, row,
+              carryBack, ['access_token', 'id_token', 'userinfo'],
+              'cfg-oauth')
           : '') +
         (group.id === 'saml'
           ? ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
               ['saml2', 'saml11'], 'cfg-saml-attributes',
-              'Custom SAML attributes')
+              'Custom SAML attributes') +
+            ApplicationsPage.applicationClaimSelectionSection(ctx, row,
+              carryBack, ['saml2', 'saml11'], 'cfg-saml')
           : '') +
-        formOpen(group.id, mine.map(function (one) {
+        // The realm's Credential claims page, for an OpenID4VCI client
+        // (#495).
+        (group.id === 'vc'
+          ? ApplicationsPage.applicationClaimSelectionSection(ctx, row,
+              carryBack, ['credential'], 'cfg-vc')
+          : '') +
+        // A sub-tab drawn only for a section above has no fields to save.
+        (!mine.length ? '' : formOpen(group.id, mine.map(function (one) {
           return one.attribute;
         })) +
         kit.fieldGridOf(mine, config.groups, values,
@@ -1734,7 +1751,7 @@ class ApplicationsPage {
                              finds: (state && state.finds) || {},
                              // #488: the scope policy's warnings, by field.
                              fieldWarnings: config.fieldWarnings || {} }) +
-        saveButton('Save ' + group.label) + '</form></div>';
+        saveButton('Save ' + group.label) + '</form>') + '</div>';
     }).join('');
     const bar = '<nav class="tabbar subbar" aria-label="Configuration">' +
       '<a class="first" href="#cfg-families">Protocol families</a>' +
@@ -4140,6 +4157,151 @@ class ApplicationsPage {
             : '');
       }).join('');
     return html;
+  }
+
+  // AN APPLICATION'S OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495): the ticked
+  // catalogue of the realm's Custom claims, UserInfo claims, Custom SAML
+  // attributes and Credential claims pages, for this application, under the
+  // rows above. ONE TABLE PER SET, the boxes ticked as IN FORCE — the
+  // realm's while the application inherits, its own once saved — beside
+  // what each attribute would say about one person; Save writes the ticked
+  // boxes as this application's whole selection, which REPLACES the realm's
+  // (unticking is how one of the realm's attributes is dropped for it), and
+  // Use the realm's takes its own off. Both post to `/admin/applications`
+  // (`set-claim-attributes`, `inherit-claim-attributes`), mirrored at
+  // `/admin-api/applications/<action>`. The hidden empty `attributes` is
+  // what an all-unticked form sends: a list of no names.
+  /**
+   * Draws an application's directory-attribute selections for some of its
+   * claim sets, or its credential claims, with a preview for one person.
+   *
+   * @param ctx - the render context (`kit.context()`)
+   * @param row - the application's view, with its `page`
+   * @param carryBack - the hidden `back` field every form carries
+   * @param setIds - the claim sets to draw, or `['credential']`
+   * @param anchor - the sub-tab's fragment the forms return to
+   * @returns the markup, or '' when there is nothing to draw
+   */
+  static applicationClaimSelectionSection(ctx, row, carryBack, setIds,
+                                          anchor) {
+    const state = row.page.claimSelections;
+    if (!state) {
+      return '';
+    }
+    const id = String(row.identifier || '');
+    const wanted = setIds.indexOf('credential') >= 0
+      ? (state.credential ? [Object.assign({ id: 'credential',
+          label: 'Verifiable Credential' }, state.credential)] : [])
+      : state.sets.filter(function (one) {
+        return setIds.indexOf(one.id) >= 0;
+      });
+    if (!wanted.length) {
+      return '';
+    }
+    const values = state.preview.byLdap || {};
+    const formOpen = function (action, setId) {
+      return '<form method="post" action="/admin/applications#' +
+        kit.esc(anchor) + '"' + (action === 'set-claim-attributes' ? ''
+                                 : ' class="inline"') + '>' + carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="application" value="' + kit.esc(id) +
+        '"><input type="hidden" name="set" value="' + kit.esc(setId) + '">';
+    };
+    const previewForm = '<form method="get" action="/admin/applications#' +
+      kit.esc(anchor) + '"><div class="formrow">' +
+      '<input type="hidden" name="application" value="' + kit.esc(id) + '">' +
+      '<label' + kit.tip('Whose directory entry the values below are read ' +
+        'from. Nothing is issued.') + '>Preview for <input type="text" ' +
+      'name="claimsUser" size="16" value="' + kit.esc(state.preview.user) +
+      '"></label> <button type="submit" class="secondary">Show</button>' +
+      '</div></form>';
+    const html = wanted.map(function (set) {
+      const isSaml = set.id === 'saml2' || set.id === 'saml11';
+      const isVc = set.id === 'credential';
+      const inForce = set.effective.map(function (one) {
+        return one.toLowerCase();
+      });
+      const realm = set.realm.map(function (one) {
+        return one.toLowerCase();
+      });
+      const rows = state.catalogue.map(function (one) {
+        const key = one.ldap.toLowerCase();
+        const on = inForce.indexOf(key) >= 0;
+        const found = values[key];
+        return '<tr><td>' + (ctx.write
+          ? '<input type="checkbox" name="attributes" value="' +
+            kit.esc(one.ldap) + '"' + (on ? ' checked' : '') +
+            ' aria-label="' + kit.esc(one.ldap) + '">'
+          : (on ? 'yes' : '')) + '</td><td><code>' + kit.esc(one.ldap) +
+          '</code></td><td><code>' + kit.esc(one.claim) + '</code>' +
+          (isVc && !one.ldpTerm
+            ? ' <span class="sub">(not in ldp_vc)</span>' : '') +
+          '</td><td>' + (realm.indexOf(key) >= 0
+            ? '<span class="state-valid">ticked</span>'
+            : '<span class="state-none">no</span>') + '</td><td>' +
+          (found ? '<code>' + kit.esc(found.value) + '</code> <span ' +
+            'class="sub">' + kit.esc(found.source) + '</span>'
+            : '<span class="state-none">—</span>') + '</td></tr>';
+      }).join('');
+      const report = set.report.length
+        ? '<table><tr><th>' + (isSaml ? 'Attribute' : 'Claim') +
+          '</th><th>Value</th><th>From</th></tr>' +
+          set.report.map(function (item) {
+            return '<tr><td><code>' + kit.esc(item.claim) + '</code></td>' +
+              '<td><code>' + kit.esc(typeof item.value === 'string'
+                ? item.value : JSON.stringify(item.value)) + '</code></td>' +
+              '<td>' + kit.esc(item.source) + '</td></tr>';
+          }).join('') + '</table>'
+        : kit.note('No directory attribute is in force for this set, so ' +
+            (isVc ? 'a credential carries nothing but its subject ' +
+                    'identifier from this selection.'
+                  : 'it carries none — the rows above still go out.'));
+      return '<h4>' + kit.esc(isVc ? 'Credential claims' : set.label) +
+        ' &mdash; directory attributes</h4>' +
+        kit.note(set.inherited
+          ? '<span class="state-none">The realm\'s selection</span> is in ' +
+            'force (' + (set.realm.length ? kit.codeList(set.realm)
+                                          : 'no attribute') + '). Tick ' +
+            'the boxes this application should carry instead and press ' +
+            'Save; its selection then replaces the realm\'s for it.'
+          : '<span class="state-valid">This application\'s own ' +
+            'selection</span> is in force (' + (set.own.length
+              ? kit.codeList(set.own) : 'no attribute') + ') in place of ' +
+            'the realm\'s (' + (set.realm.length ? kit.codeList(set.realm)
+                                                 : 'none') + ').' +
+            (isVc ? ' The issuer metadata still advertises the realm\'s ' +
+              'selection: it is one document for every client, so a wallet ' +
+              'asking for a path is held to that and then given what this ' +
+              'selection holds.' : '')) +
+        (ctx.write ? formOpen('set-claim-attributes', set.id) +
+          '<input type="hidden" name="attributes" value="">' : '') +
+        '<table><tr><th>In</th><th>LDAP attribute</th><th>' +
+        (isSaml ? 'Attribute name' : 'Claim') + '</th><th>The realm\'s' +
+        '</th><th>For ' + kit.esc(state.preview.user) + '</th></tr>' + rows +
+        '</table>' + (ctx.write
+          ? '<div class="formrow"><button type="submit"' + kit.tip('Write ' +
+              'the ticked boxes as this application\'s whole selection for ' +
+              'this set. It replaces the realm\'s for this application.') +
+            '>Save this application\'s selection</button></div></form>' +
+            (set.inherited ? '' : '<div class="formrow">' +
+              formOpen('inherit-claim-attributes', set.id) +
+              '<button type="submit" class="secondary"' + kit.tip('Take ' +
+                'this application\'s selection off; the realm\'s is in ' +
+                'force for it again.') + '>Use the realm\'s selection' +
+              '</button></form></div>')
+          : '') +
+        '<h5>What it would carry for ' + kit.esc(state.preview.user) +
+        '</h5>' + report;
+    }).join('');
+    return '<h3 id="' + kit.esc(anchor) + '-attributes">Directory ' +
+      'attributes</h3>' +
+      kit.note('The realm\'s ticked catalogue of directory attributes, for ' +
+        'this application. Unlike the rows above, which are added to the ' +
+        'realm\'s and win by name, a selection is a whole set: once this ' +
+        'application holds its own it REPLACES the realm\'s, so an ' +
+        'attribute the realm ticks can be dropped as well as one added. A ' +
+        'typed or attribute row above still wins over a selected attribute ' +
+        'of the same name.') + previewForm + html;
   }
 
   // AN APPLICATION'S TOKEN LIFETIMES (rcbj, 2026-10-01): the realm's Token

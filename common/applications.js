@@ -2561,6 +2561,32 @@ const SCHEMA = {
             'rows like the realm\'s UserInfo claims page. Added to the ' +
             'realm\'s UserInfo claims answered to this client, winning by ' +
             'name.' },
+    // AN APPLICATION'S OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495), one JSON
+    // array of catalogue attribute names per claim set: the ticked
+    // catalogue of the realm's Custom claims and UserInfo claims pages, for
+    // this client. HELD, IT REPLACES THE REALM'S SELECTION for the set;
+    // absent, the realm's is in force (claim_attributes.ts). Written by the
+    // configuration tab's sections through `set-claim-attributes` and
+    // `inherit-claim-attributes`; kept off the field grid for the reason the
+    // rows above are.
+    { name: 'oauthClaimAttributesAccessToken', kind: 'single',
+      from: 'the console\'s Custom claims section',
+      what: 'THIS APPLICATION\'S OWN SELECTION of directory attributes for ' +
+            'its access tokens, as a JSON array of attribute names from the ' +
+            'realm\'s Custom claims catalogue. When present it REPLACES the ' +
+            'realm\'s selection for tokens issued to this client; absent, ' +
+            'the realm\'s is used.' },
+    { name: 'oauthClaimAttributesIdToken', kind: 'single',
+      from: 'the console\'s Custom claims section',
+      what: 'THIS APPLICATION\'S OWN SELECTION of directory attributes for ' +
+            'its ID Tokens, a JSON array of catalogue attribute names, ' +
+            'replacing the realm\'s selection when present.' },
+    { name: 'oauthClaimAttributesUserinfo', kind: 'single',
+      from: 'the console\'s UserInfo claims section',
+      what: 'THIS APPLICATION\'S OWN SELECTION of directory attributes for ' +
+            'the UserInfo response answered to it, a JSON array of ' +
+            'catalogue attribute names, replacing the realm\'s selection ' +
+            'when present.' },
     { name: 'oauthRevokeRefreshOnLogout', kind: 'single', from: 'by hand',
       overrides: 'oauth2.revokeRefreshOnLogout',
       what: 'TRUE or FALSE: does signing out revoke this client\'s refresh ' +
@@ -2825,6 +2851,31 @@ const SCHEMA = {
             'allowed). Added to the realm\'s SAML 1.1 attributes in ' +
             'assertions for this audience (SAML 1.1, WS-Federation, ' +
             'WS-Trust), winning by name.' },
+    // The SAML halves of #495's selections, as the OAuth ones above.
+    { name: 'saml2ClaimAttributes', kind: 'single',
+      from: 'the console\'s Custom SAML attributes section',
+      what: 'THIS SERVICE PROVIDER\'S OWN SELECTION of directory attributes ' +
+            'for its SAML 2.0 assertions, a JSON array of catalogue ' +
+            'attribute names, replacing the realm\'s selection when ' +
+            'present.' },
+    { name: 'saml11ClaimAttributes', kind: 'single',
+      from: 'the console\'s Custom SAML attributes section',
+      what: 'THIS RELYING PARTY\'S OWN SELECTION of directory attributes ' +
+            'for its SAML 1.1 assertions (SAML 1.1, WS-Federation, ' +
+            'WS-Trust), a JSON array of catalogue attribute names, ' +
+            'replacing the realm\'s selection when present.' },
+    // AN OPENID4VCI CLIENT'S OWN CREDENTIAL CLAIMS (#495): the realm's
+    // Verifiable Credentials → Credential claims selection, for credentials
+    // issued on an access token issued to this client (vc_claims.ts).
+    { name: 'vcCredentialClaimAttributes', kind: 'single',
+      families: ['oid4vci'],
+      from: 'the console\'s Credential claims section',
+      what: 'THIS CLIENT\'S OWN SELECTION of the directory attributes a ' +
+            'Verifiable Credential carries, a JSON array of catalogue ' +
+            'attribute names. When present it REPLACES the realm\'s ' +
+            'Credential claims selection for credentials issued on this ' +
+            'client\'s access tokens; the issuer metadata still advertises ' +
+            'the realm\'s.' },
     { name: 'saml2AssertionLifetimeMin', kind: 'single', from: 'by hand',
       overrides: 'saml2.assertionLifetimeMin',
       what: 'HOW LONG THIS SERVICE PROVIDER\'S ASSERTIONS ARE VALID, in ' +
@@ -4099,6 +4150,13 @@ const EDITABLE = {
   oauthClaimsUserinfo: 'set',
   saml2CustomAttributes: 'set',
   saml11CustomAttributes: 'set',
+  // Its own directory-attribute selections (#495), each one JSON array.
+  oauthClaimAttributesAccessToken: 'set',
+  oauthClaimAttributesIdToken: 'set',
+  oauthClaimAttributesUserinfo: 'set',
+  saml2ClaimAttributes: 'set',
+  saml11ClaimAttributes: 'set',
+  vcCredentialClaimAttributes: 'set',
   didAlsoKnownAs: 'multi',
   // A secret push destination (#221 P3): each one value, an empty write
   // clearing it. The credential is write-only: sealed on the way in,
@@ -4457,6 +4515,52 @@ function claimRowsProblem(attribute, value) {
   }
   const checked = require('./admin_stats').checkClaimEntries(setId, rows);
   log.debug("Leaving claimRowsProblem(). " + (checked.ok ? 'ok' : 'refused'));
+  return checked.ok ? '' : checked.errors.join(' ');
+}
+
+// AN APPLICATION'S OWN ATTRIBUTE SELECTIONS (#495), held at the write to the
+// catalogue: `claim_attributes.ts` and `vc_claims.ts`, required lazily because
+// both reach this module through `admin_stats.js`. Shared by the two (one
+// catalogue), each asked through its own module so a rename there is
+// followed here.
+const CLAIM_SELECTION_ATTRIBUTES = [
+  'oauthClaimAttributesAccessToken', 'oauthClaimAttributesIdToken',
+  'oauthClaimAttributesUserinfo', 'saml2ClaimAttributes',
+  'saml11ClaimAttributes', 'vcCredentialClaimAttributes'
+];
+
+/**
+ * Says whether a value of one of an application's attribute-selection
+ * attributes is acceptable: a JSON array of catalogue attribute names.
+ *
+ * @param attribute - the attribute being written
+ * @param value - the value
+ * @returns '' when it is, the refusal sentence otherwise
+ */
+function claimSelectionProblem(attribute, value) {
+  log.debug("Entering claimSelectionProblem(). attribute=" + attribute);
+  const text = String(value == null ? '' : value).trim();
+  if (CLAIM_SELECTION_ATTRIBUTES.indexOf(attribute) < 0 || !text) {
+    log.debug("Leaving claimSelectionProblem(). Not a selection value.");
+    return '';
+  }
+  let names = null;
+  try {
+    names = JSON.parse(text);
+  } catch (e) {
+    log.debug("Caught in claimSelectionProblem(): " +
+              ((e && e.message) || e));
+    names = null;
+  }
+  if (!Array.isArray(names)) {
+    log.debug("Leaving claimSelectionProblem(). Not an array.");
+    return attribute + ' holds a JSON array of attribute names.';
+  }
+  const checker = attribute === 'vcCredentialClaimAttributes'
+    ? require('../oid4vc/vc_claims') : require('./claim_attributes');
+  const checked = checker.checkNames(names);
+  log.debug("Leaving claimSelectionProblem(). " +
+            (checked.ok ? 'ok' : 'refused'));
   return checked.ok ? '' : checked.errors.join(' ');
 }
 
@@ -5182,7 +5286,10 @@ function gridExcludedAttributes() {
                // text box.
                'oauthClaimsAccessToken', 'oauthClaimsIdToken',
                'oauthClaimsUserinfo', 'saml2CustomAttributes',
-               'saml11CustomAttributes'];
+               'saml11CustomAttributes'].concat(
+                 // And their attribute selections (#495), drawn as the
+                 // catalogue's checkboxes.
+                 CLAIM_SELECTION_ATTRIBUTES);
   Object.keys(KEY_PAIR_ATTRIBUTES).forEach(function (profile) {
     const row = KEY_PAIR_ATTRIBUTES[profile];
     ['certificate', 'chain', 'privateKey', 'handle', 'expires', 'source',
@@ -12344,6 +12451,7 @@ function createApplication(detail) {
     valuesOf(given.fields[name]).forEach(function (one) {
       const problem = didValueProblem(name, one) ||
         claimRowsProblem(name, one) ||
+        claimSelectionProblem(name, one) ||
         didDuplicateProblem(name, one, seen);
       if (problem) {
         didProblems.push(problem);
@@ -12792,6 +12900,12 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). Claim rows refused.");
       return errorCodes.mark({ ok: false, errors: [claimProblem] },
                              'STS-REG-0206');
+    }
+    const selectionProblem = claimSelectionProblem(attribute, value);
+    if (selectionProblem) {
+      log.debug("Leaving updateApplication(). Selection refused.");
+      return errorCodes.mark({ ok: false, errors: [selectionProblem] },
+                             'STS-REG-0215');
     }
     const notAChoice = choiceProblem(attribute, value);
     if (notAChoice) {

@@ -573,8 +573,8 @@ answers with, which links back to the application. `GET
 
 ### Custom claims, SAML attributes and token lifetimes
 
-The realm's **Token lifetimes**, **Custom claims**, **UserInfo claims** and
-**Custom SAML attributes** pages (under Protocols) apply to every
+The realm's **Token lifetimes**, **Custom claims**, **UserInfo claims**,
+**Custom SAML attributes** and **Credential claims** pages (under Protocols) apply to every
 application. An application can override them on its own configuration tabs
 (**Directory → Applications → the application → Configuration**):
 
@@ -583,6 +583,7 @@ application. An application can override them on its own configuration tabs
 | OAuth 2.0 / OpenID Connect | **Token lifetimes** | Shows the access token, ID Token, refresh token and refresh-idle lifetimes in force for this client, whether each is its own or the realm's, and the realm page's warnings. The overrides are the `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS` and `oauthRefreshIdleSeconds` fields on the same tab. The clock skew stays realm-wide. |
 | OAuth 2.0 / OpenID Connect | **Custom claims** | The access token, ID Token and UserInfo claims for this client. |
 | SAML | **Custom SAML attributes** | The SAML 2.0 attributes (with an optional NameFormat) and SAML 1.1 attributes (with a namespace) for this audience. |
+| Verifiable Credentials | **Credential claims** | The directory attributes a credential issued to this OpenID4VCI client carries (see below). |
 
 **An application's claims are added to the realm's, and win by name.** The
 realm's claims still go out. Where the application and the realm name the
@@ -609,6 +610,46 @@ The management API: `POST /admin-api/applications/set-custom-claim` (with
 `POST /admin-api/applications/remove-custom-claim`. `GET
 /admin-api/applications?application=<id>` returns `customClaims` and
 `tokenLifetimes`.
+
+#### Directory attributes and credential claims
+
+Under the rows, each section also draws the realm's **ticked catalogue of
+directory attributes** for that set — the attributes the realm's Custom
+claims, UserInfo claims and Custom SAML attributes pages tick — and the
+**Verifiable Credentials** sub-tab draws the realm's **Credential claims**
+selection for an application declared for OpenID4VCI.
+
+**A selection is a whole set, so the application's replaces the realm's.**
+While the application has none of its own, the realm's selection is in force
+and its boxes are ticked. Tick the boxes this application should carry and
+press **Save this application's selection**: from then on the realm's
+selection is not used for it, so an attribute the realm ticks can be dropped
+as well as one added, and saving with every box unticked issues none.
+**Use the realm's selection** takes the application's off again. A typed or
+attribute row above still wins over a selected attribute of the same name.
+
+| Set | Applies to |
+|---|---|
+| Access token, ID Token, UserInfo | tokens and UserInfo answered to this client (`client_id`) |
+| SAML 2.0, SAML 1.1 | assertions for this audience |
+| Credential claims | Verifiable Credentials issued on an access token issued to this client |
+
+The credential issuer metadata still advertises the realm's selection: it is
+one document for every client. A wallet asking for particular claims is held
+to what the metadata advertises, and then given those this client's selection
+holds.
+
+Each section previews what its selection would carry for one person
+(**Preview for**, `alice` by default). An unknown attribute, or a set whose
+protocol the application is not declared for, is refused (`STS-REG-0215`).
+
+The management API: `POST /admin-api/applications/set-claim-attributes`
+(with `set` = `access_token`, `id_token`, `userinfo`, `saml2`, `saml11` or
+`credential`, and `attributes`, a list of catalogue names from `GET
+/admin-api/claims`) and `POST
+/admin-api/applications/inherit-claim-attributes`. `GET
+/admin-api/applications?application=<id>&claimsUser=<person>` returns
+`claimSelections`.
 
 ### CORS: which pages may read an answer
 

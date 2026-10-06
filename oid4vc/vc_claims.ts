@@ -644,6 +644,101 @@ class VcClaims {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // AN APPLICATION'S OWN SELECTION (#495): `vcCredentialClaimAttributes` on
+  // an OpenID4VCI client's entry, one JSON array of attribute names, drawn on
+  // the Verifiable Credentials sub-tab of its configuration. WHEN IT HOLDS
+  // ONE, IT REPLACES THE REALM'S SELECTION for a credential issued on an
+  // access token issued to that client — the application scope takes
+  // precedence. Absent is the realm's; `[]` is a credential carrying nothing
+  // but its subject identifier.
+  //
+  // THE METADATA STAYS THE REALM'S. OpenID4VCI's Credential Issuer Metadata
+  // is one document per issuer and is not per client, so it advertises the
+  // realm's selection; a client's own selection decides what ITS credentials
+  // carry. A wallet asking for a path (section 5.1.1) is held to what the
+  // metadata advertises at the authorization endpoint, and then given the
+  // advertised rows this client's selection holds.
+  // ---------------------------------------------------------------------------
+  /**
+   * The application attribute holding its own credential claim selection.
+   */
+  static readonly APP_SELECTION_ATTRIBUTE = 'vcCredentialClaimAttributes';
+
+  /**
+   * Checks a list of attribute names against the catalogue.
+   *
+   * @param names - the names offered
+   * @returns `{ ok, names, errors }`, `names` canonically spelled in
+   *   catalogue order
+   */
+  checkNames(names: unknown[]) {
+    const { log } = this.deps;
+    log.debug("Entering VcClaims.checkNames().");
+    const errors = [];
+    const wanted = new Set<string>();
+    (Array.isArray(names) ? names : []).forEach((name) => {
+      const key = String(name == null ? '' : name).trim().toLowerCase();
+      if (!key) {
+        return;
+      }
+      if (!BY_LDAP.has(key)) {
+        errors.push('There is no attribute called "' +
+                    String(name).slice(0, 80) + '" in the catalogue.');
+        return;
+      }
+      wanted.add(key);
+    });
+    const out = VC_ATTRIBUTES.filter((row) => {
+      return wanted.has(row.ldap.toLowerCase());
+    }).map((row) => { return row.ldap; });
+    log.debug("Leaving VcClaims.checkNames(). " + errors.length +
+              " error(s).");
+    return { ok: errors.length === 0, names: out, errors: errors };
+  }
+
+  /**
+   * Returns an application's own credential claim rows, or null when it
+   * holds no selection and the realm's is in force. A value that will not
+   * parse is ignored with a warning, never costing the issuance.
+   *
+   * @param application - the application's view, or null
+   * @returns the rows in catalogue order, or null
+   */
+  applicationRows(application: any): CatalogueRow[] | null {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering VcClaims.applicationRows().");
+    const attribute = VcClaims.APP_SELECTION_ATTRIBUTE;
+    const raw = application && application.fields
+      ? [].concat(application.fields[attribute] || [])[0] : '';
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+      log.debug("Leaving VcClaims.applicationRows(). None.");
+      return null;
+    }
+    let names = null;
+    try {
+      names = JSON.parse(String(raw));
+    } catch (e) {
+      log.debug("Caught in VcClaims.applicationRows(): " +
+                ((e && e.message) || e));
+      names = null;
+    }
+    const checked = Array.isArray(names) ? this.checkNames(names) : null;
+    if (!checked || !checked.ok) {
+      log.warn(errorCodes.tag('STS-REG-0214') + 'vc: the application "' +
+               application.identifier + '" carries ' + attribute + ' that ' +
+               'is not a JSON array of catalogue attribute names; its own ' +
+               'selection is ignored and the realm\'s is issued.');
+      log.debug("Leaving VcClaims.applicationRows(). Refused.");
+      return null;
+    }
+    const keys = checked.names.map((name) => name.toLowerCase());
+    log.debug("Leaving VcClaims.applicationRows(). " + keys.length + ".");
+    return VC_ATTRIBUTES.filter((row) => {
+      return keys.indexOf(row.ldap.toLowerCase()) >= 0;
+    });
+  }
+
   /**
    * Says whether an attribute is selected.
    *
@@ -1442,15 +1537,17 @@ class VcClaims {
    *
    * @param paths - the requested claims paths
    * @param format - the credential format
+   * @param base - optional; the rows in force when not the realm's
+   *   selection (an application's own, #495)
    * @returns the rows
    */
-  rowsForPaths(paths: unknown[], format: string) {
+  rowsForPaths(paths: unknown[], format: string, base?: CatalogueRow[]) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.rowsForPaths(). " + (paths || []).length +
               " path(s), " +
         "format=" + format);
     const wanted = new Set((paths || []).map((path) => this.pathKey(path)));
-    const out = this.selectedRows().filter((row) => {
+    const out = (base || this.selectedRows()).filter((row) => {
       const path = this.pathOfRow(row, format);
       return path && wanted.has(this.pathKey(path));
     });
@@ -1579,6 +1676,9 @@ export = {
   DEFAULT_SELECTION: VcClaims.DEFAULT_SELECTION,
   selectedRows: slot.forward('selectedRows'),
   selectedNames: slot.forward('selectedNames'),
+  APP_SELECTION_ATTRIBUTE: VcClaims.APP_SELECTION_ATTRIBUTE,
+  checkNames: slot.forward('checkNames'),
+  applicationRows: slot.forward('applicationRows'),
   isSelected: slot.forward('isSelected'),
   setSelection: slot.forward('setSelection'),
   resetSelection: slot.forward('resetSelection'),

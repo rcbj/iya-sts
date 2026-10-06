@@ -549,7 +549,8 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
-                             'remove-custom-claim', 'set-access-type',
+                             'remove-custom-claim', 'set-claim-attributes',
+                             'inherit-claim-attributes', 'set-access-type',
                              'remove-access-type', 'forget'];
 
 // ---------------------------------------------------------------------------
@@ -4596,7 +4597,8 @@ class AdminActions {
                       'revoke-tls-client-certificate',
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
-                      'remove-custom-claim', 'set-access-type',
+                      'remove-custom-claim', 'set-claim-attributes',
+                      'inherit-claim-attributes', 'set-access-type',
                       'remove-access-type', 'forget'];
     if (needsOne.indexOf(action) >= 0 && !identifier) {
       log.debug("Leaving AdminActions.applicationsAction(). No application " +
@@ -4891,6 +4893,98 @@ class AdminActions {
                  : 'The ' + setId + ' claim "' + name + '" is set on "' +
                    identifier + '"; it is added to the realm\'s set and wins ' +
                    'by name.') };
+    }
+
+    // ---------------------------------------------------------------------
+    // AN APPLICATION'S OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495), from the
+    // catalogue sections of its OAuth / OpenID Connect, SAML and Verifiable
+    // Credentials sub-tabs. `set` names one of the five claim sets or
+    // `credential`; `set-claim-attributes` writes the application's own
+    // selection (`attributes`, or a form's repeated `attribute`), which
+    // REPLACES the realm's for that set — an empty one included, which
+    // carries nothing; `inherit-claim-attributes` takes it off, and the
+    // realm's selection is in force again. The names are held to the
+    // catalogue by `updateApplication()` (`STS-REG-0215`).
+    // ---------------------------------------------------------------------
+    if (action === 'set-claim-attributes' ||
+        action === 'inherit-claim-attributes') {
+      const setId = String(body.set || '');
+      const SELECTION_FAMILIES = {
+        access_token: ['oauth2', 'oidc', 'oid4vci'],
+        id_token: ['oidc', 'oauth2'], userinfo: ['oidc', 'oauth2'],
+        saml2: ['saml2'], saml11: ['saml11'], credential: ['oid4vci']
+      };
+      const attribute = setId === 'credential'
+        ? vcClaims.APP_SELECTION_ATTRIBUTE
+        : claimAttributes.APP_SELECTION_ATTRIBUTES[setId];
+      if (!attribute || !SELECTION_FAMILIES[setId]) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such set.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['set must be one of ' +
+            Object.keys(SELECTION_FAMILIES).join(', ') + ', not "' +
+            setId.slice(0, 60) + '".'] });
+      }
+      const entry = applications.get(identifier);
+      if (!entry) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such application.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['There is no application called "' + identifier +
+                   '".'] });
+      }
+      // THE SET'S PROTOCOL MUST BE DECLARED, for set-custom-claim's reason:
+      // a selection nothing can issue reads like a policy in force.
+      const declaredFamilies = applications.declaredFamiliesOf(entry);
+      if (action === 'set-claim-attributes' &&
+          !SELECTION_FAMILIES[setId].some(function (one) {
+            return declaredFamilies.indexOf(one) >= 0;
+          })) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the set's protocol is not declared.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['The application "' + identifier + '" is not declared ' +
+            'for ' + SELECTION_FAMILIES[setId].join(' or ') + ', so a ' +
+            setId + ' selection would reach nothing. Tick the family ' +
+            'first.'] });
+      }
+      let value = '';
+      let names = null;
+      if (action === 'set-claim-attributes') {
+        const offered = body.attributes !== undefined ? body.attributes
+                                                      : body.attribute;
+        const list = Array.isArray(offered) ? offered
+          : (offered === undefined || offered === null || offered === ''
+            ? [] : String(offered).split(/[\s,]+/));
+        const checked = setId === 'credential'
+          ? vcClaims.checkNames(list) : claimAttributes.checkNames(list);
+        if (!checked.ok) {
+          log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                    ": an attribute the catalogue does not hold.");
+          return this.refused('STS-REG-0215', { ok: false,
+            errors: checked.errors });
+        }
+        names = checked.names;
+        value = JSON.stringify(names);
+      }
+      const write = applications.updateApplication(identifier, {
+        mode: 'set', attribute: attribute, value: value });
+      if (!write.ok) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the write was refused.");
+        return this.refusedBy('STS-REG-0215', write);
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                " ok.");
+      return { ok: true, application: identifier, set: setId,
+               inherited: names === null, attributes: names,
+               message: names === null
+                 ? '"' + identifier + '" uses the realm\'s ' + setId +
+                   ' selection again.'
+                 : '"' + identifier + '" now selects ' +
+                   (names.length ? names.join(', ') : 'no attribute') +
+                   ' for its ' + setId + ' set, in place of the realm\'s ' +
+                   'selection.' };
     }
 
     // ---------------------------------------------------------------------
