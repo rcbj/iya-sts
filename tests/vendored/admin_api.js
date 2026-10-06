@@ -422,6 +422,14 @@ function everyConsolePageIsMirrored(status, index) {
   const mirrored = new Set(index.operations.map(function (o) {
     return o.mirrors.replace(/^(GET|POST)\s+/, "");
   }));
+  // A PAGE DRAWN BY ONE OF THE CONSOLE'S OWN OPERATIONS (#454) is mirrored by
+  // the management operation its data comes from, which names it in
+  // `drawnOn` — read off the index, as the rest of this is.
+  index.operations.forEach(function (o) {
+    (o.drawnOn || []).forEach(function (page) {
+      mirrored.add(page);
+    });
+  });
   assert.ok(Array.isArray(status.pages) && status.pages.length > 5,
     "the status reply should carry the console's own page list; got " +
     JSON.stringify(status.pages));

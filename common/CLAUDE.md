@@ -5151,6 +5151,42 @@ ordinary role (any member kind, edited on `/admin/roles`) and is seeded EMPTY
 `device:compliance` is gated like `admin:*`, at issuance and at
 `/admin-api`'s gate (held ∩ carried). No role is read off a scope now.
 
+**A THIRD WAY OF HOLDING A ROLE: CONFERRED BY A CLIENT (#454, 2026-10-06).**
+A person holds a role as a member (or, for the console roles, through the
+roster), and an application as a member for its own `client_credentials`
+token. `roleConferredBy` on the role entry adds the third: every PERSON who
+signs in through a named client holds the role **on that client's token and
+no other**. It is a fact about the TOKEN, so:
+
+* **It is mixed in, not stored on the person.** `conferredOn()` in
+  `role_permissions.ts` adds the client's roles to the person's own at
+  issuance (`narrowScope()`, whose context carries the client) and on every
+  call at `/admin-api` (`effectiveRoles()`, read NOW in the issuing realm, so
+  taking a client off the role takes it off that client's tokens at once).
+  The issuance policy decides on the union as it did on the person's roles.
+* **Never for a client's own token**, which would be a membership nobody
+  wrote down; and not for a subject that did not authenticate.
+* **Not the PIP's**: `configuredRolesOf()` answers what a SUBJECT holds, and a
+  conferred role is not one — the built-in roles' reason.
+* **Two kinds of role cannot be conferred** (`roles.write()`): one only
+  applications may hold (`STS-XACML-0088`), and the two console roles, whose
+  people are the roster's (`STS-XACML-0089`) — the reason a person cannot be
+  written onto them is the reason a client cannot hand them out.
+* **`write()` keeps `roleConferredBy` when a caller does not name it.** Every
+  caller writes the whole record and all but one predate the attribute; a
+  describe-role that dropped it would silently stop the console's client
+  conferring.
+
+**ADMIN_CONSOLE is the native role it was built for**: it authorizes
+`admin:console`, the scope of the console's own operations under
+`/admin-api/console` (`mgmt-api/CLAUDE.md`), has no members, and is seeded
+conferred by `sts-admin-console`. So every person who signs in to the console
+is issued `admin:console` beside whatever Admin Read or Admin Write they hold
+themselves, and the gate asks for both kinds together through the
+access-control document's every-one-of conjunct (`xacml/CLAUDE.md`).
+`admin:console` is one of `scope_policy.ts`'s `ADMIN_SCOPES`, so a client must
+declare it as well.
+
 **THE BOOTSTRAP ADMINISTRATOR'S CLAIM IS MADE AT ISSUANCE TOO (#446,
 2026-10-05).** That account holds no console role until it has claimed the
 console (#103, `admin-ui/CLAUDE.md` 8a), and the server-rendered console made

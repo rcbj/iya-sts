@@ -643,7 +643,8 @@ const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
  */
 const ROLE_ACTIONS = ['create-role', 'delete-role', 'add-member',
                       'remove-member', 'describe-role', 'add-permission',
-                      'remove-permission'];
+                      'remove-permission', 'add-conferring-client',
+                      'remove-conferring-client'];
 
 // The three kinds of thing that can hold a role, in one table because four
 // places have to agree about them — the two member actions, the console's
@@ -6125,6 +6126,84 @@ class AdminActions {
                      'anybody who may ask for it until it does.' : '')
                  : '"' + name + '" no longer authorizes "' + permission +
                    '".' };
+    }
+
+    // -------------------------------------------------------------------------
+    // WHICH CLIENTS CONFER A ROLE (#454). `roleConferredBy` on the role entry
+    // names the clients through which every person signing in holds the
+    // role, on that client's token alone — the third way of holding a role,
+    // beside a person's membership (or the console roster) and an
+    // application's own. The client must be registered here, for the
+    // ordering rule add-permission keeps: a typo must not become a role
+    // conferred by nobody that looks conferred by somebody. Which roles may
+    // be conferred at all is `roles.write()`'s to refuse.
+    // -------------------------------------------------------------------------
+    if (action === 'add-conferring-client' ||
+        action === 'remove-conferring-client') {
+      const client = String(body.client || '').trim();
+      const row = roles.read(name);
+      if (!row) {
+        log.debug("Leaving AdminActions.rolesAction(). No such role.");
+        return this.refused(roles.isBuiltIn(name) ? 'STS-ADMIN-0546'
+                                                  : 'STS-ADMIN-0543',
+          { ok: false, errors: [roles.isBuiltIn(name)
+            ? '"' + name + '" is a BUILT-IN role, computed from the context ' +
+              'of each decision; no client can confer it.'
+            : 'There is no role called "' + name + '". Create it first.'] });
+      }
+      if (!client) {
+        log.debug("Leaving AdminActions.rolesAction(). No client named.");
+        return this.refused('STS-ADMIN-0845', { ok: false, errors: [
+          '`client` names the application that confers the role: its ' +
+          'client_id in this realm.'] });
+      }
+      const conferring = (row.conferredBy || []).slice();
+      const at = conferring.indexOf(client);
+      if (action === 'add-conferring-client') {
+        if (!applications.get(client)) {
+          log.debug("Leaving AdminActions.rolesAction(). No such client.");
+          return this.refused('STS-ADMIN-0845', { ok: false, errors: [
+            'There is no application "' + client + '" in this realm to ' +
+            'confer "' + name + '".'] });
+        }
+        if (at >= 0) {
+          log.debug("Leaving AdminActions.rolesAction(). Already conferred.");
+          return this.refused('STS-ADMIN-0846', { ok: false, errors: ['"' +
+            client + '" already confers "' + name + '".'] });
+        }
+        conferring.push(client);
+      } else {
+        if (at < 0) {
+          log.debug("Leaving AdminActions.rolesAction(). Not conferred.");
+          return this.refused('STS-ADMIN-0847', { ok: false, errors: ['"' +
+            client + '" does not confer "' + name + '".'] });
+        }
+        conferring.splice(at, 1);
+      }
+      const result = roles.write(name, {
+        description: row.description, users: row.users, groups: row.groups,
+        applications: row.applications, permissions: row.permissions,
+        application: row.application, displayName: row.displayName,
+        memberTypes: row.memberTypes, conferredBy: conferring
+      });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). The write was refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
+                            { ok: false, errors: [result.why] });
+      }
+      auditLog.audit({
+        action: action === 'add-conferring-client' ? 'roles.confer'
+                                                   : 'roles.unconfer',
+        actor: actor, target: client, protocol: 'XACML', channel: 'http',
+        detail: '"' + client + '" ' + (action === 'add-conferring-client'
+          ? 'now confers' : 'no longer confers') + ' the role "' + name +
+          '" on everybody signing in through it' });
+      log.debug("Leaving AdminActions.rolesAction(). " + action + " ok.");
+      return { ok: true, role: name, client: client,
+               message: action === 'add-conferring-client'
+                 ? '"' + client + '" now confers "' + name + '" on everybody ' +
+                   'who signs in through it.'
+                 : '"' + client + '" no longer confers "' + name + '".' };
     }
 
     log.debug("Leaving AdminActions.rolesAction(). Unknown action.");

@@ -250,7 +250,8 @@ source wrote (`<source>:<attribute>`), and `stsAttributeSourceSeen` records when
 
 `objectClass: top, stsRole`, named `cn=<role>`, with `roleName`, `description`, the three kinds of
 holder (`roleMemberUser`, `roleMemberGroup` and `roleMemberApplication`), and `rolePermission`: the permissions a
-holder may be issued (#303), named as a client asks for them, and `roleApplication`: the one application a role
+holder may be issued (#303), named as a client asks for them, `roleConferredBy`: the clients that confer the role
+on every person who signs in through them, on that client's token alone (#454), and `roleApplication`: the one application a role
 belongs to (#310). Such a role is named `<role>@<application>`, and only a token for that application carries it,
 as `<role>`. `roleAllowedMemberType` (`user`, `application`, or both when absent) says who may hold the
 role, and a member of another kind is refused (#93); the two console roles cannot be restricted. `displayName`
@@ -263,7 +264,10 @@ no object class and gains one on its next save.
 `ADMIN_WRITE`, which authorize `admin:read` and `admin:write`. Their groups come from `admin.readGroup` and
 `admin.writeGroup` and are not stored on the entry; `sts-management-api` is a member of both. A third seeded role,
 `DEVICE_COMPLIANCE`, authorizes `device:compliance` and has no members until the MDM feed's application is added
-(#309). None of the three can be deleted, and their permissions are fixed. The service also computes eight
+(#309). A fourth, `ADMIN_CONSOLE`, authorizes `admin:console` and has no members either: it is conferred by the
+console's client, `sts-admin-console`, on everybody who signs in to the console (#454). None of the four can be
+deleted, and their permissions are fixed. A role only applications may hold, and the two console roles, cannot be
+conferred. The service also computes eight
 built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS,
 ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIONS, REMOTE_PEPS and XACML_USER.
 

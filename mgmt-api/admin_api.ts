@@ -1035,6 +1035,17 @@ class AdminApi {
         !Array.isArray(body)) {
       body = Object.assign({}, body, { protocolEndpoints: rows });
     }
+    // WHAT ONLY THE CONSOLE DRAWS, LEFT OUT OF A MANAGEMENT ANSWER (#454):
+    // the members the registration loop names for an operation whose
+    // console twin answers them (`withConsoleRoutes()`).
+    const consoleMembers = res.locals && res.locals.consoleMembers;
+    if (consoleMembers && status === 200 && body && typeof body === 'object' &&
+        !Array.isArray(body)) {
+      body = Object.assign({}, body);
+      consoleMembers.forEach(function (name) {
+        delete body[name];
+      });
+    }
     res.status(status).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(body, null, 2));
     log.debug("Leaving AdminApi.sendJson().");
@@ -2439,8 +2450,12 @@ class AdminApi {
                           description: 'An OpenAPI 3.1.0 document.' },
         handler: function (req, res) {
           log.debug("Entering the OpenAPI document endpoint.");
+          // THE MANAGEMENT OPERATIONS ALONE (#454): the console's own are
+          // described by `GET /admin-api/console/openapi.json`, so what an
+          // integrator reads here is what they can rely on.
           self.sendJson(res, 200,
-                        spec.buildSpec(ROUTES, self.specOptions(req)));
+                        spec.buildSpec(self.routesOfKind('management'),
+                                       self.specOptions(req)));
           log.debug("Leaving the OpenAPI document endpoint.");
         } },
 
@@ -5152,7 +5167,8 @@ class AdminApi {
       // belong to this API's document rather than to the console's shell. The
       // console requires them.
       // ---------------------------------------------------------------------
-      { method: 'GET', path: BASE + '/api-explorer', tag: 'Service',
+      { method: 'GET', path: BASE + '/console/api-explorer', kind: 'console',
+        tag: 'Service',
         operationId: 'getApiExplorer',
         summary:
           'What the console\'s API explorer reads, and what you may drive',
@@ -5230,7 +5246,8 @@ class AdminApi {
 
       // THE CONSOLE'S FRAME (#446): what the static console draws around
       // every page — the sidebar, the banners, the foot — for this caller.
-      { method: 'GET', path: BASE + '/console', tag: 'Service',
+      { method: 'GET', path: BASE + '/console', kind: 'console',
+        tag: 'Service',
         operationId: 'getConsoleShell',
         summary: 'What the console draws around every page, for this caller',
         description: 'The gate as it stands for the caller and the labels ' +
@@ -5265,7 +5282,10 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API status endpoint.");
           // The dashboard's answer since #446: the totals as before, and
-          // the visible sections, persistence and the base URL beside them.
+          // the visible sections, persistence and the base URL beside them —
+          // which since #454 only its console twin,
+          // `GET /admin-api/console/dashboard`, answers: this operation names
+          // them in `consoleMembers` and `sendJson()` takes them off.
           self.sendJson(res, 200, admin.dashboardJson(req));
           log.debug("Leaving the management API status endpoint.");
         } },
@@ -18718,7 +18738,8 @@ class AdminApi {
       // of this API needs what only this process knows about it: what each
       // box IS, where it GOES, and the drawing's markup. See
       // `AdminViews.delegationMapModel()`.
-      { method: 'GET', path: BASE + '/delegation/map', tag: 'Delegation',
+      { method: 'GET', path: BASE + '/console/delegation/map',
+        kind: 'console', tag: 'Delegation',
         operationId: 'getDelegationMap',
         summary: 'The delegation picture: the graph, each box, the drawing',
         description: 'The same acts as `GET /admin-api/delegation`, with ' +
@@ -18764,7 +18785,8 @@ class AdminApi {
 
       // THE FEDERATION PICTURE (#446): the console page had no operation,
       // having no form; see `AdminViews.federationMapModel()`.
-      { method: 'GET', path: BASE + '/federation/map', tag: 'Federation',
+      { method: 'GET', path: BASE + '/console/federation/map',
+        kind: 'console', tag: 'Federation',
         operationId: 'getFederationMap',
         summary: 'This realm\'s federation relationships, drawn',
         description: 'Every federation relationship of the trust realm, ' +
@@ -18811,7 +18833,8 @@ class AdminApi {
 
       // ONE GROUP OF APPLICATIONS, DRAWN (#446): the console page had no
       // operation, having no form; see `AdminViews.delegationClusterModel()`.
-      { method: 'GET', path: BASE + '/delegation/cluster', tag: 'Delegation',
+      { method: 'GET', path: BASE + '/console/delegation/cluster',
+        kind: 'console', tag: 'Delegation',
         operationId: 'getDelegationCluster',
         summary: 'One group of applications joined by permissions, drawn',
         description: 'The group an application is in — the applications ' +
@@ -18860,7 +18883,8 @@ class AdminApi {
 
       // THE ALLOWED MAPPINGS, DRAWN (#446): the console page had no
       // operation, having no form; see `AdminViews.delegationAllowedModel()`.
-      { method: 'GET', path: BASE + '/delegation/allowed', tag: 'Delegation',
+      { method: 'GET', path: BASE + '/console/delegation/allowed',
+        kind: 'console', tag: 'Delegation',
         operationId: 'getDelegationAllowed',
         summary: 'The configured delegated permissions, drawn, and groups',
         description: 'Every delegated permission somebody configured — a ' +
@@ -18905,8 +18929,8 @@ class AdminApi {
       // PROTOCOLS → DELEGATION (#446): what the page draws, as the page
       // answers it; see `AdminViews.delegationSettingsModel()`. The register
       // alone is `GET /admin-api/permissions`.
-      { method: 'GET', path: BASE + '/delegation-settings',
-        tag: 'Delegation',
+      { method: 'GET', path: BASE + '/console/delegation-settings',
+        kind: 'console', tag: 'Delegation',
         operationId: 'getDelegationSettings',
         summary: 'The configured permissions register, as its page shows it',
         description: 'The delegated permissions register searched and ' +
@@ -19039,7 +19063,8 @@ class AdminApi {
 
       // ONE RELATIONSHIP, DRAWN ALONE (#446): the console page had no
       // operation, having no form; see `AdminViews.delegationChainModel()`.
-      { method: 'GET', path: BASE + '/delegation/chain', tag: 'Delegation',
+      { method: 'GET', path: BASE + '/console/delegation/chain',
+        kind: 'console', tag: 'Delegation',
         operationId: 'getDelegationChain',
         summary: 'One delegation relationship: its acts, graph and drawing',
         description: 'One chain — (mechanism, initial identity, ' +
@@ -20033,7 +20058,64 @@ class AdminApi {
                            permission: 'https://payroll.example/read' }],
               additionalProperties: false
             },
-            responseDescription: 'What the role no longer authorizes.' }
+            responseDescription: 'What the role no longer authorizes.' },
+
+          { action: 'add-conferring-client',
+            operationId: 'addRoleConferringClient',
+            summary: 'Let a client confer a role on everybody signing in ' +
+                     'through it',
+            description: 'Adds one value to the role\'s `roleConferredBy` ' +
+                         '(#454): every PERSON who signs in through that ' +
+                         'client holds the role on the access token the ' +
+                         'client is issued, beside the roles they hold ' +
+                         'themselves, and on no other token. It is how the ' +
+                         'console\'s client, `sts-admin-console`, gives ' +
+                         'everybody who signs in to the console ' +
+                         'ADMIN_CONSOLE. ' +
+                         'The client must be registered in this realm. A ' +
+                         'role only applications may hold, and the two ' +
+                         'console roles, cannot be conferred.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', description: 'The role.' },
+                client: { type: 'string',
+                          description: 'The client_id of the application ' +
+                                       'that confers it.' }
+              },
+              required: ['role', 'client'],
+              examples: [{ role: 'ADMIN_CONSOLE',
+                           client: 'sts-admin-console' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Which client now confers the role.' },
+
+          { action: 'remove-conferring-client',
+            operationId: 'removeRoleConferringClient',
+            summary: 'Stop a client conferring a role',
+            description: 'Removes one value from the role\'s ' +
+                         '`roleConferredBy` (#454). The client\'s tokens ' +
+                         'stop carrying the role at once at `/admin-api`, ' +
+                         'whose ' +
+                         'gate asks on every call, and at the next issuance ' +
+                         'everywhere else. Taking `sts-admin-console` off ' +
+                         'ADMIN_CONSOLE leaves the console unable to draw ' +
+                         'itself until it is put back.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', description: 'The role.' },
+                client: { type: 'string',
+                          description: 'The client_id to take off.' }
+              },
+              required: ['role', 'client'],
+              examples: [{ role: 'ADMIN_CONSOLE',
+                           client: 'sts-admin-console' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Which client no longer confers the role.' }
         ] },
 
       // -----------------------------------------------------------------------
@@ -21133,7 +21215,250 @@ class AdminApi {
       ...loadSsfTransmittersApi().ROUTES
     ];
     log.debug("Leaving AdminApi.buildRoutes().");
-    return ROUTES;
+    return this.withConsoleRoutes(ROUTES);
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE CONSOLE'S OWN OPERATIONS (#454).
+  //
+  // Since #446 the console is a static application whose one data source is
+  // this API, and to draw itself it added operations that exist only for it:
+  // its frame, its drawings and its form helpers. They answer in the shape a
+  // renderer wants — an SVG laid out on the server, a select's options, the
+  // sidebar — and that shape changes whenever a page does, so they are not
+  // part of the contract an external client relies on. Every row of the
+  // table is therefore one of two KINDS:
+  //
+  //   * `management`, the default: a realm's resources and the controls on
+  //     them, at `/admin-api/...`, described by `/admin-api/openapi.json`,
+  //     listed by the index and drawn by the API explorer, and asked for
+  //     with ADMIN_READ or ADMIN_WRITE as always;
+  //   * `console`: under `/admin-api/console`, described by
+  //     `/admin-api/console/openapi.json` alone, and reached with
+  //     `admin:console` — the permission of the ADMIN_CONSOLE role the
+  //     console's client confers on everybody signing in through it — and,
+  //     wherever it shows realm data, ADMIN_READ (or ADMIN_WRITE, for a form
+  //     helper) as well.
+  //
+  // **THIS IS A BOUNDARY FOR CLEANLINESS, NOT FOR SECURITY.** Nothing here
+  // shows an administrator anything they could not already reach; what moves
+  // is which answers are the API's contract. And rule 7 is untouched: a
+  // console CONTROL keeps its management operation, because a console
+  // operation is a read or a form helper that writes nothing
+  // (`tests/admin_api_kinds.js` holds that).
+  //
+  // Eight rows are written as console rows where they are declared. The
+  // rest is here, because each is DERIVED from a management row: four
+  // answers whose console twin is the whole answer and whose management
+  // operation leaves the drawing or the form's layout out (`consoleMembers`,
+  // which `sendJson()` takes off), the form helpers of two action routes,
+  // and the three rows that exist only for the console — its dashboard, the
+  // operation list its forms resolve through, and its own document.
+  // ---------------------------------------------------------------------------
+  /**
+   * Adds the console's derived operations to the route table and marks every
+   * other row a management operation.
+   *
+   * @param routes - the table as declared
+   * @returns the table with the console's twins, form helpers and own rows
+   */
+  withConsoleRoutes(routes: any[]): any[] {
+    const { log, spec } = this.deps;
+    const self = this;
+    log.debug("Entering AdminApi.withConsoleRoutes().");
+    const byId = function (id) {
+      log.debug("Entering byId().");
+      log.debug("Leaving byId().");
+      return routes.filter(function (entry) {
+        return entry.operationId === id;
+      })[0];
+    };
+    // What a drawing adds to a delegation answer: the box looks, the SVG,
+    // its size and label, and the page's chooser, key and facts.
+    const DRAWING = ['drawing', 'looks', 'label', 'svg', 'chooser',
+                     'mapKey', 'facts'];
+    const TWINS = [
+      { of: 'getStatus', path: '/console/dashboard',
+        operationId: 'getConsoleDashboard',
+        summary: 'What the console\'s front page draws',
+        description: 'The totals `GET /admin-api/status` answers, with the ' +
+                     'base URL, what is persisted and the console sections ' +
+                     'the caller may see, which is what `/admin` draws.',
+        members: ['base', 'persistence', 'sections'] },
+      { of: 'getNewApplicationForm', path: '/console/applications/new',
+        operationId: 'getConsoleNewApplicationForm',
+        summary: 'Everything the new application form is drawn from',
+        description: 'The vocabulary `GET /admin-api/applications/new` ' +
+                     'answers, with how the form lays it out: its field ' +
+                     'groups, the combined protocol choices, the long text ' +
+                     'fields, the persistence note and the RFC 9728 ' +
+                     'import tab.',
+        members: ['fieldGroups', 'familyChoices', 'longTextAttributes',
+                  'persistence', 'resourceMetadataImport'] },
+      { of: 'getDelegationUser', path: '/console/delegation/user',
+        operationId: 'getConsoleDelegationUser',
+        summary: 'One person\'s delegations, drawn',
+        description: 'What `GET /admin-api/delegation/user` answers, with ' +
+                     'every node\'s look, the drawing (`svg`) and its size, ' +
+                     'and the page\'s chooser, key and facts. With ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        members: DRAWING, drawing: true },
+      { of: 'getDelegationApplication', path: '/console/delegation/application',
+        operationId: 'getConsoleDelegationApplication',
+        summary: 'One application\'s delegations, drawn',
+        description: 'What `GET /admin-api/delegation/application` answers, ' +
+                     'with every node\'s look, the drawing (`svg`) and its ' +
+                     'size, and the page\'s chooser, key and facts. With ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        members: DRAWING, drawing: true }
+    ];
+    const out = routes.slice(0);
+    TWINS.forEach(function (twin) {
+      const entry = byId(twin.of);
+      const copy = Object.assign({}, entry, {
+        kind: 'console', path: BASE + twin.path,
+        operationId: twin.operationId, summary: twin.summary,
+        description: twin.description });
+      // THE MANAGEMENT OPERATION LEAVES THE CONSOLE'S MEMBERS OUT, and a
+      // drawing's `format=svg` with them: its parameter is the twin's.
+      entry.consoleMembers = twin.members.slice(0);
+      entry.consoleTwin = BASE + twin.path;
+      if (twin.drawing) {
+        entry.parameters = (entry.parameters || []).filter(function (one) {
+          return one.name !== 'format';
+        });
+        entry.description = String(entry.description || '')
+          .split('\n\nWith `format=svg`')[0] + '\n\nThe drawing is the ' +
+          'console\'s: `GET ' + BASE + twin.path + '`.';
+      }
+      out.push(copy);
+    });
+    // THE FORM HELPERS (#454): a key pair or a profile into the certificate
+    // form, a secret into the new application form. Each writes nothing; the
+    // act they lead to — `pki/issue-certificate`, `applications/create` —
+    // stays a management operation. Same handler, a route of their own.
+    const HELPERS = [
+      { route: '/pki/:action',
+        actions: ['apply-profile', 'generate-keys', 'generate-alt-keys',
+                  'use-key'] },
+      { route: '/applications/:action', actions: ['generate-secret'] }
+    ];
+    HELPERS.forEach(function (helper) {
+      const entry = routes.filter(function (one) {
+        return one.route === BASE + helper.route;
+      })[0];
+      const moved = entry.actions.filter(function (one) {
+        return helper.actions.indexOf(one.action) >= 0;
+      }).map(function (one) {
+        return Object.assign({}, one, { writesNothing: true });
+      });
+      entry.actions = entry.actions.filter(function (one) {
+        return helper.actions.indexOf(one.action) < 0;
+      });
+      entry.consoleActions = helper.actions.slice(0);
+      out.push(Object.assign({}, entry, {
+        kind: 'console', route: BASE + '/console' + helper.route,
+        actions: moved, consoleActions: undefined }));
+    });
+    out.push(
+      { method: 'GET', path: BASE + '/console/operations', kind: 'console',
+        tag: 'Service', operationId: 'getConsoleOperations',
+        summary: 'Every operation of both kinds, for the console\'s forms',
+        description: 'Every operation this API registers, management and ' +
+                     'console alike, with the console control it mirrors ' +
+                     'and its kind: the table the static console resolves ' +
+                     'a form to the operation it posts to through. The ' +
+                     'index, `GET /admin-api`, lists the management ' +
+                     'operations alone.',
+        mirrors: 'GET /admin',
+        responseDescription: 'Every operation.',
+        handler: function (req, res) {
+          log.debug("Entering the console operations endpoint.");
+          self.sendJson(res, 200,
+                        { operations: self.operationSummaries('all') });
+          log.debug("Leaving the console operations endpoint.");
+        } },
+      { method: 'GET', path: BASE + '/console/openapi.json', kind: 'console',
+        tag: 'Service', operationId: 'getConsoleOpenApi',
+        summary: 'The OpenAPI 3.1 document for the console\'s operations',
+        description: 'The operations under `/admin-api/console`, built from ' +
+                     'the same table as `GET /admin-api/openapi.json`, ' +
+                     'which describes the management operations alone. ' +
+                     'For maintainers and tests: these answers follow the ' +
+                     'console\'s pages and are not a contract.',
+        mirrors: 'GET /admin/sts-metadata',
+        responseDescription: 'The document.',
+        responseSchema: { type: 'object',
+                          description: 'An OpenAPI 3.1.0 document.' },
+        handler: function (req, res) {
+          log.debug("Entering the console OpenAPI document endpoint.");
+          self.sendJson(res, 200,
+                        spec.buildSpec(self.routesOfKind('console'),
+                                       Object.assign(self.specOptions(req),
+                                                     { console: true })));
+          log.debug("Leaving the console OpenAPI document endpoint.");
+        } });
+    // RULE 7 FOR A PAGE WHOSE OWN OPERATION MOVED (#454). A page with no
+    // form still needs a management GET; for a drawing, that is the
+    // operation its data comes from, and the row says so — `drawnOn` is
+    // published in the index, where the parity check reads it
+    // (`tests/vendored/admin_api.js`), beside `mirrors`.
+    const DRAWN_ON = {
+      getDelegation: ['/admin/delegation/map', '/admin/delegation/chain'],
+      getPermissions: ['/admin/delegation/allowed',
+                       '/admin/delegation-settings'],
+      getPermissionGroups: ['/admin/delegation/cluster'],
+      getFederationRelationships: ['/admin/federation/map'],
+      getOpenApi: ['/admin/api-explorer']
+    };
+    Object.keys(DRAWN_ON).forEach(function (id) {
+      byId(id).drawnOn = DRAWN_ON[id].slice(0);
+    });
+    out.forEach(function (entry) {
+      if (!entry.kind) {
+        entry.kind = 'management';
+      }
+    });
+    log.debug("Leaving AdminApi.withConsoleRoutes(). " + out.length +
+              " row(s).");
+    return out;
+  }
+
+  /**
+   * Returns the route table's rows of one kind.
+   *
+   * @param kind - `management` or `console`
+   * @returns the rows
+   */
+  routesOfKind(kind: string): any[] {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.routesOfKind(). " + kind);
+    const rows = (ROUTES || []).filter(function (entry) {
+      return (entry.kind || 'management') === kind;
+    });
+    log.debug("Leaving AdminApi.routesOfKind(). " + rows.length + " row(s).");
+    return rows;
+  }
+
+  // Whether a request is for one of the console's operations: its path,
+  // under the API's base, is `/console` or below it. The prefix IS the kind —
+  // `tests/admin_api_kinds.js` holds that no row of one kind sits under the
+  // other's — so the gate can ask it of a request it has not routed yet.
+  /**
+   * Tells whether a request is for one of the console's operations.
+   *
+   * @param req - the request
+   * @returns true under `/admin-api/console`
+   */
+  isConsoleOperation(req): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.isConsoleOperation().");
+    const path = String(req.path || '').replace(/\/+$/, '');
+    const answer = path === '/console' || path.indexOf('/console/') === 0;
+    log.debug("Leaving AdminApi.isConsoleOperation(). " + answer);
+    return answer;
   }
 
   // Every operation, flattened, for the index. The same walk buildSpec() does,
@@ -21145,22 +21470,37 @@ class AdminApi {
    *
    * @returns the operations
    */
-  operationSummaries() {
+  operationSummaries(kind?: string) {
     const { log } = this.deps;
-    log.debug("Entering AdminApi.operationSummaries().");
+    log.debug("Entering AdminApi.operationSummaries(). " +
+              (kind || 'management'));
     const out = [];
-    ROUTES.forEach(function (entry) {
+    // THE MANAGEMENT OPERATIONS unless `all` is asked for (#454): the index
+    // and the banner count what an integrator may rely on; the console's
+    // form table (`GET /admin-api/console/operations`) wants both kinds.
+    const wanted = kind || 'management';
+    ROUTES.filter(function (entry) {
+      return wanted === 'all' || (entry.kind || 'management') === wanted;
+    }).forEach(function (entry) {
+      const rowKind = entry.kind || 'management';
       if (!entry.actions) {
-        out.push({ method: entry.method, path: entry.path,
-                   operationId: entry.operationId, summary: entry.summary,
-                   mirrors: entry.mirrors || '' });
+        const row: any = { method: entry.method, path: entry.path,
+                           operationId: entry.operationId,
+                           summary: entry.summary,
+                           mirrors: entry.mirrors || '', kind: rowKind };
+        // The pages whose console operation draws this one's data (#454).
+        if (entry.drawnOn) {
+          row.drawnOn = entry.drawnOn.slice(0);
+        }
+        out.push(row);
         return;
       }
       entry.actions.forEach(function (action) {
         out.push({ method: entry.method,
                    path: entry.route.replace(':action', action.action),
                    operationId: action.operationId, summary: action.summary,
-                   mirrors: action.mirrors || entry.mirrors || '' });
+                   mirrors: action.mirrors || entry.mirrors || '',
+                   kind: rowKind });
       });
     });
     log.debug("Leaving AdminApi.operationSummaries(). " + out.length +
@@ -21499,7 +21839,11 @@ class AdminApi {
   consoleOperationOf(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.consoleOperationOf().");
-    const path = BASE + String(req.path || '');
+    // A CONSOLE OPERATION (#454) mirrors the page it draws as its
+    // management twin does: `/admin-api/console/delegation/map` is
+    // `/admin/delegation/map`, and the frame is `/admin`.
+    const path = BASE + String(req.path || '')
+      .replace(/^\/console(?=\/|$)/, '');
     let action = '';
     let resource = path;
     ROUTES.forEach(function (entry) {
@@ -21935,20 +22279,28 @@ class AdminApi {
         // the MDM feed takes `device:compliance` and its role, and nothing
         // else here takes that scope — see DevicesAdmin.mdmFeed().
         const mdmFeed = self.isDeviceComplianceFeed(req);
+        // THE CONSOLE'S OWN OPERATIONS (#454) take `admin:console`, the
+        // permission of the ADMIN_CONSOLE role the console's client confers
+        // on everybody who signs in through it — see withConsoleRoutes().
+        const consoleOp = self.isConsoleOperation(req);
         const scopesWanted = mdmFeed ? 'device:compliance'
-          : (req.method === 'GET' ? 'admin:read' : 'admin:write');
+          : (consoleOp ? 'admin:console'
+            : (req.method === 'GET' ? 'admin:read' : 'admin:write'));
         const presentation = self.presentedTokenOf(req);
         const presented = presentation.token;
         if (!presented) {
+          // The scope to ask for: the feed's or the console's own (#454)
+          // where the operation is one of theirs, both admin scopes
+          // otherwise.
+          const hint = mdmFeed || consoleOp ? scopesWanted
+                                            : 'admin:read admin:write';
           res.set('WWW-Authenticate',
-                  'Bearer realm="' + BASE +
-                  '", scope="' + (mdmFeed ? scopesWanted
-                                          : 'admin:read admin:write') + '"');
+                  'Bearer realm="' + BASE + '", scope="' + hint + '"');
           errorCodes.mark(res, 'STS-API-0001');
           return self.sendJson(res, 401, { error: 'unauthorized', errors: [
             'This API requires an OAuth 2.0 access token. Ask ' +
             '/oauth2/token for one with `grant_type=client_credentials`, ' +
-            '`scope=' + (mdmFeed ? scopesWanted : 'admin:read admin:write') +
+            '`scope=' + hint +
             '` and `resource=' +
             self.wantedAudience(req) +
             '`, then send it as `Authorization: Bearer`. ' +
@@ -22288,7 +22640,42 @@ class AdminApi {
           // administrator's console session.
           res.locals.realmTokenOf = tokenRealm;
         }
+        // A CONSOLE OPERATION ASKED WITH A TOKEN THAT IS NOT THE CONSOLE'S
+        // (#454): said in so many words, because the policy's refusal would
+        // only say a role was missing, and the caller holding Admin Read
+        // would not see why that is not enough.
+        if (consoleOp && carried.indexOf('admin:console') < 0) {
+          errorCodes.mark(res, 'STS-API-0127');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            'This is one of the admin console\'s own operations, under ' +
+            BASE + '/console: they draw the console and are not part of ' +
+            'the management API a client relies on (' + BASE +
+            '/openapi.json describes that). They take admin:console, which ' +
+            'is issued only to the console\'s client, sts-admin-console, ' +
+            'and this token does not carry it. A console client entry ' +
+            'seeded before #454 declares no admin:console: add it to the ' +
+            'entry\'s oauthAllowedScope and oauthGlobalConsent (POST ' +
+            BASE + '/applications/add) and sign in again.'] });
+        }
         const held = effective.roles;
+        // WHAT THE OPERATION REQUIRES, IN TWO PARTS (#454). `requiredRoles`
+        // is any-one-of, as the access-control document has always read it;
+        // `requiredAllRoles` is every-one-of, a conjunct beside it, which is
+        // what lets one decision mix a role the person holds with one the
+        // console's client confers. A console operation needs ADMIN_CONSOLE
+        // and — unless it is the frame or the operation list, which show no
+        // realm data and are what a person with no console role still needs
+        // to be told so — ADMIN_READ for a read or ADMIN_WRITE for a form
+        // helper. `/me` is either kind's: who-am-I is the console's first
+        // question and an integrator's.
+        const path = String(req.path || '').replace(/\/+$/, '');
+        const frameOnly = path === '/console' || path === '/console/operations';
+        const requiredRoles = mdmFeed ? ['DEVICE_COMPLIANCE']
+          : (consoleOp ? ['ADMIN_CONSOLE']
+            : (path === '/me' ? ['ADMIN_READ', 'ADMIN_CONSOLE']
+              : (req.method === 'GET' ? ['ADMIN_READ'] : ['ADMIN_WRITE'])));
+        const requiredAllRoles = consoleOp && !frameOnly
+          ? [req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE'] : [];
         const policy = accessGate.check({
           resource: accessGate.RESOURCE.MANAGEMENT_API,
           action: req.method === 'GET' ? accessGate.ACTION.READ
@@ -22300,8 +22687,8 @@ class AdminApi {
           // encoding "a read needs ADMIN_READ and a write needs ADMIN_WRITE" in
           // XACML. Nothing in this file decides the outcome; it decides the
           // question.
-          requiredRoles: [mdmFeed ? 'DEVICE_COMPLIANCE'
-            : (req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE')],
+          requiredRoles: requiredRoles,
+          requiredAllRoles: requiredAllRoles,
           subject: { name: who, authenticated: true, roles: held,
                      sessionId: null },
           context: { method: req.method, path: req.originalUrl || req.url }
@@ -22318,9 +22705,14 @@ class AdminApi {
             'role(s) ' + (held.length ? held.join(', ') : '(none)') + '. ' +
             (mdmFeed ? 'The device compliance feed needs device:compliance ' +
                        '(DEVICE_COMPLIANCE), and only that'
-              : 'A ' + (req.method === 'GET'
-                ? 'read needs admin:read (ADMIN_READ)'
-                : 'write needs admin:write (ADMIN_WRITE)')) +
+              : (consoleOp
+                ? 'A console operation needs admin:console (ADMIN_CONSOLE)' +
+                  (requiredAllRoles.length ? ' and ' +
+                    (req.method === 'GET' ? 'admin:read (ADMIN_READ)'
+                                          : 'admin:write (ADMIN_WRITE)') : '')
+                : 'A ' + (req.method === 'GET'
+                  ? 'read needs admin:read (ADMIN_READ)'
+                  : 'write needs admin:write (ADMIN_WRITE)'))) +
             '. The document is on /admin/xacml and xacml.enforceAccess turns ' +
             'the layer off.'] });
         }
@@ -22420,6 +22812,23 @@ class AdminApi {
         self.sendJson(res, 400, { ok: false, errors: [asked.sentence] });
         return true;
       };
+      // A MANAGEMENT ANSWER WITH A CONSOLE TWIN (#454) leaves the console's
+      // members out, and refuses the twin's drawing rather than answering
+      // it: `format=svg` is the console's.
+      const consoleOnly = function (req, res) {
+        if (!entry.consoleMembers) {
+          return false;
+        }
+        res.locals.consoleMembers = entry.consoleMembers;
+        if (String((req.query || {}).format || '') !== 'svg') {
+          return false;
+        }
+        errorCodes.mark(res, 'STS-API-0129');
+        self.sendJson(res, 400, { ok: false, errors: [
+          'The drawing is the admin console\'s: ask ' + entry.consoleTwin +
+          '?format=svg. This operation answers the data alone.'] });
+        return true;
+      };
       if (entry.method === 'GET') {
         // A GET that `mirrors` exactly one Protocols page answers that page's
         // endpoints as well, which is rule 7 for the section `respond()` draws
@@ -22432,7 +22841,7 @@ class AdminApi {
                      mirrored[1] : null;
         if (!page) {
           app.get(path, function (req, res) {
-            if (queryRefused(req, res)) {
+            if (queryRefused(req, res) || consoleOnly(req, res)) {
               return undefined;
             }
             return entry.handler(req, res);
@@ -22440,7 +22849,7 @@ class AdminApi {
           return;
         }
         app.get(path, function (req, res) {
-          if (queryRefused(req, res)) {
+          if (queryRefused(req, res) || consoleOnly(req, res)) {
             return undefined;
           }
           res.locals.protocolEndpoints = protocolEndpoints.forPage(req, page);
@@ -22450,6 +22859,20 @@ class AdminApi {
       }
       app.post(path, function (req, res) {
         if (queryRefused(req, res)) {
+          return undefined;
+        }
+        // A FORM HELPER ASKED AT ITS OLD ADDRESS (#454): the action is the
+        // console's now, under `/admin-api/console`. Refused rather than
+        // answered, or the one handler behind both routes would carry it out
+        // and the move would be a second door.
+        const asked = String((req.params && req.params.action) || '');
+        if ((entry.consoleActions || []).indexOf(asked) >= 0) {
+          errorCodes.mark(res, 'STS-API-0128');
+          self.sendJson(res, 404, { ok: false, errors: [
+            '"' + asked + '" is a form helper of the admin console, at ' +
+            path.replace(BASE, BASE + '/console').replace(':action', asked) +
+            '. It writes nothing; the act it leads to is an operation ' +
+            'here.'] });
           return undefined;
         }
         // The route this request matched, so the wrapper can find its schema

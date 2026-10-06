@@ -5000,7 +5000,12 @@ class AdminConsole {
         : null,
       realmRoot: req ? this.realmRoot(req) : '',
       portalHref: req ? this.portalHref(req, given) : '',
-      sections: this.visibleSections(navState),
+      // NOTHING TO NAVIGATE TO for a person holding no console role (#454):
+      // the frame is the one answer they can now be given — ADMIN_CONSOLE,
+      // which the console's client confers, reaches it — and every page
+      // behind a link would refuse them.
+      sections: this.holdsNoConsoleRole(given) ? []
+        : this.visibleSections(navState),
       // Every page's nav label by path, for the trail's section crumb —
       // the whole table, since a crumb names the page whoever reads it.
       navLabels: NAV.reduce(function (out, row) {
@@ -5042,6 +5047,15 @@ class AdminConsole {
       log.debug("Leaving AdminConsole.shellRuntimeFacts(). Nobody.");
       return {};
     }
+    // SIGNED IN AND HOLDING NEITHER CONSOLE ROLE (#454): nothing either. The
+    // frame reaches such a person since ADMIN_CONSOLE is conferred on
+    // everybody signing in to the console, and the process arrangement, the
+    // database host and where the secrets come from are what
+    // `/admin/persistence` and `/admin/secrets` show to Admin Read.
+    if (this.holdsNoConsoleRole(gate)) {
+      log.debug("Leaving AdminConsole.shellRuntimeFacts(). No console role.");
+      return {};
+    }
     const facts = this.runtimeFacts();
     if (gate && gate.authority === 'realm') {
       log.debug("Leaving AdminConsole.shellRuntimeFacts(). A realm's.");
@@ -5049,6 +5063,22 @@ class AdminConsole {
     }
     log.debug("Leaving AdminConsole.shellRuntimeFacts().");
     return facts;
+  }
+
+  /**
+   * Tells whether a gate is a signed-in person holding neither console role,
+   * where a token is required (#454).
+   *
+   * @param gate - the gate the shell is drawn for, or null
+   * @returns true for such a person
+   */
+  holdsNoConsoleRole(gate): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.holdsNoConsoleRole().");
+    const answer = !!(gate && gate.enforced && gate.session &&
+                      !gate.read && !gate.write);
+    log.debug("Leaving AdminConsole.holdsNoConsoleRole(). " + answer);
+    return answer;
   }
 
   // The two directions the table and `SECTIONS` can disagree in: a Protocols

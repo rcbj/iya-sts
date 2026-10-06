@@ -510,11 +510,12 @@ function childMain() {
     }
     // EVERY POST FORM A CONVERTED PAGE DRAWS IS ONE /admin-api OPERATION
     // (#446). The static console sends a submitted form to the operation
-    // that mirrors it (`web_forms.ts`), read off `GET /admin-api`'s index;
-    // a form that resolves to none, or to two, is a control the static
-    // console could not work.
+    // that mirrors it (`web_forms.ts`), read off `GET
+    // /admin-api/console/operations` — both kinds since #454, because a
+    // form helper is the console's own operation; a form that resolves to
+    // none, or to two, is a control the static console could not work.
     const WebForms = require(ROOT_DIR + '/admin-ui/web_forms');
-    const formTable = WebForms.table(adminApi.operationSummaries());
+    const formTable = WebForms.table(adminApi.operationSummaries('all'));
     const unresolved = {};
     let forms = 0;
     drawnPages.forEach(function (one) {
@@ -626,7 +627,8 @@ function childMain() {
          }).join('; '));
     note(forms > 300 && Object.keys(unresolved).length === 0,
          'F0. every POST form a converted page draws resolves to one ' +
-         '/admin-api operation (web_forms.ts, off GET /admin-api)',
+         '/admin-api operation (web_forms.ts, off GET ' +
+         '/admin-api/console/operations)',
          forms + ' form action(s), ' + Object.keys(unresolved).length +
          ' unresolved: ' + Object.keys(unresolved).map(function (k) {
            return k + ' (on ' + unresolved[k] + ')';
@@ -1014,7 +1016,9 @@ function childMain() {
 
     // --- E. the table is true ------------------------------------------------
     const consolePages = admin.consoleJson().pages;
-    const operations = adminApi.operationSummaries().map(function (one) {
+    // Either kind (#454): a page is drawn from a management operation or,
+    // where only the console wants its shape, from one of its own.
+    const operations = adminApi.operationSummaries('all').map(function (one) {
       return one.method + ' ' + one.path;
     });
     // A page of the console, or a page drawn under one of its tabs
@@ -1031,8 +1035,8 @@ function childMain() {
              typeof page.render !== 'function' || !page.title;
     }).map(function (page) { return page.path; });
     note(WebPages.PAGES.length >= 1 && untrue.length === 0,
-         'E. every converted page is a page of the console and names a ' +
-         'management API operation that exists', untrue.join(', ') + ' ' +
+         'E. every converted page is a page of the console and names an ' +
+         '/admin-api operation that exists', untrue.join(', ') + ' ' +
          operations.length + ' operation(s)');
 
     // --- F. the settings block is one block ----------------------------------

@@ -208,7 +208,54 @@ cover:
 For the full list, with request and response schemas and examples, see
 `GET /admin-api/openapi.json`. The index at `GET /admin-api` returns the
 version and build, whether the API is protected, and a one-line summary of
-every operation.
+every operation. Both describe the management operations alone; the
+console's own are below.
+
+### The console's own operations
+
+The admin console is a static application whose one data source is this API,
+and some operations exist only to draw it: its frame, its drawings and its
+form helpers. Their answers follow the console's pages, which change, so they
+are **not part of the management API** and live apart from it under
+`/admin-api/console` (#454):
+
+| Operation | What it is for |
+|---|---|
+| `GET /admin-api/console` | The frame around every page: the sidebar, banners, realm switcher and footer |
+| `GET /admin-api/console/operations` | Every operation of both kinds, for resolving a console form to its operation |
+| `GET /admin-api/console/openapi.json` | The OpenAPI document for these operations |
+| `GET /admin-api/console/dashboard` | The front page: `GET /admin-api/status` with the base URL, persistence and the visible sections |
+| `GET /admin-api/console/api-explorer` | The explorer page's own facts |
+| `GET /admin-api/console/delegation-settings` | The permissions register as its page lays it out |
+| `GET /admin-api/console/delegation/{map,cluster,allowed,chain}`, `GET /admin-api/console/federation/map` | The drawings |
+| `GET /admin-api/console/delegation/{user,application}` | One person's or application's delegations, drawn |
+| `GET /admin-api/console/applications/new` | The new application form's layout |
+| `POST /admin-api/console/pki/{apply-profile,generate-keys,generate-alt-keys,use-key}` | Fill the certificate form; write nothing |
+| `POST /admin-api/console/applications/generate-secret` | Mint a secret for the new application form; write nothing |
+
+Every console **control** is still a management operation. A console
+operation is a read or a form helper that writes nothing, and the data behind
+a drawing is a management operation too: `GET /admin-api/delegation/user`,
+`/delegation/application`, `/applications/new` and `/status` answer the same
+data as their console twins without the drawing or the form's layout, and
+refuse `format=svg` (`STS-API-0129`). A form helper asked at its old address
+is answered 404 (`STS-API-0128`).
+
+They take the scope `admin:console`, which is issued only to the console's
+client: the `ADMIN_CONSOLE` role authorizes it, and it is **conferred** by
+`sts-admin-console` on every person who signs in to the console rather than
+held by anybody (`roleConferredBy`, managed on `/admin/roles` and with
+`POST /admin-api/roles/add-conferring-client` and
+`remove-conferring-client`). The roles a person holds themselves and the
+roles their client confers are mixed on every call. The frame and the
+operation list need `ADMIN_CONSOLE` alone, so a person with no console role is
+still told so; every other console operation needs `ADMIN_READ` too, or
+`ADMIN_WRITE` for a form helper. A token without `admin:console`, such as
+`sts-management-api`'s, is refused 403 (`STS-API-0127`).
+
+A console client entry persisted before #454 does not declare
+`admin:console`. Add it to that entry's `oauthAllowedScope` and
+`oauthGlobalConsent` and sign in again.
 
 ### Request bodies
 
@@ -238,8 +285,10 @@ its `csvValues`. `GET /admin-api/config` publishes both.
 
 ### The explorer
 
-`/admin/api-explorer` is a console page, behind the console's session and
-roles. It shows the document, a form for each operation, the response, and
+`/admin/api-explorer` (Server configuration → API explorer) is a console page,
+behind the console's session and roles. It shows the management API's document
+— the console's own operations are not in it — a form for each operation, the
+response, and
 the equivalent `curl` command. Its **Try it** button calls `/admin-api` with a
 token the page mints for you. That token carries only the scopes your console
 roles grant (`admin:read` for Admin Read, `admin:write` for Admin Write). The

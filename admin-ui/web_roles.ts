@@ -591,6 +591,7 @@ class RolesPage {
         : '') +
       (one.id ? '<br><span class="sub">id <code>' + kit.esc(one.id) +
         '</code></span>' : '') +
+      RolesPage.conferredBy(one, listView) +
       '</td>' + members + permissions +
       '<td class="act">' + RolesPage.roleEditFold(one, listView) + (one.native
         ? '<span class="sub">kept in every realm</span>'
@@ -601,6 +602,35 @@ class RolesPage {
           '">' +
           '<button type="submit" class="danger">Delete</button>' +
           '</form>') + '</td></tr>';
+  }
+
+  // WHICH CLIENTS CONFER IT (#454): every person signing in through one of
+  // them holds the role on that client's token. Each with its Remove; the
+  // add is in the Edit fold.
+  /**
+   * Draws the clients that confer a role, each with a Remove form.
+   *
+   * @param one - the configured role
+   * @param listView - the list view the forms carry
+   * @returns the lines as HTML, or nothing when no client confers it
+   */
+  static conferredBy(one, listView) {
+    const clients = one.conferredBy || [];
+    if (!clients.length) {
+      return '';
+    }
+    return '<br><span class="sub">conferred on everybody signing in ' +
+      'through</span>' + clients.map(function (client) {
+        return '<div><code>' + kit.esc(client) + '</code> ' +
+          '<form method="post" action="/admin/roles" class="inline">' +
+          RolesPage.rolesBack(listView) +
+          '<input type="hidden" name="action" ' +
+          'value="remove-conferring-client">' +
+          '<input type="hidden" name="role" value="' + kit.esc(one.name) +
+          '"><input type="hidden" name="client" value="' +
+          kit.esc(client) + '"><button type="submit" class="danger">' +
+          'Remove</button></form></div>';
+      }).join('');
   }
 
   /**
@@ -646,7 +676,22 @@ class RolesPage {
       kit.esc(one.displayName || '') + '"></label>' +
       '<label>Description <input name="description" value="' +
       kit.esc(one.description || '') + '"></label>' + typeField +
-      '<button type="submit">Save</button></form></details>';
+      '<button type="submit">Save</button></form>' +
+      // CONFERRED BY A CLIENT (#454), for any role but a console role, whose
+      // people are the roster's, or one only applications may hold.
+      (one.console || ((one.memberTypes || []).length &&
+                       one.memberTypes.indexOf('user') < 0) ? ''
+        : '<form method="post" action="/admin/roles">' +
+          RolesPage.rolesBack(listView) +
+          '<input type="hidden" name="action" ' +
+          'value="add-conferring-client">' +
+          '<input type="hidden" name="role" value="' + kit.esc(one.name) +
+          '"><label title="' + kit.esc('Every person who signs in through ' +
+            'this client holds the role on the token it is issued, beside ' +
+            'the roles they hold themselves.') + '">Conferred by the client ' +
+          '<input name="client" required></label>' +
+          '<button type="submit">Add</button></form>') +
+      '</details>';
   }
 
   // Who a role's member types let hold it, in words (#93).

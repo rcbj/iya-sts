@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4064** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4072** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -82,10 +82,10 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 348
 * [Device register (`STS-DEVICE`)](#sts-device) — 46
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 88
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 90
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 223
-* [Management API (`STS-API`)](#sts-api) — 76
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 226
+* [Management API (`STS-API`)](#sts-api) — 79
 * [User portal (`STS-PORTAL`)](#sts-portal) — 83
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 150
@@ -3977,6 +3977,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0085` | No issuance policy, not even the built-in one, gave a verdict on who may act for whom (#186); the exchange was refused. | each protocol's own refusal |
 | `STS-XACML-0086` | The issuance gate's decider threw on an exchange question (#186); the built-in policy decided instead. | — |
 | `STS-XACML-0087` | No issuance policy, not even the built-in one, answered the may_act question for a subject who named a delegate (#186); the subject's own choice was put in the token. | — |
+| `STS-XACML-0088` | A role restricted to applications was to be conferred by a client (roleConferredBy, #454); a conferred role is held by the PEOPLE signing in through that client, so the write was refused. | — |
+| `STS-XACML-0089` | One of the two console roles was to be conferred by a client (roleConferredBy, #454); their people are the console roster's, so the write was refused. | — |
 | `STS-XACML-0168` | No issuance policy, not even the built-in one, could answer the per-right GNAP question (issue-gnap-right); the right was refused (#432). | — |
 
 ## STS-XPEP
@@ -4253,6 +4255,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0842` | reveal-secret found nothing to reveal: no such application, or it holds no client secret with that id, or no registration access token (#446). | none (a management API refusal, HTTP 400) |
 | `STS-ADMIN-0843` | A request other than GET reached /admin: the console is a static application since #446, and its acts are /admin-api operations. | none (HTTP 404) |
 | `STS-ADMIN-0844` | The static console's script, admin-ui/console.js, could not be read; the shell loads one that says so (#446). | none (logged) |
+| `STS-ADMIN-0845` | add-conferring-client or remove-conferring-client named no client, or add-conferring-client named one that is not registered in the realm (#454). | — |
+| `STS-ADMIN-0846` | add-conferring-client named a client that already confers the role (#454). | — |
+| `STS-ADMIN-0847` | remove-conferring-client named a client that does not confer the role (#454). | — |
 
 ## STS-API
 
@@ -4338,6 +4343,9 @@ Raised from: mgmt-api/.
 | `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0125` | A management API access token carried the admin scope an operation needs, and its subject — a person, or the application on a client_credentials token — no longer holds a role authorizing it in the realm that issued it (#302, #303). | HTTP 403 forbidden |
 | `STS-API-0126` | A management API access token was issued on a sign-on session that has since ended, by a sign-out or by running out, so the token is no longer honoured (#446). | invalid_token (HTTP 401) |
+| `STS-API-0127` | One of the admin console's own operations, under /admin-api/console, was asked with an access token that does not carry admin:console, which only the console's client is issued (#454). | forbidden (HTTP 403) |
+| `STS-API-0128` | A form helper of the admin console was asked at its old management API address; it is under /admin-api/console since #454. | HTTP 404 |
+| `STS-API-0129` | A management API operation whose drawing is the admin console's was asked for format=svg; the drawing is its console twin's under /admin-api/console (#454). | HTTP 400 |
 
 ## STS-PORTAL
 

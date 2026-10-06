@@ -4,7 +4,8 @@
 'use strict';
 // File: tests/admin_api_delegation_map.js
 // ===========================================================================
-// `GET /admin-api/delegation/map` — THE DELEGATION PICTURE AS ONE ANSWER
+// `GET /admin-api/console/delegation/map` — THE DELEGATION PICTURE AS ONE
+// ANSWER (the console's own operation since #454)
 // (#446, 2026-10-05).
 //
 // `/admin/delegation/map` had no operation, because it has no form. A
@@ -141,7 +142,9 @@ function childMain() {
     const base = 'http://127.0.0.1:' + port;
     const token = await inDefault(function () {
       return oauth2.accessTokenAsync(base, {
-        audience: base + '/admin-api', scope: 'admin:read',
+        // `admin:console` (#454): the picture is the console's own
+        // operation, and only the console's client is issued it.
+        audience: base + '/admin-api', scope: 'admin:read admin:console',
         client_id: 'sts-admin-console', username: READER, sub: READER,
         // DPoP-bound, as every console token is since the cutover (#446).
         jkt: DPOP.jkt });
@@ -150,7 +153,7 @@ function childMain() {
       return request(port, 'GET', urlPath, null,
                      DPOP.headers('GET', base + urlPath.split('?')[0], token));
     };
-    const MAP = '/admin-api/delegation/map';
+    const MAP = '/admin-api/console/delegation/map';
 
     // --- 1. the picture ------------------------------------------------------
     let r = await get(MAP);
@@ -202,15 +205,20 @@ function childMain() {
          '4. a mechanism outside its closed set is refused',
          r.status + ' ' + r.text.slice(0, 160));
 
-    // --- 5. the index --------------------------------------------------------
-    r = await get('/admin-api');
+    // --- 5. the console's operation list, and not the index (#454) ---------
+    r = await get('/admin-api/console/operations');
     const listed = ((r.json || {}).operations || []).filter(function (one) {
       return one.path === MAP;
     })[0] || null;
-    note(!!listed && listed.method === 'GET' &&
+    note(!!listed && listed.method === 'GET' && listed.kind === 'console' &&
          listed.mirrors === 'GET /admin/delegation/map',
-         '5. the index lists it as the mirror of the console page',
-         JSON.stringify(listed));
+         '5. the console\'s operation list names it, a console operation ' +
+         'mirroring the page', JSON.stringify(listed));
+    r = await get('/admin-api');
+    note(!((r.json || {}).operations || []).some(function (one) {
+      return one.path === MAP;
+    }), '5b. the index, which is the management API\'s, does not',
+         r.status + ' ' + r.text.slice(0, 120));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
@@ -266,7 +274,8 @@ async function run(t) {
 
 module.exports = {
   name: 'admin_api_delegation_map',
-  describe: 'GET /admin-api/delegation/map answers the delegation picture: ' +
+  describe: 'GET /admin-api/console/delegation/map answers the delegation ' +
+            'picture: ' +
             'the graph, each box\'s look and the drawing (#446)',
   run: run
 };

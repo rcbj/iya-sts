@@ -427,6 +427,44 @@ class RolePermissions {
     return closed;
   }
 
+  // ---------------------------------------------------------------------------
+  // conferredOn(subject, clientId) — THE ROLES A CLIENT CONFERS (#454).
+  //
+  // The third way of holding a role. A person holds a role as a member or
+  // through the console roster, an application as a member for its own
+  // `client_credentials` token, and — this — a PERSON holds every role the
+  // client they signed in through names them in `roleConferredBy`, on that
+  // client's token and no other. It is read in the ambient realm, which is
+  // the realm that issues the token or, at a resource server, the one that
+  // issued it (`effectiveRoles()` runs this inside `inRealm()`).
+  //
+  // **NOT FOR AN APPLICATION'S OWN TOKEN**: a client conferring a role on
+  // itself would be a membership nobody wrote down. And not for a subject
+  // that did not authenticate or has no name, who holds no configured role.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the roles a client confers on the person a token is for.
+   *
+   * @param subject - `{ kind, name, authenticated }`
+   * @param clientId - the client the person signed in through
+   * @returns the role names; empty for an application or an anonymous subject
+   */
+  conferredOn(subject: Subject, clientId: unknown): string[] {
+    const { log, roles } = this.deps;
+    log.debug("Entering RolePermissions.conferredOn().");
+    const who = subject || {};
+    const client = String(clientId == null ? '' : clientId);
+    if (!client || who.kind === 'application' || who.authenticated === false ||
+        !String(who.name || '').trim()) {
+      log.debug("Leaving RolePermissions.conferredOn(). Nothing conferred.");
+      return [];
+    }
+    const out = roles.conferredBy(client);
+    log.debug("Leaving RolePermissions.conferredOn(). " + out.length +
+              " role(s).");
+    return out;
+  }
+
   // The configured roles of a subject, for the PIP's role designator. The
   // built-in ones are left out: they are facts about the REQUEST (who
   // authenticated, over what) that a PIP naming a subject cannot know, and
@@ -506,6 +544,18 @@ class RolePermissions {
     const who = subject || {};
     const ctx = context || {};
     const held = this.heldRoles(who);
+    // AND WHAT THE CLIENT CONFERS ON THEM (#454): a person signing in
+    // through a client holds the roles that client confers, on this token,
+    // beside their own — the console's client conferring ADMIN_CONSOLE is
+    // what lets every person who signs in to the console be issued
+    // `admin:console`. Never for a client's own token.
+    const conferred = this.conferredOn(who, ctx.clientId);
+    conferred.forEach(function (role) {
+      if (held.configured.indexOf(role) < 0) {
+        held.configured.push(role);
+        held.all.push(role);
+      }
+    });
     const authorizes = this.permissionsByRole();
     // THE FACTS, AND THE POLICY DECIDES (#304, part C of #88). Every value
     // of the scope goes to the issuance policy with whether its resource
@@ -662,6 +712,16 @@ class RolePermissions {
           name: String(c.username || c.preferred_username || c.sub || '') };
     return this.inRealm(tokenRealm, function () {
       const held = self.heldRoles(subject);
+      // THE CLIENT'S CONFERRED ROLES, MIXED WITH THE PERSON'S OWN (#454),
+      // read NOW in the realm that issued the token, as the person's are: a
+      // client taken off `roleConferredBy` stops conferring on the tokens it
+      // already holds at once.
+      self.conferredOn(subject, client ? '' : c.client_id)
+        .forEach(function (role) {
+          if (held.configured.indexOf(role) < 0) {
+            held.configured.push(role);
+          }
+        });
       const builtIn = roles.rolesOf({ kind: subject.kind, name: subject.name,
                                       authenticated: true, scopes: scopes })
         .filter(function (one) {

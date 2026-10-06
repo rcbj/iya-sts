@@ -93,12 +93,16 @@ import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 const OIDC_SCOPES = Object.freeze(['openid', 'profile', 'email', 'address',
   'phone', 'offline_access', 'bound_key']);
 
-// `/admin-api`'s two, as `common/roles.js` maps them to ADMIN_READ and
-// ADMIN_WRITE. Not settings: the management API's vocabulary is fixed.
+// `/admin-api`'s three, as `common/roles.js` maps them to ADMIN_READ,
+// ADMIN_WRITE and ADMIN_CONSOLE — the last the console's own operations
+// under `/admin-api/console` (#454). Not settings: the management API's
+// vocabulary is fixed.
 /**
- * The management API's two scopes, `admin:read` and `admin:write`.
+ * The management API's scopes: `admin:read`, `admin:write` and the console's
+ * `admin:console`.
  */
-const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write']);
+const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write',
+                                    'admin:console']);
 
 // Grant Management for OAuth 2.0's two (#142): the grant management API is
 // this service's own resource server, so its scopes are protected like the

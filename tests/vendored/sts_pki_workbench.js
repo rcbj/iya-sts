@@ -229,6 +229,10 @@ function postJson(url, payload) {
 // ---------------------------------------------------------------------------
 let consoleClient = null;
 let view = null;
+// The pane's four actions that fill the form and write nothing (#454): the
+// console's own operations, at `/admin-api/console/pki/<action>`.
+const FORM_HELPERS = ["apply-profile", "generate-keys", "generate-alt-keys",
+                      "use-key"];
 let bundle = null;
 
 // The console's renderers, loaded as a browser loads them: run with no
@@ -284,8 +288,11 @@ async function press(pairs, extra, action) {
   });
   // The formaction's query takes the place of the form's own hidden action.
   delete body.action;
-  const answer = await consoleClient.api("POST", "/admin-api/pki/" + action,
-                                         body);
+  // A FORM HELPER IS THE CONSOLE'S OWN OPERATION (#454), under
+  // `/admin-api/console`; the issue it leads to is the management API's.
+  const operation = (FORM_HELPERS.indexOf(action) >= 0
+    ? "/admin-api/console/pki/" : "/admin-api/pki/") + action;
+  const answer = await consoleClient.api("POST", operation, body);
   if (answer.json && answer.json.workbench) {
     view = Object.assign({}, view, { workbench: answer.json.workbench });
   }
@@ -735,8 +742,18 @@ async function theApiMirrorsThePane(object) {
     });
   });
 
-  const applied = await postJson(api("/pki/apply-profile"),
+  // A FORM HELPER IS THE CONSOLE'S (#454): asked as the console, with its
+  // token, at `/admin-api/console`; at the old address it is refused.
+  const moved = await postJson(api("/pki/apply-profile"),
     { pki_profile: "tls-server", pki_pq_mode: "classical" });
+  check("apply-profile is not a management operation any more", function () {
+    assert.strictEqual(moved.status, 404, moved.text.slice(0, 200));
+  });
+  const asked = await consoleClient.api("POST",
+    "/admin-api/console/pki/apply-profile",
+    { pki_profile: "tls-server", pki_pq_mode: "classical" });
+  const applied = { status: asked.status, body: asked.json || {},
+                    text: String(asked.text || JSON.stringify(asked.json)) };
   check("apply-profile answers with the whole form", function () {
     assert.strictEqual(applied.status, 200, applied.text.slice(0, 200));
     assert.strictEqual(applied.body.draft.pki_dn_cn, "server");

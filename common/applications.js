@@ -16060,9 +16060,11 @@ function internalApplications() {
       // whether their own console may use the API it is drawn from is a
       // question with one answer. The scopes are still narrowed to the roles
       // the person holds.
+      // `admin:console` (#454) beside them: ADMIN_CONSOLE, which this client
+      // confers on everybody signing in through it, authorizes it.
       attributes: { oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'admin:read',
-                                         'admin:write'] },
+                                         'admin:write', 'admin:console'] },
       registration: {
         client_id: 'sts-admin-console',
         client_name: 'Admin console',
@@ -16077,8 +16079,11 @@ function internalApplications() {
         response_types: ['code'],
         // `admin:read admin:write` (#110): the console asks for both, and
         // /admin-api asks whether the client declared them; issuance narrows
-        // them to the roles the person holds.
-        scope: 'openid profile email offline_access admin:read admin:write',
+        // them to the roles the person holds. `admin:console` (#454) is the
+        // console's own operations', authorized by the ADMIN_CONSOLE role
+        // this client confers.
+        scope: 'openid profile email offline_access admin:read admin:write ' +
+               'admin:console',
         // A PUBLIC CLIENT SINCE THE CUTOVER (#446, rcbj's decision 1): the
         // console is a static application signing in in the browser with
         // PKCE, so it holds no credential — and every token issued to it is

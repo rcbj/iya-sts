@@ -159,7 +159,10 @@ function childMain() {
     const signedIn = async function (runtime) {
       const answer = await runtime.tokenRequest({
         grant_type: 'password', username: WRITER, password: 'anything',
-        scope: 'openid admin:read admin:write', client_id: CONSOLE,
+        // The console's own scope too (#454): its frame and its form table
+        // are its own operations, under /admin-api/console.
+        scope: 'openid admin:read admin:write admin:console',
+        client_id: CONSOLE,
         resource: runtime.resource() });
       if (answer.status === 200) {
         runtime.keepTokens(answer.json);

@@ -1990,3 +1990,29 @@ checks the PEP's certificate (the channel forwards the client certificate and
 shims the socket, `common/cell_channel.ts`) and writes the `xacml.pip.query`
 audit row. A query that does not parse, or names nobody the routing index
 knows, is answered where it arrived, as before. Single-cell mode does not look.
+
+## `access-control` has a third conjunct: every role named as required-all (#454, 2026-10-06)
+
+`requiredRoles` is ANY-ONE-OF, as the document has always read it
+(`any-of-any` over `urn:sts:xacml:required-role`). The admin console's own
+operations need two roles of two kinds at once — ADMIN_CONSOLE, which the
+console's client confers on the person's token, and ADMIN_READ, which the
+person holds — and an any-one-of cannot say "both". So the template conjoins
+a third question beside the role and the ownership ones:
+`all-of-any(string-equal, required-all-role, role)` over
+**`urn:sts:xacml:required-all-role`**, which `xacml_access_pep.ts` fills from
+`requiredAllRoles` on the question (`common/access_gate.ts`).
+
+* **An empty bag asks nothing** (`all-of-any` is vacuously true), so every
+  surface that names none — every surface but the console's operations — is
+  decided exactly as before.
+* **A conjunct, not an arm**, for ownership's reason: it narrows and must
+  never be a way round the any-one.
+* **It is in the decision, not in the gate's code** (rcbj's directive that
+  authorization is policy): the gate states the question, and an override of
+  `access-control` in a realm's `ou=policies` that leaves the conjunct out
+  decides without it. The template is built in and called, not seeded, so
+  every realm without an override has it at once.
+
+`tests/access_policy.js` holds the four cases: the conferred role alone,
+ADMIN_READ alone, both, and an empty required-all.

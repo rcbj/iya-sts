@@ -2154,3 +2154,71 @@ streams the application owns, with the members their receiver set, and each
 override's value in force and its source. That is the same view model the
 console's Shared Signals section draws. Pausing and enabling a stream is
 `POST /admin-api/ssf/status`, as it always was.
+
+## THE CONSOLE'S OWN OPERATIONS ARE A SECOND KIND (#454, 2026-10-06)
+
+**Since #446 the console is a static application whose one data source is
+this API, and to draw itself it added operations that exist only for it** —
+its frame, its drawings, its form helpers. They answer in the shape a
+renderer wants (an SVG laid out on the server, a select's options, the
+sidebar), which changes whenever a page does, so they are not a contract an
+external client should build on. rcbj's decision on #454: they are a
+separate KIND, at `/admin-api/console`, behind a separate scope. **It is a
+boundary for cleanliness and not for security** — nothing there shows an
+administrator anything they could not already reach.
+
+**Every row of `ROUTES` is `management` or `console`, and everything follows
+from that field** (`withConsoleRoutes()`):
+
+* **The path IS the kind.** A console row is under `/admin-api/console`, a
+  management row is not, and the gate decides on the path of a request it
+  has not routed (`isConsoleOperation()`), so a console row outside the
+  prefix would be gated as a management one.
+* **Two documents, two lists.** `/admin-api/openapi.json` and the index
+  describe the management rows; `/admin-api/console/openapi.json` and
+  `GET /admin-api/console/operations` (the table the console resolves a form
+  through) the console's. The API explorer — Server configuration → API
+  explorer — is built from the management rows alone.
+* **The scope is `admin:console`.** It is the permission of the native role
+  ADMIN_CONSOLE, which nobody holds as a member: it is CONFERRED by the
+  console's client on everybody who signs in through it
+  (`roleConferredBy`, `common/CLAUDE.md` 3bq). A console operation asks
+  `requiredRoles: [ADMIN_CONSOLE]` and, unless it is the frame or the
+  operation list, `requiredAllRoles: [ADMIN_READ]` (a form helper
+  ADMIN_WRITE) — the access-control document's every-one-of conjunct
+  (`xacml/CLAUDE.md`). So one decision mixes a role the client confers with
+  one the person holds. A token without `admin:console` gets 403
+  `STS-API-0127`, said in words because the policy's refusal would only say
+  a role was missing.
+* **`/me` is either kind's**: who-am-I is the console's first question and an
+  integrator's, so it asks ADMIN_READ or ADMIN_CONSOLE.
+
+**RULE 7 IS UNTOUCHED, AND THAT IS WHAT THE SPLIT IS CHECKED AGAINST.** A
+console operation is a read, or a form helper that writes nothing
+(`writesNothing` on each of its actions); every console CONTROL keeps its
+management operation. `tests/admin_api_kinds.js` holds that, the prefix
+rule, the two documents, and the console's set by operationId — a row
+moving across is a decision, made where the list is.
+
+**THREE SHAPES OF MOVE**, and which one a new console-only answer takes is
+the question to ask:
+
+1. **Moved outright** — the frame, the explorer's own facts,
+   `delegation-settings`, the four delegation drawings and the federation
+   map. Written as console rows where they are declared; the data each draws
+   is already a management operation (`/delegation`, `/permissions`,
+   `/permissions/groups`, `/federation`).
+2. **A twin** — `/status`, `/applications/new`, `/delegation/user` and
+   `/delegation/application` carry data found nowhere else, so they stay;
+   their console twin answers the whole thing and the management row names
+   the members it leaves out (`consoleMembers`, taken off in `sendJson()`)
+   and refuses `format=svg` (`STS-API-0129`).
+3. **A form helper** — `pki/apply-profile`, `generate-keys`,
+   `generate-alt-keys`, `use-key` and `applications/generate-secret` moved to
+   a console action route over the SAME handler; the management route
+   refuses them by name (`STS-API-0128`, 404) rather than letting the one
+   handler behind both carry them out.
+
+**AN ENTRY PERSISTED BEFORE #454 IS NOT MIGRATED** (no migrations): a
+`sts-admin-console` seeded earlier declares no `admin:console`, and the
+console's frame answers 403 `STS-API-0127`, whose text names the fix.
