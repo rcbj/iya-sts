@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4131** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4142** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -63,11 +63,11 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 257
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 699
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 98
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 258
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 701
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 102
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
-* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
+* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 18
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 198
@@ -84,7 +84,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 348
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 90
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 92
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 226
 * [Management API (`STS-API`)](#sts-api) — 80
@@ -1405,6 +1405,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0295` | A person's delegation semantics named something other than delegation or impersonation (#186). | none (a console or management API refusal, HTTP 400) |
 | `STS-AUTHN-0296` | A security key's attestation, revoked by Google's Android attestation status list, could not be recorded as untrusted on the person's entry (#256). | none — an error in the log |
 | `STS-AUTHN-0297` | A WebAuthn android-key attestation is untrusted: a certificate of its chain is revoked or suspended in Google's Android attestation status list, or its revocation could not be checked where the realm requires it (#256). At registration a policy demanding trust refuses it; at a recheck a stored key's attestation becomes untrusted. | the registration's own refusal where trust is demanded (STS-AUTHN-0235); none at a recheck |
+| `STS-AUTHN-0298` | A sign-in was refused at the sign-in door because it used a mechanism the application being signed in to does not allow (appAuthnMechanism, #457). The screen is drawn again, naming the mechanisms it allows. | the sign-in screen, drawn again |
 
 ## STS-OAUTH
 
@@ -2113,6 +2114,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0942` | A resource response that FAPI 2.0 HTTP Signatures should sign went out unsigned: the realm holds no key for oauth2.httpSignatureResponseAlg, the signature was refused, or the response had begun writing before it ended (#178). | none: the response is sent unsigned, and a client requiring a signature refuses it |
 | `STS-OAUTH-0943` | The admin console, declared as a public client, asked the token endpoint for tokens with no DPoP proof. Every token issued to it as a public client is bound to a key it proves (#446). | invalid_dpop_proof (HTTP 400) |
 | `STS-OAUTH-0944` | An access token issued to the admin console as a public client was presented at a resource carrying no cnf.jkt. Such a token is honoured only DPoP-bound (#446). | invalid_token (HTTP 401) |
+| `STS-OAUTH-0945` | An authorization request reached a session whose sign-in mechanism the client does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does. | HTTP 302 to the sign-in screen |
+| `STS-OAUTH-0946` | An authorization request with prompt=none reached a session whose sign-in mechanism the client does not allow (appAuthnMechanism, #457), and prompt=none forbids asking. | login_required (OIDC Core 3.1.2.6) |
 
 ## STS-SAML
 
@@ -2220,6 +2223,10 @@ Raised from: saml/.
 | `STS-SAML-0096` | A SAML 1.1 AttributeQuery or AuthenticationQuery in product mode named a subject no live session here gave the asking relying party (by the NameIdentifier it was issued). #189. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0097` | The TLS certificate the SAML back channel presents (this process's main-port leaves, or another cluster node's off its membership row) could not be read while a SAML 2.0 or SAML 1.1 metadata document was built, so the document went out without that KeyDescriptor and a service provider authenticating the back channel from metadata will refuse the node it names none for. #248. | none — the metadata is served (HTTP 200) without the key |
 | `STS-SAML-0098` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request reached a resolver whose entityID (providerID) the artifact's SourceID does not name — with saml2.perApplicationEntityId or saml11.perApplicationProviderId on, an artifact minted for one party presented at the unscoped resolver or at another party's. The artifact is not spent; it stays resolvable at its own resolver. #160. | SOAP response with status Success and nothing embedded (HTTP 200) — the empty response |
+| `STS-SAML-0099` | A SAML 2.0 sign-in reached a session whose sign-in mechanism the service provider does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-SAML-0100` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a sign-in mechanism the service provider does not allow (appAuthnMechanism, #457). | Responder / RequestDenied |
+| `STS-SAML-0101` | A SAML 1.1 sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-SAML-0102` | A SAML 1.1 flow back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
 
 ## STS-WSTRUST
 
@@ -2279,6 +2286,8 @@ Raised from: ws-federation/.
 | `STS-WSFED-0014` | The wreq parameter is not readable XML; it is ignored and the default token type is used. | — |
 | `STS-WSFED-0015` | The WS-Federation metadata document could not be signed and was served unsigned. | — |
 | `STS-WSFED-0016` | The mock relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. | HTTP 200 page listing the failed checks |
+| `STS-WSFED-0017` | A WS-Federation sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-WSFED-0018` | A WS-Federation request back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
 
 ## STS-FED
 
@@ -4058,6 +4067,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0088` | A role restricted to applications was to be conferred by a client (roleConferredBy, #454); a conferred role is held by the PEOPLE signing in through that client, so the write was refused. | — |
 | `STS-XACML-0089` | One of the two console roles was to be conferred by a client (roleConferredBy, #454); their people are the console roster's, so the write was refused. | — |
 | `STS-XACML-0168` | No issuance policy, not even the built-in one, could answer the per-right GNAP question (issue-gnap-right); the right was refused (#432). | — |
+| `STS-XACML-0169` | The application registry could not be read for the sign-in mechanisms an application allows (appAuthnMechanism, #457), so the issuance gate required none for that issuance. | — |
+| `STS-XACML-0170` | The issuance policy denied a browser issuance on the sign-in mechanism (#457): the application allows only some mechanisms (appAuthnMechanism) and the person's authentication used none of them. The door re-prompts for an allowed one. | — |
 
 ## STS-XPEP
 

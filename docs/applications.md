@@ -615,6 +615,54 @@ logged as `STS-HTTP-0019` (a preflight), `STS-HTTP-0020` (no client named),
 `STS-HTTP-0021` (unknown client) or `STS-HTTP-0022` (the client does not list
 the origin).
 
+### Sign-in mechanisms: how its people may sign in
+
+**`appAuthnMechanism`** is the list of mechanisms an application's people may
+sign in to it with. It is a checkbox per mechanism on the application's
+Configuration tab (*Every protocol*):
+
+| Mechanism | A session satisfies it when |
+|---|---|
+| `password` | this service checked a password |
+| `password-mfa` | this service checked a password and a second factor |
+| `webauthn` | a security key (WebAuthn) answered |
+| `spnego` | a Kerberos ticket signed the person in at `/authn/spnego` |
+| `wallet` | a wallet presentation signed the person in at `/authn/wallet` |
+| `federation` | a federation partner signed the person in |
+
+**None ticked allows every mechanism.** With some ticked it is **enforced, in
+both modes, at every browser sign-in to the application**: OAuth 2.0 /
+OpenID Connect's authorization endpoint, SAML 2.0 (solicited and
+identity-provider-initiated), SAML 1.1 and WS-Federation. The issuance
+policy's `authn-mechanism` rule decides it (`decideAuthnMechanisms` on the
+`role-issuance` template). It compares the mechanisms the person's session
+satisfies with the ones the application allows:
+
+* **A session that satisfies none is re-prompted, not refused.** The person
+  is sent to sign in again, and the screen offers only the allowed
+  mechanisms. Since that screen accepts nothing else, the person comes back
+  with a session that satisfies one, or cancels (`access_denied` at the
+  authorization endpoint). SAML 2.0, SAML 1.1 and WS-Federation make the trip
+  once anyway, and refuse a request that comes back still unmet
+  (`STS-SAML-0100`, `STS-SAML-0102`, `STS-WSFED-0018`); SAML 2.0's
+  `IsPassive` is refused at once. `prompt=none` is answered `login_required`
+  (`STS-OAUTH-0946`).
+* **A sign-in made with a mechanism the application does not allow is
+  refused at the sign-in door** (`STS-AUTHN-0298`), and the screen is drawn
+  again naming the ones it does.
+* **One ticked is also where the sign-in goes**: straight to
+  `/authn/spnego`, `/authn/wallet` or the partner, or the screen in the shape
+  named. Several ticked draw the screen with only those offered. A mechanism
+  this service has switched off (`spnego` while `krb5.spnegoAuthentication`
+  is off, `wallet` while `oid4vp.signIn` is off) is named on the screen and
+  not offered.
+
+Browser authentication only. The password grant, WS-Trust, an LDAP bind,
+the token endpoint and SAML 2.0's attribute query are not covered. Set it
+from the application's page, `POST /admin-api/applications/update-fields`, or
+`add` / `remove` with `attribute: appAuthnMechanism`. A value that is not a
+mechanism is refused (`STS-REG-0203`).
+
 ## Development and product mode
 
 | | Development | Product |

@@ -7858,6 +7858,41 @@ class OAuth2Server {
       session: authInfo || null
     });
     // -----------------------------------------------------------------------
+    // A SESSION ON A SIGN-IN MECHANISM THE CLIENT DOES NOT ALLOW (#457) IS A
+    // SIGN-IN, NOT AN ERROR — the risk step-up's road below: the person is
+    // here, in a browser, so they are sent to sign in again, and the screen
+    // offers only the mechanisms the application allows. A sign-in with any
+    // other is refused at the screen, so the request comes round with a
+    // session that satisfies one. `prompt=none` forbids the screen, so it is
+    // `login_required` (OIDC Core section 3.1.2.6) instead.
+    // -----------------------------------------------------------------------
+    if (!roleAnswer.allowed && roleAnswer.mechanism &&
+        (authInfo || {}).authenticated !== false) {
+      if (String(query.prompt || '').split(/\s+/).indexOf('none') >= 0) {
+        errorCodes.mark(res, 'STS-OAUTH-0946');
+        log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). The " +
+                  "sign-in mechanism, and prompt=none.");
+        return self.redirectBack(res, base, redirectUri, query.state,
+          { error: 'login_required', error_description: roleAnswer.why },
+          self.usesFragment(types, query.response_mode),
+          query.response_mode);
+      }
+      errorCodes.mark(res, 'STS-OAUTH-0945');
+      log.info('oauth2: "' + String(query.client_id || '') + '" allows ' +
+               'signing in with ' + roleAnswer.mechanism.allowed.join(', ') +
+               ', and the session of "' + String(user.username || '') +
+               '" used none of them; sent to sign in again.');
+      log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). A " +
+                "re-prompt for an allowed sign-in mechanism.");
+      return res.redirect(302, this.deps.authn.beginAuthentication({
+        returnTo: self.asPathOf(req) + '/oauth2/authorize?' +
+                  self.authorizationReturnQuery(req, query),
+        hint: String(user.username || ''),
+        protocol: 'OAuth 2.0 / OIDC',
+        application: String(query.client_id || '')
+      }));
+    }
+    // -----------------------------------------------------------------------
     // A STEP-UP ON RISK IS A SIGN-IN, NOT AN ERROR (#62 P3). The policy
     // denied on the risk of the session this response would rest on and
     // named a factor; the person is here, in a browser, so they are sent to

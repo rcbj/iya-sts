@@ -3451,14 +3451,57 @@ class Saml2Sso {
       // reads (#62 P3).
       session: session
     });
+    // -----------------------------------------------------------------------
+    // A SESSION ON A SIGN-IN MECHANISM THE SERVICE PROVIDER DOES NOT ALLOW
+    // (#457) is sent to sign in again — the screen offers only the allowed
+    // ones, and a sign-in with any other is refused there — ONCE, on the
+    // one-trip rule above: the request is held and the trip recorded on it,
+    // as the ForceAuthn branch does. Back from that trip still unmet, or with
+    // IsPassive, it is the RequestDenied Response below, with the policy's
+    // sentence naming the mechanisms. The hold is that branch's, repeated
+    // rather than shared: that branch is reached before the policy is asked.
+    // -----------------------------------------------------------------------
+    if (!roleAnswer.allowed && roleAnswer.mechanism && !returned &&
+        !request.isPassive && session.authenticated !== false) {
+      const again = held || {
+        id: randomId(18), samlRequest: String(encoded),
+        relayState: String(relayState || ''),
+        arrivedBy: arrivedBy, signature: String(params.Signature || ''),
+        sigAlg: String(params.SigAlg || ''),
+        verification: verification
+      };
+      again.expires = Date.now() + this.requestTtlMs();
+      again.forcedAt = nowSec();
+      pendingRequests.set(again.id, again);
+      errorCodes.mark(res, 'STS-SAML-0099');
+      log.info('saml2: "' + spEntityId + '" allows signing in with ' +
+               roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
+               'of "' + String((session.user || {}).username) + '" used ' +
+               'none of them; sent to sign in again.');
+      const whereAgain = beginAuthentication({
+        returnTo: req.path + '?rid=' + encodeURIComponent(again.id),
+        hint: String((session.user || {}).username || ''),
+        application: spEntityId,
+        protocol: 'SAML 2.0',
+        details: [
+          { label: 'Service provider', value: spEntityId,
+            note: 'it allows signing in with ' +
+                  roleAnswer.mechanism.allowed.join(', ') + ' only.' }
+        ]
+      });
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). A re-prompt for " +
+                "an allowed sign-in mechanism.");
+      return res.set('Cache-Control', 'no-store').redirect(303, whereAgain);
+    }
     if (!roleAnswer.allowed) {
       log.info('saml2: the issuance policy refused an assertion for "' +
                String((session.user || {}).username) + '" to "' + spEntityId +
                '". ' + roleAnswer.why);
       pendingRequests.delete(String(params.rid || ''));
-      // A realm being removed (#262) is its own code.
+      // A realm being removed (#262) is its own code; a sign-in mechanism
+      // still not allowed after the one trip (#457) is its own.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-                                               : 'STS-SAML-0010');
+        : (roleAnswer.mechanism ? 'STS-SAML-0100' : 'STS-SAML-0010'));
       const denied = this.buildResponse({
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
@@ -3659,6 +3702,32 @@ class Saml2Sso {
       claims: null,
       session: session
     });
+    // A SESSION ON A SIGN-IN MECHANISM THE SERVICE PROVIDER DOES NOT ALLOW
+    // (#457): sent to sign in again, back to this same link, which is asked
+    // again with the new session. The screen offers only the allowed
+    // mechanisms and refuses a sign-in with any other, so it cannot loop.
+    if (!roleAnswer.allowed && roleAnswer.mechanism &&
+        session.authenticated !== false) {
+      const again = this.rawQueryOf(req);
+      errorCodes.mark(res, 'STS-SAML-0099');
+      log.info('saml2: "' + spEntityId + '" allows signing in with ' +
+               roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
+               'used none of them; sent to sign in again.');
+      const whereAgain = beginAuthentication({
+        returnTo: req.path + (again ? '?' + again : ''),
+        hint: String((session.user || {}).username || ''),
+        application: spEntityId,
+        protocol: 'SAML 2.0',
+        details: [
+          { label: 'Service provider', value: spEntityId,
+            note: 'it allows signing in with ' +
+                  roleAnswer.mechanism.allowed.join(', ') + ' only.' }
+        ]
+      });
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). A re-prompt for an " +
+                "allowed sign-in mechanism.");
+      return res.set('Cache-Control', 'no-store').redirect(303, whereAgain);
+    }
     if (!roleAnswer.allowed) {
       // A realm being removed (#262) is its own code.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
@@ -3871,7 +3940,11 @@ class Saml2Sso {
                  name: String((session.user || {}).username || ''),
                  authenticated: session.authenticated !== false },
       claims: null,
-      session: session
+      session: session,
+      // A BACK-CHANNEL QUERY, NOT A BROWSER SIGN-IN (#457): the sign-in
+      // mechanism rule is browser authentication only (rcbj), and nobody is
+      // here to sign in again.
+      browser: false
     });
     if (!roleAnswer.allowed) {
       log.debug("Leaving Saml2Sso.answerAttributeQuery(). The issuance " +

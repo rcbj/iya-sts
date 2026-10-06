@@ -4732,6 +4732,21 @@ rather than being an error.
 
 ### `appAuthnMechanism` — the THIRD of that group, and the generalisation of the other two
 
+**#457 (2026-10-06): A LIST OF THE MECHANISMS THE APPLICATION ALLOWS, AND
+ENFORCED.** What follows describes the single routing value it was. Now it is
+`multi`, one checkbox per mechanism, a value checked at the write
+(`CHOICES_CHECKED_HERE`); none listed allows every one. Every BROWSER sign-in
+to the application is put to the issuance policy with what the session
+satisfies — `common/authn_mechanisms.ts`, a leaf that reads an authentication
+event's authority, `amr`, `acr` and credential kind (`federation`,
+`spnego`, `password`, `password-mfa`, `webauthn` off the credential and not
+`hwk`, which a wallet also sets, `wallet` off `pop`) — and its
+`authn-mechanism` rule decides (`xacml/CLAUDE.md`). A session on the wrong
+mechanism is re-prompted, not refused: OAuth's authorization endpoint
+(`STS-OAUTH-0945`, `login_required` for prompt=none), SAML 2.0 and SAML 1.1
+(a held request, one trip), WS-Federation (one trip, a marker on the return
+address). Non-browser doors are not covered (rcbj).
+
 Added 2026-08-26. The pair above can say "send my people to a federated identity
 provider" and can say nothing else, because until then there was nothing else to
 say: every way of authenticating somebody here was either this service's own

@@ -1969,6 +1969,38 @@ class Saml11Sso {
       // reads (#62 P3).
       session: session
     });
+    // A SESSION ON A SIGN-IN MECHANISM THE RELYING PARTY DOES NOT ALLOW
+    // (#457) is sent to sign in again, ONCE: the flow is held as the branch
+    // above holds it, and the trip recorded on it (`mechanismAt`), so a
+    // flow back from that trip still unmet is the refusal page below — the
+    // screen offers only the allowed mechanisms and refuses any other, so
+    // that is a person who cancelled or could not.
+    if (!roleAnswer.allowed && roleAnswer.mechanism &&
+        !(held && held.mechanismAt) && session.authenticated !== false) {
+      const again = held || { id: randomId(18), params: carried };
+      again.expires = Date.now() + this.requestTtlMs();
+      again.mechanismAt = Date.now();
+      pendingFlows.set(again.id, again);
+      errorCodes.mark(res, 'STS-SAML-0101');
+      log.info('saml11: "' + rpId + '" allows signing in with ' +
+               roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
+               'of "' + String((session.user || {}).username) + '" used ' +
+               'none of them; sent to sign in again.');
+      const whereAgain = beginAuthentication({
+        returnTo: req.path + '?fid=' + encodeURIComponent(again.id),
+        hint: String((session.user || {}).username || ''),
+        protocol: 'SAML 1.1',
+        application: rpId,
+        details: [
+          { label: 'Relying party', value: rpId,
+            note: 'it allows signing in with ' +
+                  roleAnswer.mechanism.allowed.join(', ') + ' only.' }
+        ]
+      });
+      log.debug("Leaving Saml11Sso.interSiteTransfer(). A re-prompt for an " +
+                "allowed sign-in mechanism.");
+      return res.set('Cache-Control', 'no-store').redirect(303, whereAgain);
+    }
     if (!roleAnswer.allowed) {
       log.info('saml11: the issuance policy refused an assertion for "' +
                String((session.user || {}).username) + '" to "' + rpId + '". ' +
@@ -1977,8 +2009,10 @@ class Saml11Sso {
       log.debug("Leaving Saml11Sso.interSiteTransfer(). The issuance policy " +
                 "refused it.");
       // A realm being removed (#262) is its own code.
+      // A sign-in mechanism still not allowed after the one trip (#457) is
+      // its own.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-                                               : 'STS-SAML-0032');
+        : (roleAnswer.mechanism ? 'STS-SAML-0102' : 'STS-SAML-0032'));
       log.debug("Leaving Saml11Sso.interSiteTransfer().");
       return this.samlError(res, 403, 'Refused by policy', roleAnswer.why,
         '<p>The person is signed in. The XACML issuance policy would not let ' +
