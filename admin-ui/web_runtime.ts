@@ -1322,8 +1322,12 @@ class ConsoleRuntime {
     const held = kit.gridValuesFromDraft(drafted)[asked.attribute] || [];
     // AN APPLICATION SEARCH LEAVES OUT THE APPLICATION ITSELF, which neither
     // list may name (STS-REG-0335); both leave out what the list holds.
-    const exclude = (kind === 'applications'
-      ? [String(fields.application || '')] : []).concat(held);
+    // A `parties` search (#461) replaces ONE value, so it leaves out only
+    // the application itself, and only from the applications it finds.
+    const exclude = kind === 'parties'
+      ? [String(fields.application || '')]
+      : (kind === 'applications'
+        ? [String(fields.application || '')] : []).concat(held);
     const answer = await this.apiJson('GET',
       WebAnswers.fieldSearchPath(kind, asked, exclude));
     const found = WebAnswers.fieldSearchFound(kind, asked,

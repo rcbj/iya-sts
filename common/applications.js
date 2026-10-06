@@ -8365,6 +8365,13 @@ function delegationAttributeProblem(attribute, value) {
 // self-reference written that way grants nothing, since the policy's question
 // is always about two different parties, so hiding it would only hide what
 // the entry holds. STS-REG-0335.
+//
+// `appMayAct` TOO (#461): the one party this application names as its
+// delegate, by DN. Naming its own entry is meaningless — a token about it
+// would say it may act for itself — so it is refused by the same code. Its
+// value is a DN and is compared as LDAP compares one (case, and the spaces
+// after a comma, do not matter) with the entry's DN, or, at a create, with
+// the DN the entry is about to be given (`cn=<labelFor()>,` the container).
 // ---------------------------------------------------------------------------
 /**
  * The attributes whose values name another application of the realm, and
@@ -8381,27 +8388,62 @@ const APPLICATION_REFERENCE_ATTRIBUTES = ['appAllowedToDelegateTo',
  * group DNs. One table, so the console and this module cannot disagree
  * about which cells have one.
  */
+//
+// `parties` (#461) is `appMayAct`'s: ONE person or application, by the DN of
+// its entry, searched as either kind and chosen to REPLACE the one value.
 const FIELD_SEARCHES = {
   appAllowedToDelegateTo: 'applications',
   appAllowedToActOnBehalfOf: 'applications',
-  appDelegationSubjectGroup: 'groups'
+  appDelegationSubjectGroup: 'groups',
+  appMayAct: 'parties'
 };
 
 /**
- * Checks that a value of `appAllowedToDelegateTo` or
- * `appAllowedToActOnBehalfOf` does not name the application it is written
- * on.
+ * A DN as LDAP compares one, near enough for an equality between two DNs
+ * this directory wrote: lower case, no spaces around a comma.
+ *
+ * @param dn - the DN
+ * @returns the comparable form
+ */
+function comparableDn(dn) {
+  log.debug("Entering comparableDn().");
+  log.debug("Leaving comparableDn().");
+  return String(dn || '').trim().toLowerCase().replace(/\s*,\s*/g, ',');
+}
+
+/**
+ * Checks that a value of `appAllowedToDelegateTo`,
+ * `appAllowedToActOnBehalfOf` or `appMayAct` does not name the application
+ * it is written on.
  *
  * @param attribute - the attribute's name
  * @param value - the value written
  * @param identifier - the application's identifier
  * @param fields - the application's fields (what it answers to)
+ * @param entryDn - optional; the entry's DN, where it has one already
  * @returns the refusal sentence, or ''
  */
-function selfReferenceProblem(attribute, value, identifier, fields) {
+function selfReferenceProblem(attribute, value, identifier, fields,
+                              entryDn) {
   log.debug("Entering selfReferenceProblem(). attribute=" + attribute);
   const text = String(value === undefined || value === null ? '' : value)
     .trim();
+  if (attribute === 'appMayAct' && text) {
+    const container = containerDn();
+    const ownDns = [entryDn || '',
+                    container ? 'cn=' + labelFor(identifier) + ',' +
+                                container : '']
+      .filter(function (one) { return !!one; })
+      .map(comparableDn);
+    if (ownDns.indexOf(comparableDn(text)) < 0) {
+      log.debug("Leaving selfReferenceProblem(). Another party.");
+      return '';
+    }
+    log.debug("Leaving selfReferenceProblem(). appMayAct names itself.");
+    return attribute + ': "' + text + '" is this application\'s own entry. ' +
+           'It names the OTHER party that may act for it, and an ' +
+           'application acting for itself is not a delegation.';
+  }
   if (APPLICATION_REFERENCE_ATTRIBUTES.indexOf(attribute) < 0 || !text) {
     log.debug("Leaving selfReferenceProblem(). Not asked.");
     return '';
@@ -12316,15 +12358,16 @@ function createApplication(detail) {
   // read against the identifier and the identifiers this create is about to
   // write, for familyRefusal()'s reason: the entry does not exist yet.
   const selfProblems = [];
-  APPLICATION_REFERENCE_ATTRIBUTES.forEach(function (name) {
-    valuesOf(given.fields[name]).forEach(function (one) {
-      const problem = selfReferenceProblem(name, one, identifier,
-                                           given.fields);
-      if (problem) {
-        selfProblems.push(problem);
-      }
+  APPLICATION_REFERENCE_ATTRIBUTES.concat(['appMayAct'])
+    .forEach(function (name) {
+      valuesOf(given.fields[name]).forEach(function (one) {
+        const problem = selfReferenceProblem(name, one, identifier,
+                                             given.fields);
+        if (problem) {
+          selfProblems.push(problem);
+        }
+      });
     });
-  });
   if (selfProblems.length) {
     log.debug("Leaving createApplication(). A delegation list names the " +
               "application itself.");
@@ -12842,7 +12885,8 @@ function updateApplication(identifier, change) {
   // Nor may the two delegation lists name the application itself (#459).
   if ((mode === 'set' || mode === 'add') && value) {
     const problem = selfReferenceProblem(attribute, value, identifier,
-                                         loaded.record.fields);
+                                         loaded.record.fields,
+                                         loaded.entry && loaded.entry.dn);
     if (problem) {
       log.debug("Leaving updateApplication(). It names itself.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0335');

@@ -10959,14 +10959,48 @@ class AdminViews {
           personFieldCount: vcClaims.personFields().length,
           newUserContainer: self.newUserContainer(),
           registryKeeps: stats.MAX_USERS,
-          // Each row with its live sign-on sessions, the column beside it.
+          // Each row with its live sign-on sessions, the column beside it,
+          // and its entry's DN (#461) — what an application's `appMayAct`
+          // names a person by, so the console's search there can store it.
+          // Looked up for the rows of this page only.
           users: shown.map(function (row) {
             return Object.assign({}, row,
-                                 { liveSessions: liveByUser[row.key] || 0 });
+                                 { liveSessions: liveByUser[row.key] || 0,
+                                   dn: self.personDnOf(row) });
           })
       };
       }())
     };
+  }
+
+  /**
+   * The DN of a listed person's directory entry (#461), or '' where they
+   * have none or no directory is loaded.
+   *
+   * @param row - a row of the people list
+   * @returns the DN, or ''
+   */
+  personDnOf(row) {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminViews.personDnOf().");
+    if (!row || !row.inDirectory) {
+      log.debug("Leaving AdminViews.personDnOf(). No entry.");
+      return '';
+    }
+    const name = String(row.name || row.key || '');
+    let dn = '';
+    try {
+      dn = String(credentials.deviceStore('personDnOf', [name]) || '');
+    } catch (e) {
+      // A directory that cannot answer leaves the row without a DN, which
+      // the search draws as a person who cannot be named; the list itself
+      // is still answered.
+      log.debug("Caught in AdminViews.personDnOf(): " +
+                ((e && e.message) || e));
+      dn = '';
+    }
+    log.debug("Leaving AdminViews.personDnOf().");
+    return dn;
   }
 
   // ===========================================================================

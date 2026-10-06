@@ -20062,7 +20062,8 @@ const CODES = [
     summary: 'A write of appAllowedToDelegateTo or appAllowedToActOnBehalfOf ' +
       'was refused: the value names the application it is written on — ' +
       'its identifier, an identifier it answers to, or an audience it ' +
-      'registered (#459). Both lists name the OTHER party of a delegation.',
+      'registered (#459) — or a write of appMayAct names its own entry ' +
+      'by DN (#461). Each names the OTHER party of a delegation.',
     spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
       '{ ok: false, errors }' },
   { code: 'STS-DBG-0001',

@@ -1731,7 +1731,12 @@ class WebKit {
     // `tabindex="-1"` makes the cell itself focusable, so a click on its
     // blank space — or on a button a browser does not focus on click —
     // keeps focus inside it rather than closing it under the pointer.
-    const searchKind = row.type === 'array' && opts.searches
+    // On a list of free text, or (#461) on a single text box — never on a
+    // closed set, a flag or a long text.
+    const searchable = row.type === 'array'
+      ? !(row.choices && row.choices.length)
+      : ['boolean', 'enum', 'int'].indexOf(row.type) < 0 && !row.long;
+    const searchKind = searchable && opts.searches
       ? String(opts.searches[row.attribute] || '') : '';
     if (searchKind) {
       control += WebKit.fieldSearchOf(row.attribute, searchKind,
@@ -1777,14 +1782,21 @@ class WebKit {
    * Draws a list field's search: the box, Find, and the page of results.
    *
    * @param attribute - the list's attribute
-   * @param kind - `applications` or `groups`, what the search finds
+   * @param kind - `applications`, `groups` or `parties` (people or
+   *   applications, one value), what the search finds
    * @param found - the last search's results for this list, or nothing
    * @param redraw - the route the grid's round trips post to
    * @returns the search as HTML
    */
   static fieldSearchOf(attribute, kind, found, redraw) {
-    const groups = kind === 'groups';
-    const noun = groups ? 'group' : 'application';
+    // `parties` (#461) is `appMayAct`'s: ONE value, a person's or another
+    // application's DN, searched as either kind (a toggle — each page of
+    // five is then one list operation's page) and chosen to REPLACE it.
+    const parties = kind === 'parties';
+    const which = parties && found && found.which === 'applications'
+      ? 'applications' : 'people';
+    const noun = kind === 'groups' ? 'group'
+      : parties && which === 'people' ? 'person' : 'application';
     const action = WebKit.esc(redraw + '#fgc-' + attribute);
     const button = function (name, value, label, tipText, cls?, off?) {
       return '<button type="submit" class="secondary ' + (cls || '') +
@@ -1793,31 +1805,73 @@ class WebKit {
         WebKit.tip(tipText) + (off ? ' disabled' : '') + '>' +
         WebKit.esc(label) + '</button>';
     };
-    const box = '<div class="fg-item fg-findrow"><input type="search" ' +
-      'id="fgq-' + WebKit.esc(attribute) + '" name="fgfind.' +
-      WebKit.esc(attribute) + '" data-fg-find="' + WebKit.esc(attribute) +
-      '" value="' + WebKit.esc(found ? found.query : '') + '" ' +
-      'placeholder="Find ' + (groups ? 'a group' : 'an application') +
-      '" aria-label="' + WebKit.esc('Find ' + (groups ? 'a group' :
-        'another application') + ' for ' + attribute) + '"' +
-      WebKit.tip(groups
-        ? 'Type part of a group\'s DN or name and press Find (or Enter): ' +
-          'the realm\'s groups are matched as the Groups page\'s filter ' +
-          'matches them, ' + WebKit.FIND_PER_PAGE + ' to a page, leaving ' +
-          'out the groups this list already holds.'
+    const boxTip = kind === 'groups'
+      ? 'Type part of a group\'s DN or name and press Find (or Enter): ' +
+        'the realm\'s groups are matched as the Groups page\'s filter ' +
+        'matches them, ' + WebKit.FIND_PER_PAGE + ' to a page, leaving ' +
+        'out the groups this list already holds.'
+      : parties
+        ? 'Type part of a username, or of an application\'s identifier or ' +
+          'name, and press Find (or Enter): People are matched as the ' +
+          'Users page\'s filter matches them, Applications as the ' +
+          'Applications page\'s, ' + WebKit.FIND_PER_PAGE + ' to a page, ' +
+          'leaving out this application itself, which may not name itself.'
         : 'Type part of an application\'s identifier or name and press ' +
           'Find (or Enter): the realm\'s applications are matched as the ' +
           'Applications page\'s filter matches them, ' +
           WebKit.FIND_PER_PAGE + ' to a page, leaving out this application ' +
           'itself, which this list may not name, and the applications it ' +
-          'already holds.') + '>' +
+          'already holds.';
+    const placeholder = kind === 'groups' ? 'Find a group'
+      : parties ? 'Find a person or an application' : 'Find an application';
+    const kindRadio = function (value, label, tipText) {
+      return '<label class="fg-radio"' + WebKit.tip(tipText) + '>' +
+        '<input type="radio" name="fgkind.' + WebKit.esc(attribute) +
+        '" value="' + value + '"' + (which === value ? ' checked' : '') +
+        '>' + WebKit.esc(label) + '</label>';
+    };
+    const kinds = parties
+      ? '<div class="fg-bool fg-kinds" role="radiogroup" aria-label="' +
+        WebKit.esc('What to find for ' + attribute) + '">' +
+        kindRadio('people', 'people', 'Find a PERSON of this realm, by ' +
+                  'username (GET /admin-api/users). Their entry\'s DN is ' +
+                  'what is stored.') +
+        kindRadio('applications', 'applications', 'Find another ' +
+                  'APPLICATION of this realm, by identifier or name (GET ' +
+                  '/admin-api/applications). Its entry\'s DN is what is ' +
+                  'stored.') + '</div>'
+      : '';
+    const box = kinds + '<div class="fg-item fg-findrow"><input ' +
+      'type="search" id="fgq-' + WebKit.esc(attribute) + '" name="fgfind.' +
+      WebKit.esc(attribute) + '" data-fg-find="' + WebKit.esc(attribute) +
+      '" value="' + WebKit.esc(found ? found.query : '') + '" ' +
+      'placeholder="' + placeholder + '" aria-label="' +
+      WebKit.esc(placeholder + ' for ' + attribute) + '"' +
+      WebKit.tip(boxTip) + '>' +
       button('fgsearch', attribute, 'Find',
-             'Search the realm\'s ' + noun + 's for what is in the box. ' +
+             'Search the realm\'s ' + (parties ? 'people or applications, ' +
+             'as ticked above,' : noun + 's') + ' for what is in the box. ' +
              'An empty box lists them all. Nothing is saved.', 'fg-findbtn') +
       '</div>';
     if (!found) {
       return '<div class="fg-find">' + box + '</div>';
     }
+    // AN ADD PUTS A VALUE IN A LIST; A USE REPLACES THE ONE VALUE (#461).
+    const pick = function (one) {
+      if (!one.value) {
+        return '<span class="state-none"' + WebKit.tip('This identity has ' +
+          'no entry in this realm\'s directory, so there is no DN to name ' +
+          'it by.') + '>no entry</span>';
+      }
+      return parties
+        ? button('fgadd', attribute + '|' + one.value, 'Use',
+                 'Make ' + one.value + ' the value of ' + attribute + ', ' +
+                 'in place of what the box holds. It is written when you ' +
+                 'press this tab\'s Save.', 'fg-add')
+        : button('fgadd', attribute + '|' + one.value, 'Add',
+                 'Put ' + one.value + ' in this list, as a new box. It ' +
+                 'is written when you press this tab\'s Save.', 'fg-add');
+    };
     const rows = found.failed
       ? '<span class="state-none">The search could not be run: /admin-api ' +
         'did not answer it.</span>'
@@ -1828,12 +1882,13 @@ class WebKit {
           : 'No other ' + noun + ' to offer here.') + '</span>'
         : found.rows.map(function (one) {
           return '<div class="fg-hit"><span class="fg-hit-name">' +
-            WebKit.shortened(one.value, 60) +
-            (one.label ? ' ' + WebKit.esc(one.label) : '') + '</span>' +
-            button('fgadd', attribute + '|' + one.value, 'Add',
-                   'Put ' + one.value + ' in this list, as a new box. It ' +
-                   'is written when you press this tab\'s Save.',
-                   'fg-add') + '</div>';
+            (one.kind
+              ? '<span class="fg-hit-kind">' + WebKit.esc(one.kind) +
+                '</span> ' + WebKit.esc(one.label) +
+                (one.value ? ' ' + WebKit.shortened(one.value, 60) : '')
+              : WebKit.shortened(one.value, 60) +
+                (one.label ? ' ' + WebKit.esc(one.label) : '')) +
+            '</span>' + pick(one) + '</div>';
         }).join('');
     const pager = found.failed || found.pages <= 1 ? ''
       : '<div class="fg-pager">' +

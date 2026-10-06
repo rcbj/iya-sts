@@ -747,6 +747,10 @@ function childMain() {
       '/admin-api/users/create': ['view'],
       '/admin-api/applications/create': ['view']
     };
+    // AND A FIELD'S SEARCH (#459, #461): its box, its page and its people
+    // / applications toggle are read by the runtime's round trip and never
+    // sent — `fgfind.<attribute>`, `fgpage.<attribute>`, `fgkind.<...>`.
+    const SEARCH_CONTROL = /^fg(find|page|kind)\./;
     const droppedFields = {};
     const droppedFilled = {};
     const refusedChoicesPosted = {};
@@ -780,6 +784,7 @@ function childMain() {
               // A column of checkboxes is carried into the list member its
               // operation takes (`attribute` into `attributes`).
               if (name === 'action' || CONSOLE_ONLY.indexOf(name) >= 0 ||
+                  SEARCH_CONTROL.test(name) ||
                   (CONSOLE_ONLY_AT[operation] || []).indexOf(name) >= 0 ||
                   Object.prototype.hasOwnProperty.call(shaped, name) ||
                   Object.prototype.hasOwnProperty.call(shaped, name + 's')) {
@@ -806,6 +811,7 @@ function childMain() {
               await shaper.requestSchema(operation));
             Object.keys(full).forEach(function (name) {
               if (name === 'action' || CONSOLE_ONLY.indexOf(name) >= 0 ||
+                  SEARCH_CONTROL.test(name) ||
                   (CONSOLE_ONLY_AT[operation] || []).indexOf(name) >= 0 ||
                   Object.prototype.hasOwnProperty.call(fullShaped, name) ||
                   Object.prototype.hasOwnProperty.call(fullShaped,
