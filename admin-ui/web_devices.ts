@@ -449,7 +449,18 @@ class DevicesPage {
             'device or its owner presents.'
           : 'This realm (product) REFUSES a self-asserted key a device or ' +
             'its owner presents (STS-DEVICE-0024).') + ' ' +
-        esc(json.unattestedKeys.adminKeys) + '.') +
+        esc(json.unattestedKeys.adminKeys) + '. ' +
+        (json.freshKeyAttestation
+          ? (json.freshKeyAttestation.required
+            ? 'A TPM key attestation must also be FRESH: its extraData a ' +
+              'nonce from <code>' + esc(json.freshKeyAttestation.nonce) +
+              '</code>, sent with that response\'s cookie, or it is ' +
+              'refused (STS-DEVICE-0050). '
+            : 'A TPM key attestation that is not fresh (no nonce from <code>' +
+              esc(json.freshKeyAttestation.nonce) + '</code>) is recorded ' +
+              'with freshness unproven. ') +
+            esc(json.freshKeyAttestation.scep) + '.'
+          : '')) +
       '<table class="grid"><thead><tr><th>Statement</th><th>Anchors</th>' +
       '<th>Setting</th><th>Shipped</th></tr></thead><tbody>' +
       json.trustAnchors.map(function (r: Json): string {

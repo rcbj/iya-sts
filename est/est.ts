@@ -29,6 +29,29 @@
 //   POST serverkeygen     a key pair this service generates (4.4)
 //   GET  csrattrs         what a request should carry (4.5)
 //   POST fullcmc          501: Full CMC (4.3) is not implemented
+//   GET  nonce            a freshness nonce for a key attestation in the next
+//   POST nonce            request (draft-ietf-lamps-attestation-freshness
+//                         section 5.1, #257)
+//
+// **THE NONCE (#257).** draft-ietf-lamps-csr-attestation section 6.2 defers
+// freshness to draft-ietf-lamps-attestation-freshness, whose section 5 says a
+// compliant EST server MUST provide `/nonce`: GET with no content, or POST
+// with `application/est-attestation-freshness+json` `{ len?, reqTypeInfo? }`,
+// answered 200 `{ nonce, expiry }` in the same media type; 400 for any error
+// and 503 when unable. Here it is AUTHENTICATED exactly as an enrollment is
+// (section 5.1: "MAY request HTTP-based client authentication"; section 8:
+// associate nonce state "with an authenticated or otherwise constrained
+// requester"), and the nonce is bound to the request that spends it by the
+// session-maintenance mechanism section 5.1 requires — an HTTP cookie
+// (`sts_est_nonce`, a random handle) — AND by the authenticated principal,
+// so a nonce another client fetched is not this one's whatever its cookie.
+// The row lives in `devices.challenges` (`common/device_enrolment.ts`), and
+// `simpleenroll` hands the cookie's handle to the core, which spends the
+// TPM statement's extraData as the nonce. A label naming a profile other
+// than `device` answers an EMPTY nonce, which the draft defines as "no
+// freshness proof needed": nothing else here reads an attestation.
+// No `reqTypeInfo` type is defined by this service, so a request naming one
+// is answered 503 (unable to supply its respInfo).
 //
 // **EVERYTHING THAT IS NOT A WIRE FORMAT IS THE CORE'S.** Who may be issued a
 // certificate for whom, which names it may carry, whether a request proves
@@ -106,6 +129,7 @@ import InstanceSlot = require('../common/instance_slot');
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
 import cellRouting = require('../common/cell_routing');
+import stsCrypto = require('../common/crypto');
 
 /**
  * The enrollment family's name in the core and the monitor, `est`.
@@ -128,8 +152,23 @@ const OPERATIONS = [
   { name: 'simplereenroll', method: 'POST' },
   { name: 'serverkeygen', method: 'POST' },
   { name: 'csrattrs', method: 'GET' },
-  { name: 'fullcmc', method: 'POST' }
+  { name: 'fullcmc', method: 'POST' },
+  // draft-ietf-lamps-attestation-freshness section 5.1 (#257): GET with no
+  // content, POST with a nonce request — the one operation with two.
+  { name: 'nonce', method: 'GET, POST' }
 ];
+
+/**
+ * The methods an `OPERATIONS` row answers.
+ *
+ * @param op - the row
+ * @returns its methods, `GET` and `POST` for `nonce`
+ */
+function methodsOf(op: { method: string }): string[] {
+  log.debug("Entering methodsOf().");
+  log.debug("Leaving methodsOf().");
+  return String(op.method).split(/,\s*/);
+}
 
 // Every path this module registers, for `sts_metadata.js` and the endpoints
 // table to be checked against.
@@ -153,8 +192,32 @@ const MEDIA = {
   pkcs10: 'application/pkcs10',
   certsOnly: 'application/pkcs7-mime; smime-type=certs-only',
   csrattrs: 'application/csrattrs',
-  pkcs8: 'application/pkcs8'
+  pkcs8: 'application/pkcs8',
+  // draft-ietf-lamps-attestation-freshness section 5.1, for a nonce request
+  // and its response alike (#257).
+  freshness: 'application/est-attestation-freshness+json'
 };
+
+// THE NONCE COOKIE (#257): the session-maintenance mechanism
+// draft-ietf-lamps-attestation-freshness section 5.1 requires to bind a
+// nonce to the CSR that carries it. Its value is a random handle and nothing
+// else — the nonce itself never leaves in it.
+const NONCE_COOKIE = 'sts_est_nonce';
+const NONCE_HANDLE_SHAPE = /^est\.[A-Za-z0-9_-]{43}$/;
+
+const vzEst = validation.z;
+// The nonce-request CDDL (section 3.2): two optional members and no others —
+// a CDDL map is closed unless it says otherwise — `len` an unsigned integer
+// in 8..64, and `reqTypeInfo` a `type` that is a dotted-decimal OID and an
+// optional `reqInfo` of any shape.
+const NONCE_REQUEST = vzEst.strictObject({
+  len: vzEst.number().int().min(8).max(64).optional(),
+  reqTypeInfo: vzEst.strictObject({
+    type: vzEst.string().max(200).regex(/^[0-2](\.(0|[1-9][0-9]*))+$/,
+                                       'must be a dotted-decimal OID'),
+    reqInfo: vzEst.any().optional()
+  }).optional()
+});
 
 // No EST operation takes a query string.
 const NO_QUERY = validation.z.strictObject({});
@@ -190,6 +253,10 @@ interface EstDeps {
   cells: typeof cells;
   cellPlacement: typeof cellPlacement;
   cellRouting: typeof cellRouting;
+  stsCrypto: typeof stsCrypto;
+  // `common/device_enrolment`, whose challenge store holds the nonces
+  // (#257). Lazily: it requires the WebAuthn verifier and credentials.
+  loadDeviceEnrolment(): typeof import('../common/device_enrolment');
   // Required when first called, as the JavaScript did, for the reason
   // given where each is called.
   loadPkijs(): typeof import('pkijs');
@@ -246,6 +313,10 @@ class Est {
       cells: cells,
       cellPlacement: cellPlacement,
       cellRouting: cellRouting,
+      stsCrypto: stsCrypto,
+      loadDeviceEnrolment: function () {
+        return require('../common/device_enrolment');
+      },
       loadPkijs: function () {
         return require('pkijs');
       },
@@ -1028,6 +1099,9 @@ class Est {
       // The request's key attestation, read only by the device profile
       // (#164 phase 2, `core.issueForDevice()`).
       attestations: csr.attestations,
+      // The nonce cookie /nonce set (#257): the session a TPM statement's
+      // extraData is spent against as a freshness nonce.
+      attestationSession: { handle: this.nonceHandleOf(req) },
       // The unlabelled path's profile is the realm default, which an
       // application's own default replaces (2026-10-01).
       profileDefaulted: !ctx.labelled,
@@ -1475,6 +1549,220 @@ class Est {
     log.debug("Leaving Est.csrattrs().");
   }
 
+  // ---------------------------------------------------------------------------
+  // THE FRESHNESS NONCE (#257) — see the header.
+  // ---------------------------------------------------------------------------
+
+  // The nonce cookie's handle, when the request carries a well-formed one.
+  /**
+   * Returns the handle in the request's `sts_est_nonce` cookie.
+   *
+   * @param req - the request
+   * @returns the handle, or empty when there is none or it is malformed
+   */
+  nonceHandleOf(req): string {
+    const { log } = this.deps;
+    log.debug("Entering Est.nonceHandleOf().");
+    let handle = '';
+    String((req && req.headers && req.headers.cookie) || '').split(';')
+      .forEach(function (part) {
+        const bit = part.trim();
+        if (bit.indexOf(NONCE_COOKIE + '=') === 0 &&
+            NONCE_HANDLE_SHAPE.test(bit.slice(NONCE_COOKIE.length + 1))) {
+          handle = bit.slice(NONCE_COOKIE.length + 1);
+        }
+      });
+    log.debug("Leaving Est.nonceHandleOf(). " + (handle ? 'One.' : 'None.'));
+    return handle;
+  }
+
+  // The Set-Cookie value for a handle: scoped to this realm's EST paths as
+  // the client addressed them (a `/realm/<id>` prefix included), Secure on
+  // TLS, HttpOnly, SameSite=Strict, and no longer-lived than the nonce.
+  /**
+   * Returns the `Set-Cookie` value that carries a nonce handle.
+   *
+   * @param req - the request
+   * @param handle - the handle
+   * @param seconds - how long the nonce lives
+   * @returns the header value
+   */
+  nonceCookie(req, handle: string, seconds: number): string {
+    const { log } = this.deps;
+    log.debug("Entering Est.nonceCookie().");
+    const url = String(req.originalUrl || req.url || '').split('?')[0];
+    const at = url.indexOf(BASE);
+    const path = at >= 0 ? url.slice(0, at + BASE.length) : BASE;
+    log.debug("Leaving Est.nonceCookie().");
+    return NONCE_COOKIE + '=' + handle + '; Path=' + path + '; Max-Age=' +
+      Math.max(1, Math.floor(seconds)) + '; HttpOnly; SameSite=Strict' +
+      (req.secure ? '; Secure' : '');
+  }
+
+  // A POST's nonce request, read after authentication (the header's order):
+  // `{ ok, len }`, or `{ ok: false, status, code, why }` — 400 when
+  // malformed, 503 for a reqTypeInfo nobody defined here.
+  /**
+   * Reads a POSTed nonce request against the draft's CDDL.
+   *
+   * @param req - the request
+   * @returns `{ ok, len }`, or `{ ok: false, status, code, why }`
+   */
+  nonceRequestOf(req): any {
+    const { log } = this.deps;
+    log.debug("Entering Est.nonceRequestOf().");
+    const text = typeof req.body === 'string' ? req.body
+      : Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in Est.nonceRequestOf(): " + ((e && e.message) || e));
+      parsed = undefined;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      log.debug("Leaving Est.nonceRequestOf(). Not an object.");
+      return { ok: false, status: 400, code: 'STS-EST-0034',
+               why: 'A nonce request is one JSON object (draft-ietf-lamps-' +
+                    'attestation-freshness section 3.2); send GET for none.' };
+    }
+    const checked = NONCE_REQUEST.safeParse(parsed);
+    if (!checked.success) {
+      const issue = checked.error.issues[0] || { path: [], message: '' };
+      log.debug("Leaving Est.nonceRequestOf(). The CDDL refused.");
+      return { ok: false, status: 400, code: 'STS-EST-0034',
+               why: 'The nonce request does not match draft-ietf-lamps-' +
+                    'attestation-freshness section 3.2 at "' +
+                    (issue.path.join('.') || '(the object)') + '": ' +
+                    String(issue.message).slice(0, 200) + '.' };
+    }
+    if (checked.data.reqTypeInfo) {
+      log.debug("Leaving Est.nonceRequestOf(). A type.");
+      return { ok: false, status: 503, code: 'STS-EST-0036',
+               why: 'This EST server defines no reqInfo/respInfo for "' +
+                    checked.data.reqTypeInfo.type + '", so it cannot ' +
+                    'answer that nonce request; ask without reqTypeInfo.' };
+    }
+    log.debug("Leaving Est.nonceRequestOf().");
+    return { ok: true, len: checked.data.len };
+  }
+
+  // draft-ietf-lamps-attestation-freshness section 5.1.
+  /**
+   * Answers `nonce` (draft-ietf-lamps-attestation-freshness section 5.1): a
+   * freshness nonce bound to the caller and a cookie, for the TPM key
+   * attestation in its next `simpleenroll`. Authenticated as an enrollment
+   * is.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @returns a promise that settles when it has answered
+   */
+  async nonce(req, res, ctx) {
+    const { log, core, config, errorCodes, stsCrypto } = this.deps;
+    log.debug("Entering Est.nonce(). " + req.method);
+    ctx.basic = this.basicCredentialOf(req);
+    ctx.identity = this.identityHintOf(req, ctx.basic);
+    // The nonce is held where the request that spends it is served: placed
+    // by the credential, as an enrollment is (#98 D10).
+    if (await this.placeRequest(req, res, ctx.basic)) {
+      log.debug("Leaving Est.nonce(). Relayed to another cell.");
+      return;
+    }
+    const throttled = await core.throttledShared(FAMILY, req,
+                                                 ctx.identity || '');
+    if (throttled) {
+      this.refuseWith(req, res, ctx, throttled);
+      log.debug("Leaving Est.nonce(). Throttled.");
+      return;
+    }
+    const posted = req.method === 'POST';
+    if (posted) {
+      const type = String(req.headers['content-type'] || '').split(';')[0]
+        .trim().toLowerCase();
+      if (type !== MEDIA.freshness) {
+        errorCodes.mark(res, 'STS-EST-0035');
+        this.estError(req, res, ctx, 400, 'A nonce request is ' +
+                      MEDIA.freshness + ' (draft-ietf-lamps-attestation-' +
+                      'freshness section 5.1), and this one was "' +
+                      type.slice(0, 80) + '".');
+        log.debug("Leaving Est.nonce(). Media type.");
+        return;
+      }
+      const max = Number(config.value('est.maxRequestBytes'));
+      const declared = Number(req.headers['content-length']);
+      if (Number.isFinite(declared) && declared > max) {
+        errorCodes.mark(res, 'STS-EST-0034');
+        this.estError(req, res, ctx, 400, 'The nonce request is larger ' +
+                      'than the ' + max + ' bytes est.maxRequestBytes ' +
+                      'allows.');
+        log.debug("Leaving Est.nonce(). Too large.");
+        return;
+      }
+    }
+    const authenticated = await this.authenticate(req, ctx);
+    if (!authenticated.ok) {
+      this.refuseWith(req, res, ctx, authenticated);
+      log.debug("Leaving Est.nonce(). Not authenticated.");
+      return;
+    }
+    ctx.principal = authenticated.principal;
+    ctx.identity = this.principalLabel(ctx.principal);
+    let len: number | undefined;
+    if (posted) {
+      const asked = this.nonceRequestOf(req);
+      if (!asked.ok) {
+        errorCodes.mark(res, asked.code === 'STS-EST-0036' ? 'STS-EST-0036'
+                                                           : 'STS-EST-0034');
+        this.estError(req, res, ctx, asked.status, asked.why);
+        log.debug("Leaving Est.nonce(). The request.");
+        return;
+      }
+      len = asked.len;
+    }
+    const send = (body: object): void => {
+      log.debug("Entering send().");
+      // A Buffer, so express adds no `; charset=utf-8`: the draft's media
+      // type defines no parameter, and JSON is UTF-8 (RFC 8259 section 8.1).
+      res.status(200)
+         .set('Content-Type', MEDIA.freshness)
+         .set('Cache-Control', 'no-store')
+         .send(Buffer.from(JSON.stringify(body), 'utf8'));
+      log.debug("Leaving send().");
+    };
+    // A label naming another profile: nothing it issues reads an
+    // attestation, so no freshness proof is needed — the draft's empty
+    // nonce, still 200.
+    if (ctx.labelled && ctx.profile !== core.DEVICE_PROFILE) {
+      this.counted(ctx, { outcome: 'answered', status: 200 });
+      send({ nonce: '' });
+      log.debug("Leaving Est.nonce(). Not needed for " + ctx.profile + ".");
+      return;
+    }
+    const handle = this.nonceHandleOf(req) ||
+      'est.' + stsCrypto.randomToken(256);
+    const issued = this.deps.loadDeviceEnrolment().issueChallenge({
+      purpose: 'csr-attestation', sessionId: handle,
+      username: ctx.identity, bytes: len });
+    if (!issued.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(issued) || 'STS-EST-0036');
+      this.estError(req, res, ctx, 503, 'No nonce could be issued: ' +
+                    String(issued.error || ''));
+      log.debug("Leaving Est.nonce(). Not issued.");
+      return;
+    }
+    const seconds = Math.max(1, Math.round(
+      (Date.parse(issued.expiresAt) - Date.now()) / 1000));
+    res.append('Set-Cookie', this.nonceCookie(req, handle, seconds));
+    this.counted(ctx, { outcome: 'answered', status: 200 });
+    send({ nonce: issued.challenge, expiry: seconds });
+    log.info('est: nonce issued to ' + ctx.identity + ' (' +
+             Buffer.from(issued.challenge, 'base64url').length +
+             ' octets, ' + seconds + ' s)');
+    log.debug("Leaving Est.nonce().");
+  }
+
   // 4.3 — Full CMC is optional and not implemented.
   /**
    * Answers `fullcmc` (section 4.3) with 501: Full CMC is not implemented.
@@ -1550,12 +1838,17 @@ class Est {
     log.debug("Leaving Est.wrongMethod().");
     return function (req, res) {
       log.debug("Entering the EST wrong-method answer.");
+      const allow = [];
+      methodsOf(op).forEach(function (method) {
+        allow.push(method);
+        if (method === 'GET') {
+          allow.push('HEAD');
+        }
+      });
       errorCodes.mark(res, 'STS-EST-0003');
       self.estError(req, res, { op: op.name }, 405,
                     'EST ' + op.name + ' answers ' +
-                    op.method + ' only.', { Allow: op.method === 'GET'
-                                                     ? 'GET, HEAD' :
-                                                       op.method });
+                    op.method + ' only.', { Allow: allow.join(', ') });
       log.debug("Leaving the EST wrong-method answer.");
     };
   }
@@ -1577,11 +1870,13 @@ class Est {
     [BASE, BASE + '/:label'].forEach(function (base) {
       OPERATIONS.forEach(function (op) {
         const path = base + '/' + op.name;
-        if (op.method === 'GET') {
-          app.get(path, self.operation(op));
-        } else {
-          app.post(path, self.operation(op));
-        }
+        methodsOf(op).forEach(function (method) {
+          if (method === 'GET') {
+            app.get(path, self.operation(op));
+          } else {
+            app.post(path, self.operation(op));
+          }
+        });
       });
     });
 
@@ -1624,7 +1919,8 @@ const HANDLERS = {
   simplereenroll: slot.forward('simplereenroll'),
   serverkeygen: slot.forward('serverkeygen'),
   csrattrs: slot.forward('csrattrs'),
-  fullcmc: slot.forward('fullcmc')
+  fullcmc: slot.forward('fullcmc'),
+  nonce: slot.forward('nonce')
 };
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
@@ -1676,6 +1972,7 @@ export = {
   PATHS: PATHS,
   OPERATIONS: OPERATIONS,
   MEDIA: MEDIA,
+  NONCE_COOKIE: NONCE_COOKIE,
   handlers: {
     // The route functions, for `tests/est_handlers.js` to drive with a fake
     // request — exactly what Express calls.

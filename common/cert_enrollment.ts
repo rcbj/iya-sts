@@ -244,6 +244,15 @@ const URN_PREFIX = { person: 'urn:sts:person:',
 //     (draft-ietf-lamps-csr-attestation), a TPM key attestation, verified by
 //     `device_attestation.csrAttestation()`; product refuses a key without a
 //     verified, anchored one (`mode.acceptsUnattestedDeviceKeys()`).
+//   * **FRESHNESS** (#257): a TPM statement's TPMS_ATTEST extraData must be
+//     a nonce EST /nonce issued to the same principal and the same nonce
+//     cookie (draft-ietf-lamps-attestation-freshness section 5.1), spent
+//     here once across the cluster. A statement that is not — no nonce, an
+//     expired, spent or foreign one, or any request over SCEP, which has no
+//     nonce operation — is recorded `unproven` in development and REFUSED in
+//     product (`mode.requiresFreshKeyAttestation()`, STS-DEVICE-0050). It is
+//     asked after the level, so a statement product refuses for its anchor
+//     spends nothing.
 //   * **RE-ENROLMENT** is a `simpleenroll` naming the device's URN — EST
 //     `/simplereenroll` and SCEP RenewalReq find the renewed certificate on a
 //     person or application entry, and a device certificate is on neither,
@@ -314,6 +323,10 @@ interface CertEnrollmentDeps {
   // (`websecurityModule()`).
   loadRevocation(): typeof import('./pki_revocation');
   loadWebsecurity(): typeof import('./websecurity');
+  // `device_enrolment.ts`, whose challenge store holds EST's freshness
+  // nonces (#257), by `issueForDevice()`. Lazily: it requires the WebAuthn
+  // verifier and the credentials module, which nothing else here needs.
+  loadDeviceEnrolment(): typeof import('./device_enrolment');
 }
 
 /**
@@ -428,6 +441,9 @@ class CertEnrollment {
       },
       loadWebsecurity: function () {
         return require('./websecurity');
+      },
+      loadDeviceEnrolment: function () {
+        return require('./device_enrolment');
       }
     };
   }
@@ -2755,9 +2771,67 @@ class CertEnrollment {
   }
 
   // ---------------------------------------------------------------------------
+  // WAS A TPM STATEMENT MADE NOW (#257)? `attested` is
+  // `csrAttestation()`'s answer; `asked` is `issueForDevice()`'s spec, whose
+  // `attestationSession.handle` is the EST nonce cookie's (absent over SCEP).
+  // Resolves `{ ok, status: 'fresh' | 'unproven' | 'none', detail }`, or the
+  // claim store's 503 refusal: a nonce that could not be proved unspent is
+  // not believed in either mode.
+  // ---------------------------------------------------------------------------
+  /**
+   * Decides whether a TPM key attestation was made now: its extraData spent
+   * as the nonce EST /nonce issued to this principal and cookie.
+   *
+   * @param family - `est` or `scep`
+   * @param asked - `issueForDevice()`'s spec
+   * @param attested - `deviceAttestation.csrAttestation()`'s answer
+   * @returns a promise of `{ ok, status, detail }` (`status` `fresh`,
+   *   `unproven`, or `none` when there is no TPM statement), or a 503
+   *   refusal
+   */
+  async attestationFreshness(family, asked, attested) {
+    const { log, loadDeviceEnrolment, errorCodes } = this.deps;
+    log.debug("Entering CertEnrollment.attestationFreshness().");
+    if (!attested || attested.attestation.format !== 'tcg-tpm2-key' ||
+        !Buffer.isBuffer(attested.extraData)) {
+      log.debug("Leaving CertEnrollment.attestationFreshness(). None.");
+      return { ok: true, status: 'none', detail: '' };
+    }
+    if (family !== 'est') {
+      log.debug("Leaving CertEnrollment.attestationFreshness(). " + family);
+      return { ok: true, status: 'unproven', detail: FAMILY_LABELS[family] +
+        ' has no nonce operation (draft-ietf-lamps-attestation-freshness ' +
+        'defines one for CMP, EST and CMC only), so a TPM statement sent ' +
+        'over it cannot be shown to have been made now; enroll over EST ' +
+        'after /nonce' };
+    }
+    const principal = asked.principal || {};
+    const spent = await loadDeviceEnrolment().spendAttestationNonce(
+      attested.extraData, {
+        sessionId: (asked.attestationSession &&
+                    asked.attestationSession.handle) || '',
+        username: principal.kind && principal.id
+          ? String(principal.kind) + ':' + String(principal.id) : '' });
+    if (spent.ok) {
+      log.debug("Leaving CertEnrollment.attestationFreshness(). Fresh.");
+      return { ok: true, status: 'fresh', detail: 'its extraData was the ' +
+        'nonce EST /nonce issued to this client, now spent' };
+    }
+    if (errorCodes.codeOf(spent) === 'STS-DEVICE-0028') {
+      log.debug("Leaving CertEnrollment.attestationFreshness(). Store.");
+      return Object.assign({ status: 503 }, spent);
+    }
+    log.debug("Leaving CertEnrollment.attestationFreshness(). Unproven.");
+    return { ok: true, status: 'unproven', detail: 'its extraData is not ' +
+      'a live nonce issued to this client: ' +
+      String((spent.errors || [])[0] || spent.error || '') };
+  }
+
+  // ---------------------------------------------------------------------------
   // A CERTIFICATE FOR A DEVICE (the header's `device` profile). `spec` is
   // `issue()`'s, and `attestations` — the request's id-aa-attestation
-  // values.
+  // values — and `attestationSession` — `{ handle }`, EST's nonce cookie
+  // (#257), absent over SCEP.
   // ---------------------------------------------------------------------------
   async issueForDevice(spec) {
     const { log, audit, config, errorCodes, pki, realms, mode, devices,
@@ -2879,6 +2953,28 @@ class CertEnrollment {
         'certifies a device key only with a TPM key attestation that ' +
         'verified and chained to devices.tpmTrustAnchors: ' +
         attested.attestation.summary));
+    }
+    const freshness = await self.attestationFreshness(family, asked,
+                                                      attested);
+    if (!freshness.ok) {
+      log.debug("Leaving CertEnrollment.issueForDevice(). Freshness store.");
+      return refused(freshness);
+    }
+    if (freshness.status === 'unproven' &&
+        mode.requiresFreshKeyAttestation()) {
+      deviceRecognition.noteAttestationRefused('stale');
+      log.debug("Leaving CertEnrollment.issueForDevice(). Not fresh.");
+      return refused(self.refuse('STS-DEVICE-0050', 403, 'This realm ' +
+        'certifies a device key only with a TPM key attestation made for ' +
+        'this request, and this one is not shown to be: ' +
+        freshness.detail + '.'));
+    }
+    if (freshness.status !== 'none') {
+      attested.attestation.freshness = { status: freshness.status,
+                                         detail: freshness.detail };
+      attested.attestation.summary = String(attested.attestation.summary) +
+        ' Freshness ' + freshness.status.toUpperCase() + ': ' +
+        freshness.detail + '.';
     }
     const thumbprint = self.spkiThumbprintOf(asked.publicKeyPem);
     const holder = devices.byKeyThumbprint(thumbprint, 'x509');

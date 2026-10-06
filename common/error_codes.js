@@ -4488,6 +4488,23 @@ const CODES = [
   { code: 'STS-EST-0033',
     summary: 'An EST /admin-api action was refused and carried no more specific code.',
     spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-EST-0034',
+    summary: 'An EST /nonce request (draft-ietf-lamps-attestation-freshness ' +
+      'section 5.1) was malformed: a body that is not one JSON object, a ' +
+      'member the nonce-request CDDL does not define, a "len" outside 8..64, ' +
+      'a "reqTypeInfo" without a dotted-decimal "type", or a body larger ' +
+      'than est.maxRequestBytes (#257).',
+    spec: 'HTTP 400, a sentence and no nonce (section 5.1)' },
+  { code: 'STS-EST-0035',
+    summary: 'An EST /nonce POST did not carry ' +
+      'application/est-attestation-freshness+json, the one media type ' +
+      'draft-ietf-lamps-attestation-freshness section 5.1 allows (#257).',
+    spec: 'HTTP 400 (section 5.1 answers every error 400)' },
+  { code: 'STS-EST-0036',
+    summary: 'An EST /nonce request named a "reqTypeInfo" type this service ' +
+      'defines no reqInfo/respInfo for, so it is unable to answer it ' +
+      '(draft-ietf-lamps-attestation-freshness section 5.1) (#257).',
+    spec: 'HTTP 503 (section 5.1)' },
   // ===== SCEP ==============================================================
   { code: 'STS-SCEP-0001',
     summary: 'A SCEP request reached a realm where scep.enabled is off.',
@@ -16829,6 +16846,15 @@ const CODES = [
       'queue the recheck of the stored chains (#256); the daily ' +
       'devices.android-status-recheck run reaches them.',
     spec: 'none — a warning in the log' },
+  { code: 'STS-DEVICE-0050',
+    summary: 'A TPM key attestation in a device certificate request was not ' +
+      'proved FRESH — its TPMS_ATTEST extraData is not a live nonce this ' +
+      'realm issued at EST /nonce to the same client and cookie, or the ' +
+      'request came over SCEP, which has no nonce operation — and product ' +
+      'mode requires freshness (common/mode.js requiresFreshKeyAttestation(); ' +
+      'draft-ietf-lamps-csr-attestation section 6.2, ' +
+      'draft-ietf-lamps-attestation-freshness) (#257).',
+    spec: 'EST 403 / SCEP failInfo badRequest' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile other than `default` was ' +

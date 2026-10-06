@@ -150,6 +150,7 @@ class EstPage {
              esc(one.urls.simpleenroll) + '</code><div class="sub">' +
              esc(one.urls.simplereenroll) + '<br>' +
              esc(one.urls.serverkeygen) + '<br>' + esc(one.urls.csrattrs) +
+             (one.urls.nonce ? '<br>' + esc(one.urls.nonce) : '') +
              '</div></td></tr>';
     }).join('');
     const refusedRows = json.refusedProfiles.map(function (one) {

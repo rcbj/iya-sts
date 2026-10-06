@@ -9579,6 +9579,22 @@ entry. `issue()` hands it to `issueForDevice()`:
   now returns them as `attestations`; more than one is `STS-DEVICE-0021`),
   verified by `device_attestation.csrAttestation()`; product refuses a key
   with no anchored TPM attestation (`STS-DEVICE-0024`).
+* **Freshness** (#257) — a TPM statement's TPMS_ATTEST `extraData` is spent
+  (`attestationFreshness()` calls `device_enrolment.spendAttestationNonce()`)
+  as the nonce EST `/nonce` issued to the same principal under the same
+  `sts_est_nonce` cookie (`attestationSession.handle`). It is asked AFTER
+  the level, so a statement product refuses for its anchor spends nothing.
+  Fresh, the key's attestation records `freshness: fresh`. Anything else is
+  `unproven`: no cookie, an empty extraData, a nonce expired, spent or
+  issued to another principal, or any request over SCEP, which has no nonce
+  operation. Development certifies it with the reason. Product refuses it
+  (`mode.requiresFreshKeyAttestation()`, `STS-DEVICE-0050`). A claim store
+  that cannot be asked refuses in both modes (`STS-DEVICE-0028`).
+  **extraData IS the nonce's octets**, untransformed. The CSR-attestation
+  draft leaves "nonce selection" to the statement's own specification
+  (revision 29 section 4.3), and none exists for `tcg-attest-tpm-certify`.
+  `crypto.js` lists the seven places revision 20, the last text to define
+  the statement, disagrees with itself.
 * **Kept ON THE DEVICE** as an `x509` key (`proof` the family, the serial and
   expiry in its material), NOT on the owner's entry — it names the device —
   and recorded by `pki.issueEnrolled()` (subject kind `device`) so OCSP and
@@ -9852,7 +9868,9 @@ each argued there:
   statement that does not verify is refused in both modes; one that verifies
   and chains to nothing this realm trusts is `self-asserted`; only an
   anchored one is `attested`.** Every codec is `crypto.js`'s (the CSR
-  attestation codec is new there) and every chain `pki.js`'s.
+  attestation codec is new there) and every chain `pki.js`'s. Since #257 a TPM
+  statement's `extraData` goes back to the caller, which decides freshness
+  (3ag's *Freshness*), and this file calls no `node:crypto` of its own.
 * **The Google and Apple roots SHIP** in `pki_device_anchors.json`,
   generated from the vendors' URLs and PINNED by SHA-256, re-checked by
   `pki.deviceAttestationAnchors()` at load (a mismatch is dropped,

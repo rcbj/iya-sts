@@ -111,6 +111,12 @@ async function childMain() {
       res.headersSent = true;
       return res;
     };
+    // Set-Cookie, as express appends it (#257's nonce cookie).
+    res.append = function (k, v) {
+      const name = String(k).toLowerCase();
+      res.headers[name] = [].concat(res.headers[name] || [], v);
+      return res;
+    };
     log.debug("Leaving fakeRes().");
     return res;
   }
@@ -134,7 +140,8 @@ async function childMain() {
       params: spec.label ? { label: spec.label } : {},
       query: spec.query || {}, headers: headers,
       body: spec.body === undefined ? undefined : spec.body,
-      protocol: encrypted ? 'https' : 'http', ip: '127.0.0.9',
+      protocol: encrypted ? 'https' : 'http', secure: encrypted,
+      ip: '127.0.0.9',
       socket: { encrypted: encrypted, remoteAddress: '127.0.0.9',
                 getPeerCertificate: function () {
                   return spec.peer ? { raw: spec.peer,
@@ -153,9 +160,10 @@ async function childMain() {
     })[0];
     const res = fakeRes();
     await inRealm(realmId, function () {
+      // `nonce` answers 'GET, POST'; the first is the default (#257).
       return est.handlers.operation(op)(fakeReq(Object.assign({
-        method: op.method, path: '/.well-known/est/' + opName }, spec || {})),
-                                        res);
+        method: op.method.split(',')[0],
+        path: '/.well-known/est/' + opName }, spec || {})), res);
     });
     log.debug("Leaving call().");
     return { status: res.statusCode, headers: res.headers, body: res.body,
@@ -395,6 +403,131 @@ async function childMain() {
          'and the default realm shows none');
   });
 
+  // --- 5c. the freshness nonce (#257) ---------------------------------------
+  // draft-ietf-lamps-attestation-freshness section 5.1. The spend half — a
+  // TPM statement's extraData against the cookie and the principal — is
+  // `device_enrolment.js`'s; what is here is the operation, and the binding
+  // it hands that half.
+  const FRESH = 'application/est-attestation-freshness+json';
+  const enrolment = require(path.join(ROOT, 'common', 'device_enrolment'));
+  // A person of its own: eight refusals below are counted against the
+  // caller (est.attemptsPerIdentity), and WHO has spent some already.
+  const NONCER = WHO + 'n';
+  await inRealm(A, function () {
+    ldap.createUser(NONCER, { invent: false,
+                              attributes: { mail: 'nonce@esth.test' } });
+  });
+  const nonceNoCred = await call(A, 'nonce');
+  note(nonceNoCred.status === 401 && nonceNoCred.code === 'STS-EST-0009',
+       '/nonce is authenticated as an enrollment is: 401, STS-EST-0009',
+       nonceNoCred.status + ' ' + nonceNoCred.code);
+  const gotNonce = await call(A, 'nonce', { label: 'device',
+                                             basic: [NONCER, 'x'] });
+  let nonceBody = {};
+  try {
+    nonceBody = JSON.parse(String(gotNonce.body));
+  } catch (e) {
+    note(false, 'the /nonce body is JSON', e.message);
+  }
+  const cookieLine = String([].concat(gotNonce.headers['set-cookie'] ||
+                                      [])[0] || '');
+  const handle = (/^sts_est_nonce=(est\.[A-Za-z0-9_-]{43});/
+    .exec(cookieLine) || [])[1] || '';
+  note(gotNonce.status === 200 &&
+       gotNonce.headers['content-type'] === FRESH &&
+       gotNonce.headers['cache-control'] === 'no-store' &&
+       Buffer.from(String(nonceBody.nonce || ''), 'base64url').length ===
+         32 && /^[A-Za-z0-9_-]{43}$/.test(String(nonceBody.nonce)) &&
+       Number.isInteger(nonceBody.expiry) && nonceBody.expiry > 0,
+       'GET /device/nonce: 200, ' + FRESH + ', a 32-octet unpadded ' +
+       'base64url nonce and an expiry', gotNonce.status + ' ' +
+       String(gotNonce.body).slice(0, 200));
+  note(handle && /Path=\/\.well-known\/est;/.test(cookieLine) &&
+       /HttpOnly/.test(cookieLine) && /SameSite=Strict/.test(cookieLine) &&
+       /Secure/.test(cookieLine) &&
+       cookieLine.indexOf(String(nonceBody.nonce)) < 0,
+       'it sets the sts_est_nonce cookie: a handle, never the nonce, ' +
+       'scoped to the EST paths, HttpOnly, Secure, SameSite=Strict',
+       cookieLine);
+  const spendAs = async function (who, cookie, nonce) {
+    log.debug("Entering spendAs().");
+    let out = null;
+    await inRealm(A, async function () {
+      out = await enrolment.spendAttestationNonce(
+        Buffer.from(String(nonce), 'base64url'),
+        { sessionId: cookie, username: who });
+    });
+    log.debug("Leaving spendAs().");
+    return out;
+  };
+  const foreignSpend = await spendAs('person:someone-else', handle,
+                                     nonceBody.nonce);
+  const ownSpend = await spendAs('person:' + NONCER, handle, nonceBody.nonce);
+  const againSpend = await spendAs('person:' + NONCER, handle, nonceBody.nonce);
+  note(foreignSpend && !foreignSpend.ok && ownSpend && ownSpend.ok &&
+       againSpend && !againSpend.ok,
+       'the nonce is bound to the principal and the cookie: another ' +
+       'principal cannot spend it, its own can, once',
+       JSON.stringify([foreignSpend, ownSpend, againSpend]));
+  const reused = await call(A, 'nonce', { label: 'device', basic: [NONCER, 'x'],
+    headers: { Cookie: 'other=1; sts_est_nonce=' + handle } });
+  note(reused.status === 200 && String([].concat(
+         reused.headers['set-cookie'] || [])[0]).indexOf(
+         'sts_est_nonce=' + handle + ';') === 0,
+       'a request carrying the cookie keeps its handle (one nonce per ' +
+       'cookie)', JSON.stringify(reused.headers['set-cookie']));
+  const posted = await call(A, 'nonce', { method: 'POST', label: 'device',
+    basic: [NONCER, 'x'], headers: { 'Content-Type': FRESH },
+    body: JSON.stringify({ len: 48 }) });
+  note(posted.status === 200 && Buffer.from(String(JSON.parse(
+         String(posted.body)).nonce), 'base64url').length === 48,
+       'POST { len: 48 }: a 48-octet nonce', posted.status + ' ' +
+       String(posted.body).slice(0, 200));
+  const refusedPosts = [
+    [{ 'Content-Type': 'application/json' }, '{}', 400, 'STS-EST-0035',
+     'another media type'],
+    [{ 'Content-Type': FRESH }, 'not json', 400, 'STS-EST-0034',
+     'a body that is not JSON'],
+    [{ 'Content-Type': FRESH }, '[]', 400, 'STS-EST-0034', 'an array'],
+    [{ 'Content-Type': FRESH }, '{"len":7}', 400, 'STS-EST-0034',
+     'len 7'],
+    [{ 'Content-Type': FRESH }, '{"len":65}', 400, 'STS-EST-0034',
+     'len 65'],
+    [{ 'Content-Type': FRESH }, '{"len":32,"x":1}', 400, 'STS-EST-0034',
+     'a member the CDDL does not define'],
+    [{ 'Content-Type': FRESH }, '{"reqTypeInfo":{"type":"not-an-oid"}}',
+     400, 'STS-EST-0034', 'a type that is not a dotted-decimal OID'],
+    [{ 'Content-Type': FRESH }, '{"reqTypeInfo":{"type":"1.2.3.4.5"}}',
+     503, 'STS-EST-0036', 'a reqTypeInfo type nobody defined here']
+  ];
+  for (const one of refusedPosts) {
+    const r = await call(A, 'nonce', { method: 'POST', label: 'device',
+      basic: [NONCER, 'x'], headers: one[0], body: one[1] });
+    note(r.status === one[2] && r.code === one[3] &&
+         !r.headers['set-cookie'],
+         'POST /nonce with ' + one[4] + ': ' + one[2] + ', ' + one[3] +
+         ', no nonce', r.status + ' ' + r.code);
+  }
+  const noneNeeded = await call(A, 'nonce', { label: 'tls-client',
+                                              basic: [NONCER, 'x'] });
+  note(noneNeeded.status === 200 &&
+       JSON.parse(String(noneNeeded.body)).nonce === '' &&
+       !noneNeeded.headers['set-cookie'],
+       'under a label that reads no attestation: 200 and the empty nonce ' +
+       '("no freshness proof required")', noneNeeded.status + ' ' +
+       String(noneNeeded.body));
+  const nonceWrongMethod = fakeRes();
+  await inRealm(A, function () {
+    return est.handlers.wrongMethod(est.OPERATIONS.filter(function (op) {
+      return op.name === 'nonce';
+    })[0])(fakeReq({ method: 'PUT', path: '/.well-known/est/nonce' }),
+           nonceWrongMethod);
+  });
+  note(nonceWrongMethod.statusCode === 405 &&
+       nonceWrongMethod.headers.allow === 'GET, HEAD, POST',
+       '/nonce\'s wrong method: 405, Allow: GET, HEAD, POST',
+       nonceWrongMethod.headers.allow);
+
   // --- 6. the realm boundary ------------------------------------------------
   const inB = await call(B, 'simpleenroll', { headers: PKCS10,
     basic: [WHO, 'x'], body: b64Body(aliceCsr.der) });
@@ -532,7 +665,8 @@ async function childMain() {
   })) === JSON.stringify(est.OPERATIONS.map(function (op) {
     return op.name + ' ' + op.method;
   })), 'the view\'s operation table and the router\'s agree');
-  note(est.PATHS.length === 12, 'twelve paths are registered', est.PATHS);
+  note(est.PATHS.length === 14,
+       'fourteen paths are registered (#257 added /nonce)', est.PATHS);
   note(view.certificates.paging.total >= 1 &&
        !/PRIVATE KEY/.test(JSON.stringify(view)),
        'the enrolled certificates are listed and no private key is in the ' +
