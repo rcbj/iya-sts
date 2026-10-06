@@ -809,25 +809,19 @@ function assertAct(cast, act, expect) {
 // A box stands for an application (`application`, or its id) or for an
 // identity. An impersonation's middle is the client alone, keyed by its
 // identifier, so the box the first hop reaches and the box the second hop
-// leaves from are the same box. A DELEGATION's middle is keyed by the
-// actor_token's SUBJECT (`common/delegation.js`'s `party()` keys a presented
-// identity before an application) — and that is where the modes part:
-//
-//   * DEVELOPMENT: a client_credentials token's `sub` is the client_id, so
-//     the actor's key is `esb1-del`, the target's is `esb1-del`, one box.
-//   * PRODUCT (RFC 9700 mode): the `sub` is `urn:sts:client:esb1-del`
-//     (section 4.13's namespace), the actor's box is keyed by that, and the
-//     target's by `esb1-del` — TWO boxes, both with `application: esb1-del`.
-//     The map draws a two-hop delegation chain as two unconnected halves,
-//     which is the drawing the register's audience resolution was added to
-//     prevent. That is the SERVICE's behaviour, recorded on #467 and not
-//     fixed here; this asserts what the register does hold — both boxes
-//     stand for the same application, one reached, one acting — and says
-//     so in a WARN line, so the day the map folds the namespace into the
-//     application the one-box branch takes over with nothing to change.
+// leaves from are the same box. A DELEGATION's middle presents the
+// actor_token's SUBJECT, which here is the tier's own client_credentials
+// subject — `esb1-del` in development, `urn:sts:client:esb1-del` in RFC 9700
+// mode (product, section 4.13's namespace) — and the picture draws a
+// client's own subject as that client's APPLICATION (#468,
+// `common/delegation.js`'s `clientApplicationOf()`). So in both modes the
+// middle box is keyed by the tier's identifier, and the tier the first hop
+// reached and the tier acting in the second are ONE box. Until #468 product
+// drew them as two, keyed `esb1-del` and `urn:sts:client:esb1-del`, and this
+// function said so in a WARN line; it is an assertion now.
 // ---------------------------------------------------------------------------
 // `hops`: [{ clientId, actorSub? }]. `actorSub` is the delegation's actor
-// token subject, the key its middle box is drawn under.
+// token subject; its box is the application it is the subject of.
 function assertGraphIsAChain(cast, graph, hops, mode) {
   log.debug("Entering assertGraphIsAChain().");
   const describe = function () {
@@ -845,9 +839,16 @@ function assertGraphIsAChain(cast, graph, hops, mode) {
       return e.from + " -" + e.relation + "/" + e.mode + "-> " + e.to;
     }));
   };
-  // The box each hop's middle is drawn as, and the person's line to it.
+  // The box each hop's middle is drawn as, and the person's line to it: the
+  // tier's own application, whatever form its subject took (#468).
   const middles = hops.map(function (hop) {
-    const key = hop.actorSub || hop.clientId;
+    const key = hop.clientId;
+    (graph.nodes || []).forEach(function (n) {
+      assert.ok(!hop.actorSub || hop.actorSub === key || n.id !== hop.actorSub,
+        "the picture draws a box keyed by the actor's subject " +
+        hop.actorSub + " beside the application " + key + " (#468): " +
+        describe());
+    });
     const boxes = (graph.nodes || []).filter(function (n) {
       return n.id === key;
     });
@@ -875,22 +876,15 @@ function assertGraphIsAChain(cast, graph, hops, mode) {
   assert.ok(reached.length >= 1, "the picture shows nothing standing for " +
     hops[1].clientId + " as the target of the first hop: " + describe());
   const middle = middles[1];
-  if (reached.indexOf(middle) >= 0) {
-    log.info("[picture] " + hops[1].clientId + " is ONE box (" + middle.id +
-             "): reached " + middle.roles.target + " time(s), in the " +
-             "middle " + middle.roles.intermediary + " time(s).");
-  } else {
-    assert.ok(hops[1].actorSub && hops[1].actorSub !== hops[1].clientId,
-      hops[1].clientId + " is reached as one box and acts as another, and " +
-      "the act names no actor subject that would explain it: " + describe());
-    log.warn("[picture] " + hops[1].clientId + " is TWO boxes — reached as " +
-             reached.map(function (n) {
-               return n.id;
-             }).join(", ") + ", acting as " + middle.id + " (the actor " +
-             "token's subject) — both standing for the application " +
-             hops[1].clientId + ". The map does not fold an actor's " +
-             "urn:sts:client: subject into its application (#467).");
-  }
+  assert.ok(reached.length === 1 && reached[0] === middle,
+    hops[1].clientId + " should be ONE box, reached by the first hop and " +
+    "in the middle of the second, and is drawn as " + reached.map(
+      function (n) {
+        return n.id;
+      }).concat([middle.id]).join(" and ") + " (#468): " + describe());
+  log.info("[picture] " + hops[1].clientId + " is ONE box (" + middle.id +
+           "): reached " + middle.roles.target + " time(s), in the " +
+           "middle " + middle.roles.intermediary + " time(s).");
   log.debug("Leaving assertGraphIsAChain().");
 }
 

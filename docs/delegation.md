@@ -440,6 +440,9 @@ See [GNAP](gnap.html#acting-for-somebody-else).
 * **The picture** (`/admin/delegation/map`) draws the same acts as a diagram:
   * a box per party and a line per relationship;
   * chains across protocols join where they share an application;
+  * an application is one box however it was named — its identifier, an
+    audience it registered, its client_id, or the subject it acts under
+    with a `client_credentials` token (`urn:sts:client:<id>` in product);
   * drill-downs per chain, per application and per person.
 * **Who may act for whom** (the page's *policy* section) lists the configured
   relationships, actors with their semantics and subject groups, and

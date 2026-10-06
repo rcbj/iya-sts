@@ -2816,6 +2816,20 @@ of one identity is two people — the rule `dnRfc4514()` and `userFor()` already
 follow, one layer up. The TABLE is deliberately left alone, since it shows both
 spellings in two columns where seeing them is the point.
 
+**Two names of one APPLICATION are one box too.** An application name is
+resolved to the entry that registered it — identifier, then audience, then
+client_id (`applicationNameOf()`, 2026-10-06) — and **a client acting as
+ITSELF is that application's box (#468, 2026-10-06)**: an RFC 8693 delegation
+whose `actor_token` came from `client_credentials` presents the client's own
+subject, `urn:sts:client:<id>` in RFC 9700 mode (product) or a bare registered
+client_id with it off, and `clientApplicationOf()` keys it by the application
+rather than as an identity. Before it, product drew the service bus a first hop
+REACHED and the same service bus ACTING in the second as two boxes, and a
+two-hop chain as two halves. A bare name is folded only when it is a
+REGISTERED client_id, since a bare name is also how a person is presented;
+the namespaced subject is kept on the box as an alias.
+`tests/delegation_map_client_subject.js` holds it.
+
 ---
 
 ## THREE MORE DRILL-DOWNS UNDER `/admin/delegation`, AND THEY ASK DIFFERENT QUESTIONS
