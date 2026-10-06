@@ -60,6 +60,7 @@ Cancel too.
 | `TokenType` | What is issued |
 |---|---|
 | `urn:ietf:params:oauth:token-type:jwt` | a JWT signed with `wstrust.jwtAlgorithm` |
+| `http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV1.1` or `urn:oasis:names:tc:SAML:1.0:assertion` | a signed SAML 1.1 assertion, from the SAML 1.1 builder, with the application's SAML 1.1 attributes (#487). An ActAs in SAML 1.1 names no delegate: SAML 1.1 has no Delegation Restriction |
 | anything else, or none | a signed SAML 2.0 assertion, the default |
 
 **The SAML assertion** comes from the same builder the

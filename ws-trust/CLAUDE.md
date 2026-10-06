@@ -475,9 +475,9 @@ the requester's.
 
 **Exceptions:**
 
-* **No SAML 1.1 token.** WS-Trust answers any TokenType but the JWT URI with
-  a SAML 2.0 assertion, so `saml11CustomAttributes` and the SAML 1.1 forms
-  have no WS-Trust token to apply to.
+* ~~No SAML 1.1 token~~ **Closed by #487.** WS-Trust issues SAML 1.1 for the
+  SAML 1.1 TokenType, and `saml11CustomAttributes`, the SAML 1.1 groups and
+  roles attributes apply to it (see the #487 section).
 * **Placeholders are each context's own.** A JWT's `${…}` are an OAuth
   access token's (`username`, `sub`, `email`, `name`, `client_id` — the
   JWT's own, the requester — `audience`). A SAML attribute's are the SAML
@@ -528,6 +528,54 @@ form.
 
 **A JWT's `iss` is not one of these.** It is the realm's OAuth issuer (#476's
 exceptions, above).
+
+## SAML 1.1 AS A REQUEST AND RESPONSE TOKEN TYPE (#487, 2026-10-06)
+
+**The response.** An RST whose TokenType is the SAML Token Profile's
+`…#SAMLV1.1`, or the older `urn:oasis:names:tc:SAML:1.0:assertion`, is
+answered with a signed SAML 1.1 assertion (`buildSaml11Token()`). The RSTR
+names the profile's URI, and its reference is a `SAMLAssertionID`
+KeyIdentifier. The assertion is built by `saml/saml11.ts`, the builder SAML
+1.1 SSO uses, and carries:
+
+* the subject's NameIdentifier;
+* the AppliesTo as its AudienceRestrictionCondition;
+* an AuthenticationStatement: `am:password` for a UsernameToken requester,
+  `am:unspecified` otherwise, which is the SAML 1.1 reading of
+  `authnContextOf()`;
+* the AppliesTo application's SAML 1.1 attributes, through #483's
+  `application` member: groups, roles, `saml11CustomAttributes` and
+  directory-sourced attributes, exactly as SAML 1.1 SSO gives that
+  application.
+
+Its Issuer is #480's `IssuerNames.samlIssuer(application)`, the same as a
+SAML 2.0 WS-Trust assertion's.
+
+**The request.** A SAML 1.1 assertion this realm signed is accepted inside
+OnBehalfOf and ActAs on the same footing as a SAML 2.0 one. Both are read
+by local name: the NameIdentifier, the `AssertionID`, the Conditions and
+the Audience. In product `checkedAssertion()` verifies it against the
+realm's certificate and its Conditions, with the same codes: `0004`, `0005`,
+`0006` (`wst:ExpiredData`) and `0007`. No new refusal was needed.
+
+**EXCEPTION: no delegate chain in SAML 1.1.** The SAML V2.0 Condition for
+Delegation Restriction (sstc-saml-delegation-cs-01) is a SAML 2.0 condition
+type, derived from SAML 2.0's `ConditionAbstractType`, and cannot appear in
+a SAML 1.1 `<saml:Conditions>`. SAML 1.1 has no element of its own for
+"this party acted". WS-Trust 1.4 section 9.3 expects an ActAs token to
+carry the identity acted AS, and names no representation of the requester.
+So:
+
+* an ActAs answered in SAML 1.1 is issued about the subject and names nobody
+  else;
+* a chain the presented token carried is not written into it;
+* the delegation register keeps the chain, and the act's note (`actNote()`)
+  says that SAML 1.1 cannot carry it.
+
+A SAML 2.0 or JWT ActAs still carries the chain.
+
+`tests/wstrust_saml11.js` (T1 to T4) and the #473 SAML 1.1 chain pair
+(`sts_wstrust_saml11_chain_{impersonation,delegation}.js`) hold it.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 
