@@ -2289,7 +2289,7 @@ const SCHEMAS = {
           '(`administrator`, `rfc7591`, `startup`, or empty for an ' +
           'application that merely turned up), `firstSeen`, `lastSeen`, ' +
           '`authentications`, ' +
-          '`sessions`, `users`, `descriptions`, `origin`, `createdAt` and ' +
+          '`sessions`, `users`, `description` (one string), `origin`, `createdAt` and ' +
           '`modifiedAt` (the ENTRY\'s own, which an ldapmodify moves and ' +
           'firstSeen/lastSeen do not), `operational` (which of the ' +
           'attributes a SEARCH would have withheld unless asked for by name, ' +

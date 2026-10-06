@@ -1297,10 +1297,9 @@ class ApplicationsPage {
         'seen</td><td><code>' + kit.esc(row.firstSeen) +
         '</code></td></tr><tr><td>Last ' +
         'seen</td><td><code>' + kit.esc(row.lastSeen) +
-        '</code></td></tr><tr><td>How ' +
-        'it got here</td><td>' + (row.descriptions.length
-          ? row.descriptions.map(function (d) { return kit.esc(d); })
-            .join('<br>')
+        '</code></td></tr><tr><td>Description</td><td>' +
+        (row.description
+          ? kit.esc(row.description)
           : '<span class="state-none">nothing recorded</span>') + '</td></tr>' +
         '</table>' +
             ApplicationsPage.protocolFamilySection(row) },

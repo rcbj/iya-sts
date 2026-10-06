@@ -971,8 +971,16 @@ const SCHEMA = {
             'server, so this records where it HAS been rather than where it ' +
             'may go. Accumulated, because a client that talks to two of them ' +
             'is one client with two values and not two clients.' },
-    { name: 'description', kind: 'multi', from: 'this registry', standard: true,
-      what: 'One line per protocol that first brought this application here.' },
+    // ONE VALUE, NOT A LIST (#456): what this application is, in a sentence,
+    // edited as one box. The registry's own notes — how it first got here —
+    // only ever fill an EMPTY one (noteDescription()), so they never add a
+    // second value beside an administrator's or overwrite it. RFC 4519 lets
+    // the attribute hold several; an entry an ldapmodify gave several is read
+    // as its first, and the next save writes one.
+    { name: 'description', kind: 'single', from: 'this registry', standard: true,
+      what: 'What this application is, in a sentence. One value: until ' +
+            'somebody writes one, it says how the application first got ' +
+            'here.' },
 
     // --- what has happened ------------------------------------------------
     { name: 'appFirstSeen', kind: 'single', from: 'this registry',
@@ -4173,7 +4181,7 @@ const EDITABLE = {
   // above. Its own row says why the two were split.
   wsfedReplyUrl: 'multi',
   wsfedSignOutUri: 'multi',
-  description: 'multi'
+  description: 'set'
 };
 
 // Merged onto the rows so that one table answers "what is this attribute?" and
@@ -9863,7 +9871,7 @@ function attributesFor(record) {
     appSessions: [String(record.sessions.length)],
     appUsers: [String(record.users.length)],
     appRegistered: [record.registered ? 'TRUE' : 'FALSE'],
-    description: record.descriptions.slice(0)
+    description: record.description ? [record.description] : []
   };
   // The protocol-specific half, from the table. Anything not in the table was
   // refused at setField() and cannot get here.
@@ -9944,7 +9952,7 @@ function recordFromAttributes(attributes) {
     name: firstValue(attrs, 'appName'),
     kinds: allValues(attrs, 'appKind'),
     protocols: allValues(attrs, 'appProtocol'),
-    descriptions: allValues(attrs, 'description'),
+    description: firstValue(attrs, 'description') || '',
     firstAt: fromGeneralizedTime(firstValue(attrs, 'appFirstSeen')),
     lastAt: fromGeneralizedTime(firstValue(attrs, 'appLastSeen')),
     authentications: parseInt(firstValue(attrs, 'appAuthentications') || '0',
@@ -9993,7 +10001,7 @@ function blankRecord(identifier) {
     name: String(identifier),
     kinds: [],
     protocols: [],
-    descriptions: [],
+    description: '',
     firstAt: 0,
     lastAt: 0,
     authentications: 0,
@@ -10427,6 +10435,29 @@ function addTo(list, value) {
   return true;
 }
 
+// THE REGISTRY'S OWN NOTE ON AN ENTRY (#456): how it first got here, written
+// only where the description is EMPTY. The description is one value an
+// administrator may write, so a note that added a second would turn the box
+// back into a list, and one that overwrote would undo what they wrote.
+/**
+ * Writes the registry's note as the description when it has none.
+ *
+ * @param record - the application's record
+ * @param value - the note
+ * @returns whether the record changed
+ */
+function noteDescription(record, value) {
+  log.debug("Entering noteDescription().");
+  const text = String(value == null ? '' : value).trim();
+  if (!text || record.description) {
+    log.debug("Leaving noteDescription(). Nothing to write.");
+    return false;
+  }
+  record.description = text;
+  log.debug("Leaving noteDescription().");
+  return true;
+}
+
 // Set a schema field, honouring the row's `kind`: multi accumulates, single is
 // assigned. The one place that distinction is applied, so a caller cannot get
 // it wrong per attribute — and an attribute that is not in the table is REFUSED
@@ -10445,6 +10476,18 @@ function setField(record, name, value) {
   if (value === undefined || value === null || value === '') {
     log.debug("Leaving setField().");
     return false;
+  }
+  // THE DESCRIPTION IS ON THE RECORD, NOT IN `fields` (#456): attributesFor()
+  // writes it from `record.description`, so a create's typed description
+  // lands there, one value.
+  if (name === 'description') {
+    const text = String(Array.isArray(value) ? value[0] || '' : value).trim();
+    const changed = !!text && record.description !== text;
+    if (text) {
+      record.description = text;
+    }
+    log.debug("Leaving setField(). The description.");
+    return changed;
   }
   // THE CLIENT SECRET IS RECORDS (2026-10-01): a value written here is THE
   // secret, wrapped — see putClientSecret().
@@ -10787,7 +10830,7 @@ function seen(detail) {
       changed = true;
     }
   }
-  if (info.note && addTo(record.descriptions, info.note)) changed = true;
+  if (info.note && noteDescription(record, info.note)) changed = true;
 
   // **A SIGHTING MAY NOT WRITE A RETURN ADDRESS WHERE ONLY A REGISTERED ONE IS
   // BELIEVED** (2026-09-12). A family's `redirectAttribute` — an ACS URL, a
@@ -11200,7 +11243,7 @@ function register(clientId, registration, options) {
   record.lastAt = now;
   addTo(record.kinds, 'oauth2-client');
   addTo(record.protocols, 'OAuth 2.0');
-  addTo(record.descriptions, federated
+  noteDescription(record, federated
     ? 'registered through an OpenID Federation Trust Chain (' +
       federated.type + ')'
     : 'registered through RFC 7591 dynamic client registration');
@@ -11315,7 +11358,7 @@ function forgetRegistration(clientId) {
     delete record.fields[name];
   });
   setField(record, 'oauthConfidential', 'FALSE');
-  addTo(record.descriptions, 'its RFC 7592 registration was deleted');
+  noteDescription(record, 'its RFC 7592 registration was deleted');
   record.lastAt = Date.now();
   save(record);
   log.debug("Leaving forgetRegistration(). The registration is gone; the " +
@@ -12253,8 +12296,8 @@ function createApplication(detail) {
   // has never authenticated anything and its counters are zero; without this
   // line a reader would have to infer that from the zeros, and "created by
   // hand" and "turned up once and never again" would look alike.
-  addTo(record.descriptions, 'created from the console; nothing has ' +
-                             'authenticated for it yet');
+  noteDescription(record, 'created from the console; nothing has ' +
+                          'authenticated for it yet');
   if (!save(record)) {
     log.debug("Leaving createApplication(). The container would not take it.");
     log.debug("Leaving createApplication().");
@@ -13003,16 +13046,11 @@ function updateApplication(identifier, change) {
     record.name = value;
     what = 'appName is now "' + value + '"';
   } else if (attribute === 'description') {
-    if (mode === 'add') {
-      changed = addTo(record.descriptions, value);
-      what = 'added a description';
-    } else {
-      const before = record.descriptions.length;
-      record.descriptions = record.descriptions.filter(
-          function (one) { return one !== value; });
-      changed = record.descriptions.length !== before;
-      what = 'removed a description';
-    }
+    // ONE VALUE (#456): set, and an empty one clears it.
+    changed = record.description !== value;
+    record.description = value;
+    what = value ? 'the description is now "' + value + '"'
+                 : 'the description was cleared';
   } else if (mode === 'set') {
     changed = setField(record, attribute, value);
     // setField() ignores an empty value, which is how a caller CLEARS one — so
@@ -14862,7 +14900,7 @@ function view(record, entry) {
     authentications: record.authentications,
     sessions: record.sessionCount,
     users: record.userCount,
-    descriptions: record.descriptions.slice(0),
+    description: record.description,
     // The entry's own facts, which are facts about the ENTRY rather than about
     // the application: when the directory created it, when it last changed, and
     // whether this service wrote it or a client did.
@@ -14883,8 +14921,30 @@ function view(record, entry) {
     // store gets the ciphertext the store holds.
     // Withheld FIRST: `withholdFields()` copies with Object.assign, which
     // would read — and so open — every accessor the other order put there.
-    fields: openSealedFields(withholdFields(record.fields), record.identifier)
+    fields: fieldsWithDescription(
+      openSealedFields(withholdFields(record.fields), record.identifier),
+      record)
   };
+}
+
+// THE DESCRIPTION AMONG THE FIELDS (#456). It lives on the record rather than
+// in `fields` (setField()), but the field grid shows and compares every
+// editable attribute out of `fields`, so it is put there — one value, or
+// absent when the entry carries none.
+/**
+ * Adds the record's description to a view's fields.
+ *
+ * @param fields - the view's fields
+ * @param record - the application's record
+ * @returns the same fields
+ */
+function fieldsWithDescription(fields, record) {
+  log.debug("Entering fieldsWithDescription().");
+  if (record.description) {
+    fields.description = record.description;
+  }
+  log.debug("Leaving fieldsWithDescription().");
+  return fields;
 }
 
 // ---------------------------------------------------------------------------
@@ -16788,7 +16848,7 @@ function seedInternalApplication(spec) {
   spec.protocols.forEach(function (protocol) {
     addTo(record.protocols, protocol);
   });
-  addTo(record.descriptions, spec.description);
+  noteDescription(record, spec.description);
   applyRegistrationFields(record, spec.registration);
   // ANYTHING THAT IS NOT AN RFC 7591 MEMBER, and today that is one attribute:
   // `oauthGlobalConsent`. It goes through `setField()` like every other write

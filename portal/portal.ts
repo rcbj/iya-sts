@@ -4462,10 +4462,8 @@ class Portal {
         homePage: applications.homePageOf(one),
         // OpenID Connect Core section 4's `initiate_login_uri`, or '' (#120).
         initiateLogin: applications.initiateLoginUriOf(one),
-        // The first description on the entry, if it carries one. An application
-        // registered by a client has none; one an operator created usually
-        // does.
-        description: (one.descriptions || [])[0] || '',
+        // The entry's description, if it carries one (one value since #456).
+        description: one.description || '',
         families: permitted.map(function (family) {
           const detail = applications.protocolRow(family.protocol);
           return detail ? detail.label : family.protocol;
