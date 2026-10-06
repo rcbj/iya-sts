@@ -4727,23 +4727,32 @@ class AdminConsole {
       '.fg-proto{font-weight:400;white-space:nowrap}' +
       '.fg-view{align-items:center;gap:.8em}' +
       // A LIST WITH A SEARCH (#459): the search box and its results show
-      // only while focus is inside the cell, so the cell grows downwards
-      // while somebody works in it and is its old size again when they move
-      // to another field. `:focus-within` and no script: every button in
-      // the cell, and the cell itself (`tabindex="-1"`), keep focus inside
-      // it, and the runtime puts focus back in the box after a search's
-      // redraw. A cell OPEN is outlined so it reads as the one in use.
+      // only while the cell is in use, so the cell grows downwards while
+      // somebody works in it and is its old size again when they move to
+      // another field. IN USE IS TWO THINGS (#462): focus inside the cell
+      // (`:focus-within` — clicking into it, the cell itself being
+      // `tabindex="-1"`), OR a search it holds (`fg-search-open`, drawn by
+      // `fieldGridCell()` while the page's state has results for it). The
+      // second is what keeps it open across Find, Previous, Next, Add and
+      // Enter: each redraws the page, which replaces the element focus was
+      // on — and Safari and Firefox on macOS never focus a button on click
+      // at all — so focus alone closed the cell on the very press that
+      // filled it. The runtime takes the class off when focus moves into
+      // ANOTHER field (`ConsoleRuntime.closeOtherSearches()`). A cell open
+      // is outlined so it reads as the one in use.
       '.fg-find{display:none;margin-top:.4em;padding-top:.4em;' +
       'border-top:1px dashed #d5d5dd}' +
-      '.fg-search:focus-within .fg-find{display:block}' +
+      '.fg-search:focus-within .fg-find,' +
+      '.fg-search-open .fg-find{display:block}' +
       '.fg-search:focus{outline:none}' +
-      '.fg-search:focus-within{border-color:#12107c;' +
+      '.fg-search:focus-within,.fg-search-open{border-color:#12107c;' +
       'box-shadow:0 0 0 2px rgba(18,16,124,.15)}' +
       '.fg-cell input[type=search]{flex:1 1 auto;min-width:0;' +
       'box-sizing:border-box}' +
       '.fg-hit{display:flex;gap:.3em;align-items:center;' +
       'justify-content:space-between;margin:.2em 0}' +
       '.fg-hit-name{min-width:0;overflow-wrap:anywhere;font-size:.9em}' +
+      '.fg-hint,.fg-none{display:block;font-size:.85em;margin:.2em 0}' +
       '.fg-pager{display:flex;gap:.4em;align-items:center;margin-top:.3em;' +
       'font-size:.85em}' +
       'button.fg-findbtn,button.fg-add,button.fg-prev,button.fg-next{' +

@@ -279,6 +279,32 @@ function run(t) {
           !/fg-search|fgfind/.test(plainCell),
           '4g. the grid draws a search on the cells it is offered on — five ' +
           'Adds after a search — and none on any other');
+  // #462: a cell holding a search is drawn OPEN by its class, because the
+  // redraw a Find makes takes focus with it and `:focus-within` alone
+  // closed the cell on the press that filled it.
+  t.check(/class="fg-cell fg-search fg-search-open/.test(groupCell) &&
+          !/fg-search-open/.test(delegateCell),
+          '4g-ii. a cell with results is drawn open (fg-search-open), one ' +
+          'without is not (#462)');
+  // #462, rcbj: a search that found nothing, an empty query and a failed
+  // call keep the cell open too — the box, Find and the line saying so.
+  const asCell = function (found) {
+    return webKit.fieldGridCell(row('appDelegationSubjectGroup'), {},
+      Object.assign({}, opts, { finds: { appDelegationSubjectGroup: found } }));
+  };
+  const none = asCell(webAnswers.fieldSearchFound('groups',
+    { query: 'zzz', page: 1 }, { groups: [], page: 1, pages: 1, matched: 0 }));
+  const empty = asCell(webAnswers.fieldSearchFound('groups',
+    { query: '', page: 1 }, { groups: [], page: 1, pages: 1, matched: 0 }));
+  const failed = asCell(webAnswers.fieldSearchFound('groups',
+    { query: 'x', page: 1 }, null));
+  t.check(/fg-search-open/.test(none) && /value="zzz"/.test(none) &&
+          /No matches for &ldquo;zzz&rdquo;/.test(none) &&
+          /name="fgsearch"/.test(none) && !/fg-next/.test(none) &&
+          /fg-search-open/.test(empty) && /fg-hint/.test(empty) &&
+          /fg-search-open/.test(failed) && /could not be run/.test(failed),
+          '4g-iii. no matches, an empty query and a failed call are drawn ' +
+          'open, with the query kept and a line saying which (#462)');
   t.check(Object.keys(applications.FIELD_SEARCHES).sort().join(',') ===
             'appAllowedToActOnBehalfOf,appAllowedToDelegateTo,' +
             'appDelegationSubjectGroup',
