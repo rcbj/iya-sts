@@ -3,7 +3,7 @@
 //
 // ===========================================================================
 // tests/tools/container-smoke.js — SIGN IN TO THE CONSOLE AND READ
-// /admin/sts-metadata, FOR THE BUILD-CONTAINER WORKFLOW'S SMOKE TEST.
+// /admin-api/sts-metadata, FOR THE BUILD-CONTAINER WORKFLOW'S SMOKE TEST.
 //
 // `.github/workflows/build-container.yml` starts the image it just built and
 // asks `/admin/sts-metadata` for the endpoint list, because that page is built
@@ -27,7 +27,8 @@
 // that path.
 //
 // Usage: STS_ADMIN_API_TOKEN=<token> node tests/tools/container-smoke.js <base>
-// Exits 0 when the page answered 200 with an endpoint list, 1 otherwise.
+// Exits 0 when the page's operation answered 200 with an endpoint list, 1
+// otherwise.
 // ===========================================================================
 
 'use strict';
@@ -64,41 +65,43 @@ async function main(base) {
     throw new Error('STS_ADMIN_API_TOKEN is empty. Mint one with ' +
                     'tests/tools/admin-api-token.js first.');
   }
+  // `grant: 'read'`, as the vendored `sts_metadata.js` job asks: a fresh
+  // container's empty roster admits anybody, and a role given first keeps
+  // that from being what this step depends on.
   const session = await consoleSignIn.signInToTheConsole(base, CONSOLE_USER,
-                                                         log);
+                                                         log,
+                                                         { grant: 'read' });
   if (!session) {
-    // `signInToTheConsole()` answers null when the gate did not redirect,
-    // which can no longer happen. Reported rather than passed over, because a
-    // console that is open to anybody is the finding, not the smoke test.
+    // `signInToTheConsole()` asserts its own walk and answers a client; a
+    // null here would mean the helper changed under this tool.
     log.debug("Leaving main().");
-    throw new Error('GET /admin/tokens did not redirect to sign-in, so the ' +
-                    'console gate is off; it cannot be turned off since ' +
-                    '2026-09-06.');
+    throw new Error('console_signin.js answered no console client.');
   }
-  const reply = await fetch(base + '/admin/sts-metadata?format=json',
-                            { headers: { cookie: session },
-                              redirect: 'manual' });
-  const text = await reply.text();
+  // THE PAGE'S OPERATION, since the #446 cutover made `/admin` a static
+  // application: every `/admin/*` path answers the console's shell, so
+  // `?format=json` there is HTML and lists nothing — which is how this step
+  // failed on the first build after the cutover. The console draws the page
+  // from `GET /admin-api/sts-metadata`, the same JSON `?format=json` was, and
+  // the client the sign-in answers holds that console's DPoP-bound token. It
+  // is asked with `api()` and not `get()`, because `get()` also DRAWS the
+  // page with `admin-ui/console.bundle.js`, which only an image build makes
+  // and a workflow's checkout does not have.
+  const reply = await session.api('GET', '/admin-api/sts-metadata');
   console.log('sts-metadata: ' + reply.status);
   if (reply.status !== 200) {
     log.debug("Leaving main().");
-    throw new Error('GET /admin/sts-metadata?format=json answered ' +
-                    reply.status + ' with a console session: ' +
-                    text.slice(0, 300));
+    throw new Error('GET /admin-api/sts-metadata answered ' + reply.status +
+                    ' with the console\'s token: ' +
+                    String(reply.text || '').slice(0, 300));
   }
-  let doc = null;
-  try {
-    doc = JSON.parse(text);
-  } catch (e) {
-    log.debug("Caught in main(): " + ((e && e.message) || e));
-    // Not JSON is a failure of its own, named below with the body's start.
-    doc = null;
-  }
+  const doc = reply.json;
+  const text = String(reply.text || '');
   const count = doc && Array.isArray(doc.endpoints) ? doc.endpoints.length : 0;
   if (count <= MINIMUM_ENDPOINTS) {
     log.debug("Leaving main().");
-    throw new Error('/admin/sts-metadata listed ' + count + ' endpoint(s), ' +
-                    'so the router was not walked: ' + text.slice(0, 300));
+    throw new Error('/admin-api/sts-metadata listed ' + count +
+                    ' endpoint(s), so the router was not walked: ' +
+                    text.slice(0, 300));
   }
   console.log('sts-metadata lists ' + count + ' endpoints.');
   log.debug("Leaving main().");
