@@ -10431,8 +10431,8 @@ class AdminApi {
       { method: 'GET', path: BASE + '/kerberos/claims', tag: 'Kerberos',
         operationId: 'getKerberosPacClaims',
         summary: 'The claims a Kerberos ticket\'s PAC carries',
-        description: 'The `kerberos-pac` claim set — the claims this realm\'s ' +
-                     'KDC writes into PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11) ' +
+        description: 'The `kerberos-pac` claim set — the claims this ' +
+                     'realm\'s KDC writes into PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11) ' +
                      'while `krb5.pacClaims` is on — with each row\'s claim ' +
                      'id, the four PAC claim types and the claims one ' +
                      'person\'s next TGT would carry, built by the function ' +
