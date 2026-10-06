@@ -6032,6 +6032,92 @@ class OAuth2Server {
   }
 
   // ---------------------------------------------------------------------------
+  // THE ORIGINAL CLIENT AT THE BOTTOM OF AN `act` CHAIN (#443).
+  //
+  // RFC 8693 section 4.1 nests prior actors beneath the current one, and the
+  // exchange always kept a subject_token's own `act` beneath the new actor —
+  // but the FIRST exchange of a token had no prior `act` to keep, so the
+  // client the person signed in to (the one that obtained the first
+  // subject_token, by the authorization code flow or any other grant) was
+  // in no token of the chain. rcbj's example: issued to rcbj0004, exchanged
+  // by rcbj0005 and then rcbj0006, the last token should read
+  // `act: {sub: rcbj0006, act: {sub: rcbj0005, act: {sub: rcbj0004}}}`.
+  //
+  // THE RULE IS THE TOKEN-CHAINING PROFILE'S ("Token and Identity Chaining
+  // Between Protected Resources in a Single ICAM Ecosystem Using OAuth Token
+  // Exchange", MITRE PR 21-1421, the profile #443 cites as the ENA profile):
+  // the issued `act` names the exchanging party; "if an act claim is present
+  // in the access token to be exchanged, the AS MUST copy it into the new
+  // access token as a nested claim within the new access token's outer act
+  // claim. If an act claim is not present ..., the AS MUST add a nested act
+  // claim containing a sub claim with the identity of the client that
+  // presented the access token to be exchanged to PR1 (found in the access
+  // token's client_id claim)". So this is asked only when there is no prior
+  // `act`: a token that has one already carries its chain's beginning.
+  //
+  // WHO the original client is: the subject_token's `client_id` — the claim
+  // the profile names, and the one every token this realm issues carries —
+  // else `azp`, OpenID Connect's name for the same party on an ID Token. Only
+  // off a subject_token THIS REALM SIGNED AND VERIFIED: a `client_id` on a
+  // token from somewhere else (development's unverified read) names a client
+  // of another server, and an assertion's (#114) is filled in from the
+  // exchanging client, not read off anything a client was issued.
+  //
+  // ITS FORM is the one a client's own subject takes in the mode (RFC 9700
+  // section 4.13, `client-subject-separated`): `urn:sts:client:<id>` in RFC
+  // 9700 mode — implied by product — and the bare client_id otherwise, so the
+  // original client reads as the actors above it read when they act by their
+  // client_credentials tokens.
+  //
+  // NOTHING IS ADDED WHEN THE ORIGINAL CLIENT IS THE ACTOR. A client
+  // exchanging the token it was itself issued already begins the chain;
+  // nesting it beneath itself would record a hop between a party and itself
+  // that never happened.
+  //
+  // The entry is INFORMATIONAL, as every nested `act` is (section 4.1: "only
+  // the top-level claims and the party identified as the current actor ...
+  // are to be considered"): may_act, the delegation policy and the register
+  // all read the current actor, which stays outermost.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the nested `act` entry naming the client a chain began with, or
+   * null where there is none to add.
+   *
+   * @param subject - the subject_token's claims
+   * @param ownVerified - whether this realm signed and verified it (and it
+   *   is not an assertion)
+   * @param actorName - the current actor's client_id or name, as the
+   *   delegation policy is asked about it
+   * @param namespaced - whether a client's subject is `urn:sts:client:<id>`
+   *   (RFC 9700 mode)
+   * @returns `{ sub }`, or null
+   */
+  static originalClientAct(subject: Json, ownVerified: boolean,
+                           actorName: string, namespaced: boolean): Json {
+    helpers.log.debug("Entering OAuth2Server.originalClientAct().");
+    if (!ownVerified || !subject ||
+        (subject.act && typeof subject.act === 'object')) {
+      helpers.log.debug("Leaving OAuth2Server.originalClientAct(). Not " +
+                        "this realm's own, or the chain is already there.");
+      return null;
+    }
+    const clientId = String(subject.client_id || subject.azp || '').trim();
+    if (!clientId) {
+      helpers.log.debug("Leaving OAuth2Server.originalClientAct(). The " +
+                        "subject_token names no client.");
+      return null;
+    }
+    if (clientId === String(actorName || '')) {
+      helpers.log.debug("Leaving OAuth2Server.originalClientAct(). The " +
+                        "original client is the actor.");
+      return null;
+    }
+    helpers.log.debug("Leaving OAuth2Server.originalClientAct(). " +
+                      clientId);
+    return { sub: namespaced ? 'urn:sts:client:' + clientId : clientId };
+  }
+
+  // ---------------------------------------------------------------------------
   // AN ASSERTION'S SUBJECT, AS THE TOKEN EXCHANGE READS A SUBJECT (#114).
   //
   // The person the verified assertion names, recorded and provisioned as the
@@ -15881,15 +15967,19 @@ class OAuth2Server {
         : String(subject.username || subjectSub);
       const subjectAudiences = (Array.isArray(subject.aud) ? subject.aud
         : (subject.aud ? [subject.aud] : [])).map(String);
+      // The actor as the policy is asked about it: a client by its
+      // client_id however its subject is spelt, a person by name. Kept, so
+      // the act chain below compares the original client with the same name.
+      const actorName = actorClaims
+        ? String(actorIdentity.aliases && actorIdentity.aliases[0] ||
+                 (/^urn:sts:client:/.test(String(actorClaims.sub || ''))
+                   ? String(actorClaims.sub).slice('urn:sts:client:'.length)
+                   : String(actorClaims.username || actorClaims.sub || '')))
+        : String(client.client_id || '');
       const decision = delegationPolicy.decide({
         protocol: 'OAuth 2.0',
         requested: (askedSemantics[0] || '') as any,
-        actor: actorClaims
-          ? String(actorIdentity.aliases && actorIdentity.aliases[0] ||
-                   (/^urn:sts:client:/.test(String(actorClaims.sub || ''))
-                     ? String(actorClaims.sub).slice('urn:sts:client:'.length)
-                     : String(actorClaims.username || actorClaims.sub || '')))
-          : client.client_id,
+        actor: actorName,
         subject: subjectName,
         source: subjectAudiences.concat([String(subject.client_id || ''),
                                          String(subject.azp || '')]),
@@ -15905,8 +15995,18 @@ class OAuth2Server {
       if (issuedSemantics === 'delegation') {
         act = (actorClaims ? { sub: actorClaims.sub }
                            : { sub: client.client_id }) as Json;
+        // Beneath the new actor: the subject_token's own chain, or — on the
+        // first exchange of a token, which has none — the client the chain
+        // began with (#443, `originalClientAct()`). Only where this exchange
+        // adds an actor: an impersonation adds nobody, so it has no chain to
+        // begin (RFC 8693 section 1.1), and keeps a prior one as it is.
+        const original = priorAct ? null : OAuth2Server.originalClientAct(
+          subject, subjectVerified && !subjectAssertion, actorName,
+          bcp.enabled());
         if (priorAct) {
           act.act = priorAct;
+        } else if (original) {
+          act.act = original;
         }
       } else {
         act = priorAct;
@@ -16244,8 +16344,9 @@ class OAuth2Server {
           identifier: issuedJti,
           note: act
             ? 'carries an `act` claim naming ' + String(act.sub || '(nobody)') +
-              (act.act ? ', with the prior actors nested beneath it (RFC ' +
-                         '8693 section 4.1)' : '')
+              (act.act ? ', with the prior actors — back to the client the ' +
+                         'chain began with — nested beneath it (RFC 8693 ' +
+                         'section 4.1)' : '')
             : 'carries nothing about the client that exchanged it'
         }].concat(exchanged.id_token ? [{
           kind: 'id_token',

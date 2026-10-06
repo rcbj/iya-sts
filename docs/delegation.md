@@ -208,6 +208,16 @@ mode — are listed in [XACML](xacml.html).
 * **Delegation** puts `act: { sub: <actor> }` on the access token, nesting any
   `act` the subject token carried. **Impersonation** issues a token about the
   subject with no new `act`.
+* **The chain begins with the original client.** When the subject token
+  carries no `act` — the first exchange of a token — delegation nests the
+  client that token was issued to (its `client_id`) beneath the actor. Two
+  hops from a web application's sign-in therefore read
+  `act: { sub: <second actor>, act: { sub: <first actor>, act: { sub:
+  <web application> } } }`. A client's `sub` here is `urn:sts:client:<id>` in
+  RFC 9700 mode (and so in product mode) and the bare `client_id` otherwise,
+  as for an actor token from `client_credentials`. Nothing is nested when the
+  client exchanging the token is the one it was issued to. Only the outermost
+  `act` is the current actor; the nested ones are history.
 * `may_act` is read off the verified subject token and compared with the
   actor's `sub` (and `iss`, when the claim has one). It is *issued* on a
   person's access tokens when their entry carries `stsMayAct`.

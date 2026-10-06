@@ -22,18 +22,31 @@
 //   subject_token. That is RFC 8693 section 1.1's DELEGATION: the issued
 //   token names bob_end_user as its subject and the tier in an `act` claim.
 //
-//   AND `act` NESTS (section 4.1). The second hop's subject_token already
-//   carries `act` naming apigw1-del, so sp1-del's token reads
+//   AND THE CHAIN BEGINS WITH THE ORIGINAL CLIENT (#443). The sign-in's
+//   token carries no `act`, so the first hop nests the client it was issued
+//   to — webapp1-del, its `client_id` — beneath the gateway, as the
+//   token-chaining profile #443 cites requires ("add a nested act claim
+//   containing a sub claim with the identity of the client that presented
+//   the access token", MITRE PR 21-1421):
 //
-//       "act": { "sub": <esb1-del>, "act": { "sub": <apigw1-del> } }
+//       "act": { "sub": <apigw1-del>, "act": { "sub": <webapp1-del> } }
+//
+//   AND `act` NESTS (section 4.1). The second hop's subject_token already
+//   carries that chain, so sp1-del's token reads
+//
+//       "act": { "sub": <esb1-del>,
+//                "act": { "sub": <apigw1-del>,
+//                         "act": { "sub": <webapp1-del> } } }
 //
 //   — "the outermost act claim represents the current actor while nested act
-//   claims represent prior actors". Each `sub` is the actor_token's own
-//   subject, verbatim: `esb1-del` in development, where a client_credentials
-//   token's subject is its client_id, and `urn:sts:client:esb1-del` in
-//   RFC 9700 mode (implied by product), which gives a client a namespace of
-//   its own (section 4.13). Section 4.1 says the claims inside `act`
-//   identify the actor and are not otherwise constrained, so either is right.
+//   claims represent prior actors". Each actor's `sub` is the actor_token's
+//   own subject, verbatim: `esb1-del` in development, where a
+//   client_credentials token's subject is its client_id, and
+//   `urn:sts:client:esb1-del` in RFC 9700 mode (implied by product), which
+//   gives a client a namespace of its own (section 4.13). The original
+//   client takes the same form in the same mode — `webapp1-del` or
+//   `urn:sts:client:webapp1-del` — though it never sends a token of its own:
+//   it is a client, named as the service names a client's subject.
 //
 // The middle tiers are configured to DELEGATE — `appDelegationSemantics`
 // and `appDefaultDelegationSemantics` delegation, `appAllowedToDelegateTo`
@@ -51,7 +64,8 @@
 //      token about its tier (not the person), issued to it, carrying
 //      app1-scope; each exchanged token about bob_end_user, carrying
 //      app1-scope, addressed to the next tier, issued to the client that
-//      asked, with `act` exactly as above.
+//      asked, with `act` exactly as above — the whole chain, compared in
+//      full, on the hop-1 token and on the final one.
 //   3. INTROSPECTION at sp1-del: active, for bob_end_user, addressed to
 //      sp1-del, app1-scope — and, where the response carries `act` (RFC 8693
 //      section 7.2 registers it for introspection), the same nested `act`.
@@ -126,6 +140,20 @@ function assertActorToken(cast, tier, token) {
   return claims;
 }
 
+// The form the service gives a CLIENT's subject in the mode, read off an
+// actor token that is one: namespaced where the actor's is (RFC 9700 mode),
+// the bare client_id where it is not. Product implies RFC 9700 mode, so a
+// product service that does not namespace is a failure, not a form.
+function clientSubjectLike(actorClaims, identifier, product) {
+  log.debug("Entering clientSubjectLike(). " + identifier);
+  const namespaced = /^urn:sts:client:/.test(String(actorClaims.sub || ""));
+  assert.ok(!product || namespaced, "a product service gives a client the " +
+            "subject urn:sts:client:<id> (RFC 9700 section 4.13, implied by " +
+            "product) and the actor token's is \"" + actorClaims.sub + "\".");
+  log.debug("Leaving clientSubjectLike().");
+  return namespaced ? "urn:sts:client:" + identifier : identifier;
+}
+
 function assertActIs(claims, expected, what) {
   log.debug("Entering assertActIs(). " + what);
   assert.deepStrictEqual(claims.act, expected, what + " should carry " +
@@ -173,16 +201,20 @@ async function test() {
   });
   const hop1 = await kit.exchange(base, cast, cast.gateway,
                                   signedIn.access_token, actor1.access_token);
+  // The client the chain began with, in its mode's form (#443).
+  const originalSub = clientSubjectLike(actor1Claims, cast.webapp.identifier,
+                                        product);
   let second;
   check("2c. " + cast.gateway.identifier + "'s exchanged token: " +
         cast.user + ", " + kit.COMMON_SCOPE + ", addressed to " +
-        cast.esb.audience + ", act naming " + cast.gateway.identifier,
-        function () {
+        cast.esb.audience + ", act naming " + cast.gateway.identifier +
+        " with the original client " + cast.webapp.identifier +
+        " NESTED beneath it (#443)", function () {
     second = kit.assertChainToken(cast, hop1.access_token, {
       what: cast.gateway.identifier + "'s exchanged token",
       audience: cast.esb.audience, clientId: cast.gateway.identifier,
       notAudience: [cast.gateway.identifier, cast.gateway.audience] });
-    assertActIs(second, { sub: actor1Claims.sub },
+    assertActIs(second, { sub: actor1Claims.sub, act: { sub: originalSub } },
                 cast.gateway.identifier + "'s exchanged token");
   });
 
@@ -196,11 +228,12 @@ async function test() {
   const hop2 = await kit.exchange(base, cast, cast.esb, hop1.access_token,
                                   actor2.access_token);
   let third;
-  const nested = { sub: "", act: { sub: "" } };
+  const nested = { sub: "", act: { sub: "", act: { sub: "" } } };
   check("2e. " + cast.esb.identifier + "'s exchanged token: " + cast.user +
         ", " + kit.COMMON_SCOPE + ", addressed to " + cast.provider.audience +
         ", act naming " + cast.esb.identifier + " with " +
-        cast.gateway.identifier + " NESTED beneath it", function () {
+        cast.gateway.identifier + " and then the original client " +
+        cast.webapp.identifier + " NESTED beneath it (#443)", function () {
     third = kit.assertChainToken(cast, hop2.access_token, {
       what: cast.esb.identifier + "'s exchanged token",
       audience: cast.provider.audience, clientId: cast.esb.identifier,
@@ -208,6 +241,7 @@ async function test() {
                     cast.webapp.identifier] });
     nested.sub = actor2Claims.sub;
     nested.act.sub = actor1Claims.sub;
+    nested.act.act.sub = originalSub;
     assertActIs(third, nested, cast.esb.identifier + "'s exchanged token");
   });
   log.info("=== The final access token's claims ===");
