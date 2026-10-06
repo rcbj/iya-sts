@@ -1909,13 +1909,43 @@ class WebKit {
       if (!mine.length) {
         return '';
       }
-      const cells = mine.map(function (row) {
-        return WebKit.fieldGridCell(row, values, options);
+      // A GROUP'S HEADED SECTIONS (#463) come after the rest of it, each
+      // under its own heading, inside the group's form: the rows that name
+      // one (`section`, `sectionLabel`) are drawn there and not above.
+      const plain = mine.filter(function (row) {
+        return !row.section;
       });
+      const sections: { id: string; label: string; rows: any[] }[] = [];
+      mine.forEach(function (row) {
+        if (!row.section) {
+          return;
+        }
+        let found = sections.filter(function (one) {
+          return one.id === row.section;
+        })[0];
+        if (!found) {
+          found = { id: String(row.section),
+                    label: String(row.sectionLabel || row.section),
+                    rows: [] };
+          sections.push(found);
+        }
+        found.rows.push(row);
+      });
+      const cellsOf = function (rows) {
+        return rows.map(function (row) {
+          return WebKit.fieldGridCell(row, values, options);
+        });
+      };
+      const cells = cellsOf(plain);
+      const sectionHtml = sections.map(function (one) {
+        return '<div class="fg-section" id="fgs-' + WebKit.esc(one.id) +
+          '"><h4>' + WebKit.esc(one.label) + '</h4><div class="fg">' +
+          cellsOf(one.rows).join('') + '</div></div>';
+      }).join('');
       // THE GROUP CARRIES THE UNION OF ITS CELLS' FAMILIES, or none when any
       // cell is unconditional, so a
       // group whose every cell is hidden leaves no bare heading behind.
-      const always = cells.some(function (cell) {
+      const always = cellsOf(mine).some(function (cell) {
         return cell.indexOf('<div class="fg-cell">') === 0;
       });
       const families = [];
@@ -1928,8 +1958,9 @@ class WebKit {
       });
       return '<div class="fg-group' + (always ? '' : ' ' +
         WebKit.esc(WebKit.familyClasses(families))) + '"><h3>' +
-        WebKit.esc(group.label) + '</h3><div class="fg">' + cells.join('') +
-        '</div></div>';
+        WebKit.esc(group.label) + '</h3>' +
+        (cells.length ? '<div class="fg">' + cells.join('') + '</div>' : '') +
+        sectionHtml + '</div>';
     }).join('');
   }
 
