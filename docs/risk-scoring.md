@@ -379,6 +379,12 @@ ways in:
   expanded as it is read, and nothing expanded is written to disk. See
   [Uploading a file](#uploading-a-file). A short list can also be pasted on
   the same page, or sent as `content` to `POST /admin-api/risk/import`.
+  Both forms have one *Dataset and its format* drop-down that offers only
+  the pairs that go together — each dataset with the formats it is read
+  from — and the table above them, *Which file goes with which dataset*,
+  says what each format's file looks like. Through the API, `dataset` and
+  `format` are two fields as before, and a pair that does not go together
+  is refused.
 - **At install time, with the loader.** Run it inside the image. It
   connects to the database the way the service does, from the same
   settings (see step 3 below):

@@ -650,6 +650,18 @@ function childMain() {
     // field grids a closed schema dropped — because an unticked box sends
     // nothing and an empty one is an absent value.
     const ConsoleRuntime = require(ROOT_DIR + '/admin-ui/web_runtime');
+    // A JOINED FIELD (#219) is sent as its parts, as the runtime sends it
+    // (`splitJoinedFields()`): Monitoring → Risk's `dataset|format`.
+    const asSent = function (fields) {
+      const data = new FormData();
+      Object.keys(fields).forEach(function (name) {
+        [].concat(fields[name]).forEach(function (value) {
+          data.append(name, String(value));
+        });
+      });
+      ConsoleRuntime.splitJoinedFields(data);
+      return ConsoleRuntime.fieldsOf(data);
+    };
     const specModule = require(ROOT_DIR + '/mgmt-api/admin_api_spec');
     const shaper = new ConsoleRuntime({ location: { pathname: '/admin' } });
     shaper.spec = specModule.buildSpec(adminApi.ROUTES, adminApi.specOptions({
@@ -757,7 +769,7 @@ function childMain() {
           const route = operation ? routeOf(operation) : null;
           if (route && !route.owns) {
             bodies++;
-            const sent = fieldsOfForm(form, action);
+            const sent = asSent(fieldsOfForm(form, action));
             const shaped = shaper.shapeFields(sent,
               await shaper.requestSchema(operation));
             delete shaped.action;
@@ -789,7 +801,7 @@ function childMain() {
             // name it, and a ticked box is refused only where its value is
             // not in the member's enum — the two ways a form drawn empty
             // hides a control its operation cannot take.
-            const full = fieldsOfForm(form, action, true);
+            const full = asSent(fieldsOfForm(form, action, true));
             const fullShaped = shaper.shapeFields(full,
               await shaper.requestSchema(operation));
             Object.keys(full).forEach(function (name) {
