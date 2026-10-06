@@ -6284,11 +6284,19 @@ async function theTwoDrawingsAreServerSide(driver) {
     // And ?format=svg hands the document over, which is the answer to the pan
     // and zoom this deliberately does not have. Since #446 the page's
     // download link is answered by the picture's /admin-api operation —
-    // the console saves what it answers — so that is what is asked.
-    const svgAt = realm("/admin-api" + path.slice("/admin".length) +
+    // the console saves what it answers — so that is what is asked. Since
+    // #454 a drawing is a CONSOLE operation, under /admin-api/console and
+    // behind `admin:console`, which the run's preloaded token does not
+    // carry: so it is asked as the console asks it, with the node-side
+    // console's DPoP-bound token (`renderedMarkupOf()`'s sign-in).
+    if (!nodeConsole) {
+      nodeConsole = await require("./console_signin.js").signInToTheConsole(
+        base, "console-test-node-" + names.runStamp(), log,
+        { grant: "write" });
+    }
+    const svgAt = realm("/admin-api/console" + path.slice("/admin".length) +
                         "?format=svg");
-    const svgAnswer = await fetch(svgAt);
-    await svgAnswer.text();
+    const svgAnswer = await nodeConsole.api("GET", svgAt);
     const raw = { status: svgAnswer.status, headers: {
       "content-type": svgAnswer.headers.get("content-type") || "" } };
     check(path + "?format=svg hands the document over", function () {
