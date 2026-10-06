@@ -1012,9 +1012,74 @@ function applicationNameOf(name) {
   return found ? String(found.identifier) : wanted;
 }
 
+// ---------------------------------------------------------------------------
+// A CLIENT'S OWN SUBJECT IS THAT APPLICATION'S BOX (#468, 2026-10-06).
+//
+// A party with a PRESENTED identity is keyed by it, before its application —
+// right for a person, and wrong for a client acting as itself. An RFC 8693
+// delegation whose actor_token came from a client_credentials grant names
+// the client by that token's `sub`, which is the client's own subject: the
+// bare client_id with RFC 9700 mode off, and `urn:sts:client:<id>` with it
+// on (section 4.13's namespace; product implies the mode). In product the
+// actor of hop 2 was therefore keyed `urn:sts:client:esb1-del` and the
+// application hop 1 reached `esb1-del`, and a two-hop chain was drawn as two
+// unconnected halves — the drawing the audience resolution above was added
+// to prevent, one layer further in.
+//
+// So a presented identity that IS a client's subject is drawn as that
+// application, by the same resolution `applicationNameOf()` gives a name an
+// act calls an application:
+//
+//   * `urn:sts:client:<id>` — a client's subject by construction, whether or
+//     not `<id>` is registered (an unregistered one is a box named `<id>`, as
+//     an unregistered client_id target is);
+//   * a bare name that is a REGISTERED client_id — the client_credentials
+//     `sub` with the mode off. Only a registered one: a bare name is also how
+//     a person is presented, and the registry is what says it is a client.
+//
+// A username that is also a registered client_id is the collision RFC 9700
+// section 4.13 is about; with the mode off this service's tokens cannot
+// tell them apart either, and the picture follows the token.
+//
+// `applications.js` is required lazily, for `applicationNameOf()`'s reasons.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the application a presented identity names when it is a client's
+ * own subject, or '' when it is not one.
+ *
+ * @param presented - the identity as the act recorded it
+ * @returns the registered application's identifier (or the client_id as
+ *   written, for an unregistered `urn:sts:client:` subject), or ''
+ */
+function clientApplicationOf(presented) {
+  log.debug("Entering clientApplicationOf().");
+  const value = String(presented == null ? '' : presented).trim();
+  const namespaced = /^urn:sts:client:(.+)$/.exec(value);
+  if (namespaced) {
+    log.debug("Leaving clientApplicationOf(). A client's subject.");
+    return applicationNameOf(namespaced[1]);
+  }
+  if (!value) {
+    log.debug("Leaving clientApplicationOf(). Nothing presented.");
+    return '';
+  }
+  let found = null;
+  try {
+    found = require('./applications').forClientId(value) || null;
+  } catch (e) {
+    log.debug("Caught in clientApplicationOf(): " +
+              ((e && e.message) || e));
+    found = null;
+  }
+  log.debug("Leaving clientApplicationOf(). " +
+            (found ? found.identifier : 'Not a client.'));
+  return found ? String(found.identifier) : '';
+}
+
 /**
  * Returns the key a party is drawn under, so two spellings of one identity
- * or application are one box.
+ * or application are one box — and a client acting as itself is its
+ * application's box.
  *
  * @param party - a party `{ key, presented, application }`
  * @returns the node id
@@ -1022,6 +1087,11 @@ function applicationNameOf(name) {
 function nodeIdOf(party) {
   log.debug("Entering nodeIdOf().");
   if (party.key) {
+    const asClient = clientApplicationOf(party.presented);
+    if (asClient) {
+      log.debug("Leaving nodeIdOf(). A client's own subject.");
+      return stats.identityKeyOf(asClient);
+    }
     log.debug("Leaving nodeIdOf().");
     return party.key;
   }
@@ -1193,6 +1263,20 @@ function graph(rows, options) {
         if (party.application !== node.application &&
             node.aliases.indexOf(party.application) < 0) {
           node.aliases.push(party.application);
+        }
+      }
+      // A client acting as itself (#468): the box is its application, and
+      // the subject it presented — `urn:sts:client:<id>` — is one more name
+      // the box was given.
+      const asClient = party.presented ?
+        clientApplicationOf(party.presented) : '';
+      if (asClient) {
+        if (!node.application) {
+          node.application = asClient;
+        }
+        if (party.presented !== node.application &&
+            node.aliases.indexOf(party.presented) < 0) {
+          node.aliases.push(party.presented);
         }
       }
       if (party.what && !node.what) node.what = party.what;

@@ -74,7 +74,8 @@
 //      subject as the identity in the middle and the actor token's jti among
 //      what it consumed, the issuance policy's ALLOWED sentence; in product,
 //      policed with both tokens verified. Then the graph: a delegation line
-//      from bob_end_user to each tier, and esb1-del ONE box.
+//      from bob_end_user to each tier, and esb1-del ONE box — in product
+//      too, where its actor subject is `urn:sts:client:esb1-del` (#468).
 //
 // In development and product mode alike; entries left behind and
 // reconciled on a rerun, as there.
@@ -301,7 +302,7 @@ async function test() {
   });
   check("4c. the picture: a delegation line from " + cast.user + " to " +
         "each actor, and " + cast.esb.identifier + " both reached and " +
-        "acting (one box where the actor's subject is its client_id)",
+        "acting, ONE box in either mode (#468)",
         function () {
     kit.assertGraphIsAChain(cast, since.graph, hops, "delegation");
   });
