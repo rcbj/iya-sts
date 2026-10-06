@@ -27,20 +27,26 @@
 //      — each SPN on its entry, each delegating tier naming exactly the next
 //      tier, sp1 and nobody else naming nobody.
 //   2. THE WIRE: every KDC reply decoded — the ticket is for bob, to the SPN
-//      asked for, the nonce echoed — and every ticket a hop presents is
-//      FORWARDABLE, which classic delegation needs.
+//      asked for, the nonce echoed — and every ticket FORWARDABLE, sp1's
+//      too: each request asked for it and each front end's TGT is
+//      forwardable (RFC 4120 3.3.3, #492); a ticket a hop presents must be,
+//      for either route ([MS-SFU] 3.2.5.2.1 and 3.2.5.2.3).
 //   3. THE TARGET'S VALIDATION: each tier opens the AP-REQ it is handed with
 //      its own key and the Authenticator with the session key, finds bob,
 //      verifies the PAC's server signature, and reads the PAC's
 //      S4U_DELEGATION_INFO ([MS-PAC] 2.9): absent on bob's own ticket, then
 //      transited [webapp1], [webapp1, apigw1] and at sp1
 //      [webapp1, apigw1, esb1] — webapp1 first, the original client (#443's
-//      analogue), each S4U2proxyTarget the tier the ticket is for.
+//      analogue) — each `SPN@REALM`, and each S4U2proxyTarget the bare SPN
+//      of the tier the ticket is for (#489).
 //   4. THE REGISTER AND THE PICTURE: one `krb5-s4u2proxy-classic` act per
 //      hop, mode delegation, policed, for bob, from the requester to the
 //      application its registered SPN names, attributed to
-//      appAllowedToDelegateTo and to the issuance policy's ALLOWED sentence.
-//      Then the graph: apigw1 and esb1 are each ONE box (#468).
+//      appAllowedToDelegateTo and to the issuance policy's ALLOWED sentence
+//      in Kerberos's words — S4U2Proxy, classic constrained delegation, the
+//      evidence ticket, the SPN (#490). Mode delegation is [MS-SFU]'s: an
+//      S4U2Proxy ticket carries the chain (#491). Then the graph: apigw1
+//      and esb1 are each ONE box (#468).
 //
 // In development and product mode alike (GET /admin-api/mode); the KDC
 // enforces the delegation policy in both. The entries are left behind; a
@@ -106,7 +112,7 @@ async function test() {
               " holds evidence that is not forwardable: " +
               held.flagNames.join(","));
     const r = await kit.s4u2proxy(K, cast, tier, held.ticket);
-    kit.assertReply(K, cast, r, tier.next, !!tier.next.next,
+    kit.assertReply(K, cast, r, tier.next, true,
                     tier.stem + "'s ticket to " + tier.next.stem);
     held = await kit.accept(K, cast, tier.next, r);
     transited.push(tier);

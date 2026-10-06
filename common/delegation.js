@@ -223,7 +223,9 @@ const TYPES = [
           'involved at all — no password, no ticket of theirs, nothing they ' +
           'consented to. It is how a service that authenticated somebody by ' +
           'other means gets a Kerberos identity for them, and it is not a ' +
-          'privilege: the ticket is to yourself.' },
+          'privilege: the ticket is to yourself. [MS-SFU] calls it protocol ' +
+          'transition, and it is the one impersonation in a Kerberos ' +
+          'chain: the S4U2Proxy hops after it are delegation (#491).' },
   { type: 'krb5-s4u2proxy-classic', protocol: 'Kerberos v5', mode: 'delegation',
     label: 'S4U2Proxy — classic constrained delegation', spec: '[MS-SFU] ' +
         '3.2.5.2',
@@ -231,15 +233,18 @@ const TYPES = [
     what: 'The front end then reached ANOTHER service as that user. ' +
           'Authorized by msDS-AllowedToDelegateTo on the FRONT-END account, ' +
           'which only a domain admin can set, and requiring the evidence ' +
-          'ticket to be forwardable.' },
+          'ticket to be forwardable. Delegation even when its evidence came ' +
+          'from S4U2Self: the ticket carries the chain in the PAC\'s ' +
+          'S4U_DELEGATION_INFO ([MS-SFU] constrained delegation, #491).' },
   { type: 'krb5-s4u2proxy-rbcd', protocol: 'Kerberos v5', mode: 'delegation',
     label: 'S4U2Proxy — resource-based (RBCD)', spec: '[MS-SFU] 3.2.5.2',
     policed: true,
     what: 'The same messages, authorized from the opposite direction: ' +
           'msDS-AllowedToActOnBehalfOfOtherIdentity on the BACK-END account, ' +
           'which whoever controls that object can set themselves. That is ' +
-          'the entire security story of RBCD, and it needs no forwardable ' +
-          'evidence — but does need PA-PAC-OPTIONS.' },
+          'the entire security story of RBCD. It needs PA-PAC-OPTIONS, and ' +
+          'since the CVE-2020-16996 update ([MS-SFU] 3.2.5.2.3) forwardable ' +
+          'evidence too (#492). Delegation, like classic (#491).' },
   { type: 'krb5-forwarded', protocol: 'Kerberos v5', mode: 'impersonation',
     label: 'Forwarded TGT (unconstrained delegation)', spec: 'RFC 4120 5.8.1',
     policed: true,

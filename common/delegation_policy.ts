@@ -111,6 +111,11 @@ interface DecideQuestion {
   // actor (`mayActNames()`).
   mayActPresent?: boolean;
   mayActNamesActor?: boolean;
+  // Kerberos only (#490): which [MS-SFU] mechanism asked — 'S4U2Self', or
+  // 'S4U2Proxy' with `rbcd` saying whether resource-based delegation
+  // permitted it — so the row is written in Kerberos's words.
+  mechanism?: '' | 'S4U2Self' | 'S4U2Proxy';
+  rbcd?: boolean;
 }
 
 // What `decide()` answers. `refusal` says which rule refused, so each door can
@@ -652,9 +657,11 @@ class DelegationPolicy {
         target + ', so there is nothing to read its roles or relationships ' +
         'from.',
       'no-target': 'The request names no target (' + noTarget + '), and ' +
-        'only a self ' + (question.protocol === 'WS-Trust'
-          ? 'request defaults to the presented token\'s own audience.'
-          : 'exchange defaults to the subject token\'s own audience.'),
+        (question.protocol === 'Kerberos'
+          ? 'a Kerberos request always names the SPN it wants a ticket for.'
+          : 'only a self ' + (question.protocol === 'WS-Trust'
+            ? 'request defaults to the presented token\'s own audience.'
+            : 'exchange defaults to the subject token\'s own audience.')),
       'subject': subject + ' is protected — its entry says it is never ' +
         'delegated, it is in a protected group (delegation.protectedGroups, ' +
         'the console roster), or it is outside the groups ' + actor +
@@ -676,13 +683,19 @@ class DelegationPolicy {
           subject + ': R is not the actor itself, nor on its ' +
           'appAllowedToDelegateTo, nor does R accept it ' +
           '(appAllowedToActOnBehalfOf).'
-        : 'Nothing allows this delegation to ' + target + ': the actor ' +
-          'must be the application ' + (question.protocol === 'WS-Trust'
-            ? 'the token inside <wst14:ActAs> was issued for'
-            : 'the subject token was issued for') + ' or ' +
-          'the target, and that application must delegate to the target ' +
-          '(appAllowedToDelegateTo on it, or appAllowedToActOnBehalfOf on ' +
-          'the target).'),
+        : question.protocol === 'Kerberos'
+          ? 'Nothing allows this S4U2Proxy to ' + target + ': the service ' +
+            'the evidence ticket was issued to must delegate to the ' +
+            'requested SPN (appAllowedToDelegateTo on it, classic ' +
+            'constrained delegation), or the target must accept it ' +
+            '(appAllowedToActOnBehalfOf, resource-based).'
+          : 'Nothing allows this delegation to ' + target + ': the actor ' +
+            'must be the application ' + (question.protocol === 'WS-Trust'
+              ? 'the token inside <wst14:ActAs> was issued for'
+              : 'the subject token was issued for') + ' or ' +
+            'the target, and that application must delegate to the ' +
+            'target (appAllowedToDelegateTo on it, or ' +
+            'appAllowedToActOnBehalfOf on the target).'),
       'policy': 'The issuance policy refused this ' + what + '.'
     };
     const out = sentences[decision.refusal] || sentences.policy;
@@ -714,18 +727,40 @@ class DelegationPolicy {
       // <wst:OnBehalfOf> or <wst14:ActAs> (the element is the semantics
       // asked for) and an AppliesTo the target was resolved from. Every
       // other protocol keeps the sentence it had.
+      //
+      // KERBEROS TOO (#490): a Kerberos row has no token at all. S4U2Self
+      // is a ticket the service asked for TO ITSELF, naming a user in
+      // PA-FOR-USER ([MS-SFU] protocol transition); S4U2Proxy presents an
+      // EVIDENCE TICKET — a ticket for the user, issued to the service
+      // asking — and names the target by its SPN, permitted by classic or
+      // resource-based constrained delegation.
       const wsTrust = question.protocol === 'WS-Trust';
+      const kerberos = question.protocol === 'Kerberos';
       const element = question.requested === 'impersonation'
         ? '<wst:OnBehalfOf>' : '<wst14:ActAs>';
-      const source = !facts.source.id ? ''
-        : wsTrust
-          ? ' (the token inside ' + element + ' was issued for "' +
-            facts.source.id + '")'
-          : ' (the subject token was issued for "' + facts.source.id + '")';
+      const mechanism = question.mechanism === 'S4U2Self'
+        ? 'S4U2Self, protocol transition: the service named the user in ' +
+          'PA-FOR-USER and holds no credential of theirs'
+        : 'S4U2Proxy, ' + (question.rbcd ? 'resource-based'
+                                         : 'classic') +
+          ' constrained delegation';
+      const source = kerberos
+        ? ' (' + mechanism + (facts.source.id
+          ? '; the evidence ticket was issued to "' + facts.source.id + '"'
+          : '') + ')'
+        : !facts.source.id ? ''
+          : wsTrust
+            ? ' (the token inside ' + element + ' was issued for "' +
+              facts.source.id + '")'
+            : ' (the subject token was issued for "' + facts.source.id +
+              '")';
       out = 'the issuance policy allowed ' + decision.semantics + ' by "' +
             facts.actor.id + '" for "' + facts.subject.id + '" to "' +
             decision.audience + '"' +
             (wsTrust ? ', the application the AppliesTo names' : '') +
+            (kerberos ? (question.mechanism === 'S4U2Self'
+              ? ', the service the ticket is for'
+              : ', the service the requested SPN names') : '') +
             source +
             (question.mayActNamesActor
               ? '; the subject named this actor in may_act' : '') + '.';

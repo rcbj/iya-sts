@@ -74,10 +74,27 @@
 //                           be: it held no Kerberos credential of bob's.
 //
 // Each intermediate ticket is held to the prefix of that list, and its
-// S4U2proxyTarget to the tier it was issued for. The list's element FORM is
-// not fixed by [MS-PAC] (`RPC_UNICODE_STRING`, no syntax); this KDC writes
-// each requester's bare SPN, and the job accepts the SPN with or without
-// `@REALM` and logs which it saw.
+// S4U2proxyTarget to the tier it was issued for. [MS-PAC] 2.9 fixes no
+// syntax for either; since #489 this KDC writes them as Samba and MIT do,
+// and as Samba's s4u_tests expect of Windows: each transited service WITH
+// its realm (`HTTP/apigw1-krbdel.example.com@EXAMPLE.COM`), the target as
+// its bare SPN — and the job holds both forms exactly.
+//
+// **THE REGISTER'S MODE IS THE MECHANISM'S (#491).** [MS-SFU] 1.3 names
+// S4U2Self protocol transition and S4U2Proxy constrained delegation, and the
+// register records each so, whatever chain it is part of. So the Kerberos
+// impersonation chain has ONE impersonation act (apigw1's S4U2Self) and
+// delegation acts after it, where the OAuth impersonation chain is
+// impersonation at every hop — and rightly: an S4U2Proxy ticket carries the
+// chain in S4U_DELEGATION_INFO, as an `act` claim would, while a token
+// exchanged with no actor_token carries none. The console says it under the
+// mode of every Kerberos row.
+//
+// **EVERY S4U2PROXY TICKET HERE IS FORWARDABLE, THE LAST ONE TOO (#492)**:
+// each request asks for it and each front end's TGT is forwardable, which
+// RFC 4120 section 3.3.3 makes the rule ([MS-SFU] 3.2.5.2.4 says nothing of
+// the reply's flags). A forwardable ticket at sp1 lets nothing happen by
+// itself: sp1 delegates nowhere because its entry names nobody.
 //
 // **CLASSIC, NOT RESOURCE-BASED.** Each tier's own entry names the next
 // tier on `appAllowedToDelegateTo` (msDS-AllowedToDelegateTo) — the
@@ -642,11 +659,12 @@ async function accept(K, cast, tier, ticket) {
 // `transited` is the list of tiers delegated through, oldest first; `null`
 // means the ticket should carry no S4U_DELEGATION_INFO at all (one no
 // S4U2Proxy made).
-function sameService(written, tier) {
-  log.debug("Entering sameService().");
-  const bare = String(written || "");
-  log.debug("Leaving sameService().");
-  return bare === tier.spn || bare === tier.spn + "@" + tierRealm(tier);
+// The two forms #489 fixed: a transited service is `SPN@REALM`, the
+// S4U2proxyTarget the bare SPN.
+function transitedName(tier) {
+  log.debug("Entering transitedName().");
+  log.debug("Leaving transitedName().");
+  return tier.spn + "@" + tierRealm(tier);
 }
 
 function tierRealm(tier) {
@@ -666,19 +684,13 @@ function assertDelegationInfo(accepted, tier, transited) {
   }
   assert.ok(info, tier.spn + "'s ticket came out of S4U2Proxy and its PAC " +
             "carries no S4U_DELEGATION_INFO ([MS-PAC] section 2.9)");
-  assert.ok(sameService(info.s4u2proxyTarget, tier), "S4U2proxyTarget is " +
-            JSON.stringify(info.s4u2proxyTarget) + " and should name " +
-            tier.spn + ", the service the ticket was issued for");
+  assert.strictEqual(info.s4u2proxyTarget, tier.spn, "S4U2proxyTarget " +
+    "should be " + tier.spn + ", the bare name of the service the ticket " +
+    "was issued for (#489; Samba and MIT write it without the realm)");
   const written = info.transitedServices || [];
-  assert.ok(written.length === transited.length &&
-            transited.every(function (one, i) {
-              return sameService(written[i], one);
-            }),
-    "S4UTransitedServices should be " + JSON.stringify(transited.map(
-      function (one) {
-        return one.spn;
-      })) + " — every service delegated through, oldest first — and is " +
-    JSON.stringify(written));
+  assert.deepStrictEqual(written, transited.map(transitedName),
+    "S4UTransitedServices should be every service delegated through, " +
+    "oldest first, each WITH its realm (#489; Samba and MIT write them so)");
   log.info("[pac] " + tier.stem + "'s ticket: S4U2proxyTarget " +
            info.s4u2proxyTarget + ", S4UTransitedServices " +
            JSON.stringify(written) + ".");
@@ -782,6 +794,20 @@ function assertAct(K, cast, act, expect) {
       "appAllowedToDelegateTo on " + expect.requester.identifier +
       " — and says \"" + said + "\"");
   }
+  // IN KERBEROS'S WORDS (#490): the mechanism, the evidence ticket, the SPN,
+  // and never RFC 8693's "subject token".
+  const words = expect.type === "krb5-s4u2self"
+    ? allowed + ", the service the ticket is for (S4U2Self, protocol " +
+      "transition: the service named the user in PA-FOR-USER and holds no " +
+      "credential of theirs)"
+    : allowed + ", the service the requested SPN names (S4U2Proxy, " +
+      (expect.classic ? "classic" : "resource-based") + " constrained " +
+      "delegation; the evidence ticket was issued to \"" +
+      expect.requester.identifier + "\")";
+  assert.ok(said.indexOf(words) >= 0, "the act should say \"" + words +
+            "\" and says \"" + said + "\"");
+  assert.ok(said.indexOf("subject token") < 0, "a Kerberos act speaks of " +
+            "no subject token: \"" + said + "\"");
   if (expect.type === "krb5-s4u2self") {
     assert.ok(/The ticket is FORWARDABLE\./.test(said), "the S4U2Self act " +
               "should say its ticket is forwardable: \"" + said + "\"");
