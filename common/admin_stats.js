@@ -3439,6 +3439,10 @@ function resolvedGroupClaims(id, context) {
 function claimApplicationsOf(ctx) {
   log.debug("Entering claimApplicationsOf().");
   const out = [];
+  // The application a caller resolved (#483), ahead of the audience values.
+  if (ctx.application) {
+    out.push(String(ctx.application));
+  }
   String(ctx.audience || '').split(/\s+/).filter(Boolean)
     .forEach(function (value) {
       let found = null;
@@ -3978,8 +3982,17 @@ function effectiveClaimSet(id, context) {
   log.debug("Entering effectiveClaimSet(). id=" + id);
   const realmRows = claimSet(id);
   const isSaml = id === 'saml2' || id === 'saml11';
+  // `application` FIRST (#483): a caller that resolved the application an
+  // issuance is for names it, and the strings below are only how a caller
+  // that did not is looked up. WS-Trust needs it: its audience is an
+  // AppliesTo URI, which an OBSERVED entry named by that very URI (the one
+  // `applications.seen()` files) answers to before `forAppliesTo()` is
+  // asked — so the registered application's rows were found for the first
+  // token and never again.
   const name = context
-    ? (isSaml ? context.audience : (context.client_id || context.clientId))
+    ? (context.application || (isSaml ? context.audience
+                                      : (context.client_id ||
+                                         context.clientId)))
     : '';
   const own = name ? applicationClaimSet(id, String(name)) : [];
   if (!own.length) {

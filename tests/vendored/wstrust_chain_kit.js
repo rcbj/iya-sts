@@ -116,6 +116,13 @@
 // against the one `GET /sts` names. Those jobs need #476 (the JWT's claims)
 // and #477 (a JWT accepted inside OnBehalfOf / ActAs).
 //
+// **7. EVERY TOKEN CARRIES THE AppliesTo's CLAIM SETTINGS** (#483, #484).
+// Each tier sets the groups claim (`teams`, by cn), a custom access-token
+// claim and a custom SAML attribute (`tier`). The person is in a group that
+// holds a role. Every assertion and JWT is checked for all three, plus the
+// roles claim, and the values are always the person's: the requesters are
+// in neither the group nor the role.
+//
 // Each job passes a TAG (`wsimp`, `wsdel`, `wjimp`, `wjdel`) and gets
 // entries of its own. The
 // two jobs differ in the semantics their tiers allow, and
@@ -185,6 +192,10 @@ function castFor(tag, tokenType) {
       ? "Svc-" + crypto.randomBytes(18).toString("base64url") + "-7b!"
       : "";
   });
+  // #483: a group the person is in and a role the group holds, so the
+  // groups claim and the roles claim have something to say at every hop.
+  cast.team = "chain-" + tag + "-team";
+  cast.role = "chain-" + tag + "-role";
   cast.requesters = cast.tiers.filter(function (tier) {
     return !!tier.next;
   });
@@ -252,10 +263,27 @@ async function adminOk(base, path, body, what) {
 //                             tier that presents it. Nothing is wider:
 //                             apigw1 may not reach sp1.
 // ---------------------------------------------------------------------------
+// THE CLAIM SETTINGS EVERY TIER CARRIES (#483, #484), since every tier is
+// the AppliesTo of one token: the groups claim under a name and in a form
+// of its own (`teams`, the group's cn), and one custom claim and one custom
+// SAML attribute naming the person (`${username}` is a JWT context's,
+// `${subject}` a SAML one's), the attribute with a NameFormat.
+const BASIC_FORMAT = "urn:oasis:names:tc:SAML:2.0:attrname-format:basic";
+const CLAIM_FIELDS = {
+  appGroupsClaim: "TRUE",
+  appGroupsClaimName: "teams",
+  appGroupsClaimValue: "cn",
+  oauthClaimsAccessToken: JSON.stringify(
+    [{ name: "tier", value: "gold-${username}" }]),
+  saml2CustomAttributes: JSON.stringify(
+    [{ name: "tier", value: "gold-${subject}", nameFormat: BASIC_FORMAT }])
+};
+
 function fieldsFor(tier, semantics) {
   log.debug("Entering fieldsFor(). " + tier.identifier);
-  const fields = { wstrustAppliesTo: [tier.appliesTo],
-                   samlEntityId: [tier.appliesTo] };
+  const fields = Object.assign({ wstrustAppliesTo: [tier.appliesTo],
+                                 samlEntityId: [tier.appliesTo] },
+                               CLAIM_FIELDS);
   if (tier.next) {
     fields.appDelegationSemantics = [semantics];
     fields.appDefaultDelegationSemantics = semantics;
@@ -265,12 +293,13 @@ function fieldsFor(tier, semantics) {
   return fields;
 }
 
-// The person, given this process's password before they sign in. Each job
-// has its own, `bob_end_user-<tag>` (#482, `token_exchange_chain_kit.js`),
-// so no other job can change the password in between.
+// The person was given this process's password when the cast was
+// provisioned (provisionGroupAndRole()), ONCE: a product realm's password
+// history refuses the same password set twice. Each job has its own person,
+// `bob_end_user-<tag>` (#482, `token_exchange_chain_kit.js`), so no other
+// job can change it in between.
 async function preparePerson(base, cast) {
   log.debug("Entering preparePerson().");
-  await registry.ensurePerson(base, cast.user, cast.password);
   // No `stsMayAct`: it names ONE delegate and this chain has three.
   await adminOk(base, "/users/set-may-act", { user: cast.user, delegate: "" },
                 "clearing " + cast.user + "'s stsMayAct");
@@ -303,8 +332,36 @@ async function ensureServiceAccount(base, tier, owner) {
 
 // The four entries, then every one READ BACK: the reply to a write is the
 // service describing what it wrote, and the question is what it holds.
+// The person, in a group that holds a role (#483): created, or reconciled
+// on a rerun. A create of something already there, and a role given to a
+// group that already holds it, are answered "already" and moved past; a
+// group membership add is idempotent.
+async function provisionGroupAndRole(base, cast) {
+  log.debug("Entering provisionGroupAndRole().");
+  await registry.ensurePerson(base, cast.user, cast.password);
+  const tolerant = async function (path, body) {
+    log.debug("Entering tolerant(). " + path);
+    const r = await call("POST", base + "/admin-api" + path, body);
+    assert.ok(r.status === 200 || /already|exists/i.test(r.text),
+              path + ": " + r.status + " " + r.text.slice(0, 300));
+    log.debug("Leaving tolerant().");
+  };
+  await tolerant("/groups/create", { group: cast.team });
+  await adminOk(base, "/groups/add-member",
+                { group: cast.team, member: cast.user },
+                "putting " + cast.user + " in " + cast.team);
+  await tolerant("/roles/create-role", { role: cast.role });
+  // Not idempotent: a group that already holds the role is answered 400.
+  await tolerant("/roles/add-member",
+                 { role: cast.role, kind: "group", member: cast.team });
+  log.info("[registry] " + cast.user + " is in " + cast.team + ", which " +
+           "holds " + cast.role + ".");
+  log.debug("Leaving provisionGroupAndRole().");
+}
+
 async function provisionCast(base, cast, semantics) {
   log.debug("Entering provisionCast(). " + cast.tag + " " + semantics);
+  await provisionGroupAndRole(base, cast);
   log.info("=== Provisioning the four applications and three service " +
            "accounts (" + semantics + ") ===");
   const owner = String(await registry.setting(base, "admin.writeGroup") ||
@@ -332,6 +389,11 @@ async function provisionCast(base, cast, semantics) {
       assert.ok(held.indexOf(tier.appliesTo) >= 0, tier.identifier +
         " should register " + tier.appliesTo + " on " + attribute +
         " and holds " + JSON.stringify(held));
+    });
+    Object.keys(CLAIM_FIELDS).forEach(function (attribute) {
+      assert.deepStrictEqual(registry.valuesOf(f[attribute]),
+                             [CLAIM_FIELDS[attribute]], tier.identifier +
+                             "'s " + attribute);
     });
     if (tier.next) {
       assert.deepStrictEqual(registry.valuesOf(f.appAllowedToDelegateTo),
@@ -547,6 +609,16 @@ function read(xml) {
       };
     })
     : [];
+  // Every <saml:Attribute>, by name: its NameFormat and its values.
+  const attributes = {};
+  const statement = child(a, NS_SAML, "AttributeStatement");
+  (statement ? children(statement, NS_SAML, "Attribute") : [])
+    .forEach(function (one) {
+      attributes[String(one.getAttribute("Name") || "")] = {
+        nameFormat: String(one.getAttribute("NameFormat") || ""),
+        values: children(one, NS_SAML, "AttributeValue").map(textOf)
+      };
+    });
   const authnStatement = child(a, NS_SAML, "AuthnStatement");
   const classRef = authnStatement
     ? textOf(child(child(authnStatement, NS_SAML, "AuthnContext"), NS_SAML,
@@ -563,6 +635,7 @@ function read(xml) {
     restricted: restrictions.length === 1,
     delegates: delegates,
     authnContext: classRef,
+    attributes: attributes,
     signature: child(a, NS_DSIG, "Signature")
   };
   log.debug("Leaving read(). " + out.id);
@@ -632,6 +705,26 @@ function assertChainAssertion(cast, xml, expect) {
     assert.strictEqual(got.authnContext, expect.authnContext, expect.what +
                        "'s AuthnContextClassRef");
   }
+  // THE APPLICATION'S CLAIM SETTINGS (#483, #484), on the subject: the
+  // groups claim as `teams` (cn), the roles claim, and the custom attribute
+  // with its NameFormat — the AppliesTo's own settings, the person's own
+  // group and role, whoever asked.
+  const attrs = got.attributes;
+  assert.ok(attrs.teams && JSON.stringify(attrs.teams.values) ===
+            JSON.stringify([cast.team]), expect.what + " should carry the " +
+            "groups claim as `teams` [" + cast.team + "]: " +
+            JSON.stringify(attrs));
+  assert.ok(attrs.groups === undefined, expect.what + " carries the " +
+            "realm's `groups` attribute beside the application's `teams`");
+  assert.ok(attrs.roles && attrs.roles.values.indexOf(cast.role) >= 0,
+            expect.what + " should carry the roles claim with " + cast.role +
+            ": " + JSON.stringify(attrs.roles));
+  assert.ok(attrs.tier && attrs.tier.nameFormat === BASIC_FORMAT &&
+            JSON.stringify(attrs.tier.values) ===
+              JSON.stringify(["gold-" + cast.user]),
+            expect.what + " should carry the custom attribute tier=gold-" +
+            cast.user + " (" + BASIC_FORMAT + "): " +
+            JSON.stringify(attrs.tier));
   log.info("[assertion] " + expect.what + ": ID=" + got.id + ", subject=" +
            got.nameId + ", audience=" + JSON.stringify(got.audiences) +
            ", delegates=" + JSON.stringify(got.delegates.map(function (d) {
@@ -860,6 +953,17 @@ function assertChainJwt(cast, out, keys, expect) {
   assert.deepStrictEqual(c.act, expect.act, expect.what + " should carry " +
     "act " + JSON.stringify(expect.act) + " (RFC 8693 section 4.1: the " +
     "current actor outermost) and carries " + JSON.stringify(c.act));
+  // THE APPLICATION'S CLAIM SETTINGS (#483, #484), as an OAuth access token
+  // for it carries them: `teams` (cn), `roles`, and the custom `tier`.
+  assert.deepStrictEqual(c.teams, [cast.team], expect.what + " should " +
+                         "carry the groups claim as `teams`");
+  assert.strictEqual(c.groups, undefined, expect.what + " carries the " +
+                     "realm's `groups` claim beside the application's");
+  assert.ok(Array.isArray(c.roles) && c.roles.indexOf(cast.role) >= 0,
+            expect.what + " should carry " + cast.role + " in roles: " +
+            JSON.stringify(c.roles));
+  assert.strictEqual(c.tier, "gold-" + cast.user, expect.what + "'s " +
+                     "custom claim tier");
   // RFC 8693 section 4.4: none, since the person names no delegate.
   assert.strictEqual(c.may_act, undefined, expect.what + " carries may_act " +
                      JSON.stringify(c.may_act));
