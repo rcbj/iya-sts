@@ -1349,10 +1349,16 @@ class ApplicationsPage {
           html: forFamilies(OAUTH,
             ApplicationsPage.applicationPermissionsSection(ctx, row,
               carryBack)) },
-        // AND WHAT IT MAY DO AS ITSELF (#93): the roles it holds.
+        // AND WHAT IT MAY DO AS ITSELF (#93): the roles it holds. FIRST, THE
+        // ROLES IT REQUIRES (#458), moved here from the Configuration grid:
+        // the question asked before any other, so drawn above the one asked
+        // after it, and the two relations side by side where a reader can see
+        // that they are opposite.
         { id: 'tab-roles', label: 'Roles',
-          html: ApplicationsPage.applicationRolesSection(row, json.page.roles,
-            carryBack) },
+          html: ApplicationsPage.applicationRequiredRolesSection(row,
+            json.page.roles, carryBack) +
+            ApplicationsPage.applicationRolesSection(row, json.page.roles,
+              carryBack) },
         // THE METADATA REFRESH, the only control on this page that reaches off
         // this machine, drawn only for an application that names a URL — see
         // sp_metadata.ts.
@@ -1742,7 +1748,9 @@ class ApplicationsPage {
       'writes, and RFC 9700 mode reads it on the very next request. The ' +
       'web origins allowed to call it (CORS, <code>appCorsOrigin</code>) ' +
       'are not here: they are edited on the <a href="#tab-origins">Browser ' +
-      'origins</a> tab.') +
+      'origins</a> tab; nor are the roles a person must hold to use it ' +
+      '(<code>appRequiredRole</code>), which are on the <a ' +
+      'href="#tab-roles">Roles</a> tab.') +
       '<div class="subtabs">' + bar + familiesPanel + groupPanels + '</div>';
   }
 
@@ -3760,6 +3768,122 @@ class ApplicationsPage {
         : '<p class="sub">No role admits an application that it does not ' +
           'already hold. Make one on <a href="/admin/roles#create">Roles' +
           '</a>.</p>');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ROLES SOMEBODY MUST HOLD TO USE IT (#458): `appRequiredRole`, moved
+  // here from the Configuration grid's Every protocol sub-tab so the two
+  // relations a role has with an application are on one tab — what it HOLDS
+  // (the section below) and what it DEMANDS (this one). Shaped like that
+  // section on purpose: a table of what is there with a Remove per row, and a
+  // select of what could be added. One store, the application entry: the
+  // forms post the ordinary `add` and `remove` application actions with
+  // `attribute=appRequiredRole`, the same act as `POST
+  // /admin-api/applications/add` and `remove`, audited the same.
+  //
+  // EACH ROW SAYS WHAT IT RESOLVES TO, because the one way to get this wrong
+  // silently is to name a role nothing defines: that requirement refuses
+  // everybody, correctly, and reads as a broken application. /admin/roles
+  // flags it for the whole realm; this flags it where it was written.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the roles an application requires (`appRequiredRole`): one row
+   * each with what it resolves to and a Remove, and a form to add one.
+   *
+   * The forms post to `/admin/applications`.
+   *
+   * @param row - the application's registry view
+   * @param state - `adminViews.applicationRolesState()`
+   * @param carryBack - the hidden `back` field every form carries
+   * @returns the section as HTML
+   */
+  static applicationRequiredRolesSection(row, state, carryBack) {
+    const identifier = row.identifier;
+    const hidden = function (action) {
+      return carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="application" value="' +
+        kit.esc(identifier) + '">' +
+        '<input type="hidden" name="attribute" value="appRequiredRole">';
+    };
+    const resolution = function (one) {
+      if (one.resolves === 'built-in') {
+        return 'a built-in role, computed from the request rather than ' +
+          'held';
+      }
+      if (one.resolves === 'application') {
+        return 'this application\'s own role <code>' + kit.esc(one.role) +
+          '</code>';
+      }
+      if (one.resolves === 'realm') {
+        return 'a realm-wide role';
+      }
+      return '<span class="state-invalid">nothing defines it &mdash; ' +
+        'NOBODY can hold it, so everybody is refused</span>';
+    };
+    const rows = (state.required || []).map(function (one) {
+      return '<tr><td>' + (one.role
+        ? '<a href="/admin/roles#roles"><code>' + kit.esc(one.name) +
+          '</code></a>'
+        : '<code>' + kit.esc(one.name) + '</code>') +
+        (one.displayName ? '<br><span class="sub">' +
+          kit.esc(one.displayName) + '</span>' : '') + '</td>' +
+        '<td>' + resolution(one) + '</td>' +
+        '<td><form method="post" action="/admin/applications">' +
+        hidden('remove') +
+        '<input type="hidden" name="value" value="' + kit.esc(one.name) +
+        '">' +
+        '<button type="submit" class="danger"' + kit.tip('Stop requiring ' +
+          one.name + '. If it is the last one, this application requires ' +
+          'nothing and everybody may use it again.') +
+        '>Remove</button></form></td></tr>';
+    }).join('');
+    const options = (state.requirable || []).map(function (name) {
+      return '<option value="' + kit.esc(name) + '">' + kit.esc(name) +
+             '</option>';
+    }).join('');
+    return '<h3 id="app-required-roles"' + kit.tip('appRequiredRole on ' +
+        'this application\'s entry: the roles somebody must hold before ' +
+        'anything is issued for it. Any one of them is enough; none means ' +
+        'everybody.') + '>Roles a person must hold to use it</h3>' +
+      kit.note('<strong>Who may use <code>' + kit.esc(identifier) +
+        '</code> at all.</strong> Somebody must hold ONE of these roles ' +
+        'before this service issues anything for this application &mdash; ' +
+        'a token, an assertion, a WS-Federation response, a session. The ' +
+        'user portal\'s <em>Applications</em> page lists it only to people ' +
+        'who hold one, and a person who holds none is refused by the ' +
+        'issuance policy and goes no further: nothing the rest of this ' +
+        'page grants &mdash; permissions, scopes, the roles a token would ' +
+        'carry &mdash; ever applies to them. <strong>Empty means ' +
+        'everybody</strong> (the built-in <code>EVERYBODY</code>), which is ' +
+        'how every application starts. These are the roles the ' +
+        'application DEMANDS of others, stored on its ' +
+        'own entry as <code>appRequiredRole</code>; the section below is ' +
+        'the roles it HOLDS as itself, which is the opposite relation.') +
+      '<table><thead><tr><th>Role</th><th>Resolves to</th><th></th></tr>' +
+      '</thead><tbody>' +
+      (rows || '<tr><td colspan="3"><span class="state-none">None &mdash; ' +
+               'everybody may use it.</span></td></tr>') +
+      '</tbody></table>' +
+      (options
+        ? '<form method="post" action="/admin/applications"><div ' +
+          'class="formrow">' + hidden('add') +
+          '<label' + kit.tip('A built-in role, a realm-wide role, or one of ' +
+            'this application\'s own roles by its name inside it. Another ' +
+            'application\'s role cannot meet this application\'s ' +
+            'requirement, so none is offered.') + '>Require <select ' +
+          'name="value">' + options + '</select></label>' +
+          '<button type="submit"' + kit.tip('Add the chosen role to the ' +
+            'roles this application requires. From the next request, ' +
+            'somebody holding none of them is refused.') +
+          '>Require</button></div></form>'
+        : '<p class="sub">Every role that could be required already is. ' +
+          'Make one on <a href="/admin/roles#create">Roles</a>.</p>') +
+      kit.note('Who holds a role is decided on <a href="/admin/roles">' +
+        'Roles</a>, which also lists every application that requires one ' +
+        'and whether anything can satisfy it. The decision is the XACML ' +
+        'issuance policy\'s, so a refusal\'s reason can be read on <a ' +
+        'href="/admin/xacml/decide">Try a decision</a>.');
   }
 
   /**

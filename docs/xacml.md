@@ -253,6 +253,19 @@ application's `appRequiredRole` can name it, and tokens and assertions for that
 application carry it in the roles claim. Tokens for any other application never
 carry it. Realm-wide roles work as before and appear everywhere.
 
+**The roles an application requires are set on its own page** (#458): the
+*Roles* tab of `/admin/applications?application=<id>`, in the section *Roles a
+person must hold to use it*. Each required role is listed with what it
+resolves to — a built-in role, a realm-wide role, one of the application's own
+roles, or nothing (a requirement nobody can meet, so everybody is refused) —
+with a **Remove** button, and a **Require** control adds one from the roles
+that could meet it. Empty means everybody. The user portal's *Applications*
+page lists the application only to people who hold one of the roles. Through
+the management API the same list is `POST /admin-api/applications/add` and
+`remove` with `attribute: appRequiredRole`, and `GET
+/admin-api/applications?application=<id>` returns it, resolved, as
+`applicationRoles.required`.
+
 **An application can hold a role as itself** (#93): add it as a member, on
 `/admin/roles` or in the *Application permissions* section of its own page on
 `/admin/applications` (`POST /admin-api/roles/add-member` with

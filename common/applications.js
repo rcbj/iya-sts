@@ -5100,7 +5100,16 @@ function authMethodsProblem(values) {
 // two controls over one list read as two settings with a precedence between
 // them. The NEW-application form keeps it in its grid: that page has no such
 // tab, and its grid is the only place an origin can be typed at creation.
-const PAGE_TAB_ATTRIBUTES = ['appCorsOrigin'];
+//
+// `appRequiredRole` is the Roles tab's (#458): the roles a person must hold
+// to use the application sit beside the roles it holds as itself, each row
+// shown with what it resolves to (a built-in role, a realm-wide one, this
+// application's own, or nothing at all — a requirement nobody can satisfy),
+// which a grid box cannot show, and chosen from the roles that could meet it
+// rather than typed. The new-application form keeps it in its grid for
+// appCorsOrigin's reason: no Roles tab there, and an application may need to
+// be narrowed from the moment it exists.
+const PAGE_TAB_ATTRIBUTES = ['appCorsOrigin', 'appRequiredRole'];
 
 const LONG_TEXT_ATTRIBUTES = [
   'oauthJwks', 'samlSpMetadata', 'samlEncryptionCertificate',

@@ -4703,7 +4703,11 @@ one is the mistake this page exists to avoid: **MEMBERSHIP** — who holds a rol
 stored on the role entry under `ou=roles` and edited here — and
 **REQUIREMENT** — which roles an application demands before anything is issued
 for it, stored as `appRequiredRole` on the APPLICATION entry and edited on the
-application's own page. An application appears in both and means opposite things
+application's own page — on its Roles tab since #458, beside the roles it HOLDS
+and out of the Configuration grid (`applications.PAGE_TAB_ATTRIBUTES`), so the
+two relations meet on one tab whose prose says they are opposite; the
+new-application form keeps the field in its grid, having no Roles tab. An
+application appears in both and means opposite things
 in each. `common/CLAUDE.md` argues the split; this file's job is that the page
 never implies one is the other.
 
