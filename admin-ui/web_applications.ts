@@ -1739,7 +1739,10 @@ class ApplicationsPage {
       'with + to add one and the bin to delete one; every box that is there ' +
       'must hold a value. A field with a fixed set of values offers them to ' +
       'choose from. These write the same entry an <code>ldapmodify</code> ' +
-      'writes, and RFC 9700 mode reads it on the very next request.') +
+      'writes, and RFC 9700 mode reads it on the very next request. The ' +
+      'web origins allowed to call it (CORS, <code>appCorsOrigin</code>) ' +
+      'are not here: they are edited on the <a href="#tab-origins">Browser ' +
+      'origins</a> tab.') +
       '<div class="subtabs">' + bar + familiesPanel + groupPanels + '</div>';
   }
 

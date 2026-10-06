@@ -9024,11 +9024,14 @@ class AdminViews {
       return [].concat(fields[name] || []).map(String)
         .filter(function (one) { return one !== ''; });
     };
-    // The configuration tab's fields: every field but the credentials, typed
-    // as the grid types them, with the entry's values.
+    // The configuration tab's fields: every field but the credentials and
+    // those a tab of their own edits (#392: the CORS origins are the
+    // Browser origins tab's), typed as the grid types them, with the
+    // entry's values.
+    const ownTab = applications.PAGE_TAB_ATTRIBUTES || [];
     const configFields = applications.applicationFields()
       .filter(function (one) {
-        return !one.sensitive;
+        return !one.sensitive && ownTab.indexOf(one.attribute) < 0;
       }).map(function (one) { return self.typedField(one); });
     const configValues: Record<string, string[]> = {};
     configFields.forEach(function (one) {

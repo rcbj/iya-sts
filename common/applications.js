@@ -5093,6 +5093,15 @@ function authMethodsProblem(values) {
     '. Choose "none" alone, or the methods the client authenticates with.';
 }
 
+// THE ATTRIBUTES AN APPLICATION'S PAGE EDITS ON A TAB OF THEIR OWN, which
+// its Configuration grid therefore does not draw (#392). `appCorsOrigin` is
+// the Browser origins tab's: each origin is shown with the one it is matched
+// as and removed by the value as stored, which a grid box cannot show, and
+// two controls over one list read as two settings with a precedence between
+// them. The NEW-application form keeps it in its grid: that page has no such
+// tab, and its grid is the only place an origin can be typed at creation.
+const PAGE_TAB_ATTRIBUTES = ['appCorsOrigin'];
+
 const LONG_TEXT_ATTRIBUTES = [
   'oauthJwks', 'samlSpMetadata', 'samlEncryptionCertificate',
   'samlSpMetadataSigningCertificate', 'oauthSamlAssertionSigningCertificate',
@@ -17104,6 +17113,7 @@ module.exports = {
   // The console's field grid (2026-09-30): every field, typed, with the
   // families and group each is drawn under.
   applicationFields: applicationFields,
+  PAGE_TAB_ATTRIBUTES: PAGE_TAB_ATTRIBUTES,
   FIELD_GROUPS: FIELD_GROUPS,
   FAMILY_CHOICES: FAMILY_CHOICES,
   CHOICE_IDS: CHOICE_IDS,

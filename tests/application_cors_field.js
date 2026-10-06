@@ -29,6 +29,9 @@
 //   4. THE PAGE'S EDITOR: add one, remove one by the value as stored — the
 //      two actions its Add box and per-row Remove buttons post.
 //   5. What CORS itself reads for that client is the list just written.
+//   2c/2d (#392). The application page edits the origins in ONE place, the
+//      Browser origins tab: its Configuration grid does not draw them, and
+//      the new-application form, with no such tab, still does.
 //
 // The HTML of the two pages is not rendered here: requiring the console runs
 // its load-time wiring in `run.js`'s one process. That every role has a
@@ -85,6 +88,28 @@ function run(t) {
                           'http://localhost:5173']),
           '2b. stored normalised and de-duplicated: two spellings of one ' +
           'origin are one value, and a non-default port is kept');
+
+  // --- 2c. One home on the application's page (#392) ---------------------
+  // The page's Configuration grid leaves the origins to the Browser origins
+  // tab; the new-application form, which has no such tab, keeps them.
+  const req = { query: {}, headers: { host: 'localhost:8081' },
+                protocol: 'https', get: function () { return ''; } };
+  const detail = adminViews.applicationDetailJson(req, ID);
+  const page = detail && detail.json && detail.json.page;
+  const gridHas = !!page && page.config.fields.some(function (one) {
+    return one.attribute === 'appCorsOrigin';
+  });
+  t.check(!!page && !gridHas && Array.isArray(page.cors) &&
+          page.cors.length === 2,
+          '2c. the application page\'s Configuration grid does not draw ' +
+          'appCorsOrigin; the Browser origins tab lists the two held',
+          JSON.stringify({ page: !!page, gridHas: gridHas,
+                           cors: page && page.cors }));
+  const newForm = adminViews.newApplicationJson({}).fields || [];
+  t.check(newForm.some(function (one) {
+    return one.attribute === 'appCorsOrigin';
+  }), '2d. and the new-application form still offers it, having no tab ' +
+      'of its own to put it on');
 
   // --- 3. Not an origin --------------------------------------------------
   const refused = adminActions.applicationsAction({
