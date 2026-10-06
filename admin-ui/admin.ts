@@ -4508,7 +4508,12 @@ class AdminConsole {
       // the summary to a column two words wide.
       '.formrow details.fold{flex-basis:100%;margin:.2em 0 ' +
       '0}label[title]{cursor:help;text-decoration:underline dotted #b4b4c4;' +
-      'text-underline-offset:3px}th[title],.tipword[title]{cursor:help;' +
+      'text-underline-offset:3px}th[title],.tipword[title],' +
+      // THE FIELD GRID'S NAMES (2026-10-06): a list's, a boolean's and a
+      // closed set's name is a <span>, not a <label> — it names several
+      // controls — so the label rule above never marked its tooltip, and
+      // those fields read as having none beside the text fields that did.
+      '.fg-name[title]{cursor:help;' +
       'text-decoration:underline dotted #b4b4c4;text-underline-offset:3px}' +
       // THE OVERVIEW PAGE'S DERIVED LIST OF EVERY PAGE HERE (consoleGuide()).
       // Its shape is the sidebar's — sections, one group level under Protocols,

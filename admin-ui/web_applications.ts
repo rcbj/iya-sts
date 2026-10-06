@@ -2529,8 +2529,10 @@ class ApplicationsPage {
             (canWrite && !k.boundAccount
               ? formOpen('acme', 'delete-eab', '<input type="hidden" ' +
                   'name="kid" value="' + kit.esc(k.kid) + '">') +
-                '<button type="submit" class="secondary">Delete</button>' +
-                '</form>'
+                '<button type="submit" class="secondary"' +
+                kit.tip('Delete this unused key. An ACME client holding it ' +
+                         'can no longer bind an account with it.') +
+                '>Delete</button></form>'
               : '') + '</td></tr>';
         }).join('')
         : '<tr><td colspan="5" class="sub">None.</td></tr>';
@@ -2553,8 +2555,13 @@ class ApplicationsPage {
       generation += '<h4>EST: a certificate with a server-generated key</h4>' +
         (canWrite && state.est.serverKeyGeneration.on
           ? formOpen('est', 'issue-server-key', entryFields) +
-            '<label>Profile ' + profileSelect(rule) + '</label> ' +
-            '<label>Key <select name="keyAlg">' +
+            '<label' + kit.tip('The certificate profile to issue: one of ' +
+              'the profiles this application may be issued over EST, with ' +
+              'the default selected.') + '>Profile ' + profileSelect(rule) +
+            '</label> ' +
+            '<label' + kit.tip('The key pair this service generates for the ' +
+              'certificate: its algorithm and size.') +
+            '>Key <select name="keyAlg">' +
             state.keyAlgorithms.map(function (alg) {
               return '<option value="' + kit.esc(alg) + '"' +
                 (alg === 'ec-p256' ? ' selected' : '') + '>' +
@@ -2585,8 +2592,10 @@ class ApplicationsPage {
             '</td><td>' + (canWrite && c.status === 'unused'
               ? formOpen('scep', 'delete-challenge', '<input type="hidden" ' +
                   'name="id" value="' + kit.esc(c.id) + '">') +
-                '<button type="submit" class="secondary">Delete</button>' +
-                '</form>'
+                '<button type="submit" class="secondary"' +
+                kit.tip('Delete this unused challenge password. A SCEP ' +
+                         'request presenting it is refused.') +
+                '>Delete</button></form>'
               : '') + '</td></tr>';
         }).join('')
         : '<tr><td colspan="6" class="sub">None.</td></tr>';
@@ -2595,7 +2604,10 @@ class ApplicationsPage {
         '<th>Expires</th><th>Status</th><th></th></tr>' + challengeRows +
         '</table>' + (canWrite
           ? formOpen('scep', 'create-challenge', entryFields) +
-            '<label>Profile ' + profileSelect(rule) + '</label> ' +
+            '<label' + kit.tip('The certificate profile the challenge ' +
+              'password is good for: one of the profiles this application ' +
+              'may be issued over SCEP, with the default selected.') +
+            '>Profile ' + profileSelect(rule) + '</label> ' +
             '<button type="submit"' + kit.tip('Make a one-time challenge ' +
               'password for this application and profile. It is shown once ' +
               'on the next page, with the SCEP URL and an sscep example.') +
@@ -2610,8 +2622,10 @@ class ApplicationsPage {
         return '<li><code>' + kit.esc(h) + '</code> ' + (canWrite
           ? formOpen(hostFamily, 'remove-host-name', entryFields +
               '<input type="hidden" name="hostName" value="' + kit.esc(h) +
-              '">') + '<button type="submit" class="secondary">Remove' +
-            '</button></form>'
+              '">') + '<button type="submit" class="secondary"' +
+            kit.tip('Take this host name off. A certificate already issued ' +
+                     'for it stays valid; no new one names it.') +
+            '>Remove</button></form>'
           : '') + '</li>';
       }).join('')
       : '<li class="sub">None.</li>';
@@ -2620,7 +2634,9 @@ class ApplicationsPage {
         '<input type="text" name="hostName" placeholder="web1.example.com"' +
         kit.tip('A DNS name or IP address this application may be issued a ' +
                  'server certificate for, over ACME, EST or SCEP.') + '> ' +
-        '<button type="submit">Add</button></form>'
+        '<button type="submit"' + kit.tip('Register the host name typed ' +
+          'beside this for all three enrollment protocols.') +
+        '>Add</button></form>'
       : '') + '<p class="sub">A dNSName or iPAddress is issued only when ' +
       'it is registered here; one registration serves all three ' +
       'protocols.</p>';
