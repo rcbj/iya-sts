@@ -230,19 +230,21 @@ jobs:
           echo "::add-mask::${token}"
           echo "STS_ADMIN_API_TOKEN=${token}" >> "$GITHUB_ENV"
 
-      # A second, sharper check on the same running container. The metadata
-      # page at /admin/sts-metadata
-      # reads the endpoint list from the live Express router, so it answers only
-      # once every protocol module has registered its routes — a module that
-      # loaded but registered nothing, or a require order that changed, shows up
-      # here and not in the liveness probe.
+      # A second, sharper check on the same running container.
+      # GET /admin-api/sts-metadata — what the console's /admin/sts-metadata
+      # page is drawn from — reads the endpoint list from the live Express
+      # router, so it answers only once every protocol module has registered
+      # its routes — a module that loaded but registered nothing, or a require
+      # order that changed, shows up here and not in the liveness probe.
       #
-      # It is a CONSOLE page, behind a gate that cannot be turned off, so the
-      # check signs in first — through tests/vendored/console_signin.js's
+      # It is the CONSOLE's operation, behind a gate that cannot be turned off,
+      # so the check signs in first — through tests/vendored/console_signin.js's
       # authorization code flow, which tests/tools/container-smoke.js calls —
-      # and asks for 200 AND an endpoint list. A bare status check on this path
-      # is what passed for weeks and then failed on a 303.
-      - name: Check /admin/sts-metadata answers
+      # and asks with the console's DPoP-bound token for 200 AND an endpoint
+      # list. A bare status check on the page's path is what passed for weeks
+      # and then failed on a 303; since the #446 cutover that path answers the
+      # static console's shell, which lists nothing.
+      - name: Check /admin-api/sts-metadata answers
         env:
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: node tests/tools/container-smoke.js https://localhost:8081
