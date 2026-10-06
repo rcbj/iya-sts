@@ -106,7 +106,7 @@ import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
 // wstrust.issuer. A SAML token requested THROUGH WS-Trust is built by the
 // SAML modules and carries saml.issuer instead; the two are separate
-// settings for that reason and default to the same value.
+// settings for that reason, and unset both are the SAML entityID (#494).
 import config = require('../common/config');
 // #480: the names this service signs under, in one place (a library).
 import IssuerNames = require('../common/issuer_names');
@@ -807,10 +807,11 @@ class WsTrust {
     // groups claim's, its custom attributes) govern the assertion as a
     // service provider's govern a SAML SSO one.
     const samlApp = application || this.appliesToApplication(audience);
-    // #480: the Issuer is `saml.issuer` where somebody set it, and in product
-    // the SAML 2.0 entityID — this application's own where
-    // `saml2.perApplicationEntityId` is on, as SAML SSO names itself to it
-    // (`common/issuer_names.ts`).
+    // #480, #494: the Issuer is `saml.issuer` where somebody set it, and
+    // otherwise, in either mode, the SAML 2.0 entityID — a REGISTERED
+    // application's own where `saml2.perApplicationEntityId` is on, the name
+    // SAML SSO and WS-Federation give the same application; the shared one
+    // for an AppliesTo nobody registered (`common/issuer_names.ts`).
     const assertion = buildSamlAssertion(subject, audience, lifetimeMin,
       { authnContextClassRef: authnContextClassRef ||
                               authnContext.AC_UNSPECIFIED,
@@ -871,7 +872,8 @@ class WsTrust {
     const assertion = buildSaml11Assertion({
       subject: subject, audience: audience, lifetimeMin: lifetimeMin,
       authnMethod: method, application: samlApp,
-      // #480: the same Issuer a SAML 2.0 WS-Trust assertion carries.
+      // #480, #494: the same Issuer a SAML 2.0 WS-Trust assertion carries —
+      // per application for a registered AppliesTo, as SAML SSO names it.
       issuer: IssuerNames.samlIssuer(samlApp) });
     const idm = assertion.match(/\bAssertionID="([^"]+)"/);
     const id = idm ? idm[1] : '';
@@ -2204,6 +2206,19 @@ class WsTrust {
     const requester = auth.delegation
       ? String(auth.delegation.requester || '')
       : (auth.kind === 'none' ? '' : String(auth.subject || ''));
+    // NO NAME TO SIGN A SAML ASSERTION UNDER (#494): product with
+    // `saml2.entityId` empty and `saml.issuer` unset. SAML SSO refuses the
+    // same state (STS-SAML-0004); an assertion whose Issuer is empty matches
+    // no metadata a relying party could be configured from. A JWT is not
+    // affected: its `iss` is the realm's OAuth issuer.
+    const issuerProblem = tokenType === JWT_TOKEN_TYPE ? ''
+      : IssuerNames.problem('saml.issuer');
+    if (issuerProblem) {
+      log.debug("Leaving the RST handler. No name to sign under.");
+      return { status: 500, version: version, errorCode: 'STS-WSTRUST-0029',
+               body: this.soapFault(version, issuerProblem, 'RequestFailed',
+                                    trustNs) };
+    }
     const tok = this.buildToken(tokenType, subject, audience, lifetimeMin,
                            this.authnContextOf(auth), delegates, requester,
                            undefined, jwtIssuer);

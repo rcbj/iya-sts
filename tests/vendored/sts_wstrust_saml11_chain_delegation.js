@@ -34,8 +34,8 @@
 //      1.1 assertion (MajorVersion 1, MinorVersion 1) that parses on its
 //      own, a new AssertionID, signed, about bob, restricted to exactly the
 //      requested registered identifier, its Issuer the entityID the
-//      AppliesTo's own metadata names (product, #480) or the STS's
-//      placeholder name (development), its AuthenticationStatement's method
+//      AppliesTo's own metadata names (#480; both modes since #494), its
+//      AuthenticationStatement's method
 //      `am:password` at the sign-in and `am:unspecified` after, no
 //      delegation element, and the AppliesTo application's SAML 1.1
 //      attributes: `teams`, `roles` and `saml11CustomAttributes`' `tier`.

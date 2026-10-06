@@ -35,6 +35,7 @@ reaching the relying party while the sign-in still appeared to succeed.
 |---|---|
 | `GET\|POST /wsfed` | the passive requestor endpoint, dispatched on `wa`; with no `wa` it describes itself and every parameter, the way `GET /sts` does |
 | `GET /FederationMetadata/2007-06/FederationMetadata.xml` | the signed federation metadata |
+| `GET /wsfed/metadata/{rp}` | one **registered** relying party's own signed metadata, naming the entityID its assertions are issued under (#494) |
 | `GET\|POST /wsfed/rp` | a **mock relying party** (not part of any specification) |
 | `GET /wsfed/autopost.js` | the one script the sign-in response page runs |
 
@@ -185,9 +186,30 @@ actually emits. It carries no SAML `IDPSSODescriptor` — that is at
 `/saml2/metadata`.
 
 **`wsfed.entityId` and `saml.issuer` are two settings**: the metadata names the
-identity provider by one, and every assertion is issued by the other. They
-default to the same value; when they differ, `GET /wsfed` and the startup log
-say so, because a relying party's issuer registry would refuse the token.
+identity provider by one, and every assertion is issued by the other. Unset —
+the default, in either mode (#480, #494) — both are the realm's SAML 2.0
+entityID, `saml2.entityId`; when somebody sets them apart, `GET /wsfed` and the
+startup log say so, because a relying party's issuer registry would refuse the
+token.
+
+**Each registered relying party has a name of its own** (#494). A sign-in to a
+`wtrealm` that is a REGISTERED application — one an administrator, dynamic
+registration or this service's seeding put in the registry, not one it has
+merely seen — carries that application's own entityID as the assertion's
+Issuer: `<saml2.entityId>:<application>` while `saml2.perApplicationEntityId`
+is on. It is the name SAML 2.0 SSO (`/saml2/metadata/{sp}`) and WS-Trust give
+the same application, so one application sees one entityID in all three
+protocols. Its own document, `/wsfed/metadata/{rp}` — `{rp}` the application's
+identifier (its `wtrealm`) or its slug, as on `/admin/saml2` — is the shared
+document with that entityID, so a relying party is configured from metadata
+that names its own issuer. A segment naming no registered relying party is a
+404 (`STS-WSFED-0019`) in both modes: an unregistered `wtrealm` is issued under
+the shared entityID, which the shared document already publishes. The mock
+relying party checks the issuer against the name for its own realm.
+
+In product, with `saml2.entityId` emptied and neither setting set, there is no
+name to sign under, and the sign-in and both metadata documents answer 503
+(`STS-WSFED-0020`) rather than publish an empty one.
 
 ### The mock relying party
 
@@ -226,7 +248,7 @@ same in both modes. See [What is not checked](what-is-not-checked.md).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `wsfed.entityId` | `STS_WSFED_ENTITY_ID` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` (development); `saml2.entityId` in product, unset | yes | The entityID in the federation metadata; the assertions' issuer is `saml.issuer`. Unset in product, both are the SAML 2.0 entityID, so they agree (#480). |
+| `wsfed.entityId` | `STS_WSFED_ENTITY_ID` (or `STS_ISSUER`) | *(empty)*: `saml2.entityId`, per application for a registered one | yes | The entityID in the federation metadata; the assertions' issuer is `saml.issuer`. Unset, in either mode (#480, #494), both are the SAML 2.0 entityID — a registered relying party's own in its assertions and in `/wsfed/metadata/{rp}` — so they agree. |
 | `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | The lifetime of the assertion and of the RSTR's `wsu:Lifetime`; per relying party with `wsfedAssertionLifetimeMin`. |
 | `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the mock relying party remembers a `wctx` it minted. |
 

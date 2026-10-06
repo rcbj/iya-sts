@@ -504,90 +504,53 @@ the requester's.
 application, in both modes. The #473 chain jobs assert all of it at every
 hop.
 
-## THE NAMES IT SIGNS UNDER ARE THE SAML ENTITYID IN PRODUCT (#480, 2026-10-06)
+## THE NAMES IT SIGNS UNDER ARE THE SAML ENTITYID (#480, #494, 2026-10-06)
 
-rcbj: "Align with SAML entityID". Three settings name this service outside
-the SAML browser profile: `saml.issuer` (a WS-Trust or WS-Federation
-assertion's Issuer), `wstrust.issuer` (the STS's name on GET /sts) and
-`wsfed.entityId` (the FederationMetadata entityID). Each shipped the
-development placeholder `urn:wstrust:mock:sts`, and `env/local.js`, the
-image's default appconfig, set it explicitly, so a product deployment
-signed with it.
+rcbj: "Align with SAML entityID" (#480, product only), then on #494 "in
+development as well as product", with the placeholder dropped from
+`env/docker-tests.js` and `env/test.js` so the suites run the rule. Three
+settings name this service outside the SAML browser profile: `saml.issuer`
+(a WS-Trust or WS-Federation assertion's Issuer), `wstrust.issuer` (the
+STS's name on GET /sts) and `wsfed.entityId` (the FederationMetadata
+entityID). Each shipped the development placeholder `urn:wstrust:mock:sts`;
+since #494 their shipped default is EMPTY, meaning "the entityID".
 
 `common/issuer_names.ts` reads all three, and every reader goes through it.
-The rules, in order:
+The rules, in order, the same in both modes (`mode.namesIssuersByEntityId()`
+and its `issuer-names` requirement were retired by #494, no shim):
 
 * **A value somebody set wins.** That means a realm value, a runtime
   override, the environment or the operator's appconfig. A realm's SEEDED
   `urn:<domain>:sts` is not somebody's choice, and is read as a default.
-* **In product** (`mode.namesIssuersByEntityId()`), an unset name is the
-  realm's `saml2.entityId`, what `/saml2/metadata` publishes.
-* **In development**, it is the placeholder (or the realm's seed).
+* **Otherwise the realm's `saml2.entityId`**, what `/saml2/metadata`
+  publishes — per application for a REGISTERED one, below.
+* **No name at all** only in product with `saml2.entityId` emptied:
+  a SAML token is then refused (`STS-WSTRUST-0029`) as SAML SSO refuses
+  (`STS-SAML-0004`); a JWT is unaffected.
 
-`env/local.js` no longer sets them. The test stacks' `env/docker-tests.js`
-and `env/test.js` still set the placeholder, so the suites' development runs
-are unchanged.
+**Per application, one name across three protocols (#494).** The SAML SSO
+profile names itself to each service provider by `<entityID>:<sp>` where
+`saml2.perApplicationEntityId` is on (`saml2_sso.idpEntityIdFor()`), in the
+assertion's Issuer and in `/saml2/metadata/{sp}`. A WS-Trust assertion,
+SAML 2.0 or SAML 1.1, whose AppliesTo a REGISTERED application answers to
+(`appliesToApplication()`: `forAppliesTo()`, then the entry of that very
+identifier) carries THAT application's entityID, keyed by its registry
+identifier; WS-Federation does the same for a registered `wtrealm`, and
+publishes it at `/wsfed/metadata/{rp}` (`../ws-federation/CLAUDE.md`). SSO's
+function decides all of it, so the three cannot differ.
 
-**Per service provider.** The SAML SSO profile names itself to each service
-provider by `<entityID>:<sp>` where `saml2.perApplicationEntityId` is on
-(`saml2_sso.idpEntityIdFor()`), in the assertion's Issuer and in
-`/saml2/metadata/{sp}`. So a WS-Trust assertion whose AppliesTo a registered
-application answers to carries THAT application's entityID, the one its own
-metadata names, and SSO's function decides it. A WS-Federation assertion,
-whose metadata is one document, and an AppliesTo nobody registered, carry
-the shared entityID. `wstrust.issuer` and `wsfed.entityId` have no per-SP
-form.
+**"Registered" is `appRegisteredBy`** — an administrator, RFC 7591, an
+OpenID Federation or this service's seeding. `handleRst()`'s own `seen()`
+files every AppliesTo it issues for; counting that entry would give the
+second token for an unregistered AppliesTo a different Issuer from the
+first. An AppliesTo nobody registered carries the shared entityID, on every
+request. Until #494 any entry counted, which is that bug, in product.
 
-**A JWT's `iss` is not one of these.** It is the realm's OAuth issuer (#476's
-exceptions, above).
+`wstrust.issuer` and `wsfed.entityId`'s shared form have no per-application
+reading on GET /sts: the STS has one name.
 
-## SAML 1.1 AS A REQUEST AND RESPONSE TOKEN TYPE (#487, 2026-10-06)
-
-**The response.** An RST whose TokenType is the SAML Token Profile's
-`…#SAMLV1.1`, or the older `urn:oasis:names:tc:SAML:1.0:assertion`, is
-answered with a signed SAML 1.1 assertion (`buildSaml11Token()`). The RSTR
-names the profile's URI, and its reference is a `SAMLAssertionID`
-KeyIdentifier. The assertion is built by `saml/saml11.ts`, the builder SAML
-1.1 SSO uses, and carries:
-
-* the subject's NameIdentifier;
-* the AppliesTo as its AudienceRestrictionCondition;
-* an AuthenticationStatement: `am:password` for a UsernameToken requester,
-  `am:unspecified` otherwise, which is the SAML 1.1 reading of
-  `authnContextOf()`;
-* the AppliesTo application's SAML 1.1 attributes, through #483's
-  `application` member: groups, roles, `saml11CustomAttributes` and
-  directory-sourced attributes, exactly as SAML 1.1 SSO gives that
-  application.
-
-Its Issuer is #480's `IssuerNames.samlIssuer(application)`, the same as a
-SAML 2.0 WS-Trust assertion's.
-
-**The request.** A SAML 1.1 assertion this realm signed is accepted inside
-OnBehalfOf and ActAs on the same footing as a SAML 2.0 one. Both are read
-by local name: the NameIdentifier, the `AssertionID`, the Conditions and
-the Audience. In product `checkedAssertion()` verifies it against the
-realm's certificate and its Conditions, with the same codes: `0004`, `0005`,
-`0006` (`wst:ExpiredData`) and `0007`. No new refusal was needed.
-
-**EXCEPTION: no delegate chain in SAML 1.1.** The SAML V2.0 Condition for
-Delegation Restriction (sstc-saml-delegation-cs-01) is a SAML 2.0 condition
-type, derived from SAML 2.0's `ConditionAbstractType`, and cannot appear in
-a SAML 1.1 `<saml:Conditions>`. SAML 1.1 has no element of its own for
-"this party acted". WS-Trust 1.4 section 9.3 expects an ActAs token to
-carry the identity acted AS, and names no representation of the requester.
-So:
-
-* an ActAs answered in SAML 1.1 is issued about the subject and names nobody
-  else;
-* a chain the presented token carried is not written into it;
-* the delegation register keeps the chain, and the act's note (`actNote()`)
-  says that SAML 1.1 cannot carry it.
-
-A SAML 2.0 or JWT ActAs still carries the chain.
-
-`tests/wstrust_saml11.js` (T1 to T4) and the #473 SAML 1.1 chain pair
-(`sts_wstrust_saml11_chain_{impersonation,delegation}.js`) hold it.
+**A JWT's `iss` is not one of these.** It is the realm's OAuth issuer
+(#476's exceptions, above; rcbj kept it on #494).
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 

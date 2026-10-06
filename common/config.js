@@ -8263,17 +8263,19 @@ const SETTINGS = [
   // --- SAML ----------------------------------------------------------------
   { key: 'saml.issuer', group: 'SAML', label: 'Assertion issuer',
     env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: 'urn:wstrust:mock:sts', runtime: true,
+    dflt: '', runtime: true,
     description: 'The <saml:Issuer> of every SAML 2.0 assertion and the Issuer ' +
                  'attribute of every SAML 1.1 one that WS-Trust and ' +
                  'WS-Federation build (the SAML SSO profile names itself by ' +
                  'saml2.entityId), and what /wsfed/rp checks a presented ' +
-                 'assertion against. Unset, a PRODUCT realm uses its SAML 2.0 ' +
-                 'entityID (#480) - for a WS-Trust token whose AppliesTo a ' +
-                 'registered application answers to, that application\'s own ' +
-                 'entityID where saml2.perApplicationEntityId is on, as SAML ' +
-                 'SSO names itself to it - and development uses the default ' +
-                 'shown.' },
+                 'assertion against. Unset, in either mode (#480, #494), it ' +
+                 'is the realm\'s SAML 2.0 entityID - and for a token to a ' +
+                 'REGISTERED application (a WS-Trust AppliesTo, a ' +
+                 'WS-Federation wtrealm) that application\'s own entityID, ' +
+                 '<entityID>:<application> where saml2.perApplicationEntityId ' +
+                 'is on, the name SAML SSO and /saml2/metadata/{sp} give it. ' +
+                 'An address nobody registered gets the shared entityID. Set, ' +
+                 'it is every assertion\'s Issuer.' },
 
   // The one setting on this page that changes what goes INTO an assertion's
   // validity window rather than how long that window is. It is deliberately
@@ -8432,11 +8434,12 @@ const SETTINGS = [
     description: 'The entityID this identity provider publishes in its SAML ' +
                  '2.0 metadata, and the <saml:Issuer> of every Response and ' +
                  'Assertion the Web Browser SSO profile issues. It is NOT ' +
-                 'the SAML issuer above: that one names whoever signed an ' +
-                 'assertion and is shared with WS-Trust and WS-Federation, ' +
-                 'and a service provider checks THIS one against the ' +
-                 'metadata it was configured from. They are separate for the ' +
-                 'reason wsfed.entityId is separate from it.' },
+                 'the SAML issuer above, which is a setting of its own; but ' +
+                 'where saml.issuer, wstrust.issuer and wsfed.entityId are ' +
+                 'unset (#494, both modes), they are this entityID - per ' +
+                 'application for a registered one, as here - so WS-Trust ' +
+                 'and WS-Federation sign under the name this metadata ' +
+                 'publishes.' },
 
   { key: 'saml2.perApplicationEntityId', group: 'SAML 2.0',
     label: 'An entityID per service provider',
@@ -8451,7 +8454,12 @@ const SETTINGS = [
                  'above and differ only in its endpoint URLs, which is what ' +
                  'a service provider library that keys its trust store off ' +
                  'the entityID expects. Both are real deployments, which is ' +
-                 'why it is a setting and not a decision.' },
+                 'why it is a setting and not a decision. It governs ' +
+                 'WS-Trust and WS-Federation too (#494): a registered ' +
+                 'application gets the same <entityID>:{sp} as the Issuer of ' +
+                 'a WS-Trust or WS-Federation assertion, and in its own ' +
+                 '/wsfed/metadata/{rp}, unless saml.issuer or wsfed.entityId ' +
+                 'is set.' },
 
   { key: 'saml2.assertionLifetimeMin', group: 'SAML 2.0 assertions',
     label: 'Assertion lifetime (minutes)',
@@ -9031,11 +9039,12 @@ const SETTINGS = [
   // --- WS-Trust ------------------------------------------------------------
   { key: 'wstrust.issuer', group: 'WS-Trust', label: 'Token issuer',
     env: 'STS_WSTRUST_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: 'urn:wstrust:mock:sts', runtime: true,
-    description: 'The name this STS publishes on GET /sts. Unset, a PRODUCT ' +
-                 'realm uses its SAML 2.0 entityID (#480) and development the ' +
-                 'default shown. It is not the iss of a JWT this STS returns: ' +
-                 'that is the realm\'s OAuth 2.0 issuer, the one ' +
+    dflt: '', runtime: true,
+    description: 'The name this STS publishes on GET /sts. Unset, in either ' +
+                 'mode (#480, #494), it is the realm\'s SAML 2.0 entityID. A ' +
+                 'SAML assertion this STS issues carries saml.issuer - for a ' +
+                 'registered AppliesTo, that application\'s own entityID - ' +
+                 'and a JWT the realm\'s OAuth 2.0 issuer, the one ' +
                  '/.well-known/oauth-authorization-server publishes, which GET ' +
                  '/sts names on a line of its own. When this and saml.issuer ' +
                  'differ GET /sts says so and the process logs it at startup.' },
@@ -9119,12 +9128,14 @@ const SETTINGS = [
 
   { key: 'wsfed.entityId', group: 'WS-Federation', label: 'Entity ID',
     env: 'STS_WSFED_ENTITY_ID', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: 'urn:wstrust:mock:sts', runtime: true,
+    dflt: '', runtime: true,
     description: 'The entityID in the federation metadata at ' +
-                 '/FederationMetadata/2007-06/FederationMetadata.xml. Unset, a ' +
-                 'PRODUCT realm uses its SAML 2.0 entityID (#480) and ' +
-                 'development the default shown, so it and the SAML issuer ' +
-                 'agree in either mode unless one of them is set.' },
+                 '/FederationMetadata/2007-06/FederationMetadata.xml. Unset, in ' +
+                 'either mode (#480, #494), it is the realm\'s SAML 2.0 ' +
+                 'entityID, and a registered relying party\'s own document, ' +
+                 '/wsfed/metadata/{rp}, names that application\'s entityID - ' +
+                 'the Issuer of the assertions it is sent - so the metadata ' +
+                 'and the SAML issuer agree unless one of them is set.' },
 
   { key: 'wsfed.mockRpContextTtlMin', group: 'WS-Federation',
     label: 'Mock relying party wctx lifetime (minutes)',

@@ -976,7 +976,9 @@ function validateId(id) {
 // because an entityID built from a domain would otherwise read as an ADDRESS
 // the service may not answer at (see the domain's note above). The three that
 // shared `urn:wstrust:mock:sts` by default share `urn:<domain>:sts`, so the
-// relationship between them is kept. `oid4vp.clientId` is a client id rather
+// relationship between them is kept — and since #480/#494 that seed is READ
+// AS A DEFAULT (`common/issuer_names.ts`): unset or seeded, all three are the
+// realm's SAML 2.0 entityID. `oid4vp.clientId` is a client id rather
 // than a name in a domain, and keeps the id suffix it always had.
 //
 // `from(domain, id, base)` answers the seeded value; `base` is the process's

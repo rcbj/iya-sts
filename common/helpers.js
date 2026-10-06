@@ -418,11 +418,12 @@ const HOST = config.value('global.host');
 // that needed one of them to be its own real name had to change all three.
 //
 // They are now `saml.issuer`, `wstrust.issuer` and `wsfed.entityId` in
-// config.js, all three still defaulting to `urn:wstrust:mock:sts` and all
-// three still fed by STS_ISSUER when it is set, so nothing that worked before
-// changed. Callers read them from config.js directly rather than through a
-// re-export here: they are runtime-settable, so a constant captured at
-// require time would be the one thing the console could not change.
+// config.js, all three still fed by STS_ISSUER when it is set. Their default
+// was `urn:wstrust:mock:sts` until #494; it is empty now, meaning the realm's
+// SAML 2.0 entityID (`common/issuer_names.ts`). Callers read them through
+// that library, per use, rather than through a re-export here: they are
+// runtime-settable, so a constant captured at require time would be the one
+// thing the console could not change.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

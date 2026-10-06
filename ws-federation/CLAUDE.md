@@ -170,6 +170,46 @@ relationship's own key (`federation/CLAUDE.md`, #168). WS-Trust's `/sts/cert`
 serves the pinned certificate while it signs. `common/CLAUDE.md` has the
 model.
 
+## The issuer a relying party sees is ITS OWN (#494, 2026-10-06)
+
+rcbj, on #494: "the entityID a relying party sees is per application, keyed
+by its `wtrealm` registration … One name per application across all three
+protocols." So `issueSignInResponse()` passes `IssuerNames.samlIssuer(realm)`
+to both assertion builders, and that function decides it for SAML 2.0 SSO,
+WS-Trust and WS-Federation alike (`../common/issuer_names.ts`):
+
+* **The application is the entry filed under the `wtrealm` itself**,
+  `applications.get(wtrealm)`, the entry every other step of this path
+  reads — the return addresses, the lifetime override, the role gate. An
+  application known by another name that merely lists the `wtrealm` on
+  `wsfedRealm` is not looked up: product would refuse its `wreply` anyway,
+  since `returnAddressesOf()` reads the `wtrealm`'s own entry. Decided here
+  rather than asked, and the one place this could differ from WS-Trust,
+  whose `forAppliesTo()` does look across names.
+* **Only a REGISTERED one** (`appRegisteredBy`) gets a name of its own.
+  `seen()` files every `wtrealm` the first time a token goes to it; counting
+  that entry would give the second token for an unregistered address a
+  different Issuer from the first. Unregistered: the shared entityID.
+* **Its metadata is `/wsfed/metadata/{rp}`**, `federationMetadata(base,
+  application)` with `wsfedEntityId(application)` — the shared document with
+  the application's entityID. The segment is the identifier or
+  `saml2_sso.slugOf()`'s slug, reached lazily (that module is built after
+  this one). **A 404 in BOTH modes for anything unregistered**
+  (`STS-WSFED-0019`), where `/saml2/metadata/{sp}` answers for anything in
+  development: an unregistered `wtrealm` is issued under the shared name, so
+  a per-application document for it would publish a name no assertion
+  carries. The shared `/FederationMetadata/2007-06/FederationMetadata.xml`
+  stays.
+* **The mock relying party checks against the name for its own realm**, so
+  it makes the check a relying party configured from its own metadata
+  makes.
+* **No name, no document and no token** (`STS-WSFED-0020`, 503): product
+  with `saml2.entityId` emptied and neither setting set.
+
+`tests/issuer_names.js` (I7–I9) and `tests/vendored/wstrust_chain_kit.js`
+(`samlIssuerFor()`, which asks this route for every tier) hold it;
+`sts_metadata_anonymous.js` section 5 holds the 404.
+
 ## What no test covers yet
 
 `tests/saml_family_hardcoded.js` pins the 2026-09-12 changes above, and

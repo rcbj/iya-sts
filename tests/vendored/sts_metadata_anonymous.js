@@ -1420,7 +1420,23 @@ async function thePerPartnerDocuments() {
       "spread to the document a partner reads while being configured.");
   });
 
-  log.info("[per partner] OK — two minted documents and one honest 404.");
+  // WS-FEDERATION'S PER-RELYING-PARTY DOCUMENT (#494) answers only for a
+  // REGISTERED relying party, in both modes: an unregistered wtrealm is
+  // issued under the shared entityID, which the shared document already
+  // publishes. Its refusal has federation's shape — a 404 from a handler,
+  // text/plain and no-store, saying why — never a gate on the reader.
+  const wsfed = await fetchDocument("/wsfed/metadata/anon-probe-rp");
+  check("WS-Federation metadata for an unregistered relying party is an " +
+        "honest 404", function () {
+    assert.strictEqual(wsfed.status, 404, "/wsfed/metadata/<unregistered> " +
+      "answered " + wsfed.status +
+      (wsfed.location ? " -> " + wsfed.location : ""));
+    assert.ok(/text\/plain/.test(wsfed.type), wsfed.type);
+    assert.ok(/no-store/.test(wsfed.cache), wsfed.cache);
+    assert.ok(/registered/.test(wsfed.text), wsfed.text.slice(0, 200));
+  });
+
+  log.info("[per partner] OK — two minted documents and two honest 404s.");
   log.debug("Leaving thePerPartnerDocuments().");
 }
 

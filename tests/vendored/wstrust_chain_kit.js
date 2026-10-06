@@ -1011,30 +1011,34 @@ async function publishedIssuer(base) {
   return named;
 }
 
-// THE ISSUER A WS-TRUST SAML ASSERTION FOR `tier` CARRIES (#480). In
-// product: the entityID this identity provider publishes to that
-// application, in its own `/saml2/metadata/{sp}` — the per-SP entityID SAML
-// SSO names itself by, where `saml2.perApplicationEntityId` is on. In
-// development: the STS's name on `GET /sts`, which is `saml.issuer`'s
-// placeholder (or the realm's seed) there.
+// THE ISSUER A WS-TRUST SAML ASSERTION FOR `tier` CARRIES (#480, #494), in
+// EITHER mode since #494: the entityID this identity provider publishes to
+// that registered application in its own `/saml2/metadata/{sp}` — the
+// per-SP entityID SAML SSO names itself by, where
+// `saml2.perApplicationEntityId` is on. And ONE NAME PER APPLICATION: the
+// application's own WS-Federation metadata, `/wsfed/metadata/{rp}`, must
+// name the same entityID. `product` is kept for the callers and no longer
+// changes the answer.
 async function samlIssuerFor(base, tier, product) {
-  log.debug("Entering samlIssuerFor(). " + tier.identifier);
-  let out;
-  if (product) {
-    const r = await call("GET", base + "/saml2/metadata/" +
-                         encodeURIComponent(tier.identifier), undefined,
-                         { Accept: "application/samlmetadata+xml, */*" });
-    out = (/entityID="([^"]+)"/.exec(r.text) || [])[1] || "";
-    assert.ok(r.status === 200 && out, "/saml2/metadata/" + tier.identifier +
-              ": " + r.status + " " + r.text.slice(0, 200));
-    assert.notStrictEqual(out, "urn:wstrust:mock:sts", "a product service " +
-                          "publishes the development placeholder as its " +
-                          "entityID");
-  } else {
-    const r = await call("GET", base + "/sts", undefined, { Accept: "*/*" });
-    out = (/^Issuer:\s*(\S+)/m.exec(r.text) || [])[1] || "";
-    assert.ok(out, "GET /sts names no issuer: " + r.text.slice(0, 200));
-  }
+  log.debug("Entering samlIssuerFor(). " + tier.identifier +
+            (product ? " (product)" : ""));
+  const r = await call("GET", base + "/saml2/metadata/" +
+                       encodeURIComponent(tier.identifier), undefined,
+                       { Accept: "application/samlmetadata+xml, */*" });
+  const out = (/entityID="([^"]+)"/.exec(r.text) || [])[1] || "";
+  assert.ok(r.status === 200 && out, "/saml2/metadata/" + tier.identifier +
+            ": " + r.status + " " + r.text.slice(0, 200));
+  assert.notStrictEqual(out, "urn:wstrust:mock:sts", "the service " +
+                        "publishes the development placeholder as its " +
+                        "entityID (#494 retired it)");
+  const f = await call("GET", base + "/wsfed/metadata/" +
+                       encodeURIComponent(tier.identifier), undefined,
+                       { Accept: "application/xml, */*" });
+  const wsfed = (/entityID="([^"]+)"/.exec(f.text) || [])[1] || "";
+  assert.strictEqual(wsfed, out, "/wsfed/metadata/" + tier.identifier +
+                     " should name the application's one entityID, as " +
+                     "/saml2/metadata/" + tier.identifier + " does (#494): " +
+                     f.status + " " + f.text.slice(0, 200));
   log.debug("Leaving samlIssuerFor(). " + out);
   return out;
 }
