@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4146** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4149** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -66,7 +66,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 258
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 701
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 102
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 25
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 28
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 18
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -2264,6 +2264,9 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0023` | An OnBehalfOf or ActAs request was refused because the subject has no authority for the application the act stands on (#186). | SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11) |
 | `STS-WSTRUST-0024` | An OnBehalfOf or ActAs request named no AppliesTo, or one no application registers, and is not a self request (#186). | SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11) |
 | `STS-WSTRUST-0025` | A request carried both <wst:OnBehalfOf> and <wst14:ActAs>, which ask for impersonation and delegation at once (#186). | SOAP Fault wst:InvalidRequest (WS-Trust 1.4 section 11) |
+| `STS-WSTRUST-0026` | Product mode: a JWT inside OnBehalfOf/ActAs does not verify with this STS's own key, or was not issued by this STS (its iss is not wstrust.issuer) (#477). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0027` | Product mode: a JWT inside OnBehalfOf/ActAs has expired (#477). | SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0028` | Product mode: a JWT inside OnBehalfOf/ActAs names, in its sub, nobody this directory holds (#477). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 

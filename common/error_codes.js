@@ -9719,6 +9719,22 @@ const CODES = [
     summary: 'A request carried both <wst:OnBehalfOf> and <wst14:ActAs>, ' +
       'which ask for impersonation and delegation at once (#186).',
     spec: 'SOAP Fault wst:InvalidRequest (WS-Trust 1.4 section 11)' },
+  { code: 'STS-WSTRUST-0026',
+    summary: 'Product mode: a JWT inside OnBehalfOf/ActAs does not verify ' +
+      'with this STS\'s own key, or was not issued by this STS ' +
+      '(its iss is not wstrust.issuer) (#477).',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
+  { code: 'STS-WSTRUST-0027',
+    summary: 'Product mode: a JWT inside OnBehalfOf/ActAs has expired ' +
+      '(#477).',
+    spec: 'SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
+  { code: 'STS-WSTRUST-0028',
+    summary: 'Product mode: a JWT inside OnBehalfOf/ActAs names, in its sub, ' +
+      'nobody this directory holds (#477).',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +

@@ -153,9 +153,9 @@ fault. Each refusal names its code at the place it refuses:
 
 | Code | Refusals | Why that one |
 |---|---|---|
-| `InvalidRequest` | `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025` | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
+| `InvalidRequest` | `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025` | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
 | `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007`, `0009`, `0010` | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
-| `ExpiredData` | `0006`, in either seat | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
+| `ExpiredData` | `0006`, in either seat, and a delegated JWT's `0027` (#477) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
 | `RequestFailed` | `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell) | the request was understood and authenticated, and could not be done |
 
 **Not used, and why**: `InvalidSecurityToken` is "Security token has been
@@ -352,6 +352,51 @@ SAML assertion are WS-Trust's and SAML's, as before.
 
 `tests/wstrust_jwt_claims.js` holds each of these in both modes, in
 process. `tests/delegation_policy.js` L13 holds the product form of `act`.
+
+## A JWT THIS STS ISSUED IS READ INSIDE OnBehalfOf / ActAs (#477, 2026-10-06)
+
+**This is a change to how a WS-Trust request is processed, and it is kept
+apart from #476 for that reason. It needs rcbj's decision.**
+
+WS-Trust names no kind of token for either element: 1.3 section 9.2 and
+1.4 section 9.3 each hold "a security token or wsse:SecurityTokenReference".
+Until #477 only a SAML assertion was read there, so a chain whose response
+tokens were JWTs stopped at its first hop:
+
+* product refused the JWT as `0008` ("no SAML assertion");
+* development delegated for `delegated-subject`.
+
+`delegatedJwt()` reads the `wsse:BinarySecurityToken` this STS's own RSTR
+carries a JWT in (ValueType `urn:ietf:params:oauth:token-type:jwt`), on
+`checkedAssertion()`'s footing, because the smallest real answer to "which
+issuer is trusted" is this STS. **In product** the JWT is refused with a
+fault unless all four of these hold:
+
+* it verifies with this realm's own key (`helpers.verifyOwnJws()`), else
+  `0026`;
+* it is within its `exp` and `nbf`, else `0027`, `wst:ExpiredData`;
+* its `iss` is `wstrust.issuer`, else `0026`. An OAuth access token from
+  this realm is signed with the same key, and it is not a token this STS
+  issued;
+* its `sub` is the `urn:uuid:` of a person this directory holds, else
+  `0028`.
+
+**Development** reads it unverified and believes it, as it believes a
+NameID.
+
+What the rest of the request needs is read off the JWT as an assertion's
+is:
+
+| Read | From |
+|---|---|
+| the subject | `sub` |
+| S | `aud` |
+| the prior delegates | `act`, innermost first, so least to most recent. Each `sub` is read back to an application's identifier (from `urn:sts:client:<client_id>` or the bare client_id) or to a person's username |
+| what the act consumed | `jti` |
+
+The decision, the SAML assertion and the JWT that is issued do not change.
+An assertion inside still wins where an element carries both.
+`tests/wstrust_jwt_claims.js` K holds each of these in both modes.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 

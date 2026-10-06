@@ -30,6 +30,18 @@
 //       Delegation Restriction names the applications by their bare
 //       identifiers in both modes.
 //
+// AND A JWT THIS STS ISSUED IS ACCEPTED INSIDE OnBehalfOf / ActAs (#477):
+//
+//   K1. a chain in JWTs — a person's own JWT for the front end, ActAs of it
+//       for the back end, ActAs of THAT for the last tier — in both modes:
+//       the subject carried, `act` nesting, the register consuming each
+//       JWT's `jti`; and a SAML assertion asked for with a JWT inside names
+//       the JWT's actors in its Delegation Restriction;
+//   K2. product refuses a JWT that does not verify, one another issuer
+//       signed, an expired one (`wst:ExpiredData`) and one naming nobody,
+//       each by its own code; development believes a tampered one, as it
+//       believes a NameID.
+//
 // Every JWT verifies with this realm's own key (`helpers.verifyOwnJws()`).
 // IN PROCESS, in a throwaway realm, for `wstrust_fault_codes.js`'s reason:
 // the two modes' answers differ, and a job over HTTP runs in one.
@@ -54,6 +66,7 @@ const WST = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
 const JWT = 'urn:ietf:params:oauth:token-type:jwt';
 const BACK = 'https://wj-back.example';
 const FINAL = 'https://wj-final.example';
+const FRONT = 'https://wj-front.example';
 
 function inMode(m, fn) {
   log.debug("Entering inMode(). " + m);
@@ -153,6 +166,7 @@ function fixtures(t) {
     // A client_id unlike its identifier, so the claim is seen to be the
     // registered client_id and not the entry's name.
     app('wj-front', { oauthClientId: 'wj-front-client',
+                      wstrustAppliesTo: [FRONT],
                       appAllowedToDelegateTo: ['wj-back'],
                       appDelegationSemantics: ['delegation',
                                                'impersonation'] })
@@ -258,6 +272,135 @@ function inBothModes(t) {
   log.debug("Leaving inBothModes().");
 }
 
+// K. A JWT this STS issued, inside OnBehalfOf / ActAs (#477).
+function jwtInside(t) {
+  log.debug("Entering jwtInside().");
+  const wstrust = require('../ws-trust/wstrust');
+  const saml2 = require('../saml/saml2');
+  const delegation = require('../common/delegation');
+  const signed = function (name, audience) {
+    log.debug("Entering signed().");
+    log.debug("Leaving signed().");
+    return saml2.buildSamlAssertion(name, audience, 5);
+  };
+  const bst = function (token) {
+    log.debug("Entering bst().");
+    log.debug("Leaving bst().");
+    return '<wsse:BinarySecurityToken ValueType="' + JWT + '">' + token +
+      '</wsse:BinarySecurityToken>';
+  };
+  ['development', 'product'].forEach(function (m) {
+    t.log.info('=== K. a JWT inside ActAs, ' + m + ' mode ===');
+    const product = m === 'product';
+    const ask = function (requester, appliesTo, body, tokenType) {
+      log.debug("Entering ask().");
+      log.debug("Leaving ask().");
+      return inMode(m, function () {
+        return wstrust.handleRst(rst(signed(requester, 'https://sts.test'),
+                                     appliesTo, body, tokenType),
+                                 'application/soap+xml');
+      });
+    };
+    const issuer = String(config.value('wstrust.issuer'));
+    const front = product ? 'urn:sts:client:wj-front-client'
+                          : 'wj-front-client';
+    const back = product ? 'urn:sts:client:wj-back' : 'wj-back';
+    const aliceSub = helpers.subjectForName('wj-alice');
+
+    const own = jwtOf(ask('wj-alice', FRONT, '', JWT));
+    let r = ask('wj-front', BACK, actAs(bst(own.token)), JWT);
+    const hop1 = jwtOf(r);
+    const consumed = function (jti) {
+      log.debug("Entering consumed().");
+      const row = (delegation.list ? delegation.list() : [])
+        .filter(function (one) {
+          return (one.consumed || []).some(function (c) {
+            return c.identifier === jti;
+          });
+        });
+      log.debug("Leaving consumed().");
+      return row.length;
+    };
+    t.check(r.status === 200 && hop1.verified &&
+            hop1.claims.sub === aliceSub && hop1.claims.aud === BACK &&
+            JSON.stringify(hop1.claims.act) ===
+              JSON.stringify({ sub: front, iss: issuer }),
+            'K1a (' + m + '). ActAs of a person\'s own JWT: the subject ' +
+            'carried, act naming the requester',
+            r.status + ' ' + JSON.stringify(hop1.claims) + ' ' +
+            hop1.body.slice(0, 400));
+    r = ask('wj-back', FINAL, actAs(bst(hop1.token)), JWT);
+    const hop2 = jwtOf(r);
+    t.check(r.status === 200 && hop2.verified &&
+            hop2.claims.sub === aliceSub &&
+            JSON.stringify(hop2.claims.act) === JSON.stringify(
+              { sub: back, iss: issuer, act: { sub: front, iss: issuer } }),
+            'K1b (' + m + '). ActAs of an ActAs JWT: act nests, the JWT\'s ' +
+            'actors read back from its act', JSON.stringify(hop2.claims.act) +
+            ' ' + hop2.body.slice(0, 400));
+    t.check(!delegation.list || consumed(hop1.claims.jti) >= 1,
+            'K1c (' + m + '). the register records the JWT\'s jti as what ' +
+            'the act consumed', String(hop1.claims.jti));
+    r = ask('wj-back', FINAL, actAs(bst(hop1.token)), '');
+    const named = [];
+    const re = /<del:Delegate[^>]*><saml:NameID[^>]*>([^<]+)</g;
+    const xml = assertionOf(r);
+    for (let d = re.exec(xml); d; d = re.exec(xml)) {
+      named.push(d[1]);
+    }
+    t.check(r.status === 200 &&
+            JSON.stringify(named) === '["wj-front","wj-back"]' &&
+            xml.indexOf('<saml:NameID') >= 0,
+            'K1d (' + m + '). a SAML assertion asked for with a JWT inside ' +
+            'names the JWT\'s actor and the requester, by bare identifier',
+            JSON.stringify(named) + ' ' + r.status);
+
+    // Refusals: a tampered JWT, another issuer, an expired one, nobody.
+    const parts = own.token.split('.');
+    const tamperedClaims = Object.assign({}, own.claims,
+                                         { name: 'someone-else' });
+    const tampered = parts[0] + '.' + Buffer.from(JSON.stringify(
+      tamperedClaims)).toString('base64url') + '.' + parts[2];
+    const now = Math.floor(Date.now() / 1000);
+    const sign = function (claims) {
+      log.debug("Entering sign().");
+      log.debug("Leaving sign().");
+      return helpers.signJwtAs(claims, 'RS256', null, {});
+    };
+    const base = { sub: aliceSub, aud: FRONT, iat: now, exp: now + 300,
+                   jti: 'wj-k2-' + m, iss: issuer };
+    const cases = [
+      ['K2a', 'a JWT whose signature does not verify', tampered,
+       'STS-WSTRUST-0026', 'InvalidRequest'],
+      ['K2b', 'a JWT another issuer named',
+       sign(Object.assign({}, base, { iss: 'https://elsewhere.example' })),
+       'STS-WSTRUST-0026', 'InvalidRequest'],
+      ['K2c', 'an expired JWT',
+       sign(Object.assign({}, base, { iat: now - 7200, exp: now - 3600 })),
+       'STS-WSTRUST-0027', 'ExpiredData'],
+      ['K2d', 'a JWT naming nobody this directory holds',
+       sign(Object.assign({}, base, {
+         sub: 'urn:uuid:00000000-0000-4000-8000-000000000000' })),
+       'STS-WSTRUST-0028', 'InvalidRequest']
+    ];
+    cases.forEach(function (one) {
+      r = ask('wj-front', BACK, actAs(bst(one[2])), JWT);
+      if (product) {
+        t.check(r.status === 500 && r.errorCode === one[3] &&
+                new RegExp('wst:' + one[4] + '<').test(String(r.body)),
+                one[0] + ' (product). ' + one[1] + ' is refused: ' + one[3] +
+                ', wst:' + one[4], r.status + ' ' + r.errorCode + ' ' +
+                String(r.body).slice(0, 400));
+      } else if (one[0] === 'K2a') {
+        t.check(r.status === 200,
+                'K2a (development). a tampered JWT is believed, as a NameID ' +
+                'is', r.status + ' ' + String(r.body).slice(0, 300));
+      }
+    });
+  });
+  log.debug("Leaving jwtInside().");
+}
+
 // EVERYTHING IN A THROWAWAY REALM, removed afterwards.
 function run(t) {
   log.debug("Entering run().");
@@ -274,6 +417,7 @@ function run(t) {
     realms.run(made.realm, function () {
       fixtures(t);
       inBothModes(t);
+      jwtInside(t);
     });
   } finally {
     realms.remove(id);
@@ -286,6 +430,8 @@ module.exports = {
   name: 'wstrust_jwt_claims',
   describe: 'the JWT a WS-Trust RST asks for: RFC 9068\'s typ and claims, ' +
             'client_id the requester\'s application, RFC 8693 act in this ' +
-            'service\'s OAuth shape, and the SAML assertion untouched (#476)',
+            'service\'s OAuth shape, and the SAML assertion untouched ' +
+            '(#476); a JWT this STS issued accepted inside OnBehalfOf / ' +
+            'ActAs (#477)',
   run: run
 };
