@@ -1767,7 +1767,12 @@ class WebKit {
       '<span class="fg-for">' + WebKit.esc(labels) +
       (row.type === 'array' ? ' &middot; a list' : '') +
       (row.sensitive ? ' &middot; a credential' : '') + '</span>' +
-      control + '</div>';
+      control +
+      // #488: a value the service will not use as written, said beside the
+      // field that holds it — the page data's `fieldWarnings`, one line each.
+      ((opts.fieldWarnings || {})[row.attribute] || []).map(function (one) {
+        return '<div class="warn fg-warn">' + WebKit.esc(one.text) + '</div>';
+      }).join('') + '</div>';
   }
 
   // A FIELD'S SEARCH (#459), drawn under a list's boxes: a box and Find,

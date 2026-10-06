@@ -370,6 +370,18 @@ SAML assertion are WS-Trust's and SAML's, as before.
   change after the write, development grants undeclared scopes, and the
   field's description says to declare it on `oauthAllowedScope`. A SAML token
   has no scope.
+
+  **AND IT IS SAID WHERE IT IS SET (#488).** Each value the policy would drop
+  earns a warning from `scopePolicy.configuredScopeWarnings()`. It names the
+  value and why, and says to declare it on `oauthAllowedScope` or remove it.
+  In development it says what product would do. The warning appears:
+  * beside the field on Configuration → WS-Trust;
+  * after the Save reply's message;
+  * as `warnings` on the `/admin-api/applications` `set` / `add` / `remove` /
+    `update-fields` replies;
+  * on the application's GET view.
+
+  All four carry the one list (rule 7). The write still stands.
 * **No `auth_time`, `acr` or `amr`.** RFC 9068 section 2.2.1 makes them
   optional, and a delegated JWT could only copy them from an
   authentication it never saw.
