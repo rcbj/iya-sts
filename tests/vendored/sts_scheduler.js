@@ -135,12 +135,19 @@ async function report(prefix) {
   assert.strictEqual(r.status, 200, "GET /admin-api/scheduler answered " +
                      r.status + " " + r.text.slice(0, 300));
   const body = r.body;
+  // EVERY NODE THAT ANSWERED A PAGE (2026-10-05). Once the job list runs to
+  // two pages a report is two requests, and through a round-robin balancer
+  // the FIRST page then lands on one node every time — so counting only
+  // page one's `answeredBy` saw one node of two.
+  body.answeredNodes = [body.answeredBy && body.answeredBy.node];
   const pages = Number((body.jobsPaging || {}).pages) || 1;
   for (let page = 2; page <= pages; page++) {
     const more = await api("GET", path + "&jobsPage=" + page);
     assert.strictEqual(more.status, 200, "GET /admin-api/scheduler page " +
                        page + " answered " + more.status);
     body.jobs = (body.jobs || []).concat(more.body.jobs || []);
+    body.answeredNodes.push(more.body.answeredBy &&
+                            more.body.answeredBy.node);
   }
   log.debug("Leaving report().");
   return body;
@@ -582,7 +589,11 @@ async function theClusterAgrees() {
   const answers = [];
   for (let i = 0; i < 8 * EXPECTED_NODES; i++) {
     const r = await report();
-    seen[r.answeredBy.node] = true;
+    r.answeredNodes.forEach(function (node) {
+      if (node) {
+        seen[node] = true;
+      }
+    });
     answers.push(r);
   }
   check("every node answered through the balancer", function () {
