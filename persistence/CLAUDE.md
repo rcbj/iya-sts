@@ -1688,8 +1688,9 @@ PostgreSQL has none.
 
 `docs/encryption-at-rest.md` is the whole argument, including what column-level
 encryption misses that block-level does not (the WAL, spilled sorts, `pg_dump`
-output, replicas, query logs) and why the compose stack's `sts-secrets` volume
-must not sit on the same unencrypted disk as the database. **One fact from it
+output, replicas, query logs) and why a key-encryption key kept in a file
+must not sit on the same unencrypted disk as the database (the compose stack
+keeps none since #254: its key is OpenBao's Transit key, `openbao/CLAUDE.md`). **One fact from it
 belongs in a reader's head before they get there**: there is ONE
 key-encryption key for the service, not one per trust realm, so a realm is not a
 cryptographic boundary at rest — `common/CLAUDE.md` carries that argument beside

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4064** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4067** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 81
+* [Service core (`STS-CORE`)](#sts-core) — 84
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 74
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
@@ -225,6 +225,9 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0147` | A realm's listener.port is already another realm's or one of this process's own listeners' (every node binds every realm port, so each must be its own). | the write is refused; nothing is changed |
 | `STS-CORE-0148` | A realm listener (listener.port) was asked for while this service runs as several cells, which #99 does not support yet. | the write is refused; nothing is changed |
 | `STS-CORE-0149` | A module told of changed settings (config.onOverridesChanged()) or asked to judge a write between settings (config.addWriteRule()) threw. The change is in force; what that module does with it, or the rule it holds, did not run this time. | logged; the write is not refused by the failed rule |
+| `STS-CORE-0150` | A secret delivered as a file at start (<ENV>_FILE, #254) could not be read. The service does not start: it was told where its secret is, and starting without it would mint a different one. | none — fatal at startup, logged |
+| `STS-CORE-0151` | A secret delivered as a file at start (<ENV>_FILE, #254) was empty. The service does not start. | none — fatal at startup, logged |
+| `STS-CORE-0152` | A secret delivered as a file at start (<ENV>_FILE, #254) was read and could not be deleted afterwards, so it is still readable where it was delivered. The service starts with it. | none — logged |
 
 ## STS-WORKER
 

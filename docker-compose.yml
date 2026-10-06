@@ -330,6 +330,10 @@ services:
     # afterwards: the pair belongs to the volume and re-minting it would break
     # the anchor the service pins.
     restart: "no"
+    # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
+    # writes into the store's volume and hands the listener key to the store's
+    # own user.
+    user: "0"
     environment:
       - STS_BAO_TLS_DIR=/openbao/file/tls
       # The names the certificate answers to. `openbao` is the service name on
@@ -382,7 +386,7 @@ services:
     # catch. 501 means uninitialised and 503 means sealed or standby, so the
     # first start is expected to fail this probe until the seeder has run.
     healthcheck:
-      test: ["CMD-SHELL", "bao status -address=https://127.0.0.1:8200 -ca-cert=/openbao/file/tls/server.crt >/dev/null 2>&1 || test -f /openbao/file/seed/root.token"]
+      test: ["CMD-SHELL", "bao status -address=https://127.0.0.1:8200 -ca-cert=/openbao/file/tls/server.crt >/dev/null 2>&1 || test -f /openbao/file/seed/seeder.token"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -394,6 +398,10 @@ services:
     build:
       context: .
     restart: "no"
+    # ROOT, ON PURPOSE (#254): it hands the service its client key, 0600 and
+    # owned by uid 10001, and writes the start-up tokens 0600 and root's —
+    # neither of which a non-root user can do.
+    user: "0"
     depends_on:
       openbao:
         condition: service_started
@@ -406,11 +414,34 @@ services:
       # database itself is built with, so the value in the store and the value
       # in postgres cannot drift.
       - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+      # ---------------------------------------------------------------------
+      # THE START-UP SECRETS (#254). `secret/sts-admin` holds the management
+      # API client's secret, which this seeder GENERATES on the run that
+      # initialises the store unless ADMIN_API_CLIENT_SECRET pins one — and
+      # the service reads it once at start through the single-use token
+      # written for `sts` below, never with its own identity.
+      #
+      # **AND IT PRINTS AN OPERATOR TOKEN**, read on that path only for a day:
+      # `docker compose logs openbao-seed` shows it, and docs/management-api.md
+      # says how to read the secret with it for the FIRST token. After that
+      # the way in is an application of your own, holding Admin Read and Admin
+      # Write, on client credentials. On the run that initialises the store it
+      # prints the RECOVERY KEY too, once — the root token is revoked when the
+      # seeder is done, and the recovery key is how one is made again.
+      # STS_BAO_PRINT_CREDENTIALS=false prints neither.
+      # ---------------------------------------------------------------------
+      - STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET:-}
+      - STS_BAO_STARTUP_NODES=sts
+      - STS_BAO_STARTUP_DIR=/openbao/startup
+      - STS_BAO_PRINT_CREDENTIALS=${STS_BAO_PRINT_CREDENTIALS:-true}
     volumes:
       - sts-bao-file:/openbao/file
       - sts-bao-client:/openbao/client
+      - sts-bao-startup:/openbao/startup
       - ./openbao/seed.js:/usr/src/sts/openbao/seed.js:ro
       - ./openbao/read-only.hcl:/usr/src/sts/openbao/read-only.hcl:ro
+      - ./openbao/admin-secret.hcl:/usr/src/sts/openbao/admin-secret.hcl:ro
+      - ./openbao/seeder.hcl:/usr/src/sts/openbao/seeder.hcl:ro
     command: ["node", "openbao/seed.js"]
 
   sts:
@@ -427,47 +458,50 @@ services:
     # launchers set it when a compose project is named.
     image: ${STS_IMAGE:-rcbj/sts}
     # -----------------------------------------------------------------------
-    # THE KEY-ENCRYPTION KEY IS MADE ON THE FIRST START THAT FINDS NONE.
+    # THE SERVICE RUNS AS uid 10001, AND THIS COMMAND IS ROOT ONLY UNTIL IT
+    # HAS DONE THE TWO THINGS THAT NEED ROOT (#254, 2026-10-06).
     #
-    # Product mode refuses to start without one, and a stack that cannot come
-    # up until somebody has read a paragraph is a stack nobody runs. So this
-    # mints one into the `sts-secrets` volume the first time and uses it for
-    # ever after — which is exactly the property that matters, because a KEK
-    # regenerated per start would leave every stored signing key unopenable
-    # and the service would refuse to start rather than issue tokens nobody
-    # can verify.
+    # Until #254 node ran as root, and the command minted the key-encryption
+    # key and the management API secret into a `sts-secrets` volume at
+    # /run/secrets — readable from a shell here by design. Both are gone: the
+    # key-encryption key is OpenBao's Transit key (#391), which never leaves
+    # the store, and the management API secret is in the store at
+    # `secret/sts-admin`, which the service's own identity cannot read. So
+    # `user: "0"` starts this command as root, and it:
     #
-    # A `command` wrapper rather than an entrypoint script in the image, and
-    # the same shape the postgres service above uses for its TLS material:
-    # the generation belongs to THIS stack rather than to the image, because
-    # a real deployment mounts a key it manages and must not have one invented
-    # for it. `exec` so node keeps pid 1 and still receives the stop signal.
+    #   1. adds the SPIFFE secondary addresses (below; NET_ADMIN);
+    #   2. hands /usr/src/sts/data to uid 10001 (a volume written before #254
+    #      is root's);
+    #   3. runs `openbao/startup-secrets.js`, which takes this node's
+    #      single-use start-up token from `sts-bao-startup` (root's, 0600),
+    #      unwraps it, reads `secret/sts-admin`, revokes it, and leaves each
+    #      value in a 0400 file of uid 10001's on the /run/sts-startup tmpfs.
+    #      What it prints is `export <ENV>_FILE=<path>` lines and never a
+    #      value; the service reads each file once and DELETES it
+    #      (`common/delivered_secrets.ts`). A start-up token somebody else
+    #      already unwrapped stops the node here;
+    #   4. `exec setpriv` to uid 10001 with every capability dropped and
+    #      no_new_privs set, so node is pid 1, not root, and holds neither
+    #      NET_ADMIN nor a way back.
     #
-    # 32 bytes from the kernel, base64 — `common/secrets.js` reads the file's
-    # contents as the key material.
+    # The low ports need no capability: Docker sets
+    # net.ipv4.ip_unprivileged_port_start=0 in the container's namespace, and
+    # `sysctls` below says so explicitly.
     #
+    # **A SHELL HERE AS THE SERVICE'S USER** reads the OpenBao client
+    # credential (0600, its own) — the use of the Transit key and the database
+    # password, which is what the service itself may do — and nothing else
+    # from disk or from the environment. `docker compose exec -u 0` is root,
+    # and root in a container is the host's docker group; that is not a line
+    # this file can draw.
+    #
+    # ADMIN_API_CLIENT_SECRET in the host's environment still PINS the
+    # secret: it goes to the SEEDER, which stores it, and not to this
+    # container.
     # -----------------------------------------------------------------------
-    # AND THE MANAGEMENT API'S CLIENT SECRET, ON THE SAME ARGUMENT (2026-09-09).
-    #
-    # `/admin-api` requires an access token minted by the seeded
-    # `sts-management-api` client. Left alone, that client's secret is
-    # generated at every start and is readable only THROUGH the API it
-    # unlocks — so the default stack would ship an administrative surface
-    # nobody could ever obtain a token for, and the first thing anybody would
-    # do about it is turn the gate off.
-    #
-    # **IT IS KEPT IN THE SAME VOLUME AS THE KEK AND FOR THE SAME REASON**: a
-    # secret regenerated per start invalidates the credential somebody wrote
-    # down, and this stack's whole point is that a restart changes nothing.
-    # `ADMIN_API_CLIENT_SECRET` in the environment WINS, because a deployment
-    # that manages its own must not have one invented for it — which is why
-    # the generated value is only used when the variable is empty.
-    #
-    # It is READABLE from the volume by design: `docker compose exec sts cat
-    # /run/secrets/sts-admin-api-secret` is how an operator gets a token on a
-    # stack they own. That is a property of a stack whose database password is
-    # also in this file.
-    # -----------------------------------------------------------------------
+    user: "0"
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0
     # -----------------------------------------------------------------------
     # AND THE SECONDARY ADDRESSES THE PER-REALM SPIFFE LISTENERS BIND
     # (2026-09-12).
@@ -503,17 +537,7 @@ services:
       default:
         ipv4_address: ${STS_ADDRESS:-172.29.0.10}
     command: >
-      sh -c 'if [ ! -s /run/secrets/sts-kek ]; then
-      head -c 32 /dev/urandom | base64 > /run/secrets/sts-kek;
-      chmod 600 /run/secrets/sts-kek; fi;
-      if [ ! -s /run/secrets/sts-admin-api-secret ]; then
-      head -c 24 /dev/urandom | base64 | tr -d "/+=" | head -c 24
-      > /run/secrets/sts-admin-api-secret;
-      chmod 600 /run/secrets/sts-admin-api-secret; fi;
-      if [ -z "$$ADMIN_API_CLIENT_SECRET" ]; then
-      ADMIN_API_CLIENT_SECRET="$$(cat /run/secrets/sts-admin-api-secret)";
-      export ADMIN_API_CLIENT_SECRET; fi;
-      IFACE="$$(ip -o -4 route show to default | awk "{print \$$5}" | head -1)";
+      sh -c 'IFACE="$$(ip -o -4 route show to default | awk "{print \$$5}" | head -1)";
       for CIDR in $$STS_EXTRA_IPS; do
       if ip addr add "$$CIDR" dev "$$IFACE" 2>/dev/null; then
       echo "sts: added $$CIDR to $$IFACE for a realm SPIFFE listener";
@@ -521,7 +545,13 @@ services:
       echo "sts: COULD NOT add $$CIDR to $$IFACE — a realm configured to bind
       it will report that its listener did not come up. NET_ADMIN is what this
       needs; everything else in this service is unaffected."; fi; done;
-      exec node server.js'
+      find /usr/src/sts/data ! -user 10001 -exec chown 10001:10001 {} +;
+      STARTUP="$$(node openbao/startup-secrets.js)" || {
+      echo "sts: the start-up secrets could not be taken; not starting.";
+      exit 1; };
+      eval "$$STARTUP";
+      exec setpriv --reuid=10001 --regid=10001 --clear-groups --inh-caps=-all
+      --bounding-set=-all --no-new-privs node server.js'
     build:
       # Repo root, and the default ./Dockerfile. The parent passes
       # `dockerfile: sts/Dockerfile` with a root context because its COPY paths
@@ -578,8 +608,9 @@ services:
       # error naming a service nobody was thinking about. Uncomment them, or map
       # them somewhere unprivileged (`"1389:389"`, `"1636:636"`), to point
       # `ldapsearch` or the parent project's api at the directory. The container
-      # side stays 389 and 636: the service runs as root in the image and binds
-      # them directly, and LDAP_PORT/LDAPS_PORT are for a run outside a container.
+      # side stays 389 and 636: the service binds them directly as uid 10001,
+      # which the unprivileged-port sysctl above allows (#254), and
+      # LDAP_PORT/LDAPS_PORT are for a run outside a container.
       # - "389:389"
       # - "636:636"
       # THE TLS ENDPOINT'S TWO PORTS WERE HERE UNTIL 2026-09-16, commented out
@@ -617,8 +648,14 @@ services:
       # certificate it authenticates with, its key, and the CA that signs the
       # store's own listener. Read-only: this service presents them and never
       # writes them, and the identity they carry can read two values and
-      # change nothing.
-      - sts-bao-client:/run/secrets/bao:ro
+      # change nothing. The key is 0600 and uid 10001's (#254), read once per
+      # start (`common/secrets.js`, `vaultTls()`). /run/secrets/openbao since
+      # #254; it was /run/secrets/bao, under the `sts-secrets` volume.
+      - sts-bao-client:/run/secrets/openbao:ro
+      # THIS NODE'S START-UP TOKEN (#254): `sts.wrap`, written 0600 and root's
+      # by the seeder, taken and deleted by the command above before it drops
+      # to uid 10001 — so read-write, and never readable by the service.
+      - sts-bao-startup:/run/secrets/openbao-startup
       # WHERE THE ldif MODE WRITES. Mounted in postgres mode too, so that
       # switching between them is one environment variable — see the header.
       - sts-data:/usr/src/sts/data
@@ -629,22 +666,9 @@ services:
       # written — and an upload it cannot hold is refused (STS-RISK-0029).
       # Every file in it is deleted when its import ends.
       - sts-risk-uploads:/usr/src/sts/data/risk-uploads
-      # ---------------------------------------------------------------------
-      # THE KEY-ENCRYPTION KEY, which product mode cannot start without.
-      #
-      # Product mode keeps its signing keys across restarts by sealing them in
-      # the store under a key this service NEVER generates and never writes
-      # down — `common/secrets.js` reads it from a mounted file (the default)
-      # or one of four cloud secret stores. A volume rather than a bind mount
-      # so it is not a file in this repository: a key-encryption key in a
-      # checkout is a key-encryption key in everybody's checkout.
-      #
-      # `docker compose down -v` removes it WITH the database, which is the
-      # right pairing — the keys it opens go at the same moment, so the two can
-      # never be out of step. `down` on its own keeps both, which is what makes
-      # a restart keep every token it ever issued verifiable.
-      # ---------------------------------------------------------------------
-      - sts-secrets:/run/secrets
+      # THE KEY-ENCRYPTION KEY'S FILE AND THE MANAGEMENT API SECRET'S were a
+      # `sts-secrets` volume here until #254: the key is OpenBao's Transit key
+      # (#391), and the secret is `secret/sts-admin`, delivered at start.
       # THE APPCONFIG FILES, bind-mounted from this repository so that editing
       # env/local.js on the host is all it takes. Read-only from the
       # container's side, and that is the point rather than caution: nothing in
@@ -657,6 +681,11 @@ services:
       # env/generate_defaults.js`). Editing it by hand is how it comes to
       # disagree with the table in common/config.js that generates it.
       - ./env:/usr/src/sts/env:ro
+    # WHERE THE START-UP SECRETS ARE HANDED TO THE SERVICE (#254): memory, not
+    # the container's disk, for the moment between the command above writing
+    # each file and the service deleting it.
+    tmpfs:
+      - /run/sts-startup:mode=0700,uid=10001,gid=10001
     environment:
       # The appconfig layer. It was chosen for its log level, and since
       # 2026-09-12 every file in env/ is at `info` — every function logs its
@@ -793,28 +822,18 @@ services:
       - STS_WORKERS_FANOUT=${STS_WORKERS_FANOUT:-/scim,/xacml,/admin-api}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-true}
       # ---------------------------------------------------------------------
-      # THE MANAGEMENT API'S CLIENT SECRET, AND IT IS NOT OPTIONAL IN PRODUCT
-      # MODE (2026-09-09).
+      # THE MANAGEMENT API'S CLIENT SECRET IS NOT IN THIS ENVIRONMENT (#254).
       #
       # `/admin-api` requires an OAuth 2.0 access token, minted by the seeded
-      # `sts-management-api` client. That client's secret is generated at every
-      # start unless this pins it — and it is readable only THROUGH the API it
-      # unlocks, so a stack that does not set it has an administrative surface
-      # nobody can obtain a token for. In DEVELOPMENT mode the token endpoint
-      # does not verify a client secret at all, which is why the omission is
-      # survivable there and fatal here.
-      #
-      # **IT WAS MISSING FROM THIS FILE FOR THE FIRST DAY OF THAT FEATURE AND
-      # NOTHING FAILED.** The launchers were already generating one per run and
-      # putting it in compose's environment; with no line here compose dropped
-      # it, the service minted its own, and every test still passed — because
-      # development mode ignores the secret. It would have failed the moment
-      # anybody ran this stack in product mode, which is now the default.
-      #
-      # BARE, so that an unset variable leaves the setting alone rather than
-      # setting it to the empty string. See STS_LOG_LEVEL above for what the
-      # `=${VAR:-}` form costs.
-      - ADMIN_API_CLIENT_SECRET
+      # `sts-management-api` client, whose secret has to be PINNED or it is
+      # minted per start and readable only through the API it unlocks. It was
+      # pinned here, as ADMIN_API_CLIENT_SECRET, until #254 — which put it in
+      # `docker inspect` and in /proc/1/environ. It is now pinned in OpenBao
+      # (`secret/sts-admin`, the seeder's) and DELIVERED as a file that the
+      # service reads once and deletes: ADMIN_API_CLIENT_SECRET_FILE, exported
+      # by the command above. The host's ADMIN_API_CLIENT_SECRET still pins
+      # it, by way of the seeder.
+      # ---------------------------------------------------------------------
       # The other two halves of the same surface, forwarded for a deployment
       # that pins an audience or turns the requirement off. Bare for the same
       # reason: unset must mean "the default", not "the empty string".
@@ -879,9 +898,9 @@ services:
       - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
       - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-sts-kek}
       - STS_KEYS_KEK_FIELD=${STS_KEYS_KEK_FIELD:-kek}
-      - STS_KEYS_VAULT_CLIENT_CERT=${STS_KEYS_VAULT_CLIENT_CERT:-/run/secrets/bao/client.crt}
-      - STS_KEYS_VAULT_CLIENT_KEY=${STS_KEYS_VAULT_CLIENT_KEY:-/run/secrets/bao/client.key}
-      - STS_KEYS_VAULT_CA_CERT=${STS_KEYS_VAULT_CA_CERT:-/run/secrets/bao/bao-ca.crt}
+      - STS_KEYS_VAULT_CLIENT_CERT=${STS_KEYS_VAULT_CLIENT_CERT:-/run/secrets/openbao/client.crt}
+      - STS_KEYS_VAULT_CLIENT_KEY=${STS_KEYS_VAULT_CLIENT_KEY:-/run/secrets/openbao/client.key}
+      - STS_KEYS_VAULT_CA_CERT=${STS_KEYS_VAULT_CA_CERT:-/run/secrets/openbao/bao-ca.crt}
       # THE ADDRESSES A REALM'S SPIFFE LISTENERS MAY BIND. See `cap_add` and
       # the `command` above: these are added to the container's own interface
       # on the way up, so `spiffe.grpcHost` on a realm may name any of them.
@@ -905,7 +924,7 @@ services:
       # key's, which is now a Transit key's name and no place to read from.
       - STS_DATABASE_PASSWORD_REF=${STS_DATABASE_PASSWORD_REF:-secret/data/sts}
       # WHETHER THE KEYSTORE IS ON AT ALL, and it is BARE for the reason
-      # ADMIN_API_CLIENT_SECRET above is: unset must mean *the default for this
+      # STS_LOG_LEVEL above is: unset must mean *the default for this
       # mode* rather than the empty string. Product mode — this file's default
       # — persists its keys and therefore reads the key-encryption key from the
       # store above. `tests/tools/modes.sh` sets it to `persisted` for the
@@ -1194,9 +1213,13 @@ volumes:
   sts-bao-file:
   # WHAT THE STORE ISSUED TO THIS SERVICE: the client certificate, its key and
   # the listener's CA. Written by the seeder, mounted read-only into the
-  # service. It is a volume rather than a bind mount for `sts-secrets`' reason:
-  # a credential in a checkout is a credential in everybody's checkout.
+  # service. It is a volume rather than a bind mount because a credential in a
+  # checkout is a credential in everybody's checkout.
   sts-bao-client:
+  # THE START-UP TOKENS (#254): one `<node>.wrap` per node, written by the
+  # seeder 0600 and root's, taken and deleted by the node's start command.
+  # Mounted into the seeder and the service and nowhere else.
+  sts-bao-startup:
   # PostgreSQL's own data directory. This is where the embedded LDAP directory,
   # the trust realm registry and the durable setting changes actually live when
   # persistence.mode is postgres.
@@ -1209,7 +1232,3 @@ volumes:
   # /usr/src/sts/data/risk-uploads inside the STS container: an uploaded risk
   # dataset, for as long as its import runs (#215). Empty between uploads.
   sts-risk-uploads:
-  # /run/secrets inside the STS container: the key-encryption key product mode
-  # seals its signing keys with, generated on the first start that finds none
-  # and kept until `down -v`. See the `command` on the sts service.
-  sts-secrets:

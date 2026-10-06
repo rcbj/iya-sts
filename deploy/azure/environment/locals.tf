@@ -101,6 +101,13 @@ locals {
   host_upload_dir = "/mnt/risk-uploads"
   risk_upload_dir = "/usr/src/sts/data/risk-uploads"
 
+  # THE USER THE SERVICE IMAGE RUNS AS (#254, 2026-10-06): `sts`, uid and gid
+  # 10001, fixed in the root Dockerfile rather than looked up, so that what
+  # the VM mounts into the node can be handed to it here. Two things are:
+  # the upload disk (sts-disk.sh) and the TLS key (sts-cert, node-init's
+  # cert.sh). Spelt once, like the paths above.
+  service_user = "10001:10001"
+
   # The vault's URL, with Key Vault's trailing slash removed: the SDK and
   # the REST calls both take it either way, and a URL spelt one way is easier
   # to compare in a log.

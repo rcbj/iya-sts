@@ -93,6 +93,29 @@ certificate is an ACME one and the node obtains it:
   environment without spending the limit (untrusted certificates). Google's
   own public CA speaks ACME too but needs External Account Binding; not wired.
 
+## The service image runs as uid 10001 (#254, 2026-10-06)
+
+**The image's `USER` is `sts`, 10001:10001, and no longer root** (the root
+`Dockerfile` argues it), so what the VM mounts into `iya-sts` is handed to
+that user — `local.service_user`, spelt once in `environment/locals.tf`:
+
+* **The upload disk**: `sts-disk.sh` chowns its mount point to it, still
+  0700, after emptying it.
+* **The TLS key**: `node-init/cert.sh` chowns `key.pem` (still 0400) and
+  `certificate.pem` to `STS_TLS_OWNER`, which the `sts-cert` unit passes.
+  The node-init image itself still runs as root.
+* **The low ports**: `sts-node` passes
+  `--sysctl net.ipv4.ip_unprivileged_port_start=0`, which Docker already
+  sets in a bridged container; said so a daemon that did not fails loudly.
+  Not `setcap` on node (a secure exec ignores `NODE_PATH` and
+  `NODE_EXTRA_CA_CERTS`).
+
+The database CA (`/run/sts/database-ca.pem`, 0644, read-only) needed nothing;
+the env files under `/etc/sts` and `/run/sts` stay root's 0600, because the
+Docker daemon reads them, not the container. **They put every secret in the
+container's environment**, readable by anything that can inspect the container
+or read its `/proc/1/environ`; that is unchanged here and outside #254.
+
 ## The deployer, and what is weaker than AWS
 
 GCP has no permissions boundary and scopes almost nothing by name or label,

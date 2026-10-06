@@ -251,6 +251,10 @@ services:
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
     restart: "no"
+    # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
+    # writes files other containers' users must own — docker-compose.yml's
+    # one-shots and their reason.
+    user: "0"
     environment:
       - STS_BAO_TLS_DIR=/openbao/file/tls
       - STS_BAO_TLS_NAMES=${STS_BAO_TLS_NAMES:-openbao,localhost}
@@ -277,7 +281,7 @@ services:
       - sts-bao-file:/openbao/file
     command: ["server", "-config=/openbao/config/bao.hcl"]
     healthcheck:
-      test: ["CMD-SHELL", "bao status -address=https://127.0.0.1:8200 -ca-cert=/openbao/file/tls/server.crt >/dev/null 2>&1 || test -f /openbao/file/seed/root.token"]
+      test: ["CMD-SHELL", "bao status -address=https://127.0.0.1:8200 -ca-cert=/openbao/file/tls/server.crt >/dev/null 2>&1 || test -f /openbao/file/seed/seeder.token"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -291,6 +295,10 @@ services:
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
     restart: "no"
+    # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
+    # writes files other containers' users must own — docker-compose.yml's
+    # one-shots and their reason.
+    user: "0"
     depends_on:
       openbao:
         condition: service_started
@@ -300,10 +308,29 @@ services:
       - STS_BAO_POLICY_FILE=/usr/src/sts/openbao/read-only.hcl
       - STS_BAO_CLIENT_CN=${STS_BAO_CLIENT_CN:-sts}
       - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+      # THE START-UP SECRETS (#254), which the launcher pins per run and which
+      # reached the `sts` container's environment until then: the management
+      # API secret, and in the product modes the two Kerberos passwords. The
+      # seeder writes them to `secret/sts-admin`, and each node reads them
+      # once at start through its own single-use token (docker-compose.yml's
+      # `sts` service argues the arrangement). Empty is "not pinned".
+      #
+      # A NODE LIST, because a cluster or cells run has two nodes and each
+      # takes its own token: the layered files add `sts2`. Nothing is printed
+      # — the store lives for one run, and its log goes into the report.
+      - STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET:-}
+      - STS_KRB5_KRBTGT_PASSWORD=${KRB5_KRBTGT_PASSWORD:-}
+      - STS_KRB5_SERVICE_PASSWORD=${KRB5_SERVICE_PASSWORD:-}
+      - STS_BAO_STARTUP_NODES=${STS_BAO_STARTUP_NODES:-sts}
+      - STS_BAO_STARTUP_DIR=/openbao/startup
+      - STS_BAO_PRINT_CREDENTIALS=false
     volumes:
       - sts-bao-file:/openbao/file
       - sts-bao-client:/openbao/client
+      - sts-bao-startup:/openbao/startup
       - ./openbao/seed.js:/usr/src/sts/openbao/seed.js:ro
+      - ./openbao/admin-secret.hcl:/usr/src/sts/openbao/admin-secret.hcl:ro
+      - ./openbao/seeder.hcl:/usr/src/sts/openbao/seeder.hcl:ro
       - ./openbao/read-only.hcl:/usr/src/sts/openbao/read-only.hcl:ro
     command: ["node", "openbao/seed.js"]
 
@@ -329,6 +356,10 @@ services:
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
     restart: "no"
+    # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
+    # writes files other containers' users must own — docker-compose.yml's
+    # one-shots and their reason.
+    user: "0"
     environment:
       - STS_BAO_TLS_DIR=/run/sts-test/mailpit
       - STS_BAO_TLS_NAMES=mailpit,localhost
@@ -381,6 +412,11 @@ services:
     # printed and the service starts anyway, for the reason every listener here
     # follows.
     # ---------------------------------------------------------------------
+    # ROOT FOR THE START COMMAND ONLY, AND uid 10001 FOR NODE (#254):
+    # docker-compose.yml's `sts` service argues each step.
+    user: "0"
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0
     cap_add:
       - NET_ADMIN
     networks:
@@ -394,7 +430,13 @@ services:
       else
       echo "sts: COULD NOT add $$CIDR to $$IFACE — a realm configured to bind
       it will report that its listener did not come up."; fi; done;
-      exec node server.js'
+      find /usr/src/sts/data ! -user 10001 -exec chown 10001:10001 {} +;
+      STARTUP="$$(node openbao/startup-secrets.js)" || {
+      echo "sts: the start-up secrets could not be taken; not starting.";
+      exit 1; };
+      eval "$$STARTUP";
+      exec setpriv --reuid=10001 --regid=10001 --clear-groups --inh-caps=-all
+      --bounding-set=-all --no-new-privs node server.js'
     build:
       # The repository root, and the root .dockerignore applies. The tests
       # image is built from the same context with the same ignore file, so the
@@ -461,20 +503,12 @@ services:
       # reports a healthcheck timeout rather than anything naming a log level.
       # `docker compose config` tells the two apart: bare renders null.
       - STS_LOG_LEVEL
-      # THE MANAGEMENT API'S CLIENT SECRET, PINNED BY THE LAUNCHER (2026-09-09).
-      #
-      # `/admin-api` requires an access token minted by the seeded
-      # `sts-management-api` client, whose secret is otherwise generated at
-      # every start and readable only THROUGH the API it unlocks. The launcher
-      # generates one per run and passes it here; `./run-tests.sh` then
-      # mints a token against this container once per mode.
-      #
-      # BARE, for the reason STS_LOG_LEVEL above is bare — though the stakes
-      # are the opposite way round here. An empty value is harmless (it means
-      # "mint one per start", which is the default), so what the bare form
-      # buys is that `docker compose -f this up` by hand behaves exactly as it
-      # did before this line existed.
-      - ADMIN_API_CLIENT_SECRET
+      # THE MANAGEMENT API'S CLIENT SECRET, PINNED BY THE LAUNCHER (2026-09-09),
+      # IS NOT IN THIS ENVIRONMENT SINCE #254: the launcher's
+      # ADMIN_API_CLIENT_SECRET goes to the SEEDER, and this container is
+      # delivered it as a file at start (ADMIN_API_CLIENT_SECRET_FILE, from
+      # the command above). `docker inspect` no longer shows it. The runner
+      # still gets it below, because jobs mint tokens with it.
       # NOT A TUNING CHOICE. A suite that persisted would be a suite whose
       # second run started from the first run's leavings, which is the failure
       # that looks like a flaky test and is not one.
@@ -513,11 +547,11 @@ services:
       # WHAT A PRODUCT-MODE STACK IS GIVEN AND A DEVELOPMENT ONE IS NOT
       # (2026-09-21) — set by ./run-tests.sh for the `product` mode only; see
       # its "THE `product` MODE" block. The base URL is empty (learnt from
-      # requests) unless set; the two Kerberos passwords are BARE, so a mode
-      # that does not set them passes nothing and keeps the fixture defaults.
+      # requests) unless set. The two Kerberos passwords went to the SEEDER
+      # in #254 and arrive here as files (ADMIN_API_CLIENT_SECRET's
+      # arrangement, above); a mode that does not set them keeps the fixture
+      # defaults.
       - STS_PUBLIC_BASE_URL=${STS_PUBLIC_BASE_URL:-}
-      - KRB5_KRBTGT_PASSWORD
-      - KRB5_SERVICE_PASSWORD
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}
@@ -572,9 +606,12 @@ services:
       - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
       - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-secret/data/sts}
       - STS_KEYS_KEK_FIELD=${STS_KEYS_KEK_FIELD:-kek}
-      - STS_KEYS_VAULT_CLIENT_CERT=${STS_KEYS_VAULT_CLIENT_CERT:-/run/secrets/bao/client.crt}
-      - STS_KEYS_VAULT_CLIENT_KEY=${STS_KEYS_VAULT_CLIENT_KEY:-/run/secrets/bao/client.key}
-      - STS_KEYS_VAULT_CA_CERT=${STS_KEYS_VAULT_CA_CERT:-/run/secrets/bao/bao-ca.crt}
+      - STS_KEYS_VAULT_CLIENT_CERT=${STS_KEYS_VAULT_CLIENT_CERT:-/run/secrets/openbao/client.crt}
+      - STS_KEYS_VAULT_CLIENT_KEY=${STS_KEYS_VAULT_CLIENT_KEY:-/run/secrets/openbao/client.key}
+      - STS_KEYS_VAULT_CA_CERT=${STS_KEYS_VAULT_CA_CERT:-/run/secrets/openbao/bao-ca.crt}
+      # WHICH START-UP TOKEN IS THIS NODE'S (#254); the layered files' `sts2`
+      # sets its own.
+      - STS_BAO_STARTUP_NODE=sts
       - STS_DATABASE_PASSWORD_PROVIDER=${STS_DATABASE_PASSWORD_PROVIDER:-vault}
       - STS_DATABASE_PASSWORD_FIELD=${STS_DATABASE_PASSWORD_FIELD:-databasePassword}
       # Per mode, from tests/tools/modes.sh: `persisted` in `dispatch`, which
@@ -642,8 +679,11 @@ services:
       # WHAT THE STORE ISSUED THIS SERVICE: the client certificate it
       # authenticates with, its key, and the CA that signs the store's own
       # listener. Read-only, and the identity they carry can read two values
-      # and change nothing.
-      - sts-bao-client:/run/secrets/bao:ro
+      # and change nothing. /run/secrets/openbao since #254, the key 0600 and
+      # uid 10001's.
+      - sts-bao-client:/run/secrets/openbao:ro
+      # THIS NODE'S START-UP TOKEN (#254), taken by the command above as root.
+      - sts-bao-startup:/run/secrets/openbao-startup
       # A DIRECTORY SHARED WITH THE RUNNER (#171). A job that runs a push
       # listener of its own makes a CA at run time and writes the CA's
       # CERTIFICATE here, then names it in a `…CaFile` setting so the service
@@ -658,6 +698,9 @@ services:
       # at `risk.uploadDirectory`'s default: docker-compose.yml's volume and
       # its reason. The cluster file gives node B one of its own.
       - sts-risk-uploads:/usr/src/sts/data/risk-uploads
+    # The start-up secrets' hand-over, in memory (#254): docker-compose.yml.
+    tmpfs:
+      - /run/sts-startup:mode=0700,uid=10001,gid=10001
     healthcheck:
       # The scheme follows the mode in this service — oauth2.rfc9700 derives
       # global.https — so the probe decides which module to use the same way
@@ -887,6 +930,10 @@ services:
     image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
     profiles: ["conformance"]
     restart: "no"
+    # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
+    # writes files other containers' users must own — docker-compose.yml's
+    # one-shots and their reason.
+    user: "0"
     # Pinned with the suite's three (.40 to .42), for their reason: a
     # dynamically addressed container could land on an address the sts
     # service adds to its own interface. `.47`, above the SAML peers'
@@ -1183,9 +1230,9 @@ services:
       # rather than the job's. run-report.js forwards it to the jobs under the
       # `STS_`-prefixed name.
       #
-      # BARE, for the reason ADMIN_API_CLIENT_SECRET on the `sts` service is
-      # bare: an empty value is what a hand-run of this file has, and that must
-      # go on behaving as it did.
+      # BARE: an empty value is what a hand-run of this file has, and that
+      # must go on behaving as it did. (The `sts` service had the same bare
+      # line until #254, which moved it to the seeder.)
       - ADMIN_API_CLIENT_SECRET
       # The conformance suite, when the mode brought it up (#176). Empty
       # otherwise, which the job reads as "skipped, and why".
@@ -1257,6 +1304,8 @@ services:
 volumes:
   sts-bao-file:
   sts-bao-client:
+  # The start-up tokens, one per node (#254).
+  sts-bao-startup:
   # The run-time CA certificates a job hands the service (#171).
   sts-test-shared:
   # An uploaded risk dataset while it is imported (#215).

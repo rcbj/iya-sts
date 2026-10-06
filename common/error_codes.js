@@ -974,6 +974,20 @@ const CODES = [
       'threw. The change is in force; what that module does with it, or the ' +
       'rule it holds, did not run this time.',
     spec: 'logged; the write is not refused by the failed rule' },
+  { code: 'STS-CORE-0150',
+    summary: 'A secret delivered as a file at start (<ENV>_FILE, #254) ' +
+      'could not be read. The service does not start: it was told where its ' +
+      'secret is, and starting without it would mint a different one.',
+    spec: 'none — fatal at startup, logged' },
+  { code: 'STS-CORE-0151',
+    summary: 'A secret delivered as a file at start (<ENV>_FILE, #254) was ' +
+      'empty. The service does not start.',
+    spec: 'none — fatal at startup, logged' },
+  { code: 'STS-CORE-0152',
+    summary: 'A secret delivered as a file at start (<ENV>_FILE, #254) was ' +
+      'read and could not be deleted afterwards, so it is still readable ' +
+      'where it was delivered. The service starts with it.',
+    spec: 'none — logged' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +

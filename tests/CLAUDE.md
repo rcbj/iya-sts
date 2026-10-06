@@ -2608,7 +2608,10 @@ client's secret is minted per start and is readable only THROUGH the API it
 unlocks. `adminApi.clientSecret` pins it; both launchers generate a fresh one
 per run and pass it to the stack, so it lives as long as one stack and never
 reaches a repository. **A compose file that does not forward
-`ADMIN_API_CLIENT_SECRET` makes the pinning inert**, and that is not
+`ADMIN_API_CLIENT_SECRET` makes the pinning inert** — since #254 it is forwarded
+to the SEEDER, which stores it at `secret/sts-admin`, and each node is delivered
+it as a file at start (`openbao/CLAUDE.md`), so it is in no `sts` container's
+environment; the runner still has it — and that is not
 hypothetical — it was inert in both compose files for the first day of this
 feature's life, and nothing failed, because development mode does not verify a
 client secret at the token endpoint. It would have failed the moment anybody

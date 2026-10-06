@@ -12,6 +12,9 @@
 // store if it has never been, put the two secrets in it, build a certificate
 // authority inside it, issue THE SERVICE its client certificate, and bind that
 // certificate to a policy that can read those two values and nothing else.
+// Since #254, also: keep the START-UP secrets on a path of their own
+// (`secret/sts-admin`), hand each node a single-use token that can read them,
+// and revoke the root token once the store is configured.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS IS NODE AND NOT A SHELL SCRIPT AGAINST THE `bao` CLI.
@@ -45,20 +48,63 @@
 //     free.
 //
 // ---------------------------------------------------------------------------
-// THE ROOT TOKEN IS KEPT, AND THAT IS A DELIBERATE COST.
+// THE ROOT TOKEN IS REVOKED ONCE THE STORE IS CONFIGURED (#254, 2026-10-06).
 //
-// `PUT /v1/sys/init` hands back a root token exactly once. This writes it into
-// the store's own volume so that a later run can re-declare a policy or issue
-// a replacement certificate — without it, a restarted stack could only be
-// reconfigured by destroying the volume. **It is 0600 and it is in the volume
-// the store's own data is in**, which is the same trade the static seal makes
-// one file over: this arrangement protects the secrets from a reader of the
-// DATABASE, not from somebody who already has the store's disk.
+// `PUT /v1/sys/init` hands back a root token exactly once. Until #254 this
+// wrote it into the store's own volume, so that a later run could re-declare a
+// policy or issue a replacement certificate — and so a shell in the store's
+// container held everything. rcbj's decision on #254 was to revoke it: the
+// run that initialises the store uses it in memory, writes it NOWHERE, and
+// revokes it (`revoke-self`) as its last act. A volume from before #254 that
+// still has `seed/root.token` is used once the same way, then revoked and the
+// file deleted.
 //
-// A deployment that wants the real posture revokes it — `bao token revoke`,
-// after configuring an auth method for its operators — and this seeder then
-// reports that it cannot reconfigure, which is the correct answer rather than
-// a surprise.
+// **WHAT A LATER RUN USES INSTEAD** is a narrow PERIODIC token made by the
+// first run, `seed/seeder.token` (0600, in the store's own volume), whose
+// policy is `seeder.hcl`: issue the service's client certificate, and mint the
+// start-up and operator tokens of `admin-secret.hcl`, and keep
+// `secret/sts-admin` as a launcher pins it. Nothing else — no policy, mount or
+// auth method can be changed by it, and it cannot read `secret/sts`. A later
+// run therefore DECLARES NOTHING: it renews its own token, writes a pinned
+// start-up secret, renews the client certificate when due, proves the
+// service's identity, and hands out the start-up tokens. Changing a
+// declaration on a running store is an operator's act — `STS_BAO_TOKEN`
+// with a token made for it (`bao operator generate-root` and the recovery
+// key), or `down -v`.
+//
+// **THE RECOVERY KEY IS PRINTED ONCE AND KEPT NOWHERE**, for the same reason:
+// with an auto seal it is what regenerates a root token, so a copy of it in
+// the volume would be the root token by another name. So is the OPERATOR
+// TOKEN this prints on every run (`STS_BAO_PRINT_CREDENTIALS`, on by default
+// and off on the test stacks): read on `secret/sts-admin` and nothing else,
+// for `STS_BAO_OPERATOR_TTL` — the way a person gets the management API secret
+// for the first token on a stack they own (`docs/management-api.md`).
+//
+// ---------------------------------------------------------------------------
+// THE START-UP SECRETS, AND WHY THE SERVICE'S OWN IDENTITY CANNOT READ THEM.
+//
+// The management API client's secret (and, on a product test stack, the two
+// Kerberos passwords) live at `secret/sts-admin`, apart from `secret/sts`:
+// the identity the service holds while it runs is the client certificate,
+// and a shell that has it must not have `/admin-api` as well. So the
+// certificate's policy names no such path, and the service reads them ONCE,
+// at start, through a token that can do nothing else:
+//
+//   * this seeder mints one per node in `STS_BAO_STARTUP_NODES` from the
+//     `sts-admin-secret` token role — `admin-secret.hcl`, orphan, a short TTL
+//     and two uses — RESPONSE-WRAPPED for `STS_BAO_STARTUP_WRAP_TTL`, and
+//     writes the wrapping token to `<node>.wrap` (0600, root) in
+//     `STS_BAO_STARTUP_DIR`, a volume mounted only into that node;
+//   * `openbao/startup-secrets.js`, run as ROOT by the node's start command
+//     before it drops to uid 10001, deletes the file, unwraps it, reads, and
+//     revokes the token, and hands the values to the service as files it
+//     reads once and deletes (`common/delivered_secrets.ts`).
+//
+// A wrapping token is single-use and says so: an unwrap that finds it already
+// unwrapped means somebody else took the secret, and the node refuses to
+// start. A node restarted without a seeder run finds no file and starts
+// without the secret (`docker compose up` re-runs the seeder; `restart`
+// does not).
 //
 // ---------------------------------------------------------------------------
 // SEVERAL STACKS AGAINST ONE STORE (2026-09-14, #46 section 8).
@@ -89,8 +135,9 @@
 // **THE DEPLOYMENT SHAPE THIS POINTS AT** is one seeding, out of band — a
 // one-shot init job run once against the store, handing each node its client
 // credential — rather than a seeder per container. `openbao/CLAUDE.md` says
-// so, and says that the client certificate's one-year lifetime is renewed
-// only when a seeder runs (`ensureClientCertificate()`).
+// so, and says that the client certificate's lifetime (`STS_BAO_CLIENT_TTL`,
+// ninety days since #254; it was a year) is renewed only when a seeder runs
+// (`ensureClientCertificate()`).
 // ===========================================================================
 
 const fs = require('fs');
@@ -121,6 +168,53 @@ const WAIT_SECONDS = Number(process.env.STS_BAO_WAIT_SECONDS || 60);
 const OPERATOR_TOKEN = String(process.env.STS_BAO_TOKEN || '').trim();
 // A client certificate this close to expiry is re-issued by a seeder that can.
 const RENEW_WITHIN_DAYS = Number(process.env.STS_BAO_RENEW_WITHIN_DAYS || 30);
+// ---------------------------------------------------------------------------
+// #254: the client certificate's lifetime, who it is for, the start-up
+// secrets, and the tokens that replace the root token. See the header.
+// ---------------------------------------------------------------------------
+// Ninety days, and it was a year: the certificate is the running service's
+// identity, and renewal comes with every seeder run inside the last
+// RENEW_WITHIN_DAYS.
+const CLIENT_TTL = process.env.STS_BAO_CLIENT_TTL || '2160h';
+// THE SERVICE'S UID AND GID, which the Dockerfile fixes at 10001. The client
+// key is written 0600 and owned by them, so the service reads it and no other
+// non-root user in its container can.
+const SERVICE_UID = Number(process.env.STS_BAO_SERVICE_UID || 10001);
+const SERVICE_GID = Number(process.env.STS_BAO_SERVICE_GID || 10001);
+// Where the start-up secrets live, and the policy and role that read them.
+const ADMIN_SECRET_PATH = process.env.STS_BAO_ADMIN_SECRET || 'sts-admin';
+const ADMIN_POLICY_NAME = 'sts-admin-secret';
+const ADMIN_POLICY_FILE = process.env.STS_BAO_ADMIN_POLICY_FILE ||
+                          path.join(__dirname, 'admin-secret.hcl');
+const ADMIN_ROLE = 'sts-admin-secret';
+const SEEDER_POLICY_NAME = 'sts-seeder';
+const SEEDER_POLICY_FILE = process.env.STS_BAO_SEEDER_POLICY_FILE ||
+                           path.join(__dirname, 'seeder.hcl');
+const SEEDER_PERIOD = process.env.STS_BAO_SEEDER_PERIOD || '768h';
+// The start-up tokens: one per node named here, wrapped for this long, each
+// living this long once unwrapped.
+const STARTUP_DIR = process.env.STS_BAO_STARTUP_DIR || '/openbao/startup';
+const STARTUP_NODES = String(process.env.STS_BAO_STARTUP_NODES || 'sts')
+  .split(/[\s,]+/).filter(Boolean);
+const STARTUP_WRAP_TTL = process.env.STS_BAO_STARTUP_WRAP_TTL || '30m';
+const STARTUP_TTL = process.env.STS_BAO_STARTUP_TTL || '10m';
+// The operator token's lifetime, and whether this prints it (and, on the run
+// that initialises the store, the recovery key) at all.
+const OPERATOR_TTL = process.env.STS_BAO_OPERATOR_TTL || '24h';
+const PRINT_CREDENTIALS =
+  String(process.env.STS_BAO_PRINT_CREDENTIALS || 'true') !== 'false';
+// THE START-UP SECRETS THIS SEEDER WRITES, field by field, and the variable
+// each is taken from when a launcher pins it. The management API secret is
+// GENERATED when nobody pins one and none is stored; the Kerberos passwords
+// are stored only when given (a product test stack's launcher gives them).
+const ADMIN_FIELDS = [
+  { field: 'adminApiClientSecret', from: 'STS_ADMIN_API_CLIENT_SECRET',
+    generate: true },
+  { field: 'krb5KrbtgtPassword', from: 'STS_KRB5_KRBTGT_PASSWORD',
+    generate: false },
+  { field: 'krb5ServicePassword', from: 'STS_KRB5_SERVICE_PASSWORD',
+    generate: false }
+];
 
 let ca = null;
 
@@ -134,9 +228,10 @@ function say(what) {
 // ONE REQUEST FUNCTION. It answers `{ status, body }` and NEVER throws for an
 // HTTP status: every caller here has a status it is expecting and several have
 // a 404 that means "not configured yet", which is the ordinary path rather
-// than an error.
+// than an error. `headers` adds request headers — `X-Vault-Wrap-TTL`, which
+// asks for the answer response-wrapped (#254).
 // ---------------------------------------------------------------------------
-function call(method, route, body, token) {
+function call(method, route, body, token, headers) {
   log.debug("Entering call().");
   log.debug("Leaving call().");
   return new Promise(function (resolve, reject) {
@@ -152,6 +247,7 @@ function call(method, route, body, token) {
       headers: Object.assign(
         { 'Content-Type': 'application/json' },
         token ? { 'X-Vault-Token': token } : {},
+        headers || {},
         payload ? { 'Content-Length': payload.length } : {})
     }, function (res) {
       let text = '';
@@ -246,22 +342,45 @@ async function waitForActive() {
                   'within ' + WAIT_SECONDS + ' seconds.');
 }
 
-// The token for a store that is ALREADY initialised: the root token this
-// stack's own volume kept, an operator's `STS_BAO_TOKEN`, or null — which
-// `main()` turns into proving the credential this stack already holds.
-function tokenForInitialisedStore(tokenFile) {
+// THE TOKEN THIS RUN HOLDS, and what kind it is — the answer decides how much
+// of the store this run may touch (see the header on the root token):
+//
+//   { token, kind: 'root', revoke: true }   the root token of a store this run
+//                                           initialised, or one a volume from
+//                                           before #254 kept: used, revoked
+//   { token, kind: 'operator' }             `STS_BAO_TOKEN`: everything is
+//                                           declared, and it is not revoked
+//   { token, kind: 'seeder' }               `seed/seeder.token`: nothing is
+//                                           declared; renewals and start-up
+//                                           tokens only
+//   null                                    nothing: the credential this stack
+//                                           holds is proved, and that is all
+// ---------------------------------------------------------------------------
+function tokenForInitialisedStore() {
   log.debug("Entering tokenForInitialisedStore().");
-  if (fs.existsSync(tokenFile)) {
-    say('the store is already initialised; reusing the root token from its ' +
-        'own volume.');
+  const legacy = path.join(SEED_DIR, 'root.token');
+  if (fs.existsSync(legacy)) {
+    say('the store is already initialised and its volume still holds a ' +
+        'root token from before #254; it is used for this run and then ' +
+        'revoked and deleted.');
     log.debug("Leaving tokenForInitialisedStore(). The kept root token.");
-    return String(fs.readFileSync(tokenFile, 'utf8')).trim();
+    return { token: String(fs.readFileSync(legacy, 'utf8')).trim(),
+             kind: 'root', revoke: true, file: legacy };
   }
   if (OPERATOR_TOKEN) {
-    say('the store is already initialised and this stack holds no root ' +
-        'token; using the operator token in STS_BAO_TOKEN.');
+    say('the store is already initialised; using the operator token in ' +
+        'STS_BAO_TOKEN, which is not revoked.');
     log.debug("Leaving tokenForInitialisedStore(). The operator's token.");
-    return OPERATOR_TOKEN;
+    return { token: OPERATOR_TOKEN, kind: 'operator' };
+  }
+  const seeder = path.join(SEED_DIR, 'seeder.token');
+  if (fs.existsSync(seeder)) {
+    say('the store is already initialised; using this stack\'s seeder ' +
+        'token, which renews the client certificate and hands out start-up ' +
+        'tokens and declares nothing.');
+    log.debug("Leaving tokenForInitialisedStore(). The seeder token.");
+    return { token: String(fs.readFileSync(seeder, 'utf8')).trim(),
+             kind: 'seeder' };
   }
   log.debug("Leaving tokenForInitialisedStore(). None.");
   return null;
@@ -269,11 +388,10 @@ function tokenForInitialisedStore(tokenFile) {
 
 async function rootToken() {
   log.debug("Entering rootToken().");
-  const tokenFile = path.join(SEED_DIR, 'root.token');
   const status = await call('GET', '/v1/sys/init');
   if (status.body && status.body.initialized) {
     log.debug("Leaving rootToken(). Already initialised.");
-    return tokenForInitialisedStore(tokenFile);
+    return tokenForInitialisedStore();
   }
   // ONE RECOVERY SHARE. With an auto seal the shares are RECOVERY keys rather
   // than unseal keys — they exist to rekey or to recover, never to start the
@@ -291,19 +409,36 @@ async function rootToken() {
       say('another seeder initialised the store while this one was asking ' +
           'to; carrying on as a second stack.');
       log.debug("Leaving rootToken(). Initialised by somebody else.");
-      return tokenForInitialisedStore(tokenFile);
+      return tokenForInitialisedStore();
     }
     refuse(made, 'the secret store could not be initialised');
   }
-  fs.mkdirSync(SEED_DIR, { recursive: true });
-  fs.writeFileSync(tokenFile, made.body.root_token, { mode: 0o600 });
-  fs.writeFileSync(path.join(SEED_DIR, 'recovery-keys.json'),
-                   JSON.stringify(made.body.recovery_keys_b64 || [], null, 2),
-                   { mode: 0o600 });
-  say('initialised the store and kept its root token in the store\'s own ' +
-      'volume. See this file\'s header for what that costs.');
+  // THE RECOVERY KEY, ONCE (#254): printed here and written nowhere — a copy
+  // in the volume would regenerate the root token this run is about to
+  // revoke. With STS_BAO_PRINT_CREDENTIALS=false it is not printed either,
+  // which is the test stacks' answer: their store lives for one run.
+  //
+  // `recovery_keys_base64`, which is the field's name: it was read as
+  // `recovery_keys_b64` until #254, so the file this seeder kept then held
+  // `[]` and no recovery key was ever kept anywhere. Harmless while the root
+  // token sat beside it, and not once the root token is revoked.
+  const recovery = (made.body.recovery_keys_base64 ||
+                    made.body.recovery_keys || []).join(', ');
+  if (!recovery) {
+    log.warn('the store returned no recovery key at initialisation, so once ' +
+             'the root token is revoked nothing can make one again; a ' +
+             'change to this store\'s declarations will need ' +
+             '`docker compose down -v`.');
+  } else if (PRINT_CREDENTIALS) {
+    say('initialised the store. Its RECOVERY KEY (base64), printed this once ' +
+        'and kept nowhere — it is what `bao operator generate-root` needs to ' +
+        'make a root token again: ' + recovery);
+  } else {
+    say('initialised the store; its recovery key was not printed ' +
+        '(STS_BAO_PRINT_CREDENTIALS=false) and is kept nowhere.');
+  }
   log.debug("Leaving rootToken().");
-  return made.body.root_token;
+  return { token: made.body.root_token, kind: 'root', revoke: true };
 }
 
 async function ensureMount(token, mount, type, options) {
@@ -349,10 +484,10 @@ function casRefused(answer) {
 // The secret as it stands: its data, its version, and whether its latest
 // version was deleted (KV v2 answers a soft-deleted version 404 WITH its
 // metadata, which is a different fact from "never written").
-async function readSecrets(token) {
+async function readSecrets(token, at) {
   log.debug("Entering readSecrets().");
-  const held = await call('GET', '/v1/secret/data/' + SECRET_PATH, undefined,
-                          token);
+  const held = await call('GET', '/v1/secret/data/' + (at || SECRET_PATH),
+                          undefined, token);
   const body = held.body || {};
   const metadata = (body.data && body.data.metadata) || {};
   log.debug("Leaving readSecrets().");
@@ -364,9 +499,9 @@ async function readSecrets(token) {
   };
 }
 
-async function writeSecrets(token, data, cas) {
+async function writeSecrets(token, data, cas, where) {
   log.debug("Entering writeSecrets(). cas=" + cas);
-  const at = '/v1/secret/data/' + SECRET_PATH;
+  const at = '/v1/secret/data/' + (where || SECRET_PATH);
   // ---------------------------------------------------------------------
   // **THE FIRST WRITE AFTER ENABLING THE ENGINE CAN BE REFUSED, AND IT IS NOT
   // A FAILURE (2026-09-12).**
@@ -571,15 +706,223 @@ async function ensureTransitKey(token) {
 
 async function ensurePolicy(token) {
   log.debug("Entering ensurePolicy().");
-  const policy = fs.readFileSync(POLICY_FILE, 'utf8');
-  const wrote = await call('PUT', '/v1/sys/policies/acl/' + POLICY_NAME,
+  await writePolicy(token, POLICY_NAME, POLICY_FILE,
+                    'read on two paths and no write anywhere');
+  // #254: the start-up secrets' read, and the seeder's two acts.
+  await writePolicy(token, ADMIN_POLICY_NAME, ADMIN_POLICY_FILE,
+                    'read on secret/' + ADMIN_SECRET_PATH + ' and nothing ' +
+                    'else');
+  await writePolicy(token, SEEDER_POLICY_NAME, SEEDER_POLICY_FILE,
+                    'issue the client certificate and mint ' +
+                    ADMIN_POLICY_NAME + ' tokens, and nothing else');
+  log.debug("Leaving ensurePolicy().");
+}
+
+async function writePolicy(token, name, file, what) {
+  log.debug("Entering writePolicy(). " + name);
+  const policy = fs.readFileSync(file, 'utf8');
+  const wrote = await call('PUT', '/v1/sys/policies/acl/' + name,
                            { policy: policy }, token);
   if (wrote.status !== 204 && wrote.status !== 200) {
-    refuse(wrote, 'the read-only policy could not be written');
+    refuse(wrote, 'the ' + name + ' policy could not be written');
   }
-  say('wrote the ' + POLICY_NAME + ' policy from ' + POLICY_FILE +
-      ' — read on two paths and no write anywhere.');
-  log.debug("Leaving ensurePolicy().");
+  say('wrote the ' + name + ' policy from ' + file + ' — ' + what + '.');
+  log.debug("Leaving writePolicy().");
+}
+
+// ===========================================================================
+// THE START-UP SECRETS (#254): `secret/sts-admin`, written by every run that
+// holds a token — the seeder token included (`seeder.hcl` says why).
+//
+// Each field of ADMIN_FIELDS is taken from its variable when a launcher pins
+// one (the test launchers pin the management API secret per run, and the
+// product one the Kerberos passwords), kept when it is already stored, and —
+// for the management API secret alone — GENERATED when neither: the default
+// stack's operator reads it from here for the first token. Written with
+// check-and-set, as `secret/sts` is.
+// ===========================================================================
+async function ensureAdminSecrets(token) {
+  log.debug("Entering ensureAdminSecrets().");
+  for (let round = 0; round < 10; round++) {
+    const held = await readSecrets(token, ADMIN_SECRET_PATH);
+    const data = Object.assign({}, held.data);
+    const changed = [];
+    ADMIN_FIELDS.forEach(function (one) {
+      const pinned = String(process.env[one.from] || '').trim();
+      if (pinned && data[one.field] !== pinned) {
+        data[one.field] = pinned;
+        changed.push(one.field + ' (from ' + one.from + ')');
+      } else if (!pinned && !data[one.field] && one.generate) {
+        // 24 characters of base64url's alphabet without its two symbols, the
+        // shape the compose file's wrapper used to mint into a file.
+        data[one.field] = nodeCrypto.randomBytes(32).toString('base64')
+          .replace(/[^A-Za-z0-9]/g, '').slice(0, 24);
+        changed.push(one.field + ' (generated)');
+      }
+    });
+    if (!changed.length) {
+      say('secret/' + ADMIN_SECRET_PATH + ' already holds the start-up ' +
+          'secrets (' + Object.keys(data).join(', ') + '); nothing written.');
+      log.debug("Leaving ensureAdminSecrets(). Unchanged.");
+      return;
+    }
+    const wrote = await writeSecrets(token, data, held.version,
+                                     ADMIN_SECRET_PATH);
+    if (casRefused(wrote)) {
+      say('secret/' + ADMIN_SECRET_PATH + ' changed while this seeder was ' +
+          'writing it; reading it again.');
+      continue;
+    }
+    if (wrote.status !== 200 && wrote.status !== 204) {
+      refuse(wrote, 'the start-up secrets could not be written');
+    }
+    // WHICH FIELDS, AND NEVER WHAT.
+    say('wrote secret/' + ADMIN_SECRET_PATH + ': ' + changed.join(', ') + '.');
+    log.debug("Leaving ensureAdminSecrets(). Written.");
+    return;
+  }
+  log.debug("Leaving ensureAdminSecrets(). Gave up.");
+  throw new Error('secret/' + ADMIN_SECRET_PATH + ' kept changing under this ' +
+                  'seeder\'s check-and-set for ten rounds.');
+}
+
+// THE TOKEN ROLE every start-up and operator token comes from: the one policy,
+// orphans (so revoking the seeder token does not take a running node's start
+// with it), not renewable, and a ceiling no request can lift.
+async function ensureTokenRole(token) {
+  log.debug("Entering ensureTokenRole().");
+  const wrote = await call('POST', '/v1/auth/token/roles/' + ADMIN_ROLE,
+                           { allowed_policies: [ADMIN_POLICY_NAME],
+                             orphan: true, renewable: false,
+                             token_type: 'service',
+                             token_explicit_max_ttl: '168h' }, token);
+  if (wrote.status !== 204 && wrote.status !== 200) {
+    refuse(wrote, 'the ' + ADMIN_ROLE + ' token role could not be written');
+  }
+  say('wrote the ' + ADMIN_ROLE + ' token role — ' + ADMIN_POLICY_NAME +
+      ' only, orphan, not renewable, seven days at most.');
+  log.debug("Leaving ensureTokenRole().");
+}
+
+// THE SEEDER TOKEN (#254): made once, by a run holding root, and kept as
+// `seed/seeder.token` for the runs after. A token that is already there and
+// still answers is kept; one the store no longer knows is replaced.
+async function ensureSeederToken(token) {
+  log.debug("Entering ensureSeederToken().");
+  const file = path.join(SEED_DIR, 'seeder.token');
+  if (fs.existsSync(file)) {
+    const held = String(fs.readFileSync(file, 'utf8')).trim();
+    const looked = await call('GET', '/v1/auth/token/lookup-self', undefined,
+                              held);
+    if (looked.status === 200) {
+      say('the seeder token in the store\'s volume is still valid; kept.');
+      log.debug("Leaving ensureSeederToken(). Kept.");
+      return;
+    }
+  }
+  const made = await call('POST', '/v1/auth/token/create-orphan',
+                          { policies: [SEEDER_POLICY_NAME],
+                            period: SEEDER_PERIOD, renewable: true,
+                            display_name: 'sts-seeder' }, token);
+  const issued = made.body && made.body.auth && made.body.auth.client_token;
+  if (made.status !== 200 || !issued) {
+    refuse(made, 'the seeder token could not be made');
+  }
+  fs.mkdirSync(SEED_DIR, { recursive: true });
+  fs.writeFileSync(file, issued, { mode: 0o600 });
+  say('made the seeder token (' + SEEDER_POLICY_NAME + ', periodic ' +
+      SEEDER_PERIOD + ') and kept it in the store\'s own volume, 0600. It is ' +
+      'what later runs use; root is revoked at the end of this one.');
+  log.debug("Leaving ensureSeederToken(). Made.");
+}
+
+// The seeder token's renewal, at the start of every run that uses it. False
+// when the store no longer accepts it (expired, revoked), which main() turns
+// into proving only.
+async function renewSeederToken(token) {
+  log.debug("Entering renewSeederToken().");
+  const renewed = await call('POST', '/v1/auth/token/renew-self', {}, token);
+  log.debug("Leaving renewSeederToken(). status=" + renewed.status);
+  return renewed.status === 200;
+}
+
+// AND THE ROOT TOKEN, REVOKED (#254) — this run's last act when it held one it
+// owns: the store's own, from `sys/init`, or one a volume from before #254
+// kept, whose file is deleted after.
+async function revokeRoot(held) {
+  log.debug("Entering revokeRoot().");
+  const revoked = await call('POST', '/v1/auth/token/revoke-self', {},
+                             held.token);
+  if (revoked.status !== 204 && revoked.status !== 200) {
+    refuse(revoked, 'the root token could not be revoked');
+  }
+  if (held.file) {
+    fs.unlinkSync(held.file);
+  }
+  say('revoked the root token' +
+      (held.file ? ' and deleted ' + held.file : '') +
+      '. Nothing on disk holds root; later runs use the seeder token.');
+  log.debug("Leaving revokeRoot().");
+}
+
+// ===========================================================================
+// ONE START-UP TOKEN PER NODE (#254), response-wrapped, into the node's file.
+//
+// The wrapped token is `admin-secret.hcl`'s read for STARTUP_TTL and two uses
+// (the read, and the revoke-self after it); the WRAPPING token is what is
+// written, and it can be unwrapped once, within STARTUP_WRAP_TTL. A file left
+// by a run whose node never started is replaced — its token simply expires.
+// ===========================================================================
+async function issueStartupTokens(token) {
+  log.debug("Entering issueStartupTokens().");
+  fs.mkdirSync(STARTUP_DIR, { recursive: true, mode: 0o700 });
+  // A volume's root is made 0755 by docker, whatever mkdir asked for.
+  fs.chmodSync(STARTUP_DIR, 0o700);
+  for (let i = 0; i < STARTUP_NODES.length; i++) {
+    const node = STARTUP_NODES[i];
+    if (!/^[A-Za-z0-9._-]+$/.test(node) || node === '.' || node === '..') {
+      throw new Error('STS_BAO_STARTUP_NODES names "' + node + '", which is ' +
+                      'not a plain file name.');
+    }
+    const made = await call('POST', '/v1/auth/token/create/' + ADMIN_ROLE,
+                            { ttl: STARTUP_TTL, num_uses: 2,
+                              display_name: 'startup-' + node },
+                            token, { 'X-Vault-Wrap-TTL': STARTUP_WRAP_TTL });
+    const wrapping = made.body && made.body.wrap_info &&
+                     made.body.wrap_info.token;
+    if (made.status !== 200 || !wrapping) {
+      refuse(made, 'a start-up token for ' + node + ' could not be made');
+    }
+    const file = path.join(STARTUP_DIR, node + '.wrap');
+    fs.writeFileSync(file, wrapping + '\n', { mode: 0o600 });
+    fs.chmodSync(file, 0o600);
+    say('wrote a single-use, response-wrapped start-up token for ' + node +
+        ' (unwrap within ' + STARTUP_WRAP_TTL + ', then ' + STARTUP_TTL +
+        ' and two uses) to ' + file + '.');
+  }
+  log.debug("Leaving issueStartupTokens().");
+}
+
+// THE OPERATOR TOKEN (#254): read on `secret/sts-admin` for OPERATOR_TTL,
+// printed for the person running the stack. Off with
+// STS_BAO_PRINT_CREDENTIALS=false, when it is not made at all.
+async function issueOperatorToken(token) {
+  log.debug("Entering issueOperatorToken().");
+  if (!PRINT_CREDENTIALS) {
+    log.debug("Leaving issueOperatorToken(). Not asked for.");
+    return;
+  }
+  const made = await call('POST', '/v1/auth/token/create/' + ADMIN_ROLE,
+                          { ttl: OPERATOR_TTL, display_name: 'operator' },
+                          token);
+  const issued = made.body && made.body.auth && made.body.auth.client_token;
+  if (made.status !== 200 || !issued) {
+    refuse(made, 'the operator token could not be made');
+  }
+  say('an OPERATOR TOKEN for the first /admin-api token on this stack — read ' +
+      'on secret/' + ADMIN_SECRET_PATH + ' and nothing else, for ' +
+      OPERATOR_TTL + ' (docs/management-api.md): ' + issued);
+  log.debug("Leaving issueOperatorToken().");
 }
 
 async function ensureCertAuth(token, caPem) {
@@ -611,6 +954,15 @@ async function ensureCertAuth(token, caPem) {
   log.debug("Leaving ensureCertAuth().");
 }
 
+// The client key's mode and owner (#254): 0600, the service's uid and gid.
+// The seeder runs as root, which is what lets it chown.
+function ownKey(keyFile) {
+  log.debug("Entering ownKey().");
+  fs.chmodSync(keyFile, 0o600);
+  fs.chownSync(keyFile, SERVICE_UID, SERVICE_GID);
+  log.debug("Leaving ownKey().");
+}
+
 // Days until a certificate file expires, or null when it cannot be read.
 function daysLeft(certFile) {
   log.debug("Entering daysLeft().");
@@ -637,6 +989,10 @@ async function ensureClientCertificate(token, caPem) {
   // certificate, and the two are different CAs here on purpose.
   fs.writeFileSync(caOut, fs.readFileSync(CA_FILE), { mode: 0o644 });
   if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
+    // A KEY ALREADY THERE IS MADE THE SERVICE'S OWN EVERY RUN (#254): a volume
+    // written before #254 has it 0644 and root's, and re-issuing to fix a
+    // mode would be a new credential for no reason.
+    ownKey(keyFile);
     const left = daysLeft(certFile);
     if (left === null || left > RENEW_WITHIN_DAYS) {
       say('the client certificate is already in the shared volume' +
@@ -654,19 +1010,22 @@ async function ensureClientCertificate(token, caPem) {
         RENEW_WITHIN_DAYS + '); issuing a new one.');
   }
   const issued = await call('POST', '/v1/pki/issue/sts-client',
-                            { common_name: COMMON_NAME, ttl: '8760h' }, token);
+                            { common_name: COMMON_NAME, ttl: CLIENT_TTL },
+                            token);
   if (issued.status !== 200 || !issued.body || !issued.body.data) {
     refuse(issued, 'a client certificate could not be issued');
   }
   const data = issued.body.data;
   fs.writeFileSync(certFile, data.certificate + '\n', { mode: 0o644 });
-  // 0644 ON A PRIVATE KEY, and it is said out loud rather than left to be
-  // found: this volume is shared with one container in this stack and the
-  // service in it runs as root. A deployment that wants the real posture
-  // mounts its own credential instead of letting this seeder issue one — see
-  // openbao/CLAUDE.md, where the line between this fixture and a deployment
-  // is drawn.
-  fs.writeFileSync(keyFile, data.private_key + '\n', { mode: 0o644 });
+  // 0600 AND THE SERVICE'S (#254). It was 0644 until then, said out loud as a
+  // cost: the service ran as root, so no mode could have kept the key from a
+  // shell in its container. It runs as uid 10001 now, and the key is that
+  // user's alone — written to a temporary name and renamed, so the key is
+  // never readable at a wider mode, even for an instant.
+  const pending = keyFile + '.new';
+  fs.writeFileSync(pending, data.private_key + '\n', { mode: 0o600 });
+  ownKey(pending);
+  fs.renameSync(pending, keyFile);
   fs.writeFileSync(path.join(CLIENT_DIR, 'issuing-ca.crt'),
                    data.issuing_ca + '\n', { mode: 0o644 });
   say('issued the service its client certificate (CN=' + COMMON_NAME +
@@ -754,6 +1113,16 @@ async function proveReadOnly() {
                     'secret/data/somebody-else (' + elsewhere.status + '). ' +
                     'The policy is meant to name two paths, not a prefix.');
   }
+  // AND THE START-UP SECRETS ARE NOT ITS TO READ (#254): the identity a
+  // running service holds must not open `/admin-api` as well.
+  const startup = await call('GET', '/v1/secret/data/' + ADMIN_SECRET_PATH,
+                             undefined, asService);
+  if (startup.status !== 403) {
+    throw new Error('the service\'s identity could read secret/' +
+                    ADMIN_SECRET_PATH + ' (' + startup.status + '), the ' +
+                    'start-up secrets it must read only through a start-up ' +
+                    'token. ' + POLICY_FILE + ' names a path it must not.');
+  }
   // THE TRANSIT KEY: used, and not changed (#391). A wrap and an unwrap with
   // associated data must work; a rotation, a configuration change and a read
   // of another key must be refused.
@@ -781,8 +1150,9 @@ async function proveReadOnly() {
   }
   say('proved it with the certificate itself: policies [' + policies + '], ' +
       'the two secrets readable, a write to them refused 403, no other ' +
-      'path reachable, and the Transit key ' + TRANSIT_KEY + ' usable but ' +
-      'neither rotatable nor reconfigurable.');
+      'path reachable (secret/' + ADMIN_SECRET_PATH + ' among them), and ' +
+      'the Transit key ' + TRANSIT_KEY + ' usable but neither rotatable nor ' +
+      'reconfigurable.');
   log.debug("Leaving proveReadOnly().");
 }
 
@@ -797,9 +1167,17 @@ async function main() {
                     'it, before the server starts.');
   }
   await waitForListener();
-  const token = await rootToken();
+  let held = await rootToken();
   await waitForActive();
-  if (!token) {
+  if (held && held.kind === 'seeder' && !(await renewSeederToken(held.token))) {
+    log.warn('the seeder token in ' + SEED_DIR + ' is no longer accepted by ' +
+             'the store (it is renewed by every run and lapses after ' +
+             SEEDER_PERIOD + ' without one). This run proves the client ' +
+             'credential only and hands out no start-up token; set ' +
+             'STS_BAO_TOKEN to an operator token to restore it.');
+    held = null;
+  }
+  if (!held) {
     // A SECOND STACK WITH NO TOKEN (see the header). Nothing is re-declared;
     // what this stack needs is a client credential the store accepts, and that
     // can be proved without any token at all.
@@ -807,19 +1185,21 @@ async function main() {
     if (!fs.existsSync(certFile) ||
         !fs.existsSync(path.join(CLIENT_DIR, 'client.key'))) {
       throw new Error('the secret store is already initialised, this stack ' +
-                      'holds no root token in ' + SEED_DIR + ', ' +
-                      'STS_BAO_TOKEN is not set, and there is no client ' +
-                      'certificate in ' + CLIENT_DIR + ' to prove — so this ' +
-                      'seeder can neither configure the store nor show that ' +
-                      'this stack can read it. Either set STS_BAO_TOKEN to ' +
-                      'an operator token for this store, or put the client ' +
-                      'credential the store was seeded with (client.crt, ' +
-                      'client.key, bao-ca.crt) in ' + CLIENT_DIR + '. For a ' +
-                      'stack that has lost its own volume state, ' +
+                      'holds neither a root token nor a seeder token in ' +
+                      SEED_DIR + ', STS_BAO_TOKEN is not set, and there is ' +
+                      'no client certificate in ' + CLIENT_DIR +
+                      ' to prove — ' +
+                      'so this seeder can neither configure the store nor ' +
+                      'show that this stack can read it. Either set ' +
+                      'STS_BAO_TOKEN to an operator token for this store, or ' +
+                      'put the client credential the store was seeded with ' +
+                      '(client.crt, client.key, bao-ca.crt) in ' + CLIENT_DIR +
+                      '. For a stack that has lost its own volume state, ' +
                       '`docker compose down --volumes` is the way back.');
     }
     fs.writeFileSync(path.join(CLIENT_DIR, 'bao-ca.crt'),
                      fs.readFileSync(CA_FILE), { mode: 0o644 });
+    ownKey(path.join(CLIENT_DIR, 'client.key'));
     await proveReadOnly();
     const left = daysLeft(certFile);
     if (left !== null && left <= RENEW_WITHIN_DAYS) {
@@ -828,22 +1208,51 @@ async function main() {
                'renew it. Run the seeder that holds one, or set ' +
                'STS_BAO_TOKEN.');
     }
+    log.warn('no start-up token was written for ' + STARTUP_NODES.join(', ') +
+             ': this run holds no token that can make one, so the service ' +
+             'starts without the start-up secrets in secret/' +
+             ADMIN_SECRET_PATH + '.');
     say('the secret store was initialised by another stack; nothing was ' +
         're-declared, and the client credential this stack holds was proved ' +
         'against it.');
     log.debug("Leaving main(). Proved only.");
     return;
   }
+  const token = held.token;
+  if (held.kind === 'seeder') {
+    // DECLARES NOTHING (#254): the seeder token keeps the start-up secrets
+    // as pinned, renews the certificate when due, proves the identity, and
+    // hands out the start-up tokens.
+    await ensureAdminSecrets(token);
+    await ensureClientCertificate(token);
+    await proveReadOnly();
+    await issueStartupTokens(token);
+    await issueOperatorToken(token);
+    say('the secret store is ready: nothing re-declared (the seeder token ' +
+        'cannot), the client credential proved, and a start-up token per ' +
+        'node.');
+    log.debug("Leaving main(). Seeder token.");
+    return;
+  }
   await ensureMount(token, 'secret', 'kv', { options: { version: '2' } });
   await ensureSecrets(token);
+  await ensureAdminSecrets(token);
   await ensureTransitKey(token);
   const caPem = await ensurePki(token);
   await ensurePolicy(token);
   await ensureCertAuth(token, caPem);
+  await ensureTokenRole(token);
   await ensureClientCertificate(token, caPem);
   await proveReadOnly();
-  say('the secret store is ready: two secrets, one read-only identity, and a ' +
-      'client certificate the store itself issued.');
+  await issueStartupTokens(token);
+  await issueOperatorToken(token);
+  if (held.revoke) {
+    await ensureSeederToken(token);
+    await revokeRoot(held);
+  }
+  say('the secret store is ready: two secrets and the start-up secrets, one ' +
+      'read-only identity, a client certificate the store itself issued, and ' +
+      'a start-up token per node.');
   log.debug("Leaving main().");
 }
 

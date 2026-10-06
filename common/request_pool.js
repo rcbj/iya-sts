@@ -2624,7 +2624,13 @@ function fork(pool, slot) {
     // Connect back channel in `common/oidc_rp.ts`, which names the worker that
     // should redeem a code and has to know whether that can be itself — see
     // PROTOCOL_WORKER_HEADER.
-    env: Object.assign({}, process.env, {
+    //
+    // AND THE SECRETS THIS PROCESS WAS DELIVERED AS FILES (#254), which it
+    // holds at config.js's environment layer and never in `process.env`: the
+    // thread's copy is the one place they become variables, inside this
+    // process, where no `/proc/<pid>/environ` shows them.
+    env: Object.assign({}, process.env,
+                       require('./delivered_secrets').workerEnvironment(), {
       STS_REQUEST_WORKER: '1',
       STS_REQUEST_WORKER_POOL: which,
       STS_REQUEST_WORKER_SLOT: typeof slot === 'number'

@@ -228,7 +228,10 @@ audienced to this API, carrying `admin:read` to read and `admin:write` to
 change anything. Ask the token endpoint for one with the client-credentials
 grant as the seeded `sts-management-api` client, whose secret is
 `adminApi.clientSecret`, and send `resource=<base>/admin-api` so the audience is
-right. `adminApi.authRequired=false` opens the API in development mode; product
+right. On the compose stack that secret is kept in OpenBao and is for the
+first token only; after that, use an application of your own that holds the
+admin roles ([Getting a token](management-api.md#getting-a-token)).
+`adminApi.authRequired=false` opens the API in development mode; product
 mode ignores it, and always requires the token.
 
 **Federation is the one feature that refuses by default, and that is deliberate.**

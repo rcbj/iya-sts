@@ -808,7 +808,28 @@ const azureProvider = {
 // merges `rpDefaults` into the request library's defaults, which is what
 // `client.request()` — the escape hatch below — uses. Passing only one of them
 // gives a login that works and a read that does not, or the reverse.
+//
+// **EACH FILE IS READ ONCE PER PROCESS (#254, 2026-10-06)**, the first time a
+// path is asked for, and held in memory after — it was read again at every
+// connection. The client key is the identity that opens the key-encryption
+// key, so the file is something a deployment may want to make unreadable once
+// the service has started, and a process that went back to it for every
+// Transit call could not allow that. A path that changes (the settings are
+// read on every call) is read when it is first named; a certificate RENEWED
+// at the same path is read at the next start, which is inside the renewal
+// window `openbao/seed.js` leaves (`STS_BAO_RENEW_WITHIN_DAYS`).
 // ---------------------------------------------------------------------------
+const tlsFiles = new Map();
+
+function tlsFile(path) {
+  log.debug("Entering tlsFile(). path=" + path);
+  if (!tlsFiles.has(path)) {
+    tlsFiles.set(path, fs.readFileSync(path));
+  }
+  log.debug("Leaving tlsFile().");
+  return tlsFiles.get(path);
+}
+
 function vaultTls() {
   log.debug("Entering vaultTls().");
   const certPath = String(config.value('keys.vaultClientCert') || '').trim();
@@ -816,11 +837,11 @@ function vaultTls() {
   const caPath = String(config.value('keys.vaultCaCert') || '').trim();
   const out = {};
   if (certPath && keyPath) {
-    out.cert = fs.readFileSync(certPath);
-    out.key = fs.readFileSync(keyPath);
+    out.cert = tlsFile(certPath);
+    out.key = tlsFile(keyPath);
   }
   if (caPath) {
-    out.ca = fs.readFileSync(caPath);
+    out.ca = tlsFile(caPath);
   }
   log.debug("Leaving vaultTls().");
   return { options: out, authenticates: !!(certPath && keyPath),

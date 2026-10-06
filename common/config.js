@@ -17213,6 +17213,37 @@ function valueWithout(where, key) {
 const overrides = {};
 
 // ---------------------------------------------------------------------------
+// THE VALUES DELIVERED AS FILES AT START (#254, 2026-10-06), by key, raw.
+//
+// `common/delivered_secrets.ts` fills this once, in the front process, before
+// anything reads a setting it carries: a secret named by `<ENV>_FILE` is read
+// from that file, the file is deleted, and the value lives here — never in
+// `process.env`, because a variable set there is inherited by every child a
+// process spawns and shows in its `/proc/<pid>/environ`. It is the
+// environment layer in every respect a reader can see (`sourceOf()` answers
+// `env`, and a request worker is handed it as an ordinary variable of its own
+// thread), and it sits just above it, so a file and a variable naming the
+// same setting resolve to the file, which is the one the deployment chose to
+// make unreadable.
+// ---------------------------------------------------------------------------
+const delivered = {};
+
+/**
+ * Holds a setting's value delivered as a file at start (#254), at the
+ * environment layer; `common/delivered_secrets.ts` is the one caller.
+ *
+ * @param key - the setting's key
+ * @param raw - the value, as the file held it, trimmed
+ * @throws an Error when the key names no setting
+ */
+function setDelivered(key, raw) {
+  log.debug("Entering setDelivered(). key=" + key);
+  settingFor(key);
+  delivered[key] = String(raw);
+  log.debug("Leaving setDelivered().");
+}
+
+// ---------------------------------------------------------------------------
 // AND WHERE THAT MAP IS WRITTEN DOWN, SINCE 2026-08-27. Rule 3q.
 //
 // `persistence/persistence.js` fills this at ITS require time, and it is an
@@ -17476,6 +17507,12 @@ function resolve(key) {
   if (Object.prototype.hasOwnProperty.call(overrides, key)) {
     log.debug("Leaving resolve().");
     return { raw: overrides[key], source: 'override' };
+  }
+  // A SECRET DELIVERED AS A FILE (#254) is the environment layer, above the
+  // variable itself — see `delivered`.
+  if (Object.prototype.hasOwnProperty.call(delivered, key)) {
+    log.debug("Leaving resolve(). Delivered as a file.");
+    return { raw: delivered[key], source: 'env' };
   }
   if (setting.env && process.env[setting.env] !== undefined) {
     log.debug("Leaving resolve().");
@@ -18810,6 +18847,7 @@ module.exports = {
   modeWriteProblem: modeWriteProblem,
   REPLACED_SETTINGS: REPLACED_SETTINGS,
   setOverride: setOverride,
+  setDelivered: setDelivered,
   clearOverride: clearOverride,
   // What a setting is for the PROCESS, the realm layer set aside (#99: a
   // realm listener's port is checked against the process's own listeners).

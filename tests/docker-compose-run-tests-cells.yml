@@ -54,6 +54,12 @@
 # cell A addresses by name is unaffected: nothing else it dials is `sts2`.
 # ===========================================================================
 services:
+  # A START-UP TOKEN PER NODE (#254): the base file's seeder writes one for
+  # `sts` only, and node B takes its own.
+  openbao-seed:
+    environment:
+      - STS_BAO_STARTUP_NODES=sts,sts2
+
   # A fresh cell key-encryption key per cell and per run. Kept when present,
   # so a `--keep-stack` restart of a cell reads the key its rows were sealed
   # under; the stack's `down -v` removes both volumes with the databases they
@@ -62,6 +68,9 @@ services:
     container_name: ${STS_CELL_KEK_CONTAINER_NAME:-sts-docker-tests-cell-kek}
     image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
     restart: "no"
+    # ROOT, AND THE KEY IS HANDED TO THE SERVICE'S uid (#254): the image runs
+    # as 10001, the cells read the key as 10001, and 0600 keeps it theirs.
+    user: "0"
     entrypoint: ["sh", "-c"]
     command:
       - >
@@ -70,6 +79,7 @@ services:
         if [ ! -s /kek/$$c/kek ]; then
         head -c 32 /dev/urandom | base64 > /kek/$$c/kek;
         echo "sts-cell-kek: a key was written for cell $$c."; fi;
+        chown 10001:10001 /kek/$$c/kek;
         done
     volumes:
       - sts-cell-kek-a:/kek/a
@@ -177,6 +187,8 @@ services:
       sts-cell-kek:
         condition: service_completed_successfully
     environment:
+      # Its own start-up token (#254).
+      - STS_BAO_STARTUP_NODE=sts2
       - STS_CELL_ID=cellb
       - STS_CELL_JURISDICTION=ca
       - STS_CELL_HOSTNAME=sts2

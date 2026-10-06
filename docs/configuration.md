@@ -708,7 +708,8 @@ access token rather than a console session), so getting back in means holding
 that token and calling `POST /admin-api/rbac/grant`. In development, turning
 that one setting off restores an open API. Product ignores the setting turned
 off: pin `adminApi.clientSecret` before the start, so that a token can always
-be minted.
+be minted — or, better, keep an application of your own in both console roles
+([Management API → An application of your own](management-api.md#an-application-of-your-own-for-every-token-after-that)).
 
 Renaming a role group does not move anybody: the members stay in the old group,
 which stops granting anything the moment the name changes.
@@ -1284,7 +1285,7 @@ description. The full paragraph — with the reasoning, which is usually the
 record of something having gone wrong once — is in `common/config.js` beside the
 row, and beside the input on whichever console page draws it.
 
-Four things about these settings do not fit in a cell and have cost real time:
+Five things about these settings do not fit in a cell and have cost real time:
 
 * **`OID4VCI_WALLET_URL` is the base URL the BROWSER uses**, not one this
   service fetches. The Credential Offer pages and the verifier's request pages
@@ -1317,6 +1318,16 @@ Four things about these settings do not fit in a cell and have cost real time:
   `GET /tls/sign-in` and a GNAP key proved by mutual TLS under
   `gnap.mtlsTrust=pki`. `STS_TLS_PORT` and `STS_MTLS_PORT` are not settings, and
   a deployment that sets one gets an "unknown setting" warning at startup.
+* **Three secrets can be handed over as a file instead of a value.**
+  `ADMIN_API_CLIENT_SECRET_FILE`, `KRB5_KRBTGT_PASSWORD_FILE` and
+  `KRB5_SERVICE_PASSWORD_FILE` name a file holding `adminApi.clientSecret`,
+  `krb5.krbtgtPassword` or `krb5.servicePassword`. The service reads the file
+  once at start, before the protocol stack loads, and deletes it, so the value is
+  never in `docker inspect` or the process's environment. An empty file, or
+  one it cannot read, stops the start. The value is resolved at level 2, as
+  the environment variable would be. No other setting takes a `_FILE` form. The compose stack hands over the
+  management API secret this way
+  ([Management API → The client secret](management-api.md#the-client-secret)).
 
 
 ### Trust realms

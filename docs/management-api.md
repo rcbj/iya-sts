@@ -36,6 +36,13 @@ To get a token, call the token endpoint with the client-credentials grant, the
 scopes you need, and `resource=<base>/admin-api`. The `resource` value sets
 the token's audience, and the API refuses a token audienced to anything else.
 
+**On a stack you run, getting in takes two steps.** Use `sts-management-api`
+for the **first** token only
+([The first token](#the-first-token-on-a-stack-you-run)). With that token,
+create an application of your own that holds the admin roles, and use that
+application from then on
+([An application of your own](#an-application-of-your-own-for-every-token-after-that)).
+
 ```bash
 BASE=https://localhost:8081          # the main port is HTTPS by default
 
@@ -61,11 +68,174 @@ an authority it generates at each start. See [TLS](tls.md).)
 generated at every start. That secret can only be read through the API it
 unlocks, so after a restart nobody can get a token wherever secrets are
 checked. Any deployment, and any launcher that starts the service for a test
-run, should set `adminApi.clientSecret` (`ADMIN_API_CLIENT_SECRET`) **before
-the service starts**, because the seeded client reads the setting when it is
-created. After that, the setting is the only way to change the secret: the
-default realm's `regenerate-secret` action on this client is refused while the
-secret is pinned.
+run, should set `adminApi.clientSecret` **before the service starts**, because
+the seeded client reads the setting when it is created. After that, the
+setting is the only way to change the secret: the default realm's
+`regenerate-secret` action on this client is refused while the secret is
+pinned.
+
+You can hand the setting over in two ways:
+
+* **`ADMIN_API_CLIENT_SECRET`** holds the secret itself, in the environment.
+  This works, but the secret then shows in `docker inspect` and in the
+  process's environment.
+* **`ADMIN_API_CLIENT_SECRET_FILE`** holds the path of a file that contains
+  the secret. The service reads the file once at start, before it loads the
+  protocol stack, and then **deletes the file**. The value is never put in the
+  process's environment. If the file is empty or cannot be read, the service
+  does not start, because starting without the secret would mint a different
+  one. The same `_FILE` form works for `KRB5_KRBTGT_PASSWORD` and
+  `KRB5_SERVICE_PASSWORD`, and for no other setting.
+
+The compose stack in this repository uses the second form, so the secret is
+never in the service's environment (see the next section).
+
+### The first token, on a stack you run
+
+**In the compose stack (`docker compose up`), the secret is kept in OpenBao**,
+at `secret/sts-admin` in the field `adminApiClientSecret`. The seeder
+generates it on the run that initialises the store. To choose the value
+yourself, set `ADMIN_API_CLIENT_SECRET` in the host's environment before that
+first `up`. Compose passes it to the **seeder**, which stores it. It does not
+pass it to the service.
+
+The service's own OpenBao identity cannot read `secret/sts-admin`. Instead,
+each `up` gives the service a single-use token that reads the secret once, at
+start, and the value reaches the service as a file that it reads and deletes.
+
+To read the secret yourself, use the **operator token** that the seeder prints
+each time it runs. That token can read `secret/sts-admin` and nothing else,
+and it lasts 24 hours (`STS_BAO_OPERATOR_TTL`). Find it in the seeder's log,
+then read the secret with it:
+
+```bash
+docker compose logs --no-log-prefix openbao-seed \
+  | grep 'OPERATOR TOKEN' | tail -1 | jq -r .msg
+#   an OPERATOR TOKEN for the first /admin-api token on this stack — read
+#   on secret/sts-admin and nothing else, for 24h (docs/management-api.md): <token>
+
+BAO_OPERATOR_TOKEN='<token>'   # the value at the end of that line
+
+ADMIN_API_CLIENT_SECRET=$(docker compose exec -T \
+  -e BAO_TOKEN="$BAO_OPERATOR_TOKEN" openbao \
+  bao kv get -address=https://127.0.0.1:8200 \
+    -ca-cert=/openbao/file/tls/server.crt \
+    -field=adminApiClientSecret secret/sts-admin)
+```
+
+Then mint the token as `sts-management-api`, as the example at the top of
+this section does.
+
+* **If no operator token is printed,** `STS_BAO_PRINT_CREDENTIALS=false` is
+  set. Run `docker compose up` again without that setting, and the seeder
+  prints a new token.
+* **If the operator token has expired,** run `docker compose up` again. Every
+  seeder run prints a new one.
+* **`docker compose restart sts` does not run the seeder again**, so the
+  service starts without its single-use token and **without the pinned
+  secret**. It then mints a secret of its own that nobody can read. Run
+  `docker compose up` to start it with the secret again.
+* **On the run that initialises the store,** the seeder also prints OpenBao's
+  **recovery key**, once, and nothing keeps a copy of it. The seeder revokes
+  the root token when it finishes, so nothing on disk holds root. The recovery
+  key is what `bao operator generate-root` needs to make a root token again,
+  for example to change a policy. Store it somewhere safe the first time you
+  see it.
+
+### An application of your own, for every token after that
+
+Use the first token to set up the credential you will keep using: **create an
+application, give it a client secret and the `ADMIN_READ` and `ADMIN_WRITE`
+roles, and get its tokens with the OAuth 2.0 client credentials grant.** Each
+token it gets carries the admin scopes that its roles allow. Do not keep
+using `sts-management-api` for routine work: its secret is the stack's
+bootstrap, and reading it means unlocking the secret store.
+
+**The realm you create the application in decides what it may administer:**
+
+| Created in | Its token is minted at | It may administer |
+|---|---|---|
+| the default realm | `<base>/oauth2/token`, with `resource=<base>/admin-api` | **every realm**: `/admin-api` and every `/realm/<id>/admin-api` |
+| a trust realm `<id>` | `<base>/realm/<id>/oauth2/token`, with `resource=<base>/realm/<id>/admin-api` | **that realm only**, under `/realm/<id>/admin-api`, and with the same limits as that realm's console administrators ([Trust realms and per-realm administrators](#trust-realms-and-per-realm-administrators)) |
+
+**API.** These calls use the first token, in `$TOKEN`. For an application in
+a trust realm, put the realm's prefix on every path
+(`$BASE/realm/<id>/admin-api/…`): the roles, the application and the grant
+all belong to one realm.
+
+```bash
+API=$BASE/admin-api               # or $BASE/realm/<id>/admin-api
+APP=ops-automation                # the client_id of your application
+
+api() {   # api <path under the API> '<json body>'
+  curl -sk -X POST "$API/$1" \
+    -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+    -d "$2"
+}
+
+# 1. A random secret, made by the service. This call stores nothing.
+APP_SECRET=$(api applications/generate-secret '{}' | jq -r .clientSecret)
+
+# 2. The application: an OAuth 2.0 client on client_credentials that
+#    declares the two admin scopes. The secret becomes its credential.
+api applications/create '{
+  "identifier": "'"$APP"'", "name": "'"$APP"'",
+  "protocols": ["oauth2"],
+  "fields": {
+    "oauthClientId": ["'"$APP"'"],
+    "oauthClientSecret": "'"$APP_SECRET"'",
+    "oauthGrantType": ["client_credentials"],
+    "oauthTokenEndpointAuthMethod": "client_secret_basic",
+    "oauthAllowedScope": ["admin:read", "admin:write"]
+  }}'
+
+# 3. The two roles.
+api roles/add-member '{"role":"ADMIN_READ","kind":"application","member":"'"$APP"'"}'
+api roles/add-member '{"role":"ADMIN_WRITE","kind":"application","member":"'"$APP"'"}'
+```
+
+From then on, the application gets its own tokens. For an application in the
+default realm:
+
+```bash
+TOKEN=$(curl -sk -u "$APP:$APP_SECRET" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode 'scope=admin:read admin:write' \
+  --data-urlencode "resource=$BASE/admin-api" \
+  "$BASE/oauth2/token" | jq -r .access_token)
+```
+
+For an application in realm `<id>`, call `$BASE/realm/<id>/oauth2/token`, with
+`resource=$BASE/realm/<id>/admin-api`.
+
+To give an application that already exists a new secret, call
+`POST …/applications/add-secret` with `{"application": "<client_id>"}`. The
+new secret is in `clientSecret` in the reply, and this reply is the only
+place the act hands it out.
+
+**Console.** On the realm's console (`/admin`, or `/realm/<id>/admin`):
+
+1. Go to **Directory → Applications → New application ›**
+   (`/admin/applications/new`). Set **Identifier** to the client_id, tick
+   **OAuth 2.0**, and click **Generate Secret** in **The client secret**.
+   Copy the value before you create the application.
+2. On the application's page, in **Change what it is allowed to do**: tick
+   `client_secret_basic` under `oauthTokenEndpointAuthMethod` and nothing
+   else, add `client_credentials` to `oauthGrantType`, and add `admin:read`
+   and `admin:write` to `oauthAllowedScope`.
+3. On `/admin/roles`, under **Give a person, a group or an application a
+   role**, choose the role `ADMIN_READ`, the kind *application* and your
+   application's identifier, and click **Add**. Do the same for
+   `ADMIN_WRITE`.
+
+**Why it needs both the scopes and the roles.** The token endpoint issues
+`admin:read` and `admin:write` only to a client whose `oauthAllowedScope`
+declares them, and each one only while the client is a member of the role
+that authorizes it: `ADMIN_READ` for `admin:read`, `ADMIN_WRITE` for
+`admin:write`. The API checks both again on every call. So if you take the
+application out of a role, or remove a scope from its `oauthAllowedScope`,
+the tokens it already holds stop working at their next call. That is also how
+to retire the application.
 
 In development mode, outside [RFC 9700 and OAuth 2.1 mode](oauth-security.md),
 the token endpoint does not check client credentials. In product mode it
@@ -367,7 +537,11 @@ would open the console too. Until then product fell back to the console's own
 session and roles when the switch was off; a console session is no longer a
 credential here in either mode. The recovery path in product is the seeded
 `sts-management-api` client: set `adminApi.clientSecret` before the service
-starts, so a token can always be minted.
+starts, so a token can always be minted. In the compose stack that secret is
+in OpenBao, and the seeder's operator token reads it
+([The first token](#the-first-token-on-a-stack-you-run)). An application of
+your own that holds both roles is a second way in, and it does not depend on
+the secret store.
 
 Whatever the state, **whoever can call this API can revoke every token this
 service has issued and change what the next one contains**. Do not expose a
@@ -386,7 +560,7 @@ override them, because they decide who administers the service.
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `adminApi.authRequired` | `ADMIN_API_AUTH_REQUIRED` | `true` | yes | Require an access token on every `/admin-api` call; off restores the open API. Off is honoured in development mode only: product refuses it and ignores it where it is stored. |
-| `adminApi.clientSecret` | `ADMIN_API_CLIENT_SECRET` | empty (generated per start) | no | The `client_secret` of the default realm's seeded `sts-management-api` client; set it so the secret survives a restart. Secret. |
+| `adminApi.clientSecret` | `ADMIN_API_CLIENT_SECRET` | empty (generated per start) | no | The `client_secret` of the default realm's seeded `sts-management-api` client; set it so the secret survives a restart. Secret. `ADMIN_API_CLIENT_SECRET_FILE` names a file to read it from instead; the file is deleted once read. |
 | `adminApi.audience` | `ADMIN_API_AUDIENCE` | derived: `global.publicBaseUrl` + `/admin-api`, or this process's scheme, host and port + `/admin-api` | yes | The `aud` a token must carry. At its default, `/admin-api` under the host the request arrived on is accepted as well; any other value pins that one value. |
 | `admin.readGroup` | `ADMIN_READ_GROUP` | `admin-read` | yes | The directory group whose members hold Admin Read, which lets them read the console and, with the token gate off in product mode, `GET` the API. |
 | `admin.writeGroup` | `ADMIN_WRITE_GROUP` | `admin-write` | yes | The directory group whose members hold Admin Write; write implies read. |
