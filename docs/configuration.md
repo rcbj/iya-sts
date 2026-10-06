@@ -102,9 +102,12 @@ entityID names an identity provider, an Issuer names whoever signed an assertion
 — so they are now `saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, all three
 still fed by `STS_ISSUER` when it is set. `saml.issuer` is the `<saml:Issuer>` of
 every SAML assertion (WS-Federation's included, since the same two functions
-build them); `wstrust.issuer` is the `iss` of the JWT this STS returns;
+build them); `wstrust.issuer` is the name this STS publishes on GET /sts;
 `wsfed.entityId` is the `entityID` in the federation metadata. All three default
-to `urn:wstrust:mock:sts`.
+to `urn:wstrust:mock:sts` in development. **In product, unset, all three are
+the realm's SAML 2.0 entityID (#480)**, so an assertion's Issuer and the
+metadata a relying party reads agree. The `iss` of a WS-Trust JWT is the realm's
+OAuth 2.0 issuer in every mode.
 
 ### An environment variable is a string, and the table knows what to do with it
 
@@ -1764,7 +1767,7 @@ what its api may dial.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `saml.issuer` | `STS_SAML_ISSUER`<br>or `STS_ISSUER` | `urn:wstrust:mock:sts` | yes | The <saml:Issuer> of every SAML 2.0 assertion and the Issuer attribute of every SAML 1.1 one. WS-Federation's assertions are built by the same two functions, so this is their issuer too, and it is what /wsfed/rp checks a presented assertion against. |
+| `saml.issuer` | `STS_SAML_ISSUER`<br>or `STS_ISSUER` | `urn:wstrust:mock:sts` | yes | The <saml:Issuer> of every SAML 2.0 assertion and the Issuer attribute of every SAML 1.1 one that WS-Trust and WS-Federation build (the SAML SSO profile names itself by saml2.entityId), and what /wsfed/rp checks a presented assertion against. Unset, a PRODUCT realm uses its SAML 2.0 entityID (#480) - for a WS-Trust token whose AppliesTo a registered application answers to, that application's own entityID where saml2.perApplicationEntityId is on, as SAML SSO names itself to it - and development uses the default shown. |
 | `saml.clockSkewS` | `STS_SAML_CLOCK_SKEW_S` | `0` | yes | How far to widen the validity window of every assertion this service ISSUES, at both ends: Conditions/NotBefore is backdated by this many seconds and NotOnOrAfter is extended by it. Both builders apply it, so it reaches SAML 2.0, SAML 1.1, WS-Trust and WS-Federation alike. IssueInstant and the authentication instant are NOT moved — those state when something happened. 0 to 300; 0 is what this service always did. It is NOT `oauth2.clockSkewS`, which is the tolerance applied when this service READS a document back. |
 | `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The SignatureMethod of every XML signature this service makes on a SAML assertion, response, LogoutRequest/Response, SAML or WS-Federation metadata and a signed federated AuthnRequest, and the Redirect binding's `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. `rsa-sha1` is development mode only: product signs with `rsa-sha256` instead and refuses setting it (#181). **In a realm with `keys.signerModel = hybrid-groups` (#68)** it may also be `ecdsa-sha256` or `ecdsa-sha384` (the XML signer group's P-256 or P-384 key) or `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87` or `slh-dsa-sha2-128s` (the group's post-quantum keys, each with its own certificate, under the W3C xmldsig-more **draft** identifiers — few service providers verify them yet). Elsewhere, or before that key is certified, the realm signs `rsa-sha256` and says so once. |
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`. Inclusive c14n is not offered: an assertion is signed standalone and embedded, and inclusive c14n would fail at every relying party. |
@@ -1839,7 +1842,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `wstrust.issuer` | `STS_WSTRUST_ISSUER`<br>or `STS_ISSUER` | `urn:wstrust:mock:sts` | yes | The `iss` of the JWT this STS returns in a RequestSecurityTokenResponse, and the issuer named on GET /sts. A SAML token requested through WS-Trust is built by the SAML modules and carries the SAML issuer above. |
+| `wstrust.issuer` | `STS_WSTRUST_ISSUER`<br>or `STS_ISSUER` | `urn:wstrust:mock:sts` | yes | The name this STS publishes on GET /sts. Unset, a PRODUCT realm uses its SAML 2.0 entityID (#480) and development the default shown. It is not the iss of a JWT this STS returns: that is the realm's OAuth 2.0 issuer, the one /.well-known/oauth-authorization-server publishes, which GET /sts names on a line of its own. When this and saml.issuer differ GET /sts says so and the process logs it at startup. |
 | `wstrust.tokenLifetimeMin` | `STS_WSTRUST_TOKEN_LIFETIME_MIN` | `60` | yes | How long an issued or renewed token is valid for when the RST carries no `wst:Lifetime`. |
 | `wstrust.maxTokenLifetimeMin` | `STS_WSTRUST_MAX_TOKEN_LIFETIME_MIN` | `1440` | yes | The ceiling on a requested `wst:Lifetime`, in both modes; the RSTR states what was issued. |
 | `wstrust.jwtAlgorithm` | `STS_WSTRUST_JWT_ALGORITHM` | `RS256` | yes | The `alg` of the JWT token type: `RS256`–`RS512`, `PS256`–`PS512`, `ES256`–`ES512` or `EdDSA`, with the key's `kid` in the header. |
@@ -1849,7 +1852,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
 | `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | How long the SAML 1.1 assertion inside a WS-Federation sign-in response is valid, and the wsu:Lifetime of the RequestSecurityTokenResponse around it. Per relying party with `wsfedAssertionLifetimeMin` on the application entry; the default is drawn on `/admin/saml-assertions`, because a WS-Federation response carries a SAML 1.1 assertion built by the same function. |
-| `wsfed.entityId` | `STS_WSFED_ENTITY_ID`<br>or `STS_ISSUER` | `urn:wstrust:mock:sts` | yes | The entityID in the federation metadata at /FederationMetadata/2007-06/FederationMetadata.xml. Split from the SAML issuer because the two are different things that happened to share a value: this names the IdP, that names whoever signed an assertion. |
+| `wsfed.entityId` | `STS_WSFED_ENTITY_ID`<br>or `STS_ISSUER` | `urn:wstrust:mock:sts` | yes | The entityID in the federation metadata at /FederationMetadata/2007-06/FederationMetadata.xml. Unset, a PRODUCT realm uses its SAML 2.0 entityID (#480) and development the default shown, so it and the SAML issuer agree in either mode unless one of them is set. |
 | `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock relying party at /wsfed/rp remembers a wctx it minted. |
 
 ### TLS

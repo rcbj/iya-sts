@@ -8264,11 +8264,16 @@ const SETTINGS = [
   { key: 'saml.issuer', group: 'SAML', label: 'Assertion issuer',
     env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
     dflt: 'urn:wstrust:mock:sts', runtime: true,
-    description: 'The <saml:Issuer> of every SAML 2.0 assertion and the ' +
-                 'Issuer attribute of every SAML 1.1 one. WS-Federation\'s ' +
-                 'assertions are built by the same two functions, so this is ' +
-                 'their issuer too, and it is what /wsfed/rp checks a ' +
-                 'presented assertion against.' },
+    description: 'The <saml:Issuer> of every SAML 2.0 assertion and the Issuer ' +
+                 'attribute of every SAML 1.1 one that WS-Trust and ' +
+                 'WS-Federation build (the SAML SSO profile names itself by ' +
+                 'saml2.entityId), and what /wsfed/rp checks a presented ' +
+                 'assertion against. Unset, a PRODUCT realm uses its SAML 2.0 ' +
+                 'entityID (#480) - for a WS-Trust token whose AppliesTo a ' +
+                 'registered application answers to, that application\'s own ' +
+                 'entityID where saml2.perApplicationEntityId is on, as SAML ' +
+                 'SSO names itself to it - and development uses the default ' +
+                 'shown.' },
 
   // The one setting on this page that changes what goes INTO an assertion's
   // validity window rather than how long that window is. It is deliberately
@@ -9027,15 +9032,13 @@ const SETTINGS = [
   { key: 'wstrust.issuer', group: 'WS-Trust', label: 'Token issuer',
     env: 'STS_WSTRUST_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
     dflt: 'urn:wstrust:mock:sts', runtime: true,
-    description: 'The `iss` of the JWT this STS returns in a ' +
-                 'RequestSecurityTokenResponse, and the issuer named on GET ' +
-                 '/sts. A SAML token requested through WS-Trust is built by ' +
-                 'the SAML modules and carries saml.issuer instead, which ' +
-                 'the console draws on its two SAML pages. When the two ' +
-                 'differ GET /sts says so and the process logs it at ' +
-                 'startup, because one STS naming itself two ways is ' +
-                 'something a relying party configured from one of them ' +
-                 'finds out about as a refused token.' },
+    description: 'The name this STS publishes on GET /sts. Unset, a PRODUCT ' +
+                 'realm uses its SAML 2.0 entityID (#480) and development the ' +
+                 'default shown. It is not the iss of a JWT this STS returns: ' +
+                 'that is the realm\'s OAuth 2.0 issuer, the one ' +
+                 '/.well-known/oauth-authorization-server publishes, which GET ' +
+                 '/sts names on a line of its own. When this and saml.issuer ' +
+                 'differ GET /sts says so and the process logs it at startup.' },
 
   { key: 'wstrust.tokenLifetimeMin', group: 'WS-Trust',
     label: 'Token lifetime (minutes)',
@@ -9118,10 +9121,10 @@ const SETTINGS = [
     env: 'STS_WSFED_ENTITY_ID', legacyEnv: 'STS_ISSUER', type: 'string',
     dflt: 'urn:wstrust:mock:sts', runtime: true,
     description: 'The entityID in the federation metadata at ' +
-                 '/FederationMetadata/2007-06/FederationMetadata.xml. Split ' +
-                 'from the SAML issuer because the two are different things ' +
-                 'that happened to share a value: this names the IdP, that ' +
-                 'names whoever signed an assertion.' },
+                 '/FederationMetadata/2007-06/FederationMetadata.xml. Unset, a ' +
+                 'PRODUCT realm uses its SAML 2.0 entityID (#480) and ' +
+                 'development the default shown, so it and the SAML issuer ' +
+                 'agree in either mode unless one of them is set.' },
 
   { key: 'wsfed.mockRpContextTtlMin', group: 'WS-Federation',
     label: 'Mock relying party wctx lifetime (minutes)',

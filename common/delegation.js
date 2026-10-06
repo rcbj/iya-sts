@@ -1214,7 +1214,9 @@ function graph(rows, options) {
     kind: 'sts',
     realm: { id: realm.id, name: realm.name,
              isDefault: realms.isDefault(realm) },
-    issuer: String(config.value('wstrust.issuer') || ''),
+    // #480: the STS's name as published (`issuer_names.ts`), required here
+    // lazily — it is a TypeScript library, compiled beside this file.
+    issuer: String(require('./issuer_names').wstrustIssuer() || ''),
     roles: { initial: 0, intermediary: 0, target: 0 },
     acts: 0, issued: 0, refused: 0
   };

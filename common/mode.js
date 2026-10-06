@@ -717,6 +717,25 @@ function inventsClaimValues() {
   return !isProduct();
 }
 
+// Does this service name itself, where nobody set a name, by the SAML 2.0
+// entityID it publishes (#480)? `saml.issuer`, `wstrust.issuer` and
+// `wsfed.entityId` shipped `urn:wstrust:mock:sts`, a development placeholder,
+// and a product deployment signed assertions with it beside a
+// `/saml2/metadata` naming `saml2.entityId`. Product names all three after
+// that entityID (`common/issuer_names.ts`); development keeps the
+// placeholder; a value somebody set wins in both.
+/**
+ * Tells whether the SAML issuer, the WS-Trust STS name and the WS-Federation
+ * entityID default to the realm's SAML 2.0 entityID (#480).
+ *
+ * @returns true in product mode
+ */
+function namesIssuersByEntityId() {
+  log.debug("Entering namesIssuersByEntityId().");
+  log.debug("Leaving namesIssuersByEntityId().");
+  return isProduct();
+}
+
 // May a response be delivered to an address the REQUEST named and no
 // registration did? A SAML AssertionConsumerServiceURL, a SAML 1.1 `shire`, a
 // WS-Federation `wreply`, a wallet URL on a query string. Development accepts
@@ -2494,6 +2513,23 @@ const REQUIREMENTS = [
              'stays allowed: with the assertion signed, the profile asks ' +
              'for no more.',
     where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, common/applications.js' },
+  { id: 'issuer-names',
+    what: 'The SAML issuer, the WS-Trust STS name and the WS-Federation ' +
+          'entityID are this service\'s published SAML 2.0 entityID',
+    development: 'Where nobody set them, `saml.issuer`, `wstrust.issuer` and ' +
+                 '`wsfed.entityId` are the development placeholder ' +
+                 '`urn:wstrust:mock:sts` (a realm\'s seeded ' +
+                 '`urn:<domain>:sts`).',
+    product: 'Where nobody set them, all three are the realm\'s ' +
+             '`saml2.entityId`, what /saml2/metadata publishes, so an ' +
+             'assertion\'s Issuer and the metadata a relying party was ' +
+             'configured from agree. A WS-Trust assertion for an AppliesTo ' +
+             'a registered application answers to carries that ' +
+             'application\'s own entityID where ' +
+             '`saml2.perApplicationEntityId` is on, as SAML SSO does. A ' +
+             'value an operator set wins.',
+    where: 'common/issuer_names.ts, saml/saml2.ts, saml/saml11.ts, ' +
+           'ws-trust/wstrust.ts, ws-federation/wsfed.ts' },
   { id: 'workload-security-header',
     what: 'A Workload API call without the workload.spiffe.io header is ' +
           'refused',
@@ -3723,6 +3759,7 @@ module.exports = {
   refusesExpiredClientSecrets: refusesExpiredClientSecrets,
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
+  namesIssuersByEntityId: namesIssuersByEntityId,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
   requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,

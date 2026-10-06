@@ -373,9 +373,14 @@ SAML assertion are WS-Trust's and SAML's, as before.
 * **No `auth_time`, `acr` or `amr`.** RFC 9068 section 2.2.1 makes them
   optional, and a delegated JWT could only copy them from an
   authentication it never saw.
-* **`iss` is `wstrust.issuer`**, the STS's own name. A WS-Trust issuer
-  publishes no authorization server metadata for RFC 9068 section 4 to
-  compare it with. Its default is `urn:wstrust:mock:sts` in every mode.
+* ~~`iss` is `wstrust.issuer`~~ **Reversed by #480 (rcbj: "Realm's OAuth
+  issuer").** `iss` is the realm's OAuth 2.0 issuer, the one
+  `/.well-known/oauth-authorization-server` publishes at the request's base
+  (`oauthIssuer()`, through `oauth2.issuerOf()`), in every mode. RFC 9068
+  section 4 has a resource server compare `iss` with that metadata, and the
+  signing key is already that server's, at `/oauth2/jwks`. Every `act`
+  entry's `iss` is the same value (#471). GET /sts names it on a line of its
+  own, `JWT issuer:`, beside the STS's name.
 * **`exp` is the lifetime the RSTR's `wst:Lifetime` states.** WS-Trust 1.4
   section 4.1 makes that the STS's decision, so the two cannot disagree.
 * **The SAML Delegation Restriction is unchanged.** Its `del:Delegate`s name
@@ -407,9 +412,10 @@ fault unless all four of these hold:
 * it verifies with this realm's own key (`helpers.verifyOwnJws()`), else
   `0026`;
 * it is within its `exp` and `nbf`, else `0027`, `wst:ExpiredData`;
-* its `iss` is `wstrust.issuer`, else `0026`. An OAuth access token from
-  this realm is signed with the same key, and it is not a token this STS
-  issued;
+* its `iss` is the realm's OAuth issuer, the one this STS's own JWTs carry
+  since #480, else `0026`. **Consequence of #480:** an OAuth access token
+  from this realm carries the same issuer under the same key, so it is
+  accepted here too. The realm is one issuer;
 * its `sub` is the `urn:uuid:` of a person this directory holds, else
   `0028`.
 
@@ -485,6 +491,43 @@ the requester's.
 `jwtClaims()` and `samlAttributes()` give OAuth and SAML SSO for the same
 application, in both modes. The #473 chain jobs assert all of it at every
 hop.
+
+## THE NAMES IT SIGNS UNDER ARE THE SAML ENTITYID IN PRODUCT (#480, 2026-10-06)
+
+rcbj: "Align with SAML entityID". Three settings name this service outside
+the SAML browser profile: `saml.issuer` (a WS-Trust or WS-Federation
+assertion's Issuer), `wstrust.issuer` (the STS's name on GET /sts) and
+`wsfed.entityId` (the FederationMetadata entityID). Each shipped the
+development placeholder `urn:wstrust:mock:sts`, and `env/local.js`, the
+image's default appconfig, set it explicitly, so a product deployment
+signed with it.
+
+`common/issuer_names.ts` reads all three, and every reader goes through it.
+The rules, in order:
+
+* **A value somebody set wins.** That means a realm value, a runtime
+  override, the environment or the operator's appconfig. A realm's SEEDED
+  `urn:<domain>:sts` is not somebody's choice, and is read as a default.
+* **In product** (`mode.namesIssuersByEntityId()`), an unset name is the
+  realm's `saml2.entityId`, what `/saml2/metadata` publishes.
+* **In development**, it is the placeholder (or the realm's seed).
+
+`env/local.js` no longer sets them. The test stacks' `env/docker-tests.js`
+and `env/test.js` still set the placeholder, so the suites' development runs
+are unchanged.
+
+**Per service provider.** The SAML SSO profile names itself to each service
+provider by `<entityID>:<sp>` where `saml2.perApplicationEntityId` is on
+(`saml2_sso.idpEntityIdFor()`), in the assertion's Issuer and in
+`/saml2/metadata/{sp}`. So a WS-Trust assertion whose AppliesTo a registered
+application answers to carries THAT application's entityID, the one its own
+metadata names, and SSO's function decides it. A WS-Federation assertion,
+whose metadata is one document, and an AppliesTo nobody registered, carry
+the shared entityID. `wstrust.issuer` and `wsfed.entityId` have no per-SP
+form.
+
+**A JWT's `iss` is not one of these.** It is the realm's OAuth issuer (#476's
+exceptions, above).
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 

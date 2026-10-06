@@ -121,6 +121,8 @@ import helpers = require('./common/helpers');
 // still decides everything it renders.
 import admin = require('./admin-ui/admin');
 import config = require('./common/config');
+// #480: the names this service signs under (a library).
+import IssuerNames = require('./common/issuer_names');
 // The named authorization servers this process has served. They cannot be read
 // off the router — one route serves all of them — so they are listed by hand,
 // the same way the Kerberos and LDAP listeners are.
@@ -10061,7 +10063,7 @@ class StsMetadata {
         stamped: APP_VERSION.stamped === true
       },
       issuer: base,
-      wsTrustIssuer: config.value('wstrust.issuer'),
+      wsTrustIssuer: IssuerNames.wstrustIssuer(),
       port: port,
       testDouble: true,
       endpoints: report.rows.map(function (r) {

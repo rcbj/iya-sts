@@ -72,8 +72,10 @@ its audience is the `AppliesTo`, its validity window is widened by
 assertion, `unspecified` for a delegation or nothing. The `wsu:Lifetime` around
 it states the lifetime without the skew.
 
-**The JWT** has `iss` `wstrust.issuer`, a `jti`, and the realm key's `kid` in
-its header (published at `/oauth2/jwks`). Its `sub` is the person's stable
+**The JWT** has `iss` the realm's OAuth 2.0 issuer, the one
+`/.well-known/oauth-authorization-server` publishes and `GET /sts` names as
+`JWT issuer:`. It also has a `jti`, and the realm key's `kid` in its header
+(published at `/oauth2/jwks`). Its `sub` is the person's stable
 subject, `urn:uuid:<entryUUID>`; a JWT for somebody the directory does not hold
 is refused with a SOAP Fault rather than issued with a bare name. By default the
 header also carries `x5u`, the address of the signing key's certificate chain
@@ -105,8 +107,8 @@ Some claims are left out on purpose:
   is audited.
 * **No `auth_time`, `acr` or `amr`.** RFC 9068 makes them optional.
 
-`iss` is `wstrust.issuer` and not an OAuth authorization server's issuer.
-The RST and RSTR are unchanged: the `wst:TokenType` answered is still
+`iss` is the realm's OAuth issuer, so RFC 9068 section 4's check against the
+authorization server's metadata holds (#480). The RST and RSTR are unchanged: the `wst:TokenType` answered is still
 `urn:ietf:params:oauth:token-type:jwt`.
 
 ### Lifetime
@@ -231,7 +233,7 @@ The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `wstrust.issuer` | `STS_WSTRUST_ISSUER` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` | yes | The `iss` of an issued JWT and the issuer named on `GET /sts`; a SAML token carries `saml.issuer` instead. |
+| `wstrust.issuer` | `STS_WSTRUST_ISSUER` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` (development); the SAML 2.0 entityID in product, unset | yes | The name `GET /sts` publishes. A SAML token carries `saml.issuer`, and a JWT the realm's OAuth issuer. |
 | `wstrust.tokenLifetimeMin` | `STS_WSTRUST_TOKEN_LIFETIME_MIN` | `60` | yes | Token lifetime when the RST carries no `wst:Lifetime`. |
 | `wstrust.maxTokenLifetimeMin` | `STS_WSTRUST_MAX_TOKEN_LIFETIME_MIN` | `1440` | yes | The ceiling a requested `wst:Lifetime` is clamped to, in both modes. |
 | `wstrust.jwtAlgorithm` | `STS_WSTRUST_JWT_ALGORITHM` | `RS256` | yes | The JWT's `alg`: `RS256`–`RS512`, `PS256`–`PS512`, `ES256`–`ES512` or `EdDSA`. |
@@ -274,7 +276,11 @@ changed on `/admin/wstrust` or with `POST /admin-api/config/set`.
   rather than any assertion at all.
 * **Two issuer settings, and disagreement is reported rather than
   reconciled.** `wstrust.issuer` names the STS and `saml.issuer` the signer of
-  an assertion; `GET /sts` and the startup log say when they differ.
+  an assertion; `GET /sts` and the startup log say when they differ. **In
+  product, unset, both are the SAML 2.0 entityID** (#480). A WS-Trust
+  assertion whose AppliesTo a registered application answers to carries that
+  application's own entityID where `saml2.perApplicationEntityId` is on, the
+  one its `/saml2/metadata/{sp}` names, as SAML SSO does.
 * **A JWT needs a directory entry.** A bare name as `sub` would be inherited by
   a person created later under that name.
 

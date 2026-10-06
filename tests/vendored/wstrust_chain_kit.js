@@ -836,15 +836,52 @@ async function jwks(base) {
   return r.json.keys;
 }
 
-// The issuer a WS-Trust client is told about: `GET /sts` names it.
+// THE ISSUER OF A WS-TRUST JWT (#480): the realm's OAuth 2.0 issuer, what
+// `/.well-known/oauth-authorization-server` publishes — RFC 9068 section 4's
+// check — and what `GET /sts` names on its `JWT issuer:` line. Both are
+// read, and must agree.
 async function publishedIssuer(base) {
   log.debug("Entering publishedIssuer().");
+  const meta = await call("GET", base +
+                          "/.well-known/oauth-authorization-server");
+  assert.ok(meta.status === 200 && meta.json && meta.json.issuer,
+            "the authorization server metadata at " + base + ": " +
+            meta.status + " " + meta.text.slice(0, 200));
   const r = await call("GET", base + "/sts", undefined, { Accept: "*/*" });
-  const named = (/Issuer:\s*(\S+)/.exec(r.text) || [])[1] || "";
-  assert.ok(r.status === 200 && named, "GET /sts names no issuer: " +
-            r.status + " " + r.text.slice(0, 200));
+  const named = (/JWT issuer:\s*(\S+)/.exec(r.text) || [])[1] || "";
+  assert.strictEqual(named, meta.json.issuer, "GET /sts should name the " +
+    "JWT issuer as the authorization server metadata does (#480): " +
+    r.text.slice(0, 300));
   log.debug("Leaving publishedIssuer(). " + named);
   return named;
+}
+
+// THE ISSUER A WS-TRUST SAML ASSERTION FOR `tier` CARRIES (#480). In
+// product: the entityID this identity provider publishes to that
+// application, in its own `/saml2/metadata/{sp}` — the per-SP entityID SAML
+// SSO names itself by, where `saml2.perApplicationEntityId` is on. In
+// development: the STS's name on `GET /sts`, which is `saml.issuer`'s
+// placeholder (or the realm's seed) there.
+async function samlIssuerFor(base, tier, product) {
+  log.debug("Entering samlIssuerFor(). " + tier.identifier);
+  let out;
+  if (product) {
+    const r = await call("GET", base + "/saml2/metadata/" +
+                         encodeURIComponent(tier.identifier), undefined,
+                         { Accept: "application/samlmetadata+xml, */*" });
+    out = (/entityID="([^"]+)"/.exec(r.text) || [])[1] || "";
+    assert.ok(r.status === 200 && out, "/saml2/metadata/" + tier.identifier +
+              ": " + r.status + " " + r.text.slice(0, 200));
+    assert.notStrictEqual(out, "urn:wstrust:mock:sts", "a product service " +
+                          "publishes the development placeholder as its " +
+                          "entityID");
+  } else {
+    const r = await call("GET", base + "/sts", undefined, { Accept: "*/*" });
+    out = (/^Issuer:\s*(\S+)/m.exec(r.text) || [])[1] || "";
+    assert.ok(out, "GET /sts names no issuer: " + r.text.slice(0, 200));
+  }
+  log.debug("Leaving samlIssuerFor(). " + out);
+  return out;
 }
 
 // Whether a client's own subject is `urn:sts:client:<id>` at the service:
@@ -1172,6 +1209,7 @@ module.exports = {
   JWT_TOKEN_TYPE: JWT_TOKEN_TYPE,
   jwks: jwks,
   publishedIssuer: publishedIssuer,
+  samlIssuerFor: samlIssuerFor,
   clientSubjectsNamespaced: clientSubjectsNamespaced,
   assertChainJwt: assertChainJwt,
   validateJwtAtTarget: validateJwtAtTarget,

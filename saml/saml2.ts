@@ -52,6 +52,8 @@ import stsCrypto = require('../common/crypto');
 // saml.issuer, read per assertion rather than captured at require time so
 // that /admin/config can change what the next one says it came from.
 import config = require('../common/config');
+// #480: the names this service signs under, in one place (a library).
+import IssuerNames = require('../common/issuer_names');
 // The error-code registry, a leaf; the signing failure below is tagged with its
 // code.
 import errorCodes = require('../common/error_codes');
@@ -375,7 +377,9 @@ class Saml2Assertions {
     // Who signed it. Read once, because it appears in the Issuer element and in
     // the default `issuedBy` attribute, and two reads of a runtime-changeable
     // setting inside one document can disagree with each other.
-    const issuer = opts.issuer || config.value('saml.issuer');
+    // #480: `saml.issuer`, or in product the SAML entityID where nobody set
+    // it (`common/issuer_names.ts`).
+    const issuer = opts.issuer || IssuerNames.samlIssuer();
     const attributes: AttributeRow[] =
       (opts.attributes && opts.attributes.length) ? opts.attributes : [
         { name: 'name', value: subject },

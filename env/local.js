@@ -198,20 +198,13 @@ var config = {
     seedInternal: true
   },
 
-  // --- SAML --------------------------------------------------------------
-  saml: {
-    issuer: "urn:wstrust:mock:sts"
-  },
-
-  // --- WS-Trust ----------------------------------------------------------
-  wstrust: {
-    issuer: "urn:wstrust:mock:sts"
-  },
-
-  // --- WS-Federation -----------------------------------------------------
-  wsfed: {
-    entityId: "urn:wstrust:mock:sts"
-  },
+  // --- SAML, WS-Trust, WS-Federation: NAMES NOT SET HERE (#480) ---------
+  // `saml.issuer`, `wstrust.issuer` and `wsfed.entityId` were set to the
+  // development placeholder `urn:wstrust:mock:sts` here until #480, and this
+  // file is the image's default — so a PRODUCT deployment signed with it. Left
+  // unset, a development service still uses that placeholder (the shipped
+  // default) and a product one names itself by its SAML 2.0 entityID
+  // (`common/issuer_names.ts`). Set one here to choose it in either mode.
 
   // --- TLS ---------------------------------------------------------------
   tls: {

@@ -38,6 +38,10 @@
 // default semantics is delegation, under which OnBehalfOf is refused in
 // product (`sts_delegation_policy.js` W3).
 //
+// THE ISSUER (#480): every assertion's Issuer is, in product, the entityID
+// its AppliesTo's own `/saml2/metadata/{sp}` names (per SP, as SAML SSO
+// names itself), and in development the STS's placeholder name.
+//
 // WHAT IT ASSERTS, in the OAuth jobs' four layers:
 //
 //   1. THE REGISTRY: each entry read back with its registered identifier
@@ -118,6 +122,15 @@ async function test() {
         "wstrustAppliesTo and samlEntityId, and the three requesters " +
         "impersonate towards the next tier only", function () {});
 
+  // THE ISSUER EACH ASSERTION MUST CARRY (#480): in product the entityID
+  // each AppliesTo's own SAML metadata names; in development the STS's
+  // placeholder name.
+  const issuers = [];
+  for (let i = 0; i < cast.tiers.length; i++) {
+    issuers.push(await kit.samlIssuerFor(base, cast.tiers[i], product));
+  }
+  log.info("[issuer] " + JSON.stringify(issuers));
+
   log.info("=== The sign-in ===");
   const signedIn = await kit.signIn(base, cast);
   let first;
@@ -125,6 +138,7 @@ async function test() {
         "to " + cast.webapp.appliesTo + ", PasswordProtectedTransport, no " +
         "delegate", function () {
     first = kit.assertChainAssertion(cast, signedIn.assertion, {
+      issuer: issuers[0],
       what: cast.user + "'s sign-in assertion",
       audience: cast.webapp.appliesTo, delegates: [],
       authnContext: kit.AC_PASSWORD });
@@ -145,7 +159,7 @@ async function test() {
           function () {
       assertions.push(kit.assertChainAssertion(cast, answer.assertion, {
         what: tier.identifier + "'s OnBehalfOf assertion",
-        audience: next.appliesTo, issuer: first.issuer,
+        audience: next.appliesTo, issuer: issuers[i + 1],
         notAudience: cast.tiers.slice(0, i + 1).map(function (one) {
           return one.appliesTo;
         }),
