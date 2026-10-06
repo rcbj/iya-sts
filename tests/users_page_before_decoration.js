@@ -362,12 +362,15 @@ function oldView(query) {
 // The members compared between the two answers. Whole rows, with their
 // factors, for the rows shown — less `liveSessions`, which the answer has
 // carried since #446 for the page's sessions column and which counts sign-on
-// sessions rather than anything the old algorithm decided.
+// sessions rather than anything the old algorithm decided, and less
+// `serviceAccount`, which #221 added for the page's service-account mark and
+// which the old algorithm did not decide either.
 function comparable(json) {
   log.debug("Entering comparable().");
   const users = (json.users || []).map(function (row) {
     const copy = Object.assign({}, row);
     delete copy.liveSessions;
+    delete copy.serviceAccount;
     return copy;
   });
   log.debug("Leaving comparable().");
