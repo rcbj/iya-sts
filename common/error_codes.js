@@ -1575,6 +1575,21 @@ const CODES = [
       'and this build seals every entry. The start is refused; recreate the ' +
       'database (#391).',
     spec: 'none — fatal at start' },
+  { code: 'STS-STORE-0075',
+    summary: 'The sequence numbers of the audit log and the delegation ' +
+      'register could not be leased from the shared store at start-up, so ' +
+      'this process numbers its rows with its own counter, unique only ' +
+      'within this process (#465).',
+    spec: '' },
+  { code: 'STS-STORE-0076',
+    summary: 'A sequence stream spent both of its leased blocks with no new ' +
+      'lease from the store, so it numbers from this process\'s own ' +
+      'fallback range until the process restarts (#465).',
+    spec: '' },
+  { code: 'STS-STORE-0077',
+    summary: 'A block of sequence numbers could not be leased from the ' +
+      'store; the next half-spent block asks again (#465).',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

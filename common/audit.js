@@ -99,6 +99,48 @@ const clientAddress = require('./client_address');
 const { AsyncLocalStorage } = require('async_hooks');
 
 // ---------------------------------------------------------------------------
+// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY:
+// this file is in the parent project's in-process Kerberos COPY closure
+// (kerberos/CLAUDE.md), and a top-level require would owe it two more files.
+// `seq_allocator` hands out a number unique across every process of the
+// service; the origin is this process's stable name in the store, or '' with
+// no shared store. Neither throws: a failure is the caller's own counter and
+// an empty origin.
+// ---------------------------------------------------------------------------
+const seqAllocator = {
+  next: function next(name, local) {
+    log.debug("Entering next().");
+    let allocator = null;
+    try {
+      allocator = require('./seq_allocator');
+    } catch (e) {
+      log.debug("Caught in next(): " + ((e && e.message) || e));
+      allocator = null;
+    }
+    log.debug("Leaving next().");
+    return allocator ? allocator.next(name, local) : local();
+  }
+};
+
+/**
+ * This process's stable origin in the store, or '' without a shared store.
+ *
+ * @returns the origin
+ */
+function processOrigin() {
+  log.debug("Entering processOrigin().");
+  let origin = '';
+  try {
+    origin = String(require('../persistence/persistence').originId() || '');
+  } catch (e) {
+    log.debug("Caught in processOrigin(): " + ((e && e.message) || e));
+    origin = '';
+  }
+  log.debug("Leaving processOrigin().");
+  return origin;
+}
+
+// ---------------------------------------------------------------------------
 // The cap, read WHERE IT IS USED rather than captured at require time.
 //
 // `audit.maxEvents` is a runtime setting — /admin/config and POST
@@ -1285,10 +1327,12 @@ const OUTCOMES = ['success', 'refused', 'error'];
 // cap — measurably nothing here, and the alternative (a real circular buffer
 // with a head index) is more code to get the ordering wrong in.
 //
-// `seq` is monotonic and NEVER reused, including across a trim. That is what
-// makes the number on a row a stable name for that event: a caller can say "I
-// have read up to 4,102" and mean it, where a row index would silently mean a
-// different event as soon as anything was dropped.
+// `seq` is NEVER reused — not across a trim, a restart, or the processes of
+// one service (#465, `common/seq_allocator.ts`) — and it rises within each
+// process. That is what makes the number on a row a stable name for that
+// event, where a row index would silently mean a different event as soon as
+// anything was dropped. It is NOT one order across processes: a reader
+// resumes by time (`at`), with `seq` as the tie-break.
 // ---------------------------------------------------------------------------
 // PER TRUST REALM. `realms.arr()` is a array that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -1311,11 +1355,11 @@ const events = realms.arr({ persist: 'audit.events', merge: 'own',
 // `realms.obj(factory)` is a plain object per realm, so `nums.seq++` works
 // exactly as the bindings it replaced did.
 // ---------------------------------------------------------------------
-// PERSISTED WITH THE RING, and it has to be the two together. `seq` is
-// promised to be monotonic and never reused, which is what makes the number on
-// a row a stable name — "I have read up to 4,102" has to keep meaning the same
-// event across a restart. A restored ring beside a `seq` that went back to 0
-// would renumber every event written afterwards on top of ones already read.
+// PERSISTED WITH THE RING, and it has to be the two together. `nums.seq` is
+// the counter a SINGLE-WRITER store numbers with (`seq_allocator.ts` hands
+// out leased numbers wherever the store is shared, #465), and a restored ring
+// beside one that went back to 0 would renumber every event written
+// afterwards on top of ones already read.
 const nums = realms.obj(function () {
   return { seq: 0, recorded: 0 };
 }, { persist: 'audit.nums', merge: 'own' });
@@ -1578,10 +1622,18 @@ function record(event) {
   }
   const outcome = OUTCOMES.indexOf(info.outcome) >= 0
     ? info.outcome : (errorCode ? 'refused' : 'success');
-  nums.seq++;
   nums.recorded++;
   const row = {
-    seq: nums.seq,
+    // UNIQUE ACROSS EVERY PROCESS OF THE SERVICE (#465): a number from this
+    // process's block leased from the store, or this realm's own counter
+    // where there is one writer. See common/seq_allocator.ts.
+    seq: seqAllocator.next('audit', function () {
+      nums.seq++;
+      return nums.seq;
+    }),
+    // WHICH PROCESS RECORDED IT (#465) — its stable origin in the store, or
+    // '' with no shared store — the tie-break merged() sorts on.
+    origin: processOrigin(),
     at: now,
     category: category,
     action: action,
@@ -2081,11 +2133,13 @@ function list() {
 // ever sees more than this process's own events. Two consequences worth
 // knowing:
 //
-//   * **`seq` IS ONLY MONOTONIC WITHIN ONE PROCESS.** It always was — it is a
-//     per-realm counter — and with several processes it is per process as
-//     well. The rows carry `origin` so that "I have read up to 4,102" can
-//     still mean something, and the sort below is by TIME rather than by
-//     sequence, because time is the only ordering two processes share.
+//   * **`seq` IS UNIQUE ACROSS PROCESSES, AND RISES WITHIN EACH ONE (#465).**
+//     Each process numbers from blocks it leased from the store
+//     (`common/seq_allocator.ts`), so no two rows share a number — but two
+//     processes hold different blocks, so the numbers are not one order
+//     across them. The rows carry `origin`, and the sort below is by TIME,
+//     because time is the only ordering two processes share; a reader
+//     resumes by `at`, with `seq` as the row's name and the tie-break.
 //   * **THE CAP IS PER PROCESS**, so a two-process deployment holds up to
 //     twice `audit.maxEvents` between them. That is the honest behaviour
 //     rather than a bug: each process bounds its own memory, and trimming

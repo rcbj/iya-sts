@@ -5218,10 +5218,17 @@ const SCHEMAS = {
     {
       seq: {
         type: 'integer',
-        description: 'Monotonic and NEVER REUSED, including across a drop. ' +
-                     'The stable name for an act and the thing to walk this ' +
-                     'list by.'
+        description: 'Unique across every process of the service and ' +
+                     'NEVER REUSED, including across a drop and a restart; ' +
+                     'rising within each process, not one order across ' +
+                     'them (#465). The stable name for an act; resume ' +
+                     'reading by `at`.'
       },
+      origin: { type: 'string',
+                description: 'The process that recorded the act, by its ' +
+                             'stable origin in the store; empty without a ' +
+                             'shared store. The tie-break, with `seq`, for ' +
+                             'two acts in one millisecond.' },
       at: { type: 'integer', description: 'Milliseconds since the epoch.' },
       protocol: { type: 'string',
                   description: 'The family, spelled as /admin-api/users ' +
@@ -5563,11 +5570,17 @@ const SCHEMAS = {
     {
       seq: {
         type: 'integer',
-        description: 'Monotonic and NEVER REUSED, including across a drop. ' +
-                     'This is the stable name for an event and the thing to ' +
-                     'walk the log by: a row number would silently mean a ' +
-                     'different event as soon as the cap discarded anything.'
+        description: 'Unique across every process of the service and ' +
+                     'NEVER REUSED, including across a drop and a restart; ' +
+                     'rising within each process, not one order across ' +
+                     'them (#465). The stable name for an event — a row ' +
+                     'number would silently mean a different event as soon ' +
+                     'as the cap discarded anything. Resume reading by `at`.'
       },
+      origin: { type: 'string',
+                description: 'The process that recorded the event, by its ' +
+                             'stable origin in the store; empty without a ' +
+                             'shared store.' },
       at: { type: 'integer',
             description: 'When it happened, in milliseconds since the epoch.' },
       category: { type: 'string',
@@ -5696,12 +5709,15 @@ const SCHEMAS = {
       shown: { type: 'integer', description: 'How many are in `events`.' },
       oldestSeq: {
         type: 'integer',
-        description: 'The lowest sequence number still held. A gap between ' +
-                     'the last one a caller saw and this is exactly how many ' +
-                     'events it missed.'
+        description: 'The sequence number of the oldest event held. ' +
+                     'Sequence numbers are unique across every process of ' +
+                     'the service and never reused, and rise within each ' +
+                     'process; they are not one order across processes, so ' +
+                     'a reader resumes by `at` (#465).'
       },
       newestSeq: { type: 'integer',
-                   description: 'The highest sequence number recorded.' },
+                   description: 'The sequence number of the newest event ' +
+                                'held.' },
       byCategory: openObject('How many held events are in each category.', {}),
       byOutcome: openObject('How many held events had each outcome.', {}),
       byAction: openObject('How many held events had each action. Only ' +

@@ -3926,11 +3926,10 @@ class AdminViews {
         recorded: summary.recorded, dropped: summary.dropped,
         maxEvents: summary.maxEvents, protocolCalls: summary.protocolCalls,
         matched: filtered.length, shown: shown.length,
-        // The lowest and highest sequence numbers still held. A caller polling
-        // this endpoint uses them rather than a timestamp: `seq` is monotonic
-        // and never reused, so "everything after 4,102" is exact, and a gap
-        // between the last seq you saw and `oldestSeq` is precisely how many
-        // events you missed.
+        // The numbers of the oldest and newest events held. `seq` is unique
+        // across every process and never reused, and rises within each one
+        // (#465) — but it is not one order across processes, so a caller
+        // polling this resumes by `at`, with `seq` as the tie-break.
         oldestSeq: summary.oldestSeq, newestSeq: summary.newestSeq,
         byCategory: summary.byCategory, byOutcome: summary.byOutcome,
         byAction: summary.byAction,
@@ -4662,8 +4661,9 @@ class AdminViews {
       links: !(options && options.links === false), id: 'delmap', label: label
     });
     // WHICH ROLES THIS APPLICATION PLAYED IN THE ACT EACH CREDENTIAL CAME
-    // OUT OF, keyed on `seq` — the act's own identifier, monotonic and never
-    // reused, so a role cannot attach to the wrong credential.
+    // OUT OF, keyed on `seq` — the act's own identifier, unique across every
+    // process and never reused (#465), so a role cannot attach to the wrong
+    // credential.
     const rolesBySeq = {};
     acts.forEach(function (row) {
       rolesBySeq[row.seq] = delegation.applicationRolesIn(row, key);
@@ -5724,10 +5724,9 @@ class AdminViews {
         recorded: summary.recorded, dropped: summary.dropped,
         maxRecords: summary.maxRecords,
         matched: filtered.length, shown: shown.length,
-        // The lowest and highest sequence numbers still held. A caller polling
-        // this endpoint uses them rather than a timestamp, for the reason
-        // /admin-api/audit gives: `seq` is monotonic and never reused, so
-        // "everything after 41" is exact.
+        // The numbers of the oldest and newest acts held, for the reason
+        // /admin-api/audit gives: `seq` is unique across every process and
+        // never reused, not one order across them (#465).
         oldestSeq: summary.oldestSeq, newestSeq: summary.newestSeq,
         byType: summary.byType, byMode: summary.byMode,
         byOutcome: summary.byOutcome, byProtocol: summary.byProtocol,

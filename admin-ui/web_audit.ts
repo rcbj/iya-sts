@@ -236,16 +236,18 @@ class AuditPage {
         : '. The cap is ' + summary.maxEvents + ' events and nothing has ' +
                                                 'been dropped yet.')) +
 
-      kit.note('The <strong>#</strong> column is a sequence number, and ' +
-      'it is monotonic and never reused — including across a drop. That is ' +
-      'what makes it a stable name for an event: a caller can say &ldquo;I ' +
-      'have read up to ' +
-      (summary.newestSeq || 0) + '&rdquo; and mean it, where a row number ' +
-      'would silently name a different event as soon as anything was ' +
-      'discarded. <code>?format=json</code> carries <code>oldestSeq</code> ' +
-      'and <code>newestSeq</code> for exactly that: a gap between the last ' +
-      'one you saw and <code>oldestSeq</code> is how many events you ' +
-      'missed.') +
+      kit.note('The <strong>#</strong> column is a sequence number, ' +
+      'unique across every process of this service and never reused — ' +
+      'including across a drop and a restart — and rising within each ' +
+      'process. That is what makes it a stable name for an event, where a ' +
+      'row number would silently name a different event as soon as ' +
+      'anything was discarded. It is NOT one order across processes: ' +
+      'several worker threads or cluster nodes each number from blocks of ' +
+      'their own. To read what is new, resume by time ' +
+      '(<code>at</code>), with <code>seq</code> as the tie-break. ' +
+      '<code>?format=json</code> carries <code>oldestSeq</code> and ' +
+      '<code>newestSeq</code>, the numbers of the oldest and newest ' +
+      'events held.') +
 
       '<h3>Where the rows come from</h3>' +
       kit.note('Six categories and five recording points, rather than a ' +

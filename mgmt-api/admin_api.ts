@@ -18671,12 +18671,15 @@ class AdminApi {
                      'and the session that came out of it. They are three ' +
                      'facts at three layers, and a Kerberos AS-REQ ' +
                      'authenticates somebody and starts no session at ' +
-                     'all.\n\nWALK IT BY `seq`, not by page. That number ' +
-                     'is monotonic and never reused, including across a ' +
-                     'drop, so "everything after 4102" is exact; a gap ' +
-                     'between ' +
-                     'the last one you saw and `oldestSeq` is precisely how ' +
-                     'many events you missed while the cap discarded them.',
+                     'all.\n\nRESUME BY `at`, not by page. Every event ' +
+                     'has a `seq` that is unique across every process of ' +
+                     'the service and never reused, including across a ' +
+                     'drop and a restart, and that rises within each ' +
+                     'process (#465). It is NOT one order across ' +
+                     'processes — request workers and cluster nodes each ' +
+                     'number from blocks of their own — so read what is ' +
+                     'new by `at`, with `seq` (and `origin`) as the ' +
+                     'tie-break and as the event\'s name.',
         mirrors: 'GET /admin/audit',
         parameters: [
           { name: 'category', in: 'query', required: false,
@@ -18940,8 +18943,10 @@ class AdminApi {
                      'register with the issued one at ' +
                      '/admin/delegation/user?user=…&format=json, and the ' +
                      'tokens alone are in GET ' +
-                     '/admin-api/users.\n\nWALK IT BY `seq`: ' +
-                     'monotonic and never reused, including across a drop.',
+                     '/admin-api/users.\n\nRESUME BY `at`: an act\'s ' +
+                     '`seq` is unique across every process and never ' +
+                     'reused, and rises within each process, but it is ' +
+                     'not one order across processes (#465).',
         mirrors: 'GET /admin/delegation',
         parameters: delegationFilter.concat(this.pagingParameters()),
         responseDescription: 'The matching acts, the distinct chains among ' +
