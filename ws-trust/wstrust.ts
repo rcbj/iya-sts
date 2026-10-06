@@ -1087,6 +1087,20 @@ class WsTrust {
       return { subject: '', element: '', tokenId: '' };
     }
     const element = oboEl ? 'OnBehalfOf' : 'ActAs';
+    // A JWT THIS STS ISSUED, in the BinarySecurityToken its own RSTR carries
+    // it in (#477). WS-Trust 1.3 section 9.2 and 1.4 section 9.3 put a
+    // security token in either element and name no kind, so a JWT is read
+    // the way an assertion is — see delegatedJwt(). An assertion inside
+    // wins where an element somehow carries both, as it always did.
+    const jwtEl = firstByLocal(obo, 'Assertion') ? null
+      : this.delegatedJwtElement(obo);
+    if (jwtEl) {
+      const fromJwt = this.delegatedJwt(jwtEl, element);
+      fromJwt.both = !!(oboEl && actAsEl);
+      log.debug("Leaving WsTrust.delegatedSubject(). A JWT via " + element +
+                ".");
+      return fromJwt;
+    }
     // PRODUCT: the token being delegated WITH must be an assertion this STS
     // issued and that is still valid — a bare UsernameToken or an unsigned
     // assertion inside <wst:OnBehalfOf> is a name anybody can type, and the
@@ -1138,6 +1152,159 @@ class WsTrust {
     return { subject: named, element: element, both: !!(oboEl && actAsEl),
              tokenId: tokenId, audiences: this.delegatedAudiences(obo),
              delegates: this.delegatedDelegates(obo) };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A JWT INSIDE OnBehalfOf OR ActAs (#477, 2026-10-06).
+  //
+  // WS-Trust names no kind of token for either element: 1.3 section 9.2's
+  // OnBehalfOf and 1.4 section 9.3's ActAs each hold "a security token or
+  // wsse:SecurityTokenReference". Until #477 only a SAML assertion was read
+  // there, so a chain whose response tokens were JWTs stopped at its first
+  // hop: product refused the JWT (`STS-WSTRUST-0008`, "no SAML assertion"),
+  // and development read no NameID and delegated for `delegated-subject`.
+  //
+  // THE SAME FOOTING AS AN ASSERTION (`checkedAssertion()`), for the same
+  // reason: the smallest real answer to "which issuer is trusted" is this
+  // STS. So the token is the `wsse:BinarySecurityToken` this STS's own RSTR
+  // carries a JWT in (ValueType `urn:ietf:params:oauth:token-type:jwt`),
+  // and in PRODUCT it must verify with this realm's own key, be inside its
+  // own `exp` / `nbf` (`oauth2.clockSkewS`, via `verifyJws()`), carry this
+  // STS's issuer (`wstrust.issuer`) — an OAuth access token from this realm
+  // is signed with the same key and is not a token this STS issued — and
+  // name a person this directory holds by its `urn:uuid:` subject.
+  // Development reads it unverified and believes it, as it believes a
+  // NameID. What the rest of the request needs is read off it as an
+  // assertion's is: the subject, S (its `aud`), the prior delegates (its
+  // `act`, innermost first: least to most recent) and the identifier the
+  // act consumed (its `jti`). Nothing about the decision or the token issued
+  // changes; WS-Trust's processing reads one more kind of token.
+  // ---------------------------------------------------------------------------
+  private delegatedJwtElement(element) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.delegatedJwtElement().");
+    const all = element && element.getElementsByTagNameNS
+      ? element.getElementsByTagNameNS('*', 'BinarySecurityToken') : [];
+    for (let i = 0; i < all.length; i += 1) {
+      if (String(all[i].getAttribute('ValueType') || '') === JWT_TOKEN_TYPE) {
+        log.debug("Leaving WsTrust.delegatedJwtElement(). Found.");
+        return all[i];
+      }
+    }
+    log.debug("Leaving WsTrust.delegatedJwtElement(). None.");
+    return null;
+  }
+
+  private delegatedJwt(jwtEl, element): any {
+    const { mode, config, log } = this.deps;
+    log.debug("Entering WsTrust.delegatedJwt(). " + element);
+    const token = String(jwtEl.textContent || '').trim();
+    const what = 'JWT inside <wst:' + element + '>';
+    const refused = function (code, why, fault?) {
+      log.debug("Entering refused(). " + code);
+      log.debug("Leaving refused().");
+      return { subject: '', element: element, tokenId: '', errorCode: code,
+               trustFault: fault || 'InvalidRequest', refused: why };
+    };
+    let claims: any = null;
+    if (mode.verifiesCredentials()) {
+      try {
+        claims = helpers.verifyOwnJws(token);
+      } catch (e) {
+        log.debug("Caught in WsTrust.delegatedJwt(): " +
+                  ((e && e.message) || e));
+        const message = String((e && e.message) || e);
+        log.debug("Leaving WsTrust.delegatedJwt(). Product: it did not " +
+                  "verify.");
+        if (/expired/i.test(message)) {
+          return refused('STS-WSTRUST-0027', 'The ' + what + ' has ' +
+                         'expired (' + message + ').', 'ExpiredData');
+        }
+        return refused('STS-WSTRUST-0026', 'The ' + what + ' does not ' +
+                       'verify with this security token service\'s own key (' +
+                       message + '). In product mode a delegated JWT is ' +
+                       'accepted only if this STS issued it.');
+      }
+      const issuer = String(config.value('wstrust.issuer') || '');
+      if (!claims || String(claims.iss || '') !== issuer) {
+        log.debug("Leaving WsTrust.delegatedJwt(). Product: another issuer.");
+        return refused('STS-WSTRUST-0026', 'The ' + what + ' was issued by "' +
+                       String(claims && claims.iss) + '", not by this ' +
+                       'security token service ("' + issuer + '").');
+      }
+    } else {
+      try {
+        claims = JSON.parse(Buffer.from(token.split('.')[1] || '',
+                                        'base64url').toString('utf8'));
+      } catch (e) {
+        log.debug("Caught in WsTrust.delegatedJwt(): " +
+                  ((e && e.message) || e));
+        // Development reads what it can; a JWT it cannot read names nobody.
+        claims = {};
+      }
+    }
+    const subject = this.nameOfSubject(String(claims.sub || '')) ||
+      (mode.verifiesCredentials() ? '' : String(claims.name || ''));
+    if (!subject) {
+      log.debug("Leaving WsTrust.delegatedJwt(). It names nobody.");
+      if (mode.verifiesCredentials()) {
+        return refused('STS-WSTRUST-0028', 'The ' + what + '\'s sub "' +
+                       String(claims.sub || '') + '" names nobody this ' +
+                       'directory holds.');
+      }
+    }
+    const audiences = [].concat(claims.aud === undefined ? [] : claims.aud)
+      .map(String).filter(function (one) { return !!one; });
+    log.debug("Leaving WsTrust.delegatedJwt(). " + (subject ||
+              'delegated-subject') + ".");
+    return { subject: subject || 'delegated-subject', element: element,
+             tokenId: String(claims.jti || ''), audiences: audiences,
+             delegates: this.delegatesInAct(claims.act) };
+  }
+
+  // A person's username from the `urn:uuid:` subject this service gave them.
+  private nameOfSubject(sub) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.nameOfSubject().");
+    const name = helpers.nameForSubject(sub);
+    log.debug("Leaving WsTrust.nameOfSubject().");
+    return name;
+  }
+
+  // An RFC 8693 `act` chain as the delegates list an assertion's Delegation
+  // Restriction gives (least to most recent): innermost first, each `sub`
+  // read back to the name the rest of this module uses — an application's
+  // identifier for a client subject (`urn:sts:client:<client_id>` or the
+  // bare client_id, #476), a person's username for a `urn:uuid:` one.
+  private delegatesInAct(act) {
+    const { applications, log } = this.deps;
+    log.debug("Entering WsTrust.delegatesInAct().");
+    const chain = [];
+    let level = act;
+    // Bounded, as `OAuth2Server.priorActChain()` is: RFC 8693 bounds the
+    // nesting by nothing.
+    for (let depth = 0; level && typeof level === 'object' && depth < 64;
+         depth += 1) {
+      chain.unshift(String(level.sub || ''));
+      level = level.act;
+    }
+    const out = chain.filter(function (one) { return !!one; })
+      .map((sub) => {
+        const clientId = /^urn:sts:client:./.test(sub)
+          ? sub.slice('urn:sts:client:'.length) : sub;
+        const app: any = applications.get(clientId) ||
+          applications.forClientId(clientId);
+        if (app) {
+          return { nameId: String(app.identifier), format: '', instant: '' };
+        }
+        const person = this.nameOfSubject(sub);
+        return { nameId: person || sub,
+                 format: person ? 'urn:oasis:names:tc:SAML:1.1:nameid-' +
+                                  'format:unspecified' : '',
+                 instant: '' };
+      });
+    log.debug("Leaving WsTrust.delegatesInAct(). " + out.length);
+    return out;
   }
 
   // #186: the parties the delegated assertion already says ACTED — its SAML
