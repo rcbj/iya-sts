@@ -97,15 +97,17 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // copy beside it rather than one over there.
 //
 // `browser: true` means the job drives Chrome through selenium-webdriver. There
-// are TWO, and both are console coverage against this working tree, which is
-// why `--no-browser` names them when it leaves them out.
+// are THREE, all coverage of this working tree's own pages, which is why
+// `--no-browser` names them when it leaves them out.
 // `sts_admin_console.js` walks every page; `sts_xacml_editor.js` drives ONE
 // page in depth — the guided policy editor, whose forty forms per render, whose
 // menus and whose nested-form hazard are markup rather than behaviour, and are
 // therefore invisible to the in-process suite that already holds its grammar.
 // They are not redundant: the first would notice the editor page failing to
 // draw, and nothing but the second notices it drawing a menu against the wrong
-// row's path.
+// row's path. The third, `sts_portal_device_webauthn.js` (#258), is the
+// portal's: the one scripted step on `/portal/devices`, run by Chrome against
+// a virtual authenticator, which no HTTP job can make.
 //
 // ---------------------------------------------------------------------------
 // `docker: true` MEANS THE JOB NEEDS A REMOTE PEP CONTAINER, AND IT IS A
@@ -1051,6 +1053,18 @@ const JOBS = [
   // Devices, Device registration and /admin/ldap/devices. `local: true`:
   // this repository's register and API.
   { file: 'sts_devices.js',              browser: false, local: true },
+  // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
+  // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
+  // roaming key and a platform key on /portal/keys; the roaming one is
+  // passed over and refused when forced; with script blocked the armed
+  // page's real button answers in a sentence and links nothing; the armed
+  // response is `script-src 'self'` with frame-ancestors; the script runs
+  // the ceremony — linked in development, refused in product (an
+  // unattested key, STS-DEVICE-0024) — and in development the device holds
+  // the key and a later WebAuthn sign-in recognises it. `local: true`: the
+  // portal and the API it is read back through are this repository's. AFTER
+  // sts_devices.js, which holds the register this one writes to.
+  { file: 'sts_portal_device_webauthn.js', browser: true, local: true },
   // A TPM KEY ATTESTATION'S FRESHNESS OVER EST (#257, 2026-10-06):
   // /nonce (draft-ietf-lamps-attestation-freshness section 5.1), a device
   // enrolment over a fresh TPM2_Certify statement built here, the same

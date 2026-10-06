@@ -1435,9 +1435,15 @@ a `link-finish` with no assertion, answered by a sentence.
 registers it self-asserted. Refusals are `STS-DEVICE-0016`–`0028`; the page
 and the JSON doors never take an identity from the request.
 
-**What it still has no test for**: the scripted link step in a real browser
-(the Selenium console job is rcbj's; `tests/device_enrolment.js` drives the
-same `finishLink()` with an assertion built in process).
+**The scripted link step is driven in a real browser** by
+`tests/vendored/sts_portal_device_webauthn.js` (#258): Chrome's virtual
+authenticators, the roaming key refused, the page with its script blocked,
+the armed policy, the link, and a later sign-in recognising the device.
+**In product it can only assert the refusal**: Chrome re-mints the virtual
+authenticator's self-signed attestation certificate at every registration,
+so no anchor makes its key attested, and product links nothing less — so
+the device and its recognition are asserted in development (`memory` mode).
+`tests/device_enrolment.js` still holds `finishLink()` in process.
 
 ## `/portal/ciba`: SIGN-IN REQUESTS (2026-09-23, #131)
 

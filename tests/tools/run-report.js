@@ -476,7 +476,8 @@ function vendoredJobs(options) {
     log.warn('SKIPPING ' + skippedBrowserJobs.length + ' browser job(s) on ' +
              '--no-browser: ' + skippedBrowserJobs.join(', ') + '. The admin ' +
              'console has NO other coverage against this working tree, so ' +
-             'this run says nothing about /admin.');
+             'this run says nothing about /admin — nor about the scripted ' +
+             'device link on /portal/devices.');
   }
   log.debug('Leaving vendoredJobs(). ' + jobs.length + ' job(s).');
   return jobs;
