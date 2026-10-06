@@ -12688,6 +12688,9 @@ export = {
   releaseWithholding: slot.forward('releaseWithholding'),
   withheldFor: slot.forward('withheldFor'),
   applicationDetailJson: slot.forward('applicationDetailJson'),
+  // #488: an application's wstrustJwtScope warnings, as its view carries
+  // them.
+  applicationScopeWarnings: slot.forward('applicationScopeWarnings'),
   applicationAttributeNote: slot.forward('applicationAttributeNote'),
   applicationsJson: slot.forward('applicationsJson'),
   applicationsListJson: slot.forward('applicationsListJson'),
