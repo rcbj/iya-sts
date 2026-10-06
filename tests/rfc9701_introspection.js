@@ -29,7 +29,9 @@
 //      answered 500, and product mode's 401 for anonymous JSON;
 //   4. SECTION 5's "INTENDED FOR THE RESOURCE SERVER" at the endpoint, by
 //      client_id, oauthAudience and permission base, a refresh token its own
-//      client's alone, and who is not restricted;
+//      client's alone, and who is not restricted — and a delegated token's
+//      `act` (nested) and `may_act` in both responses, to a caller the token
+//      is for and to nobody else (RFC 8693 section 7.2, #469);
 //   5. A NAMED AUTHORIZATION SERVER'S PROFILE narrowing the auth methods and
 //      the signing list, and a removed member not checking;
 //   6. OAUTH 2.1 SECTION 2.4 at introspection, in a realm in that mode;
@@ -688,6 +690,49 @@ function childMain() {
       note(activeIn(r) && part(r.text, 1).token_introspection.token_type ===
            'refresh_token', '4l. but its own client may', r.status);
     }
+
+    // --- 4m. `act` and `may_act` (RFC 8693 section 7.2, #469) ---------------
+    // A delegated token as an exchange mints one: the current actor
+    // outermost, the chain beneath it back to the original client (#443),
+    // and the subject's may_act. Signed here with this realm's key, so the
+    // endpoint verifies it as one of its own.
+    const helpers = require(ROOT + '/common/helpers');
+    const now = Math.floor(Date.now() / 1000);
+    const chain = { sub: 'r97-esb', act: { sub: 'r97-gw',
+                                           act: { sub: 'r97-web' } } };
+    const mayAct = { sub: 'r97-gw' };
+    const delegated = helpers.signJwt({
+      iss: part(apiToken, 1).iss, sub: 'urn:uuid:r97-delegated',
+      username: 'r97-alice', client_id: 'r97-client', typ: 'Bearer',
+      aud: 'r97-api', scope: 'r97-api', iat: now, nbf: now, exp: now + 600,
+      jti: 'r97-act-' + crypto.randomBytes(6).toString('hex'),
+      act: chain, may_act: mayAct });
+    r = await request(port, 'POST', '/oauth2/introspect',
+                      { form: { token: delegated } });
+    note(r.status === 200 && r.json.active === true &&
+         JSON.stringify(r.json.act) === JSON.stringify(chain) &&
+         JSON.stringify(r.json.may_act) === JSON.stringify(mayAct),
+         '4m. RFC 7662 JSON carries the token\'s act, nested as in the ' +
+         'token, and its may_act', r.text.slice(0, 400));
+    r = await asJwt(delegated, 'r97-api', 'r97-api-secret-0123456789abcdef');
+    const viewed = r.status === 200
+      ? part(r.text, 1).token_introspection || {} : {};
+    note(activeIn(r) &&
+         JSON.stringify(viewed.act) === JSON.stringify(chain) &&
+         JSON.stringify(viewed.may_act) === JSON.stringify(mayAct),
+         '4n. and so does RFC 9701\'s JWT, to the resource server it is ' +
+         'for', JSON.stringify(viewed).slice(0, 400));
+    r = await asJwt(delegated, 'r97-rs', RS_SECRET);
+    note(r.status === 200 && JSON.stringify(part(r.text, 1)
+           .token_introspection) === '{"active":false}',
+         '4o. a resource server the token is not for learns nothing of ' +
+         'its actors — {"active":false} alone', r.text.slice(0, 160));
+    r = await request(port, 'POST', '/oauth2/introspect',
+                      { form: { token: apiToken } });
+    note(r.status === 200 && r.json.active === true &&
+         !('act' in r.json) && !('may_act' in r.json),
+         '4p. a token carrying neither has neither member',
+         r.text.slice(0, 200));
 
     // --- 5. a named authorization server narrows what it advertises ----------
     const servers = require(ROOT + '/oauth-oidc/authorization_servers');

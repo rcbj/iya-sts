@@ -218,6 +218,11 @@ mode — are listed in [XACML](xacml.html).
   as for an actor token from `client_credentials`. Nothing is nested when the
   client exchanging the token is the one it was issued to. Only the outermost
   `act` is the current actor; the nested ones are history.
+* **Introspection returns the chain.** `/oauth2/introspect` answers with the
+  token's `act`, nested as in the token, and its `may_act` (RFC 8693 section
+  7.2), in the JSON response and in the RFC 9701 JWT alike, under the rule
+  every other member follows: an authenticated caller the token is not for
+  is told only that it is not active.
 * `may_act` is read off the verified subject token and compared with the
   actor's `sub` (and `iss`, when the claim has one). It is *issued* on a
   person's access tokens when their entry carries `stsMayAct`.

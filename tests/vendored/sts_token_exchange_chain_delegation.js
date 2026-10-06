@@ -67,8 +67,10 @@
 //      asked, with `act` exactly as above — the whole chain, compared in
 //      full, on the hop-1 token and on the final one.
 //   3. INTROSPECTION at sp1-del: active, for bob_end_user, addressed to
-//      sp1-del, app1-scope — and, where the response carries `act` (RFC 8693
-//      section 7.2 registers it for introspection), the same nested `act`.
+//      sp1-del, app1-scope — and the same nested `act`, the whole chain back
+//      to webapp1-del: RFC 8693 section 7.2 registers it for introspection
+//      and the service returns it (#469), so a resource server that
+//      introspects sees who acted.
 //   4. THE REGISTER AND THE PICTURE: one `oauth-delegation` act per hop,
 //      found by the jti of the token it produced, naming the actor_token's
 //      subject as the identity in the middle and the actor token's jti among
@@ -251,8 +253,8 @@ async function test() {
   const introspection = await kit.introspect(base, cast, hop2.access_token);
   check("3. introspection at " + cast.provider.identifier + ": active, " +
         cast.user + ", addressed to " + cast.provider.audience + ", " +
-        kit.COMMON_SCOPE + (introspection.act !== undefined
-          ? ", the same nested act" : ""), function () {
+        kit.COMMON_SCOPE + ", the same nested act back to " +
+        cast.webapp.identifier + " (#469)", function () {
     assert.strictEqual(introspection.active, true,
                        JSON.stringify(introspection));
     assert.strictEqual(introspection.username, cast.user,
@@ -261,14 +263,8 @@ async function test() {
       .indexOf(cast.provider.audience) >= 0, JSON.stringify(introspection));
     kit.assertCommonScope(introspection, "the introspection of the final " +
                           "token");
-    if (introspection.act !== undefined) {
-      assertActIs(introspection, nested, "the introspection of the final " +
-                  "token");
-    } else {
-      log.info("[introspection] the response carries no `act`; RFC 8693 " +
-               "section 7.2 registers it for introspection without " +
-               "requiring it.");
-    }
+    assertActIs(introspection, nested, "the introspection of the final " +
+                "token (RFC 8693 section 7.2, #469)");
   });
 
   log.info("=== The register and the picture ===");
