@@ -23069,6 +23069,26 @@ class AdminApi {
             'here.'] });
           return undefined;
         }
+        // AN UNKNOWN ACTION WHERE THE HELPERS LEFT (#454): the handler's
+        // refusal names every action it carries out, helpers included, and
+        // that sentence is what tests/vendored/admin_api.js reads for the
+        // parity — so on the management address it would name four actions
+        // the document no longer declares there. The sentence is built here
+        // from what this address still declares, in the handler's shape.
+        if (entry.consoleActions && asked && !(entry.actions || []).some(
+            function (one) {
+              return one.action === asked;
+            })) {
+          const known = entry.actions.map(function (one) {
+            return one.action;
+          });
+          errorCodes.mark(res, 'STS-API-0130');
+          self.sendJson(res, 400, { ok: false, errors: [
+            'Unknown action "' + asked + '". The ' +
+            helpers.numberWord(known.length) + ' are: ' +
+            known.join(', ') + '.'] });
+          return undefined;
+        }
         // The route this request matched, so the wrapper can find its schema
         // without re-deriving the path from what express matched.
         req.__adminApiRoute = path;

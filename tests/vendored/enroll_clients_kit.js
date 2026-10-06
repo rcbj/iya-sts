@@ -303,12 +303,21 @@ function run(command, args, options) {
 // The lines of a client's output or log that are warnings or errors, less
 // the ones a job has recorded as a documented exception (`allowed`, a list
 // of regular expressions, each argued where the job passes it).
+//
+// A LINE OF BASE64 IS NEVER A PROBLEM, whatever letters it happens to hold.
+// certmonger logs every PKCS#7 reply it receives, and a PEM body is random
+// text: on 2026-10-06 one line read `+PfAIl5Q…`, which a case-insensitive
+// `fail` matched, and the job reported a refusal that went exactly as it
+// should as a failure. A log message has a space in it; a base64 line has
+// none, so a line made only of the base64 alphabet is skipped.
+const BASE64_LINE = /^\s*[A-Za-z0-9+/]{16,}={0,2}\s*$/;
 function problemLines(text, pattern, allowed) {
   log.debug("Entering problemLines().");
   const lines = String(text).split(/\r?\n/).filter(function (line) {
-    return pattern.test(line) && !(allowed || []).some(function (re) {
-      return re.test(line);
-    });
+    return !BASE64_LINE.test(line) && pattern.test(line) &&
+      !(allowed || []).some(function (re) {
+        return re.test(line);
+      });
   });
   log.debug("Leaving problemLines(). count=" + lines.length);
   return lines;
