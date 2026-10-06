@@ -368,6 +368,80 @@ class RiskPage {
       '</tbody></table>');
   }
 
+  // ONE DROP-DOWN OF THE PAIRS THAT GO TOGETHER (#219). A dataset is read
+  // from only some formats (`risk_datasets.ts`'s CATALOGUE), and two
+  // drop-downs — every dataset beside every format — offered forty-eight
+  // combinations of which ten are real, the rest refused only once the form
+  // was sent. So each dataset is a group and its options are its own
+  // formats; the field is `dataset|format`, which the console's runtime
+  // sends as the two fields the operation takes
+  // (`ConsoleRuntime.splitJoinedFields()`).
+  /**
+   * Draws the one drop-down of the valid dataset and format pairs, grouped by
+   * dataset.
+   *
+   * @param view - the page's view: `datasets` (each with its `formats`) and
+   *   `formats`
+   * @param id - the element's id
+   * @returns the labelled select
+   */
+  static pairSelect(view: Json, id: string): string {
+    const formatLabel = RiskPage.formatLabels(view);
+    return '<label>Dataset and its format <select name="dataset|format" ' +
+      'id="' + kit.esc(id) + '" required>' +
+      view.datasets.map(function (d: Json): string {
+        return '<optgroup label="' + kit.esc(d.title + ' (' + d.dataset +
+                                             ')') + '">' +
+          (d.formats || []).map(function (format: string): string {
+            return '<option value="' + kit.esc(d.dataset + '|' + format) +
+              '">' + kit.esc(d.title + ' — ' +
+                             (formatLabel[format] || format)) + '</option>';
+          }).join('') + '</optgroup>';
+      }).join('') + '</select></label>';
+  }
+
+  // A format's name for a person: its id and whose file it is.
+  static formatLabels(view: Json): Json {
+    const out = {};
+    (view.formats || []).forEach(function (f: Json): void {
+      out[f.format] = f.format + (f.provider ? ' (' + f.provider + ')' : '');
+    });
+    return out;
+  }
+
+  // WHICH FILE GOES WITH WHICH DATASET (#219), said once above both forms:
+  // every pair the drop-down offers, with what the file looks like.
+  /**
+   * Draws the table of which file format each dataset is read from.
+   *
+   * @param view - the page's view
+   * @returns a collapsible table
+   */
+  static pairGuide(view: Json): string {
+    const byFormat = {};
+    (view.formats || []).forEach(function (f: Json): void {
+      byFormat[f.format] = f;
+    });
+    const rows = view.datasets.map(function (d: Json): string {
+      return (d.formats || []).map(function (format: string, i: number) {
+        const f = byFormat[format] || {};
+        return '<tr>' + (i === 0
+          ? '<td rowspan="' + d.formats.length + '"><strong>' +
+            kit.esc(d.title) + '</strong><br><code>' + kit.esc(d.dataset) +
+            '</code>' + (d.perRealm ? '<br><small>a list per realm</small>'
+                                    : '') + '</td>'
+          : '') + '<td><code>' + kit.esc(format) + '</code></td><td>' +
+          kit.esc(f.what || '') + '</td></tr>';
+      }).join('');
+    }).join('');
+    return '<details open><summary>Which file goes with which dataset' +
+      '</summary><p>Each dataset is read from the formats listed beside it ' +
+      'and no other; the drop-downs below offer only these pairs.</p>' +
+      '<table class="grid"><thead><tr><th>Dataset</th><th>Format</th>' +
+      '<th>What the file looks like</th></tr></thead><tbody>' + rows +
+      '</tbody></table></details>';
+  }
+
   static when(ms: number): string {
     return ms ? new Date(ms).toISOString().replace('.000Z', 'Z') : '—';
   }
@@ -468,18 +542,10 @@ class RiskPage {
     // shell adds is the first of them, and `risk_upload.ts` checks the token
     // and the fields before it writes a byte of the file.
     const uploadForm = !canWrite ? '' :
+      self.pairGuide(view) +
       '<h3>Upload a file</h3><form method="post" action="' + UPLOAD +
       '" enctype="multipart/form-data" id="risk-upload-form">' +
-      '<label>Dataset <select name="dataset" id="risk-upload-dataset">' +
-      view.datasets.map(function (d: Json): string {
-        return '<option value="' + esc(d.dataset) + '">' + esc(d.dataset) +
-          '</option>';
-      }).join('') + '</select></label> <label>Format <select name="format" ' +
-      'id="risk-upload-format">' +
-      view.formats.map(function (f: Json): string {
-        return '<option value="' + esc(f.format) + '">' + esc(f.format) +
-          '</option>';
-      }).join('') + '</select></label> ' + (view.realmOnly
+      self.pairSelect(view, 'risk-upload-pair') + ' ' + (view.realmOnly
         ? '<input type="hidden" name="realm" value="' + esc(view.realm) +
           '">'
         : '<label>Realm (an operator list only) <input type="text" ' +
@@ -507,16 +573,7 @@ class RiskPage {
     const importForm = !canWrite ? '' :
       '<h3>Paste a list</h3><form method="post" action="' + PAGE + '">' +
       '<input type="hidden" name="action" value="import">' +
-      '<label>Dataset <select name="dataset" id="risk-import-dataset">' +
-      view.datasets.map(function (d: Json): string {
-        return '<option value="' + esc(d.dataset) + '">' + esc(d.dataset) +
-          '</option>';
-      }).join('') + '</select></label> <label>Format <select name="format" ' +
-      'id="risk-import-format">' +
-      view.formats.map(function (f: Json): string {
-        return '<option value="' + esc(f.format) + '">' + esc(f.format) +
-          '</option>';
-      }).join('') + '</select></label> ' + (view.realmOnly
+      self.pairSelect(view, 'risk-import-pair') + ' ' + (view.realmOnly
         ? '<input type="hidden" name="realm" value="' + esc(view.realm) +
           '">'
         : '<label>Realm (an operator list only) <input type="text" ' +

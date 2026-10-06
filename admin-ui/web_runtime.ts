@@ -816,6 +816,40 @@ class ConsoleRuntime {
                                : new FormData(form);
   }
 
+  // A JOINED FIELD (#219): ONE drop-down whose name is `a|b` and whose
+  // values are `x|y` stands for two fields, `a=x` and `b=y`. It is how a
+  // form offers only the PAIRS that go together — Monitoring → Risk's
+  // dataset and its format — where two drop-downs would offer every
+  // combination and leave the server to refuse most of them. The operation
+  // is sent the two fields it has always taken; nothing in the API changes.
+  // A value with fewer parts than the name leaves the rest empty, which the
+  // operation refuses as it would an empty field.
+  /**
+   * Splits every joined field (`a|b` = `x|y`) of a form into its parts
+   * (`a` = `x`, `b` = `y`), in place.
+   *
+   * @param data - the form's FormData
+   */
+  static splitJoinedFields(data: Json): void {
+    const joined: Json[] = [];
+    data.forEach(function (value, name) {
+      if (String(name).indexOf('|') > 0 && typeof value === 'string') {
+        joined.push({ name: String(name), value: value });
+      }
+    });
+    const seen = {};
+    joined.forEach(function (one) {
+      if (!seen[one.name]) {
+        seen[one.name] = true;
+        data.delete(one.name);
+      }
+      const parts = String(one.value).split('|');
+      one.name.split('|').forEach(function (part, i) {
+        data.append(part, parts[i] === undefined ? '' : parts[i]);
+      });
+    });
+  }
+
   /**
    * A form's fields as an object: a name that repeats is an array, as the
    * console's own body parser reads it.
@@ -1106,6 +1140,9 @@ class ConsoleRuntime {
       }
       data.append(name, value);
     });
+    // A FIELD THAT CARRIES TWO (#219): `dataset|format` is sent as the
+    // operation takes it, `dataset` and `format`.
+    ConsoleRuntime.splitJoinedFields(data);
     const fields = ConsoleRuntime.fieldsOf(data);
     const action = Array.isArray(fields.action) ? fields.action[0]
                                                 : String(fields.action || '');
