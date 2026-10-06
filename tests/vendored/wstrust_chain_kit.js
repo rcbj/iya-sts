@@ -171,6 +171,12 @@ const WST14_NS = "http://docs.oasis-open.org/ws-sx/ws-trust/200802";
 const SAML2_TOKEN_TYPE = "http://docs.oasis-open.org/wss/oasis-wss-saml-" +
     "token-profile-1.1#SAMLV2.0";
 const JWT_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:jwt";
+// And SAML 1.1 (#487), the profile's SAML 1.1 URI.
+const SAML11_TOKEN_TYPE = "http://docs.oasis-open.org/wss/oasis-wss-saml-" +
+    "token-profile-1.1#SAMLV1.1";
+const NS_SAML11 = "urn:oasis:names:tc:SAML:1.0:assertion";
+const AM_PASSWORD = "urn:oasis:names:tc:SAML:1.0:am:password";
+const AM_UNSPECIFIED = "urn:oasis:names:tc:SAML:1.0:am:unspecified";
 
 // ---------------------------------------------------------------------------
 // THE CAST: `token_exchange_chain_kit.js`'s, so the names and the `next`
@@ -180,12 +186,13 @@ const JWT_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:jwt";
 // account, generated per process and SET every run, so a rerun replaces the
 // last run's.
 // ---------------------------------------------------------------------------
-// `tokenType` is what every RST of the cast asks for: "saml" (the default)
-// or "jwt" (#473's second pair).
+// `tokenType` is what every RST of the cast asks for: "saml" (the default),
+// "jwt" (#473's second pair) or "saml11" (#487's third).
 function castFor(tag, tokenType) {
   log.debug("Entering castFor(). tag=" + tag);
   const cast = chain.castFor(tag);
-  cast.tokenType = tokenType === "jwt" ? JWT_TOKEN_TYPE : SAML2_TOKEN_TYPE;
+  cast.tokenType = tokenType === "jwt" ? JWT_TOKEN_TYPE
+    : tokenType === "saml11" ? SAML11_TOKEN_TYPE : SAML2_TOKEN_TYPE;
   cast.tiers.forEach(function (tier) {
     tier.appliesTo = "https://" + tier.identifier + ".example.com";
     tier.password = tier.next
@@ -282,7 +289,11 @@ const CLAIM_FIELDS = {
   oauthClaimsAccessToken: JSON.stringify(
     [{ name: "tier", value: "gold-${username}" }]),
   saml2CustomAttributes: JSON.stringify(
-    [{ name: "tier", value: "gold-${subject}", nameFormat: BASIC_FORMAT }])
+    [{ name: "tier", value: "gold-${subject}", nameFormat: BASIC_FORMAT }]),
+  // #487: the SAML 1.1 form, with a namespace of its own.
+  saml11CustomAttributes: JSON.stringify(
+    [{ name: "tier", value: "gold-${subject}",
+       namespace: "urn:example:chain" }])
 };
 
 function fieldsFor(tier, semantics) {
@@ -380,7 +391,7 @@ async function provisionCast(base, cast, semantics) {
       identifier: tier.identifier, name: tier.name,
       // oauth2 too, for #485's `oauthAllowedScope`: the declaration a
       // configured JWT scope is judged against.
-      protocols: ["wstrust", "saml2", "oauth2"],
+      protocols: ["wstrust", "saml2", "saml11", "oauth2"],
       fields: fieldsFor(tier, semantics),
       why: "the " + tier.name + " of the WS-Trust " + semantics + " chain"
     });
@@ -805,6 +816,150 @@ function validateAtTarget(xml, certPem, audience, skewMs) {
 }
 
 // ---------------------------------------------------------------------------
+// A SAML 1.1 ASSERTION, READ AS A RELYING PARTY READS ONE (#487's pair).
+// SAML 1.1 names things differently: the Issuer is an ATTRIBUTE, the
+// identifier is `AssertionID`, the subject a NameIdentifier, the audience an
+// AudienceRestrictionCondition, and an attribute is AttributeName plus
+// AttributeNamespace. It has no Delegation Restriction, so an ActAs answered
+// in SAML 1.1 names nobody but the subject (ws-trust/CLAUDE.md's exception).
+// ---------------------------------------------------------------------------
+function read11(xml) {
+  log.debug("Entering read11().");
+  const doc = parse(xml);
+  const a = doc.documentElement;
+  assert.ok(a.namespaceURI === NS_SAML11 && a.localName === "Assertion" &&
+            a.getAttribute("MajorVersion") === "1" &&
+            a.getAttribute("MinorVersion") === "1",
+            "the document is not a SAML 1.1 saml:Assertion");
+  const conditions = child(a, NS_SAML11, "Conditions");
+  assert.ok(conditions, "the SAML 1.1 assertion has no single Conditions");
+  const audiences = [];
+  children(conditions, NS_SAML11, "AudienceRestrictionCondition")
+    .forEach(function (one) {
+      children(one, NS_SAML11, "Audience").forEach(function (aud) {
+        audiences.push(textOf(aud));
+      });
+    });
+  const authn = child(a, NS_SAML11, "AuthenticationStatement");
+  const subject = authn ? child(authn, NS_SAML11, "Subject") : null;
+  const attributes = {};
+  const statement = child(a, NS_SAML11, "AttributeStatement");
+  (statement ? children(statement, NS_SAML11, "Attribute") : [])
+    .forEach(function (one) {
+      attributes[String(one.getAttribute("AttributeName") || "")] = {
+        namespace: String(one.getAttribute("AttributeNamespace") || ""),
+        values: children(one, NS_SAML11, "AttributeValue").map(textOf)
+      };
+    });
+  const out = {
+    xml: xml,
+    id: String(a.getAttribute("AssertionID") || ""),
+    issuer: String(a.getAttribute("Issuer") || ""),
+    nameId: textOf(subject ? child(subject, NS_SAML11, "NameIdentifier")
+                           : null),
+    notBefore: String(conditions.getAttribute("NotBefore") || ""),
+    notOnOrAfter: String(conditions.getAttribute("NotOnOrAfter") || ""),
+    audiences: audiences,
+    authnMethod: authn ? String(authn.getAttribute("AuthenticationMethod") ||
+                                "") : "",
+    attributes: attributes,
+    delegates: [],
+    hasDelegation: xml.indexOf("Delegat") >= 0,
+    signature: child(a, NS_DSIG, "Signature")
+  };
+  log.debug("Leaving read11(). " + out.id);
+  return out;
+}
+
+// What every SAML 1.1 assertion in the chain is held to: the claims
+// assertChainAssertion() checks, in SAML 1.1's spelling, and NO delegate
+// chain whatever was asked.
+function assertChainAssertion11(cast, xml, expect) {
+  log.debug("Entering assertChainAssertion11(). " + expect.what);
+  const got = read11(xml);
+  assert.ok(got.id, expect.what + " has no AssertionID");
+  (expect.notIds || []).forEach(function (one) {
+    assert.notStrictEqual(got.id, one, expect.what + " reuses the " +
+                          "AssertionID " + one);
+  });
+  assert.strictEqual(got.nameId, cast.user, expect.what + " is about \"" +
+                     got.nameId + "\" rather than " + cast.user);
+  if (expect.issuer) {
+    assert.strictEqual(got.issuer, expect.issuer, expect.what + "'s Issuer");
+  }
+  assert.deepStrictEqual(got.audiences, [expect.audience], expect.what +
+    " should be restricted to exactly " + expect.audience + ": " +
+    JSON.stringify(got.audiences));
+  (expect.notAudience || []).forEach(function (one) {
+    assert.ok(got.audiences.indexOf(one) < 0, expect.what + " is still " +
+              "addressed to " + one);
+  });
+  assert.ok(got.signature, expect.what + " carries no ds:Signature");
+  assert.ok(!got.hasDelegation, expect.what + " carries a delegation " +
+            "element, and SAML 1.1 has none to carry");
+  if (expect.authnMethod) {
+    assert.strictEqual(got.authnMethod, expect.authnMethod, expect.what +
+                       "'s AuthenticationMethod");
+  }
+  // THE APPLICATION'S SAML 1.1 SETTINGS (#487, #483's plumbing): `teams`,
+  // `roles`, and `saml11CustomAttributes`' `tier` in its own namespace.
+  const attrs = got.attributes;
+  assert.ok(attrs.teams && JSON.stringify(attrs.teams.values) ===
+            JSON.stringify([cast.team]), expect.what + " should carry " +
+            "teams [" + cast.team + "]: " + JSON.stringify(attrs));
+  assert.ok(attrs.roles && attrs.roles.values.indexOf(cast.role) >= 0,
+            expect.what + " should carry " + cast.role + " in roles: " +
+            JSON.stringify(attrs.roles));
+  assert.ok(attrs.tier && attrs.tier.namespace === "urn:example:chain" &&
+            JSON.stringify(attrs.tier.values) ===
+              JSON.stringify(["gold-" + cast.user]),
+            expect.what + " should carry tier=gold-" + cast.user + " in " +
+            "urn:example:chain: " + JSON.stringify(attrs.tier));
+  log.info("[assertion 1.1] " + expect.what + ": AssertionID=" + got.id +
+           ", Issuer=" + got.issuer + ", subject=" + got.nameId +
+           ", audience=" + JSON.stringify(got.audiences) + ", method=" +
+           got.authnMethod);
+  log.debug("Leaving assertChainAssertion11().");
+  return got;
+}
+
+// The target's own validation of a SAML 1.1 assertion: the signature over
+// THIS assertion (its Reference names the AssertionID, which xml-crypto is
+// told is the identifier attribute), the Conditions, its own audience.
+function validateAtTarget11(xml, certPem, audience, skewMs) {
+  log.debug("Entering validateAtTarget11().");
+  const got = read11(xml);
+  assert.ok(got.signature, "the SAML 1.1 assertion is unsigned");
+  const refs = got.signature.getElementsByTagNameNS(NS_DSIG, "Reference");
+  assert.strictEqual(refs.length, 1, "the signature has " + refs.length +
+                     " References");
+  assert.strictEqual(String(refs[0].getAttribute("URI") || ""), "#" + got.id,
+                     "the signature covers " + refs[0].getAttribute("URI"));
+  let verified = false;
+  try {
+    const sig = new SignedXml({ publicCert: certPem,
+                                idAttribute: "AssertionID" });
+    sig.loadSignature(got.signature);
+    verified = sig.checkSignature(xml);
+  } catch (e) {
+    log.debug("Caught in validateAtTarget11(): " + ((e && e.message) || e));
+    assert.fail("the SAML 1.1 assertion's signature does not verify " +
+                "against the realm's published certificate: " + e.message);
+  }
+  assert.strictEqual(verified, true, "the SAML 1.1 assertion's signature " +
+                     "does not verify against the published certificate");
+  const now = Date.now();
+  assert.ok(Date.parse(got.notBefore) <= now + skewMs, "NotBefore " +
+            got.notBefore + " is in the future");
+  assert.ok(Date.parse(got.notOnOrAfter) > now - skewMs, "NotOnOrAfter " +
+            got.notOnOrAfter + " has passed");
+  assert.deepStrictEqual(got.audiences, [audience], "the target's own " +
+    "identifier must be the one audience: " + JSON.stringify(got.audiences));
+  log.debug("Leaving validateAtTarget11().");
+  return got;
+}
+
+// ---------------------------------------------------------------------------
 // A JWT, READ AS ITS RELYING PARTY READS ONE (#473's second pair). RFC 9068
 // and RFC 8693 govern the JWT's STRUCTURE AND CONTENTS and nothing else
 // (rcbj): the header's `typ`, the claim set and `act`. The exchange that
@@ -1161,11 +1316,18 @@ function assertAct(cast, act, expect) {
 // The consumed token's note says whether it was verified, by mode (#479).
 // What is still only reported, as a WARN naming the finding, answers the
 // list this returns.
-function actNotes(act, element, product, jwt) {
+function actNotes(act, element, product, jwt, saml11) {
   log.debug("Entering actNotes().");
   const out = [];
   const note = String(act.note || "");
-  if (element === "ActAs") {
+  if (saml11) {
+    // #487: SAML 1.1 has no element to say who acted, and the note says so.
+    assert.ok(element === "ActAs"
+      ? /a SAML 1\.1 assertion has no element to say so/.test(note)
+      : /the SAML 1\.1 assertion names the subject and adds nobody/
+        .test(note), "the " + element + " act's note for a SAML 1.1 token " +
+      "says: \"" + note + "\"");
+  } else if (element === "ActAs") {
     assert.ok(/ActAs is COMPOSITE/.test(note) &&
               (jwt ? /nested `act` claim/.test(note)
                    : /Delegation Restriction/.test(note)),
@@ -1206,6 +1368,12 @@ function actNotes(act, element, product, jwt) {
 
 module.exports = {
   AC_PASSWORD: AC_PASSWORD,
+  AM_PASSWORD: AM_PASSWORD,
+  AM_UNSPECIFIED: AM_UNSPECIFIED,
+  SAML11_TOKEN_TYPE: SAML11_TOKEN_TYPE,
+  read11: read11,
+  assertChainAssertion11: assertChainAssertion11,
+  validateAtTarget11: validateAtTarget11,
   JWT_TOKEN_TYPE: JWT_TOKEN_TYPE,
   jwks: jwks,
   publishedIssuer: publishedIssuer,

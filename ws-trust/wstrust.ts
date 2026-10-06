@@ -111,6 +111,8 @@ import config = require('../common/config');
 // #480: the names this service signs under, in one place (a library).
 import IssuerNames = require('../common/issuer_names');
 import saml2 = require('../saml/saml2');
+// #487: the SAML 1.1 assertion builder SAML 1.1 SSO uses. A library.
+import saml11 = require('../saml/saml11');
 import stats = require('../common/admin_stats');
 // The application registry (ou=applications in the embedded directory). A
 // library that registers no route, so it cannot move anything in the require
@@ -176,6 +178,7 @@ interface WsTrustDeps {
   config: typeof config;
   validation: typeof validation;
   buildSamlAssertion: Saml2['buildSamlAssertion'];
+  buildSaml11Assertion: (opts: any) => string;
   encryptAssertion: Saml2['encryptAssertion'];
   stats: typeof stats;
   applications: typeof applications;
@@ -233,6 +236,17 @@ const SAML2_TOKEN_TYPE =
 
 const JWT_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:jwt';
 
+// SAML 1.1 (#487): the WS-Security SAML Token Profile 1.1's URI, and the
+// assertion namespace an older client names the type by. Both ask for the
+// same token; the answer names the first.
+const SAML11_TOKEN_TYPE =
+    'http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV1.1';
+const SAML11_TOKEN_TYPE_ALIAS = 'urn:oasis:names:tc:SAML:1.0:assertion';
+// The SAML Token Profile's reference to a SAML 1.1 assertion by its
+// AssertionID (section 3.4.3).
+const SAML11_ASSERTION_ID_REF = 'http://docs.oasis-open.org/wss/' +
+    'oasis-wss-saml-token-profile-1.0#SAMLAssertionID';
+
 const STATUS_TOKEN_TYPE = WST_NS + '/RSTR/Status';
 
 const STATUS_VALID = WST_NS + '/status/valid';
@@ -277,6 +291,7 @@ class WsTrust {
       config: config,
       validation: validation,
       buildSamlAssertion: saml2.buildSamlAssertion,
+      buildSaml11Assertion: saml11.buildSaml11Assertion,
       encryptAssertion: saml2.encryptAssertion,
       stats: stats,
       applications: applications,
@@ -595,6 +610,20 @@ class WsTrust {
     log.debug("Entering WsTrust.actNote(). " + via);
     const jwt = tokenType === JWT_TOKEN_TYPE;
     let out;
+    if (tokenType === SAML11_TOKEN_TYPE) {
+      // #487: SAML 1.1 has no element to say who acted — see
+      // buildSaml11Token().
+      out = (via === 'ActAs'
+        ? 'ActAs is COMPOSITE (WS-Trust 1.4 section 9.3), but a SAML 1.1 ' +
+          'assertion has no element to say so: the Delegation Restriction ' +
+          'is a SAML V2.0 condition. The assertion names the subject alone; ' +
+          'this register is the record of who acted.'
+        : 'OnBehalfOf is IMPERSONATION (WS-Trust 1.3 section 9.2): the SAML ' +
+          '1.1 assertion names the subject and adds nobody for this ' +
+          'requester, so the relying party sees an ordinary sign-in.');
+      log.debug("Leaving WsTrust.actNote(). SAML 1.1.");
+      return out;
+    }
     if (via === 'ActAs') {
       out = 'ActAs is COMPOSITE (WS-Trust 1.4 section 9.3): the far end ' +
         'can see that a middle tier is acting, and the token issued says ' +
@@ -766,6 +795,12 @@ class WsTrust {
       log.debug("Leaving WsTrust.buildToken(). Issued a JWT.");
       return token;
     }
+    if (tokenType === SAML11_TOKEN_TYPE) {
+      const built11 = this.buildSaml11Token(subject, audience, lifetimeMin,
+                                            authnContextClassRef, application);
+      log.debug("Leaving WsTrust.buildToken(). Issued a SAML 1.1 assertion.");
+      return built11;
+    }
     // #186: an ActAs token NAMES the parties that acted — the SAML V2.0
     // Condition for Delegation Restriction, least to most recent.
     // #483: the AppliesTo's application, so its own claim settings (the
@@ -802,6 +837,53 @@ class WsTrust {
     // — what puts a token there is helpers.signJwt(), and this one is signed
     // through signJwtAs() for its configurable algorithm.
     return { xml: assertion, ref: ref, tokenType: SAML2_TOKEN_TYPE, id: id };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SAML 1.1 ASSERTION (#487), built by `saml/saml11.ts`'s builder — the
+  // one SAML 1.1 SSO and WS-Federation use — so the application's SAML 1.1
+  // settings govern it as they govern those: its groups and roles claims,
+  // `saml11CustomAttributes` and directory-sourced attributes, through the
+  // `application` member #483 added (`stats.samlAttributes('saml11', …)`).
+  // The subject, the AudienceRestrictionCondition for the AppliesTo, and an
+  // AuthenticationStatement whose method is the SAML 1.1 reading of how the
+  // requester authenticated (`authnContextOf()`'s class, mapped).
+  //
+  // **NO DELEGATE CHAIN, AND THAT IS AN EXCEPTION.** SAML 1.1 has no
+  // Delegation Restriction: the SAML V2.0 Condition for Delegation
+  // Restriction (sstc-saml-delegation-cs-01) is a SAML 2.0 condition type,
+  // derived from SAML 2.0's ConditionAbstractType, and cannot appear in a
+  // SAML 1.1 <saml:Conditions>. SAML 1.1 has no standard element for "this
+  // party acted". WS-Trust 1.4 section 9.3 says what an ActAs token is
+  // EXPECTED to contain (the identity acted as), and names no representation
+  // of the requester. So an ActAs in SAML 1.1 is issued about the subject,
+  // as the profile allows, and names nobody else. The register is where the
+  // chain is, and the act's note says so. A chain a presented token carried
+  // cannot be written into SAML 1.1 either, and is not.
+  // ---------------------------------------------------------------------------
+  private buildSaml11Token(subject, audience, lifetimeMin,
+                           authnContextClassRef, application) {
+    const { buildSaml11Assertion, authnContext, log, xmlEscape } = this.deps;
+    log.debug("Entering WsTrust.buildSaml11Token().");
+    const samlApp = application || this.appliesToApplication(audience);
+    const method = authnContextClassRef === authnContext.AC_PASSWORD_PROTECTED
+      ? authnContext.AM_PASSWORD : authnContext.AM_UNSPECIFIED;
+    const assertion = buildSaml11Assertion({
+      subject: subject, audience: audience, lifetimeMin: lifetimeMin,
+      authnMethod: method, application: samlApp,
+      // #480: the same Issuer a SAML 2.0 WS-Trust assertion carries.
+      issuer: IssuerNames.samlIssuer(samlApp) });
+    const idm = assertion.match(/\bAssertionID="([^"]+)"/);
+    const id = idm ? idm[1] : '';
+    const ref = '<wst:RequestedAttachedReference>' +
+      '<wsse:SecurityTokenReference xmlns:wsse="' +
+      'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-' +
+      'secext-1.0.xsd"><wsse:KeyIdentifier ValueType="' +
+      SAML11_ASSERTION_ID_REF + '">' + xmlEscape(id) +
+      '</wsse:KeyIdentifier></wsse:SecurityTokenReference>' +
+      '</wst:RequestedAttachedReference>';
+    log.debug("Leaving WsTrust.buildSaml11Token(). AssertionID " + id + ".");
+    return { xml: assertion, ref: ref, tokenType: SAML11_TOKEN_TYPE, id: id };
   }
 
   private envelope(version, action, bodyInner) {
@@ -2082,8 +2164,12 @@ class WsTrust {
                                     trustNs) };
     }
 
+    // #487: SAML 1.1 by either of its two names; anything else that is not
+    // the JWT's is answered with SAML 2.0, as it always was.
     const tokenType = (tokenTypeReq === JWT_TOKEN_TYPE) ? JWT_TOKEN_TYPE :
-                       SAML2_TOKEN_TYPE;
+      (tokenTypeReq === SAML11_TOKEN_TYPE ||
+       tokenTypeReq === SAML11_TOKEN_TYPE_ALIAS) ? SAML11_TOKEN_TYPE :
+        SAML2_TOKEN_TYPE;
     // A JWT'S `sub` IS A SUBJECT, AND THERE IS NONE WITHOUT AN ENTRY — the rule
     // the OAuth 2.0 grants follow (`STS-OAUTH-0510`). An `anonymous` Renew
     // names nobody by design and is left to the paragraph above.
@@ -2329,11 +2415,12 @@ class WsTrust {
                note: this.consumedNote(via, auth.delegation.tokenKind) }]
           : []),
         produced: [{
-          kind: tok.tokenType === SAML2_TOKEN_TYPE ? 'SAML 2.0 assertion'
+          kind: tok.tokenType === SAML11_TOKEN_TYPE ? 'SAML 1.1 assertion'
+            : tok.tokenType === SAML2_TOKEN_TYPE ? 'SAML 2.0 assertion'
                                                    : 'JWT',
           identifier: tok.id || '',
           note: tok.id
-            ? (tok.tokenType === SAML2_TOKEN_TYPE ? 'AssertionID' : 'jti')
+            ? (tok.tokenType === JWT_TOKEN_TYPE ? 'jti' : 'AssertionID')
             : 'this token carries no identifier'
         }],
         note: auth.delegation.both

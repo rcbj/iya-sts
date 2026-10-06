@@ -363,6 +363,14 @@ const JOBS = [
     local: true },
   { file: 'sts_wstrust_jwt_chain_delegation.js', browser: false,
     local: true },
+  // AND AGAIN WITH SAML 1.1 TOKENS (#487): every RST asks for the SAML Token
+  // Profile's SAML 1.1 type. The assertions carry the application's SAML 1.1
+  // attributes, and an ActAs names no delegate, since SAML 1.1 has no
+  // Delegation Restriction; the chain is in the register.
+  { file: 'sts_wstrust_saml11_chain_impersonation.js', browser: false,
+    local: true },
+  { file: 'sts_wstrust_saml11_chain_delegation.js', browser: false,
+    local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
