@@ -269,7 +269,13 @@ async function adminOk(base, path, body, what) {
 // SAML attribute naming the person (`${username}` is a JWT context's,
 // `${subject}` a SAML one's), the attribute with a NameFormat.
 const BASIC_FORMAT = "urn:oasis:names:tc:SAML:2.0:attrname-format:basic";
+// And #485's configured JWT scopes: one this application declares on
+// `oauthAllowedScope`, and one it does not, which product leaves off.
+const DECLARED_SCOPE = "chain.read";
+const UNDECLARED_SCOPE = "chain.undeclared";
 const CLAIM_FIELDS = {
+  oauthAllowedScope: [DECLARED_SCOPE],
+  wstrustJwtScope: [DECLARED_SCOPE, UNDECLARED_SCOPE],
   appGroupsClaim: "TRUE",
   appGroupsClaimName: "teams",
   appGroupsClaimValue: "cn",
@@ -372,7 +378,10 @@ async function provisionCast(base, cast, semantics) {
     const tier = cast.tiers[i];
     await registry.provision(base, {
       identifier: tier.identifier, name: tier.name,
-      protocols: ["wstrust", "saml2"], fields: fieldsFor(tier, semantics),
+      // oauth2 too, for #485's `oauthAllowedScope`: the declaration a
+      // configured JWT scope is judged against.
+      protocols: ["wstrust", "saml2", "oauth2"],
+      fields: fieldsFor(tier, semantics),
       why: "the " + tier.name + " of the WS-Trust " + semantics + " chain"
     });
     if (tier.next) {
@@ -391,9 +400,9 @@ async function provisionCast(base, cast, semantics) {
         " and holds " + JSON.stringify(held));
     });
     Object.keys(CLAIM_FIELDS).forEach(function (attribute) {
-      assert.deepStrictEqual(registry.valuesOf(f[attribute]),
-                             [CLAIM_FIELDS[attribute]], tier.identifier +
-                             "'s " + attribute);
+      assert.deepStrictEqual(registry.valuesOf(f[attribute]).slice().sort(),
+                             [].concat(CLAIM_FIELDS[attribute]).sort(),
+                             tier.identifier + "'s " + attribute);
     });
     if (tier.next) {
       assert.deepStrictEqual(registry.valuesOf(f.appAllowedToDelegateTo),
@@ -901,7 +910,8 @@ function verifyWithJwks(parsed, keys, what) {
 // What every JWT in the chain is held to. `expect`: { what, audience,
 // issuer, sub (the person's subject, once known), clientId ('' for none),
 // act (the whole expected chain, or undefined for none), notJtis,
-// expires (the RSTR's wst:Lifetime Expires) }. Answers the parsed JWT.
+// expires (the RSTR's wst:Lifetime Expires), product }. Answers the parsed
+// JWT.
 function assertChainJwt(cast, out, keys, expect) {
   log.debug("Entering assertChainJwt(). " + expect.what);
   const parsed = jwtParts(out.jwt, expect.what);
@@ -947,9 +957,16 @@ function assertChainJwt(cast, out, keys, expect) {
     assert.strictEqual(c.client_id, undefined, expect.what + " names a " +
       "client_id (" + c.client_id + ") and nobody but the person asked");
   }
-  // No scope: an RST asks for none (an exception, not an omission).
-  assert.strictEqual(c.scope, undefined, expect.what + " carries scope " +
-                     JSON.stringify(c.scope) + " and an RST asks for none");
+  // THE APPLICATION'S CONFIGURED SCOPES (#485): `wstrustJwtScope`, judged
+  // as an OAuth access token's are — the declared one kept, the undeclared
+  // one left off in product and kept in development.
+  const scope = expect.product ? DECLARED_SCOPE
+                               : DECLARED_SCOPE + " " + UNDECLARED_SCOPE;
+  assert.strictEqual(c.scope, scope, expect.what + "'s scope should be \"" +
+                     scope + "\" (wstrustJwtScope, " + (expect.product
+                       ? "the undeclared one dropped in product)"
+                       : "development grants the undeclared one)") +
+                     " and is " + JSON.stringify(c.scope));
   assert.deepStrictEqual(c.act, expect.act, expect.what + " should carry " +
     "act " + JSON.stringify(expect.act) + " (RFC 8693 section 4.1: the " +
     "current actor outermost) and carries " + JSON.stringify(c.act));

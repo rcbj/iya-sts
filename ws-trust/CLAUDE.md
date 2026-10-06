@@ -355,7 +355,21 @@ SAML assertion are WS-Trust's and SAML's, as before.
   own UsernameToken (or assertion) for a token about themselves has no
   client. A name in the claim that is not a client's would be worse than
   none.
-* **No `scope`.** An RST asks for none, and none is invented.
+* **No `scope` unless the application configures it** (#485). An RST asks
+  for none and none is invented. The AppliesTo's application may name scopes
+  on `wstrustJwtScope`, and those are carried after the judgement an OAuth
+  access token's get (`configuredScope()`, `scopePolicy.narrow()`):
+  * the application is the client, so its `oauthAllowedScope` declares what
+    it may be issued, in product; the protected scopes are held to it in
+    every mode;
+  * the issuance policy asks its per-scope question;
+  * what is left off gets the token endpoint's audit row, STS-OAUTH-0579.
+
+  **A write naming an undeclared scope is ACCEPTED and dropped at
+  issuance**, which is the token endpoint's own backstop. The declaration may
+  change after the write, development grants undeclared scopes, and the
+  field's description says to declare it on `oauthAllowedScope`. A SAML token
+  has no scope.
 * **No `auth_time`, `acr` or `amr`.** RFC 9068 section 2.2.1 makes them
   optional, and a delegated JWT could only copy them from an
   authentication it never saw.

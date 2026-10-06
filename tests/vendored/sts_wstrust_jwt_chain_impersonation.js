@@ -30,8 +30,9 @@
 //   2. THE WIRE: every JWT `typ: at+jwt`, verified with the published key,
 //      `iss`, `exp` the wst:Lifetime, `aud` exactly the registered
 //      identifier, bob's `sub` at every hop, `client_id` the requester (none
-//      on the sign-in's), a fresh `jti`, no `scope`, no `act`, no
-//      `may_act`.
+//      on the sign-in's), a fresh `jti`, `scope` the AppliesTo's judged
+//      `wstrustJwtScope` (#485), no `act`, no `may_act`; and the AppliesTo's
+//      groups, roles and custom claims (#483, #484).
 //   3. THE TARGET'S VALIDATION at sp1, and nobody named as having acted.
 //   4. THE REGISTER AND THE PICTURE: one `wstrust-onbehalfof` act per hop,
 //      found by `jti`, policed in product; apigw1 and esb1 each ONE box.
@@ -103,7 +104,8 @@ async function test() {
         function () {
     first = kit.assertChainJwt(cast, signedIn, keys, {
       what: cast.user + "'s sign-in JWT", audience: cast.webapp.appliesTo,
-      issuer: issuer, clientId: "", act: undefined });
+      issuer: issuer, clientId: "", act: undefined,
+      product: product });
   });
 
   const requesters = cast.requesters;
@@ -125,6 +127,7 @@ async function test() {
         what: tier.identifier + "'s OnBehalfOf JWT",
         audience: next.appliesTo, issuer: issuer, sub: first.claims.sub,
         clientId: tier.identifier, act: undefined,
+        product: product,
         notJtis: tokens.map(function (one) {
           return one.claims.jti;
         }) }));

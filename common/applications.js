@@ -2966,6 +2966,25 @@ const SCHEMA = {
             'registered is issued for exactly as before and recorded ' +
             'verbatim. See forAppliesTo(), which asks this attribute first ' +
             'and `samlEntityId` behind it.' },
+    // #485: the OAuth 2.0 scopes a WS-Trust JWT for this application
+    // carries, judged as an access token's are.
+    { name: 'wstrustJwtScope', kind: 'multi', from: 'by hand',
+      families: ['wstrust'],
+      what: 'THE OAUTH 2.0 SCOPES A WS-TRUST JWT FOR THIS APPLICATION ' +
+            'CARRIES, one scope value each (#485). A JWT WS-Trust issues with ' +
+            'this application as the AppliesTo (wst:TokenType ' +
+            'urn:ietf:params:oauth:token-type:jwt) carries them in its ' +
+            '`scope` claim, space-delimited (RFC 9068 section 2.2.3); with ' +
+            'none set it carries no `scope`. A SAML token is unaffected.\n\n' +
+            '**EACH IS JUDGED AS AN OAUTH ACCESS TOKEN\'S IS**, with this ' +
+            'application as the client: `oauthAllowedScope` declares what it ' +
+            'may be issued (in product; this service\'s protected scopes in ' +
+            'every mode), and the issuance policy\'s per-scope question ' +
+            'decides. A value the policy drops is LEFT OFF the token and ' +
+            'audited (STS-OAUTH-0579), never issued. A write naming an ' +
+            'undeclared scope is accepted here, because the declaration may ' +
+            'change and development grants undeclared scopes: declare it on ' +
+            'oauthAllowedScope too.' },
 
     // --- Kerberos and OID4VP ----------------------------------------------
     { name: 'krb5ServicePrincipalName', kind: 'multi', from: 'Kerberos v5',
@@ -4010,6 +4029,7 @@ const EDITABLE = {
   saml2EncryptLogoutNameId: 'set',
   wsfedRealm: 'multi',
   wstrustAppliesTo: 'multi',
+  wstrustJwtScope: 'multi',
   krb5ServicePrincipalName: 'multi',
   krb5TrustedForDelegation: 'set',
   oid4vpClientId: 'multi',
@@ -5331,6 +5351,7 @@ const FIELD_EXAMPLES = {
   saml2KeyTransportAlgorithm: 'http://www.w3.org/2009/xmlenc11#rsa-oaep',
   wsfedRealm: 'urn:example:my-app',
   wstrustAppliesTo: 'https://service.example.com/',
+  wstrustJwtScope: 'api.read',
   krb5ServicePrincipalName: 'HTTP/app.example.com@EXAMPLE.COM',
   oid4vpClientId: 'x509_san_dns:verifier.example.com',
   federationPartnerId: 'partner-idp',

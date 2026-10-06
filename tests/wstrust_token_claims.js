@@ -38,6 +38,16 @@
 //       requester holds neither the group nor the role, and nothing of its
 //       own appears.
 //
+// AND THE APPLICATION'S CONFIGURED JWT SCOPES (#485, `wstrustJwtScope`),
+// judged as an OAuth access token's are:
+//
+//   S1. a declared scope (`oauthAllowedScope`) is carried in `scope`; an
+//       undeclared one is LEFT OFF in product and carried in development
+//       (`mode.grantsUndeclaredScopes()`); this service's protected scope
+//       `admin:write` is left off in both;
+//   S2. an application with none configured issues no `scope`;
+//   S3. the SAML assertion carries no scope of any kind.
+//
 // IN PROCESS, in a throwaway realm.
 // ===========================================================================
 
@@ -145,11 +155,14 @@ function fixtures(t) {
       wstrustAppliesTo: [BACK], oauthClientId: 'wc-back',
       appGroupsClaim: 'TRUE', appGroupsClaimName: 'teams',
       appGroupsClaimValue: 'dn',
+      oauthAllowedScope: ['api.read'],
+      wstrustJwtScope: ['api.read', 'api.undeclared', 'admin:write'],
       oauthClaimsAccessToken: JSON.stringify(
         [{ name: 'tier', value: 'gold-${username}' }]),
       saml2CustomAttributes: JSON.stringify(
         [{ name: 'tier', value: 'gold-${subject}', nameFormat: BASIC }])
     }),
+    app('wc-plain', { wstrustAppliesTo: ['https://wc-plain.example'] }),
     app('wc-front', { appAllowedToDelegateTo: ['wc-back'],
                       appDelegationSemantics: ['delegation',
                                                'impersonation'] })
@@ -244,6 +257,26 @@ function compare(t) {
               JSON.stringify(wrong) + ' ' + JSON.stringify(one[3]
                 ? claimsOf(r) : attributesOf(r)).slice(0, 700));
     });
+    // S. The configured scopes (#485).
+    const own = claimsOf(ask('wc-alice', '', JWT));
+    const expected = m === 'product' ? 'api.read' : 'api.read api.undeclared';
+    t.check(own.scope === expected,
+            'S1 (' + m + '). wstrustJwtScope is carried, judged: "' +
+            expected + '" (admin:write is protected in every mode; ' +
+            'api.undeclared is dropped in product)', JSON.stringify(own.scope));
+    const plain = inMode(m, function () {
+      return wstrust.handleRst(rst(signed('wc-alice', 'https://sts.test'),
+                                   '', JWT).replace(BACK,
+                                   'https://wc-plain.example'),
+                               'application/soap+xml');
+    });
+    t.check(plain.status === 200 && claimsOf(plain).scope === undefined,
+            'S2 (' + m + '). an application with no wstrustJwtScope issues ' +
+            'no scope', plain.status + ' ' + JSON.stringify(claimsOf(plain)));
+    const saml = attributesOf(ask('wc-alice', '', ''));
+    t.check(!saml.scope && JSON.stringify(saml).indexOf('api.read') < 0,
+            'S3 (' + m + '). the SAML assertion carries no scope',
+            JSON.stringify(saml));
   });
   log.debug("Leaving compare().");
 }
