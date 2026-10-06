@@ -42,6 +42,13 @@
 //       each by its own code; development believes a tampered one, as it
 //       believes a NameID.
 //
+// AND THE REGISTER'S ROW FOR EACH ACT SAYS WHAT HAPPENED (section N):
+//
+//   N1. an ActAs act's note says the token issued names who acted — the
+//       Delegation Restriction for an assertion, the nested `act` for a
+//       JWT (#478; it said no ActAs token carried that);
+//   N2. an OnBehalfOf act's note says the token adds nobody.
+//
 // Every JWT verifies with this realm's own key (`helpers.verifyOwnJws()`).
 // IN PROCESS, in a throwaway realm, for `wstrust_fault_codes.js`'s reason:
 // the two modes' answers differ, and a job over HTTP runs in one.
@@ -401,6 +408,61 @@ function jwtInside(t) {
   log.debug("Leaving jwtInside().");
 }
 
+// N. The register's row for each act (#478, #479, #481).
+function registerRows(t) {
+  log.debug("Entering registerRows().");
+  const wstrust = require('../ws-trust/wstrust');
+  const saml2 = require('../saml/saml2');
+  const delegation = require('../common/delegation');
+  const signed = function (name, audience) {
+    log.debug("Entering signed().");
+    log.debug("Leaving signed().");
+    return saml2.buildSamlAssertion(name, audience, 5);
+  };
+  ['development', 'product'].forEach(function (m) {
+    t.log.info('=== N. the register\'s rows, ' + m + ' mode ===');
+    const ask = function (body, tokenType) {
+      log.debug("Entering ask().");
+      log.debug("Leaving ask().");
+      return inMode(m, function () {
+        return wstrust.handleRst(rst(signed('wj-front', 'https://sts.test'),
+                                     BACK, body, tokenType),
+                                 'application/soap+xml');
+      });
+    };
+    // The act that produced the token in `r`: its assertion ID or jti.
+    const actFor = function (r) {
+      log.debug("Entering actFor().");
+      const body = String(r.body || '');
+      const jwt = jwtOf(r);
+      const id = jwt.token ? String(jwt.claims.jti || '')
+        : ((/<saml:Assertion[^>]*\bID="([^"]+)"/.exec(body) || [])[1] || '');
+      const found = delegation.list().filter(function (row) {
+        return (row.produced || []).some(function (one) {
+          return one.identifier === id;
+        });
+      });
+      log.debug("Leaving actFor(). " + found.length);
+      return found[0] || {};
+    };
+    [['ActAs', '', /Delegation Restriction/],
+     ['ActAs', JWT, /nested `act` claim/],
+     ['OnBehalfOf', '', /the assertion names the subject and adds nobody/],
+     ['OnBehalfOf', JWT, /the JWT names the subject and adds nobody/]]
+      .forEach(function (one) {
+        const r = ask((one[0] === 'ActAs' ? actAs : onBehalfOf)(
+          signed('wj-alice', 'wj-front')), one[1]);
+        const act = actFor(r);
+        t.check(r.status === 200 && one[2].test(String(act.note || '')),
+                (one[0] === 'ActAs' ? 'N1' : 'N2') + ' (' + m + ', ' +
+                (one[1] ? 'JWT' : 'SAML') + '). the ' + one[0] + ' act\'s ' +
+                'note says what the token issued carries',
+                r.status + ' ' + String(act.note));
+      });
+  });
+  log.debug("Leaving registerRows().");
+}
+
 // EVERYTHING IN A THROWAWAY REALM, removed afterwards.
 function run(t) {
   log.debug("Entering run().");
@@ -418,6 +480,7 @@ function run(t) {
       fixtures(t);
       inBothModes(t);
       jwtInside(t);
+      registerRows(t);
     });
   } finally {
     realms.remove(id);

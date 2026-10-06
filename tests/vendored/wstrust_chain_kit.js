@@ -988,20 +988,31 @@ function assertAct(cast, act, expect) {
   log.debug("Leaving assertAct().");
 }
 
-// WHAT THE ACT'S OWN NOTES SAY, compared with what the jobs just verified
-// on the wire. Each is prose written when the behaviour was different. A
-// stale note is reported as a WARN line naming the finding rather than
-// asserted, because the jobs test the protocol and not a sentence.
-function noteStaleNotes(act, element, product) {
-  log.debug("Entering noteStaleNotes().");
+// WHAT THE ACT'S OWN NOTES SAY, held to what the jobs just verified on the
+// wire. The note on an ActAs act says the issued token names who acted, in
+// that token's vocabulary — a SAML Delegation Restriction or a JWT's `act`
+// — and an OnBehalfOf act's says it adds nobody (#478; until then it said
+// no ActAs token carried the composite fact, and the jobs WARNed on it).
+// What is still only reported, as a WARN naming the finding, answers the
+// list this returns.
+function actNotes(act, element, product, jwt) {
+  log.debug("Entering actNotes().");
   const out = [];
-  if (element === "ActAs" &&
-      /Nothing in the token this service issues carries that/
-        .test(String(act.note || ""))) {
-    out.push("the act's note says nothing in an ActAs token carries the " +
-             "composite fact, and the token it produced names its " +
-             "delegates (#186: a SAML Delegation Restriction, or a JWT's " +
-             "act)");
+  const note = String(act.note || "");
+  if (element === "ActAs") {
+    assert.ok(/ActAs is COMPOSITE/.test(note) &&
+              (jwt ? /nested `act` claim/.test(note)
+                   : /Delegation Restriction/.test(note)),
+      "the ActAs act's note should say the " + (jwt ? "JWT" : "assertion") +
+      " names who acted (" + (jwt ? "its `act`" : "its Delegation " +
+      "Restriction") + ") and says: \"" + note + "\"");
+  } else {
+    assert.ok(/OnBehalfOf is IMPERSONATION/.test(note) &&
+              /adds nobody/.test(note) &&
+              note.indexOf("the " + (jwt ? "JWT" : "assertion") + " names") >=
+              0,
+      "the OnBehalfOf act's note should say the token adds nobody and " +
+      "says: \"" + note + "\"");
   }
   const delegated = (act.consumed || []).filter(function (one) {
     return one.kind === "delegated token";
@@ -1015,7 +1026,7 @@ function noteStaleNotes(act, element, product) {
   out.forEach(function (one) {
     log.warn("[finding] " + one + ".");
   });
-  log.debug("Leaving noteStaleNotes(). " + out.length);
+  log.debug("Leaving actNotes(). " + out.length);
   return out;
 }
 
@@ -1044,5 +1055,5 @@ module.exports = {
   validateAtTarget: validateAtTarget,
   actProducing: actProducing,
   assertAct: assertAct,
-  noteStaleNotes: noteStaleNotes
+  actNotes: actNotes
 };
