@@ -51,6 +51,61 @@ const PERSON_KEY_SOURCE_SENTENCES = {
  *
  * A static utility class; it holds no state and takes no dependencies.
  */
+// THE IDENTITY VERIFICATION FORM'S TOOLTIPS (OpenID Connect for Identity
+// Assurance 1.0), one per field: the element of `verified_claims` each fills,
+// as `identity_assurance.ts`'s `fromForm()` builds it.
+const IDA_TIPS = {
+  framework: 'The trust framework the verification was done under ' +
+    '(verification.trust_framework), from oauth2.idaTrustFrameworks.',
+  level: 'The assurance level reached within that framework ' +
+    '(verification.assurance_level). Optional.',
+  time: 'When the verification was done (verification.time), as an ISO ' +
+    '8601 date and time. Empty records now.',
+  evidence: 'The kind of evidence the identity was verified with. Only ' +
+    'the fields of the kind chosen below are recorded; none records the ' +
+    'verification with no evidence.',
+  check: 'How the evidence was checked (check_details check_method), ' +
+    'from the specification\'s predefined values. None records no check.',
+  documentType: 'The kind of identity document (document_details.type).',
+  documentNumber: 'The document\'s number (document_details' +
+    '.document_number).',
+  issuer: 'The authority that issued the document (document_details' +
+    '.issuer.name).',
+  country: 'The issuing country as an ISO 3166-1 code (document_details' +
+    '.issuer.country_code).',
+  issued: 'The date the document was issued, YYYY-MM-DD.',
+  expires: 'The date the document expires, YYYY-MM-DD.',
+  recordType: 'The kind of electronic record (record.type), for example a ' +
+    'bank account.',
+  recordSource: 'Who holds the record (record.source.name), for example ' +
+    'the bank.',
+  vouchType: 'The kind of attestation the voucher gave (attestation.type).',
+  reference: 'The attestation\'s reference number (attestation' +
+    '.reference_number).',
+  voucher: 'Who vouched for the person (attestation.voucher.name).',
+  signatureType: 'The kind of electronic signature (signature_type).',
+  signatureIssuer: 'Who issued the signing certificate (issuer).',
+  serial: 'The signing certificate\'s serial number (serial_number).',
+  created: 'When the signature was made (created_at), as an ISO 8601 date ' +
+    'and time.'
+};
+
+// THE DIRECTORY ENTRY TAB'S THREE ONE-ATTRIBUTE FORMS' TOOLTIPS, by the
+// action's first word.
+const ENTRY_TIPS = {
+  set: { attribute: 'The attribute to set. Its value is replaced.',
+         value: 'The value to set it to. Empty clears the attribute.',
+         button: 'Write this value to their entry, replacing what the ' +
+                 'attribute held.' },
+  add: { attribute: 'The list attribute to add a value to.',
+         value: 'The value to add beside the ones it holds.',
+         button: 'Add this value to the attribute.' },
+  remove: { attribute: 'The attribute to take a value off; the number is ' +
+                       'how many it holds.',
+            value: 'The value to take off, exactly as it is held.',
+            button: 'Take this value off the attribute.' }
+};
+
 class UsersPage {
   /**
    * Draws the page's body from its view.
@@ -72,6 +127,25 @@ class UsersPage {
                            factor: wantedFactor, kind: wantedKind,
                            per: ctx.query.per ? paging.perPage : '' };
     const nav = kit.pageNavPair('/admin/users', filterParams, paging);
+    // THE FILTER FORM'S TOOLTIPS, each on its label and its control.
+    const tips = {
+      q: kit.tip('Show only people whose username contains this text, in ' +
+                 'any case.'),
+      protocol: kit.tip('Show only people who have signed in through this ' +
+                        'protocol at least once. The list is every protocol ' +
+                        'anyone listed here has signed in through.'),
+      factor: kit.tip('Show only people in this second-factor state. ' +
+                      '"enrolment this process cannot read" is an ' +
+                      'authenticator app enrolled under a key this process ' +
+                      'cannot open. A person no credential store answers ' +
+                      'for matches only "any state".'),
+      kind: kit.tip('Show service accounts only, or everybody except them.'),
+      per: kit.tip('How many people to show on each page.'),
+      filter: kit.tip('Apply the filters to the left.'),
+      create: kit.tip('The username of the person to create. You choose ' +
+                      'their attributes and how they first sign in on the ' +
+                      'next page.')
+    };
 
     // Sessions are counted per user here rather than fetched per row inside the
     // loop: one pass over the session map instead of one per user, and more
@@ -241,19 +315,20 @@ class UsersPage {
       '<code>alice</code> as one.') +
 
       '<form method="get" action="/admin/users"><div class="formrow">' +
-        '<label for="q">Name contains</label>' +
-        '<input type="text" id="q" name="q" size="20" value="' +
-        kit.esc(wantedText) +
+        '<label for="q"' + tips.q + '>Name contains</label>' +
+        '<input type="text" id="q" name="q" size="20"' + tips.q +
+        ' value="' + kit.esc(wantedText) +
       '"><label ' +
-        'for="protocol">Authenticated through</label><select id="protocol" ' +
-        'name="protocol">' + protocolOptions + '</select>' +
+        'for="protocol"' + tips.protocol + '>Authenticated through</label>' +
+        '<select id="protocol" name="protocol"' + tips.protocol + '>' +
+        protocolOptions + '</select>' +
         // THE SECOND-FACTOR FILTER (2026-09-10), which is what `/admin/mfa` was
         // for. `none` is the one an operator actually comes here to run, and it
         // is the reason this page's population had to widen: the people most
         // likely to hold no second factor are the ones who have never signed
         // in.
-        '<label for="factor">Second factor</label>' +
-        '<select id="factor" name="factor">' +
+        '<label for="factor"' + tips.factor + '>Second factor</label>' +
+        '<select id="factor" name="factor"' + tips.factor + '>' +
         [['', 'any state'], ['any', 'holds one'], ['totp', 'authenticator app'],
          ['key', 'security key'], ['none', 'holds none'],
          ['unreadable', 'enrolment this process cannot read']].map(
@@ -264,16 +339,18 @@ class UsersPage {
         }).join('') + '</select>' +
         // #221: a service account is a person, tagged; this narrows to
         // them, or leaves them out.
-        '<label for="kind">Kind</label><select id="kind" name="kind">' +
+        '<label for="kind"' + tips.kind + '>Kind</label>' +
+        '<select id="kind" name="kind"' + tips.kind + '>' +
         [['', 'everybody'], ['service', 'service accounts'],
          ['person', 'everybody but service accounts']].map(function (pair) {
           return '<option value="' + kit.esc(pair[0]) + '"' +
                  (wantedKind === pair[0] ? ' selected' : '') + '>' +
                  kit.esc(pair[1]) + '</option>';
         }).join('') + '</select>' +
-        '<label for="per">Per page</label><select id="per" name="per">' +
+        '<label for="per"' + tips.per + '>Per page</label>' +
+        '<select id="per" name="per"' + tips.per + '>' +
       perOptions + '</select><button ' +
-        'class="secondary">Filter</button>' +
+        'class="secondary"' + tips.filter + '>Filter</button>' +
         (wantedText || wantedProtocol || wantedFactor || wantedKind
           ? ' <a href="/admin/users">clear</a>' : '') +
       '</div></form>' +
@@ -306,10 +383,13 @@ class UsersPage {
       // ---------------------------------------------------------------------
       '<form method="get" action="/admin/users/new">' +
         '<div class="formrow">' +
-          '<label for="new-username">Create a user</label>' +
+          '<label for="new-username"' + tips.create + '>Create a user' +
+          '</label>' +
           '<input type="text" id="new-username" name="user" size="20" ' +
-                 'placeholder="username">' +
-          '<button>Create &rsaquo;</button>' +
+                 'placeholder="username"' + tips.create + '>' +
+          '<button' + kit.tip('Go to New user with this name filled in. ' +
+            'Nothing is created until you press Create there.') +
+          '>Create &rsaquo;</button>' +
         '</div>' +
         kit.note('<strong>Takes you to <a href="/admin/users/new">New ' +
         'user</a></strong>, carrying whatever name you type here, and ' +
@@ -1206,7 +1286,10 @@ class UsersPage {
         '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
         '<input type="hidden" name="from" value="users">' +
         '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
-        '<div class="formrow"><button class="danger">Sign ' +
+        '<div class="formrow"><button class="danger"' + kit.tip('End ' +
+          'every session they hold and revoke their tokens: a global ' +
+          'logout. Back-channel Logout Tokens are sent; front-channel ' +
+          'notifications need their own browser and are not.') + '>Sign ' +
         kit.esc(row.name) +
         ' out of everything</button></div></form>' +
 
@@ -1226,7 +1309,10 @@ class UsersPage {
         '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
         '<input type="hidden" name="from" value="users">' +
         '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
-        '<div class="formrow"><button class="danger">Revoke every token for ' +
+        '<div class="formrow"><button class="danger"' + kit.tip('Revoke ' +
+          'every access, ID and refresh token held for them. Their browser ' +
+          'session is left alone, so their next request is issued new ' +
+          'ones.') + '>Revoke every token for ' +
         kit.esc(row.name) + '</button></div></form>' }
       ]);
 
@@ -2004,7 +2090,9 @@ class UsersPage {
             '"><input type="hidden" name="id" value="' + kit.esc(one.id) +
             '"><input type="hidden" name="from" value="user">' +
             '<input type="hidden" name="back" value="' + kit.esc(back) +
-            '"><button class="danger" type="submit">Revoke</button></form>'
+            '"><button class="danger" type="submit"' + kit.tip('Revoke ' +
+              'this app password. It is refused at every door from now ' +
+              'on.') + '>Revoke</button></form>'
           : '') + '</td></tr>';
     };
     const appPasswordsBlock = '<h3>App passwords</h3>' +
@@ -2025,15 +2113,28 @@ class UsersPage {
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           '<input type="hidden" name="from" value="user">' +
           '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
-          '<div class="formrow"><label>Name <input type="text" name="name" ' +
-          'maxlength="64" required></label></div><div class="formrow">' +
+          '<div class="formrow"><label' + kit.tip('A name for this app ' +
+            'password, so they and you can tell it from the others: the ' +
+            'program or device it is for.') + '>Name <input type="text" ' +
+          'name="name" maxlength="64" required></label></div>' +
+          '<div class="formrow">' +
           // ONE NAME FOR THE COLUMN, a value per door (#446): the static
           // console sends this form as JSON, where a repeated name is the
           // operation's `doors` list. (The portal's server-read form keeps
           // `door_<door>` — a form parser there keeps the last of a name.)
-          ['ldap', 'wstrust', 'scim', 'ssf', 'est'].map(function (door) {
-            return '<label><input type="checkbox" name="doors" value="' +
-                   kit.esc(door) + '"> ' + kit.esc(door) + '</label> ';
+          // The tooltips are common/app_passwords.ts's DOORS, said again
+          // here because a renderer requires nothing but its own kind.
+          [['ldap', 'an LDAP simple bind on 389 or 636 (RFC 4513)'],
+           ['wstrust', 'a WS-Security UsernameToken sent to the security ' +
+                       'token service'],
+           ['scim', 'HTTP Basic at /scim/v2 (RFC 7617)'],
+           ['ssf', 'HTTP Basic at the /ssf endpoints (RFC 7617)'],
+           ['est', 'HTTP Basic at /.well-known/est (RFC 7030 section ' +
+                   '3.2.3)']].map(function (door) {
+            return '<label' + kit.tip('Accept this app password at ' +
+                     door[1] + '.') + '><input type="checkbox" ' +
+                   'name="doors" value="' + kit.esc(door[0]) + '"> ' +
+                   kit.esc(door[0]) + '</label> ';
           }).join('') + '</div><div class="formrow"><button type="submit" ' +
           'title="' + kit.esc('Generates an app password for this person, ' +
             'scoped to the doors ticked, and shows it to you ONCE.') +
@@ -2063,15 +2164,16 @@ class UsersPage {
       return '<option value="' + kit.esc(value) + '">' +
              kit.esc(label || value) + '</option>';
     };
-    const select = function (name, values, blank?) {
-      return '<select name="' + name + '">' +
+    const select = function (name, values, blank?, tip?) {
+      return '<select name="' + name + '"' + kit.tip(tip || '') + '>' +
              (blank ? option('', blank) : '') +
              values.map(function (one) {
                return option(one);
              }).join('') + '</select>';
     };
-    const field = function (label, name, placeholder?) {
-      return '<label>' + kit.esc(label) + ' <input type="text" name="' +
+    const field = function (label, name, placeholder?, tip?) {
+      return '<label' + kit.tip(tip || '') + '>' + kit.esc(label) +
+             ' <input type="text" name="' +
              name + '" maxlength="256"' + (placeholder
                ? ' placeholder="' + kit.esc(placeholder) + '"' : '') +
              '></label> ';
@@ -2099,7 +2201,10 @@ class UsersPage {
             '"><input type="hidden" name="id" value="' + kit.esc(one.id) +
             '"><input type="hidden" name="from" value="user">' +
             '<input type="hidden" name="back" value="' + kit.esc(back) +
-            '"><button class="danger" type="submit">Remove</button></form>'
+            '"><button class="danger" type="submit"' + kit.tip('Delete ' +
+              'this verification. The claims it covered are no longer ' +
+              'released as verified on its strength.') +
+            '>Remove</button></form>'
           : '') + '</td></tr>';
     };
     const verificationsBlock = '<h3>Identity verifications</h3>' +
@@ -2122,38 +2227,51 @@ class UsersPage {
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           '<input type="hidden" name="from" value="user">' +
           '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
-          '<div class="formrow"><label>Trust framework ' +
+          '<div class="formrow"><label' + kit.tip(IDA_TIPS.framework) +
+          '>Trust framework ' +
           select('trust_framework', ida.trustFrameworks) + '</label> ' +
-          field('Assurance level', 'assurance_level') +
-          field('Verified at', 'time', '2026-09-23T10:00:00Z (now if empty)') +
-          '</div><div class="formrow"><label>Evidence ' +
+          field('Assurance level', 'assurance_level', '', IDA_TIPS.level) +
+          field('Verified at', 'time', '2026-09-23T10:00:00Z (now if empty)',
+                IDA_TIPS.time) +
+          '</div><div class="formrow"><label' + kit.tip(IDA_TIPS.evidence) +
+          '>Evidence ' +
           select('evidence_type', ida.evidenceTypes, 'none') + '</label> ' +
-          '<label>Check method ' + select('check_method', ida.checkMethods,
-                                          'none') + '</label></div>' +
-          '<div class="formrow"><strong>document:</strong> <label>Type ' +
+          '<label' + kit.tip(IDA_TIPS.check) + '>Check method ' +
+          select('check_method', ida.checkMethods, 'none') +
+          '</label></div>' +
+          '<div class="formrow"><strong>document:</strong> <label' +
+          kit.tip(IDA_TIPS.documentType) + '>Type ' +
           select('document_type', ida.documentTypes) + '</label> ' +
-          field('Number', 'document_number') +
-          field('Issuer', 'issuer_name') +
-          field('Issuer country', 'issuer_country', 'DEU') +
-          field('Issued', 'date_of_issuance', 'YYYY-MM-DD') +
-          field('Expires', 'date_of_expiry', 'YYYY-MM-DD') + '</div>' +
+          field('Number', 'document_number', '', IDA_TIPS.documentNumber) +
+          field('Issuer', 'issuer_name', '', IDA_TIPS.issuer) +
+          field('Issuer country', 'issuer_country', 'DEU', IDA_TIPS.country) +
+          field('Issued', 'date_of_issuance', 'YYYY-MM-DD', IDA_TIPS.issued) +
+          field('Expires', 'date_of_expiry', 'YYYY-MM-DD', IDA_TIPS.expires) +
+          '</div>' +
           '<div class="formrow"><strong>electronic_record:</strong> ' +
-          '<label>Type ' + select('record_type', ida.electronicRecordTypes) +
-          '</label> ' + field('Source', 'source_name') + '</div>' +
-          '<div class="formrow"><strong>vouch:</strong> <label>Type ' +
+          '<label' + kit.tip(IDA_TIPS.recordType) + '>Type ' +
+          select('record_type', ida.electronicRecordTypes) +
+          '</label> ' + field('Source', 'source_name', '',
+                               IDA_TIPS.recordSource) + '</div>' +
+          '<div class="formrow"><strong>vouch:</strong> <label' +
+          kit.tip(IDA_TIPS.vouchType) + '>Type ' +
           select('attestation_type', ida.attestationTypes) + '</label> ' +
-          field('Reference', 'reference_number') +
-          field('Voucher', 'voucher_name') + '</div>' +
+          field('Reference', 'reference_number', '', IDA_TIPS.reference) +
+          field('Voucher', 'voucher_name', '', IDA_TIPS.voucher) + '</div>' +
           '<div class="formrow"><strong>electronic_signature:</strong> ' +
-          field('Signature type', 'signature_type') +
-          field('Issuer', 'signature_issuer') +
-          field('Serial number', 'serial_number') +
-          field('Created', 'created_at', '2026-09-23T10:00:00Z') + '</div>' +
+          field('Signature type', 'signature_type', '',
+                IDA_TIPS.signatureType) +
+          field('Issuer', 'signature_issuer', '', IDA_TIPS.signatureIssuer) +
+          field('Serial number', 'serial_number', '', IDA_TIPS.serial) +
+          field('Created', 'created_at', '2026-09-23T10:00:00Z',
+                IDA_TIPS.created) + '</div>' +
           '<div class="formrow">Claims verified: ' +
           ida.verifiableClaims.map(function (claim) {
             // One field per claim, as the app-password doors are: a form
             // body keeps only the last of a repeated name.
-            return '<label><input type="checkbox" name="claim_' +
+            return '<label' + kit.tip('Record ' + claim + ' as verified by ' +
+                     'this evidence, with the value this entry holds for ' +
+                     'it now.') + '><input type="checkbox" name="claim_' +
                    kit.esc(claim) + '" value="on"> ' + kit.esc(claim) +
                    '</label> ';
           }).join('') + '</div><div class="formrow"><button ' +
@@ -2193,7 +2311,10 @@ class UsersPage {
             '"><input type="hidden" name="id" value="' + kit.esc(one.id) +
             '"><input type="hidden" name="from" value="user">' +
             '<input type="hidden" name="back" value="' + kit.esc(back) +
-            '"><button class="danger" type="submit">Remove</button></form>'
+            '"><button class="danger" type="submit"' + kit.tip('Delete ' +
+              'this device entry. Its Native SSO secret goes with it, so ' +
+              'the apps sharing it must sign in again.') +
+            '>Remove</button></form>'
           : '') + '</td></tr>';
     };
     const devicesBlock = '<h3>Devices</h3>' +
@@ -2234,7 +2355,9 @@ class UsersPage {
             kit.esc(one.subject) + '"><input type="hidden" name="from" ' +
             'value="user"><input type="hidden" name="back" value="' +
             kit.esc(back) + '"><button class="danger" ' +
-            'type="submit">Remove</button></form>'
+            'type="submit"' + kit.tip('Take this key off. Its self-issued ' +
+              'ID Token no longer signs this person in.') +
+            '>Remove</button></form>'
           : '') + '</td></tr>';
     };
     const selfIssuedBlock = '<h3>Self-issued IDs</h3>' +
@@ -2255,9 +2378,13 @@ class UsersPage {
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           '<input type="hidden" name="from" value="user">' +
           '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
-          '<div class="formrow"><label>Subject <input type="text" ' +
-          'name="subject" size="60" maxlength="2048" required ' +
-          'placeholder="did:jwk:… or a JWK thumbprint"></label> <label>Label ' +
+          '<div class="formrow"><label' + kit.tip('The wallet key\'s ' +
+            'self-issued subject: a did:jwk, or the JWK thumbprint a ' +
+            'SIOPv2 ID Token carries as its sub.') + '>Subject <input ' +
+          'type="text" name="subject" size="60" maxlength="2048" required ' +
+          'placeholder="did:jwk:… or a JWK thumbprint"></label> <label' +
+          kit.tip('A name for this key, so it can be told from the ' +
+            'others: the wallet or device it is in.') + '>Label ' +
           '<input type="text" name="label" maxlength="64"></label></div>' +
           '<div class="formrow"><button type="submit" title="' +
           kit.esc('Whoever holds this key signs in as this person. Enrol ' +
@@ -2371,7 +2498,10 @@ class UsersPage {
         ? '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="clear-email-factor">' +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
-          carryBack + '<div class="formrow"><button class="danger">Turn off ' +
+          carryBack + '<div class="formrow"><button class="danger"' +
+          kit.tip('Stop sending this person an emailed code or link after ' +
+            'their first factor. They can turn it on again at /portal/mfa ' +
+            'where the authentication policy allows it.') + '>Turn off ' +
           'their emailed second factor</button></div></form>'
         : '') +
       // THE ACCOUNT IDS CLIENTS KNOW THIS PERSON BY (#148): each sent as the
@@ -2383,20 +2513,32 @@ class UsersPage {
             'none') + '</p><form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="set-aud-sub">' +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
-          carryBack + '<div class="formrow"><label>client_id <input ' +
+          carryBack + '<div class="formrow"><label' + kit.tip('The ' +
+            'client_id of the client this account id is for.') +
+          '>client_id <input ' +
           'type="text" name="client" size="24" maxlength="256" required>' +
-          '</label> <label>aud_sub <input type="text" name="value" ' +
-          'size="24" maxlength="255"></label> <button type="submit">Set ' +
+          '</label> <label' + kit.tip('The id that client knows this ' +
+            'person by, sent to it as the ID Token\'s aud_sub (OpenID ' +
+            'Connect Enterprise Extensions). Leave it empty to remove the ' +
+            'one held for that client.') + '>aud_sub <input type="text" ' +
+          'name="value" size="24" maxlength="255"></label> <button ' +
+          'type="submit"' + kit.tip('Set the account id for that client, ' +
+            'or remove it when the aud_sub box is empty.') + '>Set ' +
           '(empty removes)</button></div></form></div>'
         : '') +
       (state.write
         ? '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="set-mail">' +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
-          carryBack + '<div class="formrow"><label>Address <input ' +
+          carryBack + '<div class="formrow"><label' + kit.tip('The ' +
+            'address mail is sent to. Set here it is marked verified, ' +
+            'because an administrator set it.') + '>Address <input ' +
           'type="email" name="mail" size="40" maxlength="254" required ' +
           'value="' + kit.esc(status.address) + '"></label> ' +
-          '<button type="submit">Set the address</button></div></form>' +
+          '<button type="submit"' + kit.tip('Save this address as their ' +
+            'verified email address. The old one, if any, is told it ' +
+            'changed when this realm can send mail.') +
+          '>Set the address</button></div></form>' +
           kit.note('An address set here is <strong>verified</strong> — an ' +
           'administrator is a trusted source (#64) — and the old one, if ' +
           'there was one' + (mailUsable ? ', is told it changed.'
@@ -2646,16 +2788,23 @@ class UsersPage {
         hidden('action', 'upload-certificate') + hidden('target', 'person') +
         hidden('from', '/admin/users') + hidden('back', back) +
         hidden('identifier', username) + hidden('purpose', p.id) +
-        '<div class="formrow"><label for="' + anchor + '-cert">Certificate ' +
+        '<div class="formrow"><label for="' + anchor + '-cert"' +
+        kit.tip('The certificate whose key this person\'s assertions are ' +
+          'verified with, in PEM. The certificate only: its private key ' +
+          'stays with them.') + '>Certificate ' +
         '(PEM)</label><textarea id="' + anchor + '-cert" name="certificate" ' +
-        'rows="6" required placeholder="-----BEGIN ' +
+        'rows="6" required' + kit.tip('The certificate, in PEM.') +
+        ' placeholder="-----BEGIN ' +
         'CERTIFICATE-----"></textarea></div><div class="formrow"><label ' +
-        'for="' + anchor + '-chain">Chain ' +
+        'for="' + anchor + '-chain"' + kit.tip('The certificates that ' +
+          'issued it, in PEM: every intermediate and the root.') + '>Chain ' +
         '(PEM, every intermediate and the root)</label><textarea id="' +
         anchor +
-        '-chain" name="chain" rows="6" placeholder="-----BEGIN ' +
+        '-chain" name="chain" rows="6"' + kit.tip('Every intermediate ' +
+          'and the root, in PEM.') + ' placeholder="-----BEGIN ' +
         'CERTIFICATE-----"></textarea></div><div class="formrow"><button ' +
-        'type="submit">' +
+        'type="submit"' + kit.tip('Put this certificate on their entry for ' +
+          'this profile, replacing the key pair held for it.') + '>' +
         (p.held ? 'Replace it with this certificate' :
          'Upload the certificate') +
         '</button></div></form>';
@@ -2666,8 +2815,10 @@ class UsersPage {
           hidden('target', 'person') + hidden('from', '/admin/users') +
           hidden('back', back) + hidden('identifier', username) +
           hidden('purpose', p.id) +
-          '<button type="submit" class="danger">Take this key pair ' +
-          'off</button><span class="sub">Not revocation: the certificate ' +
+          '<button type="submit" class="danger"' + kit.tip('Take the key ' +
+            'pair off this entry. Not revocation: the certificate stays ' +
+            'valid and this service stops accepting what it signs.') +
+          '>Take this key pair off</button><span class="sub">Not revocation: the certificate ' +
           'stays valid and this service stops accepting what it signs. The ' +
           'declared issuer goes with it; the other profile&rsquo;s key pair ' +
           'is untouched.</span></div></form>'
@@ -3011,10 +3162,15 @@ class UsersPage {
       '<input type="hidden" name="action" value="reset-person-keytab">' +
       '<input type="hidden" name="username" value="' + kit.esc(key) + '">' +
       '<input type="hidden" name="from" value="user">' +
-      '<div class="formrow"><label for="krb5-keytab-password">New ' +
+      '<div class="formrow"><label for="krb5-keytab-password"' +
+      kit.tip('The new password; their Kerberos keys and the keytab are ' +
+        'derived from it.') + '>New ' +
       'password</label><input type="password" id="krb5-keytab-password" ' +
-      'name="password" autocomplete="new-password" size="30"></div>' +
-      '<div class="formrow"><label><input type="checkbox" name="random" ' +
+      'name="password" autocomplete="new-password" size="30"' +
+      kit.tip('The new password.') + '></div>' +
+      '<div class="formrow"><label' + kit.tip('Generate a password ' +
+        'nobody is shown instead of the one typed; only the keytab then ' +
+        'signs them in.') + '><input type="checkbox" name="random" ' +
       'value="true"> or a generated one that is never shown</label></div>' +
       '<div class="formrow"><button class="danger" type="submit" title="' +
       kit.esc('Sets the password, signs them out everywhere, and shows the ' +
@@ -3105,7 +3261,10 @@ class UsersPage {
         '>Set the address to</label><input type="email" id="personmail" ' +
         'name="mail" size="34" required value="' +
         kit.esc(String(editor.mail || '')) + '" placeholder="e.g. ' +
-        'alice@example.com"><button type="submit">Set the address</button>' +
+        'alice@example.com"' + kit.tip('The address mail is sent to.') +
+        '><button type="submit"' + kit.tip('Save this address as their ' +
+          'verified email address; the former address is told it ' +
+          'changed.') + '>Set the address</button>' +
         '<span class="sub">Verified, because an administrator set it; the ' +
         'former address is told.</span></div></form>'
       : '<h3 id="mail">Email address</h3>' + (editor.mail
@@ -3239,13 +3398,17 @@ class UsersPage {
         '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
         '<input type="hidden" name="from" value="user">' +
         '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
-        '<div class="formrow"><label for="' + id + 'personattr">' + label +
-        '</label><select id="' + id + 'personattr" name="attribute">' +
+        '<div class="formrow"><label for="' + id + 'personattr"' +
+        kit.tip(ENTRY_TIPS[id].attribute) + '>' + label +
+        '</label><select id="' + id + 'personattr" name="attribute"' +
+        kit.tip(ENTRY_TIPS[id].attribute) + '>' +
         rows.map(option).join('') + '</select><label for="' + id +
-        'personval">' + (id === 'set' ? 'to' : 'the value') + '</label>' +
+        'personval"' + kit.tip(ENTRY_TIPS[id].value) + '>' +
+        (id === 'set' ? 'to' : 'the value') + '</label>' +
         '<input type="text" id="' + id + 'personval" name="value" size="34"' +
-        (required ? ' required' : '') + ' placeholder="' +
-        kit.esc(placeholder) + '"><button type="submit">' +
+        (required ? ' required' : '') + kit.tip(ENTRY_TIPS[id].value) +
+        ' placeholder="' + kit.esc(placeholder) + '"><button type="submit"' +
+        kit.tip(ENTRY_TIPS[id].button) + '>' +
         label.split(' ')[0] + '</button></div></form>';
     };
     const listing = '<details><summary>What each attribute takes, and what ' +
@@ -3388,7 +3551,10 @@ class UsersPage {
         '<div class="formrow"><button' + (danger ? ' class="danger"' : '') +
         ' title="' + kit.esc(title) + '">' + label + '</button></div></form>';
     };
-    const compromisedBox = '<div class="formrow"><label><input ' +
+    const compromisedBox = '<div class="formrow"><label' +
+      kit.tip('Tick when the password is known or suspected to be ' +
+        'compromised: the RISC event sent is credential-compromise instead ' +
+        'of an ordinary credential change.') + '><input ' +
       'type="checkbox" name="compromised" value="true"> the password was ' +
       'compromised (RISC <code>credential-compromise</code>)</label></div>';
     const reset = '<h3>Reset the password</h3>' +
@@ -3481,8 +3647,9 @@ class UsersPage {
         form('disable', 'Disable the account',
              'Sets pwdAccountLockedTime and signs them out of everything.',
              true,
-             '<div class="formrow"><label>Reason for RISC receivers ' +
-             '<select name="riscReason"><option value="">none given' +
+             '<div class="formrow"><label' + kit.tip('The reason the RISC ' +
+               'account-disabled event gives its receivers, if any.') +
+             '>Reason for RISC receivers <select name="riscReason"><option value="">none given' +
              '</option><option value="hijacking">hijacking — the account ' +
              'was taken over</option><option value="bulk-account">' +
              'bulk-account — one of many created in bulk</option>' +
@@ -3510,7 +3677,10 @@ class UsersPage {
            (facts.notDelegated ? 'false' : 'true') + '">') +
       form('set-may-act', 'Set who may act for them',
            'Writes stsMayAct; empty clears it.', false,
-           '<div class="formrow"><label>Delegate DN <input type="text" ' +
+           '<div class="formrow"><label' + kit.tip('The DN of the one ' +
+             'person or application that may act for them, carried in ' +
+             'their access tokens as may_act. Empty clears it.') +
+           '>Delegate DN <input type="text" ' +
            'name="delegate" size="60" value="' +
            kit.esc(facts.mayAct || '') + '" placeholder="uid=bob,ou=users,' +
            '... or cn=app,ou=applications,..."></label></div>') +
@@ -3524,11 +3694,19 @@ class UsersPage {
            'policy: both are allowed for a subject, delegation only for an ' +
            'actor.', false,
            '<div class="formrow">' +
-           ['delegation', 'impersonation'].map(function (one) {
-             return '<label><input type="checkbox" name="semantics" value="' +
+           [['delegation', 'Allow delegation: the actor acts for them and ' +
+              'is named in the token as act.'],
+            ['impersonation', 'Allow impersonation: the actor is issued a ' +
+              'token as them, with no act naming the actor.']].map(
+             function (pair) {
+             const one = pair[0];
+             return '<label' + kit.tip(pair[1]) + '><input ' +
+               'type="checkbox" name="semantics" value="' +
                one + '"' + ((facts.semantics || []).indexOf(one) >= 0
                  ? ' checked' : '') + '> ' + one + '</label> ';
-           }).join('') + '</div><div class="formrow"><label>Default ' +
+           }).join('') + '</div><div class="formrow"><label' +
+           kit.tip('The semantics used when a request does not say which ' +
+             'it wants.') + '>Default ' +
            '<select name="default">' +
            ['', 'delegation', 'impersonation'].map(function (one) {
              return '<option value="' + one + '"' +
@@ -3604,8 +3782,9 @@ class UsersPage {
         kit.note('Making somebody a service account needs <strong>Admin ' +
                  'Write</strong>.');
     }
-    const field = function (name, label, value, placeholder) {
-      return '<div class="formrow"><label>' + label + ' <input type="text" ' +
+    const field = function (name, label, value, placeholder, tip) {
+      return '<div class="formrow"><label' + kit.tip(tip) + '>' + label +
+        ' <input type="text" ' +
         'name="' + name + '" size="60" value="' + kit.esc(value || '') +
         '" placeholder="' + kit.esc(placeholder) + '"></label></div>';
     };
@@ -3621,11 +3800,18 @@ class UsersPage {
     };
     const fields = field('owner', 'Owner (a person or group)',
                          account && account.owner,
-                         'uid=alice,ou=users,... or a group\'s cn') +
+                         'uid=alice,ou=users,... or a group\'s cn',
+                         'The person or group who answers for this ' +
+                         'account: a person\'s DN or a group\'s cn.') +
       field('destination', 'Push destination DN', account &&
-            account.destination, 'cn=vault-prod,ou=applications,...') +
+            account.destination, 'cn=vault-prod,ou=applications,...',
+            'The secrets manager a rotated password is written to: the DN ' +
+            'of an application entry declared for secret-destination. ' +
+            'Empty, the password is never rotated here.') +
       field('secretName', 'Secret name or path', account &&
-            account.secretName, 'iya/svc-backup');
+            account.secretName, 'iya/svc-backup',
+            'Where in that secrets manager the password is written. The ' +
+            'secret must already exist; a push never creates one.');
     const set = form('set-service-account', account
       ? 'Save the service account' : 'Make them a service account',
       'Writes stsServiceAccount, its owner and its push destination.',
