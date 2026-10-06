@@ -786,6 +786,7 @@ async function makeWorld(mode) {
     spEnc: "https://spenc-" + tag + "-" + STAMP + ".example.com/saml",
     rp11: "https://rp11-" + tag + "-" + STAMP + ".example.com/shibboleth",
     wsRp: "https://wsrp-" + tag + "-" + STAMP + ".example.com/",
+    wsSrc: "https://wssrc-" + tag + "-" + STAMP + ".example.com/",
     requester: "xsd-req-" + tag + "-" + STAMP
   };
   w.acs = w.sp.replace(/\/saml$/, "/acs");
@@ -812,13 +813,18 @@ async function makeWorld(mode) {
   await createApplication(realm, w.rp11, ["saml11"], {
     samlEntityId: [w.rp11], samlAssertionConsumerService: [w.acs11],
     samlSigningCertificate: signing });
-  // #186: the delegated assertion was issued for the AppliesTo, so S and R
-  // are both the relying party — which accepts the requester as an actor
-  // and lists itself, so that S delegates to R.
+  // #186: the delegated assertion is issued for a second WS-Trust relying
+  // party, S, which delegates to the AppliesTo, R; R accepts the requester
+  // as an actor. S and R are two applications because since #459 no
+  // application may list itself, so a delegation with S equal to R cannot
+  // be configured.
   await createApplication(realm, w.wsRp, ["wsfed", "wstrust"], {
     wsfedRealm: [w.wsRp], wsfedReplyUrl: [w.wsReply],
     wstrustAppliesTo: [w.wsRp],
-    appAllowedToActOnBehalfOf: [w.requester, w.wsRp] });
+    appAllowedToActOnBehalfOf: [w.requester] });
+  await createApplication(realm, w.wsSrc, ["wstrust"], {
+    wstrustAppliesTo: [w.wsSrc],
+    appAllowedToDelegateTo: [w.wsRp] });
   await createApplication(realm, w.requester, ["wstrust"], {
     appDelegationSemantics: ["delegation", "impersonation"],
     appAllowedToDelegateTo: [w.wsRp] });
@@ -1258,7 +1264,14 @@ async function wsTrust(w) {
       throw new Error("HTTP " + enc.status + " " + enc.body.slice(0, 400));
     }
   });
-  // 1.4's ActAs and 1.3's OnBehalfOf, from the application trusted to.
+  // 1.4's ActAs and 1.3's OnBehalfOf, from the application trusted to, of
+  // an assertion the person was issued for S (makeWorld()).
+  const forSource = await sts(w, "1.3 Issue for the delegating relying " +
+    "party", { trustNs: NS.wst13, soap: "1.2", op: "Issue",
+               username: w.person, password: PASSWORD,
+               appliesTo: w.wsSrc });
+  issued = (/<saml:Assertion[\s\S]*<\/saml:Assertion>/
+    .exec(forSource.body) || [])[0] || issued;
   await sts(w, "1.4 ActAs", {
     trustNs: NS.wst13, soap: "1.2", op: "Issue", username: w.requester,
     password: PASSWORD, appliesTo: w.wsRp,
