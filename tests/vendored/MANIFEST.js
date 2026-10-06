@@ -561,6 +561,11 @@ const JOBS = [
   // `local: true`: this repository's own transmitter and management API, in
   // a throwaway realm.
   { file: 'sts_application_signals.js', browser: false, local: true },
+  // SERVICE ACCOUNTS (#221 P1, P2, P4): the flag through /admin-api, the
+  // users list's tag and filter, the third policy kind, Rotate now's
+  // refusals and Monitoring → Service accounts. `local: true`: this
+  // repository's own management API, in a throwaway realm.
+  { file: 'sts_service_accounts.js',     browser: false, local: true },
   // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
   // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
   // token is confined, and in the `cluster` mode both nodes name one leader
