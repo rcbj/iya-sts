@@ -237,7 +237,7 @@ own account with a form they abandoned. It is the same shape of lockout
 ### The QR code is an image this server drew, and the typed secret is not a fallback nobody sees
 
 `script-src 'none'` covers every page here except `/portal/keys` (see below,
-2026-09-10), so a QR library running in the browser was never available on this
+2026-09-10) and a few states of others the root `CLAUDE.md`'s table lists, so a QR library running in the browser was never available on this
 one — `common/totp.ts` renders an SVG and it arrives as
 a `data:` URI, which `img-src 'self' data:` already allowed for the two OID4VC
 offer pages.
@@ -352,6 +352,22 @@ row — `attestation` — and this page draws it in the person's words
 trusted", "verified" with no trusted root, "no attestation sent", or "not
 verified" where the policy verified nothing. `authn/CLAUDE.md`, *The
 attestation statement*, has the rest.
+
+### The recovery codes' Copy button is a script, and the box beside it is the fallback (#224, 2026-10-06)
+
+rcbj: "Right now, the user must select and copy the displayed text. The
+resulting formatting is messed up." A fresh set is drawn as a grid, and a
+selection across a CSS grid copies as whatever the browser makes of it. So
+the card says the codes twice: the grid, to read, and a READ-ONLY BOX holding
+them one per line, which a selection copies exactly as drawn. The **Copy all
+codes** button writes that box to the clipboard, which no markup can, so the
+one response that shows a fresh set (`sendCodesPage()`, the POST of
+`generate-codes`) carries `script-src 'self'` for `/portal/copy.js` and nothing
+else; every other state of `/portal/mfa` runs no script. With script blocked
+the button stays hidden and the box is the whole mechanism. The script reads
+only the box beside its button and sends nothing. rcbj asked for the same in
+the admin console and then withdrew it: the console never shows a person's
+codes (`admin-ui/web_users.ts`, the recovery codes block).
 
 ### It is the SEVENTH scripted page in this service and the first in this portal
 

@@ -4851,6 +4851,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'used each, and whether its Native SSO secret is live. The ' +
           'identity is the session\'s; the forms name only the device or ' +
           'the credential. The link step runs /authn/webauthn.js.' },
+  { path: '/portal/copy.js', group: 'User portal',
+    name: 'Recovery codes Copy script', specs: [],
+    what: 'NON-SPEC (#224). The script behind the Copy all codes button on ' +
+          '/portal/mfa, loaded only by the one response that shows a freshly ' +
+          'generated set of recovery codes: it writes the read-only box of ' +
+          'codes, one per line, to the clipboard. It sends nothing; with it ' +
+          'blocked the button stays hidden and the box is copied by hand.' },
   { path: '/portal/devices/challenge', group: 'User portal',
     name: 'Device enrolment challenge (JSON)',
     specs: [],

@@ -264,6 +264,66 @@ const BASE = '/portal';
  * The activation link's path.
  */
 const ACTIVATE = BASE + '/activate';
+
+// ---------------------------------------------------------------------------
+// THE COPY BUTTON ON A FRESH SET OF RECOVERY CODES (#224, 2026-10-06).
+//
+// rcbj: "Right now, the user must select and copy the displayed text. The
+// resulting formatting is messed up." The set is drawn as a grid of codes,
+// and a selection across a CSS grid copies as whatever the browser makes of
+// it. So the card says the codes twice: the grid, to read, and a read-only
+// box holding them ONE PER LINE, which a selection copies exactly; and a
+// Copy button writes that box's text to the clipboard.
+//
+// **WRITING TO THE CLIPBOARD NEEDS A SCRIPT** — no markup can — which makes
+// the card's one response, the set being shown, a scripted page (the root
+// CLAUDE.md's table): `script-src 'self'` naming this one resource, only for
+// that response (`sendCodesPage()`), never `'unsafe-inline'`. With the
+// script blocked the button stays hidden and the box is the whole
+// mechanism: select it and copy, and the lines come out as drawn. The script
+// reads only the box beside the button and sends nothing anywhere.
+// ---------------------------------------------------------------------------
+const COPY_SCRIPT_PATH = BASE + '/copy.js';
+
+// Browser code, served as it is (exempt from the logging rule, like every
+// script this service sends to a browser).
+const COPY_SCRIPT = [
+  "'use strict';",
+  '(function () {',
+  '  var buttons = document.querySelectorAll(',
+  "    'button.copybtn[data-copy-target]');",
+  '  Array.prototype.forEach.call(buttons, function (button) {',
+  "    var box = document.getElementById(button.getAttribute(",
+  "      'data-copy-target'));",
+  '    if (!box) { return; }',
+  '    button.hidden = false;',
+  '    var said = function (ok) {',
+  '      var label = button.textContent;',
+  "      button.textContent = ok ? 'Copied' : 'Copy failed: select the box " +
+    "and copy';",
+  '      setTimeout(function () { button.textContent = label; }, 2500);',
+  '    };',
+  '    var byHand = function () {',
+  '      box.focus();',
+  '      box.select();',
+  '      var ok = false;',
+  "      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }",
+  '      return ok;',
+  '    };',
+  "    button.addEventListener('click', function () {",
+  '      var text = box.value;',
+  '      if (navigator.clipboard && navigator.clipboard.writeText) {',
+  '        navigator.clipboard.writeText(text).then(function () {',
+  '          said(true);',
+  '        }, function () { said(byHand()); });',
+  '        return;',
+  '      }',
+  '      said(byHand());',
+  '    });',
+  '  });',
+  '}());',
+  ''
+].join('\n');
 // A PASSWORD RESET LINK an administrator issued (2026-09-13). Unauthenticated,
 // like ACTIVATE, and for its reason: the token is the credential.
 const RESET_PASSWORD = BASE + '/reset-password';
@@ -3527,7 +3587,19 @@ class Portal {
         self.esc('They are not saved yet. Nothing has been stored, and none ' +
             'of these codes will work until you press the button below.') +
         '</strong></p>' +
-        '<ul class="codes">' + list + '</ul><p class="note"><strong>This is ' +
+        '<ul class="codes">' + list + '</ul>' +
+        // #224: the same codes ONE PER LINE, which a selection copies as
+        // drawn, and the Copy button the script reveals (see COPY_SCRIPT).
+        '<p><label for="recovery-codes-text">The same codes as plain ' +
+        'text, one per line</label><br><textarea id="recovery-codes-text" ' +
+        'readonly rows="' + fresh.codes.length + '" cols="28">' +
+        fresh.codes.map(function (code) {
+          return self.esc(backupCodes.formatted(code));
+        }).join('\n') + '</textarea><br><button type="button" ' +
+        'class="copybtn secondary" hidden ' +
+        'data-copy-target="recovery-codes-text">Copy all codes</button></p>' +
+        '<script src="' + COPY_SCRIPT_PATH + '"></script>' +
+        '<p class="note"><strong>This is ' +
         'the only time they will ever be shown.</strong> When you confirm, ' +
         'this service stores a <em>hash</em> of each one &mdash; the same ' +
         'kind of scrypt hash it stores for your password &mdash; so it can ' +
@@ -4864,6 +4936,18 @@ class Portal {
   // only sometimes would be a policy that changes under a reader, and the two
   // states of this page differ by a form.
   // ---------------------------------------------------------------------------
+  // AND THE SECOND (#224): a fresh set of recovery codes, the one state of
+  // /portal/mfa with a Copy button. The same builder for the same reason.
+  // Every other response of /portal/mfa runs no script.
+  private sendCodesPage(res, status, html) {
+    const { app, log } = this.deps;
+    log.debug("Entering Portal.sendCodesPage().");
+    res.set('Content-Security-Policy',
+            app.contentSecurityPolicy({ 'script-src': "'self'" }));
+    res.status(status).set('Cache-Control', 'no-store').type('html').send(html);
+    log.debug("Leaving Portal.sendCodesPage().");
+  }
+
   private sendKeysPage(res, status, html) {
     const { app, log } = this.deps;
     log.debug("Entering Portal.sendKeysPage().");
@@ -4895,6 +4979,8 @@ class Portal {
       // the router against its own descriptions, and a route registered and
       // undescribed fails the suite.
       .concat([ACTIVATE, BASE + '/callback', BASE + '/remove-key',
+               // The recovery codes' Copy script (#224).
+               COPY_SCRIPT_PATH,
                BASE + '/signout', BASE + '/signals/receive',
                // The mail channel's two pages nobody is signed in to (#63).
                BASE + '/forgot-password', BASE + '/verify-email',
@@ -5861,6 +5947,16 @@ class Portal {
     // distinction the whole portal keeps and the reason it has an access-gate
     // action of its own.
     // -------------------------------------------------------------------------
+    // THE COPY SCRIPT (#224): served to anybody, since it is the same bytes
+    // for everybody and carries nothing of anyone's; the page that loads it
+    // is behind the sign-in. The service's own policy (`app.js`) stays on it.
+    app.get(COPY_SCRIPT_PATH, function (req, res) {
+      log.debug("Entering GET " + COPY_SCRIPT_PATH + ".");
+      res.status(200).type('application/javascript')
+        .set('Cache-Control', 'public, max-age=3600').send(COPY_SCRIPT);
+      log.debug("Leaving GET " + COPY_SCRIPT_PATH + ".");
+    });
+
     app.get(BASE + '/mfa', async function (req, res) {
       log.debug('Entering GET ' + BASE + '/mfa.');
       const session = self.requireSignIn(req, res, BASE + '/mfa',
@@ -6139,8 +6235,10 @@ class Portal {
         // does that: a 303 cannot carry a list of credentials, and putting them
         // on a query string would write them into a browser history entry and
         // every proxy log between here and the person.
-        return self.send(res, 200, self.mfaPage(session, null, null, null,
-                                                begun, null));
+        // The one response of this page that runs a script (#224):
+        // `sendCodesPage()`.
+        return self.sendCodesPage(res, 200, self.mfaPage(session, null, null,
+                                                         null, begun, null));
       }
 
       if (action === 'confirm-codes') {
@@ -7204,6 +7302,8 @@ slot.buildNowUnlessDeferred();
  * @namespace
  */
 export = {
+  // The recovery codes' Copy script as it is served (#224), for its test.
+  COPY_SCRIPT: COPY_SCRIPT,
   registerRoutes: (target: any): void => {
     slot.get().registerRoutes(target);
     portalCertificates.register({
