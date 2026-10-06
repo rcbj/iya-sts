@@ -731,14 +731,22 @@ async function theApiMirrorsThePane(object) {
   log.debug("Entering theApiMirrorsThePane().");
   log.info("=== 7. /admin-api mirrors the pane (rule 7) ===");
   const unknown = await postJson(api("/pki/nonsense"), {});
-  check("the unknown-action sentence names every action", function () {
+  // The pane's MANAGEMENT actions are named; its four form helpers are not,
+  // because since #454 they are the console's, at /admin-api/console/pki,
+  // and the refusal names what THIS address declares (STS-API-0130).
+  check("the unknown-action sentence names every management action",
+        function () {
     assert.strictEqual(unknown.status, 400);
     const said = (unknown.body.errors || []).join(" ");
-    ["apply-profile", "generate-keys", "generate-alt-keys",
-     "issue-certificate", "use-key", "remove-object", "clear-store",
+    ["issue-certificate", "remove-object", "clear-store",
      "export"].forEach(function (action) {
       assert.ok(said.indexOf(action) >= 0,
         'the refusal does not name "' + action + '": ' + said);
+    });
+    ["apply-profile", "generate-keys", "generate-alt-keys",
+     "use-key"].forEach(function (action) {
+      assert.ok(said.indexOf(action) < 0,
+        'the refusal names the console helper "' + action + '": ' + said);
     });
   });
 
