@@ -4725,7 +4725,8 @@ class AdminActions {
     // on, behind the same fold the old one was, and a secret in a query string
     // would be a secret in the browser history and every log on the way.
     if (action === 'regenerate-secret') {
-      const result = applications.regenerateClientSecret(identifier);
+      const result = applications.regenerateClientSecret(identifier,
+        { actor: body.actor || '' });
       log.debug("Leaving AdminActions.applicationsAction(). " +
                 "regenerate-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -4975,7 +4976,12 @@ class AdminActions {
     // A ROTATION (#49 P5): the same new secret, with the old one still
     // accepted for oauth2.clientSecretOverlapS so the client can change over.
     if (action === 'rotate-secret') {
-      const result = applications.rotateClientSecret(identifier);
+      // THE ACTOR GOES WITH IT (2026-10-06): the register names the act's
+      // initiating entity `admin` from it, and `system` without one — so a
+      // rotation an administrator asked for was announced to Shared Signals
+      // as the service's own (sts_application_signals found it).
+      const result = applications.rotateClientSecret(identifier,
+        { actor: body.actor || '' });
       log.debug("Leaving AdminActions.applicationsAction(). rotate-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
@@ -4987,14 +4993,15 @@ class AdminActions {
     // primary); the reply carries a new secret once, as regenerate's does.
     if (action === 'add-secret') {
       const result = applications.addClientSecret(identifier, {
-        lifetimeDays: body.lifetimeDays, description: body.description });
+        lifetimeDays: body.lifetimeDays, description: body.description,
+        actor: body.actor || '' });
       log.debug("Leaving AdminActions.applicationsAction(). add-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
     }
     if (action === 'remove-secret') {
       const result = applications.removeClientSecret(identifier, {
-        id: body.secret });
+        id: body.secret, actor: body.actor || '' });
       log.debug("Leaving AdminActions.applicationsAction(). remove-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);

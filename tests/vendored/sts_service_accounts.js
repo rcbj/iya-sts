@@ -114,12 +114,12 @@ async function test() {
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "Service accounts " + STAMP },
     "created the realm");
-  await ok(realmApi + "/users/create", { username: OWNER, invent: "no",
+  await ok(realmApi + "/users/create", { username: OWNER, invent: false,
     credential: "none" }, "created the owner");
 
   log.info("=== a. a refused owner creates nobody ===");
   const refused = await postJson(realmApi + "/users/create", {
-    username: REFUSED, invent: "no", credential: "none",
+    username: REFUSED, invent: false, credential: "none",
     serviceAccount: true, owner: "nobody-" + STAMP.toLowerCase() });
   check("a service account whose owner is nobody is refused", function () {
     assert.ok(refused.status >= 400 && refused.status < 500,
@@ -136,7 +136,7 @@ async function test() {
 
   log.info("=== b. a service account, tagged and filtered ===");
   const made = await ok(realmApi + "/users/create", { username: ACCOUNT,
-    invent: "no", credential: "none", serviceAccount: true, owner: OWNER },
+    invent: false, credential: "none", serviceAccount: true, owner: OWNER },
     "created the service account");
   check("the create says it made a service account", function () {
     assert.strictEqual(made.serviceAccount, true, JSON.stringify(made));
