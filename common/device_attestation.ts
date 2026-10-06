@@ -71,13 +71,22 @@
 //     since #256 (2026-10-06): every certificate of a chain that reaches
 //     Google's roots is looked up in the list `attestation_revocation.ts`
 //     reads, and a revoked or suspended one leaves the key self-asserted.
-//   * **Freshness of a TPM statement**: draft-ietf-lamps-csr-attestation
-//     section 6.2 leaves it to the CA ("may choose to ignore attestations
-//     that are stale"), and EST and SCEP give the attester no nonce without
-//     draft-ietf-lamps-attestation-freshness. What a key attestation states —
-//     that the key was made in, and cannot leave, a TPM — does not go stale,
-//     and the request's own signature proves possession NOW; so the
-//     statement's `extraData` is recorded and not required to be anything.
+//   * ~~Freshness of a TPM statement is recorded, not required~~ — it is
+//     required since #257 (2026-10-06). draft-ietf-lamps-csr-attestation
+//     section 6.2 lets the CA "ignore attestations that are stale, or whose
+//     freshness cannot be determined", and draft-ietf-lamps-attestation-
+//     freshness gives EST a /nonce. Without one, a captured statement could
+//     be replayed in a new request for the same key. This file verifies the
+//     statement and returns its `extraData`; `cert_enrollment.ts` spends it
+//     as a nonce issued at EST /nonce to the same client and cookie, and
+//     product refuses a statement that is not one
+//     (`mode.requiresFreshKeyAttestation()`, STS-DEVICE-0050). SCEP has no
+//     nonce operation in any specification, so a statement over SCEP is
+//     never fresh.
+//   * **The TPM statement's syntax** is revision 20's appendix A.2.3 of the
+//     CSR-attestation draft, the only one ever published (re-checked on
+//     #257: revision 21 removed it and nothing replaced it); `crypto.js`'s
+//     codec lists the seven places the draft disagrees with itself.
 //   * **Post-quantum**: every format here is fixed by its vendor — Android's
 //     and Apple's chains are RSA and ECDSA, a TPM 2.0 AK signs RSA or ECDSA —
 //     so none of them can be post-quantum, and the summary records the
@@ -91,7 +100,6 @@
 // and authenticator-data readers are `authn/webauthn.js`'s, the one copy.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -533,10 +541,9 @@ class DeviceAttestation {
       return falsified('the authenticator data carries no attested credential');
     }
     // Steps 2-4: the nonce in the credential certificate.
-    const clientDataHash = nodeCrypto.createHash('sha256')
-      .update(String(s.nonce || ''), 'utf8').digest();
-    const nonce = nodeCrypto.createHash('sha256')
-      .update(Buffer.concat([authDataRaw, clientDataHash])).digest();
+    const clientDataHash = stsCrypto.digest('sha256', String(s.nonce || ''));
+    const nonce = stsCrypto.digest('sha256',
+      Buffer.concat([authDataRaw, clientDataHash]));
     const facts = pki.attestationCertificateFacts(x5c[0]);
     const ext = facts ? facts.extensions[OID_APPLE_NONCE] : null;
     const certified = ext ? stsCrypto.appleAttestationNonce(ext.value) : null;
@@ -550,16 +557,14 @@ class DeviceAttestation {
     const point = certJwk.kty === 'EC' && certJwk.crv === 'P-256'
       ? Buffer.concat([Buffer.from([4]), Buffer.from(certJwk.x, 'base64url'),
                        Buffer.from(certJwk.y, 'base64url')]) : null;
-    if (!point || !nodeCrypto.createHash('sha256').update(point).digest()
-          .equals(keyId)) {
+    if (!point || !stsCrypto.digest('sha256', point).equals(keyId)) {
       log.debug("Leaving DeviceAttestation.appAttest(). Key id.");
       return falsified('the key id is not the SHA-256 of the certified ' +
                        'P-256 key');
     }
     // Step 6: the app.
     const appId = appIds.filter(function (one: string): boolean {
-      return nodeCrypto.createHash('sha256').update(one, 'utf8').digest()
-        .equals(authData.rpIdHash);
+      return stsCrypto.digest('sha256', one).equals(authData.rpIdHash);
     })[0];
     if (!appId) {
       log.debug("Leaving DeviceAttestation.appAttest(). App.");
@@ -611,8 +616,10 @@ class DeviceAttestation {
   // =========================================================================
   // TPM KEY ATTESTATION IN A CERTIFICATE REQUEST. `spec` is { bundle (the
   // id-aa-attestation value's DER, or null for none), publicKeyPem }.
-  // Resolves { ok, attestation } — `none` and self-asserted when there is
-  // no bundle or no statement this service verifies — or a refusal.
+  // Resolves { ok, attestation, extraData } — `none` and self-asserted when
+  // there is no bundle or no statement this service verifies — or a
+  // refusal. Whether `extraData` is a nonce this realm issued is the
+  // caller's question (#257): only it knows who asked for one.
   // =========================================================================
   /**
    * Verifies a TPM key attestation carried in a certificate request's
@@ -620,8 +627,10 @@ class DeviceAttestation {
    *
    * @param spec - `bundle` (the attribute value's DER, or null for none) and
    *   `publicKeyPem` (the request's key)
-   * @returns `{ ok, attestation }` — `self-asserted` when there is no bundle
-   *   or no statement this service verifies — or a refusal
+   * @returns `{ ok, attestation, extraData }` — `self-asserted` when there is
+   *   no bundle or no statement this service verifies, and `extraData` (the
+   *   TPMS_ATTEST's, a Buffer) only for a TPM statement that verified — or a
+   *   refusal
    */
   async csrAttestation(spec: Json): Promise<Json> {
     const { log, stsCrypto } = this.deps;
@@ -695,7 +704,7 @@ class DeviceAttestation {
     }
     let requestJwk: Json = null;
     try {
-      requestJwk = nodeCrypto.createPublicKey(String(publicKeyPem || ''))
+      requestJwk = stsCrypto.publicKeyOf(String(publicKeyPem || ''))
         .export({ format: 'jwk' });
     } catch (e) {
       log.debug("Caught in DeviceAttestation.tpmCertify(): " +
@@ -759,7 +768,7 @@ class DeviceAttestation {
         continue;
       }
       if (await stsCrypto.verifyRawSignature(scheme,
-            nodeCrypto.createPublicKey(facts.pem), stmt.tpmSAttest,
+            stsCrypto.publicKeyOf(facts.pem), stmt.tpmSAttest,
             signature.signature)) {
         ak = der;
         break;
@@ -782,7 +791,10 @@ class DeviceAttestation {
       String(attest.firmwareVersion);
     log.debug("Leaving DeviceAttestation.tpmCertify(). " +
               (chain.ok ? 'Anchored.' : 'Unanchored.'));
-    return { ok: true, attestation: chain.ok
+    // `extraData` goes back to the caller, which alone knows the client and
+    // the cookie a nonce was issued to, and asks whether it is one (#257).
+    return { ok: true, extraData: Buffer.from(attest.extraData),
+             attestation: chain.ok
       ? this.record('attested', 'tcg-tpm2-key', said + ', its AK chained ' +
                     'to ' + chain.anchor + '.')
       : this.record('self-asserted', 'tcg-tpm2-key', said + ', which ' +

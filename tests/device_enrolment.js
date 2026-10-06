@@ -30,6 +30,11 @@
 //      server key and a re-enrolment refused (STS-DEVICE-0025); a spoiled
 //      statement refused (STS-DEVICE-0020); two attributes refused
 //      (STS-DEVICE-0021); product refuses no attestation (STS-DEVICE-0024).
+//      FRESHNESS (#257): a nonce issued for EST /nonce, carried as the
+//      statement's extraData with its cookie handle, is fresh and spent;
+//      replayed, someone else's, or with no cookie it is UNPROVEN in
+//      development; product refuses an unproven one (STS-DEVICE-0050) and a
+//      TPM statement over SCEP; a fresh one issues in product.
 //   7. RECOGNITION by each of the four ways — x509 (and a revoked
 //      certificate not), webauthn, jwk (a DPoP jkt), native-sso — a
 //      compromised device still recognised, the last use moved, and the
@@ -245,7 +250,9 @@ function tpm2b(bytes) {
 
 // A TPM key attestation (TPM2_Certify) of an EC P-256 key `jwk`, as an
 // AttestationBundle's DER. spoil: 'name', 'attributes', 'signature'.
-async function tpmBundle(jwk, anchor, spoil) {
+// `extraData` is TPM2_Certify's qualifyingData — a freshness nonce's octets
+// (#257) — and the word "freshness" when none is given, which is no nonce.
+async function tpmBundle(jwk, anchor, spoil, extraData) {
   log.debug("Entering tpmBundle().");
   const pubArea = Buffer.concat([
     u16(0x0023), u16(0x000b),
@@ -258,7 +265,8 @@ async function tpmBundle(jwk, anchor, spoil) {
   const certInfo = Buffer.concat([
     u32(0xff544347), u16(0x8017),
     tpm2b(Buffer.concat([u16(0x000b), nodeCrypto.randomBytes(32)])),
-    tpm2b(Buffer.from('freshness')), Buffer.alloc(17), Buffer.alloc(8),
+    tpm2b(extraData || Buffer.from('freshness')), Buffer.alloc(17),
+    Buffer.alloc(8),
     tpm2b(name),
     tpm2b(Buffer.concat([u16(0x000b), nodeCrypto.randomBytes(32)]))]);
   const ak = await kit.keyPair('rsa');
@@ -784,9 +792,123 @@ async function checkCertificates(t) {
   } finally {
     config.clearOverride('global.mode');
   }
+  await checkFreshness(t, tpmRoot);
   log.debug("Leaving checkCertificates().");
   return { device: device, certificatePem: renewed.ok
     ? renewed.record.certificatePem : issued.record.certificatePem };
+}
+
+// #257: a TPM statement's freshness, the nonce issued as EST /nonce issues
+// it (the handler itself is `est_handlers.js`'s) and spent by the core.
+async function checkFreshness(t, tpmRoot) {
+  log.debug("Entering checkFreshness().");
+  t.log.info('=== 6l. TPM attestation freshness (#257) ===');
+  const handle = 'est.' + nodeCrypto.randomBytes(32).toString('base64url');
+  const alice = person(ALICE);
+  const nonceFor = function (who, cookie, bytes) {
+    log.debug("Entering nonceFor().");
+    const issued = enrolment.issueChallenge({ purpose: 'csr-attestation',
+      sessionId: cookie, username: who.kind + ':' + who.id, bytes: bytes });
+    log.debug("Leaving nonceFor().");
+    return issued;
+  };
+  const enroll = async function (family, who, cookie, extraData, product) {
+    log.debug("Entering enroll().");
+    const keys = await deviceCsr([]);
+    const request = await deviceCsr([await tpmBundle(keys.jwk, tpmRoot,
+                                                     undefined, extraData)],
+                                    [], keys.pair);
+    const read = await core.parseCsr(request.der);
+    if (product) {
+      set('global.mode', 'product');
+    }
+    try {
+      const out = await core.issue({ family: family, profile: 'device',
+        principal: who, target: { kind: 'person', id: who.id },
+        publicKeyPem: read.publicKeyPem, requested: read.requested,
+        attestations: read.attestations, keySource: 'client', via: 'test',
+        attestationSession: cookie === null ? undefined
+          : { handle: cookie } });
+      const device = out.ok ? devices.byId(out.device) : null;
+      log.debug("Leaving enroll().");
+      return { out: out, key: device ? device.keys[0] : null };
+    } finally {
+      if (product) {
+        config.clearOverride('global.mode');
+      }
+    }
+  };
+  const short = nonceFor(alice, handle, 8);
+  t.check(short.ok && Buffer.from(short.challenge, 'base64url').length ===
+            16 && Buffer.from(nonceFor(alice, handle, 48).challenge,
+                              'base64url').length === 48 &&
+          Buffer.from(nonceFor(alice, handle).challenge, 'base64url')
+            .length === 32,
+          '6l. a nonce is 32 octets by default, the length asked for within ' +
+          '16..64, and an 8-octet ask raised to RANDOM_TOKEN_MIN_BITS');
+  const issued = nonceFor(alice, handle);
+  const nonce = Buffer.from(issued.challenge, 'base64url');
+  const fresh = await enroll('est', alice, handle, nonce);
+  t.check(fresh.out.ok && fresh.key.attestation.level === 'attested' &&
+          fresh.key.attestation.freshness.status === 'fresh' &&
+          /Freshness FRESH/.test(fresh.key.attestation.summary),
+          '6m. extraData that is the nonce issued to this principal and ' +
+          'cookie is FRESH', JSON.stringify(fresh.out.errors ||
+                                            fresh.key.attestation));
+  const replayed = await enroll('est', alice, handle, nonce);
+  t.check(replayed.out.ok &&
+          replayed.key.attestation.freshness.status === 'unproven' &&
+          replayed.key.attestation.level === 'attested' &&
+          /no such challenge/.test(replayed.key.attestation.freshness.detail),
+          '6n. the same nonce again is UNPROVEN in development (spent once) ' +
+          'and keeps its level', JSON.stringify(replayed.key &&
+                                                replayed.key.attestation));
+  const bobs = Buffer.from(nonceFor(person(BOB), handle).challenge,
+                           'base64url');
+  const foreign = await enroll('est', alice, handle, bobs);
+  t.check(foreign.out.ok &&
+          foreign.key.attestation.freshness.status === 'unproven' &&
+          /another session/.test(foreign.key.attestation.freshness.detail),
+          '6o. a nonce issued to another principal is not this request\'s ' +
+          '(section 5.1)', JSON.stringify(foreign.key &&
+                                          foreign.key.attestation));
+  const cookieless = Buffer.from(nonceFor(alice, handle).challenge,
+                                 'base64url');
+  const noCookie = await enroll('est', alice, null, cookieless);
+  t.check(noCookie.out.ok &&
+          noCookie.key.attestation.freshness.status === 'unproven' &&
+          /no EST nonce cookie/.test(noCookie.key.attestation.freshness
+            .detail),
+          '6p. a request without the nonce cookie cannot be associated with ' +
+          'a nonce, whatever its extraData', JSON.stringify(noCookie.key &&
+            noCookie.key.attestation));
+  const overScep = await enroll('scep', person(ADMIN, true), handle,
+                                cookieless);
+  t.check(overScep.out.ok &&
+          overScep.key.attestation.freshness.status === 'unproven' &&
+          /SCEP has no nonce operation/.test(overScep.key.attestation
+            .freshness.detail),
+          '6q. SCEP has no nonce operation: a TPM statement over it is ' +
+          'UNPROVEN', JSON.stringify(overScep.out.errors ||
+                                     (overScep.key &&
+                                      overScep.key.attestation)));
+  t.equal(code((await enroll('est', alice, handle,
+                              Buffer.from('freshness'), true)).out),
+          'STS-DEVICE-0050', '6r. product refuses an attested TPM ' +
+          'statement that is not fresh');
+  t.equal(code((await enroll('scep', person(ADMIN, true), handle,
+                              cookieless, true)).out),
+          'STS-DEVICE-0050', '6s. product refuses a TPM statement over SCEP');
+  const productNonce = Buffer.from(nonceFor(alice, handle).challenge,
+                                   'base64url');
+  const productFresh = await enroll('est', alice, handle, productNonce, true);
+  t.check(productFresh.out.ok &&
+          productFresh.key.attestation.freshness.status === 'fresh',
+          '6t. product issues over a fresh TPM statement',
+          JSON.stringify(productFresh.out.errors ||
+                         (productFresh.key &&
+                          productFresh.key.attestation)));
+  log.debug("Leaving checkFreshness().");
 }
 
 function checkRecognition(t, jwkDevice, linked, certified) {

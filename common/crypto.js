@@ -10250,14 +10250,58 @@ function androidKeyDescription(extnValue) {
 //     certs SEQUENCE SIZE (1..MAX) OF LimitedCertChoices OPTIONAL }
 //   AttestationStatement ::= SEQUENCE { type OBJECT IDENTIFIER, stmt ANY }
 //
-// and LimitedCertChoices is a Certificate or an `other [3]`. Revision 29
-// defines NO statement format (section 4.2); the TPM 2.0 one this service
-// verifies is the TCG's `tcg-attest-tpm-certify` (2.23.133.20.1), whose
-// syntax the draft carried in its appendix A.2.3 until revision 21:
+// and LimitedCertChoices is a Certificate or an `other [3]`. (Figure 2 of
+// revision 29 ends `certs ... OPTIONAL,` with a trailing comma, which is not
+// valid ASN.1; the structure is read as written above.) An
+// AttestationStatement is exactly TWO elements: revision 20's
+// EvidenceStatement carried a third, `hint IA5String OPTIONAL`, and revision
+// 29 has none, so a three-element statement is refused rather than read.
+//
+// RE-CHECKED ON 2026-10-06 (#257), AND NO CURRENT DOCUMENT DEFINES THE TPM
+// STATEMENT. Revision 29 defines no statement format (section 4.2) and
+// leaves the OID and syntax to "specification authors who define an
+// attestation-statement format". Revision 21 removed appendix A.2, the TPM
+// 2.0 example, and revisions 22 to 29 carry no TPM text; the working group's
+// sample-data repository (lamps-wg/csr-attestation-examples) holds only a
+// README, and no TCG profile of the statement was found (the TCG's OID
+// registry was not reachable to check). So the TPM 2.0 statement verified is
+// the TCG's `tcg-attest-tpm-certify` (2.23.133.20.1) in the one syntax ever
+// published, revision 20's appendix A.2.3:
 //
 //   Tcg-csr-tpm-certify ::= SEQUENCE {
 //     tpmSAttest OCTET STRING, signature OCTET STRING,
 //     tpmTPublic OCTET STRING OPTIONAL }
+//
+// rcbj's rule is that a disagreement between a specification and itself is
+// FLAGGED, not resolved silently, and revision 20 disagrees with itself (the
+// list is on #257 too):
+//
+//   1. A.2.2 writes `tcg-kp-AIKCertificate ::= { id-tcg 8 3 }` where the
+//      module defines only `tcg`; the value read is 2.23.133.8.3, the TCG EK
+//      Credential Profile's (`device_attestation.ts`'s OID_TCG_AIK).
+//   2. A.1's statement set names the type `Tcg-attest-tpm-certify`; A.2.3
+//      defines `Tcg-csr-tpm-certify`. Only the OID is on the wire.
+//   3. Section 5 says the A.2 example carries the hint
+//      "tpmverifier.example.com"; A.2.3 has no hint, and revision 29's
+//      AttestationStatement has no hint field. Revision 29 is followed.
+//   4. A.2.5.5 says TPM2_Certify yields "TPM2B_ATTEST" and TPM2_ReadPublic
+//      "TPM2B_PUBLIC" (both SIZED), while A.2.3's fields are named for
+//      TPMS_ATTEST and TPMT_PUBLIC (both bare). BOTH spellings are read
+//      (`tpm2bContents()`), and the reading is unambiguous: a TPMS_ATTEST
+//      begins with TPM_GENERATED_VALUE (0xff544347), whose first two octets
+//      are no plausible size, and a TPMT_PUBLIC with its type, which equals
+//      its own length minus two only for a 3- or 37-octet structure no key
+//      has.
+//   5. A.2.5.5 lists TPM2_Certify's inputs as the key and the AK and OMITS
+//      qualifyingData — the input that becomes extraData, and the only place
+//      a freshness nonce can be.
+//   6. Revision 29 section 4.3 says an attestation-format specification
+//      "should mandate the precise mechanism for nonce selection", and none
+//      exists for this one. This service's rule, which
+//      draft-ietf-lamps-attestation-freshness section 8 ("MUST use the
+//      received nonce") implies: extraData IS the nonce's octets, with no
+//      transformation (`common/cert_enrollment.ts`, #257).
+//   7. The trailing comma in revision 29's Figure 2, above.
 //
 // These answer the structures; `common/device_attestation.ts` verifies them.
 /** The id-aa-attestation attribute's OID. */
@@ -10331,10 +10375,11 @@ function csrAttestationBundle(der) {
 }
 
 // A TPM2B's contents when `bytes` is exactly one TPM2B (a big-endian size
-// then that many bytes), else `bytes` unchanged. The draft's appendix said
+// then that many bytes), else `bytes` unchanged. Revision 20's appendix said
 // the attester sends "TPM2B_ATTEST in binary format" and "TPM2B_PUBLIC"
 // while the signature and the Name are over the contents, so both spellings
-// are read, as WebAuthn's tpm format reads `sig` both ways.
+// are read, as WebAuthn's tpm format reads `sig` both ways (disagreement 4
+// above).
 /**
  * Returns a TPM2B's contents when the bytes are exactly one TPM2B, else the
  * bytes unchanged.

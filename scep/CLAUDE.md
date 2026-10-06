@@ -180,6 +180,15 @@ as `attestations`. A RenewalReq is refused for it (`STS-DEVICE-0025`): the
 renewed certificate is on no person or application entry. The console lists
 it as a tenth profile row.
 
+**A TPM statement over SCEP is never FRESH (#257, rcbj's decision 3).**
+draft-ietf-lamps-attestation-freshness defines a nonce operation for CMP,
+EST and CMC, and nothing defines one for SCEP. The single-use challenge
+password is fresh and bound, but a nonce derived from it would be a
+transformation the statement type's own specification has to define
+(section 9), and none does. So the core records the statement's freshness
+`unproven`, and product refuses it (`STS-DEVICE-0050`): an attested device
+certificate in product is an EST one.
+
 ## Several nodes: the challenge and the transaction (2026-09-14, #46)
 
 * **A challenge password is claimed** between the peek that proves it right and

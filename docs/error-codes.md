@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4127** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4131** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -61,7 +61,7 @@ is an ordinary outcome.
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 206
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
-* [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
+* [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 257
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 699
@@ -82,7 +82,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 46
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 348
-* [Device register (`STS-DEVICE`)](#sts-device) — 49
+* [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 90
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
@@ -1080,6 +1080,9 @@ Raised from: est/.
 | `STS-EST-0031` | An EST console or /admin-api action body failed validation. | HTTP 400 on the console or /admin-api |
 | `STS-EST-0032` | An EST console or /admin-api action named an action that does not exist. | HTTP 400 on the console or /admin-api |
 | `STS-EST-0033` | An EST /admin-api action was refused and carried no more specific code. | HTTP 400 on /admin-api |
+| `STS-EST-0034` | An EST /nonce request (draft-ietf-lamps-attestation-freshness section 5.1) was malformed: a body that is not one JSON object, a member the nonce-request CDDL does not define, a "len" outside 8..64, a "reqTypeInfo" without a dotted-decimal "type", or a body larger than est.maxRequestBytes (#257). | HTTP 400, a sentence and no nonce (section 5.1) |
+| `STS-EST-0035` | An EST /nonce POST did not carry application/est-attestation-freshness+json, the one media type draft-ietf-lamps-attestation-freshness section 5.1 allows (#257). | HTTP 400 (section 5.1 answers every error 400) |
+| `STS-EST-0036` | An EST /nonce request named a "reqTypeInfo" type this service defines no reqInfo/respInfo for, so it is unable to answer it (draft-ietf-lamps-attestation-freshness section 5.1) (#257). | HTTP 503 (section 5.1) |
 
 ## STS-SCEP
 
@@ -3920,6 +3923,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0047` | An Android Key Attestation chain names a certificate Google's attestation status list revokes or suspends (#256): at registration the key is recorded self-asserted (refused in product), and at a recheck an attested key is downgraded to self-asserted. | the registration's own refusal in product (STS-DEVICE-0024); none at a recheck |
 | `STS-DEVICE-0048` | An Android Key Attestation chain's revocation could not be checked — no current Android attestation status list, or a stale one — and devices.androidRevocationRequired treats that as unattested in product mode (#256). | the registration's own refusal in product (STS-DEVICE-0024) |
 | `STS-DEVICE-0049` | A newly activated Android attestation status list could not queue the recheck of the stored chains (#256); the daily devices.android-status-recheck run reaches them. | none — a warning in the log |
+| `STS-DEVICE-0050` | A TPM key attestation in a device certificate request was not proved FRESH — its TPMS_ATTEST extraData is not a live nonce this realm issued at EST /nonce to the same client and cookie, or the request came over SCEP, which has no nonce operation — and product mode requires freshness (common/mode.js requiresFreshKeyAttestation(); draft-ietf-lamps-csr-attestation section 6.2, draft-ietf-lamps-attestation-freshness) (#257). | EST 403 / SCEP failInfo badRequest |
 
 ## STS-SVCACCT
 

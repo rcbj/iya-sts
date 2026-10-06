@@ -1051,6 +1051,13 @@ const JOBS = [
   // Devices, Device registration and /admin/ldap/devices. `local: true`:
   // this repository's register and API.
   { file: 'sts_devices.js',              browser: false, local: true },
+  // A TPM KEY ATTESTATION'S FRESHNESS OVER EST (#257, 2026-10-06):
+  // /nonce (draft-ietf-lamps-attestation-freshness section 5.1), a device
+  // enrolment over a fresh TPM2_Certify statement built here, the same
+  // statement replayed (unproven in development, refused in product), and
+  // the nonce request's refusals. `local: true`: this repository's EST
+  // server and device register.
+  { file: 'sts_est_attestation_freshness.js', browser: false, local: true },
   // OPENID CONNECT CIBA (#131, 2026-09-23): the endpoint's refusals, poll
   // with an approval on /portal/ciba, deny, the user code, and ping and
   // push in development. `local: true`: this repository's own endpoint.

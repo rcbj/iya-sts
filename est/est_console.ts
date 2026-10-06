@@ -69,13 +69,14 @@ const FAMILY = 'est';
 const EST_ACTIONS = ['issue-server-key', 'revoke-certificate',
                      'add-host-name', 'remove-host-name'];
 
-// The six operations and where they live, for the endpoint list. The same table
-// `est.ts` registers from would be a require of a route module from a view
-// model; the operations are six names fixed by RFC 7030 section 3.2.2, so they
-// are written here and `tests/est_handlers.js` compares the two.
+// The seven operations and where they live, for the endpoint list. The same
+// table `est.ts` registers from would be a require of a route module from a
+// view model; six are names fixed by RFC 7030 section 3.2.2 and the seventh by
+// draft-ietf-lamps-attestation-freshness section 5.1, so they are written here
+// and `tests/est_handlers.js` compares the two.
 /**
- * RFC 7030's six operations, each with its method, section and a description,
- * for the endpoint list.
+ * RFC 7030's six operations and the freshness draft's `nonce`, each with its
+ * method, section and a description, for the endpoint list.
  */
 const OPERATIONS = [
   { name: 'cacerts', method: 'GET', section: '4.1',
@@ -89,7 +90,14 @@ const OPERATIONS = [
   { name: 'csrattrs', method: 'GET', section: '4.5',
     what: 'what a request should carry (unauthenticated)' },
   { name: 'fullcmc', method: 'POST', section: '4.3',
-    what: 'not implemented: answers 501' }
+    what: 'not implemented: answers 501' },
+  // Not RFC 7030's: draft-ietf-lamps-attestation-freshness section 5.1
+  // (#257), which the CSR-attestation draft defers freshness to.
+  { name: 'nonce', method: 'GET, POST',
+    section: 'draft-ietf-lamps-attestation-freshness 5.1',
+    what: 'a freshness nonce for the TPM key attestation in the next ' +
+          'device simpleenroll, bound to the caller and a cookie ' +
+          '(authenticated); empty under a label that reads no attestation' }
 ];
 
 /**
@@ -323,7 +331,9 @@ class EstConsole {
       title: 'EST',
       enabled: config.value('est.enabled') !== false,
       specifications: ['RFC 7030', 'RFC 8951', 'RFC 5967', 'RFC 2986',
-                       'RFC 5652', 'RFC 5958'],
+                       'RFC 5652', 'RFC 5958',
+                       'draft-ietf-lamps-csr-attestation-29',
+                       'draft-ietf-lamps-attestation-freshness-08'],
       endpoints: OPERATIONS.map(function (op) {
         return { operation: op.name, method: op.method, section: op.section,
                  what: op.what,
@@ -379,7 +389,8 @@ class EstConsole {
         return { id: id, needs: id === core.DEVICE_PROFILE
                    ? 'a device entry — the one the request\'s ' +
                      'urn:sts:device: names, or a new one; a TPM key ' +
-                     'attestation in product; simpleenroll only'
+                     'attestation in product, made over a nonce from ' +
+                     '/nonce (#257); simpleenroll only'
                    : core.PROFILE_NEEDS[id] || null,
                  allowed: allowed.indexOf(id) >= 0,
                  isDefault: id === defaultProfile, urls: urls };

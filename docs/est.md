@@ -30,8 +30,9 @@ All under the realm's base URL (`https://host:8081` in the default realm,
 | `POST` | `/.well-known/est/serverkeygen` | 4.4 | yes |
 | `GET` | `/.well-known/est/csrattrs` | 4.5 | no |
 | `POST` | `/.well-known/est/fullcmc` | 4.3 | answers **501** |
+| `GET`, `POST` | `/.well-known/est/nonce` | draft-ietf-lamps-attestation-freshness 5.1 | yes |
 
-The same six answer under a **label**, `/.well-known/est/<profile>/…`, where
+The same seven answer under a **label**, `/.well-known/est/<profile>/…`, where
 the label is a certificate profile. The unlabelled path issues the realm's
 `est.defaultProfile` (`tls-client` unless changed).
 
@@ -285,6 +286,56 @@ the `extensionRequest` attribute, the profile's extended key usages, and — for
 the server, email and smartcard profiles — a hint naming the subjectAltName kind
 it needs (`dNSName`, `iPAddress`, `rfc822Name`, or the UPN otherName).
 
+## The attestation freshness nonce
+
+A device certificate (the `device` label) may be requested with a TPM key
+attestation in the request
+([devices](devices.md#a-certificate-over-est-or-scep)). The attestation proves
+the key was made in a TPM and cannot leave it, but not that the TPM produced
+the attestation **now**. A captured statement could be sent again, in a new
+request for the same key. So the service follows
+[draft-ietf-lamps-attestation-freshness](https://datatracker.ietf.org/doc/draft-ietf-lamps-attestation-freshness/)
+section 5.1, which draft-ietf-lamps-csr-attestation section 6.2 points to:
+
+1. Ask for a nonce, authenticated as for an enrollment:
+
+   ```
+   GET /.well-known/est/device/nonce            (no content)
+   POST /.well-known/est/device/nonce           (to choose a length)
+   Content-Type: application/est-attestation-freshness+json
+
+   {"len": 32}
+   ```
+
+   The answer is `200`, `application/est-attestation-freshness+json`:
+   `{"nonce": "<unpadded base64url>", "expiry": <seconds>}`, and a
+   `Set-Cookie: sts_est_nonce=…` that binds the nonce to this client.
+2. Pass the nonce's octets to the TPM as `TPM2_Certify`'s `qualifyingData`.
+   They come back as the `TPMS_ATTEST`'s `extraData`. Use the octets
+   exactly as received, with no hashing or other transformation.
+3. Send the `/simpleenroll` **with the same cookie and the same
+   credential**. The nonce is spent once.
+
+The nonce is 32 octets unless `len` asks for a length from 8 to 64. A length
+below 16 is raised to 16, the service's minimum for random values. The nonce
+lives `devices.challengeTtlSeconds`, and a new request with the same cookie
+replaces it. A nonce issued to another client, or to the same client under
+another cookie, does not count, whatever its octets.
+
+**Which mode refuses what.** In **product mode**, a TPM statement whose
+`extraData` is not a live nonce issued to this client is **refused**
+(`403`, STS-DEVICE-0050). In **development mode** the key is still certified,
+and its attestation records freshness `unproven`, with the reason. **SCEP has
+no nonce operation**, because the draft defines one for CMP, EST and CMC only.
+A TPM statement sent over SCEP is therefore never fresh, and product mode
+refuses it. Enroll attested devices over EST.
+
+A label naming any other profile answers `{"nonce": ""}`, the draft's "no
+freshness proof required", because nothing it issues reads an attestation.
+`len` outside 8..64, an unknown member, or a body that is not one JSON
+object is refused `400`. So is any other media type. A `reqTypeInfo` is
+answered `503`: this service defines no request types.
+
 ## What the CA decides, not the request
 
 The subject is `CN=<username or identifier>, O=<organisation>` — or, for a
@@ -311,6 +362,9 @@ request asked for. The lifetime is `est.certificateLifetimeDays`.
   the proof of possession. Use `/serverkeygen`.
 * An EST credential of its own: EST uses passwords, client secrets and
   certificates the service already has.
+* A `reqTypeInfo` / `respInfo` type for `/nonce`
+  (draft-ietf-lamps-attestation-freshness section 3): none is defined, so a
+  request naming one is answered `503`.
 
 ## Configuration
 

@@ -73,7 +73,8 @@
 // `stsIdaVerification` already chose, for this reason. Each value is:
 //
 //   { id, kind, thumbprint, label, added, addedBy, proof,
-//     attestation: { level, format, summary, verifiedAt },
+//     attestation: { level, format, summary, verifiedAt, chainSerials?,
+//                    revocation?, freshness? },
 //     material: { … } }
 //
 //   * `kind` is `x509`, `jwk` or `webauthn` (decision 1). The Native SSO
@@ -305,6 +306,10 @@ interface Attestation {
   // asked about it, and what the list said (`attestation_revocation.ts`).
   chainSerials?: string[];
   revocation?: Json;
+  // #257: a TPM key attestation's freshness — `fresh` (its extraData was a
+  // nonce EST /nonce issued to the same client and cookie, now spent) or
+  // `unproven`, with the reason (`cert_enrollment.ts`).
+  freshness?: { status: string; detail: string };
 }
 
 interface DeviceKey {
@@ -2302,7 +2307,14 @@ class Devices {
                        ? { chainSerials: att.chainSerials.map(String)
                              .slice(0, 10) } : {},
                      att.revocation && typeof att.revocation === 'object'
-                       ? { revocation: att.revocation } : {}),
+                       ? { revocation: att.revocation } : {},
+                     // #257: a TPM statement's freshness, as the enrolment
+                     // core decided it.
+                     att.freshness && typeof att.freshness === 'object'
+                       ? { freshness: {
+                             status: String(att.freshness.status || ''),
+                             detail: String(att.freshness.detail || '')
+                               .slice(0, 300) } } : {}),
       material: read.material
     };
     log.debug("Leaving Devices.prepareKey(). " + kind);

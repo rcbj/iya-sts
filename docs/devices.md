@@ -102,7 +102,24 @@ administrator); one naming none creates a device owned by the requester. A
 request may carry a TPM key attestation in the `id-aa-attestation` attribute
 of draft-ietf-lamps-csr-attestation, as a TCG `tcg-attest-tpm-certify`
 statement with the Attestation Key's certificate chain; it is attested when
-that chain ends at `devices.tpmTrustAnchors`. A device renews by enrolling
+that chain ends at `devices.tpmTrustAnchors`.
+
+The statement must also be **fresh**. Its `extraData` must be a nonce from
+EST's `/.well-known/est/device/nonce`, sent back with that answer's cookie
+([EST](est.md#the-attestation-freshness-nonce)). Product mode refuses a
+statement that is not fresh (STS-DEVICE-0050). Development mode records
+freshness `unproven`. SCEP has no nonce operation, so in product mode a TPM
+statement over SCEP is refused.
+
+**The statement format.** No current specification defines the TPM
+statement. draft-ietf-lamps-csr-attestation revision 29 defines none, and
+revision 21 removed the TPM appendix. The service reads revision 20's
+appendix A.2.3: `Tcg-csr-tpm-certify ::= SEQUENCE { tpmSAttest, signature,
+tpmTPublic OPTIONAL }`, each an OCTET STRING, with the TPM structures sized
+or bare. The places where that text disagrees with itself are listed in
+`common/crypto.js`, beside the codec.
+
+A device renews by enrolling
 again, naming its URN; `/simplereenroll` and SCEP RenewalReq are refused for
 it, and ACME does not issue it.
 

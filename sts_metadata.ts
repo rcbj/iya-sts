@@ -3162,6 +3162,36 @@ const SPECS: Spec[] = [
               'urn:sts: subjectAltName. The device-attest-01 challenge and ' +
               'the WebAuthn attestation statement are not implemented.' },
   // ===== EST specs (est/) =====
+  { id: 'lamps-csr-attestation', name: 'Use of Remote Attestation with ' +
+      'Certification Signing Requests (draft-ietf-lamps-csr-attestation-29)',
+    where: 'IETF (draft)',
+    url: 'https://datatracker.ietf.org/doc/draft-ietf-lamps-csr-attestation/',
+    coverage: 'partial: the id-aa-attestation attribute of a PKCS#10 ' +
+              'request (at most one, exactly one AttestationBundle, the ' +
+              'certificate and other choices only) for the device profile ' +
+              'over EST and SCEP; the one statement type verified is the ' +
+              'TCG\'s tcg-attest-tpm-certify in revision 20\'s appendix ' +
+              'A.2.3 syntax, which no later revision or TCG document ' +
+              'replaces (#257). The CRMF extension is not read (no CMP ' +
+              'here), and other statement types are recorded, not ' +
+              'verified. Freshness (section 6.2) through ' +
+              'draft-ietf-lamps-attestation-freshness over EST.' },
+  { id: 'lamps-attestation-freshness', name: 'Requesting a Freshness Nonce ' +
+      'for Attestation Evidence in Certificate Signing Requests ' +
+      '(draft-ietf-lamps-attestation-freshness-08)',
+    where: 'IETF (draft)',
+    url: 'https://datatracker.ietf.org/doc/' +
+         'draft-ietf-lamps-attestation-freshness/',
+    coverage: 'partial: EST over HTTPS (section 5.1) — /nonce by GET and ' +
+              'by POST with application/est-attestation-freshness+json, ' +
+              'len honoured within 8..64 (raised to 16 octets), expiry, ' +
+              'the empty nonce where no proof is needed, 400 and 503, ' +
+              'authenticated, and bound to the CSR by a cookie and the ' +
+              'principal. The nonce is TPM2_Certify\'s qualifyingData, ' +
+              'checked as the TPMS_ATTEST extraData and spent once. ' +
+              'Missing: no reqTypeInfo type is defined (503), and CMP ' +
+              '(section 4), EST over CoAP (5.2) and CMC (6), which this ' +
+              'service does not speak.' },
   { id: 'rfc7030', name: 'Enrollment over Secure Transport (RFC 7030)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7030',
     coverage: 'partial: /cacerts, /simpleenroll, /simplereenroll, ' +
@@ -9060,6 +9090,24 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/.well-known/est/:label/fullcmc', group: 'EST',
     name: 'Full CMC (labelled)', specs: ['rfc7030'],
     what: 'Answers 501 under a label as it does without one.' },
+  { path: '/.well-known/est/nonce', group: 'EST',
+    name: 'Attestation freshness nonce',
+    specs: ['lamps-attestation-freshness', 'lamps-csr-attestation',
+            'rfc7030', 'rfc7617'],
+    effect: 'holds a nonce for the caller until it is spent or expires',
+    what: 'GET, or POST application/est-attestation-freshness+json ' +
+          '{ len?, reqTypeInfo? } (#257): authenticated as an enrollment, ' +
+          'answered { nonce, expiry } and a sts_est_nonce cookie. The TPM ' +
+          'key attestation in the caller\'s next device simpleenroll must ' +
+          'carry the nonce as its extraData, sent with that cookie; product ' +
+          'refuses one that does not (STS-DEVICE-0050).' },
+  { path: '/.well-known/est/:label/nonce', group: 'EST',
+    name: 'Attestation freshness nonce (labelled)',
+    specs: ['lamps-attestation-freshness', 'rfc7030'],
+    effect: 'holds a nonce for the caller until it is spent or expires',
+    what: 'The same under a label. A label naming a profile other than ' +
+          'device answers an empty nonce: nothing it issues reads an ' +
+          'attestation, so no freshness proof is needed.' },
   { path: '/admin-api/est', group: 'EST', name: 'The EST console page over ' +
                                                 'JSON',
     specs: ['rfc7030'],
@@ -9514,13 +9562,15 @@ const PROTOCOLS: Protocol[] = [
           'key roll-over and renewal information.' },
   // ===== EST card (est/) =====
   { name: 'EST', groups: ['EST'],
-    specs: ['rfc7030', 'rfc8951', 'rfc5967'],
+    specs: ['rfc7030', 'rfc8951', 'rfc5967', 'lamps-csr-attestation',
+            'lamps-attestation-freshness'],
     what: 'Enrollment over Secure Transport: a device or a person holding a ' +
           'password, a client secret or a certificate this realm issued sends ' +
           'a base64 PKCS#10 request and is handed a certificate from the ' +
           'realm\'s EST Issuing CA — for itself, or, as an administrator, for ' +
           'any entry — under a label per certificate profile, with ' +
-          're-enrollment, server-side key generation and CSR attributes. ' +
+          're-enrollment, server-side key generation and CSR attributes, ' +
+          'and a freshness nonce for a device\'s TPM key attestation. ' +
           'Full CMC and tls-unique channel binding are not implemented.' },
   // ===== SCEP card (scep/) =====
   { name: 'SCEP', groups: ['SCEP'],

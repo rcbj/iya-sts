@@ -1353,6 +1353,30 @@ function acceptsUnattestedDeviceKeys() {
   return !isProduct();
 }
 
+// Must a TPM key attestation in a device certificate request be FRESH (#257,
+// 2026-10-06)? draft-ietf-lamps-csr-attestation section 6.2 lets the CA
+// "ignore attestations that are stale, or whose freshness cannot be
+// determined", and draft-ietf-lamps-attestation-freshness gives EST a /nonce
+// for the TPM to sign as TPM2_Certify's qualifyingData, which comes back as
+// TPMS_ATTEST's extraData. Without it a captured statement — which says
+// nothing more than that SOME TPM certified this key once — could be sent
+// again, in a new request for the same key, by whoever holds the key now.
+// Development records such a statement's freshness UNPROVEN and keeps its
+// level, because a client under test may have no nonce exchange (and SCEP
+// has none at all). Product REFUSES it (STS-DEVICE-0050).
+// `common/cert_enrollment.ts` asks it.
+/**
+ * Tells whether a TPM key attestation must carry a live nonce this realm
+ * issued (EST /nonce) for a device certificate to be issued.
+ *
+ * @returns true in product mode
+ */
+function requiresFreshKeyAttestation() {
+  log.debug("Entering requiresFreshKeyAttestation().");
+  log.debug("Leaving requiresFreshKeyAttestation().");
+  return isProduct();
+}
+
 // Is an Android attestation whose REVOCATION could not be checked — no
 // current Android attestation status list (#256), never fetched, failing, or
 // stale — refused as unattested? Development records it attested with the
@@ -3181,7 +3205,24 @@ const REQUIREMENTS = [
              'on, an unchecked chain is recorded self-asserted: a device key ' +
              'is then refused (STS-DEVICE-0024) and a WebAuthn android-key ' +
              'statement untrusted.',
-    where: 'common/attestation_revocation.ts' }
+    where: 'common/attestation_revocation.ts' },
+  // 2026-10-06 (#257).
+  { id: 'fresh-key-attestation',
+    what: 'A TPM key attestation in a device certificate request must be ' +
+          'fresh',
+    development: 'A TPM2_Certify statement whose extraData is not a live ' +
+                 'nonce issued at EST /nonce to the same client and cookie ' +
+                 '(none fetched, expired, already spent, another client\'s, ' +
+                 'or a request over SCEP, which has no nonce operation) ' +
+                 'keeps its level and is recorded with freshness UNPROVEN ' +
+                 'and the reason. A nonce that matches is spent.',
+    product: 'Such a statement is refused (STS-DEVICE-0050): a captured ' +
+             'attestation replayed in a new request for the same key is ' +
+             'not a key made and held in a TPM now. A device certificate ' +
+             'with a TPM attestation is therefore issued over EST only, ' +
+             'after /nonce (draft-ietf-lamps-attestation-freshness section ' +
+             '5.1).',
+    where: 'common/cert_enrollment.ts, common/device_enrolment.ts, est/est.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -3711,6 +3752,7 @@ module.exports = {
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,
   acceptsUnattestedDeviceKeys: acceptsUnattestedDeviceKeys,
   refusesUncheckedAttestationRevocation: refusesUncheckedAttestationRevocation,
+  requiresFreshKeyAttestation: requiresFreshKeyAttestation,
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,

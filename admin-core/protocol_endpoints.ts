@@ -388,7 +388,9 @@ class ProtocolEndpoints {
         '/.well-known/est/:label/simpleenroll',
         '/.well-known/est/:label/simplereenroll',
         '/.well-known/est/:label/serverkeygen',
-        '/.well-known/est/:label/csrattrs', '/.well-known/est/:label/fullcmc'
+        '/.well-known/est/:label/csrattrs', '/.well-known/est/:label/fullcmc',
+        // draft-ietf-lamps-attestation-freshness section 5.1 (#257).
+        '/.well-known/est/nonce', '/.well-known/est/:label/nonce'
       ].map(route),
       // ===== OpenID Federation endpoints row (#132) =====
       '/admin/oidfed': [

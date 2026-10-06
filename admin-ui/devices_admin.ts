@@ -752,6 +752,15 @@ class DevicesAdmin {
         adminKeys: 'an administrator\'s by-value key is accepted in both ' +
                    'modes, recorded proof admin and self-asserted'
       },
+      // #257: whether a TPM key attestation must carry a nonce from EST
+      // /nonce (draft-ietf-lamps-attestation-freshness).
+      freshKeyAttestation: {
+        required: mode.requiresFreshKeyAttestation(),
+        predicate: 'requiresFreshKeyAttestation',
+        nonce: '/.well-known/est[/<label>]/nonce',
+        scep: 'SCEP has no nonce operation, so a TPM statement over it is ' +
+              'never shown fresh'
+      },
       trustAnchors: this.trustAnchors(),
       challenges: deviceEnrolment.describeChallenges(),
       settings: admin.configSettingsJson(REGISTRATION)
