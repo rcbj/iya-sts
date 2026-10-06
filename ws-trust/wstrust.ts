@@ -360,17 +360,62 @@ class WsTrust {
   // `iat`, `exp`, `iss` and `aud` are set explicitly rather than by
   // jsonwebtoken's options, because signJwtAs() takes a payload and nothing
   // else.
+  //
+  // AND ITS STRUCTURE AND CLAIMS FOLLOW RFC 9068 AND RFC 8693 (#476, rcbj:
+  // "follow RFC-9068 and OAuth2 Token Exchange spec for claims in the JWT"
+  // — and ONLY for the JWT: the RST, the AppliesTo, the requester's
+  // authentication and the RSTR stay WS-Trust's, and a SAML assertion is
+  // untouched). What changed, and the reasoned exceptions:
+  //
+  //   * `typ: "at+jwt"` in the protected header (RFC 9068 section 2.1). The
+  //     token is the bearer credential the AppliesTo's service accepts, which
+  //     is what an access token is (RFC 6749 section 1.4), and the header is
+  //     what keeps it from being mistaken for an ID Token. The RSTR's
+  //     wst:TokenType stays `urn:ietf:params:oauth:token-type:jwt`, which is
+  //     what the RST asked for and WS-Trust's to answer.
+  //   * `client_id` (RFC 9068 section 2.2, RFC 8693 section 4.3): the
+  //     APPLICATION the requester authenticated as — the client_id it
+  //     registers, else its identifier, as `may_act` names one — found the
+  //     way the delegation register finds it (`applications.get()`, then
+  //     `forClientId()`). EXCEPTION: a person asking for a token about
+  //     themselves with their own UsernameToken has no client, so the claim
+  //     is LEFT OUT rather than filled with a name that is not one.
+  //   * `act` (RFC 8693 section 4.1): the current actor outermost, prior ones
+  //     nested, as before (#186) — and each entry now in the shape this
+  //     service's OAuth tokens give it: `iss`, this token's own issuer, in
+  //     every entry (#471; the token-chaining profile's "a sub claim ... and
+  //     an iss claim identifying the AS"), and an application named by its
+  //     client subject in the mode — `urn:sts:client:<client_id>` in RFC
+  //     9700 mode, the bare client_id otherwise (#471,
+  //     `OAuth2Server.clientActorSubject()`). RFC 8693 permits both and
+  //     requires neither. A person who acted (delegation.actorRole) is named
+  //     by their `urn:uuid:` subject, as a person is everywhere else. Every
+  //     entry is this realm's: each prior delegate came from a token this
+  //     STS issued (verified in product), so this issuer is the one vouching
+  //     for all of them. #443's ORIGINAL CLIENT needs no rule here: the
+  //     first application in a WS-Trust chain is in it because it made the
+  //     first ActAs itself.
+  //   * EXCEPTIONS with no WS-Trust source: `scope` (an RST asks for none),
+  //     and `auth_time` / `acr` / `amr`, which RFC 9068 section 2.2.1 makes
+  //     optional and which a delegated JWT could only copy from a token it
+  //     cannot see the authentication of. `iss` is `wstrust.issuer`, the
+  //     STS's own name, because a WS-Trust issuer publishes no OAuth
+  //     authorization server metadata for RFC 9068 section 4 to compare it
+  //     with. `exp` is the lifetime the RSTR's wst:Lifetime states, so the
+  //     two cannot disagree.
   // ---------------------------------------------------------------------------
-  private buildJwt(subject, audience, lifetimeMin, delegates?) {
+  private buildJwt(subject, audience, lifetimeMin, delegates?, requester?) {
     const {
       config, log, logArtifact, randomId, signJwtAs, subjectForName,
       delegationPolicy
     } = this.deps;
+    const self = this;
     log.debug("Entering WsTrust.buildJwt().");
     const alg = String(config.value('wstrust.jwtAlgorithm') || 'RS256');
     const now = Math.floor(Date.now() / 1000);
+    const issuer = config.value('wstrust.issuer');
     const claims: any = {
-      iss: config.value('wstrust.issuer'),
+      iss: issuer,
       // THE PERSON'S SUBJECT (2026-09-14) — `urn:uuid:<entryUUID>`, as every
       // other token here. The bare name is left only for a process with no
       // directory, where nobody has a subject; with one, a person the directory
@@ -387,12 +432,22 @@ class WsTrust {
     };
     // An empty-string audience is not an audience — only set it when present.
     if (audience) claims.aud = audience;
+    const clientId = this.clientIdOf(requester);
+    if (clientId) {
+      claims.client_id = clientId;
+    }
     // #186: the parties that acted, as RFC 8693 section 4.1's `act` — the
     // most recent outermost, each earlier one nested beneath it — which is
-    // the same chain an assertion carries as Delegation Restriction.
+    // the same chain an assertion carries as Delegation Restriction. #476:
+    // each entry named as its party is named here, with this issuer.
+    const namespaced = this.clientSubjectsNamespaced();
     let act = null;
     (delegates || []).forEach(function (one) {
-      const next: any = { sub: String(one.nameId) };
+      const next: any = { sub: self.actorSubjectOf(String(one.nameId),
+                                                   namespaced) };
+      if (issuer) {
+        next.iss = String(issuer);
+      }
       if (act) {
         next.act = act;
       }
@@ -407,15 +462,91 @@ class WsTrust {
     if (mayAct) {
       claims.may_act = mayAct;
     }
+    const header = { typ: 'at+jwt' };
     logArtifact('WS-Trust JWT', 'before signing',
-                { header: { alg: alg }, payload: claims });
+                { header: Object.assign({ alg: alg }, header),
+                  payload: claims });
     // `wstrust.jwtCertificateHeader` decides the `x5c` / `x5u`.
     const signed = signJwtAs(claims, alg, null,
-                             { certificateHeader: 'wstrust-jwt' });
+                             { certificateHeader: 'wstrust-jwt',
+                               header: header });
     logArtifact('WS-Trust JWT', 'after signing', signed);
     log.debug("Leaving WsTrust.buildJwt(). " + alg + ", jti=" + claims.jti +
               ".");
     return { token: signed, jti: claims.jti };
+  }
+
+  // The application a party authenticated as, by the name it presented:
+  // the entry of that identifier, else the one registering it as a
+  // client_id. Null for a person, or a name nothing registers.
+  private applicationOf(name) {
+    const { applications, log } = this.deps;
+    log.debug("Entering WsTrust.applicationOf().");
+    const wanted = String(name || '').trim();
+    const found = wanted
+      ? (applications.get(wanted) || applications.forClientId(wanted) || null)
+      : null;
+    log.debug("Leaving WsTrust.applicationOf(). " +
+              (found ? found.identifier : 'None.'));
+    return found;
+  }
+
+  // RFC 9068's `client_id` for a token the requester `name` asked for: the
+  // client_id its application registers, else the application's
+  // identifier (`delegationPolicy.mayActClaimFor()`'s rule). '' when the
+  // requester is no application — see buildJwt(), the first exception.
+  private clientIdOf(name) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.clientIdOf().");
+    const app: any = this.applicationOf(name);
+    if (!app) {
+      log.debug("Leaving WsTrust.clientIdOf(). Not an application.");
+      return '';
+    }
+    const registered = app.fields && app.fields.oauthClientId;
+    const first = Array.isArray(registered) ? registered[0] : registered;
+    log.debug("Leaving WsTrust.clientIdOf().");
+    return String(first || app.identifier);
+  }
+
+  // The `sub` of one `act` entry (#476): an application by its client
+  // subject in the mode (#471's one form), a person by their subject, and
+  // anything else as it was named.
+  private actorSubjectOf(name, namespaced) {
+    const { subjectForName, log } = this.deps;
+    log.debug("Entering WsTrust.actorSubjectOf().");
+    const clientId = this.clientIdOf(name);
+    if (clientId) {
+      log.debug("Leaving WsTrust.actorSubjectOf(). A client.");
+      return namespaced ? 'urn:sts:client:' + clientId : clientId;
+    }
+    const person = subjectForName(name);
+    log.debug("Leaving WsTrust.actorSubjectOf(). " +
+              (person ? "A person." : "As named."));
+    return person || String(name);
+  }
+
+  // Whether a client's subject is `urn:sts:client:<id>` here: RFC 9700 mode
+  // (`oauth2_bcp.enabled()`, which product implies), the predicate the
+  // token endpoint asks for the same question (#471). Asked of the module
+  // LAZILY, `common/consent.ts`'s arrangement: it is loaded with the
+  // authorization server, and a require at load would pull the OAuth
+  // modules in ahead of this one.
+  private clientSubjectsNamespaced(): boolean {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.clientSubjectsNamespaced().");
+    let on = false;
+    try {
+      on = !!require('../oauth-oidc/oauth2_bcp').enabled();
+    } catch (e) {
+      // A process without the authorization server (a unit test of this
+      // module alone) has no RFC 9700 mode to be in.
+      log.debug("Caught in WsTrust.clientSubjectsNamespaced(): " +
+                ((e && e.message) || e));
+      on = false;
+    }
+    log.debug("Leaving WsTrust.clientSubjectsNamespaced(). " + on);
+    return on;
   }
 
   // Build the token element (what goes inside wst:RequestedSecurityToken).
@@ -436,17 +567,19 @@ class WsTrust {
    * when absent
    * @param delegates - #186: the parties that acted for the subject, least
    * to most recent; none when absent
+   * @param requester - #476: the name the requester authenticated as, whose
+   * application is a JWT's `client_id`; none when absent
    * @returns the token's XML, its reference, its token type and its id
    */
   buildToken(tokenType, subject, audience, lifetimeMin,
-                      authnContextClassRef, delegates?) {
+                      authnContextClassRef, delegates?, requester?) {
     const { buildSamlAssertion, authnContext, log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.buildToken(). tokenType=" + tokenType + ", " +
         "subject=" +
               subject);
     if (tokenType === JWT_TOKEN_TYPE) {
       const built = this.buildJwt(subject, audience, lifetimeMin,
-                                  delegates);
+                                  delegates, requester);
       const token = { xml: '<wsse:BinarySecurityToken ' +
         'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ' +
         'ValueType="urn:ietf:params:oauth:token-type:jwt">' + built.token +
@@ -1614,8 +1747,14 @@ class WsTrust {
                        auth.delegation.requester || ''),
         instant: new Date().toISOString() }])
       : priorDelegates;
+    // #476: who ASKED, for a JWT's `client_id` — the requester of a
+    // delegation, or whoever authenticated for a token about themselves.
+    // An anonymous request (development) asked as nobody.
+    const requester = auth.delegation
+      ? String(auth.delegation.requester || '')
+      : (auth.kind === 'none' ? '' : String(auth.subject || ''));
     const tok = this.buildToken(tokenType, subject, audience, lifetimeMin,
-                           this.authnContextOf(auth), delegates);
+                           this.authnContextOf(auth), delegates, requester);
 
     // Optional encryption (?encrypt=1): encrypt the SAML assertion to the
     // recipient certificate carried in the request's WS-Security signature

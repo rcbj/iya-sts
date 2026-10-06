@@ -79,6 +79,31 @@ is refused with a SOAP Fault rather than issued with a bare name. By default the
 header also carries `x5u`, the address of the signing key's certificate chain
 (`wstrust.jwtCertificateHeader`).
 
+The JWT's structure and claims follow
+[RFC 9068](https://www.rfc-editor.org/rfc/rfc9068) and
+[RFC 8693](https://www.rfc-editor.org/rfc/rfc8693):
+
+* its header carries `typ: at+jwt`;
+* it carries `iss`, `sub`, `aud` (the `AppliesTo`), `iat`, `exp` (the
+  lifetime the RSTR's `wst:Lifetime` states) and `jti`;
+* `client_id` is the application the requester authenticated as;
+* `act` (for `ActAs`) has the shape this service's OAuth tokens give it:
+  * the current actor outermost;
+  * each entry with `iss`;
+  * an application named `urn:sts:client:<client_id>` in RFC 9700 mode and
+    by its bare client_id otherwise.
+
+Some claims are left out on purpose:
+
+* **No `client_id` for a person's own token.** A person who asks for a token
+  about themselves with their own UsernameToken has no client.
+* **No `scope`.** An RST asks for none.
+* **No `auth_time`, `acr` or `amr`.** RFC 9068 makes them optional.
+
+`iss` is `wstrust.issuer` and not an OAuth authorization server's issuer.
+The RST and RSTR are unchanged: the `wst:TokenType` answered is still
+`urn:ietf:params:oauth:token-type:jwt`.
+
 ### Lifetime
 
 With no `wst:Lifetime` the token lives `wstrust.tokenLifetimeMin`. A requested

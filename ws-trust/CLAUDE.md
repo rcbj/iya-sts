@@ -302,6 +302,57 @@ on and a person created later under the name would inherit. An `anonymous` reque
 nobody by design and is unaffected, and so is a SAML assertion, whose `NameID` is the
 username. A process with no directory still uses the name. `tests/stable_subject.js` D5b.
 
+## THE JWT FOLLOWS RFC 9068 AND RFC 8693 IN ITS STRUCTURE AND CLAIMS (#476, 2026-10-06)
+
+rcbj: "follow RFC-9068 and OAuth2 Token Exchange spec for claims in the
+JWT", and "The only time oauth2 token exchange and rfc9068 should be
+followed is for response token JWT structure and contents." So
+`buildJwt()` changed, and nothing else did. The RST, the AppliesTo, the
+requester's authentication, the RSTR and its `wst:TokenType`, and every
+SAML assertion are WS-Trust's and SAML's, as before.
+
+* **`typ: at+jwt`** (RFC 9068 section 2.1). The token is the bearer
+  credential the AppliesTo's service accepts, which is what an access
+  token is, and the header is what keeps it from being read as an ID Token
+  (`oauth2.ts`'s `ownTokenKind()` now calls it an `access_token`).
+* **`client_id`** (RFC 9068 section 2.2, RFC 8693 section 4.3) is the
+  APPLICATION the requester authenticated as: the client_id it registers,
+  else its identifier, the rule `may_act` uses. It is the requester of an
+  OnBehalfOf or ActAs, or of a token about itself.
+* **`act`** (RFC 8693 section 4.1) has the current actor outermost, as since
+  #186. Each entry takes the shape this service's OAuth tokens give it.
+  RFC 8693 permits each of these and requires none:
+  * `iss` in every entry, this token's own (#471). Each prior delegate came
+    from a token this STS issued, so this issuer vouches for all of them.
+  * An application named by its client subject in the mode: `urn:sts:client:`
+    in RFC 9700 mode (`oauth2_bcp.enabled()`, asked lazily, as
+    `common/consent.ts` does), and the bare client_id otherwise (#471).
+  * A person who acted is named by their `urn:uuid:` subject.
+  * #443's original client needs no rule. In WS-Trust the first application
+    of a chain is in `act` because it made the first ActAs itself.
+
+**The exceptions, each with its reason:**
+
+* **No `client_id` for a person's own token.** A person who asks with their
+  own UsernameToken (or assertion) for a token about themselves has no
+  client. A name in the claim that is not a client's would be worse than
+  none.
+* **No `scope`.** An RST asks for none, and none is invented.
+* **No `auth_time`, `acr` or `amr`.** RFC 9068 section 2.2.1 makes them
+  optional, and a delegated JWT could only copy them from an
+  authentication it never saw.
+* **`iss` is `wstrust.issuer`**, the STS's own name. A WS-Trust issuer
+  publishes no authorization server metadata for RFC 9068 section 4 to
+  compare it with. Its default is `urn:wstrust:mock:sts` in every mode.
+* **`exp` is the lifetime the RSTR's `wst:Lifetime` states.** WS-Trust 1.4
+  section 4.1 makes that the STS's decision, so the two cannot disagree.
+* **The SAML Delegation Restriction is unchanged.** Its `del:Delegate`s name
+  applications by their bare identifiers in every mode. The `urn:sts:client:`
+  form and `iss` are the JWT's alone.
+
+`tests/wstrust_jwt_claims.js` holds each of these in both modes, in
+process. `tests/delegation_policy.js` L13 holds the product form of `act`.
+
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 
 `requesterCredential()` passes `door: 'wstrust'`, so in product a person who
