@@ -603,6 +603,98 @@ class ScopePolicy {
               " taken off.");
     return kept;
   }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A WS-TRUST JWT'S CONFIGURED SCOPES WILL LOSE, SAID AT CONFIGURATION
+  // TIME (#488). #485 accepts any value on `wstrustJwtScope` and drops at
+  // issuance what this policy would drop, through `narrow()`; that is the
+  // token endpoint's backstop and stays the decision (rcbj). What this adds
+  // is the WARNING where the value is set: the console's cell, the Save
+  // reply, the /admin-api write replies and the application's GET view all
+  // carry this one list (rule 7), so they cannot say different things.
+  //
+  // Each value is read as `judge()` reads it, with the application as the
+  // client, and for the reason a mode question would hide: development
+  // GRANTS an undeclared scope, so its warning says what PRODUCT would do.
+  //
+  //   * a protected scope the application does not declare: dropped in
+  //     every mode;
+  //   * any other value it does not declare (or, declaring nothing, outside
+  //     the default set): dropped in product;
+  //   * a declared value the issuance policy still drops (an operator's
+  //     rule): dropped, with the policy's code.
+  //
+  // The way out is the same for each: declare it on `oauthAllowedScope`, or
+  // remove it from `wstrustJwtScope`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the warnings an application's `wstrustJwtScope` values earn: each
+   * value the scope policy would drop at issuance, why, and how to resolve
+   * it (#488).
+   *
+   * @param identifier - the application's identifier
+   * @returns `[{ attribute, value, reason, dropped, text }]`, empty when none
+   */
+  configuredScopeWarnings(identifier: unknown): Json[] {
+    const { log, applications, mode } = this.deps;
+    const self = this;
+    log.debug("Entering ScopePolicy.configuredScopeWarnings().");
+    const app: any = applications.get(String(identifier || ''));
+    const values = app && app.fields
+      ? [].concat(app.fields.wstrustJwtScope || []).map(String)
+        .map(function (one: string) { return one.trim(); })
+        .filter(function (one: string) { return !!one; })
+      : [];
+    if (!values.length) {
+      log.debug("Leaving ScopePolicy.configuredScopeWarnings(). None set.");
+      return [];
+    }
+    const registered = [].concat((app.fields || {}).oauthClientId || [])[0];
+    const clientId = String(registered || app.identifier);
+    const declared = self.declaredScopes(clientId);
+    const defaults = declared ? [] : self.defaultScopes();
+    const product = mode.isProduct();
+    const judged = self.judge(values.join(' '), clientId, { stage: 'mint' });
+    const resolve = 'Declare it on this application\'s oauthAllowedScope ' +
+      '(Configuration → OAuth 2.0 / OpenID Connect), or remove it from ' +
+      'wstrustJwtScope.';
+    const out: Json[] = [];
+    values.forEach(function (value: string) {
+      const isDeclared = declared ? declared.indexOf(value) >= 0
+                                  : defaults.indexOf(value) >= 0;
+      let reason = '';
+      let why = '';
+      if (self.isProtected(value) && !(declared &&
+                                       declared.indexOf(value) >= 0)) {
+        reason = 'protected';
+        why = 'is one of this service\'s protected scopes, which a token ' +
+          'carries only for a client that declares it, so it is dropped ' +
+          'from the JWT in every mode';
+      } else if (!isDeclared) {
+        reason = 'undeclared';
+        why = product
+          ? 'is not declared on this application\'s oauthAllowedScope, ' +
+            'so it is dropped from the JWT at issuance'
+          : 'is not declared on this application\'s oauthAllowedScope: ' +
+            'development mode issues it, and PRODUCT mode would drop it ' +
+            'from the JWT at issuance';
+      } else if (judged.kept.indexOf(value) < 0) {
+        reason = 'policy';
+        why = 'is dropped from the JWT at issuance by the issuance ' +
+          'policy\'s per-scope question';
+      }
+      if (reason) {
+        out.push({ attribute: 'wstrustJwtScope', value: value,
+                   reason: reason,
+                   dropped: reason === 'undeclared' ? product : true,
+                   text: 'wstrustJwtScope "' + value + '" ' + why + '. ' +
+                         resolve });
+      }
+    });
+    log.debug("Leaving ScopePolicy.configuredScopeWarnings(). " +
+              out.length + ".");
+    return out;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -651,5 +743,6 @@ export = {
   defaultScopes: slot.forward('defaultScopes'),
   judge: slot.forward('judge'),
   refusal: slot.forward('refusal'),
-  narrow: slot.forward('narrow')
+  narrow: slot.forward('narrow'),
+  configuredScopeWarnings: slot.forward('configuredScopeWarnings')
 };

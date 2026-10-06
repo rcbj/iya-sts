@@ -2984,7 +2984,10 @@ const SCHEMA = {
             'audited (STS-OAUTH-0579), never issued. A write naming an ' +
             'undeclared scope is accepted here, because the declaration may ' +
             'change and development grants undeclared scopes: declare it on ' +
-            'oauthAllowedScope too.' },
+            'oauthAllowedScope too. A value the policy will drop is WARNED ' +
+            'about where it is set (#488): beside this field, in the Save ' +
+            'reply, and as `warnings` on the /admin-api write replies and ' +
+            'the application\'s view.' },
 
     // --- Kerberos and OID4VP ----------------------------------------------
     { name: 'krb5ServicePrincipalName', kind: 'multi', from: 'Kerberos v5',

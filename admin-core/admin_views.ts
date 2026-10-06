@@ -9046,6 +9046,24 @@ class AdminViews {
    * @param states - the section states `applicationDetailJson()` built
    * @returns the page data
    */
+  // #488: an application's wstrustJwtScope warnings, or none when the policy
+  // cannot be asked (a view must still draw).
+  applicationScopeWarnings(identifier) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.applicationScopeWarnings().");
+    let out = [];
+    try {
+      out = require('../common/scope_policy')
+        .configuredScopeWarnings(identifier) || [];
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationScopeWarnings(): " +
+                ((e && e.message) || e));
+      out = [];
+    }
+    log.debug("Leaving AdminViews.applicationScopeWarnings().");
+    return out;
+  }
+
   applicationPageData(req, row, states) {
     const { log, applications, mode, baseUrlOf } = this.deps;
     const self = this;
@@ -9180,6 +9198,13 @@ class AdminViews {
       out.notes[name] = self.applicationAttributeNote(name,
         (row.operational || []).indexOf(name) >= 0);
     });
+    // #488: what the scope policy will drop from a WS-Trust JWT, by
+    // attribute, for the cell that holds it — the list the write replies
+    // carry (`scopePolicy.configuredScopeWarnings()`).
+    const scopeWarnings = self.applicationScopeWarnings(row.identifier);
+    (out as any).warnings = scopeWarnings;
+    (out.config as any).fieldWarnings = scopeWarnings.length
+      ? { wstrustJwtScope: scopeWarnings } : {};
     log.debug("Leaving AdminViews.applicationPageData().");
     return out;
   }
@@ -9287,6 +9312,9 @@ class AdminViews {
             softwareStatement: softwareStatementState, roles: rolesState,
             permissions: permissionState, lifetimes: lifetimesState,
             claims: claimsState, observed: observedPaged }),
+          // #488: what the scope policy will drop, as the write replies
+          // carry it.
+          warnings: self.applicationScopeWarnings(row.identifier),
           attributesShown: self.maskedAttributeRows(paged.shown),
           attributesPaging: self.pagingJson(paging),
           // `returnAddressesObserved` itself is WHOLE, on the row, beside the

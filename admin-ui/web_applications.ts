@@ -1731,7 +1731,9 @@ class ApplicationsPage {
                              // The lists with a search, and the last
                              // search's results for each (#459).
                              searches: config.fieldSearches || {},
-                             finds: (state && state.finds) || {} }) +
+                             finds: (state && state.finds) || {},
+                             // #488: the scope policy's warnings, by field.
+                             fieldWarnings: config.fieldWarnings || {} }) +
         saveButton('Save ' + group.label) + '</form></div>';
     }).join('');
     const bar = '<nav class="tabbar subbar" aria-label="Configuration">' +

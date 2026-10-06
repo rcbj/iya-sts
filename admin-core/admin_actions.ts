@@ -4182,6 +4182,47 @@ class AdminActions {
   }
 
   // ---------------------------------------------------------------------------
+  // A SAVED WRITE THAT LEAVES A wstrustJwtScope VALUE THE SCOPE POLICY WILL
+  // DROP (#488): the reply says so. The write stands (#485); the reply
+  // carries `warnings`, the list `scopePolicy.configuredScopeWarnings()`
+  // gives (the same list the application's GET view and the console's cell
+  // carry, rule 7), and its sentences after the reply's `message`, which is
+  // what the console's Save shows. A refused write and a clean one are
+  // returned as they came.
+  // ---------------------------------------------------------------------------
+  private withScopeWarnings(identifier, result) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.withScopeWarnings().");
+    if (!result || result.ok === false || !identifier) {
+      log.debug("Leaving AdminActions.withScopeWarnings(). Not saved.");
+      return result;
+    }
+    let warnings = [];
+    try {
+      warnings = require('../common/scope_policy')
+        .configuredScopeWarnings(identifier) || [];
+    } catch (e) {
+      // A policy that cannot be asked costs the warning, never the write.
+      log.debug("Caught in AdminActions.withScopeWarnings(): " +
+                ((e && e.message) || e));
+      warnings = [];
+    }
+    if (!warnings.length) {
+      log.debug("Leaving AdminActions.withScopeWarnings(). None.");
+      return result;
+    }
+    const said = warnings.map(function (one) {
+      return String(one.text);
+    }).join(' ');
+    log.debug("Leaving AdminActions.withScopeWarnings(). " + warnings.length +
+              ".");
+    return Object.assign({}, result, {
+      warnings: warnings,
+      message: (result.message ? String(result.message) + ' ' : 'Saved. ') +
+               'WARNING: ' + said });
+  }
+
+  // ---------------------------------------------------------------------------
   // A PERSON'S FIELD GRID SAVE (2026-10-01), `updateApplicationFields()`'s
   // shape for a person. Every attribute the body covers is brought to the
   // values given — a single-valued one SET (empty clears it), a multi-valued
@@ -4670,7 +4711,8 @@ class AdminActions {
       });
       log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
-      return this.refusedBy('STS-ADMIN-0531', result);
+      return this.refusedBy('STS-ADMIN-0531',
+                            this.withScopeWarnings(identifier, result));
     }
 
     // ---------------------------------------------------------------------
@@ -4682,8 +4724,8 @@ class AdminActions {
     // whose values did not change is not written at all, which is what lets
     // a form carry every field and still refuse nothing it did not touch.
     if (action === 'update-fields') {
-      const result = this.updateApplicationFields(identifier, body,
-                                                  protocols);
+      const result = this.withScopeWarnings(identifier,
+        this.updateApplicationFields(identifier, body, protocols));
       log.debug("Leaving AdminActions.applicationsAction(). update-fields " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return result;
