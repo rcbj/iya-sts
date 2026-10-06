@@ -9005,6 +9005,9 @@ const SECRET_ATTRIBUTES = [
   // An application DID's private keys (2026-10-01), sealed like the two
   // above and withheld from every directory read like them.
   'didprivatekeys',
+  // A secret destination's write credential (#221 P3), sealed like the
+  // three above and withheld from every directory read.
+  'secretdestcredential',
   'stsassertionprivatekey', 'stssamlassertionprivatekey',
   'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
   // A person's app passwords (#101): scrypt hashes, a verifier like

@@ -1137,6 +1137,12 @@ const ACTIONS = [
     label: 'An attribute source was removed' },
   { action: 'attribute-sources.refresh', category: 'admin',
     label: 'People were read from an attribute source by hand' },
+  { action: 'secret-destination.push', category: 'admin',
+    label: 'A service account\'s password was pushed to a secret ' +
+           'destination' },
+  { action: 'secret-destination.test-push', category: 'admin',
+    label: 'A canary version was pushed to a secret destination\'s test ' +
+           'secret' },
   { action: 'roles.create', category: 'admin',
     label: 'A role was created' },
   { action: 'roles.delete', category: 'admin',

@@ -63,6 +63,7 @@ configuration recipes, in the console and through the API, for each
 [Devices](devices.md) ·
 [Mail](mail.md) ·
 [Attribute sources](attribute-sources.md) ·
+[Secret push destinations](secret-destinations.md) ·
 [CAEP events](caep-events.md) ·
 [Signals received](signals-received.md)
 

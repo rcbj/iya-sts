@@ -2969,7 +2969,8 @@ const DIRECTORY_CLASSES = [
   'application-private-key', 'client-secret', 'registration-access-token',
   'federation-client-secret', 'identity-verifications', 'gnap-shared-key',
   'gnap-macaroon-key', 'person-private-key', 'federation-encryption-key',
-  'kerberos-keys', 'totp-secret', 'recovery-codes', 'directory'
+  'kerberos-keys', 'totp-secret', 'recovery-codes', 'directory',
+  'secret-destination-credential'
 ];
 
 // The cipher a NEW data key of a class is made for.

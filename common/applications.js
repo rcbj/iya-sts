@@ -584,7 +584,27 @@ const PROTOCOLS = [
           'key pair, or paste the public half of your own), the services in ' +
           'didService and the URIs in didAlsoKnownAs. Nothing is issued ' +
           'through this family: it is how the application is identified and ' +
-          'its keys found.' }
+          'its keys found.' },
+  // A SECRET PUSH DESTINATION (#221 P3, 2026-10-06): a secrets manager this
+  // service WRITES a service account's rotated password to. rcbj's answer on
+  // #221: "Each push destination is an application entry in the realm, and
+  // the destination's write credential is held on that entry" — so the
+  // register of destinations is the realm's application entries declared for
+  // this family, and `common/secret_destinations.ts` reads them. Like `ssf`,
+  // the application is something this service CALLS; like `did`, nothing is
+  // issued through it — and an entry declared for this family alone is
+  // refused every issuance in product mode by the declaration rule above.
+  { id: 'secret-destination', label: 'Secret push destination', kind: '',
+    kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'A secrets manager this service PUSHES a service account\'s ' +
+          'rotated password to (#221): AWS Secrets Manager, Google Cloud ' +
+          'Secret Manager, Azure Key Vault, or a HashiCorp Vault / OpenBao ' +
+          'KV version 2 engine — and, in development mode only, a file. ' +
+          'The secret must already exist there: a push writes a new version ' +
+          'and never creates one. The write credential ' +
+          '(secretDestCredential) is sealed on this entry and never shown. ' +
+          'Nothing is issued through this family.' }
 ];
 
 /**
@@ -3198,6 +3218,83 @@ const SCHEMA = {
             'DID document\'s alsoKnownAs: an absolute URI such as the ' +
             'application\'s web origin or its client_id URL. DID Core makes ' +
             'it a claim, not a proof; a relying party checks it.' },
+    // A SECRET PUSH DESTINATION (#221 P3, 2026-10-06): where a service
+    // account's rotated password is written, and with what. See the
+    // `secret-destination` row of PROTOCOLS and
+    // `common/secret_destinations.ts`, which reads these; every address here
+    // is the operator's, and no request can name one.
+    { name: 'secretDestProvider', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'WHICH SECRETS MANAGER THIS DESTINATION IS: aws (Secrets ' +
+            'Manager, PutSecretValue), gcp (Secret Manager, ' +
+            'AddSecretVersion), azure (Key Vault, setSecret), vault (a ' +
+            'HashiCorp Vault or OpenBao KV version 2 engine, a write with ' +
+            'check-and-set) or file (development mode only). A key ' +
+            'management service is not a destination: it stores keys, not ' +
+            'secrets.' },
+    { name: 'secretDestPayload', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'WHAT A PUSH WRITES: password (the bare password, the default) ' +
+            'or json — {"username", "password", "realm", "rotatedAt"}, the ' +
+            'object a reader takes the password out of by its field, as ' +
+            'this service\'s own secret reads do (keys.kekField and the ' +
+            'like). In Vault, whose versions are maps, password writes the ' +
+            'one field secretDestField names.' },
+    { name: 'secretDestRegion', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'aws: the AWS region the secrets are in (us-east-1).' },
+    { name: 'secretDestProject', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'gcp: the project a short secret name is in, so that a ' +
+            'service account names its secret as sts-svc-backup rather ' +
+            'than projects/<project>/secrets/sts-svc-backup. A full ' +
+            'resource name is taken as it is.' },
+    { name: 'secretDestEndpoint', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'azure: the vault URL (https://<name>.vault.azure.net). vault: ' +
+            'the Vault or OpenBao address (https://vault.example.com:8200). ' +
+            'https only — the write credential and a password cross it.' },
+    { name: 'secretDestMount', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'vault: where the KV version 2 engine is mounted; secret when ' +
+            'empty.' },
+    { name: 'secretDestField', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'vault, with the password payload: the field of the version the ' +
+            'password is written to; value when empty, which is the field ' +
+            'this service\'s own Vault reads default to.' },
+    { name: 'secretDestDirectory', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'file (DEVELOPMENT MODE ONLY): the absolute directory a secret ' +
+            'name is a file in. The file must already exist; a name that ' +
+            'leaves the directory is refused.' },
+    { name: 'secretDestCaCertificates', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'vault: the PEM certificates of the CA the Vault listener ' +
+            'chains to, trusted beside the public roots. Certificates are ' +
+            'public; the certificate is always verified.' },
+    { name: 'secretDestCredential', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      secret: true,
+      what: 'THE DESTINATION\'S WRITE CREDENTIAL, which may write versions ' +
+            'of named secrets and should be able to do nothing else: aws, a ' +
+            'JSON {"accessKeyId", "secretAccessKey"[, "sessionToken"]}; ' +
+            'gcp, a service account key file\'s JSON; azure, a JSON ' +
+            '{"tenantId", "clientId", "clientSecret"}; vault, a token. ' +
+            'Separate from the read-only credentials this service reads its ' +
+            'own key-encryption key and database password with. Sealed with ' +
+            'the key-encryption key when keys persist, WITHHELD from every ' +
+            'page, /admin-api reply and directory read, and never logged.' },
     { name: 'ssfReceiverId', kind: 'multi',
       from: 'SSF, the console, or by hand',
       identifier: true,
@@ -3974,6 +4071,19 @@ const EDITABLE = {
   saml2CustomAttributes: 'set',
   saml11CustomAttributes: 'set',
   didAlsoKnownAs: 'multi',
+  // A secret push destination (#221 P3): each one value, an empty write
+  // clearing it. The credential is write-only: sealed on the way in,
+  // withheld on the way out (SEALED_FIELDS, WITHHELD_FIELDS).
+  secretDestProvider: 'set',
+  secretDestPayload: 'set',
+  secretDestRegion: 'set',
+  secretDestProject: 'set',
+  secretDestEndpoint: 'set',
+  secretDestMount: 'set',
+  secretDestField: 'set',
+  secretDestDirectory: 'set',
+  secretDestCaCertificates: 'set',
+  secretDestCredential: 'set',
   ssfAllowedEvents: 'multi',
   // The per-receiver Shared Signals overrides, each one value an empty
   // write clears (the setting then decides); see their SCHEMA rows.
@@ -4833,6 +4943,13 @@ const ATTRIBUTE_CHOICES = {
   },
   scepDefaultProfile: function () {
     return enrollmentProfileChoices(true);
+  },
+  // A secret push destination (#221 P3), from the module that pushes.
+  secretDestProvider: function () {
+    return require('./secrets').DESTINATION_PROVIDERS.slice(0);
+  },
+  secretDestPayload: function () {
+    return require('./secrets').DESTINATION_PAYLOADS.slice(0);
   }
 };
 
@@ -4855,7 +4972,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthBackchannelAuthenticationRequestSigningAlg', 'gnapKeyProof',
   'gnapSymmetricAlg', 'gnapInteractionStartModes', 'gnapAccessTokenFormat',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
-  'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile'];
+  'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
+  'secretDestProvider', 'secretDestPayload'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),
@@ -4970,7 +5088,8 @@ function authMethodsProblem(values) {
 const LONG_TEXT_ATTRIBUTES = [
   'oauthJwks', 'samlSpMetadata', 'samlEncryptionCertificate',
   'samlSpMetadataSigningCertificate', 'oauthSamlAssertionSigningCertificate',
-  'gnapKey', 'gnapJweKey', 'oauthResourceMetadata'
+  'gnapKey', 'gnapJweKey', 'oauthResourceMetadata',
+  'secretDestCaCertificates'
 ];
 
 // THE ATTRIBUTES THE GRID DOES NOT DRAW, because a control of their own does:
@@ -4993,6 +5112,11 @@ function gridExcludedAttributes() {
   const out = ['appName', 'appAllowedProtocol',
                'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken',
                'oauthScope', 'didPrivateKeys',
+               // A secret destination's write credential (#221 P3): set on
+               // Directory → Secret destinations, where the box is
+               // write-only; a grid cell would draw the withheld sentence
+               // as its value and save it back.
+               'secretDestCredential',
                // Drawn by their own Custom claims and Custom SAML
                // attributes sections (2026-10-01): a JSON array is not a
                // text box.
@@ -5185,6 +5309,14 @@ const FIELD_EXAMPLES = {
                    'Generate a key pair above',
   didService: 'LinkedDomains|https://app.example.com',
   didAlsoKnownAs: 'https://app.example.com',
+  // A secret push destination (#221 P3).
+  secretDestRegion: 'us-east-1',
+  secretDestProject: 'my-project',
+  secretDestEndpoint: 'https://vault.example.com:8200',
+  secretDestMount: 'secret',
+  secretDestField: 'value',
+  secretDestDirectory: '/run/sts-test-secrets',
+  secretDestCaCertificates: '-----BEGIN CERTIFICATE-----',
   ssfAllowedEvents: 'https://schemas.openid.net/secevent/caep/event-type/' +
                     'session-revoked',
   ssfCaepReasonLanguage: 'en',
@@ -5277,7 +5409,8 @@ const FIELD_FAMILY_PREFIXES = [
   ['acme', ['acme']],
   ['est', ['est']],
   ['scep', ['scep']],
-  ['enroll', ['acme', 'est', 'scep']]
+  ['enroll', ['acme', 'est', 'scep']],
+  ['secretDest', ['secret-destination']]
 ];
 
 /**
@@ -5304,7 +5437,9 @@ const FIELD_GROUPS = [
   { id: 'gnap', label: 'GNAP', families: ['gnap'] },
   { id: 'did', label: 'Decentralized Identifier (DID)', families: ['did'] },
   { id: 'enroll', label: 'Certificate enrollment',
-    families: ['acme', 'est', 'scep'] }
+    families: ['acme', 'est', 'scep'] },
+  { id: 'secret-destination', label: 'Secret push destination',
+    families: ['secret-destination'] }
 ];
 
 /**
@@ -6271,7 +6406,12 @@ const SEALED_FIELDS = ['oauthAssertionPrivateKey',
                        'gnapMacaroonKey',
                        // An application DID's private keys (2026-10-01),
                        // kept to sign its Domain Linkage Credentials.
-                       'didPrivateKeys'];
+                       'didPrivateKeys',
+                       // A secret destination's write credential (#221 P3).
+                       // WITHHELD as well (below): sealed so no dump holds
+                       // it, and withheld so no reader opens it — the only
+                       // reader is `secretDestinationCredentialOf()`.
+                       'secretDestCredential'];
 
 // The label each sealed field is sealed under, which is what
 // /admin/encryption counts by (admin-ui/encryption_admin.ts DATA_CLASSES). One
@@ -6281,6 +6421,7 @@ const SEAL_LABELS = {
   oauthSamlAssertionPrivateKey: 'application-private-key',
   gnapSymmetricKey: 'gnap-shared-key',
   gnapMacaroonKey: 'gnap-macaroon-key',
+  secretDestCredential: 'secret-destination-credential',
   // Not in SEALED_FIELDS: it is multi-valued and each value is sealed WHOLE,
   // as a record — see sealClientSecretText().
   oauthClientSecret: 'client-secret',
@@ -6317,7 +6458,11 @@ const WITHHELD_FIELDS = ['krb5ServiceKeys',
                          // Certificate enrollment (2026-09-13): a private key
                          // this service generated, and two working credentials.
                          'appEnrolledPrivateKey', 'appAcmeEabKey',
-                         'appScepChallenge'];
+                         'appScepChallenge',
+                         // A secret destination's write credential (#221
+                         // P3): it leaves this service only on the wire to
+                         // its own secrets manager.
+                         'secretDestCredential'];
 
 // ---------------------------------------------------------------------------
 // WHERE A MANAGED KEY PAIR CAME FROM (2026-09-13) — the closed vocabulary of
@@ -6377,8 +6522,16 @@ const KEY_SOURCE_ATTRIBUTES = Object.keys(KEY_PAIR_ATTRIBUTES).map(
 });
 
 
-function withheldSentence(value) {
+function withheldSentence(value, name) {
   log.debug("Entering withheldSentence().");
+  if (name === 'secretDestCredential') {
+    // NOT EVEN ITS LENGTH: a token's length says which kind of credential
+    // it is, and nothing about this one is anybody's business but its
+    // secrets manager's (#221 P3).
+    log.debug("Leaving withheldSentence(). A destination credential.");
+    return '(withheld: a secret destination\'s write credential, set, ' +
+           'never shown)';
+  }
   log.debug("Leaving withheldSentence().");
   return '(withheld: Kerberos key material, ' + String(value || '').length +
          ' characters, never shown)';
@@ -6401,8 +6554,9 @@ function withholdFields(fields) {
     if (out === fields) {
       out = Object.assign({}, fields);
     }
-    out[name] = Array.isArray(out[name]) ? out[name].map(withheldSentence)
-                                         : withheldSentence(out[name]);
+    out[name] = Array.isArray(out[name])
+      ? out[name].map(function (one) { return withheldSentence(one, name); })
+      : withheldSentence(out[name], name);
   });
   log.debug("Leaving withholdFields().");
   return out;
@@ -6558,6 +6712,54 @@ function openSealedFields(fields, identifier) {
   });
   log.debug("Leaving openSealedFields().");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// A SECRET DESTINATION'S WRITE CREDENTIAL, OPENED FOR THE ONE READER THAT
+// USES IT (#221 P3, 2026-10-06).
+//
+// `secretDestCredential` is in SEALED_FIELDS and in WITHHELD_FIELDS, so every
+// view — `fields` and `attributes` alike — carries a sentence in its place
+// and `reveal-secret` has nothing to hand over. `common/secret_destinations
+// .ts` needs the credential itself, at the moment it pushes, and asks here
+// rather than reading the entry around this module: this module owns the
+// seal and so owns the open. The plaintext is returned to the caller and
+// kept nowhere (`key-material-residency`).
+// ---------------------------------------------------------------------------
+/**
+ * Returns a secret destination's write credential, opened, for the push
+ * that uses it. Never drawn and never returned by any view.
+ *
+ * @param identifier - the destination application's identifier
+ * @returns the credential, or '' when there is none or it will not open
+ */
+function secretDestinationCredentialOf(identifier) {
+  log.debug("Entering secretDestinationCredentialOf().");
+  const loaded = load(identifier);
+  const stored = loaded.known
+    ? String([].concat(loaded.record.fields.secretDestCredential || [])[0] ||
+             '')
+    : '';
+  if (!stored) {
+    log.debug("Leaving secretDestinationCredentialOf(). None.");
+    return '';
+  }
+  if (!isSealed(stored)) {
+    log.debug("Leaving secretDestinationCredentialOf(). Stored clear.");
+    return stored;
+  }
+  const opened = keystore.open(stored, sealLabelOf('secretDestCredential'));
+  if (!opened) {
+    log.warn(errorCodes.tag('STS-REG-0023') +
+             'applications: the write credential on secret destination "' +
+             identifier + '" is sealed and will not open under this ' +
+             'process\'s key-encryption key. Set it again on Directory → ' +
+             'Secret destinations.');
+    log.debug("Leaving secretDestinationCredentialOf(). Will not open.");
+    return '';
+  }
+  log.debug("Leaving secretDestinationCredentialOf(). Opened.");
+  return opened;
 }
 
 // ---------------------------------------------------------------------------
@@ -16475,6 +16677,7 @@ module.exports = {
   declaredFamiliesOf: declaredFamiliesOf,
   declaredFamiliesFor: declaredFamiliesFor,
   didValueProblem: didValueProblem,
+  secretDestinationCredentialOf: secretDestinationCredentialOf,
   claimRowsProblem: claimRowsProblem,
   didDuplicateProblem: didDuplicateProblem,
   DID_SERVICE_TYPES: DID_SERVICE_TYPES,

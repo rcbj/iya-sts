@@ -1279,6 +1279,15 @@ class ProtocolStack {
                'AttributeSourcesAdmin');
     this.register(app, require('../attribute-sources/attribute_sources_admin'),
                   'attribute-sources/attribute_sources_admin');
+    // 18r-ii. THE SECRET PUSH DESTINATIONS (#221 P3): Directory → Secret
+    // destinations. A library and no route — the realm's application entries
+    // declared for `secret-destination` are the register, and the page is
+    // the static console's (`admin-ui/web_secret_destinations.ts`) — built
+    // here, beside the other Directory register, after `applications` and
+    // `secrets` (libraries loaded long before), and before
+    // `mgmt-api/admin_api`, which spreads `secret_destinations_api`'s routes.
+    this.build('common/secret_destinations',
+               require('./secret_destinations'), 'SecretDestinations');
     // THE NODE SNAPSHOTS (#332, 2026-09-28), a library the two pages below
     // hand their views to: built here, before them, so the instance they
     // reach is the root's. It registers its scheduler job when the first
@@ -1335,6 +1344,9 @@ class ProtocolStack {
     this.build('attribute-sources/attribute_sources_api',
                require('../attribute-sources/attribute_sources_api'),
                'AttributeSourcesApi');
+    this.build('mgmt-api/secret_destinations_api',
+               require('../mgmt-api/secret_destinations_api'),
+               'SecretDestinationsApi');
     this.build('oauth-oidc/provider_commands_api',
                require('../oauth-oidc/provider_commands_api'),
                'ProviderCommandsApi');

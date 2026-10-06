@@ -490,6 +490,14 @@ families and this service advertises a W3C DID for it:
 The DID follows the address the service is reached on; pin
 `global.publicBaseUrl` so it does not change with the host name.
 
+### A secret push destination
+
+An application declared for **Secret push destination** is not a client: it
+is a secrets manager this service writes a service account's rotated
+password to. Its location appears in the application's configuration; its
+write credential is set on **Directory → Secret destinations**, where it is
+never shown again. See [Secret push destinations](secret-destinations.md).
+
 ### Certificate enrollment (ACME, EST, SCEP)
 
 ACME, EST and SCEP are three protocol families an application may be

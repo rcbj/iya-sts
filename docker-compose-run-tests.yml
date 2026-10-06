@@ -694,6 +694,12 @@ services:
       # same volume below. The cluster file's `sts2` inherits it through
       # `extends`. Read-only on this side.
       - sts-test-shared:/run/sts-test:ro
+      # A FILE SECRET PUSH DESTINATION'S DIRECTORY (#221 P3), the one volume
+      # here the service WRITES to: the runner makes the files, and the
+      # service writes a pushed password into one (it never creates a file).
+      # Development mode only — product refuses a file destination — so
+      # `tests/vendored/sts_secret_destinations.js` uses it in `memory` mode.
+      - sts-test-secret-push:/run/sts-test-secret-push
       # WHERE AN UPLOADED RISK DATASET IS WRITTEN WHILE IT IS IMPORTED (#215),
       # at `risk.uploadDirectory`'s default: docker-compose.yml's volume and
       # its reason. The cluster file gives node B one of its own.
@@ -1251,6 +1257,9 @@ services:
       - SAML_PEER_PYSAML2_URL=${SAML_PEER_PYSAML2_URL:-}
       - SAML_PEER_KEYCLOAK_URL=${SAML_PEER_KEYCLOAK_URL:-}
       - SAML_PEERS_LOG_DIR=${SAML_PEERS_LOG_DIR:-/run/sts-test/saml-peers}
+      # A file secret push destination's directory (#221 P3): the same
+      # volume, at the same path, in `sts`. Empty skips the job's file half.
+      - SECRET_PUSH_TEST_DIR=${SECRET_PUSH_TEST_DIR-/run/sts-test-secret-push}
     # Chrome crashes tabs on heavy pages when limited to Docker's default 64MB
     # /dev/shm. The console job also passes --disable-dev-shm-usage; this raises
     # the cap as well, because the two mitigations fail differently and the
@@ -1265,6 +1274,8 @@ services:
       - ./tests/report:/usr/src/sts/tests/report
       # The directory shared with the service (#171) — see `sts` above.
       - sts-test-shared:/run/sts-test
+      # A file secret push destination's directory (#221 P3) — see `sts`.
+      - sts-test-secret-push:/run/sts-test-secret-push
     depends_on:
       # The mail catcher (#63): STARTED, for xacml-pep's reason below — a
       # catcher that will not come up fails sts_mail.js and nothing else.
@@ -1308,6 +1319,8 @@ volumes:
   sts-bao-startup:
   # The run-time CA certificates a job hands the service (#171).
   sts-test-shared:
+  # A file secret push destination's directory (#221 P3).
+  sts-test-secret-push:
   # An uploaded risk dataset while it is imported (#215).
   sts-risk-uploads:
 
