@@ -290,6 +290,8 @@ const counters = {
   local: 0,
   sameHost: 0,
   closedEmpty: 0,
+  // Connections whose ClientHello the gate held until it was whole.
+  heldHello: 0,
   refused: {}
 };
 const installed = [];
@@ -299,6 +301,11 @@ const installed = [];
 // intercepted a second time.
 const INFO = Symbol('sts.proxyProtocol');
 const SEEN = Symbol('sts.proxyProtocolSeen');
+// The most of an unfinished TLS ClientHello the gate holds before handing it
+// over anyway (`firstFlightComplete()`). A hello carrying post-quantum key
+// shares and a padding extension is tens of kilobytes; one past this is
+// handed to TLS as it stands rather than buffered without a bound.
+const FIRST_FLIGHT_CAP = 256 * 1024;
 
 // ---------------------------------------------------------------------------
 // ONE AUDIT ROW PER SOURCE AND CODE PER MINUTE.
@@ -631,6 +638,72 @@ class ProxyProtocol {
   }
 
   // ---------------------------------------------------------------------------
+  // firstFlightComplete(bytes) — whether what followed the header holds a
+  // WHOLE TLS ClientHello (2026-10-06). A TLS server handed a socket whose
+  // unshifted bytes are only PART of a ClientHello, the rest still to come
+  // on the handle, sometimes never answered it: the continuation was lost
+  // between the raw socket's buffer and the TLS engine, so the client waited
+  // on a silent connection. Measured through HAProxy's send-proxy-v2: 3.6
+  // silent connections per run of tlsfuzzer's test-tls13-unrecognised-groups
+  // on LDAPS, every one a partial hello (7240, 14480, 16384 bytes) and none a
+  // header that arrived alone or with a whole hello; holding the partial
+  // flight until it was whole made it 0. So the gate reads on until the
+  // ClientHello is whole, and only a TLS server is held for it.
+  //
+  // It reads TLS records (type, version, a 16-bit length) and the handshake
+  // message they carry (a type, then a 24-bit length). Anything that is not
+  // a handshake record is TLS's to judge, so it answers true: what is held
+  // back is only what is plainly an unfinished ClientHello.
+  // ---------------------------------------------------------------------------
+  /**
+   * Whether `bytes`, read after a PROXY header, hold a whole TLS first
+   * flight: one complete handshake message, possibly across records.
+   *
+   * @param bytes - the bytes that followed the header
+   * @returns false only for an unfinished TLS handshake message
+   */
+  firstFlightComplete(bytes: Buffer): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ProxyProtocol.firstFlightComplete(). bytes=" +
+              (bytes ? bytes.length : 0));
+    if (!bytes || !bytes.length || bytes[0] !== 0x16) {
+      log.debug("Leaving ProxyProtocol.firstFlightComplete(). Not a " +
+                "handshake record.");
+      return true;
+    }
+    const parts: Buffer[] = [];
+    let held = 0;
+    let offset = 0;
+    while (offset < bytes.length) {
+      if (bytes[offset] !== 0x16) {
+        log.debug("Leaving ProxyProtocol.firstFlightComplete(). Another " +
+                  "record type follows.");
+        return true;
+      }
+      if (offset + 5 > bytes.length) {
+        break;
+      }
+      const length = bytes.readUInt16BE(offset + 3);
+      const end = Math.min(offset + 5 + length, bytes.length);
+      parts.push(bytes.subarray(offset + 5, end));
+      held += end - offset - 5;
+      if (end < offset + 5 + length) {
+        break;
+      }
+      offset = end;
+    }
+    if (held < 4) {
+      log.debug("Leaving ProxyProtocol.firstFlightComplete(). No " +
+                "handshake header yet.");
+      return false;
+    }
+    const message = Buffer.concat(parts, held);
+    const whole = held >= 4 + message.readUIntBE(1, 3);
+    log.debug("Leaving ProxyProtocol.firstFlightComplete(). " + whole);
+    return whole;
+  }
+
+  // ---------------------------------------------------------------------------
   // build(options) — a v2 header, for the tests and the live probe. The inverse
   // of parse() over what this service reads: IPv4 or IPv6 PROXY, LOCAL, extra
   // TLVs, and a CRC32C when asked.
@@ -804,6 +877,7 @@ class ProxyProtocol {
       local: counters.local,
       sameHost: counters.sameHost,
       closedEmpty: counters.closedEmpty,
+      heldHello: counters.heldHello,
       refused: Object.assign({}, counters.refused)
     };
   }
@@ -973,6 +1047,10 @@ class ProxyProtocol {
       log.debug("Entering readHeader(). peer=" + peer);
       let buffered = Buffer.alloc(0);
       let finished = false;
+      // Where the bytes after the header begin, once a header has been read
+      // and the gate is holding an unfinished TLS ClientHello behind it
+      // (`firstFlightComplete()`). -1 while the header is still being read.
+      let heldFrom = -1;
 
       function finish() {
         log.debug("Entering finish().");
@@ -1012,6 +1090,30 @@ class ProxyProtocol {
         log.debug("Leaving handOver().");
       }
 
+      // Hand over what follows the header, or go on reading while it is the
+      // start of a TLS ClientHello that has not all arrived (2026-10-06): a
+      // TLS server given a partial hello sometimes never read the rest, so
+      // the connection hung with nothing answered (`firstFlightComplete()`).
+      // FIRST_FLIGHT_CAP bounds what is held; past it the bytes are handed
+      // over as they are, and TLS decides.
+      function handOverWhenWhole(from) {
+        log.debug("Entering handOverWhenWhole(). from=" + from);
+        const rest = buffered.subarray(from);
+        if (server instanceof tls.Server && rest.length &&
+            rest.length < FIRST_FLIGHT_CAP &&
+            !self.firstFlightComplete(rest)) {
+          if (heldFrom < 0) {
+            counters.heldHello += 1;
+          }
+          heldFrom = from;
+          log.debug("Leaving handOverWhenWhole(). Holding " + rest.length +
+                    " byte(s) of an unfinished ClientHello.");
+          return;
+        }
+        handOver(rest);
+        log.debug("Leaving handOverWhenWhole(). Handed over.");
+      }
+
       function onData(chunk) {
         log.debug("Entering onData(). " + chunk.length);
         if (finished) {
@@ -1019,11 +1121,16 @@ class ProxyProtocol {
           return;
         }
         buffered = buffered.length ? Buffer.concat([buffered, chunk]) : chunk;
+        if (heldFrom >= 0) {
+          handOverWhenWhole(heldFrom);
+          log.debug("Leaving onData(). Reading the ClientHello.");
+          return;
+        }
         if (optional && buffered[0] !== SIGNATURE[0]) {
           counters.sameHost += 1;
           log.debug('proxy: ' + label + ' — ' + peer + ' is this host and ' +
                     'sent no header; served as a plain connection.');
-          handOver(buffered);
+          handOverWhenWhole(0);
           log.debug("Leaving onData(). Same host, plain.");
           return;
         }
@@ -1057,14 +1164,24 @@ class ProxyProtocol {
                     '(' + (header.family || 'no family') + ') from ' + peer +
                     '; the connection keeps the balancer\'s address.');
         }
-        handOver(buffered.subarray(parsed.length));
-        log.debug("Leaving onData(). Handed over.");
+        handOverWhenWhole(parsed.length);
+        log.debug("Leaving onData(). Header read.");
       }
 
       function onEnd() {
         log.debug("Entering onEnd().");
         if (finished) {
           log.debug("Leaving onEnd(). Finished.");
+          return;
+        }
+        if (heldFrom >= 0) {
+          // The header was good and the client left part-way through its
+          // ClientHello: nothing to serve, and nothing wrong with the header.
+          finish();
+          log.debug('proxy: ' + label + ' — ' + peer + ' closed part-way ' +
+                    'through its TLS ClientHello.');
+          socket.destroy();
+          log.debug("Leaving onEnd(). Closed mid-hello.");
           return;
         }
         if (!buffered.length) {
@@ -1102,6 +1219,12 @@ class ProxyProtocol {
       }
 
       const timer = setTimeout(function () {
+        if (!finished && heldFrom >= 0) {
+          // The header was read; a ClientHello still unfinished at the bound
+          // is handed over as it is, for TLS to time out or refuse.
+          handOver(buffered.subarray(heldFrom));
+          return;
+        }
         if (!finished) {
           refuse('STS-PROXY-0007', 'no complete header within ' +
                  self.headerTimeoutMs() + 'ms ' +
@@ -1178,6 +1301,7 @@ class ProxyProtocol {
     counters.local = 0;
     counters.sameHost = 0;
     counters.closedEmpty = 0;
+    counters.heldHello = 0;
     counters.refused = {};
     lastAudited.clear();
     thisHostCheck = null;
@@ -1222,6 +1346,7 @@ export = {
   MAX_BLOCK_LENGTH: ProxyProtocol.MAX_BLOCK_LENGTH,
   parse: slot.forward('parse'),
   build: slot.forward('build'),
+  firstFlightComplete: slot.forward('firstFlightComplete'),
   crc32c: ProxyProtocol.crc32c,
   enabled: slot.forward('enabled'),
   startupProblem: slot.forward('startupProblem'),

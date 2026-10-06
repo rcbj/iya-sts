@@ -10271,13 +10271,26 @@ maintainer of a listener has to know:
   `tls.Server` drains them into the TLS engine, every other server needs the
   socket RESUMED after the real emit — without that `http.Server` answered 408
   (measured).
+* **A `tls.Server` is handed a WHOLE ClientHello, never part of one
+  (2026-10-06).** HAProxy sends the header in the segment that carries the
+  client's first bytes. When those were only part of a large ClientHello,
+  the TLS server sometimes never read the rest, so the connection hung with
+  nothing answered. In the `cluster` mode that was `sts_tlsfuzzer`'s large
+  hellos to LDAPS: 16 timeouts in 4 runs through the balancer, and 0 direct
+  or without the header. `firstFlightComplete()` reads the TLS records and
+  handshake length, and the gate keeps reading until the hello is whole
+  before it hands over, up to `FIRST_FLIGHT_CAP` (256 KiB) or the header
+  timer. After the fix the same runs had 0 timeouts in 4. Bytes that are not
+  a handshake record are handed over at once, as before. `report().heldHello`
+  counts the connections the gate held.
 * **A refusal is one audit row per (code, address) per minute**, the rest
   counted in `report()`: the connections refused here are the ones a stranger
   can open as fast as they like, and the audit ring is capped.
 * **Not covered**: the KDC's UDP socket (no stream), and the SPIFFE gRPC
   listeners (grpc-js owns its server). `tests/proxy_protocol.js` holds the
   parser, the three peers and the round trips through http, https with a
-  client certificate, net and ldapjs.
+  client certificate, net and ldapjs. It also covers a header followed by the
+  first 40 bytes of a ClientHello (2c, 3n).
 
 ### Database connections per container
 
