@@ -614,6 +614,7 @@ async function theRefusalSentencesAreHonest(doc) {
     "claims": { set: claimSets["claims"] },
     "saml-attributes": { set: claimSets["saml-attributes"] },
     "userinfo-claims": { set: claimSets["userinfo-claims"] },
+    "kerberos/claims": { set: claimSets["kerberos/claims"] },
     "federation": { id: "no-such-relationship" },
     "saml2": { sp: "urn:no:such:sp" },
     "saml11": { rp: "urn:no:such:rp" },
@@ -694,7 +695,9 @@ async function theRefusalSentencesAreHonest(doc) {
 async function claimSetIdsPerDoor() {
   log.debug("Entering claimSetIdsPerDoor().");
   const out = {};
-  for (const resource of ["claims", "saml-attributes", "userinfo-claims"]) {
+  // `kerberos/claims` (#493): the sixth set's door, the same action function.
+  for (const resource of ["claims", "saml-attributes", "userinfo-claims",
+                          "kerberos/claims"]) {
     const probe = await post("/" + resource + "/__no_such_action__",
                              { set: "" });
     const errors = ((probe.body && probe.body.errors) || []).join(" ");

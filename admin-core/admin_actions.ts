@@ -6870,12 +6870,18 @@ class AdminActions {
     }
 
     log.debug("Leaving AdminActions.claimsAction(). Unknown action.");
+    // The Kerberos PAC set's door has no catalogue half (#493), so its
+    // sentence names the five it has — the walk of the management API holds
+    // the sentence to the operations each door documents.
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The eight are: add, ' +
-                                      'add-attribute-claim, remove, clear, ' +
-                                      'replace, attributes, attributes-all, ' +
-                                      'attributes-clear.'] });
+                     (stats.CLAIM_SETS[setId].kind === 'kerberos'
+                       ? 'The five are: add, add-attribute-claim, remove, ' +
+                         'clear, replace.'
+                       : 'The eight are: add, ' +
+                         'add-attribute-claim, remove, clear, ' +
+                         'replace, attributes, attributes-all, ' +
+                         'attributes-clear.')] });
   }
 
   // The sweep's outcome as a sentence, appended to whatever message the action
