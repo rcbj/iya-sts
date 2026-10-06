@@ -552,7 +552,11 @@ const SPECS: Spec[] = [
               'information (KERB_VALIDATION_INFO, NDR), client info, UPN/DNS ' +
               'info, attributes and the requestor SID. A TGT gets two ' +
               'signatures and a service ticket four, per sections ' +
-              '2.8.2/2.8.3. Claims and device info are not produced, and SID ' +
+              '2.8.2/2.8.3. CLIENT CLAIMS (PAC_CLIENT_CLAIMS_INFO, 2.11) are ' +
+              'produced while krb5.pacClaims is on (#493), never ' +
+              'compressed; claims buffers arriving in another realm\'s PAC ' +
+              'are decoded (XPRESS Huffman included) and carried. Device ' +
+              'info and DEVICE claims are not produced, and SID ' +
               'FILTERING across a trust is NOT implemented — a re-signed PAC ' +
               'keeps every SID it arrived with.' },
   { id: 'rfc4178', name: 'SPNEGO (RFC 4178)',
@@ -6858,6 +6862,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'CLEAR, deliberately. Needs admin:write, works in both modes, and ' +
           'is the gated twin of POST /tls/trust, which product mode refuses. ' +
           'Written to ou=trustAnchors, so a change survives a restart.' },
+  { path: '/admin-api/kerberos/claims', group: 'Management API',
+    name: 'Kerberos PAC claims',
+    specs: ['ms-pac', 'openapi'],
+    what: 'GET /admin/kerberos/claims over JSON (#493): the kerberos-pac ' +
+          'claim set — the claims PAC_CLIENT_CLAIMS_INFO carries while ' +
+          'krb5.pacClaims is on — each row with its ad://ext/<name>:<hex> ' +
+          'claim id, the four PAC claim types, and what one person\'s next ' +
+          'TGT would carry (?user=).' },
+  { path: '/admin-api/kerberos/claims/:action', group: 'Management API',
+    name: 'Add, remove, clear or replace a Kerberos PAC claim',
+    specs: ['ms-pac', 'openapi'],
+    what: 'add | add-attribute-claim | remove | clear | replace — the ' +
+          'controls on /admin/kerberos/claims, through the claim sets\' one ' +
+          'action function, audited as claims.change and announced to ' +
+          'holders of live tickets as CAEP token-claims-change. Every row ' +
+          'takes a `type` of string, int64, uint64 or boolean.' },
   { path: '/admin-api/kerberos/principals', group: 'Management API',
     name: 'Kerberos principals',
     specs: ['rfc4120', 'rfc3961', 'openapi'],

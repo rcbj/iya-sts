@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4155** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4164** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 20
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 199
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 203
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -86,11 +86,11 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 92
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 226
-* [Management API (`STS-API`)](#sts-api) — 80
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 227
+* [Management API (`STS-API`)](#sts-api) — 81
 * [User portal (`STS-PORTAL`)](#sts-portal) — 83
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 153
+* [Registries (`STS-REG`)](#sts-reg) — 156
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -2731,6 +2731,10 @@ Raised from: kerberos/.
 | `STS-KRB-0197` | The KDC held no PKINIT certificate for the realm, or could not sign its reply (#179). | none (logged); KDC_ERR_CLIENT_NOT_TRUSTED (62) to the client |
 | `STS-KRB-0198` | An anonymous PKINIT request was refused — anonymous PKINIT off, no anonymous KDC option, a service other than the realm's TGS or no AES enctype — or an anonymous ticket was presented to the TGS, which it may not buy from (#179). | RFC 8062 sections 4.1 and 4.2: KDC_ERR_C_PRINCIPAL_UNKNOWN (6), KDC_ERR_BADOPTION (13), KDC_ERR_POLICY (12), KDC_ERR_ETYPE_NOSUPP (14) |
 | `STS-KRB-0199` | Resource-based constrained delegation was refused because the evidence ticket is not forwardable (the S4U2Self service does not allow impersonation, or the user is protected) (#492). | [MS-SFU] 3.2.5.2.3: KDC_ERR_BADOPTION (13), STATUS_ACCOUNT_RESTRICTION |
+| `STS-KRB-0200` | A Kerberos PAC claim was left out of a ticket: its value — a placeholder expanded, or a directory attribute — is not its type (int64, uint64, boolean, or an empty or NUL-bearing string) (#493). The ticket is issued with the rest. | none (logged at warn; [MS-ADTS] 2.2.18.2 CLAIM_TYPE) |
+| `STS-KRB-0201` | A ticket's PAC client claims encoded to more than the 64 KiB a ticket may carry; the ticket was issued with no claims buffer (#493). | none (logged; [MS-PAC] 2.11) |
+| `STS-KRB-0202` | A ticket's PAC client claims could not be read or encoded; the ticket was issued with no claims buffer, or without the application's own claims (#493). | none (logged; [MS-PAC] 2.11) |
+| `STS-KRB-0203` | A PAC presented to the KDC carries a client claims buffer that does not decode (a compression format other than XPRESS Huffman, or malformed NDR); the ticket being built carries none of those claims (#493). | none (logged at warn; [MS-PAC] 2.11, [MS-ADTS] 2.2.18) |
 
 ## STS-LDAP
 
@@ -4357,6 +4361,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0845` | add-conferring-client or remove-conferring-client named no client, or add-conferring-client named one that is not registered in the realm (#454). | — |
 | `STS-ADMIN-0846` | add-conferring-client named a client that already confers the role (#454). | — |
 | `STS-ADMIN-0847` | remove-conferring-client named a client that does not confer the role (#454). | — |
+| `STS-ADMIN-0848` | A directory-attribute catalogue action (attributes, attributes-all, attributes-clear) was asked of the Kerberos PAC claim set, which has no catalogue half (#493). | HTTP 400 |
 
 ## STS-API
 
@@ -4446,6 +4451,7 @@ Raised from: mgmt-api/.
 | `STS-API-0128` | A form helper of the admin console was asked at its old management API address; it is under /admin-api/console since #454. | HTTP 404 |
 | `STS-API-0129` | A management API operation whose drawing is the admin console's was asked for format=svg; the drawing is its console twin's under /admin-api/console (#454). | HTTP 400 |
 | `STS-API-0130` | An unknown action was asked at a management API address whose form helpers moved to /admin-api/console (#454); the refusal names the actions the address still declares. | HTTP 400 |
+| `STS-API-0131` | A management API request to change the Kerberos PAC claim set was refused (#493); the refusal's own code names why when it has one. | HTTP 400 |
 
 ## STS-PORTAL
 
@@ -4716,6 +4722,9 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0295` | An access type could not be taken off an application: it declares no type of that name (#432). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0334` | A gnapOwnerLookupUri is not an https URL template with a host, no user information, query or fragment, and {identifier} exactly once as a whole path segment (#432 phase 5). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0335` | A write of appAllowedToDelegateTo or appAllowedToActOnBehalfOf was refused: the value names the application it is written on — its identifier, an identifier it answers to, or an audience it registered (#459) — or a write of appMayAct names its own entry by DN (#461). Each names the OTHER party of a delegation. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-REG-0336` | A Kerberos PAC claim row's name is neither letters, digits, ".", "_" and "-" (which become ad://ext/<name>:<hex>) nor a whole ad://ext/<name>:<hex> claim id (#493). | HTTP 400 (console and API) |
+| `STS-REG-0337` | A Kerberos PAC claim row named a type that is not string, int64, uint64 or boolean (#493). | HTTP 400 (console and API); [MS-ADTS] 2.2.18.2 |
+| `STS-REG-0338` | A Kerberos PAC claim row's fixed value is not its type: not an integer in range, not true or false, or an empty string (#493). | HTTP 400 (console and API) |
 
 ## STS-DBG
 

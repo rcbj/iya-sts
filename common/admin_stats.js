@@ -82,6 +82,10 @@ const audit = require('./audit');
 // throw log it with one; a refused claim-set change carries its code on the
 // audit row and, NON-ENUMERABLY, on the result a caller serialises.
 const errorCodes = require('./error_codes');
+// THE ONE CRYPTO MODULE, for one digest: a Kerberos PAC claim's id (#493,
+// pacClaimId()). A LEAF that `helpers.js` above has already loaded, so this
+// line adds no file to anything's closure and cannot close a cycle.
+const stsCrypto = require('./crypto');
 // Which attributes a claim may carry out (#94). A leaf.
 const SourcedAttributes = require('./sourced_attributes');
 // THE FEDERATION RELEASE FILTER, and it is a plain require in the ordinary
@@ -1192,19 +1196,29 @@ function recordAssertion(version, detail) {
  * Records a Kerberos ticket.
  *
  * @param kind - `TGT` or `service ticket`
- * @param detail - `client`, `realm`, `service`, `etype` and `expiresAt`
+ * @param detail - `client`, `realm`, `service`, `etype` and `expiresAt`;
+ *   `claimSet`, `username` and `pacClaims` when its PAC carried claims
  * @returns the record
  */
 function recordTicket(kind, detail) {
   log.debug("Entering recordTicket(). kind=" + kind + ", client=" +
             (detail.client || '?'));
-  const record = recordArtifact('Kerberos ' + kind, {
+  const fields = {
     subject: detail.client || '',
     realm: detail.realm || '',
     service: detail.service || '',
     etype: detail.etype || '',
     expiresAt: detail.expiresAt || 0
-  });
+  };
+  // A ticket whose PAC carried claims from the PAC set (#493) names the set
+  // and the person, so a change to that set reaches its holder as CAEP
+  // token-claims-change (liveClaimBearers()); `pacClaims` counts them.
+  if (detail.claimSet) {
+    fields.claimSet = String(detail.claimSet);
+    fields.username = String(detail.username || '');
+    fields.pacClaims = Number(detail.pacClaims || 0);
+  }
+  const record = recordArtifact('Kerberos ' + kind, fields);
   log.debug("Leaving recordTicket(). " + artifacts.length +
             " artifact(s) held.");
   return record;
@@ -3047,13 +3061,20 @@ function freshClaimSets() {
     userinfo: { label: 'OIDC UserInfo response', kind: 'userinfo', claims: [] },
     saml2: { label: 'SAML 2.0 Attribute', kind: 'saml2', claims: [] },
     saml11: { label: 'SAML 1.1 Attribute (WS-Federation)', kind: 'saml11',
-              claims: [] }
+              claims: [] },
+    // THE SIXTH SET (#493, 2026-10-06): the claims a Kerberos ticket's PAC
+    // carries in PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11). Its own `kind`, so it
+    // is on none of the three pages above — it is configured under Protocols
+    // → Kerberos (`/admin/kerberos/claims`) — and its rows carry a TYPE of
+    // the four a PAC claim can have. See KERBEROS PAC CLAIMS below.
+    'kerberos-pac': { label: 'Kerberos PAC claims', kind: 'kerberos',
+                      claims: [] }
   };
 }
 
 /**
- * The five custom claim sets, per realm: the access token, ID Token, UserInfo,
- * SAML 2.0 and SAML 1.1 sets.
+ * The six custom claim sets, per realm: the access token, ID Token, UserInfo,
+ * SAML 2.0, SAML 1.1 and Kerberos PAC sets.
  */
 const CLAIM_SETS = realms.obj(freshClaimSets,
                               { persist: 'admin_stats.claimSets' });
@@ -3080,7 +3101,7 @@ const CLAIM_SETS = realms.obj(freshClaimSets,
 //   thing is a JWT carrying `iss` and `aud` as well. Every name on that list is
 //   load-bearing in at least one of the two shapes, so the list applies whole.
 /**
- * The ids of the five claim sets.
+ * The ids of the six claim sets.
  */
 const CLAIM_SET_IDS = Object.keys(CLAIM_SETS);
 
@@ -3122,6 +3143,13 @@ const SAML_CLAIM_SET_IDS = CLAIM_SET_IDS.filter(function (id) {
  */
 const USERINFO_CLAIM_SET_IDS = CLAIM_SET_IDS.filter(function (id) {
   return CLAIM_SETS[id].kind === 'userinfo';
+});
+/**
+ * The id of the Kerberos PAC claim set, configured on
+ * /admin/kerberos/claims (#493).
+ */
+const KERBEROS_CLAIM_SET_IDS = CLAIM_SET_IDS.filter(function (id) {
+  return CLAIM_SETS[id].kind === 'kerberos';
 });
 
 // The default namespace a SAML 1.1 attribute gets when the admin does not name
@@ -3691,11 +3719,26 @@ function reservedNames(set) {
 // attribute's values are text whatever this says.
 const ATTRIBUTE_CLAIM_TYPES = ['string', 'number', 'boolean', 'json'];
 
+// THE FOUR TYPES A PAC CLAIM CAN HAVE ([MS-ADTS] 2.2.18.2's CLAIM_TYPE), as a
+// Kerberos PAC row names them (#493). Every row of that set carries one — a
+// typed row as well as an attribute row, because a PAC claim's type is part
+// of what it IS on the wire rather than a reading of its text.
+/**
+ * The types a Kerberos PAC claim row may name.
+ */
+const PAC_CLAIM_TYPES = ['string', 'int64', 'uint64', 'boolean'];
+
+// A PAC claim row's NAME: the `<name>` of `ad://ext/<name>:<hex>`, or a whole
+// claim id of that form when the operator wants a claim type an Active
+// Directory forest already defines.
+const PAC_CLAIM_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const PAC_CLAIM_ID = /^ad:\/\/ext\/[A-Za-z0-9._-]{1,128}:[0-9a-fA-F]{1,32}$/;
+
 // Validate and install a whole set at once. Returns the errors rather than
 // throwing, because the caller is a form handler that has to redisplay them.
 // THE RULES A CLAIM ROW IS HELD TO, wherever it is configured (2026-10-01):
 // lifted out of setClaimSet() when an APPLICATION grew claim sets of its own,
-// so the realm's five sets and an application's are refused for exactly the
+// so the realm's sets and an application's are refused for exactly the
 // same reasons — a reserved name, a duplicate, an attribute that may not be
 // released, a type that is not one. Returns the cleaned rows; changes
 // nothing.
@@ -3739,6 +3782,25 @@ function checkClaimEntries(id, entries) {
       return;
     }
     seen.add(name);
+    // A KERBEROS PAC ROW (#493): its name has to make a claim id, and its type
+    // is one of the four a PAC claim has.
+    const isPac = set.kind === 'kerberos';
+    const pacType = String((entry && entry.type) || 'string');
+    if (isPac && !PAC_CLAIM_NAME.test(name) && !PAC_CLAIM_ID.test(name)) {
+      errors.push('"' + name.slice(0, 140) + '" is not a PAC claim name: ' +
+                  'letters, digits, ".", "_" and "-" (it becomes ' +
+                  'ad://ext/<name>:<hex>), or a whole ad://ext/<name>:<hex> ' +
+                  'claim id.');
+      code = code || 'STS-REG-0336';
+      return;
+    }
+    if (isPac && PAC_CLAIM_TYPES.indexOf(pacType) < 0) {
+      errors.push('"' + name + '" has type "' + pacType.slice(0, 40) +
+                  '", which is not one of ' + PAC_CLAIM_TYPES.join(', ') +
+                  ' — the four types a PAC claim can have.');
+      code = code || 'STS-REG-0337';
+      return;
+    }
     // AN ATTRIBUTE CLAIM (#94): the value is a directory attribute of the
     // person the artifact is about, rather than a template. `multi` carries
     // every value; `type` (JWT and UserInfo sets) says what JSON type each
@@ -3757,7 +3819,7 @@ function checkClaimEntries(id, entries) {
         return;
       }
       const type = String((entry && entry.type) || 'string');
-      if (set.kind !== 'saml2' && set.kind !== 'saml11' &&
+      if (!isPac && set.kind !== 'saml2' && set.kind !== 'saml11' &&
           ATTRIBUTE_CLAIM_TYPES.indexOf(type) < 0) {
         errors.push('"' + name + '" has type "' + type + '", which is not ' +
                     'one of ' + ATTRIBUTE_CLAIM_TYPES.join(', ') + '.');
@@ -3773,6 +3835,21 @@ function checkClaimEntries(id, entries) {
       claim = { name: name,
                 value: String((entry && entry.value) != null ? entry.value :
                               '') };
+      // A FIXED PAC value is held to its type now, where a form can say so;
+      // one with a ${placeholder} can only be checked when it is expanded,
+      // at issuance (`pacClaimValue()`).
+      if (isPac) {
+        claim.type = pacType;
+        if (claim.value.indexOf('${') < 0 &&
+            pacClaimValue(claim.value, pacType) === null) {
+          errors.push('"' + name + '" has the value "' +
+                      claim.value.slice(0, 60) + '", which is not ' +
+                      (pacType === 'boolean' ? 'true or false'
+                                             : 'a ' + pacType) + '.');
+          code = code || 'STS-REG-0338';
+          return;
+        }
+      }
     }
     if (set.kind === 'saml2' &&
         entry.nameFormat) claim.nameFormat = String(entry.nameFormat);
@@ -3888,7 +3965,10 @@ const APP_CLAIM_ATTRIBUTES = {
   id_token: 'oauthClaimsIdToken',
   userinfo: 'oauthClaimsUserinfo',
   saml2: 'saml2CustomAttributes',
-  saml11: 'saml11CustomAttributes'
+  saml11: 'saml11CustomAttributes',
+  // #493: an application's own PAC claims, added to a SERVICE TICKET issued
+  // for one of its krb5ServicePrincipalName values.
+  'kerberos-pac': 'krb5ClaimsPac'
 };
 
 /**
@@ -3911,7 +3991,10 @@ function applicationForClaims(name) {
       (typeof applications.forClientId === 'function'
         ? applications.forClientId(wanted) : null) ||
       (typeof applications.forAppliesTo === 'function'
-        ? applications.forAppliesTo(wanted) : null);
+        ? applications.forAppliesTo(wanted) : null) ||
+      // A Kerberos service principal name (#493), for the PAC set.
+      (typeof applications.forServicePrincipal === 'function'
+        ? applications.forServicePrincipal(wanted) : null);
   } catch (e) {
     log.debug("Caught in applicationForClaims(): " + ((e && e.message) || e));
     // A registry that cannot answer costs the application's rows, never the
@@ -4441,6 +4524,198 @@ function holdsLiveIssuance(username, sub) {
 }
 
 // ---------------------------------------------------------------------------
+// KERBEROS PAC CLAIMS (#493, 2026-10-06): the sixth claim set, as the claims
+// of a ticket's PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11, [MS-ADTS] 2.2.18).
+//
+// rcbj's four decisions, and what each means here:
+//
+//  1. **The claims come from this set**, `kerberos-pac`, configured on its own
+//     page under Protocols → Kerberos and held to checkClaimEntries() like the
+//     other five. An APPLICATION may add rows of its own (`krb5ClaimsPac`, the
+//     2026-10-01 pattern), and those are applied when the KDC builds a
+//     SERVICE TICKET for one of its service principal names. A TGT carries the
+//     realm's set alone; a service ticket carries what its TGT carried with
+//     the application's rows added and winning by name — the KDC does that
+//     merge (`kerberos/krb5_kdc.js`, claimsForTicket()), with
+//     kerberosApplicationPacClaims() below as its input.
+//  2. **The claim id is `ad://ext/<name>:<hex>`**, Active Directory's form for
+//     a claim type it defines. AD picks the hex at random when a claim type is
+//     created; here it is DERIVED, so every node, every restart and every
+//     realm names a claim the same way: the first sixteen hex digits (64
+//     bits) of SHA-256 over the UTF-8 name. Realm-independent on purpose — a
+//     service reading a PAC re-signed across a trust sees the same id for the
+//     same name. A row whose name is ALREADY a whole `ad://ext/…:…` id is used
+//     as written, for a claim type a real forest already defines.
+//  3. **Roles go as claims only**: the roles claim (`roles.claimName`, the
+//     person's realm-wide roles) is a STRING claim under the rows, and nothing
+//     is added to the logon information's extraSids.
+//  4. **Never compressed** — the codec does not compress at all.
+//
+// A value that cannot be its row's type at issuance — a `${placeholder}` or a
+// directory value that is not an integer — leaves THAT claim out, said once
+// at warn with STS-KRB-0200; it never costs the ticket.
+// ---------------------------------------------------------------------------
+
+// One value as a PAC claim of `type`: a string for `string`, a decimal string
+// for the two integers (exact beyond 2^53), true/false for `boolean` — or null
+// when it is not one. Once per value while a ticket is built: the hot-path
+// exception, so no Entering/Leaving pair.
+/**
+ * Reads one value as a PAC claim value of a type, or null when it is not one.
+ *
+ * @param value - the value, as configured or read off the directory
+ * @param type - `string`, `int64`, `uint64` or `boolean`
+ * @returns the value in the codec's form, or null
+ */
+function pacClaimValue(value, type) {
+  const text = String(value == null ? '' : value).trim();
+  if (type === 'boolean') {
+    const lower = text.toLowerCase();
+    return lower === 'true' ? true : (lower === 'false' ? false : null);
+  }
+  if (type === 'int64' || type === 'uint64') {
+    if (!/^-?\d{1,20}$/.test(text)) {
+      return null;
+    }
+    const big = BigInt(text);
+    const min = type === 'int64' ? -(BigInt(1) << BigInt(63)) : BigInt(0);
+    const max = type === 'int64' ? (BigInt(1) << BigInt(63)) - BigInt(1)
+                                 : (BigInt(1) << BigInt(64)) - BigInt(1);
+    return big < min || big > max ? null : big.toString();
+  }
+  // A [string] LPWSTR cannot carry a NUL, and an empty value says nothing.
+  const raw = String(value == null ? '' : value);
+  return raw === '' || raw.indexOf('\u0000') >= 0 ? null : raw;
+}
+
+/**
+ * Returns the PAC claim id a row's name stands for: the name itself when it
+ * is already an `ad://ext/<name>:<hex>` id, and otherwise
+ * `ad://ext/<name>:<hex>` with the hex the first 64 bits of SHA-256 over the
+ * UTF-8 name.
+ *
+ * @param name - the row's name
+ * @returns the claim id
+ */
+function pacClaimId(name) {
+  log.debug("Entering pacClaimId().");
+  const text = String(name || '');
+  if (PAC_CLAIM_ID.test(text)) {
+    log.debug("Leaving pacClaimId(). Already an id.");
+    return text;
+  }
+  const hex = stsCrypto.sha256Hex(Buffer.from(text, 'utf8')).slice(0, 16);
+  log.debug("Leaving pacClaimId().");
+  return 'ad://ext/' + text + ':' + hex;
+}
+
+// The rows of the PAC set, turned into claims for one person: each row's
+// values typed, the ones that are not their type left out (and named), the
+// roles claim under them when `withRoles`. Later rows replace earlier ones of
+// the same NAME, which is how an application's rows win when the caller
+// passes the merged list.
+function pacClaimsFromRows(rows, context, withRoles) {
+  log.debug("Entering pacClaimsFromRows(). " + rows.length + " row(s).");
+  const ctx = context || {};
+  const byName = new Map();
+  const dropped = [];
+  if (withRoles) {
+    const roleClaim = resolvedRoleClaims(ctx);
+    Object.keys(roleClaim).forEach(function (name) {
+      const values = [].concat(roleClaim[name] || []).map(String)
+        .filter(function (one) { return one !== ''; });
+      if (values.length && (PAC_CLAIM_NAME.test(name) ||
+                            PAC_CLAIM_ID.test(name))) {
+        byName.set(name, { name: name, id: pacClaimId(name), type: 'string',
+                           values: values, from: 'roles' });
+      }
+    });
+  }
+  const entry = rows.some(function (row) { return !!row.attribute; })
+    ? resolvedEntryAttributes(ctx) : null;
+  rows.forEach(function (row) {
+    const type = row.type || 'string';
+    let raw;
+    if (row.attribute) {
+      raw = attributeValuesOf(entry, row.attribute);
+      if (!row.multi) {
+        raw = raw.slice(0, 1);
+      }
+      if (!raw.length) {
+        // The entry has none: the row adds nothing (#94's rule), and a lower
+        // layer of the same name still answers.
+        return;
+      }
+    } else {
+      raw = [expandValue(row.value, ctx)];
+    }
+    const values = raw.map(function (one) {
+      return pacClaimValue(one, type);
+    });
+    if (values.some(function (one) { return one === null; })) {
+      dropped.push(row.name);
+      return;
+    }
+    byName.set(row.name, { name: row.name, id: pacClaimId(row.name),
+                           type: type, values: values,
+                           from: row.attribute ? 'attribute' : 'value' });
+  });
+  if (dropped.length) {
+    log.warn(errorCodes.tag('STS-KRB-0200') + 'krb5: the PAC claim(s) ' +
+             dropped.join(', ') + ' for "' + String(ctx.username || '') +
+             '" have a value that is not their type, and are left out of ' +
+             'the ticket. The ticket is issued with the rest.');
+  }
+  const out = Array.from(byName.values());
+  log.debug("Leaving pacClaimsFromRows(). " + out.length + " claim(s).");
+  return out;
+}
+
+/**
+ * Returns the claims a person's TGT carries in its PAC: the realm's
+ * `kerberos-pac` set, with the person's realm-wide roles under it as a
+ * string claim (rcbj's decision 3 on #493).
+ *
+ * @param context - `username` (the person), and nothing else is needed
+ * @returns `[{ name, id, type, values, from }]`, empty for none
+ */
+function kerberosPacClaims(context) {
+  log.debug("Entering kerberosPacClaims().");
+  const ctx = Object.assign({}, context || {});
+  ctx.subject = ctx.subject || ctx.username;
+  // No application: a TGT is for the KDC, and its roles are the realm-wide
+  // ones (the roles of one application are not this person's in general).
+  delete ctx.application;
+  const out = pacClaimsFromRows(claimSet('kerberos-pac'), ctx, true);
+  log.debug("Leaving kerberosPacClaims(). " + out.length + " claim(s).");
+  return out;
+}
+
+/**
+ * Returns an application's OWN PAC claims for a person — the rows on its
+ * `krb5ClaimsPac`, typed — which the KDC adds to a service ticket for one of
+ * its service principal names, winning by name over what the TGT carried.
+ *
+ * @param application - the application's identifier or service principal
+ *   name, or its view
+ * @param context - `username`
+ * @returns `[{ name, id, type, values, from }]`, empty for none
+ */
+function kerberosApplicationPacClaims(application, context) {
+  log.debug("Entering kerberosApplicationPacClaims().");
+  const rows = applicationClaimSet('kerberos-pac', application);
+  if (!rows.length) {
+    log.debug("Leaving kerberosApplicationPacClaims(). None.");
+    return [];
+  }
+  const ctx = Object.assign({}, context || {});
+  ctx.subject = ctx.subject || ctx.username;
+  const out = pacClaimsFromRows(rows, ctx, false);
+  log.debug("Leaving kerberosApplicationPacClaims(). " + out.length + ".");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // WHO HOLDS SOMETHING LIVE THAT A CONFIGURATION CHANGE MOVES (#238).
 //
 // holdsLiveIssuance() above answers the question for ONE person, which is
@@ -4544,8 +4819,13 @@ function liveClaimBearers(match) {
          Number(record.iat || 0) * 1000);
   });
   allArtifacts().forEach(function (one) {
-    const fromSet = SET_OF_KIND[one.kind];
-    if (!fromSet || !one.subject) {
+    // A Kerberos ticket is a holder only when its PAC carried claims from the
+    // PAC set (#493): recordTicket() files `claimSet` and the person's
+    // `username` (its `subject` is a principal, name@REALM) on that row alone.
+    const fromSet = SET_OF_KIND[one.kind] ||
+      (one.claimSet === 'kerberos-pac' ? 'kerberos-pac' : '');
+    const holder = fromSet === 'kerberos-pac' ? one.username : one.subject;
+    if (!fromSet || !holder) {
       return;
     }
     const state = artifactStateOf(withRevocation(one), nowMs);
@@ -4553,13 +4833,13 @@ function liveClaimBearers(match) {
       return;
     }
     const shaped = { claimSet: fromSet, kind: one.kind,
-                     username: String(one.subject),
-                     audience: String(one.audience || ''),
+                     username: String(holder),
+                     audience: String(one.audience || one.service || ''),
                      client_id: String(one.audience || ''), scope: '' };
     if (!accept(shaped)) {
       return;
     }
-    keep(String(one.subject), '', shaped, fromSet,
+    keep(String(holder), '', shaped, fromSet,
          Number(one.issuedAt || 0));
   });
   const out = Array.from(newest.values());
@@ -4595,7 +4875,19 @@ function claimValuesFor(setId, record, names) {
                     client_id: String(held.client_id || ''),
                     audience: String(held.audience || '') };
   const out = {};
-  if (setId === 'saml2' || setId === 'saml11') {
+  if (setId === 'kerberos-pac') {
+    // What the person's next TGT would carry (#493): a ticket already issued
+    // carries the old claims until it expires, which is what the event says.
+    const claims = kerberosPacClaims(context);
+    (names || []).forEach(function (name) {
+      const found = claims.filter(function (one) {
+        return one.name === name;
+      })[0];
+      out[name] = found ? (found.values.length === 1 ? found.values[0]
+                                                     : found.values.slice(0))
+                        : null;
+    });
+  } else if (setId === 'saml2' || setId === 'saml11') {
     const attributes = samlAttributes(setId, context);
     (names || []).forEach(function (name) {
       const found = attributes.filter(function (attribute) {
@@ -4636,7 +4928,9 @@ function claimNamesFor(setId, username) {
   log.debug("Entering claimNamesFor(). set=" + setId);
   const context = { username: String(username || ''),
                     subject: String(username || '') };
-  const out = (setId === 'saml2' || setId === 'saml11')
+  const out = setId === 'kerberos-pac'
+    ? kerberosPacClaims(context).map(function (claim) { return claim.name; })
+    : (setId === 'saml2' || setId === 'saml11')
     ? samlAttributes(setId, context).map(function (attribute) {
       return attribute.name;
     })
@@ -6193,6 +6487,12 @@ module.exports = {
   attributeClaimRows: attributeClaimRows,
   setClaimSet: setClaimSet,
   checkClaimEntries: checkClaimEntries,
+  KERBEROS_CLAIM_SET_IDS: KERBEROS_CLAIM_SET_IDS,
+  PAC_CLAIM_TYPES: PAC_CLAIM_TYPES,
+  pacClaimId: pacClaimId,
+  pacClaimValue: pacClaimValue,
+  kerberosPacClaims: kerberosPacClaims,
+  kerberosApplicationPacClaims: kerberosApplicationPacClaims,
   APP_CLAIM_ATTRIBUTES: APP_CLAIM_ATTRIBUTES,
   applicationClaimSet: applicationClaimSet,
   effectiveClaimSet: effectiveClaimSet,

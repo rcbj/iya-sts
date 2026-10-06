@@ -4823,7 +4823,9 @@ class AdminActions {
       const SET_FAMILIES = {
         access_token: ['oauth2', 'oidc', 'oid4vci'],
         id_token: ['oidc', 'oauth2'], userinfo: ['oidc', 'oauth2'],
-        saml2: ['saml2'], saml11: ['saml11']
+        saml2: ['saml2'], saml11: ['saml11'],
+        // #493: a Kerberos service's own PAC claims.
+        'kerberos-pac': ['krb5']
       };
       const declaredFamilies = applications.declaredFamiliesOf(entry);
       if (action === 'set-custom-claim' &&
@@ -4859,6 +4861,11 @@ class AdminActions {
               type: String(body.type || 'string') }
           : { name: name, value: String(body.value == null ? ''
                                                            : body.value) };
+        // A Kerberos PAC row's type (#493); the other sets' typed rows have
+        // none, and checkClaimEntries() keeps it for that set alone.
+        if (!attributeName && body.type) {
+          row.type = String(body.type);
+        }
         if (body.nameFormat) {
           row.nameFormat = String(body.nameFormat);
         }
@@ -6663,9 +6670,25 @@ class AdminActions {
     }
     const label = stats.CLAIM_SETS[setId].label;
 
+    // THE KERBEROS PAC SET HAS NO CATALOGUE HALF (#493): its rows name their
+    // attribute themselves and carry a PAC type, and a ticked catalogue
+    // attribute would be a selection nothing in the KDC reads. Refused by
+    // name rather than stored and ignored.
+    if (stats.CLAIM_SETS[setId].kind === 'kerberos' &&
+        ['attributes', 'attributes-all', 'attributes-clear']
+          .indexOf(action) >= 0) {
+      log.debug("Leaving AdminActions.claimsAction(). No catalogue here.");
+      return this.refused('STS-ADMIN-0848', { ok: false, errors: ['The ' +
+        label + ' set has no directory-attribute catalogue: a row that ' +
+        'carries an attribute is added with add-attribute-claim, naming ' +
+        'the attribute and its PAC type.'] });
+    }
+
     if (action === 'add') {
       const entry: Record<string, any> = { name: String(body.name || '').trim(),
                       value: String(body.value == null ? '' : body.value) };
+      // A Kerberos PAC row's type (#493); ignored by the other sets.
+      if (body.type) entry.type = String(body.type).trim();
       if (body.nameFormat) entry.nameFormat = String(body.nameFormat).trim();
       if (body.namespace) entry.namespace = String(body.namespace).trim();
       const result = stats.setClaimSet(setId,

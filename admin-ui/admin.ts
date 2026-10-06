@@ -1537,6 +1537,16 @@ const SECTIONS = [
                    '<code>/authn/spnego</code> may start a browser session ' +
                    'at all. Most of them are restart-only: the principal ' +
                    'database is built from them when the process starts.' },
+          // #493: the sixth claim set, PAC_CLIENT_CLAIMS_INFO.
+          { path: '/admin/kerberos/claims', label: 'PAC claims',
+            blurb: 'The claims every ticket\'s PAC carries for a service ' +
+                   'doing claims-based access control ' +
+                   '(PAC_CLIENT_CLAIMS_INFO, [MS-PAC] 2.11): typed rows ' +
+                   'and directory attributes, each an ' +
+                   '<code>ad://ext/&lt;name&gt;:&lt;hex&gt;</code> claim id, ' +
+                   'with the person\'s roles under them. A service ticket ' +
+                   'adds the rows of the application that registered its ' +
+                   'SPN. Only while <code>krb5.pacClaims</code> is on.' },
           { path: '/admin/kerberos/principals', label: 'Principals',
             blurb: 'Who this KDC holds a stored long-term key for: the ' +
                    'directory people whose keys were derived from their own ' +

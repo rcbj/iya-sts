@@ -348,6 +348,9 @@ class ProtocolEndpoints {
                           this.route('/krb5/service'), this.route('/spnego'),
                           this.route('/spnego/protected'),
                           this.route('/authn/spnego')],
+      // #493: the claims every ticket from these doors carries.
+      '/admin/kerberos/claims': [this.socket('kdc'),
+                                 this.route('/KdcProxy')],
       '/admin/kerberos/principals': [this.socket('kdc'),
                                      this.route('/KdcProxy'),
                                      this.route('/krb5/principals')],

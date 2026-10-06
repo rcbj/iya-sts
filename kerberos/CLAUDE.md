@@ -1801,3 +1801,70 @@ for an exported `answerMessage(bytes, transport)` — the home cell needs to run
 what `handleMessage()` does on bytes that arrived without a socket.
 
 Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`.
+
+---
+
+## PAC CLIENT CLAIMS (#493, 2026-10-06)
+
+`PAC_CLIENT_CLAIMS_INFO` ([MS-PAC] 2.11, buffer type 13), written while
+`krb5.pacClaims` is on in the realm. rcbj's four decisions on #493: the claims
+are the sixth claim set of `common/admin_stats.js`, `kerberos-pac`, with a
+per-application override applied to SERVICE tickets; claim ids are
+`ad://ext/<name>:<hex>`; roles go as claims and never as extraSids; a claims
+set is never compressed. `docs/kerberos.md`, *PAC claims*, is the user's half.
+
+**THE CODEC IS THE PARENT'S, AS EVER.** The NDR encoder and decoder for
+`CLAIMS_SET_METADATA` / `CLAIMS_SET` and the XPRESS Huffman decompressor are in
+`krb5_pac.js`, written in the parent project (`feature/pac-claims`) and synced
+here byte for byte. No new codec FILE, so `sync-to-mock-sts.sh`'s list and the
+parent's `sts/` COPY closure are unchanged. `parsePac()` decodes types 13 and
+15; `resignPac()` always carried them (its comment said otherwise) and now
+takes `clientClaims` to replace or remove type 13.
+
+**THE KDC SIDE IS `claimsForTicket()` IN `krb5_kdc.js`, AND IT ADDS NO
+REQUIRE.** The claims come through `admin_stats.js` (`kerberosPacClaims()`,
+`kerberosApplicationPacClaims()`), which this file already required, and
+`admin_stats.js` reaches the application by SPN through
+`applications.forServicePrincipal()` (a file it already required) and hashes
+the claim id with `common/crypto.js` (already loaded by `helpers.js`). So the
+four in-process jobs of the parent project owe NOTHING for #493 — and with the
+setting off by default, they see no buffer at all.
+
+The shapes, each in the comment above `claimsForTicket()`:
+
+| Ticket | Claims |
+|---|---|
+| TGT (AS, or a TGS for a krbtgt) | the realm's set for the person, their realm-wide roles under it; never an application's rows |
+| AS-REQ straight to a service | the realm's set, then that SPN's application rows |
+| service ticket from this realm's TGT | the TGT's claims, decoded out of its PAC (NOT re-evaluated), then the SPN's application rows, winning by claim id |
+| S4U2Self | the IMPERSONATED person's realm set, evaluated now (the TGT is the service's), then the rows |
+| S4U2Proxy, cross-realm | the arriving buffer byte for byte; merged and replaced only when the target SPN's application has rows |
+
+**Not re-evaluating at the TGS is the issue's rule and it differs from the
+rest of this PAC**, whose groups ARE re-read from the principal table per
+service ticket (the simplification named above `encodeTicketPart`). A claim
+is something a relying party may cache an authorization on; a TGT's claims
+staying what they were for its life is AD's behaviour, and a set change
+reaches holders as CAEP `token-claims-change` instead (recordTicket() files
+`claimSet: 'kerberos-pac'` and the username on a ticket that carries claims).
+
+**Failures cost claims, never tickets**: a value that is not its type drops
+that claim (`STS-KRB-0200`), a set over 64 KiB or one that will not encode
+drops the buffer (`STS-KRB-0201`, `0202`), an undecodable carried buffer is
+treated as none (`STS-KRB-0203`).
+
+**`krb5.pacClaims` IS A PLAIN RUNTIME ROW, NOT `realmRuntime`**, although the
+issue body asked for the latter: that marker is for a row restart-only for the
+process and settable on a realm, and this one is read per ticket and is
+already per realm through the realm layer, like `krb5.pkinit`. The argument
+is at the row in `common/config.js`; `tests/config_realm_layer.js`'s list is
+unchanged.
+
+Tests: `tests/pac_claims.js` (in process: the rows, a TGT's claims and
+signatures, carry versus re-evaluation, the override on one SPN only, a krbtgt
+SPN's application ignored, S4U2Self, S4U2Proxy, a cross-realm re-sign byte for
+byte; thirteen mutants, all caught) and `tests/vendored/sts_kerberos_pac_claims.js`
+(over `/KdcProxy` in a throwaway realm, tickets opened with
+`create-service` keytabs). The codec's own tests are in the parent's
+`tests/krb5_pac_layout.js`.
+

@@ -395,6 +395,11 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return GroupsPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/kerberos/claims', title: 'Kerberos PAC claims',
+    operation: '/admin-api/kerberos/claims',
+    render: function (view: Json, ctx?: Json): string {
+      return ClaimsPage.kerberosClaimsBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/kerberos/principals', title: 'Kerberos principals',
     operation: '/admin-api/kerberos/principals',
     render: function (view: Json, ctx?: Json): string {

@@ -2324,6 +2324,68 @@ class AdminViews {
     return json;
   }
 
+  // THE KERBEROS PAC CLAIM SET (#493), as `/admin/kerberos/claims` and
+  // `GET /admin-api/kerberos/claims` both answer it. Not built on
+  // claimSetsJson(): that reply is the catalogue half of a JWT or SAML set
+  // (ticked LDAP attributes, the groups claim, release lists), and a PAC set
+  // has none of the three — its rows are typed, an attribute row names its
+  // attribute itself, groups are already SIDs in the logon information and
+  // no federation partner reads a ticket. What it carries instead is what
+  // only a PAC claim has: each row's claim id, the four types, whether the
+  // realm writes the buffer at all, and the claims one person's next TGT
+  // would carry, built by the function the KDC calls.
+  /**
+   * Builds `/admin/kerberos/claims`'s JSON: the PAC claim set, its claim ids,
+   * the setting that turns it on and one person's preview.
+   *
+   * @param previewUser - the person to preview
+   * @returns the JSON
+   */
+  kerberosClaimsJson(previewUser) {
+    const { log, stats, config } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.kerberosClaimsJson(). previewUser=" +
+              previewUser);
+    const user = previewUser || 'alice';
+    let preview = [];
+    try {
+      preview = stats.kerberosPacClaims({ username: user });
+    } catch (e) {
+      log.debug("Caught in AdminViews.kerberosClaimsJson(): " +
+                ((e && e.message) || e));
+      // A directory that cannot be read costs the preview, never the page.
+      preview = [];
+    }
+    const json = {
+      enabled: config.value('krb5.pacClaims') === true,
+      setting: 'krb5.pacClaims',
+      types: stats.PAC_CLAIM_TYPES.slice(),
+      placeholders: stats.PLACEHOLDERS,
+      idFormat: 'ad://ext/<name>:<hex>, the hex the first 16 hexadecimal ' +
+                'digits (64 bits) of SHA-256 over the UTF-8 name; a name ' +
+                'that is already a whole ad://ext/<name>:<hex> id is used as ' +
+                'written.',
+      precedence: 'The person\'s realm-wide roles are a string claim under ' +
+                  'the rows (roles.claimName); a row of the same name ' +
+                  'wins. A service ticket carries what its TGT carried, ' +
+                  'with the application\'s own rows (krb5ClaimsPac on the ' +
+                  'application of the service principal name) added and ' +
+                  'winning by name.',
+      sets: stats.KERBEROS_CLAIM_SET_IDS.map(function (id) {
+        return { id: id, label: stats.CLAIM_SETS[id].label,
+                 claims: stats.claimSet(id).map(function (row) {
+                   return Object.assign({ claimId: stats.pacClaimId(row.name) },
+                                        row);
+                 }) };
+      }),
+      attributeChoices: self.attributeClaimChoices(),
+      preview: { user: user, claims: preview }
+    };
+    log.debug("Leaving AdminViews.kerberosClaimsJson(). " +
+              json.sets[0].claims.length + " row(s).");
+    return json;
+  }
+
   // The claims request being previewed, as the characters somebody typed.
   // Capped because it is echoed and because it is parsed — and the cap is
   // larger than the other echoed fields on this console for one reason: this
@@ -9835,12 +9897,14 @@ class AdminViews {
       id_token: ['oidc', 'oauth2'],
       userinfo: ['oidc', 'oauth2'],
       saml2: ['saml2'],
-      saml11: ['saml11']
+      saml11: ['saml11'],
+      // #493: a Kerberos service's own PAC claims.
+      'kerberos-pac': ['krb5']
     };
     const labels = {
       access_token: 'Access token', id_token: 'ID Token',
       userinfo: 'UserInfo response', saml2: 'SAML 2.0 attributes',
-      saml11: 'SAML 1.1 attributes'
+      saml11: 'SAML 1.1 attributes', 'kerberos-pac': 'Kerberos PAC claims'
     };
     const sets = Object.keys(families).filter(function (id) {
       return families[id].some(function (one) {
@@ -12879,6 +12943,7 @@ export = {
   claimsRequestPreview: slot.forward('claimsRequestPreview'),
   claimsRequestJson: slot.forward('claimsRequestJson'),
   userinfoClaimsJson: slot.forward('userinfoClaimsJson'),
+  kerberosClaimsJson: slot.forward('kerberosClaimsJson'),
   setCryptoReporter: slot.forward('setCryptoReporter'),
   setXacmlPages: slot.forward('setXacmlPages'),
   setDirectoryPages: slot.forward('setDirectoryPages'),

@@ -375,6 +375,190 @@ function isTgtRequest(sname) {
 }
 
 // ---------------------------------------------------------------------------
+// PAC CLAIMS (#493, 2026-10-06): PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11,
+// buffer type 13), written while `krb5.pacClaims` is on in the realm.
+//
+// WHERE THE CLAIMS COME FROM is admin_stats.js's sixth claim set,
+// `kerberos-pac` (rcbj's decision 1 on #493) — reached through that module,
+// which this file already requires, so the parent project's in-process
+// Kerberos jobs gain no file in their COPY closure. Three shapes:
+//
+//  * A TGT, and a ticket the AS exchange issues straight to a service, carry
+//    the REALM's set for the client, with their realm-wide roles under it
+//    (`kerberosPacClaims()`; decision 3: roles as claims, never extraSids).
+//  * A SERVICE TICKET carries what the TGT it was bought with carried — read
+//    back out of that TGT's PAC, not re-evaluated, as the issue asks — with
+//    the rows of the application whose krb5ServicePrincipalName names the
+//    service ADDED and WINNING BY CLAIM ID (`kerberosApplicationPacClaims()`).
+//    That is the per-application override of 2026-10-01 applied where a
+//    Kerberos application can be told apart: at the ticket for its SPN.
+//  * Under S4U2Self the TGT is the SERVICE's, so the impersonated person's
+//    claims are the realm's set evaluated for them, then the override. Under
+//    S4U2Proxy and across a trust the PAC is RE-SIGNED rather than rebuilt,
+//    and its claims buffer travels byte for byte unless the target service's
+//    application has rows of its own, which are then merged in the same way.
+//
+// THE MERGE IS BY CLAIM ID, and an id is derived from a row's name
+// (`pacClaimId()`), so "winning by name" and "winning by id" are one rule. A
+// claim that cannot be encoded leaves only itself out (STS-KRB-0200, in
+// admin_stats.js); a whole set over PAC_CLAIMS_MAX_BYTES or that will not
+// encode leaves the BUFFER out (STS-KRB-0201, -0202) and the ticket is still
+// issued — a missing claim is a fact a service can be shown, a KDC that stops
+// issuing because of a configured claim is an outage. Off, no ticket this KDC
+// BUILDS carries the buffer; one it only re-signs keeps whatever it carried.
+// ---------------------------------------------------------------------------
+
+// The most an encoded claims buffer may be. A cap rather than a tunable: it is
+// the size of a buffer a client of this KDC has to carry in every ticket and
+// fit through UDP or a header, and nothing about a realm makes a larger one
+// sensible. [MS-ADTS]'s own range is 10 MiB.
+const PAC_CLAIMS_MAX_BYTES = 65536;
+
+function pacClaimsOn() {
+  log.debug('Entering pacClaimsOn().');
+  const on = config.value('krb5.pacClaims') === true;
+  log.debug('Leaving pacClaimsOn(). ' + on);
+  return on;
+}
+
+// admin_stats.js's claims, `{ id, type: 'string'|…, values }`, as the codec
+// takes them.
+function codecClaimsOf(list) {
+  log.debug('Entering codecClaimsOf().');
+  const out = (list || []).map(function (claim) {
+    return { sourceType: kpac.CLAIMS_SOURCE_TYPE.AD, id: claim.id,
+             type: kpac.CLAIM_TYPE[String(claim.type).toUpperCase()],
+             values: claim.values };
+  });
+  log.debug('Leaving codecClaimsOf(). ' + out.length + '.');
+  return out;
+}
+
+// The client claims a PAC already carries, flattened, each with its source
+// type. A buffer that will not decode — a format this codec does not read —
+// is reported and treated as none, which costs those claims and never the
+// ticket.
+function claimsCarriedBy(pacBytes) {
+  log.debug('Entering claimsCarriedBy().');
+  let buffer = null;
+  try {
+    buffer = kpac.bufferOfType(kpac.parsePac(pacBytes),
+                               kpac.TYPE.CLIENT_CLAIMS);
+  } catch (e) {
+    log.debug('Caught in claimsCarriedBy(): ' + ((e && e.message) || e));
+    buffer = null;
+  }
+  if (!buffer) {
+    log.debug('Leaving claimsCarriedBy(). None.');
+    return [];
+  }
+  if (!buffer.parsed) {
+    log.warn(errorCodes.tag('STS-KRB-0203') + 'krb5: the PAC presented ' +
+             'carries a client claims buffer that does not decode (' +
+             (buffer.error || 'no reason recorded') + '); the ticket being ' +
+             'built carries none of those claims.');
+    log.debug('Leaving claimsCarriedBy(). Undecodable.');
+    return [];
+  }
+  const out = kpac.claimsOf(buffer.parsed.claimsSet);
+  log.debug('Leaving claimsCarriedBy(). ' + out.length + '.');
+  return out;
+}
+
+// The codec's spec for a list of claims, grouped by source type in the order
+// first met — or null for none, too many bytes, or a value the codec refuses.
+function claimsSpecFor(claims, who) {
+  log.debug('Entering claimsSpecFor(). ' + claims.length + ' claim(s).');
+  if (!claims.length) {
+    log.debug('Leaving claimsSpecFor(). None.');
+    return null;
+  }
+  const arrays = [];
+  claims.forEach(function (claim) {
+    let array = arrays.filter(function (one) {
+      return one.sourceType === claim.sourceType;
+    })[0];
+    if (!array) {
+      array = { sourceType: claim.sourceType, claims: [] };
+      arrays.push(array);
+    }
+    array.claims.push({ id: claim.id, type: claim.type,
+                        values: claim.values });
+  });
+  const spec = { arrays: arrays };
+  let size = 0;
+  try {
+    size = kpac.encodeClaimsSetMetadata(spec).length;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-KRB-0202') + 'krb5: the PAC claims for ' +
+              who + ' could not be encoded (' + e.message + '); the ticket ' +
+              'is issued with no claims buffer.');
+    log.debug('Leaving claimsSpecFor(). Not encodable.');
+    return null;
+  }
+  if (size > PAC_CLAIMS_MAX_BYTES) {
+    log.error(errorCodes.tag('STS-KRB-0201') + 'krb5: the PAC claims for ' +
+              who + ' encode to ' + size + ' bytes, over the ' +
+              PAC_CLAIMS_MAX_BYTES + ' a ticket may carry; the ticket is ' +
+              'issued with no claims buffer.');
+    log.debug('Leaving claimsSpecFor(). Too large.');
+    return null;
+  }
+  log.debug('Leaving claimsSpecFor(). ' + size + ' bytes.');
+  return spec;
+}
+
+// THE CLAIMS ONE TICKET CARRIES — see the header above. `opts`:
+//   username  the person the ticket is for (the impersonated one under S4U)
+//   isTgt     a ticket for a krbtgt, which takes no application's rows
+//   spn       `service/host@REALM`, whose application's rows are added
+//   carried   the claims the PAC it derives from carries, when it derives
+//             from one; absent, the realm's set is evaluated for `username`
+// Returns `{ spec, count }`, or null when the ticket carries no buffer.
+function claimsForTicket(opts) {
+  log.debug('Entering claimsForTicket(). user=' + opts.username +
+            ', tgt=' + !!opts.isTgt);
+  if (!pacClaimsOn()) {
+    log.debug('Leaving claimsForTicket(). krb5.pacClaims is off.');
+    return null;
+  }
+  const context = { username: String(opts.username || '') };
+  let base;
+  if (opts.carried) {
+    base = opts.carried;
+  } else {
+    try {
+      base = codecClaimsOf(stats.kerberosPacClaims(context));
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KRB-0202') + 'krb5: the PAC claims for ' +
+                context.username + ' could not be read (' + e.message +
+                '); the ticket is issued without them.');
+      base = [];
+    }
+  }
+  let own = [];
+  if (!opts.isTgt && opts.spn) {
+    try {
+      own = codecClaimsOf(stats.kerberosApplicationPacClaims(opts.spn,
+                                                             context));
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KRB-0202') + 'krb5: the PAC claims of ' +
+                'the application for ' + opts.spn + ' could not be read (' +
+                e.message + '); the ticket carries its TGT\'s alone.');
+      own = [];
+    }
+  }
+  const ownIds = own.map(function (claim) { return claim.id; });
+  const merged = base.filter(function (claim) {
+    return ownIds.indexOf(claim.id) < 0;
+  }).concat(own);
+  const spec = claimsSpecFor(merged, context.username);
+  log.debug('Leaving claimsForTicket(). ' + (spec ? merged.length : 0) +
+            ' claim(s), ' + own.length + ' of them the application\'s.');
+  return spec ? { spec: spec, count: merged.length, own: own.length } : null;
+}
+
+// ---------------------------------------------------------------------------
 // The PAC.
 //
 // A Kerberos ticket proves who the client is. A Windows service decides what
@@ -483,6 +667,9 @@ async function buildPacFor(client, opts) {
       samName: client.name[0],
       sid: principals.domainSidFor(clientRealm) + '-' + identity.rid
     },
+    // PAC_CLIENT_CLAIMS_INFO (#493): the caller's claimsForTicket() answer,
+    // and no buffer at all when it had none.
+    clientClaims: options.clientClaims ? options.clientClaims.spec : null,
     // PAC_WAS_REQUESTED when the client asked via PA-PAC-REQUEST, and
     // PAC_WAS_GIVEN_IMPLICITLY when it neither asked nor declined. Reproducing
     // that distinction is the only way the workflow can show what the flag
@@ -2680,13 +2867,21 @@ async function answerAsReq(request, fast) {
   // honouring it is what makes that checkbox mean something rather than being a
   // control that quietly does nothing.
   let encTicketPart;
+  // The PAC's client claims (#493), counted for the ticket's record.
+  let asClaims = null;
   if (pacDeclined) {
     log.info('krb5: the client asked for NO PAC (PA-PAC-REQUEST ' +
       'include=false), so this ticket carries none. A Windows service ' +
       'reading group memberships from it will find nothing.');
     encTicketPart = encodeTicketPart(null);
   } else {
+    asClaims = claimsForTicket({
+      username: body.cname.name.join('/'),
+      isTgt: isTgtRequest(body.sname),
+      spn: body.sname.name.join('/') + '@' + asRealm
+    });
     const pacBytes = await buildPacFor(client, {
+      clientClaims: asClaims,
       authtime: authtime,
       clientRealm: asRealm,
       serverKey: { etype: ticketEtype, key: serviceKey },
@@ -2736,7 +2931,12 @@ async function answerAsReq(request, fast) {
     realm: asRealm,
     service: body.sname.name.join('/'),
     etype: profile.name,
-    expiresAt: endtime.getTime()
+    expiresAt: endtime.getTime(),
+    // Its PAC's client claims (#493), so a change to the PAC claim set
+    // reaches the holder as CAEP token-claims-change.
+    claimSet: asClaims ? 'kerberos-pac' : '',
+    username: body.cname.name.join('/'),
+    pacClaims: asClaims ? asClaims.count : 0
   });
 
   // An AS-REP is the one authentication in this whole service that a wrong
@@ -4030,6 +4230,31 @@ async function answerTgsReq(request, state) {
   const tgtHadPac = kpac.findPacs(ticketPart.authorizationData ||
                                   []).length > 0;
   let encTicketPart;
+  // THE PAC'S CLIENT CLAIMS (#493) — claimsForTicket() above says which
+  // shape each branch below takes — and what the ticket's record counts.
+  const ticketSpn = body.sname.name.join('/') + '@' + answeringRealm;
+  let tgsClaims = null;
+  // A PAC being RE-SIGNED keeps its claims buffer byte for byte unless the
+  // target service's application has rows of its own, when the carried
+  // claims and those rows are merged and the buffer replaced.
+  const resignedClaims = function (pacBytes, username) {
+    log.debug('Entering resignedClaims().');
+    if (!pacClaimsOn() || isTgtRequest(body.sname)) {
+      log.debug('Leaving resignedClaims(). Carried as it came.');
+      return {};
+    }
+    const merged = claimsForTicket({ username: username, isTgt: false,
+                                     spn: ticketSpn,
+                                     carried: claimsCarriedBy(pacBytes) });
+    if (!merged || !merged.own) {
+      log.debug('Leaving resignedClaims(). No rows of the service\'s own.');
+      return {};
+    }
+    tgsClaims = merged;
+    log.debug('Leaving resignedClaims(). ' + merged.own + ' of the ' +
+              'service\'s own merged in.');
+    return { clientClaims: merged.spec };
+  };
   if (s4u.mode === 'proxy') {
     // The user's PAC comes from the EVIDENCE ticket — the requester never had
     // the user's credentials, and this KDC must not invent authorization data
@@ -4044,15 +4269,16 @@ async function answerTgsReq(request, state) {
       const placeholder = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
           new Uint8Array([0])));
       const resigned = await kpac.resignPac(
-        pacForTarget(carried[0].bytes, isTgtRequest(body.sname)), {
-        serverKey: { etype: ticketEtype, key: serviceKey },
-        kdcKey: { etype: krbtgtEtype,
-                  key: await principals.longTermKey(krbtgt, krbtgtEtype) },
-        includeTicketSignature: !isTgtRequest(body.sname),
-        includeExtendedKdcSignature: !isTgtRequest(body.sname),
-        ticketBytes: placeholder,
-        delegationInfo: delegationInfo
-      });
+        pacForTarget(carried[0].bytes, isTgtRequest(body.sname)),
+        Object.assign({
+          serverKey: { etype: ticketEtype, key: serviceKey },
+          kdcKey: { etype: krbtgtEtype,
+                    key: await principals.longTermKey(krbtgt, krbtgtEtype) },
+          includeTicketSignature: !isTgtRequest(body.sname),
+          includeExtendedKdcSignature: !isTgtRequest(body.sname),
+          ticketBytes: placeholder,
+          delegationInfo: delegationInfo
+        }, resignedClaims(carried[0].bytes, clientName.name.join('/'))));
       encTicketPart = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
           resigned));
     }
@@ -4070,14 +4296,18 @@ async function answerTgsReq(request, state) {
     const placeholder = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
         new Uint8Array([0])));
     const resigned = await kpac.resignPac(
-      pacForTarget(carried[0].bytes, isTgtRequest(body.sname)), {
-      serverKey: { etype: ticketEtype, key: serviceKey },
-      kdcKey: { etype: krbtgtEtype,
-                key: await principals.longTermKey(krbtgt, krbtgtEtype) },
-      includeTicketSignature: !isTgtRequest(body.sname),
-      includeExtendedKdcSignature: !isTgtRequest(body.sname),
-      ticketBytes: placeholder
-    });
+      pacForTarget(carried[0].bytes, isTgtRequest(body.sname)),
+      Object.assign({
+        serverKey: { etype: ticketEtype, key: serviceKey },
+        kdcKey: { etype: krbtgtEtype,
+                  key: await principals.longTermKey(krbtgt, krbtgtEtype) },
+        includeTicketSignature: !isTgtRequest(body.sname),
+        includeExtendedKdcSignature: !isTgtRequest(body.sname),
+        ticketBytes: placeholder
+        // The person lives in the other realm: named whole, so an attribute
+        // row of the service's can never read a local entry of the same name.
+      }, resignedClaims(carried[0].bytes, ticketPart.cname.name.join('/') +
+                                        '@' + ticketPart.crealm)));
     log.info('krb5: ' + answeringRealm + ' re-signed the PAC that ' +
       ticketPart.crealm +
       ' issued for ' + ticketPart.cname.name.join('/') + ' — its contents ' +
@@ -4094,7 +4324,17 @@ async function answerTgsReq(request, state) {
       'PAC');
     encTicketPart = encodeTicketPart(null);
   } else {
+    // Under S4U2Self the presented TGT is the SERVICE's, so the impersonated
+    // person's claims are evaluated afresh; otherwise they are the TGT's own.
+    tgsClaims = claimsForTicket({
+      username: clientName.name.join('/'),
+      isTgt: isTgtRequest(body.sname),
+      spn: ticketSpn,
+      carried: s4u.mode === 'self' ? undefined : claimsCarriedBy(
+        kpac.findPacs(ticketPart.authorizationData || [])[0].bytes)
+    });
     const pacBytes = await buildPacFor(ticketClient, {
+      clientClaims: tgsClaims,
       authtime: authtime,
       clientRealm: clientRealm,
       serverKey: { etype: ticketEtype, key: serviceKey },
@@ -4197,7 +4437,11 @@ async function answerTgsReq(request, state) {
     realm: answeringRealm,
     service: body.sname.name.join('/'),
     etype: profile.name,
-    expiresAt: endtime.getTime()
+    expiresAt: endtime.getTime(),
+    // Its PAC's client claims when this KDC built or merged them (#493).
+    claimSet: tgsClaims && !crossRealm ? 'kerberos-pac' : '',
+    username: clientName.name.join('/'),
+    pacClaims: tgsClaims ? tgsClaims.count : 0
   });
 
   // THE DELEGATION ACT, recorded here and not in resolveS4u(), for the reason

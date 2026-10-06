@@ -1055,6 +1055,13 @@ const JOBS = [
   // on the kvno — in both modes. `local: true`: this repository's KDC,
   // scheduler and API.
   { file: 'sts_kerberos_krbtgt_rotation.js', browser: false, local: true },
+  // KERBEROS PAC CLIENT CLAIMS (#493): a throwaway realm with
+  // krb5.pacClaims on, its claim set and one service's own row through
+  // /admin-api, and a service ticket for each of two services opened with the
+  // service's keytab — PAC_CLIENT_CLAIMS_INFO decoded by the claim ids the
+  // API names, the service's own row in place of the realm's, none with the
+  // setting off. `local: true`: this repository's KDC and API.
+  { file: 'sts_kerberos_pac_claims.js',  browser: false, local: true },
   // SAMBA'S RAW KERBEROS KDC TESTS (#204, 2026-09-26): python/samba/tests/
   // krb5 from a pinned Samba built into the tests image (GPL-3.0, never
   // vendored), every module run unchanged by tests/kerberos-interop/

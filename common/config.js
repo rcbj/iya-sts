@@ -10835,6 +10835,30 @@ const SETTINGS = [
                  '([MS-PAC] 2.5): the NetBIOS name of the domain controller ' +
                  'that authenticated the user.' },
 
+  // PAC CLAIMS (#493). A PLAIN RUNTIME ROW, AND DELIBERATELY NOT
+  // `realmRuntime`, although the issue asked for "a realmRuntime row like the
+  // other per-realm Kerberos rows". That marker is for a row that is
+  // RESTART-ONLY for the process and settable on a realm (the test at the
+  // head of this file); this one is read by the KDC on every ticket it
+  // builds, consumes nothing at startup, and a runtime row is already
+  // settable per realm through the realm layer — `krb5.pkinit` beside it is
+  // the same shape. Adding it to the marker's list would be the "second one
+  // by analogy" the head of this file refuses.
+  { key: 'krb5.pacClaims', group: 'Kerberos',
+    label: 'PAC client claims (PAC_CLIENT_CLAIMS_INFO)',
+    env: 'KRB5_PAC_CLAIMS', type: 'bool', dflt: false, runtime: true,
+    description: 'Whether the KDC writes the client\'s claims into every ' +
+                 'ticket\'s PAC ([MS-PAC] 2.11, PAC_CLIENT_CLAIMS_INFO, ' +
+                 'buffer type 13), for a service doing claims-based access ' +
+                 'control. A TGT carries the realm\'s Kerberos PAC claims ' +
+                 '(Protocols → Kerberos → PAC claims) and the person\'s ' +
+                 'realm-wide roles; a service ticket carries its TGT\'s, ' +
+                 'with the claims of the application that registered the ' +
+                 'service principal name added. Never compressed. Off — the ' +
+                 'default — no ticket carries a claims buffer, and a claims ' +
+                 'buffer in a PAC from another realm is still carried and ' +
+                 're-signed unchanged.' },
+
   { key: 'krb5.maxRequestBytes', group: 'Kerberos',
     label: 'Largest KDC request over TCP (bytes)',
     env: 'KRB5_MAX_REQUEST_BYTES', type: 'int', dflt: 131072,

@@ -1738,6 +1738,12 @@ class ApplicationsPage {
           ? ApplicationsPage.applicationClaimSelectionSection(ctx, row,
               carryBack, ['credential'], 'cfg-vc')
           : '') +
+        // The realm's Kerberos PAC claims page, for this service (#493):
+        // added to a service ticket for one of its SPNs.
+        (group.id === 'krb5'
+          ? ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
+              ['kerberos-pac'], 'cfg-krb5-claims', 'PAC claims')
+          : '') +
         // A sub-tab drawn only for a section above has no fields to save.
         (!mine.length ? '' : formOpen(group.id, mine.map(function (one) {
           return one.attribute;
@@ -4083,6 +4089,9 @@ class ApplicationsPage {
         'The realm\'s rows are edited on the realm\'s page under Protocols.') +
       sets.map(function (set) {
         const isSaml = set.id === 'saml2' || set.id === 'saml11';
+        // A PAC row carries one of the four PAC claim types (#493), typed
+        // value or attribute alike.
+        const isPac = set.id === 'kerberos-pac';
         const rows = set.effective.length
           ? set.effective.map(function (claim) {
             const what = claim.attribute
@@ -4112,10 +4121,14 @@ class ApplicationsPage {
           }).join('')
           : '<tr><td colspan="4" class="sub">No claims: neither the realm ' +
             'nor this application configures any.</td></tr>';
-        const typeSelect = isSaml ? '' : ' <label' + kit.tip('The JSON type ' +
+        const typeSelect = isSaml ? '' : ' <label' + kit.tip(isPac
+            ? 'The PAC claim type: string, int64, uint64 or boolean. A ' +
+              'value that is not one leaves the claim out of the ticket.'
+            : 'The JSON type ' +
             'each value of a directory attribute becomes. A typed value is ' +
             'issued as written.') + '>Type <select name="type">' +
-          ['string', 'number', 'boolean', 'json'].map(function (t) {
+          (isPac ? ['string', 'int64', 'uint64', 'boolean']
+                 : ['string', 'number', 'boolean', 'json']).map(function (t) {
             return '<option value="' + t + '">' + t + '</option>';
           }).join('') + '</select></label>';
         const samlExtra = set.id === 'saml2'
