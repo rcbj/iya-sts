@@ -447,7 +447,7 @@ const PROTOCOLS = [
           'acceptor may be asked to be. This covers SPNEGO (HTTP Negotiate, ' +
           'RFC 4559) to a Kerberos-protected service, which carries the same ' +
           'ticket. Signing people in to this application with SPNEGO is not ' +
-          'a family: set appAuthnMechanism to spnego, and declare the ' +
+          'a family: list spnego in appAuthnMechanism, and declare the ' +
           'protocol the application gets its tokens or assertions through.' },
   { id: 'oid4vci', label: 'OpenID4VCI', kind: '',
     kinds: [],
@@ -877,9 +877,9 @@ const SCHEMA = {
     // which is what stops this being an attribute only a hand-edited entry ever
     // carries: that member is defined as "URL string of a web page providing
     // information about the client", which is exactly the question this
-    // answers. It is `set` rather than `multi` for `appAuthnMechanism`'s reason
-    // — an application has ONE home page, and a list would be a question no
-    // page here has anywhere to ask.
+    // answers. It is `set` rather than `multi` because an application has ONE
+    // home page, and a list would be a question no page here has anywhere to
+    // ask.
     //
     // `labeledURI` (RFC 2079) was the standards-purist alternative and was not
     // taken: its value is a URI followed by an optional label, so it would need
@@ -3735,66 +3735,65 @@ const SCHEMA = {
     // commonest integrated-authentication deployment there is.
     //
     // ITS VOCABULARY IS THE FEDERATION REGISTER'S, and deliberately the same
-    // one: `password`, `password-mfa`, `webauthn`, `spnego`, `federation`,
-    // which is `fedAuthnMechanism`'s list exactly. Two tables would have
+    // one: `password`, `password-mfa`, `webauthn`, `spnego`, `wallet`,
+    // `federation` — `federation.MECHANISM_IDS`. Two tables would have
     // drifted the first time either grew a value, and the two attributes
-    // answer the same question from two sides — this one says where THIS
-    // APPLICATION's people sign in, and that one says what to do when THAT
-    // PARTNER asks. **The list is not imported here**, which is worth saying
-    // rather than looking like an oversight: `federation.js` requires this
-    // file, so a require back would close a cycle. It is checked where it is
-    // READ instead — `authn.js`'s declaredMechanismFor() — which is where
-    // `appFederationRelationship`'s four checks are made too, and for the same
-    // reason: this is a string on a directory entry that `ldapmodify` can
-    // reach, so a check made at the write would be a check about the past.
+    // answer the same question from two sides — this one says how THIS
+    // APPLICATION's people may sign in, and `fedAuthnMechanism` says what to
+    // do when THAT PARTNER asks. The list is read LAZILY where it is checked
+    // (ATTRIBUTE_CHOICES), because `federation.js` requires this file.
     //
-    // AN EMPTY VALUE IS NOT `password`. It means this entry says nothing, and
-    // that is the whole compatibility argument: every entry in existence holds
-    // an empty one, and reading it as an explicit "use the password screen"
-    // would have switched off every appFederationRelationship in the field in
-    // one commit.
+    // **A LIST OF WHAT IS ALLOWED, AND ENFORCED (#457, rcbj 2026-10-06).** It
+    // was one value that only ROUTED a sign-in — "it is not a permission",
+    // this comment said — and nothing refused a person whose session stood
+    // on another mechanism. Now:
     //
-    // LIKE THE PAIR ABOVE IT, IT IS NOT A PERMISSION. Nothing refuses a person
-    // who reaches the sign-in screen by another route, nothing refuses the
-    // Kerberos door to an application that has not declared it — the button is
-    // on the screen for everybody — and clearing this takes the shortcut away
-    // rather than locking anybody out. What it changes is the DEFAULT ROUTE.
+    //   * **None listed allows every mechanism**, and routes as an empty
+    //     value always did: appFederationRelationship, then the screen.
+    //   * **One listed routes as the one value did** — straight to
+    //     /authn/spnego, /authn/wallet, the partner, or the screen in the
+    //     shape named.
+    //   * **Several listed draw the screen with only those on it.**
+    //   * **Every BROWSER issuance to the application is put to the issuance
+    //     policy** with the mechanisms the person's session satisfies
+    //     (`common/authn_mechanisms.ts`). Its `authn-mechanism` rule denies
+    //     one that satisfies none of these, with an obligation the door
+    //     reads as "sign in again with one of these": OAuth's authorization
+    //     endpoint, SAML 2.0, SAML 1.1 and WS-Federation re-prompt, once, and
+    //     a sign-in made with a mechanism the application does not allow is
+    //     refused at the screen. In both modes. Non-browser doors (the
+    //     password grant, WS-Trust, an LDAP bind) are not covered: their
+    //     caveats do not fit one field (rcbj).
+    //
+    // A VALUE IS CHECKED AT THE WRITE (CHOICES_CHECKED_HERE) now that it is
+    // enforced — a misspelling would otherwise allow nothing — and is kept as
+    // written where an `ldapmodify` put it, so an unknown value allows
+    // nothing rather than everything. A mechanism this service has switched
+    // off (`spnego` while krb5.spnegoAuthentication is off, `wallet` while
+    // oid4vp.signIn is off) is reported on the screen and cannot be offered.
     // ---------------------------------------------------------------------
-    { name: 'appAuthnMechanism', kind: 'single',
+    { name: 'appAuthnMechanism', kind: 'multi',
       from: 'the console, the management API, or by hand',
-      what: 'HOW THIS APPLICATION\'S USERS AUTHENTICATE, one value from the ' +
-            'same closed list fedAuthnMechanism uses: password, ' +
-            'password-mfa, webauthn, spnego, wallet, federation.\n\nIt is ' +
-            'the ' +
-            'generalisation of appFederationRelationship beside it, and the ' +
-            'value that could not be said before it existed is `spnego` — ' +
-            'INTEGRATED AUTHENTICATION, where this application\'s people are ' +
-            'sent to /authn/spnego and signed in on the Kerberos ticket ' +
-            'their machine already holds, with no screen drawn and nothing ' +
-            'typed. That is the one mechanism here resting on a credential ' +
-            'this service genuinely verifies.\n\n`wallet` (2026-09-17) ' +
-            'sends them to /authn/wallet instead, where their wallet ' +
-            'presents a credential this realm issued them and they are ' +
-            'signed in as the entry it was issued for — asked for a second ' +
-            'factor afterwards where the request demands two.\n\n' +
-            '`federation` means the ' +
-            'relationships named in appFederationRelationship, which is what ' +
-            'naming one already implied, said out loud — so it changes ' +
-            'nothing, and declaring it while naming NO usable relationship ' +
-            'is reported on the sign-in screen rather than falling quietly ' +
-            'back to a password box. `password`, `password-mfa` and ' +
-            '`webauthn` are the sign-in screen, in the three shapes it ' +
-            'has.\n\nEMPTY MEANS THIS ENTRY SAYS NOTHING, which is not the ' +
-            'same as password: it falls through to appFederationRelationship ' +
-            'and then to the screen, which is exactly what every application ' +
-            'did before this attribute existed.\n\nA value this service ' +
-            'cannot honour — a mechanism it does not have, `spnego` while ' +
-            'krb5.spnegoAuthentication is off, or `wallet` while ' +
-            'oid4vp.signIn is off — is REPORTED on the screen, ' +
-            'one line, rather than dropped. A configured mechanism that ' +
-            'silently is not happening looks exactly like one that is.\n\nIt ' +
-            'is WRITTEN BY NOBODY. No protocol presents it and no sighting ' +
-            'derives it, so it is editable and it starts empty.' }
+      what: 'THE MECHANISMS THIS APPLICATION\'S PEOPLE MAY SIGN IN WITH, ' +
+            'from the closed list fedAuthnMechanism uses: password, ' +
+            'password-mfa, webauthn, spnego, wallet, federation. NONE ' +
+            'TICKED ALLOWS EVERY ONE.\n\nENFORCED at every browser sign-in ' +
+            'to the application, in both modes: a person whose session ' +
+            'stands on no mechanism listed is sent to sign in again with ' +
+            'one that is, and a sign-in made with one that is not is ' +
+            'refused. Non-browser doors (the password grant, WS-Trust, an ' +
+            'LDAP bind) are not covered.\n\nOne listed is also where the ' +
+            'sign-in goes: `spnego` sends the person to /authn/spnego, ' +
+            'signed in on the Kerberos ticket their machine holds; `wallet` ' +
+            'to /authn/wallet; `federation` to the relationships named in ' +
+            'appFederationRelationship; `password`, `password-mfa` and ' +
+            '`webauthn` are the sign-in screen in its three shapes. Several ' +
+            'listed draw the screen with only those offered.\n\nA ' +
+            'mechanism this service has switched off — `spnego` while ' +
+            'krb5.spnegoAuthentication is off, `wallet` while oid4vp.signIn ' +
+            'is off — is reported on the screen and cannot be offered.\n\n' +
+            'It is WRITTEN BY NOBODY: no protocol presents it, so it is ' +
+            'editable and starts empty.' }
   ]
 };
 
@@ -4031,10 +4030,9 @@ const EDITABLE = {
   // And the THIRD of that group, added 2026-08-26. Editable for the same
   // reason the other two are: nothing in this service can OBSERVE how an
   // application's people are supposed to authenticate, so if it cannot be
-  // written here it cannot be written at all. `set` and not `multi` — an
-  // application has one answer to "how do my people sign in", and a list would
-  // be a question this attribute has no page to ask.
-  appAuthnMechanism: 'set',
+  // written here it cannot be written at all. `multi` since #457: it is the
+  // list of mechanisms the application ALLOWS, one checkbox each.
+  appAuthnMechanism: 'multi',
   // The home page, `set` for its row's reason: an application has one. It is
   // editable AND written by register() from RFC 7591 `client_uri`, which is the
   // same arrangement oauthRedirectUri has — a registration states it, and an
@@ -4963,8 +4961,8 @@ const ATTRIBUTE_CHOICES = {
 
 // The closed sets nothing checked at a console or API write until 2026-10-01
 // (the others have a validator of their own, which says more). A value
-// outside one is refused (STS-REG-0203). `appAuthnMechanism` is offered and
-// not refused: it is checked where it is read, on purpose.
+// outside one is refused (STS-REG-0203). `appAuthnMechanism` joined them
+// with #457: enforced, a misspelt mechanism would allow nothing.
 // The certificate profiles an enrollment family issues, from the module that
 // defines them (lazily: it is loaded after this one); `device` over EST and
 // SCEP only, as `cert_enrollment.ts` has it.
@@ -4981,7 +4979,7 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'gnapSymmetricAlg', 'gnapInteractionStartModes', 'gnapAccessTokenFormat',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
   'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
-  'secretDestProvider', 'secretDestPayload'];
+  'secretDestProvider', 'secretDestPayload', 'appAuthnMechanism'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),

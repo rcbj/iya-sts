@@ -381,8 +381,9 @@ function childMain() {
     // 5. appAuthnMechanism: wallet
     // ==================================================================
     const set = await w.inRealm(function () {
+      // A LIST since #457: `wallet` is added to what the application allows.
       return adminActions.applicationsAction({
-        action: 'set', application: 'wsi-wallet',
+        action: 'add', application: 'wsi-wallet',
         attribute: 'appAuthnMechanism', value: 'wallet' }, [], {});
     });
     const where = await w.inRealm(function () {
@@ -409,9 +410,9 @@ function childMain() {
          shut + ' ' + screen.status);
     await w.inRealm(function () {
       m.config.clearOverride('oid4vp.signIn');
-      adminActions.applicationsAction({ action: 'set',
+      adminActions.applicationsAction({ action: 'remove',
         application: 'wsi-wallet', attribute: 'appAuthnMechanism',
-        value: '' }, [], {});
+        value: 'wallet' }, [], {});
     });
   }
 }

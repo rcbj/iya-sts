@@ -485,7 +485,20 @@ const AUTHN_ATTRIBUTE = {
   // The obligation a Deny about the AUTHENTICATION carries, so the PEP can
   // tell it from a Deny about roles — which is set aside when the role
   // question is waived — and refuse on it anyway.
-  OBLIGATION: 'urn:sts:xacml:obligation:authentication'
+  OBLIGATION: 'urn:sts:xacml:obligation:authentication',
+  // A BAG (#457): the sign-in mechanisms the person's authentication
+  // satisfies — `federation.MECHANISM_IDS`: password, password-mfa,
+  // webauthn, federation, spnego, wallet — worked out from the session's
+  // events by `common/authn_mechanisms.ts`. Sent on a browser issuance to an
+  // application that allows only some.
+  MECHANISM: 'urn:sts:xacml:authn-mechanism',
+  // A BAG (#457): the mechanisms the application allows, its
+  // `appAuthnMechanism`. Absent where it allows every one.
+  ALLOWED_MECHANISM: 'urn:sts:xacml:allowed-authn-mechanism',
+  // The obligation the `authn-mechanism` rule's Deny carries (#457): the PEP
+  // reads it as "sign in again with one of the allowed mechanisms", never as
+  // a refusal about roles.
+  MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:authn-mechanism'
 };
 
 // ---------------------------------------------------------------------------
@@ -1063,6 +1076,16 @@ const TEMPLATES: TemplateRow[] = [
               'to one declared for OpenID Connect. An application declared ' +
               'for nothing is never refused by it. Development mode is not ' +
               'refused. No builds the policy without the rule.' },
+      { name: 'decideAuthnMechanisms',
+        label: 'Require a sign-in mechanism the application allows',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, in both modes, a browser sign-in to an ' +
+              'application that lists the mechanisms it allows ' +
+              '(appAuthnMechanism) is denied unless the person\'s session ' +
+              'satisfies one of them, with an obligation the sign-in door ' +
+              'reads as "sign in again with one of these". An application ' +
+              'that lists none allows every one. No builds the policy ' +
+              'without the rule.' },
       { name: 'deviceExempt',
         label: 'Applications the compliant-device rule never refuses',
         dflt: 'sts-admin-console, sts-user-portal', type: 'string',
@@ -1093,6 +1116,7 @@ const TEMPLATES: TemplateRow[] = [
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
       const decideDevices = B.yes(given.decideDevices, true);
       const decideProtocols = B.yes(given.decideProtocols, true);
+      const decideMechanisms = B.yes(given.decideAuthnMechanisms, true);
       const decideScopes = B.yes(given.decideScopes, true);
       const decideGnapRights = B.yes(given.decideGnapRights, true);
       const decideTransfers = B.yes(given.decideTransfers, true);
@@ -1532,6 +1556,37 @@ const TEMPLATES: TemplateRow[] = [
                          PROTOCOL_ATTRIBUTE.FAMILY, TYPE.STRING),
             B.designator(R, PROTOCOL_ATTRIBUTE.DECLARED, TYPE.STRING)]))]),
         obligations: [{ id: PROTOCOL_ATTRIBUTE.OBLIGATION,
+                        on: model.EFFECT.DENY, assignments: [] }],
+        advice: []
+      }] : [];
+      // -------------------------------------------------------------------
+      // THE SIGN-IN MECHANISM RULE (#457). Deny a browser issuance to an
+      // application that lists the mechanisms it allows when the person's
+      // authentication satisfies none of them — in both modes, and only
+      // when the allowed bag holds something, which the PEP sends only for
+      // such an application. Its obligation is a RE-PROMPT, not a refusal:
+      // the door sends the person to sign in again with one of the allowed
+      // mechanisms. After the protocol rule, whose refusal is final, and
+      // before risk, so a session on the wrong mechanism is re-prompted for
+      // the right one before it is assessed for a factor.
+      // -------------------------------------------------------------------
+      const mechanismRules: any[] = decideMechanisms ? [{
+        id: options.idBase + ':rule:authn-mechanism',
+        effect: model.EFFECT.DENY,
+        description: 'Ask a person to sign in again when their ' +
+                     'authentication used none of the mechanisms the ' +
+                     'application allows (appAuthnMechanism). An ' +
+                     'application that lists none allows every one.',
+        target: null,
+        condition: and([
+          holdsSome(model.CATEGORY.ENVIRONMENT,
+                    AUTHN_ATTRIBUTE.ALLOWED_MECHANISM),
+          not(B.apply(F1 + 'string-at-least-one-member-of', [
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.MECHANISM, TYPE.STRING),
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.ALLOWED_MECHANISM, TYPE.STRING)]))]),
+        obligations: [{ id: AUTHN_ATTRIBUTE.MECHANISM_OBLIGATION,
                         on: model.EFFECT.DENY, assignments: [] }],
         advice: []
       }] : [];
@@ -2284,7 +2339,8 @@ const TEMPLATES: TemplateRow[] = [
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
                 riskRules.length + ' risk rule(s), ' + deviceRules.length +
                 ' device rule(s), ' + protocolRules.length +
-                ' protocol rule(s).');
+                ' protocol rule(s), ' + mechanismRules.length +
+                ' mechanism rule(s).');
       return {
         kind: 'Policy',
         id: options.idBase,
@@ -2338,6 +2394,12 @@ const TEMPLATES: TemplateRow[] = [
                           'application is not declared for is refused, ' +
                           'unless it is declared for none.'
                         : '') +
+                     (decideMechanisms
+                        ? ' AND ON THE SIGN-IN MECHANISM (#457): a browser ' +
+                          'sign-in to an application that lists the ' +
+                          'mechanisms it allows is sent to sign in again ' +
+                          'unless it used one of them.'
+                        : '') +
                      (decideScopes
                         ? ' AND ON EACH REQUESTED SCOPE (#304, #305): the ' +
                           'client\'s declared scopes (#110) — refused where ' +
@@ -2377,7 +2439,8 @@ const TEMPLATES: TemplateRow[] = [
                           'for the one audience asked for.'
                         : ''),
         combiningAlgId: decideRisk || refuseEmail || decideDevices ||
-                        decideProtocols || decideScopes || decideTransfers ||
+                        decideProtocols || decideMechanisms ||
+                        decideScopes || decideTransfers ||
                         decideExchanges || decideGnapRights
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
@@ -2389,7 +2452,8 @@ const TEMPLATES: TemplateRow[] = [
         // explain.
         target: null,
         variables: {},
-        rules: deviceRules.concat(protocolRules).concat(riskRules)
+        rules: deviceRules.concat(protocolRules).concat(mechanismRules)
+          .concat(riskRules)
           .concat(scopeRules)
           .concat(gnapRightRules)
           .concat(transferRules)

@@ -118,6 +118,9 @@ import app = require('../common/app');
 // only callers and both read better as `helpers.`.
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+// The sign-in mechanisms an application allows and a session satisfies
+// (#457): a leaf, so requiring it closes no cycle.
+import mechanismLib = require('../common/authn_mechanisms');
 import stats = require('../common/admin_stats');
 // The federation register, for the buttons at the foot of the sign-in screen.
 // A plain require in the ordinary direction and it passes rule 3e's test both
@@ -3682,10 +3685,12 @@ class Authn {
   // plain-HTTP port has no ClientHello — and an empty field is the truth
   // rather than a gap. See `eventContext()`.
   // ---------------------------------------------------------------------------
-  private authenticationEvent(amr, acr, via, extra, username?) {
-    const { log, nowSec } = this.deps;
-    log.debug("Entering Authn.authenticationEvent().");
-    const detail = extra || {};
+  // WHO VOUCHED FOR AN AUTHENTICATION: this service, a federation partner,
+  // or a Kerberos ticket. Its own function since #457, because the sign-in
+  // mechanism question asks it of an authentication before its event exists.
+  private authorityOf(detail) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.authorityOf().");
     let authority: Record<string, string> = { kind: 'local' };
     if (detail.federation && detail.federation.id) {
       authority = { kind: 'federation', id: String(detail.federation.id),
@@ -3694,6 +3699,15 @@ class Authn {
     } else if (detail.protocol === 'Kerberos v5' && detail.presented) {
       authority = { kind: 'kerberos', principal: String(detail.presented) };
     }
+    log.debug("Leaving Authn.authorityOf(). " + authority.kind);
+    return authority;
+  }
+
+  private authenticationEvent(amr, acr, via, extra, username?) {
+    const { log, nowSec } = this.deps;
+    log.debug("Entering Authn.authenticationEvent().");
+    const detail = extra || {};
+    const authority = this.authorityOf(detail);
     log.debug("Leaving Authn.authenticationEvent(). authority=" +
               authority.kind);
     return {
@@ -4631,6 +4645,38 @@ class Authn {
   }
 
   // What startSession() did before cells: every path that makes a session.
+  // ---------------------------------------------------------------------------
+  // A SIGN-IN WITH A MECHANISM THE APPLICATION DOES NOT ALLOW (#457). The
+  // screen offered only the allowed ones; this is somebody who reached another
+  // door anyway — a password posted to a screen that drew none, a link kept
+  // from before, a direct URL. Refused, with the policy's sentence naming the
+  // mechanisms, which `refusedSession()` draws the screen again with.
+  // ---------------------------------------------------------------------------
+  private refuseOnMechanism(extra, username, via, answer) {
+    const { log, audit, errorCodes } = this.deps;
+    log.debug("Entering Authn.refuseOnMechanism().");
+    log.info(errorCodes.tag('STS-AUTHN-0298') + 'authn: a session for "' +
+             username + '" was REFUSED at the ' + (via || 'sign-in') +
+             ' door: "' + String(extra.application || '') + '" allows ' +
+             answer.mechanism.allowed.join(', ') + '.');
+    audit.audit({
+      action: 'session.refuse', actor: username,
+      errorCode: 'STS-AUTHN-0298',
+      protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+      summary: 'a session for ' + username + ' was refused at the ' +
+               (via || 'sign-in') + ' door: the application does not allow ' +
+               'that sign-in mechanism',
+      detail: { application: String(extra.application || ''),
+                allowed: answer.mechanism.allowed,
+                used: answer.mechanism.satisfied,
+                policy: answer.policy || '' }
+    });
+    extra.refusedWith = 'STS-AUTHN-0298';
+    extra.refusedWhy = answer.why;
+    log.debug("Leaving Authn.refuseOnMechanism().");
+    return null;
+  }
+
   private startSessionHere(res, username, amr, acr, via, detail) {
     const { log, randomId, userFor, helpers, stats, gate, audit,
       errorCodes } = this.deps;
@@ -4886,6 +4932,45 @@ class Authn {
     const risk = extra.risk && riskEngine ? riskEngine.riskOf(extra.risk)
                                           : null;
     let riskDecision = String(extra.riskDecision || 'permit');
+    // THE AUTHENTICATION AS AN EVENT (#457), what the session is about to
+    // record — enough of one for `common/authn_mechanisms.ts` to say which
+    // sign-in mechanism it was, for an application that allows only some. A
+    // keyed API caller is not a browser sign-in.
+    const mechanismEvent = extra.key ? null : {
+      amr: (amr || []).map(String), acr: String(acr || ''),
+      authenticated: extra.authenticated !== false,
+      authority: this.authorityOf(extra),
+      context: { credential: { kind: extra.credential &&
+                               extra.credential.kind
+                                 ? String(extra.credential.kind) : '' } }
+    };
+    // Asked only of an application that allows only some: asking it of every
+    // gated sign-in would put the session to the policy a second time, and
+    // the policy's other rules (the console's alarm) answer every asking.
+    if (extra.gated === true && mechanismEvent && extra.application &&
+        this.declaredMechanismsFor(String(extra.application))
+          .allowed.length) {
+      // A DOOR THAT ASKED THE POLICY ITSELF (`gated: true`) asked it before
+      // the authentication was complete — the password screen before its
+      // second factor — so it could not ask about the MECHANISM, which needs
+      // the whole of it: a `password-mfa` application would have refused
+      // the password step. So the session's start asks that one question
+      // here, with the role question waived (it was asked) and no risk or
+      // device facts (asked too): only the mechanism rule can deny it.
+      const mechanismAnswer = gate.check({
+        application: String(extra.application),
+        kind: gate.ISSUANCE.SESSION,
+        subject: { kind: 'user', name: username,
+                   authenticated: extra.authenticated !== false },
+        claims: null, rolesWaived: true, deviceDeferred: true,
+        authenticationEvent: mechanismEvent
+      });
+      if (!mechanismAnswer.allowed && mechanismAnswer.mechanism) {
+        log.debug("Leaving Authn.startSessionHere(). The application does " +
+                  "not allow that mechanism.");
+        return this.refuseOnMechanism(extra, username, via, mechanismAnswer);
+      }
+    }
     if (extra.gated !== true) {
       // THE APPLICATION IS THE CALLER'S TO NAME, and every screen's finisher
       // names `step.authn.application`. Until #226 (2026-09-26) the six
@@ -4904,7 +4989,9 @@ class Authn {
         authentication: extra.authenticated === false ? null
           : { amr: (amr || []).map(String), acr: String(acr || ''),
               kinds: extra.credential && extra.credential.kind
-                ? [String(extra.credential.kind)] : [] }
+                ? [String(extra.credential.kind)] : [] },
+        // The authentication as an event (#457), built above.
+        authenticationEvent: mechanismEvent
       }, extra.key
         // A KEYED API CALLER (SCIM, SPIRE, the management API) is asked no
         // device question here (#164 phase 6): its credential is presented
@@ -4954,6 +5041,11 @@ class Authn {
         extra.riskStepUp = sessionAnswer.risk.factor || '';
         log.debug("Leaving Authn.startSessionHere(). Refused on risk.");
         return null;
+      }
+      if (!sessionAnswer.allowed && sessionAnswer.mechanism) {
+        log.debug("Leaving Authn.startSessionHere(). The application does " +
+                  "not allow that mechanism.");
+        return this.refuseOnMechanism(extra, username, via, sessionAnswer);
       }
       if (!sessionAnswer.allowed) {
         log.info('authn: a session for "' + username + '" was REFUSED by the ' +
@@ -6263,8 +6355,13 @@ class Authn {
   // ---------------------------------------------------------------------------
   // WHAT AN APPLICATION ENTRY DECLARES ABOUT HOW ITS PEOPLE AUTHENTICATE.
   //
-  // `appAuthnMechanism`, a single value from the SAME closed table
-  // `fedAuthnMechanism` uses — `federation.MECHANISM_IDS`. One table for both
+  // `appAuthnMechanism`, since #457 the LIST of mechanisms the application
+  // ALLOWS, from the SAME closed table `fedAuthnMechanism` uses —
+  // `federation.MECHANISM_IDS`. What it allows is ENFORCED by the issuance
+  // policy (`common/authn_mechanisms.ts` has the facts); what is read here
+  // is where the sign-in GOES: one usable mechanism routes as the one value
+  // always did, several draw the screen with only those offered. One table
+  // for both
   // because they answer the same question from two sides, and two tables would
   // have drifted the first time either grew a value: this one says "where do
   // THIS APPLICATION's people sign in", and the relationship's says "what do I
@@ -6301,9 +6398,9 @@ class Authn {
   // SETTING that decides whether `spnego` will work is settable at runtime. A
   // check made when it was written would be a check about the past.
   // ---------------------------------------------------------------------------
-  private declaredMechanismFor(applicationId) {
+  private declaredMechanismsFor(applicationId) {
     const { log, federation, applications, config, errorCodes } = this.deps;
-    log.debug("Entering Authn.declaredMechanismFor(). application=" +
+    log.debug("Entering Authn.declaredMechanismsFor(). application=" +
               (applicationId || '(none)'));
     let entry = null;
     try {
@@ -6311,59 +6408,60 @@ class Authn {
     } catch (e) {
       // Swallowed for federationFor()'s reason and no other: this runs on the
       // way to the sign-in screen, so a registry that throws must cost the
-      // shortcut and never the screen.
+      // shortcut and never the screen. The issuance policy reads the same
+      // registry and decides what it decides.
       log.error(errorCodes.tag('STS-AUTHN-0016') +
                 'authn: the application registry threw while reading ' +
                 'appAuthnMechanism for "' + applicationId + '" and was ' +
                 'ignored; the sign-in screen itself is unaffected: ' +
                 e.message);
-      log.debug("Leaving Authn.declaredMechanismFor(). The registry threw.");
-      return { mechanism: '', problem: '' };
+      log.debug("Leaving Authn.declaredMechanismsFor(). The registry threw.");
+      return { allowed: [], usable: [], problem: '' };
     }
-    const declared = String((((entry ||
-                               {}).fields || {}).appAuthnMechanism) || '')
-      .trim();
-    if (!declared) {
-      log.debug("Leaving Authn.declaredMechanismFor(). That entry declares " +
-                "nothing.");
-      return { mechanism: '', problem: '' };
+    // THE LIST AS WRITTEN (#457) — what the issuance policy holds every
+    // browser sign-in to — and the part of it this service can offer now.
+    const allowed = mechanismLib.allowedOf(entry ? entry.fields : null);
+    if (!allowed.length) {
+      log.debug("Leaving Authn.declaredMechanismsFor(). That entry allows " +
+                "every mechanism.");
+      return { allowed: [], usable: [], problem: '' };
     }
-    if (federation.MECHANISM_IDS.indexOf(declared) === -1) {
-      log.debug("Leaving Authn.declaredMechanismFor(). Not one of ours.");
-      return { mechanism: '', problem: 'The application "' + applicationId +
-               '" declares the authentication mechanism "' + declared +
-               '", which is not one this service has: they are ' +
-               federation.MECHANISM_IDS.join(', ') + '.' };
+    const problems: string[] = [];
+    const usable = allowed.filter(function (declared) {
+      if (federation.MECHANISM_IDS.indexOf(declared) === -1) {
+        problems.push('The application "' + applicationId + '" allows the ' +
+          'authentication mechanism "' + declared + '", which is not one ' +
+          'this service has: they are ' +
+          federation.MECHANISM_IDS.join(', ') + '.');
+        return false;
+      }
+      // THE TWO MECHANISMS THAT CAN BE TURNED OFF SERVICE-WIDE. Configuration
+      // pointing at a door that is shut is reported, and the door is not
+      // offered: the person would meet a 403 halfway through a sign-in.
+      if (declared === 'spnego' && !config.value('krb5.spnegoAuthentication')) {
+        problems.push('The application "' + applicationId + '" allows ' +
+          'signing in with a Kerberos ticket over SPNEGO, and ' +
+          'krb5.spnegoAuthentication is off on this service, so that door ' +
+          'is not offered.');
+        return false;
+      }
+      if (declared === 'wallet' && !config.value('oid4vp.signIn')) {
+        problems.push('The application "' + applicationId + '" allows ' +
+          'signing in with a wallet, and oid4vp.signIn is off on this ' +
+          'service, so that door is not offered.');
+        return false;
+      }
+      return true;
+    });
+    if (!usable.length) {
+      problems.push('None of the mechanisms "' + applicationId + '" allows ' +
+        'can be offered here, so nobody can sign in to it until its ' +
+        'appAuthnMechanism or this service\'s settings change.');
     }
-    // THE ONE MECHANISM THAT CAN BE TURNED OFF SERVICE-WIDE. A relationship or
-    // an application entry naming `spnego` while `krb5.spnegoAuthentication` is
-    // false is configuration pointing at a door that is shut, and the person
-    // meets it as a 403 halfway through a sign-in unless it is said here. The
-    // other four cannot be switched off: the screen is always there, and a
-    // federation relationship's own `fedEnabled` is checked by
-    // usableServiceProviders().
-    if (declared === 'spnego' && !config.value('krb5.spnegoAuthentication')) {
-      log.debug("Leaving Authn.declaredMechanismFor(). SPNEGO is configured " +
-                "and off.");
-      return { mechanism: '', problem: 'The application "' + applicationId +
-               '" authenticates its users with a Kerberos ticket over ' +
-               'SPNEGO, ' +
-               'and krb5.spnegoAuthentication is off on this service, so ' +
-               'that door will not sign anybody in. The sign-in screen is ' +
-               'being shown instead.' };
-    }
-    // THE SECOND ONE (#38's follow-ups): `wallet` while `oid4vp.signIn` is
-    // off is a door that is shut, reported for SPNEGO's reason.
-    if (declared === 'wallet' && !config.value('oid4vp.signIn')) {
-      log.debug("Leaving Authn.declaredMechanismFor(). The wallet is " +
-                "configured and off.");
-      return { mechanism: '', problem: 'The application "' + applicationId +
-               '" authenticates its users with a wallet, and oid4vp.signIn ' +
-               'is off on this service, so that door will not sign anybody ' +
-               'in. The sign-in screen is being shown instead.' };
-    }
-    log.debug("Leaving Authn.declaredMechanismFor(). " + declared + ".");
-    return { mechanism: declared, problem: '' };
+    log.debug("Leaving Authn.declaredMechanismsFor(). Allowed " +
+              allowed.join(', ') + '; usable ' +
+              (usable.join(', ') || 'none') + ".");
+    return { allowed: allowed, usable: usable, problem: problems.join(' ') };
   }
 
   private mechanismFor(applicationId) {
@@ -6421,9 +6519,12 @@ class Authn {
                (broker.problem ? ' — and it cannot be done: ' + broker.problem
                                : '') + '.');
       log.debug("Leaving Authn.mechanismFor(). The relationship decided it.");
+      // The application's own list (#457) rides along: the policy holds the
+      // sign-in to it whichever of the two routed it.
       return { mechanism: broker.mechanism || 'password',
                source: 'relationship', federation: home, via: broker.via,
-               problem: broker.problem };
+               problem: broker.problem,
+               allowed: this.declaredMechanismsFor(wanted).allowed };
     }
     // ---------------------------------------------------------------------
     // THE APPLICATION'S OWN DECLARATION, WHICH IS READ BEFORE ITS RELATIONSHIPS
@@ -6444,30 +6545,57 @@ class Authn {
     // was TOLD about rather than a federated application quietly authenticating
     // people locally — which looks exactly like it working.
     // ---------------------------------------------------------------------
-    const declared = this.declaredMechanismFor(wanted);
-    if (declared.mechanism && declared.mechanism !== 'federation') {
-      log.info('authn: "' + wanted +
-               '" declares the authentication mechanism "' +
-               declared.mechanism + '" on its entry under ou=applications, ' +
-               'so that is what this sign-in does.');
+    const declared = this.declaredMechanismsFor(wanted);
+    const allowed = declared.allowed;
+    const usable = declared.usable;
+    // ONE USABLE MECHANISM, and not `federation`: where the sign-in goes, as
+    // the one value always sent it.
+    if (usable.length === 1 && usable[0] !== 'federation') {
+      log.info('authn: "' + wanted + '" allows the authentication mechanism ' +
+               '"' + usable[0] + '" on its entry under ou=applications, so ' +
+               'that is what this sign-in does.');
       log.debug("Leaving Authn.mechanismFor(). The application entry " +
                 "declared it.");
-      return { mechanism: declared.mechanism, source: 'application',
-               federation: null, via: '', problem: '' };
+      return { mechanism: usable[0], source: 'application',
+               federation: null, via: '', problem: declared.problem,
+               allowed: allowed };
+    }
+    // SEVERAL (#457): the screen, drawing only what is allowed — partners
+    // among them where `federation` is, as buttons rather than a redirect,
+    // because the person is choosing between them and the rest.
+    if (usable.length > 1) {
+      const partners = usable.indexOf('federation') >= 0
+        ? this.federationFor(wanted) : null;
+      log.info('authn: "' + wanted + '" allows ' + usable.join(', ') +
+               ', so the sign-in screen offers those.');
+      log.debug("Leaving Authn.mechanismFor(). Several allowed.");
+      return { mechanism: 'password', source: 'application',
+               federation: partners
+                 ? Object.assign({}, partners, { auto: false }) : null,
+               via: '', problem: declared.problem, allowed: allowed };
+    }
+    // A LIST NOTHING ON WHICH CAN BE OFFERED: the screen, saying so, with
+    // nothing on it the application allows — the issuance policy refuses
+    // whatever is used.
+    if (allowed.length && !usable.length) {
+      log.debug("Leaving Authn.mechanismFor(). Nothing allowed is usable.");
+      return { mechanism: 'password', source: 'application', federation: null,
+               via: '', problem: declared.problem, allowed: allowed };
     }
     const home = this.federationFor(wanted);
     if (home) {
       log.debug("Leaving Authn.mechanismFor(). The application entry decided " +
                 "it.");
       return { mechanism: 'federation', source: 'application', federation: home,
-               via: '', problem: home.problem || declared.problem };
+               via: '', problem: home.problem || declared.problem,
+               allowed: allowed };
     }
-    // DECLARED `federation` AND NAMING NOTHING USABLE. federationFor() returned
-    // null, which means the entry names no relationship at all or the registry
-    // could not be read — and an entry that says its people are federated while
-    // naming nobody is exactly the half-configured state this whole function is
-    // careful to report rather than swallow.
-    if (declared.mechanism === 'federation') {
+    // ALLOWS ONLY `federation` AND NAMES NOTHING USABLE. federationFor()
+    // returned null, which means the entry names no relationship at all or the
+    // registry could not be read — and an entry that says its people are
+    // federated while naming nobody is exactly the half-configured state this
+    // whole function is careful to report rather than swallow.
+    if (usable.length === 1 && usable[0] === 'federation') {
       log.debug("Leaving Authn.mechanismFor(). Declared federation and named " +
                 "nobody.");
       return { mechanism: 'password', source: 'application', federation: null,
@@ -6475,18 +6603,13 @@ class Authn {
                problem: 'The application "' + wanted + '" authenticates its ' +
                         'users through a federation relationship and its ' +
                         'entry names none that this service can use. Set ' +
-                        'appFederationRelationship on it.' };
-    }
-    if (declared.problem) {
-      log.debug("Leaving Authn.mechanismFor(). A declaration this service " +
-                "cannot honour.");
-      return { mechanism: 'password', source: 'application', federation: null,
-               via: '', problem: declared.problem };
+                        'appFederationRelationship on it.',
+               allowed: allowed };
     }
     log.debug("Leaving Authn.mechanismFor(). Nothing configured; the screen " +
               "it is.");
     return { mechanism: 'password', source: 'default', federation: null,
-             via: '', problem: '' };
+             via: '', problem: '', allowed: allowed };
   }
 
   // ---------------------------------------------------------------------------
@@ -6703,8 +6826,24 @@ class Authn {
     // relationship preferred one. `webauthn` here is PASSWORDLESS, which is amr
     // ["hwk"] and a single factor, however phishing-resistant it is.
     // ---------------------------------------------------------------------
-    const forceMfa = !!opts.forceMfa || chosen.mechanism === 'password-mfa';
-    let forcePasswordless = chosen.mechanism === 'webauthn';
+    // SEVERAL ALLOWED (#457) take the screen's shape from what is on the
+    // list: two factors where `password-mfa` is the only screen mechanism
+    // allowed, a passwordless key where `webauthn` is. The doors and links
+    // the list leaves out are not drawn (loginPage()).
+    const allowedMechanisms: string[] = (chosen.allowed || []).slice();
+    const allows = function (id: string): boolean {
+      log.debug("Entering allows().");
+      log.debug("Leaving allows().");
+      return allowedMechanisms.indexOf(id) >= 0;
+    };
+    const several = allowedMechanisms.length > 1 &&
+      chosen.mechanism === 'password';
+    const forceMfa = !!opts.forceMfa || chosen.mechanism === 'password-mfa' ||
+      (several && allows('password-mfa') && !allows('password') &&
+       !allows('webauthn'));
+    let forcePasswordless = chosen.mechanism === 'webauthn' ||
+      (several && allows('webauthn') && !allows('password') &&
+       !allows('password-mfa'));
     // ---------------------------------------------------------------------
     // AND THE SAME COLLISION A THIRD TIME, for the mechanism added on
     // 2026-08-26. A Kerberos ticket claims whatever its own flags claim — one
@@ -6768,6 +6907,10 @@ class Authn {
       details: Array.isArray(opts.details) ? opts.details : [],
       hint: lockedUsername || String(opts.hint || ''),
       lockedUsername: lockedUsername,
+      // THE MECHANISMS THE APPLICATION ALLOWS (#457), empty for every one:
+      // what loginPage() offers. Not the enforcement — the issuance policy
+      // refuses a session made with anything else at startSessionHere().
+      allowedMechanisms: allowedMechanisms,
       forceMfa: forceMfa,
       // A SECURITY KEY DEMANDED (2026-09-17) — alone or after a password; see
       // the entry point's header. On the record for `forcePasswordless`'s
@@ -7000,7 +7143,8 @@ class Authn {
     const code = said.refusedWith ||
       (accountState.isDisabled(username) ? 'STS-AUTHN-0201'
                                          : 'STS-AUTHN-0010');
-    const message = code === 'STS-AUTHN-0010' && said.refusedWhy
+    const message = (code === 'STS-AUTHN-0010' ||
+                     code === 'STS-AUTHN-0298') && said.refusedWhy
       ? String(said.refusedWhy)
       : 'Authentication failed for ' + username + '.';
     log.info('authn: the session for "' + username + '" was refused at the ' +
@@ -8040,8 +8184,23 @@ class Authn {
     // sign-in (a password, by #109), nor where a key or a passwordless key is
     // demanded: an email answers neither.
     const policy = this.deps.authnPolicy;
-    const passwordFirst = policy.allows('password', 'primary');
-    const emailFirst = locked || record.forceKey || record.forcePasswordless
+    // THE MECHANISMS THE APPLICATION ALLOWS (#457), empty for every one: a
+    // door or a link it leaves out is not drawn. Not the enforcement — the
+    // issuance policy refuses a session made with anything else — but a
+    // screen offering a door that will refuse is a screen that lies.
+    const restricted: string[] = Array.isArray(record.allowedMechanisms)
+      ? record.allowedMechanisms : [];
+    const offers = function (id: string): boolean {
+      log.debug("Entering offers().");
+      log.debug("Leaving offers().");
+      return !restricted.length || restricted.indexOf(id) >= 0;
+    };
+    const screenOffered = offers('password') || offers('password-mfa') ||
+      offers('webauthn');
+    const passwordFirst = policy.allows('password', 'primary') &&
+      (offers('password') || offers('password-mfa'));
+    const emailFirst = locked || record.forceKey || record.forcePasswordless ||
+      restricted.length
       ? { code: false, link: false }
       : { code: policy.active('emailCode', 'primary'),
           link: policy.active('emailLink', 'primary') };
@@ -8059,7 +8218,11 @@ class Authn {
           'and that account is not linked to it yet. Sign in here as ' +
           xmlEscape(locked) + ' to link them; Cancel links nothing.</p>'
         : '') +
-      '<form method="post" action="' + LOGIN_PATH + '">' +
+      // NOTHING ON THIS SCREEN THE APPLICATION ALLOWS (#457): no username,
+      // no password and no Sign In — only Cancel, and the doors it does allow
+      // underneath.
+      (screenOffered
+        ? '<form method="post" action="' + LOGIN_PATH + '">' +
       '<input type="hidden" name="authn_id" value="' + xmlEscape(record.id) +
       '">' + (this.fingerprinting()
         ? '<input type="hidden" name="device_fp" id="device-fp" value="">'
@@ -8144,8 +8307,11 @@ class Authn {
           (record.forceMfa ?
            ' — not available: this request demands two factors' : '') +
           (record.forcePasswordless
-             ? ' — required: the federation relationship "' +
-               xmlEscape(record.mechanismVia || '') + '" configures this'
+             ? (record.mechanismVia
+               ? ' — required: the federation relationship "' +
+                 xmlEscape(record.mechanismVia) + '" configures this'
+               : ' — required: the application allows a security key ' +
+                 'alone on this screen')
              : '') + '</label>' +
           (record.forcePasswordless
              ? '<input type="hidden" name="webauthn_only" value="1">' : '')
@@ -8186,7 +8352,8 @@ class Authn {
       // read one: whatever is typed above is ignored, because a session that
       // took a name from the form and called itself unauthenticated would be
       // claiming both things at once.
-      (config.value('authn.unauthenticatedSessions') && !locked
+      (config.value('authn.unauthenticatedSessions') && !locked &&
+       !restricted.length
          ? '<button type="submit" id="kc-anonymous" name="action" ' +
            'value="anonymous" class="secondary" title="' +
            xmlEscape('Continue as the anonymous principal. The flow goes on ' +
@@ -8213,7 +8380,14 @@ class Authn {
               'link</button>' : '') +
           '</div>'
         : '') +
-      '</form>' +
+      '</form>'
+        : '<form method="post" action="' + LOGIN_PATH + '">' +
+          '<input type="hidden" name="authn_id" value="' +
+          xmlEscape(record.id) + '"><p class="sub">This application is not ' +
+          'signed in to on this screen. Use one of the ways it allows, ' +
+          'below.</p><div class="row"><button type="submit" ' +
+          'id="kc-cancel" name="action" value="cancel" ' +
+          'class="secondary">Cancel</button></div></form>') +
       // FORGOT YOUR PASSWORD? (#63, 2026-09-22): the portal's self-service
       // reset, offered only where `common/mail_uses.ts` says it is — the
       // setting on, a mail transport, and a mode that checks passwords — and
@@ -8246,14 +8420,16 @@ class Authn {
       // ---------------------------------------------------------------------
       // None of the three on a linking sign-in (#109): it is a sign-in as
       // one person, with a password, and each of these is another door.
-      (locked ? '' : this.federatedOptionsHtml(record)) +
+      (locked || !offers('federation') ? ''
+                                       : this.federatedOptionsHtml(record)) +
       // AND THE KERBEROS DOOR, under the partners. Under rather than over,
       // because the partners are what an application was CONFIGURED with and
       // this is offered to everybody — a configured route belongs above an
       // ambient one.
-      (locked ? '' : this.integratedOptionHtml(record)) +
+      (locked || !offers('spnego') ? ''
+                                   : this.integratedOptionHtml(record)) +
       // AND THE WALLET (#38), last: offered to everybody, like Kerberos.
-      (locked ? '' : this.walletOptionHtml(record)) +
+      (locked || !offers('wallet') ? '' : this.walletOptionHtml(record)) +
       // WHAT THIS SCREEN CHECKS, BY MODE (2026-09-21). It said "no password
       // is checked" and "a key is enrolled on first use" in product too, where
       // both have been false — the first since 2026-09-06, the second since
@@ -9154,7 +9330,10 @@ class Authn {
     // moment ago, no directory entry to be the subject of — and the return
     // value was ignored, so the browser went back to a caller that sent it
     // straight here again.
+    // The application named (#457), for the sign-in mechanism question
+    // startSession() still asks of a gated door.
     const said = { request: req, gated: true,
+                   application: String(record.application || ''),
                    credential: { kind: 'password' },
                    risk: assessment || undefined,
                    riskDecision: riskDecision };
@@ -10909,8 +11088,12 @@ class Authn {
         // Nothing refuses an unauthenticated session in `startSession()`
         // today, and the null is looked at anyway (2026-09-22, #62 P0): a
         // refusal added there later would otherwise loop the browser.
+        // The application named (#457): an application that allows only
+        // some sign-in mechanisms allows no anonymous session.
         const anonymousSaid = { request: req, authenticated: false,
-                                gated: true };
+                                gated: true,
+                                application: String(record.application ||
+                                                    '') };
         const anonymous = this.startSession(res, ANONYMOUS_USERNAME, [], '0',
                                             record.protocol, anonymousSaid);
         if (this.refusedSession(res, base, record, ANONYMOUS_USERNAME,
@@ -11466,6 +11649,7 @@ class Authn {
         // HAVE: the issuance policy was asked there, with this assessment,
         // before the offer was drawn.
         const said = { request: req, gated: true,
+                       application: String(step.authn.application || ''),
                        credential: { kind: 'password' },
                        risk: step.risk,
                        riskDecision: step.riskDecision };

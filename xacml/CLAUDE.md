@@ -1634,6 +1634,35 @@ application declared for nothing and a session are never refused by it.
 * `tests/protocol_declaration.js` holds the rule, the request and the gate;
   no over-HTTP job asserts a refusal yet.
 
+### The sign-in mechanisms an application allows (#457, 2026-10-06)
+
+`authn-mechanism`, a Deny right after the protocol rule and before risk, **in
+both modes**: a browser issuance to an application that lists the sign-in
+mechanisms it allows (`appAuthnMechanism`) is denied when the person's
+authentication satisfies none of them. Two ENVIRONMENT bags carry it —
+`AUTHN_ATTRIBUTE.ALLOWED_MECHANISM` (the application's list) and `MECHANISM`
+(what the session satisfies, from `common/authn_mechanisms.ts`) — and the rule
+fires only when the allowed bag holds something.
+
+* **The gate supplies both** (`issuance_gate.js`'s `mechanismFactsOf()`), on
+  four BROWSER kinds only — a session started at a sign-in door (which names
+  the event it is about to record, `authenticationEvent`), an authorization
+  response, a SAML assertion and a WS-Federation token on a session — and
+  never for a caller saying `browser: false` (SAML 2.0's attribute query).
+  rcbj: browser authentication only. It makes the policy asked past both
+  shortcuts.
+* **The PEP reads the obligation** (`MECHANISM_OBLIGATION`) after the protocol
+  Deny and before risk, enforced where the role question was waived, and
+  answers `mechanism: { allowed, satisfied }` — which the doors read as a
+  RE-PROMPT, never a refusal about roles (rcbj). `STS-XACML-0170` on the audit
+  row.
+* **A gated sign-in door is asked again at the session's start**, the role
+  question waived, because the door asked before its second factor and could
+  not ask about the whole authentication (`authn/CLAUDE.md`).
+* **`decideAuthnMechanisms: no`** builds the policy without it.
+* `tests/authn_mechanism_enforcement.js` holds the library, the rule, the
+  routing, the door and the OAuth and WS-Federation re-prompts.
+
 ## THE FOURTEENTH DEFECT: TWO CONTAINERS CLAIMING A PAGE THAT WAS NEVER WRITTEN
 
 `xacml_store.ts` and `xacml_pep_registry.ts` each carry a `SCHEMA` whose comment

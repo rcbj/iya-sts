@@ -857,6 +857,24 @@ under `forceMfa` for the same reason.
 
 ### `appAuthnMechanism` — the generalisation of `appFederationRelationship`
 
+**A LIST OF WHAT IS ALLOWED, AND ENFORCED, SINCE #457 (2026-10-06).** What
+follows was written when it was one value that only routed. Now
+`declaredMechanismsFor()` returns the list as written and the part of it this
+service can offer; one usable mechanism routes as the one value did, several
+draw the screen with only those (`record.allowedMechanisms`, read by
+`loginPage()`: no password form unless `password`/`password-mfa`, no emailed
+first factor and no anonymous button while a list is set, the partners, the
+Kerberos door and the wallet only where allowed). The ENFORCEMENT is the
+issuance policy's (`xacml/CLAUDE.md`): `startSessionHere()` puts the
+authentication it is about to record to the gate, and refuses a mechanism the
+application does not allow with `STS-AUTHN-0298` through
+`refuseOnMechanism()`, which `refusedSession()` draws the screen again for. **A
+door that passed `gated: true` asked the policy before its second factor**, so
+the session's start asks the mechanism question again, roles waived — only for
+an application that restricts, because asking re-runs the policy's other rules
+(the console's alarm). The protocols re-prompt through `beginAuthentication()`
+on the policy's answer; see each protocol's file.
+
 An application entry may now DECLARE how its people authenticate, from the same
 closed vocabulary `fedAuthnMechanism` uses (`federation.MECHANISM_IDS`). One
 table for both, because they answer the same question from two sides, and two

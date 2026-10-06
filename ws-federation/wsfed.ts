@@ -267,6 +267,10 @@ const WAUTH_HARDWARE = [
 ];
 
 const PASSIVE_PATH = '/wsfed';
+// THE ONE-TRIP MARKER OF A SIGN-IN MECHANISM RE-PROMPT (#457), on the return
+// address the way `step_up.HONOURED` is. A browser that sets it itself only
+// turns the re-prompt into the refusal: it can skip the trip, never the rule.
+const MECHANISM_MARKER = 'sts_mechanism_retry';
 
 const RP_PATH = '/wsfed/rp';
 
@@ -1297,6 +1301,35 @@ class WsFederation {
       // reads (#62 P3).
       session: session
     });
+    // A SESSION ON A SIGN-IN MECHANISM THE RELYING PARTY DOES NOT ALLOW
+    // (#457) is sent to sign in again, ONCE — the screen offers only the
+    // allowed mechanisms and refuses a sign-in with any other — and a request
+    // back from that trip still unmet is the refusal page below.
+    if (!roleAnswer.allowed && roleAnswer.mechanism &&
+        String(params[MECHANISM_MARKER] || '') !== '1' &&
+        session.authenticated !== false) {
+      const back = this.requeryString(params, ['wfresh', MECHANISM_MARKER]);
+      errorCodes.mark(res, 'STS-WSFED-0017');
+      log.info('wsfed: "' + realm + '" allows signing in with ' +
+               roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
+               'of "' + String((session.user || {}).username) + '" used ' +
+               'none of them; sent to sign in again.');
+      const where = this.deps.beginAuthentication({
+        returnTo: PASSIVE_PATH + '?' + back + (back ? '&' : '') +
+                  encodeURIComponent(MECHANISM_MARKER) + '=1',
+        hint: String((session.user || {}).username || ''),
+        protocol: 'WS-Federation',
+        application: realm,
+        details: [
+          { label: 'wtrealm', value: realm,
+            note: 'it allows signing in with ' +
+                  roleAnswer.mechanism.allowed.join(', ') + ' only.' }
+        ]
+      });
+      log.debug("Leaving WsFederation.issueSignInResponse(). A re-prompt " +
+                "for an allowed sign-in mechanism.");
+      return res.set('Cache-Control', 'no-store').redirect(303, where);
+    }
     if (!roleAnswer.allowed) {
       log.info('wsfed: the issuance policy refused a token for "' +
                String((session.user || {}).username) + '" to "' + realm +
@@ -1305,8 +1338,10 @@ class WsFederation {
       log.debug("Leaving WsFederation.issueSignInResponse(). The issuance " +
                 "policy refused it.");
       // A realm being removed (#262) is its own code.
+      // A sign-in mechanism still not allowed after the one trip (#457) is
+      // its own.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-                                               : 'STS-WSFED-0011');
+        : (roleAnswer.mechanism ? 'STS-WSFED-0018' : 'STS-WSFED-0011'));
       log.debug("Leaving WsFederation.issueSignInResponse().");
       return this.wsfedError(res, 403, 'Refused by policy', roleAnswer.why,
         '<p>The person is signed in. The XACML issuance policy would not let ' +

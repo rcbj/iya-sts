@@ -142,13 +142,15 @@ the service's own key, and only in a ticket from this realm's KDC.
 The local realm is stripped from the principal (`alice@EXAMPLE.COM` signs in
 `alice`, the same entry a typed sign-in finds); a foreign realm is kept whole.
 
-It is available to every application and registered for none, three ways:
+It is available to every application that does not restrict its sign-in
+mechanisms (`appAuthnMechanism`, [Applications](applications.md)), and
+registered for none, three ways:
 
 1. **"Sign in with Kerberos"** on `/authn/login` (`krb5.spnegoLoginButton`),
    for whatever flow is in progress — OAuth 2.0, WS-Federation, SAML, the
    console;
-2. **`appAuthnMechanism: spnego`** on an application entry — its people never
-   see the screen;
+2. **`spnego` alone in `appAuthnMechanism`** on an application entry — its
+   people never see the screen;
 3. **`fedAuthnMechanism: spnego`** on an identity-provider-side
    [federation](federation.md) relationship.
 

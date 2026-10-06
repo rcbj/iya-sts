@@ -5827,6 +5827,12 @@ const CODES = [
       'it; at a recheck a stored key\'s attestation becomes untrusted.',
     spec: 'the registration\'s own refusal where trust is demanded ' +
       '(STS-AUTHN-0235); none at a recheck' },
+  { code: 'STS-AUTHN-0298',
+    summary: 'A sign-in was refused at the sign-in door because it used a ' +
+      'mechanism the application being signed in to does not allow ' +
+      '(appAuthnMechanism, #457). The screen is drawn again, naming the ' +
+      'mechanisms it allows.',
+    spec: 'the sign-in screen, drawn again' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -9040,6 +9046,16 @@ const CODES = [
       'client was presented at a resource carrying no cnf.jkt. Such a token ' +
       'is honoured only DPoP-bound (#446).',
     spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0945',
+    summary: 'An authorization request reached a session whose sign-in ' +
+      'mechanism the client does not allow (appAuthnMechanism, #457); the ' +
+      'person was sent to sign in again with one it does.',
+    spec: 'HTTP 302 to the sign-in screen' },
+  { code: 'STS-OAUTH-0946',
+    summary: 'An authorization request with prompt=none reached a session ' +
+      'whose sign-in mechanism the client does not allow ' +
+      '(appAuthnMechanism, #457), and prompt=none forbids asking.',
+    spec: 'login_required (OIDC Core 3.1.2.6)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -9531,6 +9547,26 @@ const CODES = [
       '#160.',
     spec: 'SOAP response with status Success and nothing embedded ' +
       '(HTTP 200) — the empty response' },
+  { code: 'STS-SAML-0099',
+    summary: 'A SAML 2.0 sign-in reached a session whose sign-in mechanism ' +
+      'the service provider does not allow (appAuthnMechanism, #457); the ' +
+      'person was sent to sign in again with one it does, once.',
+    spec: 'HTTP 303 to the sign-in screen' },
+  { code: 'STS-SAML-0100',
+    summary: 'A SAML 2.0 request back from its one sign-in trip, or with ' +
+      'IsPassive, still rested on a sign-in mechanism the service provider ' +
+      'does not allow (appAuthnMechanism, #457).',
+    spec: 'Responder / RequestDenied' },
+  { code: 'STS-SAML-0101',
+    summary: 'A SAML 1.1 sign-in reached a session whose sign-in mechanism ' +
+      'the relying party does not allow (appAuthnMechanism, #457); the ' +
+      'person was sent to sign in again with one it does, once.',
+    spec: 'HTTP 303 to the sign-in screen' },
+  { code: 'STS-SAML-0102',
+    summary: 'A SAML 1.1 flow back from its one sign-in trip still rested ' +
+      'on a sign-in mechanism the relying party does not allow ' +
+      '(appAuthnMechanism, #457).',
+    spec: 'HTTP 403 page' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -9737,6 +9773,16 @@ const CODES = [
     summary: 'The mock relying party at /wsfed/rp received a sign-in ' +
       'response that failed one or more of its verification checks.',
     spec: 'HTTP 200 page listing the failed checks' },
+  { code: 'STS-WSFED-0017',
+    summary: 'A WS-Federation sign-in reached a session whose sign-in ' +
+      'mechanism the relying party does not allow (appAuthnMechanism, ' +
+      '#457); the person was sent to sign in again with one it does, once.',
+    spec: 'HTTP 303 to the sign-in screen' },
+  { code: 'STS-WSFED-0018',
+    summary: 'A WS-Federation request back from its one sign-in trip still ' +
+      'rested on a sign-in mechanism the relying party does not allow ' +
+      '(appAuthnMechanism, #457).',
+    spec: 'HTTP 403 page' },
   // ===== FED ===============================================================
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +
@@ -17394,6 +17440,17 @@ const CODES = [
     summary: 'No issuance policy, not even the built-in one, could answer ' +
       'the per-right GNAP question (issue-gnap-right); the right was ' +
       'refused (#432).',
+    spec: '' },
+  { code: 'STS-XACML-0169',
+    summary: 'The application registry could not be read for the sign-in ' +
+      'mechanisms an application allows (appAuthnMechanism, #457), so the ' +
+      'issuance gate required none for that issuance.',
+    spec: '' },
+  { code: 'STS-XACML-0170',
+    summary: 'The issuance policy denied a browser issuance on the sign-in ' +
+      'mechanism (#457): the application allows only some mechanisms ' +
+      '(appAuthnMechanism) and the person\'s authentication used none of ' +
+      'them. The door re-prompts for an allowed one.',
     spec: '' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
