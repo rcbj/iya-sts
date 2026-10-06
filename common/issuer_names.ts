@@ -124,11 +124,20 @@ export = class IssuerNames {
     log.debug("Entering IssuerNames.entityIdFor().");
     let out = '';
     try {
-      out = String(require('../saml/saml2_sso')
-        .idpEntityIdFor(String(application || '')) || '');
+      const sso = require('../saml/saml2_sso');
+      // ASKED, NEVER BUILT. Before the composition root has installed the
+      // SSO module's instance, a facade call would build a DEFAULT one, and
+      // the root's own install would then refuse and stop the start — which
+      // is what WS-Trust's startup warning did in product mode, the one
+      // mode whose issuer is aligned with the entityID. Until the root has
+      // installed it, the shared setting is read directly, below.
+      if (sso.instanceOrigin() === 'none') {
+        throw new Error('the SAML 2.0 SSO module is not installed yet');
+      }
+      out = String(sso.idpEntityIdFor(String(application || '')) || '');
     } catch (e) {
-      // The SSO module is not loaded (a library tested on its own): the
-      // shared setting, read directly.
+      // The SSO module is not loaded (a library tested on its own) or not
+      // installed yet (a startup read): the shared setting, read directly.
       log.debug("Caught in IssuerNames.entityIdFor(): " +
                 ((e && e.message) || e));
       out = String(config.value('saml2.entityId') || '').trim();
