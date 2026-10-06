@@ -909,6 +909,54 @@ function chainList(rows) {
 // The table is deliberately left alone: it shows both spellings side by side in
 // two columns, where seeing them is the point, and changing `chainKey` would
 // change what `/admin-api/delegation` calls a chain.
+// ---------------------------------------------------------------------------
+// AN APPLICATION IS ONE BOX HOWEVER IT WAS NAMED (2026-10-06, rcbj). An act or
+// a configured pair can name an application by its identifier, by an audience
+// it registered on `oauthAudience`, or by its client_id — an RFC 8693
+// exchange recorded before the audience was registered keeps the audience as
+// it was asked for, and `appAllowedToDelegateTo` may hold an audience, which
+// the delegation policy resolves (`resolveTarget()`). Keyed as written, the
+// picture drew `api` and `https://api.example.com` as two boxes for one
+// application. So an application name is resolved to the entry that
+// registered it — the identifier, then an audience, then a client_id, the
+// order `delegation_policy.ts`'s resolveTarget() and applicationFor() use —
+// and keyed by that entry's identifier. A name no entry answers to is kept as
+// written: an unregistered audience is still its own dashed box, which the
+// header above argues for. The table (`chainKey`) is left alone, as it is for
+// two spellings of one identity.
+//
+// `applications.js` is required LAZILY: it is loaded after this module by
+// the console, and a registry that cannot be read leaves the name as written
+// rather than costing the picture.
+// ---------------------------------------------------------------------------
+/**
+ * Resolves an application name — identifier, audience or client_id — to the
+ * identifier of the application that registered it.
+ *
+ * @param name - the name as an act or a configured pair gave it
+ * @returns the registered application's identifier, or the name as given
+ */
+function applicationNameOf(name) {
+  log.debug("Entering applicationNameOf().");
+  const wanted = String(name == null ? '' : name).trim();
+  if (!wanted) {
+    log.debug("Leaving applicationNameOf(). Nothing named.");
+    return '';
+  }
+  let found = null;
+  try {
+    const applications = require('./applications');
+    found = applications.get(wanted) || applications.forAudience(wanted) ||
+      applications.forClientId(wanted) || null;
+  } catch (e) {
+    log.debug("Caught in applicationNameOf(): " + ((e && e.message) || e));
+    found = null;
+  }
+  log.debug("Leaving applicationNameOf(). " +
+            (found ? found.identifier : 'Unregistered.'));
+  return found ? String(found.identifier) : wanted;
+}
+
 /**
  * Returns the key a party is drawn under, so two spellings of one identity
  * or application are one box.
@@ -924,7 +972,7 @@ function nodeIdOf(party) {
   }
   if (party.application) {
     log.debug("Leaving nodeIdOf().");
-    return stats.identityKeyOf(party.application);
+    return stats.identityKeyOf(applicationNameOf(party.application));
   }
   log.debug("Leaving nodeIdOf().");
   return party.presented || '';
@@ -1058,6 +1106,9 @@ function graph(rows, options) {
         // party can arrive as a bare name on one act and with its application
         // identifier on the next, and the box should carry both.
         key: '', presented: '', application: '',
+        // The OTHER names an application box was given — an audience, a
+        // client_id — once they are resolved to the one it is drawn as.
+        aliases: [],
         // What the party IS, in the protocol's own words, from the act that
         // said it first. They are per-role sentences, and the box's role is
         // whichever it played most, which is settled below.
@@ -1077,8 +1128,18 @@ function graph(rows, options) {
     if (party) {
       if (party.key && !node.key) node.key = party.key;
       if (party.presented && !node.presented) node.presented = party.presented;
-      if (party.application &&
-          !node.application) node.application = party.application;
+      if (party.application) {
+        // The REGISTERED identifier, whatever the act spelled, so the page
+        // finds the entry; the spelling given is kept as an alias.
+        const resolved = applicationNameOf(party.application);
+        if (!node.application) {
+          node.application = resolved;
+        }
+        if (party.application !== node.application &&
+            node.aliases.indexOf(party.application) < 0) {
+          node.aliases.push(party.application);
+        }
+      }
       if (party.what && !node.what) node.what = party.what;
     }
     log.debug("Leaving nodeFor().");

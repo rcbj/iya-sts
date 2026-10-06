@@ -4180,6 +4180,11 @@ class AdminViews {
         ? 'presented as ' + node.presented : '',
       node.application && node.application !== node.id
         ? 'named as an application: ' + node.application : '',
+      // The audiences and client_ids an act or a configured pair named it by
+      // (2026-10-06): drawn as this one box because they resolve to it.
+      (node.aliases || []).length
+        ? 'also named as ' + node.aliases.join(', ') + ', which this ' +
+          'application registered' : '',
       entry ? 'In the directory at ' + entry.dn + '.'
             : (node.key ? 'No entry under ou=users names this.' : ''),
       application ? 'In the applications registry' +
