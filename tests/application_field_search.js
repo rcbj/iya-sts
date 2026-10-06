@@ -32,6 +32,11 @@
 //      from the answer; and `WebKit.fieldGridCell()` drawing the search only
 //      on the three cells it is offered on.
 //
+//   5. `appMayAct` (#461): its search over people OR applications, a pick
+//      that REPLACES the one value with the entry's DN, the DN each list now
+//      carries (`dn` on a users row) resolving to the claim `may_act`
+//      makes, and the self-reference rule by DN at a create and a set.
+//
 // The search runs in the browser through the runtime, and its CSS
 // (`:focus-within`) is a browser's; neither is driven here.
 // ---------------------------------------------------------------------------
@@ -39,7 +44,9 @@
 delete process.env.CONFIG_FILE;
 
 const applications = require('../common/applications');
-require('../ldap/ldap_server');
+const dir = require('../ldap/ldap_server');
+const credentials = require('../common/credentials');
+const policy = require('../common/delegation_policy');
 const adminActions = require('../admin-core/admin_actions');
 const adminViews = require('../admin-core/admin_views');
 const webAnswers = require('../admin-ui/web_answers');
@@ -270,7 +277,8 @@ function run(t) {
                                          {}, opts);
   const delegateCell = webKit.fieldGridCell(row('appAllowedToDelegateTo'),
                                             {}, opts);
-  const plainCell = webKit.fieldGridCell(row('appMayAct'), {}, opts);
+  const plainCell = webKit.fieldGridCell(row('oauthRedirectUri'), {},
+                                         opts);
   t.check(/fg-search/.test(groupCell) && /name="fgadd"/.test(groupCell) &&
           (groupCell.match(/name="fgadd"/g) || []).length === 5 &&
           /tabindex="-1"/.test(groupCell) &&
@@ -307,8 +315,13 @@ function run(t) {
           'open, with the query kept and a line saying which (#462)');
   t.check(Object.keys(applications.FIELD_SEARCHES).sort().join(',') ===
             'appAllowedToActOnBehalfOf,appAllowedToDelegateTo,' +
-            'appDelegationSubjectGroup',
-          '4h. three lists have a search: two of applications, one of groups');
+            'appDelegationSubjectGroup,appMayAct' &&
+          applications.FIELD_SEARCHES.appMayAct === 'parties',
+          '4h. four fields have a search: two lists of applications, one of ' +
+          'groups, and appMayAct over people or applications (#461)');
+
+  // --- 5. appMayAct (#461) ---------------------------------------------
+  mayAct(t, others[1]);
 
   // --- Clean up ---------------------------------------------------------
   [ID].concat(others).forEach(function (one) {
@@ -317,6 +330,135 @@ function run(t) {
   // The groups stay: the console has no group delete to call, and they live
   // in this test process's directory only.
   log.debug("Leaving run().");
+}
+
+/**
+ * The `appMayAct` half (#461): the self-reference rule by DN, the DNs the
+ * two lists carry, the claim they resolve to, and the console's helpers.
+ *
+ * @param t - the runner
+ * @param other - another application of the realm
+ */
+function mayAct(t, other) {
+  log.debug("Entering mayAct().");
+  const own = applications.get(ID);
+  const ownDn = String((own && own.dn) || '');
+  const spelled = ownDn.toUpperCase().replace(/,/g, ', ');
+  const self = adminActions.applicationsAction({
+    action: 'set', application: ID, attribute: 'appMayAct', value: spelled });
+  t.check(!!ownDn && selfRefusedDn(self),
+          '5a. appMayAct naming the application\'s own entry is refused, ' +
+          'however the DN\'s case and spacing are written',
+          JSON.stringify({ dn: ownDn, errors: self && self.errors }));
+  const container = applications.containerDn();
+  const created = adminActions.applicationsAction({
+    action: 'create', identifier: TAG + '-ma',
+    'field.appMayAct': 'cn=' + TAG + '-ma,' + container
+  }, []);
+  t.check(selfRefusedDn(created) && !applications.get(TAG + '-ma'),
+          '5b. so is a create naming the DN its entry is about to be given',
+          JSON.stringify(created && created.errors));
+
+  // A person, found through the users list as the console finds them.
+  const username = TAG + '-person';
+  dir.createUser(username, { invent: false });
+  const people = adminViews.usersJson(requestWith({ q: username, per: '5' }));
+  const row = (people.users || []).filter(function (one) {
+    return one.key === username || one.name === username;
+  })[0];
+  const personDn = String((row && row.dn) || '');
+  const facts = personDn ? credentials.delegationFactsFor(personDn) : null;
+  t.check(!!personDn && !!facts && facts.person === true,
+          '5c. a users-list row carries its entry\'s DN, and that DN is ' +
+          'the one the delegation reader resolves to a person',
+          JSON.stringify({ dn: personDn, person: facts && facts.person }));
+  const setPerson = adminActions.applicationsAction({
+    action: 'set', application: ID, attribute: 'appMayAct',
+    value: personDn });
+  const claimPerson = policy.mayActClaimFor(ID);
+  t.check(setPerson && setPerson.ok === true && !!claimPerson &&
+          claimPerson.sub === facts.sub,
+          '5d. appMayAct set to that DN is accepted, and may_act names the ' +
+          'person by their urn:uuid subject',
+          JSON.stringify({ set: setPerson && setPerson.errors,
+                           claim: claimPerson, sub: facts && facts.sub }));
+  const apps = adminViews.applicationsJson(requestWith({
+    q: other, per: '5', exclude: ID }));
+  const otherDn = String(((apps.applications || [])[0] || {}).dn || '');
+  const setApp = adminActions.applicationsAction({
+    action: 'set', application: ID, attribute: 'appMayAct',
+    value: otherDn });
+  const claimApp = policy.mayActClaimFor(ID);
+  t.check(!!otherDn && setApp && setApp.ok === true && !!claimApp &&
+          claimApp.sub === other,
+          '5e. an applications-list row\'s DN is accepted too, and may_act ' +
+          'names that application',
+          JSON.stringify({ dn: otherDn, claim: claimApp }));
+
+  // The console's helpers for a single-valued, two-kind search.
+  const fields = { action: 'update-fields', application: ID,
+                   'field.appMayAct': personDn,
+                   'fgfind.appMayAct': 'x',
+                   'fgkind.appMayAct': 'applications' };
+  const asked = webAnswers.fieldSearchOf(Object.assign(
+    { fgsearch: 'appMayAct' }, fields));
+  const askedPeople = webAnswers.fieldSearchOf({ fgsearch: 'appMayAct' });
+  t.check(asked.which === 'applications' && askedPeople.which === 'people' &&
+          webAnswers.fieldSearchPath('parties', askedPeople, [ID]) ===
+            '/admin-api/users?per=5&page=1' &&
+          webAnswers.fieldSearchPath('parties', asked, [ID]) ===
+            '/admin-api/applications?q=x&per=5&page=1&exclude=' + ID,
+          '5f. the toggle picks the list: GET /admin-api/users for people ' +
+          '(no exclude), /admin-api/applications for applications, leaving ' +
+          'out the application itself');
+  const replaced = webAnswers.withValueAdded(fields, 'appMayAct', otherDn);
+  t.check(replaced['field.appMayAct'] === otherDn &&
+          !Object.keys(replaced).some(function (key) {
+            return /^field\.appMayAct\.\d+$/.test(key);
+          }),
+          '5g. a Use REPLACES the one value rather than adding a box');
+  const foundPeople = webAnswers.fieldSearchFound('parties', askedPeople,
+                                                  people);
+  const foundApps = webAnswers.fieldSearchFound('parties', asked, apps);
+  t.check(foundPeople.which === 'people' &&
+          foundPeople.rows.some(function (one) {
+            return one.kind === 'person' && one.value === personDn;
+          }) &&
+          foundApps.which === 'applications' &&
+          foundApps.rows[0].kind === 'application' &&
+          foundApps.rows[0].value === otherDn,
+          '5h. the results are labelled by kind and carry the DN to store',
+          JSON.stringify({ people: foundPeople.rows, apps: foundApps.rows }));
+  const cell = webKit.fieldGridCell({ attribute: 'appMayAct', type: 'string',
+                                      families: [], everyFamily: true,
+                                      what: 'appMayAct' }, {},
+    { redraw: '/admin/applications/edit',
+      searches: applications.FIELD_SEARCHES,
+      finds: { appMayAct: foundApps } });
+  t.check(/fg-search-open/.test(cell) &&
+          /name="fgkind\.appMayAct" value="applications" checked/
+            .test(cell) &&
+          />Use</.test(cell) && !/>Add</.test(cell) &&
+          /name="field\.appMayAct"/.test(cell),
+          '5i. the single text box draws the search, the toggle as it was ' +
+          'asked, and Use rather than Add');
+  adminActions.applicationsAction({ action: 'set', application: ID,
+                                    attribute: 'appMayAct', value: '' });
+  log.debug("Leaving mayAct().");
+}
+
+/**
+ * Whether a refusal is the appMayAct self-reference (STS-REG-0335).
+ *
+ * @param result - the action's answer
+ * @returns true when it is
+ */
+function selfRefusedDn(result) {
+  log.debug("Entering selfRefusedDn().");
+  log.debug("Leaving selfRefusedDn().");
+  return !!result && result.ok === false &&
+         /appMayAct: .* is this application's own entry/
+           .test((result.errors || []).join(' '));
 }
 
 module.exports = {

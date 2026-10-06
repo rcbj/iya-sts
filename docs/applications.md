@@ -328,6 +328,15 @@ may name the application itself — its identifier, an identifier it answers to,
 or an audience it registered: the console and the API refuse that value
 (`STS-REG-0335`), since both lists name the *other* party of a delegation.
 
+`appMayAct` — the ONE party, a person or another application, that may act
+for this application — has the same search, with a toggle between **people**
+(the Users page's match, `GET /admin-api/users`, whose rows carry each person's
+entry `dn`) and **applications** (as above, leaving out the application
+itself). **Use** replaces the field's one value with the chosen entry's DN,
+the form the attribute holds and `may_act` is resolved from; a person with no
+directory entry has no DN and cannot be chosen. An `appMayAct` naming the
+application's own entry is refused too (`STS-REG-0335`).
+
 **"Every attribute" is meant literally.** The drill-down shows the whole entry,
 including the operational attributes `createTimestamp` and `modifyTimestamp`
 and anything an `ldapmodify` wrote by hand.

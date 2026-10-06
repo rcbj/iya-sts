@@ -1749,7 +1749,9 @@ class ApplicationsPage {
       'with + to add one and the bin to delete one; every box that is there ' +
       'must hold a value. The delegation lists on <em>Every protocol</em> ' +
       'open a search when you work in them — other applications, or the ' +
-      'realm\'s groups — five results a page, each with an Add. A field ' +
+      'realm\'s groups — five results a page, each with an Add; ' +
+      '<code>appMayAct</code> searches people or applications, and Use ' +
+      'replaces its one value with the chosen entry\'s DN. A field ' +
       'with a fixed set of values offers them to choose from. These ' +
       'write the same entry an <code>ldapmodify</code> ' +
       'writes, and RFC 9700 mode reads it on the very next request. The ' +

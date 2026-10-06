@@ -1874,7 +1874,13 @@ const SCHEMAS = {
                      'through, read off the data rather than written down — ' +
                      'which is what the `protocol` filter takes.'
       },
-      users: { type: 'array', items: openObject('One identity.', {}) }
+      users: { type: 'array', items: openObject('One identity.', {
+        dn: { type: 'string',
+              description: 'The DN of the person\'s entry in this realm\'s ' +
+                           'directory, or empty for an identity with none ' +
+                           '(#461) — the form `appMayAct` and `stsMayAct` ' +
+                           'name a person in.' }
+      }) }
     }, PAGING_PROPERTIES)),
 
   UserDetail: openObject(

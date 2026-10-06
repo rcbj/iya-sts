@@ -254,7 +254,8 @@ class WebAnswers {
    * Reads which search a press asks for.
    *
    * @param fields - the form's fields
-   * @returns `{ attribute, query, page, add }`; `add` is '' unless Add
+   * @returns `{ attribute, which, query, page, add }`; `add` is '' unless
+   *   Add (or Use)
    */
   static fieldSearchOf(fields: Json): Json {
     const pressed = WebAnswers.has(fields, 'fgadd')
@@ -266,6 +267,10 @@ class WebAnswers {
     const shown = Number(WebAnswers.one(fields, 'fgpage.' + attribute)) || 1;
     return {
       attribute: attribute,
+      // WHICH KIND a `parties` search asks for (#461): the toggle's value,
+      // people unless it says applications. Ignored by the other kinds.
+      which: WebAnswers.one(fields, 'fgkind.' + attribute) === 'applications'
+        ? 'applications' : 'people',
       query: WebAnswers.one(fields, 'fgfind.' + attribute).trim(),
       // An Add keeps the page it was pressed on; the answer is clamped, so a
       // page the Add emptied comes back as the last one.
@@ -274,9 +279,12 @@ class WebAnswers {
     };
   }
 
+  // A SINGLE-VALUED FIELD (#461) is one box, `field.<attribute>` with no
+  // index, and the value REPLACES what it holds; a list gets a new box.
   /**
    * The form's fields with a value put in a new box of a list, after the
-   * boxes it holds — or as they were when a box already holds it.
+   * boxes it holds — or as they were when a box already holds it; for a
+   * single-valued field, with the value in place of its one box's.
    *
    * @param fields - the form's fields
    * @param attribute - the list
@@ -286,6 +294,10 @@ class WebAnswers {
   static withValueAdded(fields: Json, attribute: string,
                         value: string): Json {
     const out = Object.assign({}, fields);
+    if (Object.prototype.hasOwnProperty.call(out, 'field.' + attribute)) {
+      out['field.' + attribute] = value;
+      return out;
+    }
     const prefix = 'field.' + attribute + '.';
     let next = 0;
     let held = false;
@@ -317,44 +329,66 @@ class WebAnswers {
    * @returns the `/admin-api` path and query
    */
   static fieldSearchPath(kind: string, asked: Json, exclude: string[]): string {
+    // `parties` (#461) asks one of two lists, as the toggle says: the
+    // Users page's or the Applications page's. The users list takes no
+    // `exclude`, and needs none: the one value is replaced, not added to.
+    const people = kind === 'parties' && asked.which !== 'applications';
     const params = new URLSearchParams();
     if (asked.query) {
       params.append('q', asked.query);
     }
     params.append('per', String(kit.FIND_PER_PAGE));
     params.append('page', String(asked.page || 1));
-    exclude.forEach(function (one) {
+    (people ? [] : exclude).forEach(function (one) {
       if (one) {
         params.append('exclude', one);
       }
     });
-    return '/admin-api/' + (kind === 'groups' ? 'groups' : 'applications') +
-      '?' + params.toString();
+    return '/admin-api/' + (kind === 'groups' ? 'groups'
+      : people ? 'users' : 'applications') + '?' + params.toString();
   }
 
   /**
    * A field search's results, as the grid draws them, from the list's
    * answer.
    *
-   * @param kind - `applications` or `groups`
+   * @param kind - `applications`, `groups` or `parties`
    * @param asked - `fieldSearchOf()`'s answer
    * @param answer - the list operation's JSON, or null when it failed
-   * @returns `{ kind, query, page, pages, matched, rows, failed }`, each row
-   *   `{ value, label }`
+   * @returns `{ kind, which, query, page, pages, matched, rows, failed }`,
+   *   each row `{ value, label }` — and, for `parties`, `kind` (`person` or
+   *   `application`), the value its entry's DN ('' where it has none)
    */
   static fieldSearchFound(kind: string, asked: Json, answer: Json): Json {
-    const ok = !!answer && (kind === 'groups' ? Array.isArray(answer.groups)
-      : Array.isArray(answer.applications));
+    const parties = kind === 'parties';
+    const people = parties && asked.which !== 'applications';
+    const list = kind === 'groups' ? 'groups' : people ? 'users'
+      : 'applications';
+    const ok = !!answer && Array.isArray(answer[list]);
     const rows = !ok ? [] : kind === 'groups'
       ? answer.groups.map(function (one) {
         return { value: String(one.dn), label: String(one.cn || '') };
       })
-      : answer.applications.map(function (one) {
-        return { value: String(one.identifier),
-                 label: one.name && one.name !== one.identifier
-                   ? String(one.name) : '' };
-      });
-    return { kind: kind, query: asked.query,
+      : people
+        ? answer.users.map(function (one) {
+          return { kind: 'person', value: String(one.dn || ''),
+                   label: String(one.name || one.key || '') };
+        })
+        : parties
+          ? answer.applications.map(function (one) {
+            return { kind: 'application', value: String(one.dn || ''),
+                     label: String(one.identifier) +
+                       (one.name && one.name !== one.identifier
+                         ? ' (' + String(one.name) + ')' : '') };
+          })
+          : answer.applications.map(function (one) {
+            return { value: String(one.identifier),
+                     label: one.name && one.name !== one.identifier
+                       ? String(one.name) : '' };
+          });
+    return { kind: kind, which: parties ? (people ? 'people'
+                                                  : 'applications') : '',
+             query: asked.query,
              page: ok ? Number(answer.page) || 1 : 1,
              pages: ok ? Number(answer.pages) || 1 : 1,
              matched: ok ? Number(answer.matched) || 0 : 0,
