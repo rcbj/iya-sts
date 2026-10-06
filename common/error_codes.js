@@ -18607,6 +18607,11 @@ const CODES = [
       'console\'s was asked for format=svg; the drawing is its console ' +
       'twin\'s under /admin-api/console (#454).',
     spec: 'HTTP 400' },
+  { code: 'STS-API-0130',
+    summary: 'An unknown action was asked at a management API address ' +
+      'whose form helpers moved to /admin-api/console (#454); the ' +
+      'refusal names the actions the address still declares.',
+    spec: 'HTTP 400' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

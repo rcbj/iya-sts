@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4075** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4076** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 90
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 226
-* [Management API (`STS-API`)](#sts-api) — 79
+* [Management API (`STS-API`)](#sts-api) — 80
 * [User portal (`STS-PORTAL`)](#sts-portal) — 83
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 150
@@ -4349,6 +4349,7 @@ Raised from: mgmt-api/.
 | `STS-API-0127` | One of the admin console's own operations, under /admin-api/console, was asked with an access token that does not carry admin:console, which only the console's client is issued (#454). | forbidden (HTTP 403) |
 | `STS-API-0128` | A form helper of the admin console was asked at its old management API address; it is under /admin-api/console since #454. | HTTP 404 |
 | `STS-API-0129` | A management API operation whose drawing is the admin console's was asked for format=svg; the drawing is its console twin's under /admin-api/console (#454). | HTTP 400 |
+| `STS-API-0130` | An unknown action was asked at a management API address whose form helpers moved to /admin-api/console (#454); the refusal names the actions the address still declares. | HTTP 400 |
 
 ## STS-PORTAL
 
