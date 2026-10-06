@@ -4877,7 +4877,20 @@ const BOOLEAN_ATTRIBUTES = [
 // client was SEEN using, an open record. The setting overrides take their
 // lists from their setting (`config.js`'s enumValues), in the console.
 // ---------------------------------------------------------------------------
+// THE TWO DELEGATION SEMANTICS (#108, #186), one list for the two places that
+// need it: the field grid's choices below — so the Configuration tab offers a
+// checkbox per value for `appDelegationSemantics` and a choice of one for
+// `appDefaultDelegationSemantics` rather than a free text box — and the check
+// at the write, delegationAttributeProblem().
+const DELEGATION_SEMANTICS = ['delegation', 'impersonation'];
+
 const ATTRIBUTE_CHOICES = {
+  appDelegationSemantics: function () {
+    return DELEGATION_SEMANTICS.slice(0);
+  },
+  appDefaultDelegationSemantics: function () {
+    return DELEGATION_SEMANTICS.slice(0);
+  },
   oauthTokenEndpointAuthMethod: function () {
     return require('../oauth-oidc/client_auth').METHODS.slice(0);
   },
@@ -8271,7 +8284,7 @@ function delegationAttributeProblem(attribute, value) {
   }
   if ((attribute === 'appDelegationSemantics' ||
        attribute === 'appDefaultDelegationSemantics') &&
-      ['delegation', 'impersonation'].indexOf(text.toLowerCase()) < 0) {
+      DELEGATION_SEMANTICS.indexOf(text.toLowerCase()) < 0) {
     log.debug("Leaving delegationAttributeProblem(). Not a semantics.");
     return attribute + ': "' + text + '" is not delegation or ' +
            'impersonation.';
