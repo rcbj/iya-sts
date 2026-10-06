@@ -1396,6 +1396,15 @@ so must `admin-ui/admin.ts`.
    token's claim is `{ "active": false }` REBUILT by `claimsFor()`, so a member
    that leaked into the caller's object cannot become a signed statement.
 
+   **`act` AND `may_act` ARE MEMBERS OF BOTH ANSWERS (#469, 2026-10-06)** —
+   RFC 8693 section 7.2 registers them for introspection. `introspectionOf()`
+   copies them as the token carries them, `act` nested exactly as signed (the
+   current actor outermost, the chain beneath it back to the original client,
+   #443), so a resource server that introspects rather than reading the JWT
+   sees who acted. They are in the one object both shapes are built from, so
+   section 5's `intendedFor()` hides them with everything else from a caller
+   the token is not for. `tests/rfc9701_introspection.js` 4m–4p.
+
    **A JWT ONLY WHERE THE MEDIA TYPE IS NAMED.** `wantsJwt()` parses the Accept
    header with q-values rather than using `req.accepts()`, which answers "which
    would you send" — the wrong question once a wildcard is involved. No

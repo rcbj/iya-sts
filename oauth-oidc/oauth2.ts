@@ -17238,6 +17238,19 @@ class OAuth2Server {
       // the token itself states it — so a resource server that introspects
       // learns what one reading the JWT does.
       device_id: claims.device_id,
+      // RFC 8693 section 7.2 registers `act` and `may_act` as introspection
+      // response members (#469). Without them a resource server that
+      // introspects — an opaque-token deployment, or one asking for RFC
+      // 9701's JWT — could not see who acted, which is the whole of a
+      // delegation at the far end: `act` as the token nests it, the current
+      // actor outermost and the chain beneath it back to the original client
+      // (#443), and `may_act` as the subject stated it. Only as the token
+      // carries them, and only in an answer the caller may see at all —
+      // `intendedFor()` below decides that for this member as for `sub`.
+      act: claims.act && typeof claims.act === 'object'
+        ? claims.act : undefined,
+      may_act: claims.may_act && typeof claims.may_act === 'object'
+        ? claims.may_act : undefined,
       exp: claims.exp, iat: claims.iat, nbf: claims.nbf,
       sub: claims.sub, aud: claims.aud, iss: claims.iss, jti: claims.jti
     }));
