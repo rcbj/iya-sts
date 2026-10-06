@@ -3187,9 +3187,28 @@ function namesUnheldDek(cipher) {
 // the data-key rows the other processes wrote. A merge that still meets a
 // data encryption key it does not hold (made in between) reads them again and
 // tries once more.
-function writeAfterDeks(perform, rowKey, payload) {
+//
+// **THE DEK IS MADE BEFORE THE WAIT (2026-10-05).** A realm's DEK is made
+// lazily, by the first sealRow() for its class — and that happens inside
+// `perform`, AFTER settleDeks() has resolved. So the first row a new realm
+// sealed went out ahead of its DEK's row, every other process met a value
+// naming a DEK it did not hold (STS-KEYS-0058, ~30 times a realm in a
+// cluster run), and one that applied the row in that window kept its old
+// certificate authority. `sealedAs` names the class and realm `perform` will
+// seal under, and activeDek() is asked for it first, so a new DEK's row is
+// queued before the wait and is one of the writes the wait waits for.
+function writeAfterDeks(perform, rowKey, payload, sealedAs) {
   log.debug("Entering writeAfterDeks(). row=" + rowKey);
   const merges = !!store && typeof store.mergeKeys === 'function';
+  if (sealedAs) {
+    try {
+      activeDek('service', dekRealm(sealedAs.realm), dekClass(sealedAs.label));
+    } catch (e) {
+      // sealRow() asks the same question inside `perform` and reports a
+      // failure there, where the write is refused; nothing is lost here.
+      log.debug("Caught in writeAfterDeks(): " + ((e && e.message) || e));
+    }
+  }
   log.debug("Leaving writeAfterDeks().");
   return settleDeks().then(function () {
     return merges ? refreshDekRows() : 0;
@@ -5170,7 +5189,8 @@ function adoptStoredKeys(id, blob, cipher, options) {
 function writeKeys(id, payload) {
   log.debug("Entering writeKeys(). realm=" + id);
   log.debug("Leaving writeKeys(). After the data-key rows.");
-  return writeAfterDeks(writeKeysNow, id, payload);
+  return writeAfterDeks(writeKeysNow, id, payload,
+                        { label: 'signing-keys', realm: id });
 }
 
 function writeKeysNow(id, payload) {
@@ -5255,7 +5275,9 @@ function writeKeysNow(id, payload) {
 function writePki(rowKey, payload) {
   log.debug("Entering writePki(). row=" + rowKey);
   log.debug("Leaving writePki(). After the data-key rows.");
-  return writeAfterDeks(writePkiNow, rowKey, payload);
+  return writeAfterDeks(writePkiNow, rowKey, payload,
+                        { label: 'pki-hierarchy',
+                          realm: rowKey.slice(PKI_ROW_PREFIX.length) });
 }
 
 function writePkiNow(rowKey, payload) {
