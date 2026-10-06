@@ -476,6 +476,38 @@ class WsTrust {
     return { token: signed, jti: claims.jti };
   }
 
+  // WHAT THE ISSUED TOKEN SAYS ABOUT WHO ACTED, for the act's note (#478).
+  // It said, until #478, that nothing in an ActAs token carried the
+  // composite fact, "a gap in the mock" — true until #186 and wrong since:
+  // an ActAs assertion names every party that acted in its SAML V2.0
+  // Condition for Delegation Restriction, and since #476 a JWT names them in
+  // RFC 8693's nested `act`. The note now says what the token issued
+  // carries, in the token's own vocabulary.
+  private actNote(via, tokenType) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.actNote(). " + via);
+    const jwt = tokenType === JWT_TOKEN_TYPE;
+    let out;
+    if (via === 'ActAs') {
+      out = 'ActAs is COMPOSITE (WS-Trust 1.4 section 9.3): the far end ' +
+        'can see that a middle tier is acting, and the token issued says ' +
+        'so. ' + (jwt
+        ? 'The JWT names every party that acted in RFC 8693 section 4.1\'s ' +
+          'nested `act` claim, this requester outermost.'
+        : 'The assertion names every party that acted in its SAML V2.0 ' +
+          'Condition for Delegation Restriction, one <del:Delegate> each, ' +
+          'least to most recent, this requester last.');
+    } else {
+      out = 'OnBehalfOf is IMPERSONATION (WS-Trust 1.3 section 9.2): the ' +
+        (jwt ? 'JWT' : 'assertion') + ' names the subject and adds ' +
+        'nobody for this requester, so the relying party sees an ordinary ' +
+        'sign-in. A chain the presented token already carried is kept as it ' +
+        'was (' + (jwt ? 'its `act`' : 'its Delegation Restriction') + ').';
+    }
+    log.debug("Leaving WsTrust.actNote().");
+    return out;
+  }
+
   // The application a party authenticated as, by the name it presented:
   // the entry of that identifier, else the one registering it as a
   // client_id. Null for a person, or a name nothing registers.
@@ -2145,14 +2177,7 @@ class WsTrust {
           ? 'The request carried BOTH <wst:OnBehalfOf> and <wst14:ActAs>. ' +
             'OnBehalfOf is what this act is attributed to, which is the ' +
             'order this service has always read them in.'
-          : (via === 'ActAs'
-              ? 'ActAs is COMPOSITE: the far end is meant to be able to see ' +
-                'that a middle tier is acting. Nothing in the token this ' +
-                'service issues carries that, which is a gap in the mock ' +
-                'rather than in the profile.'
-              : 'OnBehalfOf is IMPERSONATION: the assertion names the ' +
-                'subject and says nothing about the requester, so the ' +
-                'relying party sees an ordinary sign-in.')
+          : this.actNote(via, tok.tokenType)
       });
     }
 

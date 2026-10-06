@@ -232,7 +232,8 @@ async function test() {
     });
   });
   const findings = acts.reduce(function (all, act) {
-    return all.concat(kit.noteStaleNotes(act, ELEMENT, product));
+    return all.concat(kit.actNotes(act, ELEMENT, product,
+                                       true));
   }, []);
   check("4d. the picture: a delegation line from " + cast.user + " to " +
         "each requester, and " + cast.gateway.identifier + " and " +
