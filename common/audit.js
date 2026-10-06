@@ -1143,6 +1143,15 @@ const ACTIONS = [
     label: 'A pushed authorization request was withdrawn' },
   { action: 'password.set', category: 'authentication',
     label: 'An administrator set a person\'s password' },
+  // A SERVICE ACCOUNT'S ROTATION (#221 P4), written by
+  // `common/service_account_rotation.ts` through `audit.record()` rather
+  // than `audited()`, which is why the widened vocabulary check did not
+  // find them.
+  { action: 'service-account.rotated', category: 'authentication',
+    label: 'A service account\'s password was rotated and pushed to its ' +
+           'destination' },
+  { action: 'service-account.rotation-failed', category: 'authentication',
+    label: 'A service account\'s password did not rotate; nothing changed' },
   { action: 'portal.app-password.created', category: 'authentication',
     label: 'A person made an app password' },
   { action: 'portal.app-password.revoked', category: 'authentication',
