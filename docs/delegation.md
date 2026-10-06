@@ -218,6 +218,17 @@ mode — are listed in [XACML](xacml.html).
   as for an actor token from `client_credentials`. Nothing is nested when the
   client exchanging the token is the one it was issued to. Only the outermost
   `act` is the current actor; the nested ones are history.
+* **Every entry names its issuer, and a client has one form.** Each `act`
+  entry the exchange writes carries `iss`, the issuer of the token it is in,
+  as the token-chaining profile requires — so two hops read
+  `act: { sub: <second actor>, iss: <issuer>, act: { sub: <first actor>,
+  iss: <issuer>, act: { sub: <web application>, iss: <issuer> } } }`. An entry
+  copied from the subject token keeps its own `iss`; one without is given
+  this issuer only when this service issued the subject token. A client named
+  as an actor — including the exchanging client when the policy chooses a
+  delegation and no actor token was sent — is always `urn:sts:client:<id>` in
+  RFC 9700 mode (and so in product mode) and the bare `client_id` otherwise.
+  A `may_act` naming the client in either form names it.
 * **Introspection returns the chain.** `/oauth2/introspect` answers with the
   token's `act`, nested as in the token, and its `may_act` (RFC 8693 section
   7.2), in the JSON response and in the RFC 9701 JWT alike, under the rule

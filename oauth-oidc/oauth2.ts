@@ -6078,6 +6078,14 @@ class OAuth2Server {
   // the top-level claims and the party identified as the current actor ...
   // are to be considered"): may_act, the delegation policy and the register
   // all read the current actor, which stays outermost.
+  //
+  // AND IT CARRIES `iss` (#471): this authorization server's issuer, the
+  // token's own `iss`. PR 21-1422 section 3.1.1.1, the multi-ICAM companion
+  // of the profile above, says it in as many words for the token exchange —
+  // the nested entry holds "a sub claim with the identity of the client ...
+  // and an iss claim identifying the AS" — and the actor's entry the same
+  // pair, as PR 21-1421 section 2.4.1 has it. `actChainEntry()` below is
+  // where every entry this exchange writes is made.
   // ---------------------------------------------------------------------------
   /**
    * Returns the nested `act` entry naming the client a chain began with, or
@@ -6090,10 +6098,13 @@ class OAuth2Server {
    *   delegation policy is asked about it
    * @param namespaced - whether a client's subject is `urn:sts:client:<id>`
    *   (RFC 9700 mode)
-   * @returns `{ sub }`, or null
+   * @param issuer - this authorization server's issuer, the issued token's
+   *   `iss` (#471)
+   * @returns `{ sub, iss }`, or null
    */
   static originalClientAct(subject: Json, ownVerified: boolean,
-                           actorName: string, namespaced: boolean): Json {
+                           actorName: string, namespaced: boolean,
+                           issuer: string): Json {
     helpers.log.debug("Entering OAuth2Server.originalClientAct().");
     if (!ownVerified || !subject ||
         (subject.act && typeof subject.act === 'object')) {
@@ -6114,7 +6125,135 @@ class OAuth2Server {
     }
     helpers.log.debug("Leaving OAuth2Server.originalClientAct(). " +
                       clientId);
-    return { sub: namespaced ? 'urn:sts:client:' + clientId : clientId };
+    return OAuth2Server.actChainEntry(
+      OAuth2Server.clientActorSubject(clientId, namespaced), issuer);
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE SUBJECT FORM FOR A CLIENT NAMED AS AN ACTOR (#471).
+  //
+  // A client's own subject is `urn:sts:client:<id>` in RFC 9700 mode (section
+  // 4.13, `client-subject-separated`; product implies the mode) and the bare
+  // client_id otherwise — the `sub` its client_credentials token carries. An
+  // actor named by such an actor_token, and the original client (#443), took
+  // that form; but a DELEGATION THE ISSUANCE POLICY CHOSE WITHOUT AN
+  // actor_token named its actor — the exchanging client — by the bare
+  // client_id in every mode, so in product one token could read
+  // `act: {sub: "apigw", act: {sub: "urn:sts:client:webapp"}}`: two
+  // spellings of one kind of party, the second unable to collide with a
+  // person's name and the first able to. rcbj (#471): one form. This is it,
+  // and every place this exchange names a client as an actor asks it — the
+  // `act` entry, the original client, the register's intermediary and the
+  // `may_act` comparison (which accepts both spellings, so a claim written
+  // either way still names the client).
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the subject a client is named by as an actor: its own subject in
+   * the mode.
+   *
+   * @param clientId - the client_id
+   * @param namespaced - whether RFC 9700 mode is on (`bcp.enabled()`)
+   * @returns `urn:sts:client:<id>`, or the bare client_id
+   */
+  static clientActorSubject(clientId: string, namespaced: boolean): string {
+    helpers.log.debug("Entering OAuth2Server.clientActorSubject().");
+    const id = String(clientId || '');
+    helpers.log.debug("Leaving OAuth2Server.clientActorSubject().");
+    return namespaced ? 'urn:sts:client:' + id : id;
+  }
+
+  // ---------------------------------------------------------------------------
+  // `iss` IN EVERY `act` ENTRY (#471).
+  //
+  // The token-chaining profile #443 implemented (MITRE PR 21-1421, section
+  // 2.4.1; PR 21-1422 section 3.1.1.1 the same for several ICAMs) has the AS
+  // populate `act` with "a sub claim identifying PR1 and an iss claim
+  // identifying the AS", and the nested original client with the same pair;
+  // its examples (PR 21-1422 section 3.3) put an `iss` at every level. RFC
+  // 8693 section 4.1 allows it — `act` may carry other claims "to identify
+  // the actor", and a `sub` is only unique within its issuer. #443 left it
+  // out because it changes every delegated token; rcbj asked for it.
+  //
+  // SO EVERY ENTRY THIS EXCHANGE WRITES carries this authorization server's
+  // issuer, the same value as the issued token's own `iss`: the current
+  // actor and the original client. That is the profile's rule, followed
+  // where it is literal: the AS that issues the token is the one vouching
+  // for the party it names. An actor named by a foreign assertion (#114) or
+  // by development's unverified token gets this issuer too — the profile has
+  // no other case, and the entry records who wrote it into this token, not
+  // where the actor_token came from (its own `iss` is still compared by
+  // `may_act`, section 4.4).
+  //
+  // ENTRIES COPIED FROM THE subject_token's `act` keep the `iss` they carry,
+  // as the profile's copy rule says ("copy it into the new access token as a
+  // nested claim"). One with NONE is given THIS issuer only where the
+  // subject_token is one THIS REALM signed and verified, because only then
+  // does this service vouch for what it holds: it wrote that chain itself,
+  // under this realm's key (rcbj's rule in #471). A chain off an assertion
+  // or an unverified token is copied exactly as it came, since naming an
+  // issuer for it would be this service vouching for somebody else's claim.
+  // `iss` is informational in a nested entry as everything there is;
+  // nothing here reads it back.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns one `act` entry naming `sub`, written by `issuer`.
+   *
+   * @param sub - the party's subject
+   * @param issuer - the issuer of the token the entry goes into
+   * @returns `{ sub, iss }` (without `iss` when there is none to name)
+   */
+  static actChainEntry(sub: string, issuer: string): Json {
+    helpers.log.debug("Entering OAuth2Server.actChainEntry().");
+    const entry: Json = { sub: sub };
+    if (issuer) {
+      entry.iss = String(issuer);
+    }
+    helpers.log.debug("Leaving OAuth2Server.actChainEntry().");
+    return entry;
+  }
+
+  /**
+   * Returns a subject_token's `act` chain to nest beneath a new actor: a
+   * copy in which an entry with no `iss` is given `issuer`, or the chain
+   * exactly as it came where `issuer` is empty (#471).
+   *
+   * @param chain - the subject_token's `act`
+   * @param issuer - this issuer, where this realm signed and verified the
+   *   subject_token, or '' to fill none
+   * @returns the chain, or null for none
+   */
+  static priorActChain(chain: Json, issuer: string): Json {
+    helpers.log.debug("Entering OAuth2Server.priorActChain().");
+    if (!chain || typeof chain !== 'object') {
+      helpers.log.debug("Leaving OAuth2Server.priorActChain(). None.");
+      return null;
+    }
+    if (!issuer) {
+      helpers.log.debug("Leaving OAuth2Server.priorActChain(). As it came.");
+      return chain;
+    }
+    // A recursion over the nesting, which RFC 8693 bounds by nothing: a
+    // chain deeper than any exchange here could build is copied as it came
+    // below that depth rather than walked for ever.
+    const copy = function (level: Json, depth: number): Json {
+      helpers.log.debug("Entering copy(). depth=" + depth);
+      if (!level || typeof level !== 'object' || Array.isArray(level) ||
+          depth > 64) {
+        helpers.log.debug("Leaving copy(). Not an entry to fill.");
+        return level;
+      }
+      const out: Json = Object.assign({}, level);
+      if (typeof out.iss !== 'string' || !out.iss) {
+        out.iss = issuer;
+      }
+      if (level.act && typeof level.act === 'object') {
+        out.act = copy(level.act, depth + 1);
+      }
+      helpers.log.debug("Leaving copy().");
+      return out;
+    };
+    helpers.log.debug("Leaving OAuth2Server.priorActChain(). Filled.");
+    return copy(chain, 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -15764,18 +15903,38 @@ class OAuth2Server {
       // WHO IS ASKING TO ACT, for `may_act` and the delegation policy: the
       // actor where an actor_token named one, and otherwise the client — the
       // party section 4.4 names in the same breath ("the client (or party
-      // identified in the actor_token)"). A client is spelled here the two
-      // ways a client_credentials token spells its own subject.
-      const clientAliases = [String(client.client_id || ''),
-        'urn:sts:client:' + String(client.client_id || '')];
-      const actorIdentity = actorClaims
-        ? { sub: String(actorClaims.sub || ''),
-            iss: String(actorClaims.iss || ''),
-            aliases: actorClaims.client_id &&
-                     String(actorClaims.sub || '') ===
-                       'urn:sts:client:' + actorClaims.client_id
-              ? [String(actorClaims.client_id)] : [] }
-        : { sub: clientAliases[0], iss: '', aliases: clientAliases.slice(1) };
+      // identified in the actor_token)").
+      //
+      // A CLIENT IS NAMED IN THE ONE FORM ITS SUBJECT TAKES IN THE MODE
+      // (#471, `clientActorSubject()`): the exchanging client where no
+      // actor_token was sent, and the client a client_credentials
+      // actor_token is about (its `sub` is the client's own subject, so it
+      // is in that form already). `may_act` is compared with BOTH spellings:
+      // the claim this service writes names an application by its bare
+      // client_id (`delegationPolicy.mayActClaimFor()`, from a DN), and a
+      // realm's policy or another issuer may name it by its subject, and
+      // either is the same client — a comparison that held only one would
+      // refuse the client its own subject names, in one mode or the other.
+      const namespacedClients = bcp.enabled();
+      // The client_id of the actor when the actor is a CLIENT: the
+      // exchanging one, or the one a client_credentials actor_token is
+      // about (`sub` its client_id or `urn:sts:client:` and its client_id).
+      const actorTokenSub = actorClaims ? String(actorClaims.sub || '') : '';
+      const actorClientId = !actorClaims ? String(client.client_id || '')
+        : (actorClaims.client_id &&
+           (actorTokenSub === String(actorClaims.client_id) ||
+            actorTokenSub === 'urn:sts:client:' + actorClaims.client_id)
+          ? String(actorClaims.client_id) : '');
+      const actorSubject = actorClaims ? actorTokenSub
+        : OAuth2Server.clientActorSubject(actorClientId, namespacedClients);
+      const actorIdentity = {
+        sub: actorSubject,
+        iss: actorClaims ? String(actorClaims.iss || '') : '',
+        aliases: actorClientId
+          ? [actorClientId, 'urn:sts:client:' + actorClientId]
+            .filter(function (one) { return one !== actorSubject; })
+          : [] as string[]
+      };
       // -----------------------------------------------------------------------
       // `may_act` IS READ IN EVERY MODE (RFC 8693 section 4.4, #108). The
       // claim is the SUBJECT's statement of who may act for them, carried in
@@ -15968,14 +16127,15 @@ class OAuth2Server {
       const subjectAudiences = (Array.isArray(subject.aud) ? subject.aud
         : (subject.aud ? [subject.aud] : [])).map(String);
       // The actor as the policy is asked about it: a client by its
-      // client_id however its subject is spelt, a person by name. Kept, so
-      // the act chain below compares the original client with the same name.
-      const actorName = actorClaims
-        ? String(actorIdentity.aliases && actorIdentity.aliases[0] ||
-                 (/^urn:sts:client:/.test(String(actorClaims.sub || ''))
-                   ? String(actorClaims.sub).slice('urn:sts:client:'.length)
-                   : String(actorClaims.username || actorClaims.sub || '')))
-        : String(client.client_id || '');
+      // client_id however its subject is spelt — the policy's facts are the
+      // APPLICATION's (`partyFacts()` resolves the name to its entry, and
+      // the fact is the entry's identifier in either mode, so they carry no
+      // subject form to make consistent) — a person by name. Kept, so the
+      // act chain below compares the original client with the same name.
+      const actorName = actorClientId || (!actorClaims ? ''
+        : (/^urn:sts:client:/.test(actorTokenSub)
+          ? actorTokenSub.slice('urn:sts:client:'.length)
+          : String(actorClaims.username || actorTokenSub)));
       const decision = delegationPolicy.decide({
         protocol: 'OAuth 2.0',
         requested: (askedSemantics[0] || '') as any,
@@ -15992,25 +16152,43 @@ class OAuth2Server {
       // sign-in is the one thing an exchange must not do.
       const issuedSemantics = decision.semantics ||
         (actorClaims ? 'delegation' : 'impersonation');
+      // EVERY ENTRY WRITTEN HERE CARRIES `iss` (#471, `actChainEntry()`):
+      // this authorization server's issuer, the issued token's own. A prior
+      // chain keeps the issuers it carries, and an entry without one is
+      // given this issuer only where this realm signed and verified that
+      // token (`priorActChain()`).
+      const actIssuer = self.issuerOf(base);
+      const ownSubjectChain = subjectVerified && !subjectAssertion;
+      const priorChain = OAuth2Server.priorActChain(priorAct,
+        ownSubjectChain ? actIssuer : '');
       if (issuedSemantics === 'delegation') {
-        act = (actorClaims ? { sub: actorClaims.sub }
-                           : { sub: client.client_id }) as Json;
+        // The current actor — a client in its one subject form (#471), so a
+        // delegation the policy chose without an actor_token names the
+        // client as `urn:sts:client:<id>` in RFC 9700 mode, as its
+        // client_credentials token would.
+        act = OAuth2Server.actChainEntry(actorSubject, actIssuer);
         // Beneath the new actor: the subject_token's own chain, or — on the
         // first exchange of a token, which has none — the client the chain
         // began with (#443, `originalClientAct()`). Only where this exchange
         // adds an actor: an impersonation adds nobody, so it has no chain to
         // begin (RFC 8693 section 1.1), and keeps a prior one as it is.
         const original = priorAct ? null : OAuth2Server.originalClientAct(
-          subject, subjectVerified && !subjectAssertion, actorName,
-          bcp.enabled());
-        if (priorAct) {
-          act.act = priorAct;
+          subject, ownSubjectChain, actorName, namespacedClients, actIssuer);
+        if (priorChain) {
+          act.act = priorChain;
         } else if (original) {
           act.act = original;
         }
       } else {
-        act = priorAct;
+        act = priorChain;
       }
+      // The actor as the register names it (#471): the party the issued
+      // `act` names — the actor_token's subject, or the exchanging client in
+      // its subject form where the policy chose a delegation without one. An
+      // impersonation names nobody, as before; `delegation.js` draws a
+      // client's subject as that application's box (#468).
+      const registerActor = actorClaims ? actorTokenSub
+        : (issuedSemantics === 'delegation' ? actorSubject : '');
       // THE AUDIENCE: the one target asked for — or, for a self exchange
       // that named none, the subject_token's own.
       const issuedAudiences = decision.allowed && !exchangeAudiences.length &&
@@ -16037,7 +16215,7 @@ class OAuth2Server {
           outcome: 'refused',
           initial: { presented: subject.username || subject.sub || '',
                      what: 'the subject of the token presented' },
-          intermediary: { presented: actorClaims ? actorIdentity.sub : '',
+          intermediary: { presented: registerActor,
                           application: client.client_id,
                           what: actorClaims
                             ? 'the actor named in the actor_token, ' +
@@ -16297,14 +16475,19 @@ class OAuth2Server {
               'authenticated'
         },
         intermediary: {
-          presented: actorClaims ? String(actorClaims.sub || '') : '',
+          presented: registerActor,
           application: client.client_id,
           what: actorClaims
             ? 'the actor named in the actor_token, exchanging through client ' +
               client.client_id
-            : 'the client performing the exchange. No actor_token was sent, ' +
-              'so no identity is named — the client is the whole of the ' +
-              'middle here'
+            : (registerActor
+              ? 'the client performing the exchange, named as the actor by ' +
+                'its own subject — no actor_token was sent, and the ' +
+                'issuance policy chose a delegation, so the client acts for ' +
+                'the subject'
+              : 'the client performing the exchange. No actor_token was ' +
+                'sent, so no identity is named — the client is the whole ' +
+                'of the middle here')
         },
         target: {
           application: audienceApplication ? audienceApplication.identifier :

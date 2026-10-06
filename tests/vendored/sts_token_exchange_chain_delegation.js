@@ -48,6 +48,13 @@
 //   `urn:sts:client:webapp1-del` — though it never sends a token of its own:
 //   it is a client, named as the service names a client's subject.
 //
+//   AND EVERY ENTRY CARRIES `iss` (#471): the issuer of the token it is in,
+//   as the token-chaining profile has it ("a sub claim identifying PR1 and
+//   an iss claim identifying the AS", MITRE PR 21-1421 section 2.4.1, and
+//   the same for the nested original client). Every entry here was written
+//   by this realm, so each level's `iss` is the token's own — on the hop-1
+//   token, on the final one, and in the introspection of the final one.
+//
 // The middle tiers are configured to DELEGATE — `appDelegationSemantics`
 // and `appDefaultDelegationSemantics` delegation, `appAllowedToDelegateTo`
 // the next tier — which is the policy's rule 10 for a delegation: S (the
@@ -217,7 +224,9 @@ async function test() {
       what: cast.gateway.identifier + "'s exchanged token",
       audience: cast.esb.audience, clientId: cast.gateway.identifier,
       notAudience: [cast.gateway.identifier, cast.gateway.audience] });
-    assertActIs(second, { sub: actor1Claims.sub, act: { sub: originalSub } },
+    assert.ok(second.iss, "the exchanged token names its issuer");
+    assertActIs(second, { sub: actor1Claims.sub, iss: second.iss,
+                          act: { sub: originalSub, iss: second.iss } },
                 cast.gateway.identifier + "'s exchanged token");
   });
 
@@ -231,12 +240,14 @@ async function test() {
   const hop2 = await kit.exchange(base, cast, cast.esb, hop1.access_token,
                                   actor2.access_token);
   let third;
-  const nested = { sub: "", act: { sub: "", act: { sub: "" } } };
+  const nested = { sub: "", iss: "",
+                  act: { sub: "", iss: "", act: { sub: "", iss: "" } } };
   check("2e. " + cast.esb.identifier + "'s exchanged token: " + cast.user +
         ", " + kit.COMMON_SCOPE + ", addressed to " + cast.provider.audience +
         ", act naming " + cast.esb.identifier + " with " +
         cast.gateway.identifier + " and then the original client " +
-        cast.webapp.identifier + " NESTED beneath it (#443)", function () {
+        cast.webapp.identifier + " NESTED beneath it (#443), every entry " +
+        "with the token's iss (#471)", function () {
     third = kit.assertChainToken(cast, hop2.access_token, {
       what: cast.esb.identifier + "'s exchanged token",
       audience: cast.provider.audience, clientId: cast.esb.identifier,
@@ -245,6 +256,15 @@ async function test() {
     nested.sub = actor2Claims.sub;
     nested.act.sub = actor1Claims.sub;
     nested.act.act.sub = originalSub;
+    // Every entry written by this realm: the token's own issuer at each
+    // level (#471) — and the same issuer that wrote the hop-1 token, whose
+    // two entries are copied beneath the new actor as they came.
+    assert.ok(third.iss, "the final token names its issuer");
+    assert.strictEqual(third.iss, second.iss, "both hops were issued by " +
+                       "the one authorization server");
+    nested.iss = third.iss;
+    nested.act.iss = third.iss;
+    nested.act.act.iss = third.iss;
     assertActIs(third, nested, cast.esb.identifier + "'s exchanged token");
   });
   log.info("=== The final access token's claims ===");
@@ -263,8 +283,9 @@ async function test() {
       .indexOf(cast.provider.audience) >= 0, JSON.stringify(introspection));
     kit.assertCommonScope(introspection, "the introspection of the final " +
                           "token");
+    // The chain as the token carries it, `iss` at every level (#471).
     assertActIs(introspection, nested, "the introspection of the final " +
-                "token (RFC 8693 section 7.2, #469)");
+                "token (RFC 8693 section 7.2, #469, #471)");
   });
 
   log.info("=== The register and the picture ===");
