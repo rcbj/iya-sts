@@ -396,11 +396,28 @@ does not already hold, and the person `sensitive` carries `stsNotDelegated`.
     the back end;
   * the actor is the front end, which is S;
   * **classic** constrained delegation is the front end's
-    `appAllowedToDelegateTo` naming the back end, and needs a forwardable
-    evidence ticket;
+    `appAllowedToDelegateTo` naming the back end;
   * **resource-based** constrained delegation (the request carries
     `PA-PAC-OPTIONS` with the RBCD bit) is the back end's
-    `appAllowedToActOnBehalfOf` naming the front end.
+    `appAllowedToActOnBehalfOf` naming the front end;
+  * both need a **forwardable evidence ticket** ([MS-SFU] 3.2.5.2.1 and,
+    since the CVE-2020-16996 update, 3.2.5.2.3);
+  * the ticket out of it is forwardable when the request asks for it, the
+    front end's TGT is forwardable and the user is not protected (RFC 4120
+    section 3.3.3);
+  * its PAC carries `S4U_DELEGATION_INFO` ([MS-PAC] 2.9): the target's name
+    (`HTTP/backend.example.com`) and every service delegated through, each
+    with its realm (`HTTP/frontend.example.com@EXAMPLE.COM`), oldest first.
+* **The register records each mechanism by its own mode**, as [MS-SFU]
+  names them: S4U2Self is protocol transition, so impersonation, and
+  S4U2Proxy is constrained delegation, so delegation, whatever made its
+  evidence. A Kerberos impersonation chain — a service signs somebody in
+  without Kerberos, uses S4U2Self, then S4U2Proxy hop after hop — therefore
+  has ONE impersonation row and the rest delegation, where an OAuth 2.0
+  impersonation chain (token exchange with no `actor_token`) is
+  impersonation at every hop. The difference is real: an S4U2Proxy ticket
+  carries the chain in its PAC, and a token exchanged with no `actor_token`
+  carries none. The register's Kerberos rows say so under their mode.
 * **Protected users** (`delegation.protectedGroups`, `stsNotDelegated`) are
   never the subject of S4U, and their tickets are not forwardable.
 * **The evidence ticket is not taken on trust.** It is encrypted in the

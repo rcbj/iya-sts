@@ -826,19 +826,31 @@ permitted to act on its behalf) — so whoever controls that entry can turn "I
 can write to this account" into "I can reach this service as anybody". Same
 messages, same KDC options, opposite direction of trust.
 
-Classic delegation additionally requires the evidence ticket to be forwardable,
-which S4U2Self grants only where the issuance policy allows the impersonation:
+Both routes require the evidence ticket to be forwardable — classic by
+[MS-SFU] 3.2.5.2.1, resource-based by 3.2.5.2.3 since the CVE-2020-16996
+update, as Windows, Samba and MIT all refuse it — which S4U2Self grants only
+where the issuance policy allows the impersonation:
 the service allows it (`appDelegationSemantics`) and the user is not
 protected. So `HTTP/frontend.example.com` and `HTTP/notrusted.example.com`
 differ in exactly that one attribute and nothing else, because its absence is
 invisible where it is set: S4U2Self still succeeds and returns a ticket that
 simply is not forwardable, and classic S4U2Proxy then fails a step later
-complaining about the evidence. RBCD needs neither, but does need
-`PA-PAC-OPTIONS` with the RBCD bit, without which [MS-SFU] says a KDC MUST
-answer `KDC_ERR_BADOPTION` — an error mentioning nothing about padata, so it
-is refused here with an explanation. RBCD does not stop the policy, though: a
-protected user is refused (`KDC_ERR_POLICY`) even where no forwardable
-evidence was needed.
+complaining about the evidence (`STS-KRB-0012` classic, `STS-KRB-0199`
+resource-based). RBCD also needs `PA-PAC-OPTIONS` with the RBCD bit, without
+which [MS-SFU] says a KDC MUST answer `KDC_ERR_BADOPTION` — an error
+mentioning nothing about padata, so it is refused here with an explanation.
+A protected user's tickets are never forwardable, so neither route reaches a
+back end as them; the issuance policy refuses the rest (`KDC_ERR_POLICY`).
+
+The S4U2Proxy ticket is forwardable when the request asked for it, the front
+end's TGT is forwardable and the user is not protected (RFC 4120 section
+3.3.3; [MS-SFU] 3.2.5.2.4 says nothing of it). Its PAC's
+`S4U_DELEGATION_INFO` ([MS-PAC] 2.9) names the target without its realm and
+every service delegated through with it — `HTTP/frontend.example.com@EXAMPLE.COM`
+— the form Windows, Samba and MIT write. On `/admin/delegation`, S4U2Self is
+an impersonation and every S4U2Proxy a delegation, by mechanism ([MS-SFU]),
+so a protocol-transition chain has one impersonation row followed by
+delegation rows.
 
 ### A service that will not talk to you without a ticket
 

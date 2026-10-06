@@ -170,6 +170,33 @@ class DelegationPage {
     return '<span class="state-none">&mdash;</span>';
   }
 
+  // THE KERBEROS ROWS' MODE IS THE MECHANISM'S (#491). [MS-SFU] 1.3 names
+  // S4U2Self protocol transition and S4U2Proxy constrained delegation, and
+  // the register records each by that, whatever chain it is part of — so a
+  // Kerberos impersonation chain (S4U2Self, then S4U2Proxy hops) has ONE
+  // impersonation row and the rest delegation, where an OAuth impersonation
+  // chain is impersonation at every hop. The ticket out of S4U2Proxy does
+  // carry the chain, in the PAC's S4U_DELEGATION_INFO, which is what makes
+  // it a delegation. Said on the row, where the difference is met.
+  /**
+   * The note under a Kerberos S4U row's mode, or nothing for any other row.
+   *
+   * @param type - the act's mechanism
+   * @returns HTML
+   */
+  static kerberosModeNote(type) {
+    if (type === 'krb5-s4u2self') {
+      return '<br><span class="state-none">[MS-SFU] protocol transition: ' +
+        'impersonation, whatever follows it</span>';
+    }
+    if (type === 'krb5-s4u2proxy-classic' || type === 'krb5-s4u2proxy-rbcd') {
+      return '<br><span class="state-none">[MS-SFU] constrained ' +
+        'delegation: always delegation, even after S4U2Self — the ticket ' +
+        'carries the chain in S4U_DELEGATION_INFO</span>';
+    }
+    return '';
+  }
+
   // What a delegation CONSUMED or PRODUCED, as one cell. `key=value` pairs
   // rather than JSON for the reason the audit log's detail cell gives — the
   // column is narrow and a reader is scanning for one fact — and `?format=json`
@@ -286,7 +313,8 @@ class DelegationPage {
         '<span class="state-none">' + kit.esc(row.typeLabel) + '</span><br>' +
         '<span class="state-none">' + kit.esc(row.protocol) +
         (row.spec ? ' &middot; ' + kit.esc(row.spec) : '') + '</span></td>' +
-      '<td>' + DelegationPage.modeCell(row.mode) + '</td>' +
+      '<td>' + DelegationPage.modeCell(row.mode) +
+        DelegationPage.kerberosModeNote(row.type) + '</td>' +
       '<td>' + DelegationPage.delegationOutcomeCell(row) + '</td>' +
       '<td class="who">' +
         DelegationPage.delegationPartyCell(row.initial, facts) + '</td>' +
