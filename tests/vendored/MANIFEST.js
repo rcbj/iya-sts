@@ -331,6 +331,17 @@ const JOBS = [
   // scope carried forward when the exchange asks for none. `local: true`:
   // the response is ours. Its realm is left standing.
   { file: 'sts_token_exchange_response.js', browser: false, local: true },
+  // A FOUR-TIER TOKEN-EXCHANGE CHAIN OVER HTTP (#467, 2026-10-06): a web
+  // application, an API gateway, a service bus and a service provider — the
+  // parent's oauth2_delegation_chain.js without its browser — once as an
+  // impersonation (no actor_token) and once as a delegation (each tier's
+  // client_credentials token as actor_token, `act` nested). app1-scope on
+  // every token, every hop naming its target by a registered audience.
+  // `local: true`: the scenario is ours. Their entries are left standing.
+  { file: 'sts_token_exchange_chain_impersonation.js', browser: false,
+    local: true },
+  { file: 'sts_token_exchange_chain_delegation.js', browser: false,
+    local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
@@ -1546,7 +1557,13 @@ const LOCAL_HELPERS = [
   // follows no redirect, a JWT checked against a key set with node's own
   // crypto, and a bounded wait for the global tier. Nothing from the
   // service.
-  'cells_kit.js'
+  'cells_kit.js',
+  // WHAT THE TWO TOKEN-EXCHANGE CHAIN JOBS SHARE (#467): the four tiers'
+  // provisioning, a browser's authorization-code walk with a desktop
+  // User-Agent, the client_credentials and exchange requests, introspection,
+  // and the delegation register and graph read back. Nothing from the
+  // service.
+  'token_exchange_chain_kit.js'
 ];
 
 // ---------------------------------------------------------------------------
