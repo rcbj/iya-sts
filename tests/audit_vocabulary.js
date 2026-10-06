@@ -20,7 +20,8 @@
 //
 //   1. Every literal `action: '<a>.<b>'` in a service directory is a row of
 //      ACTIONS (the audit rows are the only dotted `action:` literals here),
-//      and so is every literal handed to admin_actions.ts' `audited()`.
+//      and so is every literal handed to an `audited()` or `this.record()`
+//      helper that writes one.
 //   2. The four actions built by concatenation are listed with their
 //      suffixes, so a new suffix fails here rather than at the filter.
 //   3. Every row names a category CATEGORIES declares.
@@ -105,11 +106,14 @@ module.exports = {
         }
       }
       // AND THE ACTIONS A HELPER IS HANDED (2026-10-06): admin_actions.ts'
-      // `audited(name, …)` writes `action: name`, so its literal is the first
-      // argument, not an `action:` — and six actions written that way had no
-      // row, with nothing here to say so. Both branches of a
-      // `audited(c ? 'a' : 'b', …)` are read.
-      const viaHelper = new RegExp("audited\\(\\s*(?:[\\w.!]+\\s*\\?\\s*)?" +
+      // and ssf_transmitters.ts' `audited(name, …)` and the private
+      // `this.record(name, …)` of service_account_rotation.ts and
+      // federation_keys.ts each write `action: name`, so the literal is the
+      // first argument, not an `action:` — and twenty-two actions written
+      // that way had no row, with nothing here to say so. Both branches of
+      // a `audited(c ? 'a' : 'b', …)` are read.
+      const viaHelper = new RegExp("(?:audited|(?:this|self)\\.record)" +
+        "\\(\\s*(?:[\\w.!]+\\s*\\?\\s*)?" +
         "'([a-z][a-z0-9-]*(?:\\.[a-zA-Z0-9-]+)+)'" +
         "(?:\\s*:\\s*'([a-z][a-z0-9-]*(?:\\.[a-zA-Z0-9-]+)+)')?", 'g');
       while ((m = viaHelper.exec(text)) !== null) {
