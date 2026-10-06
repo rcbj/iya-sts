@@ -416,6 +416,62 @@ The decision, the SAML assertion and the JWT that is issued do not change.
 An assertion inside still wins where an element carries both.
 `tests/wstrust_jwt_claims.js` K holds each of these in both modes.
 
+## THE AppliesTo's CLAIM SETTINGS GOVERN BOTH TOKEN TYPES (#483, #484, 2026-10-06)
+
+An application's claim settings are:
+* its groups-claim settings (`appGroupsClaim`, `appGroupsClaimName`,
+  `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`);
+* the roles claim (`roles.js`);
+* its custom claims (`oauthClaimsAccessToken`, `saml2CustomAttributes`, and
+  the realm's sets they sit over).
+
+They reach a WS-Trust token through the same functions they reach an OAuth
+access token and a SAML SSO assertion through: `stats.jwtClaims
+('access_token', …)` and `stats.samlAttributes('saml2', …)`. There is no
+second implementation. **What was verified, before the fix:**
+
+* **The JWT carried none of them.** `buildJwt()` never asked `jwtClaims()`.
+  `applicationClaims()` now asks it, with `customClaimContext()`'s members,
+  and assigns the protocol's own claims over the result.
+* **The SAML assertion carried the roles claim correctly.** Its groups claim
+  used the REALM's settings, because `applications.settingFor()` looks an
+  identifier up, and an AppliesTo URI is not one. Its custom attributes
+  appeared for the first token only. After that, the OBSERVED entry
+  `seen()` files under the AppliesTo URI answered `applications.get()`
+  ahead of `forAppliesTo()`, and that entry has no rows.
+
+**The fix is one context member, `application`.** WS-Trust resolves the
+application the way the register does (`appliesToApplication()`:
+`forAppliesTo()` first, which skips the self-named entry) and passes it to
+both builders (`buildSamlAssertion()`'s `opts.application`). Three readers
+ask for it first and keep their old lookups for every other caller:
+`effectiveClaimSet()`, `GroupClaims.appOf()` and `claimApplicationsOf()`.
+
+**Whose settings, and about whom.** The settings are the AppliesTo's
+application's: the relying party the token is for, as a SAML assertion's
+are its service provider's. The values are the SUBJECT's. An OnBehalfOf or
+ActAs token carries the person's groups, roles and claims, and nothing of
+the requester's.
+
+**Exceptions:**
+
+* **No SAML 1.1 token.** WS-Trust answers any TokenType but the JWT URI with
+  a SAML 2.0 assertion, so `saml11CustomAttributes` and the SAML 1.1 forms
+  have no WS-Trust token to apply to.
+* **Placeholders are each context's own.** A JWT's `${…}` are an OAuth
+  access token's (`username`, `sub`, `email`, `name`, `client_id` — the
+  JWT's own, the requester — `audience`). A SAML attribute's are the SAML
+  builder's (`subject`, `audience`), as on SAML SSO.
+* **The settings are the AppliesTo's, where OAuth reads the client's.** An
+  OAuth access token takes its custom claims from its CLIENT's entry. A
+  WS-Trust JWT takes them from the AppliesTo's application, which is the
+  party the token is issued to and is what #483 and #484 ask for.
+
+`tests/wstrust_token_claims.js` compares each WS-Trust token with what
+`jwtClaims()` and `samlAttributes()` give OAuth and SAML SSO for the same
+application, in both modes. The #473 chain jobs assert all of it at every
+hop.
+
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 
 `requesterCredential()` passes `door: 'wstrust'`, so in product a person who

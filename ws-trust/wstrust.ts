@@ -192,6 +192,7 @@ interface WsTrustDeps {
   textByLocal: Helpers['textByLocal'];
   subjectForName: Helpers['subjectForName'];
   hasSubjectResolver: Helpers['hasSubjectResolver'];
+  userFor: Helpers['userFor'];
 }
 
 // The express app's registration methods, as `registerRoutes()` uses them.
@@ -290,7 +291,8 @@ class WsTrust {
       firstByLocal: helpers.firstByLocal,
       textByLocal: helpers.textByLocal,
       subjectForName: helpers.subjectForName,
-      hasSubjectResolver: helpers.hasSubjectResolver
+      hasSubjectResolver: helpers.hasSubjectResolver,
+      userFor: helpers.userFor
     };
   }
 
@@ -404,7 +406,8 @@ class WsTrust {
   //     with. `exp` is the lifetime the RSTR's wst:Lifetime states, so the
   //     two cannot disagree.
   // ---------------------------------------------------------------------------
-  private buildJwt(subject, audience, lifetimeMin, delegates?, requester?) {
+  private buildJwt(subject, audience, lifetimeMin, delegates?, requester?,
+                   application?) {
     const {
       config, log, logArtifact, randomId, signJwtAs, subjectForName,
       delegationPolicy
@@ -462,18 +465,75 @@ class WsTrust {
     if (mayAct) {
       claims.may_act = mayAct;
     }
+    // THE APPLICATION'S CLAIMS (#483, #484): the groups claim, the roles
+    // claim, directory-attribute claims and the custom access-token claims —
+    // `stats.jwtClaims('access_token', …)`, the one function an OAuth access
+    // token's come from, with the context it is handed there
+    // (`OAuth2Server.customClaimContext()`'s members). They describe the
+    // SUBJECT, so an OnBehalfOf / ActAs token carries the person's and
+    // nothing of the requester's. The settings are the APPLIES-TO's
+    // application's (`application`), which is the relying party this token
+    // is for, as a SAML assertion's are its service provider's; an OAuth
+    // access token's are its client's, which is the same role. The
+    // protocol's own claims are assigned OVER them, as at the token
+    // endpoint, so none of them can replace `sub`, `act` or `exp`.
+    const custom = this.applicationClaims(subject, claims, audience,
+                                          application);
+    const payload = Object.assign(custom, claims);
     const header = { typ: 'at+jwt' };
     logArtifact('WS-Trust JWT', 'before signing',
                 { header: Object.assign({ alg: alg }, header),
-                  payload: claims });
+                  payload: payload });
     // `wstrust.jwtCertificateHeader` decides the `x5c` / `x5u`.
-    const signed = signJwtAs(claims, alg, null,
+    const signed = signJwtAs(payload, alg, null,
                              { certificateHeader: 'wstrust-jwt',
                                header: header });
     logArtifact('WS-Trust JWT', 'after signing', signed);
     log.debug("Leaving WsTrust.buildJwt(). " + alg + ", jti=" + claims.jti +
               ".");
     return { token: signed, jti: claims.jti };
+  }
+
+  // The access-token claims an application's settings put in a token about
+  // `subject` (#483, #484): `stats.jwtClaims()` with the members
+  // `OAuth2Server.customClaimContext()` gives it — the person's username and
+  // subject, their profile where the mode has one, the token's client_id
+  // and audience — and `application`, the entry whose settings govern.
+  private applicationClaims(subject, claims, audience, application) {
+    const { stats, userFor, log } = this.deps;
+    log.debug("Entering WsTrust.applicationClaims().");
+    const user: any = subject && subject !== 'anonymous'
+      ? (userFor(subject) || {}) : {};
+    const out = stats.jwtClaims('access_token', {
+      username: subject === 'anonymous' ? '' : String(subject || ''),
+      sub: claims.sub || '',
+      email: user.email || '',
+      name: user.name || '',
+      given_name: user.given_name || '',
+      family_name: user.family_name || '',
+      client_id: claims.client_id || '',
+      audience: String(audience || ''),
+      application: String(application || '')
+    }) || {};
+    log.debug("Leaving WsTrust.applicationClaims(). " +
+              Object.keys(out).length + " claim(s).");
+    return out;
+  }
+
+  // THE APPLICATION A TOKEN IS FOR (#483): the one registered for the
+  // AppliesTo, found the way the register finds it (`forAppliesTo()`,
+  // which skips the entry `seen()` files under the address itself), and
+  // only then the entry of that very identifier. '' for none.
+  private appliesToApplication(audience) {
+    const { applications, log } = this.deps;
+    log.debug("Entering WsTrust.appliesToApplication().");
+    const wanted = String(audience || '').trim();
+    const found: any = wanted
+      ? (applications.forAppliesTo(wanted) || applications.get(wanted))
+      : null;
+    log.debug("Leaving WsTrust.appliesToApplication(). " +
+              (found ? found.identifier : 'None.'));
+    return found ? String(found.identifier) : '';
   }
 
   // WHAT THE ISSUED TOKEN SAYS ABOUT WHO ACTED, for the act's note (#478).
@@ -634,17 +694,21 @@ class WsTrust {
    * to most recent; none when absent
    * @param requester - #476: the name the requester authenticated as, whose
    * application is a JWT's `client_id`; none when absent
+   * @param application - #483: the application the token is for, whose
+   * claim settings govern; the AppliesTo's when absent
    * @returns the token's XML, its reference, its token type and its id
    */
   buildToken(tokenType, subject, audience, lifetimeMin,
-                      authnContextClassRef, delegates?, requester?) {
+                      authnContextClassRef, delegates?, requester?,
+                      application?) {
     const { buildSamlAssertion, authnContext, log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.buildToken(). tokenType=" + tokenType + ", " +
         "subject=" +
               subject);
     if (tokenType === JWT_TOKEN_TYPE) {
+      const forApp = application || this.appliesToApplication(audience);
       const built = this.buildJwt(subject, audience, lifetimeMin,
-                                  delegates, requester);
+                                  delegates, requester, forApp);
       const token = { xml: '<wsse:BinarySecurityToken ' +
         'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ' +
         'ValueType="urn:ietf:params:oauth:token-type:jwt">' + built.token +
@@ -655,10 +719,14 @@ class WsTrust {
     }
     // #186: an ActAs token NAMES the parties that acted — the SAML V2.0
     // Condition for Delegation Restriction, least to most recent.
+    // #483: the AppliesTo's application, so its own claim settings (the
+    // groups claim's, its custom attributes) govern the assertion as a
+    // service provider's govern a SAML SSO one.
     const assertion = buildSamlAssertion(subject, audience, lifetimeMin,
       { authnContextClassRef: authnContextClassRef ||
                               authnContext.AC_UNSPECIFIED,
-        delegates: delegates || [] });
+        delegates: delegates || [],
+        application: application || this.appliesToApplication(audience) });
     const idm = assertion.match(/\bID="([^"]+)"/);
     const id = idm ? idm[1] : '';
     const ref = '<wst:RequestedAttachedReference>' +
