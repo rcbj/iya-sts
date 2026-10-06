@@ -698,6 +698,14 @@ library, wired by `spiffe_server.ts`:
   on loopback or its secure port (`requestConfigured()`), with the token, the
   client certificate and the CA read from FILES — no credential is a setting,
   because settings are drawn, returned by `/admin-api` and persisted.
+  **THE SERVICE IS NOT ROOT SINCE #254 (uid 10001)**, and one selector feels
+  it: `unix`'s `path` and `sha256` (`spiffe.unixDiscoverWorkloadPath`, off by
+  default) read `/proc/<pid>/exe`, which the kernel lets a non-root process
+  read only for a process of its OWN uid. A workload of another user is
+  refused attestation with that selector on, rather than attested without
+  it; uid, gid and the docker attestor's `/proc/<pid>/cgroup` are unaffected.
+  A deployment that needs the path for other users' workloads gives the
+  container `CAP_SYS_PTRACE` and says why.
   `spiffe.k8sSkipKubeletVerification` (SPIRE's `skip_kubelet_verification`)
   is honoured in DEVELOPMENT MODE ONLY since #171 (2026-09-23): the attestor
   asks `common/outbound_tls.ts`'s `skipsVerification()`, which in product

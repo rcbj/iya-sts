@@ -183,6 +183,7 @@ locals {
       "sts-cert.service" = templatefile("${path.module}/units/sts-cert.service.tftpl", {
         init_image  = local.init_image
         tls_dir     = local.host_tls_dir
+        tls_owner   = local.service_user
         tls_secret  = data.google_secret_manager_secret.tls[0].id
         hostname    = var.public_hostname
         alt_names   = local.cell_console_host
@@ -253,6 +254,7 @@ locals {
             content = templatefile("${path.module}/units/sts-disk.sh.tftpl", {
               device    = local.risk_upload_disk
               mount_dir = local.host_upload_dir
+              owner     = local.service_user
             })
           },
         ],

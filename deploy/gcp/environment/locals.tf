@@ -91,6 +91,13 @@ locals {
   host_upload_dir  = "/mnt/disks/risk-uploads"
   risk_upload_dir  = "/usr/src/sts/data/risk-uploads"
   risk_upload_disk = "risk-uploads"
+
+  # THE USER THE SERVICE IMAGE RUNS AS (#254, 2026-10-06): `sts`, uid and gid
+  # 10001, fixed in the root Dockerfile rather than looked up, so that what
+  # the VM mounts into the node can be handed to it here. Two things are:
+  # the upload disk (sts-disk.sh) and the TLS key (sts-cert, node-init's
+  # cert.sh). Spelt once, like the paths above.
+  service_user = "10001:10001"
 }
 
 data "google_compute_zones" "available" {

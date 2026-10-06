@@ -4,6 +4,14 @@
 # iya-sts: the node. Every init unit must have succeeded — a node that
 # could not get its certificate must not start and serve a self-signed one
 # under a public name (AWS's `dependsOn: SUCCESS`).
+#
+# THE SYSCTL (#254, 2026-10-06): the image runs as uid 10001 since that
+# change and binds 88, 389 and 636. Docker already sets it to 0 in a bridged
+# container's namespace (20.10 and later); it is said here so that a daemon
+# that did not would fail at `docker run` naming the sysctl, rather than
+# leave a node up with no directory and no KDC. Not `setcap` on node: a
+# secure exec ignores NODE_PATH and NODE_EXTRA_CA_CERTS (the root
+# Dockerfile).
 [Unit]
 Description=iya-sts: ${node}
 Requires=${requires}
@@ -21,6 +29,7 @@ ExecStart=/usr/bin/docker run --rm --name iya-sts \
   -v ${upload_host}:${upload_container} \
   -v ${db_ca}:${db_ca_container}:ro \
   ${tls_mount} \
+  --sysctl net.ipv4.ip_unprivileged_port_start=0 \
   --ulimit nofile=65536:65536 \
   --label sts.environment=${environment} \
   --label sts.node=${node} \

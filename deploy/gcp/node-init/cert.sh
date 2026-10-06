@@ -28,7 +28,8 @@
 #
 # Writes exactly what tls.certificateFile and tls.keyFile name:
 #   ${STS_TLS_DIR}/certificate.pem   the leaf FIRST, then its issuers
-#   ${STS_TLS_DIR}/key.pem           the key, unencrypted, 0400
+#   ${STS_TLS_DIR}/key.pem           the key, unencrypted, 0400, owned by
+#                                    STS_TLS_OWNER (the node's user, #254)
 #
 # A node that cannot get the certificate must FAIL, and the unit then keeps
 # iya-sts from starting — a node serving a self-signed certificate under a
@@ -45,6 +46,8 @@ ISSUER="${STS_CERT_ISSUER:-false}"
 RENEW_DAYS="${STS_ACME_RENEW_DAYS:-30}"
 ACME_SERVER="${STS_ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
 ATTEMPTS="${STS_CERT_WAIT_ATTEMPTS:-40}"
+# Who the key is handed to (#254): the uid:gid the service image runs as.
+OWNER="${STS_TLS_OWNER:-10001:10001}"
 # EVERY NAME THE CERTIFICATE MUST CARRY: the host name, and in a cell of a
 # multi-cloud environment (#97) its own console name too (comma-separated).
 # The cell's names are in Route 53, and each `_acme-challenge.<name>` there is
@@ -82,6 +85,11 @@ write_out() {
   # Every certificate in the bundle, in order: the leaf first.
   awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/' \
     "${bundle}" > "${OUT}/certificate.pem"
+  # THE NODE'S KEY, NOT THIS CONTAINER'S (#254, 2026-10-06): this runs as
+  # root and the node as uid 10001, so a key left root's and 0400 is one the
+  # node cannot open — it would fail to start on EACCES. Handed over and kept
+  # 0400, readable by the process that serves it and nobody else.
+  chown "${OWNER}" "${OUT}/certificate.pem" "${OUT}/key.pem"
   chmod 0444 "${OUT}/certificate.pem"
   chmod 0400 "${OUT}/key.pem"
   echo "sts-cert: wrote ${OUT}/certificate.pem and ${OUT}/key.pem"

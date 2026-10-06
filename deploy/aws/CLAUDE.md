@@ -570,6 +570,35 @@ item of September's AWS bill. So:
   gone. Its validation records go with it; the certificate's ARN changes on
   the next build.
 
+## The service image runs as uid 10001 (#254, 2026-10-06)
+
+**The image's `USER` is `sts`, 10001:10001, and no longer root** (the root
+`Dockerfile` argues it). Three things in `environment/` follow, and nothing
+else in this tree runs the service image:
+
+* **`systemControls` on `iya-sts`**: `net.ipv4.ip_unprivileged_port_start=0`,
+  so a user that is not root binds 88, 389 and 636. Docker sets it in every
+  container on its own; Fargate (platform 1.4.0 and later, any namespaced
+  `net.*`) is told. On the one container, because in `awsvpc` mode the
+  namespace is the task's and the value is the last starter's. **Not
+  `setcap`** on node: a secure exec ignores `NODE_PATH` and
+  `NODE_EXTRA_CA_CERTS`, which the image depends on.
+* **`volume-init`, a one-shot container in every node task**: the service
+  image as `user = "0"`, one `chown 10001:10001` of the risk upload volume
+  (a fresh xfs root is root's, 0755, and ECS cannot be told otherwise), then
+  it exits; `iya-sts` waits on it `SUCCESS`. The only container in the
+  deployment given a `user`.
+* **`cert-init` hands the exported key to 10001** (`STS_TLS_OWNER`,
+  `cert-init/export.sh`), still 0400 — left root's, the node could not open
+  it and would not start.
+
+**Checked and unchanged**: the conversion task (`conversion.tf`) mounts
+nothing and binds nothing, so it runs as 10001 as it is; the database CA is
+in the image, 0644; the secrets arrive as environment variables, which any
+user reads; the two schema inits and `cert-init` are their own images and
+still run as root; `suite-callbacks/` runs the runner and PEP images, not
+this one.
+
 ## A deployment beside the tests: `testidp` (2026-09-16)
 
 **The test environments are the standard and do not change.** Every variable

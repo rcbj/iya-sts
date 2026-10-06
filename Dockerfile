@@ -488,4 +488,39 @@ EXPOSE 8444
 # as cells (#98). A private address between cells; never publish it. See
 # docs/cells.md.
 EXPOSE 8446
+# ---------------------------------------------------------------------------
+# THE SERVICE RUNS AS `sts`, UID AND GID 10001, AND NOT AS ROOT (#254,
+# 2026-10-06).
+#
+# It ran as root until then, which made every file mode in a secret mount
+# decoration: the OpenBao client key was 0644 and the process reading it was
+# root, so a shell in the container read the identity that opens the
+# key-encryption key and the database password, whatever the mode said. A
+# fixed NUMBER rather than a name the base image might also use, so that a
+# volume, a host directory or a seeder can chown to it without asking the
+# image (`openbao/seed.js` writes the client key 0600 for 10001).
+#
+# **THE LOW PORTS ARE NOT WHY IT WAS ROOT, AND DO NOT NEED IT.** 88, 389 and
+# 636 are below 1024, but Docker sets `net.ipv4.ip_unprivileged_port_start=0`
+# in every container's network namespace (20.10 and later), so any user binds
+# them there; the compose files set it explicitly, and so does the ECS task
+# definition (`systemControls`), Fargate taking any namespaced `net.*` sysctl.
+# NOT `setcap cap_net_bind_service` on node, which was the first plan and is
+# wrong for this image: a file capability is a secure exec, and node then
+# ignores `NODE_PATH` (how the SDKs in /opt/sts-sdk are found) and
+# `NODE_EXTRA_CA_CERTS` (the database CA).
+#
+# `data/` is the one place under the tree the service writes (the ldif store
+# and risk uploads), so it is made here and owned by the user; a named volume
+# mounted over it starts with that ownership. The compose files start the
+# container as root only for the steps that need it — secondary addresses
+# for SPIFFE, the start-up secrets — and drop to this user before node starts
+# (`docker-compose.yml`, the `sts` service's `command`).
+# ---------------------------------------------------------------------------
+RUN groupadd --system --gid 10001 sts \
+    && useradd --system --uid 10001 --gid 10001 --no-create-home \
+               --home-dir /nonexistent --shell /usr/sbin/nologin sts \
+    && mkdir -p /usr/src/sts/data/risk-uploads \
+    && chown -R 10001:10001 /usr/src/sts/data
+USER 10001:10001
 CMD [ "node", "server.js" ]

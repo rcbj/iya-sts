@@ -4,6 +4,8 @@
 # iya-sts: the public certificate and its key, where the node reads them —
 # AWS's cert-init. Read from the foundation's secret; node-a issues or renews
 # it through ACME first when it must. deploy/gcp/node-init/cert.sh.
+# STS_TLS_OWNER is who the key is handed to: the user the node runs as
+# since #254, which must read it.
 [Unit]
 Description=iya-sts: public certificate
 Requires=sts-registry.service
@@ -18,6 +20,7 @@ ExecStartPre=/usr/bin/docker pull ${init_image}
 ExecStart=/usr/bin/docker run --rm --name sts-cert \
   -v ${tls_dir}:${tls_dir} \
   -e STS_TLS_DIR=${tls_dir} \
+  -e STS_TLS_OWNER=${tls_owner} \
   -e STS_TLS_SECRET=${tls_secret} \
   -e STS_TLS_HOSTNAME=${hostname} \
   -e STS_TLS_ALT_NAMES=${alt_names} \

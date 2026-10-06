@@ -91,6 +91,15 @@ require('./common/config_file').resolveConfigFile();
 // against NODE_OPTIONS and a launcher.
 // ---------------------------------------------------------------------------
 require('./common/process_memory').reexecWithHeapLimit();
+// ---------------------------------------------------------------------------
+// AND THE SECRETS DELIVERED AS FILES (#254): every `<ENV>_FILE` naming one of
+// `common/delivered_secrets.ts`'s settings is read and deleted HERE — after
+// the re-exec above, which would otherwise start a process the file was
+// already gone for, and before the protocol stack loads, because the
+// management API client is seeded with its secret as `ldap_server.js` is
+// required. A file that cannot be read stops the service (STS-CORE-0150).
+// ---------------------------------------------------------------------------
+require('./common/delivered_secrets').load();
 
 const http = require('http');
 const https = require('https');
