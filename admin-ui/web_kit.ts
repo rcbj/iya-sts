@@ -1743,7 +1743,10 @@ class WebKit {
       (searchKind ? ' fg-search' : '') +
       // OPEN WHILE IT HOLDS A SEARCH (#462): the redraw a Find makes takes
       // focus with it, so the open state is drawn rather than left to
-      // `:focus-within` (see the stylesheet).
+      // `:focus-within` (see the stylesheet). ANY search: one that found
+      // nothing, an empty query and a failed call keep the box, Find and
+      // the line saying so in view, until the reader moves to another
+      // field.
       (searchKind && (opts.finds || {})[row.attribute]
         ? ' fg-search-open' : '') +
       (conditional
@@ -1819,9 +1822,10 @@ class WebKit {
       ? '<span class="state-none">The search could not be run: /admin-api ' +
         'did not answer it.</span>'
       : !found.rows.length
-        ? '<span class="state-none">No other ' + noun + ' matches' +
-          (found.query ? ' &ldquo;' + WebKit.esc(found.query) + '&rdquo;'
-                       : '') + '.</span>'
+        ? '<span class="state-none fg-none">' + (found.query
+          ? 'No matches for &ldquo;' + WebKit.esc(found.query) +
+            '&rdquo;. Try fewer letters, or another part of the name.'
+          : 'No other ' + noun + ' to offer here.') + '</span>'
         : found.rows.map(function (one) {
           return '<div class="fg-hit"><span class="fg-hit-name">' +
             WebKit.shortened(one.value, 60) +
@@ -1841,9 +1845,14 @@ class WebKit {
         button('fgsearch', attribute + '|' + (found.page + 1), 'Next',
                'The next ' + WebKit.FIND_PER_PAGE + ' results.',
                'fg-next', found.page >= found.pages) + '</div>';
+    // AN EMPTY QUERY (#462) lists every one, and says how to narrow it —
+    // the cell stays open on it as on any other search, results or none.
+    const hint = found.failed || found.query ? ''
+      : '<span class="state-none fg-hint">Type something in the box to ' +
+        'search; an empty box lists every ' + noun + '.</span>';
     return '<div class="fg-find">' + box + '<div class="fg-found" ' +
       'aria-live="polite"><input type="hidden" name="fgpage.' +
-      WebKit.esc(attribute) + '" value="' + found.page + '">' + rows +
+      WebKit.esc(attribute) + '" value="' + found.page + '">' + hint + rows +
       pager + '</div></div>';
   }
 

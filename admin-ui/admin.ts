@@ -4752,6 +4752,7 @@ class AdminConsole {
       '.fg-hit{display:flex;gap:.3em;align-items:center;' +
       'justify-content:space-between;margin:.2em 0}' +
       '.fg-hit-name{min-width:0;overflow-wrap:anywhere;font-size:.9em}' +
+      '.fg-hint,.fg-none{display:block;font-size:.85em;margin:.2em 0}' +
       '.fg-pager{display:flex;gap:.4em;align-items:center;margin-top:.3em;' +
       'font-size:.85em}' +
       'button.fg-findbtn,button.fg-add,button.fg-prev,button.fg-next{' +

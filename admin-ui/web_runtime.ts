@@ -1156,6 +1156,13 @@ class ConsoleRuntime {
       String(submitter.className || '')))) {
       fields.fgsearch = findIn;
     }
+    // A PRESS IN ANOTHER FIELD IS MOVING TO IT (#462): a "+" or a bin
+    // elsewhere closes an open search even in a browser that does not
+    // focus a button on click, where no `focusin` came. The press's own
+    // place decides — the search box for Enter, else the button.
+    if (submitter || findIn) {
+      this.closeOtherSearches(findIn ? typedIn : submitter);
+    }
     // A FIELD'S SEARCH (#459) is a round trip that needs data: the list
     // operation's page of five, drawn under the box. It writes nothing.
     if (page && this.view && WebAnswers.isFieldSearch(page, fields)) {
