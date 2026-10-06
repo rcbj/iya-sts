@@ -17068,6 +17068,16 @@ const CODES = [
       'may_act question for a subject who named a delegate (#186); the ' +
       'subject\'s own choice was put in the token.',
     spec: '' },
+  { code: 'STS-XACML-0088',
+    summary: 'A role restricted to applications was to be conferred by a ' +
+      'client (roleConferredBy, #454); a conferred role is held by the ' +
+      'PEOPLE signing in through that client, so the write was refused.',
+    spec: '' },
+  { code: 'STS-XACML-0089',
+    summary: 'One of the two console roles was to be conferred by a client ' +
+      '(roleConferredBy, #454); their people are the console roster\'s, so ' +
+      'the write was refused.',
+    spec: '' },
   { code: 'STS-XACML-0168',
     summary: 'No issuance policy, not even the built-in one, could answer ' +
       'the per-right GNAP question (issue-gnap-right); the right was ' +
@@ -18193,6 +18203,19 @@ const CODES = [
     summary: 'The static console\'s script, admin-ui/console.js, could not ' +
       'be read; the shell loads one that says so (#446).',
     spec: 'none (logged)' },
+  { code: 'STS-ADMIN-0845',
+    summary: 'add-conferring-client or remove-conferring-client named no ' +
+      'client, or add-conferring-client named one that is not registered ' +
+      'in the realm (#454).',
+    spec: '' },
+  { code: 'STS-ADMIN-0846',
+    summary: 'add-conferring-client named a client that already confers ' +
+      'the role (#454).',
+    spec: '' },
+  { code: 'STS-ADMIN-0847',
+    summary: 'remove-conferring-client named a client that does not confer ' +
+      'the role (#454).',
+    spec: '' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -18555,6 +18578,21 @@ const CODES = [
       'session that has since ended, by a sign-out or by running out, so ' +
       'the token is no longer honoured (#446).',
     spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-API-0127',
+    summary: 'One of the admin console\'s own operations, under ' +
+      '/admin-api/console, was asked with an access token that does not ' +
+      'carry admin:console, which only the console\'s client is issued ' +
+      '(#454).',
+    spec: 'forbidden (HTTP 403)' },
+  { code: 'STS-API-0128',
+    summary: 'A form helper of the admin console was asked at its old ' +
+      'management API address; it is under /admin-api/console since #454.',
+    spec: 'HTTP 404' },
+  { code: 'STS-API-0129',
+    summary: 'A management API operation whose drawing is the admin ' +
+      'console\'s was asked for format=svg; the drawing is its console ' +
+      'twin\'s under /admin-api/console (#454).',
+    spec: 'HTTP 400' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

@@ -5084,14 +5084,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'servers[0].url is this service as the request reached it, so a ' +
           'document fetched through a published port names an address the ' +
           'caller can use.' },
-  { path: '/admin-api/api-explorer', group: 'Management API',
+  { path: '/admin-api/console/api-explorer',
+    group: 'Admin console API',
     name: 'What the console\'s explorer reads', specs: [],
     what: 'NON-SPEC. Where the explorer page reads its document from, how ' +
           'many operations it describes, and the scopes the CALLER\'s roles ' +
           'grant. It does not repeat the document — the operation above is ' +
           'the document. Mirrors GET /admin/api-explorer, which is where the ' +
           'explorer itself moved on 2026-09-09.' },
-  { path: '/admin-api/delegation/map', group: 'Management API',
+  { path: '/admin-api/console/delegation/map',
+    group: 'Admin console API',
     name: 'The delegation picture',
     specs: [],
     what: 'NON-SPEC. Mirrors GET /admin/delegation/map (#446): the acts of ' +
@@ -5100,7 +5102,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'and the application registry), the counts the filter shows, and ' +
           'the drawing as SVG laid out on the server. `format=svg` answers ' +
           'the SVG document alone, with no links in it.' },
-  { path: '/admin-api/delegation/chain', group: 'Management API',
+  { path: '/admin-api/console/delegation/chain',
+    group: 'Admin console API',
     name: 'One delegation relationship, drawn',
     specs: [],
     what: 'NON-SPEC. Mirrors GET /admin/delegation/chain (#446): one chain ' +
@@ -5112,29 +5115,48 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: [],
     what: 'NON-SPEC. Mirrors GET /admin/delegation/application (#446): ' +
           'every act an application took part in, in either role, with the ' +
-          'role per act, the graph and the drawing. `format=svg` answers ' +
+          'role per act and the graph. The drawing is the console\'s ' +
+          '(#454): GET /admin-api/console/delegation/application.' },
+  { path: '/admin-api/console/delegation/application',
+    group: 'Admin console API',
+    name: 'One application\'s delegations, drawn',
+    specs: [],
+    what: 'NON-SPEC. The console\'s own (#454): what GET ' +
+          '/admin-api/delegation/application answers, with every node\'s ' +
+          'look, the drawing and the page\'s chooser. `format=svg` answers ' +
           'the SVG alone.' },
   { path: '/admin-api/delegation/user', group: 'Management API',
     name: 'Everything done in one person\'s name, drawn',
     specs: [],
     what: 'NON-SPEC. Mirrors GET /admin/delegation/user (#446): the ' +
           'identity and delegation registers unioned for one person — ' +
-          'their credentials with the grant behind each, their acts, the ' +
-          'graph and the drawing. `format=svg` answers the SVG alone.' },
-  { path: '/admin-api/delegation/allowed', group: 'Management API',
+          'their credentials with the grant behind each, their acts and the ' +
+          'graph. The drawing is the console\'s (#454): GET ' +
+          '/admin-api/console/delegation/user.' },
+  { path: '/admin-api/console/delegation/user', group: 'Admin console API',
+    name: 'Everything done in one person\'s name, drawn',
+    specs: [],
+    what: 'NON-SPEC. The console\'s own (#454): what GET ' +
+          '/admin-api/delegation/user answers, with every node\'s look, ' +
+          'the drawing and the page\'s chooser. `format=svg` answers the ' +
+          'SVG alone.' },
+  { path: '/admin-api/console/delegation/allowed',
+    group: 'Admin console API',
     name: 'The configured delegated permissions, drawn',
     specs: [],
     what: 'NON-SPEC. Mirrors GET /admin/delegation/allowed (#446): every ' +
           'configured grant as a graph with the drawing, and the groups of ' +
           'applications the grants join, paged. `format=svg` answers the ' +
           'SVG alone.' },
-  { path: '/admin-api/delegation/cluster', group: 'Management API',
+  { path: '/admin-api/console/delegation/cluster',
+    group: 'Admin console API',
     name: 'One group of applications joined by permissions, drawn',
     specs: [],
     what: 'NON-SPEC. Mirrors GET /admin/delegation/cluster (#446): the ' +
           'group an application is in, its grants and permissions paged, ' +
           'and the drawing. `format=svg` answers the SVG alone.' },
-  { path: '/admin-api/delegation-settings', group: 'Management API',
+  { path: '/admin-api/console/delegation-settings',
+    group: 'Admin console API',
     name: 'The configured permissions register, as its page shows it',
     specs: [],
     what: 'NON-SPEC. Mirrors GET /admin/delegation-settings (#446): the ' +
@@ -5147,13 +5169,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'lineage of one credential — each generation with the act that ' +
           'produced it, who holds it and the grant at its origin — the ' +
           'graph and the drawing. `format=svg` answers the SVG alone.' },
-  { path: '/admin-api/federation/map', group: 'Management API',
+  { path: '/admin-api/console/federation/map',
+    group: 'Admin console API',
     name: 'This realm\'s federation relationships, drawn',
     specs: [],
     what: 'NON-SPEC. Mirrors GET /admin/federation/map (#446): the ' +
           'relationships filtered by role, protocol and text, the graph, ' +
           'the drawing and its key. `format=svg` answers the SVG alone.' },
-  { path: '/admin-api/console', group: 'Management API',
+  { path: '/admin-api/console', group: 'Admin console API',
     name: 'What the console draws around every page',
     specs: [],
     what: 'NON-SPEC. The console\'s frame for the caller (#446): the gate ' +
@@ -5189,6 +5212,49 @@ const ENDPOINTS: EndpointEntry[] = [
           'totals — calls, tokens held and revoked, other artifacts, users, ' +
           'sign-on sessions. The cheapest call here and the one to poll. ' +
           'Mirrors GET /admin.' },
+  { path: '/admin-api/console/dashboard', group: 'Admin console API',
+    name: 'The console\'s front page',
+    specs: [],
+    what: 'NON-SPEC. The console\'s own (#454): the totals GET ' +
+          '/admin-api/status answers, with the base URL, what is persisted ' +
+          'and the sections the caller may see, which is what /admin ' +
+          'draws.' },
+  { path: '/admin-api/console/operations', group: 'Admin console API',
+    name: 'Every operation, for the console\'s forms',
+    specs: [],
+    what: 'NON-SPEC. The console\'s own (#454): every operation of both ' +
+          'kinds with the console control it mirrors, the table the static ' +
+          'console resolves a form to its operation through. The index, ' +
+          'GET /admin-api, lists the management operations alone.' },
+  { path: '/admin-api/console/openapi.json', group: 'Admin console API',
+    name: 'The console operations\' OpenAPI document',
+    specs: ['openapi'],
+    what: 'NON-SPEC. The console\'s own (#454): the OpenAPI 3.1 document ' +
+          'for the operations under /admin-api/console, built from the ' +
+          'same route table as /admin-api/openapi.json, which describes ' +
+          'the management operations alone.' },
+  { path: '/admin-api/console/pki/:action', group: 'Admin console API',
+    name: 'The certificate form\'s helpers',
+    specs: [],
+    what: 'NON-SPEC. The console\'s own (#454): apply-profile, ' +
+          'generate-keys, generate-alt-keys and use-key fill the ' +
+          'certificate form from a profile, a fresh key pair or a stored ' +
+          'one, and write nothing. The issue they lead to is POST ' +
+          '/admin-api/pki/issue-certificate.' },
+  { path: '/admin-api/console/applications/:action',
+    group: 'Admin console API',
+    name: 'The new application form\'s helper',
+    specs: [],
+    what: 'NON-SPEC. The console\'s own (#454): generate-secret mints a ' +
+          'client secret for a form about to be submitted and writes ' +
+          'nothing. The create is POST /admin-api/applications/create.' },
+  { path: '/admin-api/console/applications/new', group: 'Admin console API',
+    name: 'New application form, as the console lays it out',
+    specs: [],
+    what: 'NON-SPEC. The console\'s own (#454): what GET ' +
+          '/admin-api/applications/new answers, with the form\'s field ' +
+          'groups, its combined protocol choices, the long text fields, ' +
+          'the persistence note and the RFC 9728 import tab.' },
   { path: '/admin-api/keys', group: 'Management API', name: 'Key pairs',
     specs: [],
     what: 'NON-SPEC. Everything /admin/keys lists, as JSON: every key pair, ' +
@@ -9552,13 +9618,14 @@ const PROTOCOLS: Protocol[] = [
           'group).' }
 ];
 // Groups of endpoints that are NOT a protocol family, and so are not expected
-// to be claimed by a row above. Four, and each is the service talking about
+// to be claimed by a row above. Five, and each is the service talking about
 // itself rather than speaking to somebody: liveness and the RFC 8414 documents
 // (Service), the operator console (Admin), the console over JSON (Management
-// API), and whatever the router has that nobody has described yet
-// (Undocumented) — that last one is already reported on its own.
+// API), the console's own operations that draw it (Admin console API, #454),
+// and whatever the router has that nobody has described yet (Undocumented) —
+// that last one is already reported on its own.
 const NON_PROTOCOL_GROUPS = ['Service', 'Admin', 'Management API',
-                             'Undocumented'];
+                             'Admin console API', 'Undocumented'];
 
 // 'Admin' sits last of the real groups, before 'Undocumented': it is the only
 // group that is not a protocol, and a reader looking for what this service
@@ -9574,7 +9641,8 @@ const GROUP_ORDER = ['Service', 'Authentication', 'WS-Trust', 'WS-Federation',
                      'VC ' +
                          'Presentation (OID4VP)',
                      'W3C VC-API (test endpoints)',
-                     'Admin', 'Management API', 'Undocumented'];
+                     'Admin', 'Management API', 'Admin console API',
+                     'Undocumented'];
 
 // One row of the router's own list: a path and the methods it answers.
 interface RegisteredRoute {

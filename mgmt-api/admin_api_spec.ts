@@ -442,6 +442,11 @@ class AdminApiSpec {
         String(path || '') === '/admin-api/device-compliance') {
       return 'device:compliance';
     }
+    // THE CONSOLE'S OWN OPERATIONS (#454), as the gate's `consoleOp` reads
+    // them: everything under `/admin-api/console` takes `admin:console`.
+    if (/^\/admin-api\/console(\/|$)/.test(String(path || ''))) {
+      return 'admin:console';
+    }
     return String(method).toUpperCase() === 'GET' ? 'admin:read' :
            'admin:write';
   }
@@ -475,6 +480,10 @@ class AdminApiSpec {
               'admin:read': 'Read anything this API exposes (every GET).',
               'admin:write': 'Change anything this API can change ' +
                              '(every other method).',
+              'admin:console': 'The admin console\'s own operations, under ' +
+                               '/admin-api/console (#454). Issued only to ' +
+                               'the console\'s client, sts-admin-console, ' +
+                               'through the ADMIN_CONSOLE role it confers.',
               'device:compliance': 'Report device compliance through POST ' +
                                    '/admin-api/device-compliance, and ' +
                                    'nothing else — the scope an MDM or ' +
@@ -700,12 +709,18 @@ class AdminApiSpec {
       components.securitySchemes = this.securitySchemesFor(opts.baseUrl);
     }
     log.debug("Leaving AdminApiSpec.buildSpec().");
+    // THE CONSOLE'S DOCUMENT (#454), `GET /admin-api/console/openapi.json`:
+    // the same builder over the console's rows, under its own title and with
+    // a first paragraph saying what those operations are.
+    const consoleDocument = opts.console === true;
     return {
       openapi: '3.1.0',
       info: {
-        title: 'IYA STS management API',
+        title: consoleDocument ? 'IYA STS admin console operations'
+                               : 'IYA STS management API',
         version: opts.version || '0.0.0',
-        description: this.describe(authRequired),
+        description: (consoleDocument ? CONSOLE_PARAGRAPH + '\n\n' : '') +
+                     this.describe(authRequired),
         license: { name: 'MIT' }
       },
       servers: [{ url: opts.baseUrl || '/', description: 'This service.' }],
@@ -728,7 +743,9 @@ class AdminApiSpec {
       // wrongly said while the gate was on.
       // ---------------------------------------------------------------------
       security: authRequired
-        ? [{ oauth2: ['admin:read', 'admin:write'] }, { bearerAuth: [] }]
+        ? [{ oauth2: consoleDocument
+            ? ['admin:console', 'admin:read', 'admin:write']
+            : ['admin:read', 'admin:write'] }, { bearerAuth: [] }]
         : [],
       paths: paths,
       components: components
@@ -1239,7 +1256,9 @@ const SCHEMAS = {
       },
       operations: {
         type: 'array',
-        description: 'Every operation, with the console page it mirrors.',
+        description: 'Every management operation, with the console page it ' +
+                     'mirrors. The console\'s own operations are listed by ' +
+                     'GET /admin-api/console/operations (#454).',
         items: openObject('One operation.', {
           method: { type: 'string' },
           path: { type: 'string' },
@@ -1248,6 +1267,19 @@ const SCHEMAS = {
           mirrors: {
             type: 'string',
             description: 'The /admin control this operation is the API form of.'
+          },
+          kind: {
+            type: 'string', enum: ['management', 'console'],
+            description: 'Which of the two kinds the operation is (#454): ' +
+                         'the management API, or one of the admin ' +
+                         'console\'s own operations under ' +
+                         '/admin-api/console.'
+          },
+          drawnOn: {
+            type: 'array', items: { type: 'string' },
+            description: 'The console pages drawn from this operation\'s ' +
+                         'data by one of the console\'s own operations ' +
+                         '(#454); present only where there are any.'
           }
         })
       }
@@ -5696,6 +5728,17 @@ const SCHEMAS = {
                 items: { $ref: '#/components/schemas/AuditEvent' } }
     }, PAGING_PROPERTIES))
 };
+
+// THE CONSOLE'S DOCUMENT'S FIRST PARAGRAPH (#454).
+const CONSOLE_PARAGRAPH =
+  '**These are the admin console\'s own operations, not the management ' +
+  'API.** They exist to draw the static console at /admin — its frame, ' +
+  'its drawings and its form helpers — and answer in the shape its pages ' +
+  'want, which changes when a page does. They take `admin:console`, ' +
+  'issued only to the console\'s client through the ADMIN_CONSOLE role ' +
+  'it confers, and a page that shows realm data takes ADMIN_READ too. ' +
+  'Every control the console has is a management operation, described by ' +
+  '/admin-api/openapi.json.';
 
 const DESCRIPTION_OPENING =
   'The management API of IYA STS: everything the /admin console ' +

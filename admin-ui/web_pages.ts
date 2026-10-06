@@ -164,7 +164,7 @@ const PAGES: WebPage[] = [
       return ApplicationsPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/applications/new', title: 'New application',
-    operation: '/admin-api/applications/new',
+    operation: '/admin-api/console/applications/new',
     render: function (view: Json, ctx?: Json): string {
       return ApplicationsPage.newApplicationBody(ctx || WebKit.context(),
                                                  view);
@@ -233,12 +233,13 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/crypto-metadata', title: 'Cryptography',
     operation: '/admin-api/crypto', render: CryptoMetadataPage.render },
-  { path: '/admin', title: 'Admin console', operation: '/admin-api/status',
+  { path: '/admin', title: 'Admin console',
+    operation: '/admin-api/console/dashboard',
     render: function (view: Json, ctx?: Json): string {
       return DashboardPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/api-explorer', title: 'API explorer',
-    operation: '/admin-api/api-explorer',
+    operation: '/admin-api/console/api-explorer',
     render: function (view: Json, ctx?: Json): string {
       return ExplorerPage.body(ctx || WebKit.context(), view);
     } },
@@ -253,13 +254,13 @@ const PAGES: WebPage[] = [
       return DelegationPage.acts(ctx || WebKit.context(), view);
     } },
   { path: '/admin/delegation/allowed', title: 'The allowed mappings',
-    operation: '/admin-api/delegation/allowed',
+    operation: '/admin-api/console/delegation/allowed',
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.allowed(ctx || WebKit.context(), view);
     } },
   { path: '/admin/delegation/application',
     title: 'Delegation — one application',
-    operation: '/admin-api/delegation/application',
+    operation: '/admin-api/console/delegation/application',
     drill: {
       param: 'application',
       sample: function (list: Json): string | null {
@@ -274,12 +275,12 @@ const PAGES: WebPage[] = [
       return DelegationPage.application(ctx || WebKit.context(), view);
     } },
   { path: '/admin/delegation-settings', title: 'Delegation',
-    operation: '/admin-api/delegation-settings',
+    operation: '/admin-api/console/delegation-settings',
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.settings(ctx || WebKit.context(), view);
     } },
   { path: '/admin/delegation/user', title: 'Delegation — one person',
-    operation: '/admin-api/delegation/user',
+    operation: '/admin-api/console/delegation/user',
     drill: {
       param: 'user',
       sample: function (list: Json): string | null {
@@ -294,17 +295,17 @@ const PAGES: WebPage[] = [
       return DelegationPage.user(ctx || WebKit.context(), view);
     } },
   { path: '/admin/delegation/cluster', title: 'Delegation — one group',
-    operation: '/admin-api/delegation/cluster',
+    operation: '/admin-api/console/delegation/cluster',
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.cluster(ctx || WebKit.context(), view);
     } },
   { path: '/admin/delegation/chain', title: 'Delegation — one relationship',
-    operation: '/admin-api/delegation/chain',
+    operation: '/admin-api/console/delegation/chain',
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.chain(ctx || WebKit.context(), view);
     } },
   { path: '/admin/delegation/map', title: 'Delegation — the picture',
-    operation: '/admin-api/delegation/map',
+    operation: '/admin-api/console/delegation/map',
     render: function (view: Json, ctx?: Json): string {
       return DelegationPage.map(ctx || WebKit.context(), view);
     } },
@@ -345,7 +346,7 @@ const PAGES: WebPage[] = [
       return EstPage.monitorBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/federation/map', title: 'Federation — the picture',
-    operation: '/admin-api/federation/map',
+    operation: '/admin-api/console/federation/map',
     render: function (view: Json, ctx?: Json): string {
       return FederationPage.map(ctx || WebKit.context(), view);
     } },

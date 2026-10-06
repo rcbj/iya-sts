@@ -308,8 +308,12 @@ class ApiExplorer {
     const self = this;
     log.debug("Entering ApiExplorer.explorerJson().");
     const gate = adminViews.gateStateFor(req);
-    const document = spec.buildSpec(adminApi.ROUTES,
-                                    adminApi.specOptions(req));
+    // THE MANAGEMENT OPERATIONS ALONE (#454): this page is the management
+    // API's, and the console's own operations — its frame, drawings and
+    // form helpers — are not part of what it documents or calls.
+    const document = spec.buildSpec(adminApi.ROUTES.filter(function (entry) {
+      return (entry.kind || 'management') === 'management';
+    }), adminApi.specOptions(req));
     const paths = Object.keys(document.paths || {});
     let operations = 0;
     paths.forEach(function (one) {

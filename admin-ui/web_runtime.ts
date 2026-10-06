@@ -64,9 +64,11 @@ type Json = any;
 // The console's client: public, DPoP-bound (`sender_constraints.ts`,
 // `DPOP_BOUND_PUBLIC_CLIENTS`).
 const CLIENT_ID = 'sts-admin-console';
-// What it asks for: an ID Token for who signed in, and the two scopes the
-// management API takes, narrowed at issuance to the roles the person holds.
-const SCOPE = 'openid admin:read admin:write';
+// What it asks for: an ID Token for who signed in, the two scopes the
+// management API takes, narrowed at issuance to the roles the person holds,
+// and the console's own (#454), which every person signing in here is
+// issued through the ADMIN_CONSOLE role this client confers.
+const SCOPE = 'openid admin:read admin:write admin:console';
 // The key the sign-in's one-use values cross the redirect under.
 const SIGNIN_KEY = 'sts-console-signin';
 // How long before an access token's expiry it is refreshed, in seconds.
@@ -575,7 +577,10 @@ class ConsoleRuntime {
       this.me = me && me.status === 200 ? me.json : {};
     }
     if (!this.formTable) {
-      const index = await this.apiJson('GET', '/admin-api');
+      // THE OPERATIONS OF BOTH KINDS (#454): the index, `GET /admin-api`,
+      // lists the management operations alone, and a form here may post to
+      // one of the console's own form helpers.
+      const index = await this.apiJson('GET', '/admin-api/console/operations');
       if (!index || index.status !== 200) {
         return false;
       }
@@ -846,9 +851,19 @@ class ConsoleRuntime {
    */
   async requestSchema(operation: string): Promise<Json> {
     if (!this.spec) {
+      // BOTH DOCUMENTS, ONE TABLE OF PATHS (#454): a form posts to a
+      // management operation or to one of the console's own form helpers,
+      // and each is described by its own document. The components are the
+      // same in both.
       const answer = await this.apiJson('GET', '/admin-api/openapi.json');
-      this.spec = answer && answer.status === 200 && answer.json
+      const own = await this.apiJson('GET', '/admin-api/console/openapi.json');
+      const management = answer && answer.status === 200 && answer.json
         ? answer.json : {};
+      const consoleDoc = own && own.status === 200 && own.json ? own.json
+                                                               : {};
+      this.spec = Object.assign({}, management, {
+        paths: Object.assign({}, consoleDoc.paths || {},
+                             management.paths || {}) });
     }
     const op = ((this.spec.paths || {})[operation] || {}).post;
     const schema = op && op.requestBody && op.requestBody.content &&

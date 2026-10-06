@@ -178,7 +178,8 @@ async function signInAtB(cells) {
   const resource = origin + "/admin-api";
   let at = origin + "/oauth2/authorize?" + new URLSearchParams({
     response_type: "code", client_id: "sts-admin-console",
-    redirect_uri: redirectUri, scope: "openid admin:read admin:write",
+    redirect_uri: redirectUri,
+    scope: "openid admin:read admin:write admin:console",
     state: state, code_challenge: pair.challenge,
     code_challenge_method: "S256", resource: resource }).toString();
   let signedIn = false;

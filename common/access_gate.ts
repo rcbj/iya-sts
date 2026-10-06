@@ -218,6 +218,7 @@ interface AccessRequest {
   subject?: AccessSubject | null;
   owner?: unknown;
   requiredRoles?: string[];
+  requiredAllRoles?: string[];
   context?: Record<string, unknown>;
   [key: string]: unknown;
 }
@@ -354,7 +355,12 @@ class AccessGate {
   //                the roles this request demands, where the CALLER states the
   //                requirement (the XACML surfaces, the debugger, the
   //                management API's token path); absent for a surface an
-  //                operator narrows by policy.
+  //                operator narrows by policy. ANY ONE of them satisfies it.
+  //     requiredAllRoles
+  //                roles the subject must hold EVERY one of, beside the above
+  //                (#454): the management API's console operations ask for
+  //                ADMIN_CONSOLE and, where they show realm data, ADMIN_READ
+  //                too. Absent or empty, it asks nothing.
   //     context    anything else worth deciding on: the method, the path. For
   //                the log and for a policy that wants it. }
   //
