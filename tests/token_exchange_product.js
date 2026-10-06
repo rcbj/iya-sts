@@ -48,6 +48,14 @@
 //   8. DEVELOPMENT: the same, each refusal ISSUED and the act's row saying
 //      it WOULD have been refused — except 0795 and 0620, refused all the
 //      same — and a wider scope issued.
+//   In both: every `act` entry carries the token's `iss`, a prior entry
+//   keeping its own (#471); a client named as an actor takes its subject's
+//   form in the mode, `urn:sts:client:<id>` in product (#471).
+//   9. RFC 9700 MODE in development (#471): a policy-chosen delegation
+//      without an actor_token names the client `urn:sts:client:<id>`, on the
+//      token and in the register, the original client beneath it in the
+//      same form; may_act names the client in either spelling, in both
+//      modes.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -75,7 +83,7 @@ function childMain() {
     findings.push({ ok: !!ok, what: what,
                     detail: detail === undefined ? '' : String(detail) });
   };
-  const post = function (port, form) {
+  const post = function (port, form, at) {
     return new Promise(function (resolve) {
       // A value that is an array is sent as the parameter repeated.
       const params = new URLSearchParams();
@@ -86,7 +94,7 @@ function childMain() {
       });
       const body = params.toString();
       const req = http.request({ host: '127.0.0.1', port: port,
-        path: '/oauth2/token', method: 'POST',
+        path: at || '/oauth2/token', method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded',
                    'content-length': Buffer.byteLength(body) } },
       function (res) {
@@ -238,21 +246,53 @@ function childMain() {
       return r.status === 200 && !!row &&
              /WOULD HAVE BEEN REFUSED/.test(row.authorizedBy);
     };
+    // A client named as an actor, in the one form its subject takes in the
+    // mode (#471): `urn:sts:client:<id>` in RFC 9700 mode, which product
+    // implies, and the bare client_id otherwise.
+    const clientSubIn = function (m, id) {
+      return m === 'product' ? 'urn:sts:client:' + id : id;
+    };
+    // Every entry of an `act` chain carries `iss` equal to `iss` (#471).
+    const issOnEvery = function (act, iss) {
+      let level = act;
+      let depth = 0;
+      while (level && typeof level === 'object') {
+        if (level.iss !== iss) {
+          return false;
+        }
+        level = level.act;
+        depth += 1;
+      }
+      return depth > 0;
+    };
     const policyChecks = async function (m) {
       const P = m === 'product' ? '7' : '8';
       const says = m === 'product' ? 'refused' : 'issued, would-have-been ' +
         'refused';
       // a. A DELEGATION: actor = S, S delegates to R; `act` names the actor.
+      // No actor_token: the issuance policy chose the delegation, and the
+      // actor is the exchanging client — named, since #471, in the form its
+      // subject takes in the mode (it was the bare client_id in product too,
+      // beside a namespaced original client in the same chain), and the
+      // register's intermediary names it the same way.
       let r = await by('txp-front', aliceToken(), { audience: BACK });
       let claims = r.json.access_token ? claimsOf(r.json.access_token) : {};
       let row = lastAct('oauth-delegation');
-      note(r.status === 200 && claims.act && claims.act.sub === 'txp-front' &&
+      note(r.status === 200 && claims.act &&
+           claims.act.sub === clientSubIn(m, 'txp-front') &&
+           claims.act.iss === claims.iss && !!claims.iss &&
            [].concat(claims.aud).indexOf(BACK) >= 0 && row &&
-           /issuance policy allowed delegation/.test(row.authorizedBy),
-           P + 'a. DELEGATION by S to R it delegates to: issued, `act` ' +
-           'naming the actor, for R, and the act says what allowed it',
-           r.status + ' ' + JSON.stringify([claims.act, claims.aud,
-                                            row && row.authorizedBy]));
+           /issuance policy allowed delegation/.test(row.authorizedBy) &&
+           row.intermediary &&
+           row.intermediary.presented === clientSubIn(m, 'txp-front'),
+           P + 'a. DELEGATION by S to R it delegates to, with no ' +
+           'actor_token: issued, `act` naming the actor as ' +
+           clientSubIn(m, 'txp-front') + ' with the token\'s `iss` (#471), ' +
+           'for R, and the act says what allowed it and names the same actor',
+           r.status + ' ' + JSON.stringify([claims.act, claims.iss,
+                                            claims.aud,
+                                            row && row.authorizedBy,
+                                            row && row.intermediary]));
       // a2. The actor named by a VERIFIED actor_token, not the client.
       const frontCc = await post(port, Object.assign(
         { grant_type: 'client_credentials' }, as('txp-front')));
@@ -263,7 +303,8 @@ function childMain() {
         actor_token_type: ACCESS });
       claims = r.json.access_token ? claimsOf(r.json.access_token) : {};
       note(r.status === 200 && claims.act && frontSub &&
-           claims.act.sub === frontSub,
+           claims.act.sub === frontSub && frontSub ===
+             clientSubIn(m, 'txp-front') && claims.act.iss === claims.iss,
            P + 'a2. the actor_token\'s subject is the actor: S itself, ' +
            'exchanging through another client — `act.sub` is its sub',
            r.status + ' ' + JSON.stringify([claims.act, frontSub]));
@@ -278,14 +319,18 @@ function childMain() {
       // the form a client's subject takes in the mode.
       r = await by('txp-back', aliceToken(), { audience: BACK });
       claims = r.json.access_token ? claimsOf(r.json.access_token) : {};
-      const originalS = m === 'product' ? 'urn:sts:client:txp-front'
-                                        : 'txp-front';
-      note(r.status === 200 && claims.act && claims.act.sub === 'txp-back' &&
+      // Both entries in the one form (#471): R had been the bare client_id
+      // in product above a namespaced S — and both carry `iss`.
+      const originalS = clientSubIn(m, 'txp-front');
+      note(r.status === 200 && claims.act &&
+           claims.act.sub === clientSubIn(m, 'txp-back') &&
            JSON.stringify(claims.act.act) ===
-             JSON.stringify({ sub: originalS }),
+             JSON.stringify({ sub: originalS, iss: claims.iss }) &&
+           issOnEvery(claims.act, claims.iss),
            P + 'b. DELEGATION by R, holding the token S was handed: issued, ' +
            '`act` naming R with the original client ' + originalS +
-           ' nested beneath it (#443)', r.status + ' ' +
+           ' nested beneath it (#443), each entry with the token\'s `iss` ' +
+           '(#471)', r.status + ' ' +
            JSON.stringify(claims.act) + ' ' + r.text.slice(0, 300));
       // c. RESOURCE-BASED: R accepts the actor by name.
       r = await by('txp-rbcd', aliceToken('txp-rbcd'), { audience: BACK });
@@ -369,12 +414,31 @@ function childMain() {
       r = await by('txp-front', aliceToken('txp-front',
         { act: { sub: 'txp-prior-actor' } }), { audience: BACK });
       claims = r.json.access_token ? claimsOf(r.json.access_token) : {};
-      note(r.status === 200 && claims.act && claims.act.sub === 'txp-front' &&
+      // The prior entry carries no `iss`; the subject_token is this
+      // realm's own, so it is given that token's issuer (#471).
+      note(r.status === 200 && claims.act &&
+           claims.act.sub === clientSubIn(m, 'txp-front') &&
            claims.act.act && claims.act.act.sub === 'txp-prior-actor' &&
-           !claims.act.act.act,
+           !claims.act.act.act && issOnEvery(claims.act, claims.iss),
            P + 'n. `act` NESTS: the new actor outermost, the ' +
            'subject_token\'s actor beneath it (RFC 8693 section 4.1), and ' +
-           'no original client added under a chain already there (#443)',
+           'no original client added under a chain already there (#443); ' +
+           'the prior entry, with no `iss` of its own, given the issuer of ' +
+           'the token this realm signed (#471)',
+           r.status + ' ' + JSON.stringify(claims.act));
+      // n2. A prior entry that carries an `iss` keeps it (#471).
+      r = await by('txp-front', aliceToken('txp-front',
+        { act: { sub: 'txp-far-actor', iss: 'https://far.example',
+                 act: { sub: 'txp-farther' } } }), { audience: BACK });
+      claims = r.json.access_token ? claimsOf(r.json.access_token) : {};
+      note(r.status === 200 && claims.act &&
+           claims.act.iss === claims.iss &&
+           claims.act.act && claims.act.act.sub === 'txp-far-actor' &&
+           claims.act.act.iss === 'https://far.example' &&
+           claims.act.act.act && claims.act.act.act.sub === 'txp-farther' &&
+           claims.act.act.act.iss === claims.iss,
+           P + 'n2. a prior entry\'s own `iss` is kept as it came; one ' +
+           'without is given this realm\'s (#471)',
            r.status + ' ' + JSON.stringify(claims.act));
       // o. A wider scope.
       r = await by('txp-front', aliceToken('txp-front', { scope: 'api' }),
@@ -474,6 +538,98 @@ function childMain() {
     }
     const devRan = await policyChecks('development');
     note(devRan, '8. DEVELOPMENT: the delegation policy checks ran');
+
+    // 9. RFC 9700 MODE WITHOUT PRODUCT (#471): the namespace is the mode's,
+    // not product's, so a delegation the policy chose without an
+    // actor_token names its actor `urn:sts:client:<id>` with the mode on in
+    // development too — and the original client beneath it in the same
+    // form, each entry carrying the token's `iss`. Before #471 the actor
+    // was the bare client_id here, above a namespaced original client.
+    // `oauth2.rfc9700` is restart-only for the process and settable on a
+    // realm, so the mode is a realm's, with the fixtures made inside it.
+    const realms = require(ROOT + '/common/realms');
+    const R9 = 'txp-rfc9700';
+    const made = realms.create({ id: R9, name: R9,
+      description: 'token_exchange_product.js, #471',
+      overrides: { 'oauth2.rfc9700': true,
+                   'oauth2.consentRequired': false } });
+    note(made && made.ok !== false, 'precondition: a realm in RFC 9700 ' +
+         'mode was created', JSON.stringify(made && made.errors));
+    const realm9 = realms.get(R9);
+    const at9 = '/realm/' + R9 + '/oauth2/token';
+    let fixtures9 = null;
+    await realms.run(realm9, async function () {
+      dir.createUser('txp-alice', { invent: false });
+      confidential('txp-back', { oauthAudience: [BACK] });
+      confidential('txp-front', { appAllowedToDelegateTo: ['txp-back'] });
+      const sub9 = helpers.subjectForName('txp-alice');
+      const now9 = Math.floor(Date.now() / 1000);
+      const about9 = function (extra) {
+        return helpers.signJwt(Object.assign({
+          iss: 'http://127.0.0.1:' + port + '/realm/' + R9, sub: sub9,
+          username: 'txp-alice', client_id: 'txp-front', typ: 'Bearer',
+          aud: 'http://127.0.0.1:' + port + '/realm/' + R9, scope: 'api',
+          iat: now9, nbf: now9, exp: now9 + 600,
+          jti: 'txp9-' + crypto.randomBytes(6).toString('hex') },
+        extra || {}));
+      };
+      fixtures9 = { plain: about9(),
+                    mayActBare: about9({ may_act: { sub: 'txp-front' } }),
+                    mayActSub: about9({ may_act:
+                                        { sub: 'urn:sts:client:txp-front' } }),
+                    plain2: about9() };
+    });
+    const by9 = function (actor, subjectToken) {
+      return post(port, Object.assign({ grant_type: EXCHANGE,
+        subject_token: subjectToken, subject_token_type: ACCESS,
+        audience: BACK }, as(actor)), at9);
+    };
+    let r9 = await by9('txp-front', fixtures9.plain);
+    let c9 = r9.json.access_token ? claimsOf(r9.json.access_token) : {};
+    const row9 = await realms.run(realm9, function () {
+      return lastAct('oauth-delegation');
+    });
+    note(r9.status === 200 && c9.act &&
+         c9.act.sub === 'urn:sts:client:txp-front' && !c9.act.act &&
+         c9.act.iss === c9.iss && !!c9.iss && row9 &&
+         row9.intermediary.presented === 'urn:sts:client:txp-front',
+         '9a. RFC 9700 MODE in development: a policy-chosen delegation ' +
+         'with no actor_token names the client urn:sts:client:txp-front, ' +
+         'with the token\'s `iss`, on the token and in the register',
+         r9.status + ' ' + JSON.stringify([c9.act, c9.iss,
+           row9 && row9.intermediary]) + ' ' + r9.text.slice(0, 300));
+    r9 = await by9('txp-back', fixtures9.plain2);
+    c9 = r9.json.access_token ? claimsOf(r9.json.access_token) : {};
+    note(r9.status === 200 && JSON.stringify(c9.act) ===
+           JSON.stringify({ sub: 'urn:sts:client:txp-back', iss: c9.iss,
+                            act: { sub: 'urn:sts:client:txp-front',
+                                   iss: c9.iss } }),
+         '9b. and R holding the token S was handed: both entries ' +
+         'urn:sts:client:, the original client nested, `iss` on each',
+         r9.status + ' ' + JSON.stringify(c9.act) + ' ' +
+         r9.text.slice(0, 300));
+    // 9c. may_act naming the client by its bare client_id — the form
+    // stsMayAct puts on a token — still names the namespaced actor.
+    r9 = await by9('txp-front', fixtures9.mayActBare);
+    c9 = r9.json.access_token ? claimsOf(r9.json.access_token) : {};
+    note(r9.status === 200 && c9.act &&
+         c9.act.sub === 'urn:sts:client:txp-front',
+         '9c. may_act naming the client by its client_id still names it ' +
+         'when it acts as urn:sts:client:txp-front',
+         r9.status + ' ' + r9.text.slice(0, 300));
+    // 9d. and naming it by its subject does too.
+    r9 = await by9('txp-front', fixtures9.mayActSub);
+    note(r9.status === 200,
+         '9d. may_act naming the client by urn:sts:client:txp-front ' +
+         'names it', r9.status + ' ' + r9.text.slice(0, 300));
+    realms.remove(R9);
+    // 9e. and with the mode off, may_act by the subject form still names
+    // the client acting under its bare client_id.
+    const r9e = await by('txp-front', aliceToken('txp-front',
+      { may_act: { sub: 'urn:sts:client:txp-front' } }), { audience: BACK });
+    note(r9e.status === 200, '9e. with RFC 9700 mode off, may_act naming ' +
+         'urn:sts:client:txp-front names the client acting as txp-front',
+         r9e.status + ' ' + r9e.text.slice(0, 300));
 
     // 6. Development is what it was.
     const dev = await exchange(unsigned);

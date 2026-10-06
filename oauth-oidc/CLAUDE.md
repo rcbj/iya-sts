@@ -2741,9 +2741,41 @@ form the actors above it have when they act by client_credentials tokens);
 nothing when the original client IS the actor; and **delegation only** — the
 profile has no impersonation (its exchanging party is always named), and RFC
 8693 section 1.1's impersonation names nobody, so it starts no chain. The
-profile's `iss` in each entry is not added. The entry is informational, as
-every nested `act` is: `may_act`, the delegation policy and the register read
-the current actor, which stays outermost. **AND THE
+profile's `iss` in each entry came with #471, below. The entry is
+informational, as every nested `act` is: `may_act`, the delegation policy and
+the register read the current actor, which stays outermost.
+
+**EVERY `act` ENTRY CARRIES `iss`, AND A CLIENT HAS ONE FORM AS AN ACTOR (#471,
+2026-10-06).** The same profile has the AS put "a sub claim identifying PR1 and
+an iss claim identifying the AS" in `act`, and the same pair in the nested
+original client (PR 21-1421 section 2.4.1; PR 21-1422 section 3.1.1.1 says it
+verbatim for the token exchange, and its section 3.3 examples carry `iss` at
+every level). So every entry a delegated exchange WRITES — the current actor
+and the original client — is `OAuth2Server.actChainEntry()`'s `{sub, iss}`,
+`iss` this authorization server's issuer, the token's own. Entries COPIED from
+the subject_token's `act` keep the `iss` they carry; one with none is given
+this issuer only when this realm signed and verified the subject_token, the
+one case in which this service vouches for it (`priorActChain()`); a chain off
+an assertion or development's unverified token is copied as it came. An
+impersonation's kept chain is filled by the same rule. An actor named by a
+foreign assertion still gets this issuer, the profile having no other case:
+the entry records who wrote it into this token. And **one subject form for a
+client named as an actor** (`clientActorSubject()`): `urn:sts:client:<id>` in
+RFC 9700 mode (product implies it), the bare client_id otherwise — the form a
+client_credentials actor_token and the original client already had, and now
+also the actor of a delegation the issuance policy chose WITHOUT an
+actor_token, which had been the bare client_id in every mode, so a product
+token could carry both spellings. The register's intermediary names that actor
+the same way (`delegation.js` draws it as its application's box, #468); the
+policy's actor FACT is the application's identifier in either mode
+(`partyFacts()`, and `applicationFor()` now also resolves `urn:sts:client:<id>`);
+and the `may_act` comparison accepts a client in both spellings, because the
+claim this service writes names an application by its bare client_id (from a
+DN). Introspection returns the chain as carried (#469). WS-Trust's own JWT
+`act` (`wstrust.ts`) is not a token exchange and is unchanged.
+`tests/token_exchange_product.js` 7a, 7b, 7n, 7n2 and 9.
+
+**AND THE
 SCOPE MAY NOT WIDEN**: `body.scope || subject.scope` was never compared with
 what the subject granted, and #110's `scopeRefusal()` and `tokenSet()`'s
 narrowing hold a scope to the CLIENT's declaration, not to the subject's grant.

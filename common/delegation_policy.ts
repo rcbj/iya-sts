@@ -221,10 +221,19 @@ class DelegationPolicy {
   }
 
   // The application an identifier, client_id or name belongs to, or null.
+  //
+  // A CLIENT'S SUBJECT IS ITS APPLICATION TOO (#471): `urn:sts:client:<id>`,
+  // the form a client is named by as an actor in RFC 9700 mode, resolves to
+  // the application whose client_id is `<id>` — so a party handed over in
+  // either of a client's two spellings has the same facts, and the policy's
+  // actor fact is the application's identifier in both modes. The token
+  // exchange hands the bare client_id today; this keeps any other caller (or
+  // a realm policy's party) from finding nobody behind the namespaced one.
   /**
-   * Finds the application an identifier or client_id belongs to.
+   * Finds the application an identifier, client_id or client subject
+   * (`urn:sts:client:<id>`) belongs to.
    *
-   * @param name - an application identifier or client_id
+   * @param name - an application identifier, client_id or client subject
    * @returns the application view, or null
    */
   applicationFor(name: string): Json {
@@ -235,8 +244,13 @@ class DelegationPolicy {
       log.debug("Leaving DelegationPolicy.applicationFor(). Nothing asked.");
       return null;
     }
+    // The name as written first, so an entry whose identifier happens to
+    // begin with the prefix is still found by it.
+    const clientId = /^urn:sts:client:./.test(wanted)
+      ? wanted.slice('urn:sts:client:'.length) : '';
     const found = applications.get(wanted) ||
-      applications.forClientId(wanted) || null;
+      applications.forClientId(wanted) ||
+      (clientId ? applications.forClientId(clientId) : null) || null;
     log.debug("Leaving DelegationPolicy.applicationFor(). " +
               (found ? found.identifier : 'None.'));
     return found;
