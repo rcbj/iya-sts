@@ -28,7 +28,9 @@
 //
 //   * RFC 9068 section 2.1: `typ: at+jwt`, and a `kid` the realm's key set
 //     (`GET /oauth2/jwks`) publishes, which its signature verifies with.
-//   * RFC 9068 section 2.2: `iss` (the issuer `GET /sts` names), `exp` (the
+//   * RFC 9068 section 2.2: `iss` (the realm's OAuth issuer, #480: what
+//     /.well-known/oauth-authorization-server publishes and `GET /sts` names
+//     as `JWT issuer:`), `exp` (the
 //     RSTR's own wst:Lifetime Expires, to the second), `aud` (exactly the
 //     registered identifier asked for), `sub` (bob's `urn:uuid:`, the same
 //     at every hop), `client_id` (the requester: webapp1-wjdel, apigw1-wjdel,
@@ -55,8 +57,6 @@
 //   * `scope` is the AppliesTo's `wstrustJwtScope` (#485), judged as an
 //     OAuth access token's: its declared `chain.read` kept, its undeclared
 //     `chain.undeclared` left off in product (kept in development);
-//   * `iss` is the STS's own (`wstrust.issuer`), which publishes no OAuth
-//     metadata to compare with;
 //   * no SAML: the Delegation Restriction is the SAML pair's.
 //
 // NEEDS #476 AND #477. Against a service without them the sign-in's JWT

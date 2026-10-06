@@ -299,7 +299,8 @@ function announce() {
            version.buildInfo(APP_VERSION) + ').');
   log.info('WS-Trust STS mock listening on ' + (useHttps ? 'https' : 'http') +
            '://' + HOST + ':' + PORT +
-           ' (WS-Trust issuer ' + config.value('wstrust.issuer') +
+           ' (WS-Trust issuer ' +
+           require('./common/issuer_names').wstrustIssuer() +
            '); POST SOAP RST to /sts');
   if (useHttps) {
     log.info('This port is HTTPS (global.https' +

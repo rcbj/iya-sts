@@ -65,6 +65,12 @@ entityID — for a service provider library that keys its trust store off the
 entityID and is surprised to find a new one per application; the endpoints stay
 per application either way.
 
+**The same entityID signs WS-Trust's assertion for that service provider**
+(#480). In product, a WS-Trust token whose AppliesTo that application
+answers to carries `saml2.entityId:{sp}` as its Issuer, unless
+`saml.issuer` is set. That is the name its own metadata document gives
+this identity provider, so the two agree.
+
 `{sp}` is the service provider's entityID percent-encoded, or a **slug** — the
 entityID where it is safe in a URL path, otherwise `app-` and twelve hex
 characters of its SHA-256. A slug is not reversible, so `/admin/saml2` lists the
@@ -563,7 +569,7 @@ one-shot artifact are enforced in **both** modes. See
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `saml.issuer` | `STS_SAML_ISSUER` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` | yes | Who signed an assertion: the issuer of the SAML assertions WS-Trust and WS-Federation carry, and what `/wsfed/rp` checks one against. The browser profiles name themselves with `saml2.entityId` and `saml11.providerId`. |
+| `saml.issuer` | `STS_SAML_ISSUER` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` (development); `saml2.entityId` in product, unset | yes | Who signed an assertion: the issuer of the SAML assertions WS-Trust and WS-Federation carry, and what `/wsfed/rp` checks one against. The browser profiles name themselves with `saml2.entityId` and `saml11.providerId`. Unset in product, it is the entityID (per SP for a WS-Trust token to a registered application, #480). |
 | `saml.clockSkewS` | `STS_SAML_CLOCK_SKEW_S` | `0` | yes | Seconds added to both ends of every issued assertion's validity window (at most 300). |
 | `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The XML signature algorithm and Redirect `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. `rsa-sha1` is development mode only: product signs with `rsa-sha256` instead and refuses setting it (#181). **In a realm with `keys.signerModel = hybrid-groups` (#68)** it may also be `ecdsa-sha256` or `ecdsa-sha384` (the XML signer group's P-256 or P-384 key) or `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87` or `slh-dsa-sha2-128s` (the group's post-quantum keys, each with its own certificate, under the W3C xmldsig-more **draft** identifiers — few service providers verify them yet). Elsewhere, or before that key is certified, the realm signs `rsa-sha256` and says so once. |
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`; inclusive c14n is not offered. |

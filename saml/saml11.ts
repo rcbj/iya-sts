@@ -85,6 +85,8 @@ import InstanceSlot = require('../common/instance_slot');
 // saml.issuer — the same setting the 2.0 assertions carry, because it names
 // the same signer.
 import config = require('../common/config');
+// #480: the names this service signs under, in one place (a library).
+import IssuerNames = require('../common/issuer_names');
 // The error-code registry, a leaf; the signing failure below is tagged with its
 // code.
 import errorCodes = require('../common/error_codes');
@@ -491,7 +493,7 @@ class Saml11Assertions {
       '<saml:Assertion xmlns:saml="' + SAML11_NS + '"' +
         ' MajorVersion="1" MinorVersion="1"' +
         ' AssertionID="' + id + '"' +
-        ' Issuer="' + xmlEscape(opts.issuer || config.value('saml.issuer')) +
+        ' Issuer="' + xmlEscape(opts.issuer || IssuerNames.samlIssuer()) +
         '" ' +
         'IssueInstant="' + now + '">' +
         '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +

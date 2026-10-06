@@ -125,6 +125,8 @@ import InstanceSlot = require('../common/instance_slot');
 // presented one against. They shared a value until config.js split them and
 // still default to the same string.
 import config = require('../common/config');
+// #480: the names this service signs under, in one place (a library).
+import IssuerNames = require('../common/issuer_names');
 // THE ROLE GATE. A LEAF (rule 3) requiring only `helpers`, `config` and
 // `error_codes`, so a require from 10 moves no route and closes no cycle. See
 // `common/issuance_gate.js`; an unfilled decider answers "allowed".
@@ -1707,8 +1709,9 @@ class WsFederation {
   issuerDisagreement() {
     const { config, log } = this.deps;
     log.debug("Entering WsFederation.issuerDisagreement().");
-    const entityId = String(config.value('wsfed.entityId') || '');
-    const issuer = String(config.value('saml.issuer') || '');
+    // #480: the names as signed and published (`common/issuer_names.ts`).
+    const entityId = String(IssuerNames.wsfedEntityId() || '');
+    const issuer = String(IssuerNames.samlIssuer() || '');
     if (entityId === issuer) {
       log.debug("Leaving WsFederation.issuerDisagreement().");
       return '';
@@ -1733,7 +1736,7 @@ class WsFederation {
     log.debug("Entering WsFederation.descriptionPage().");
     const disagreement = this.issuerDisagreement();
     const inner = '<h1>WS-Federation 1.2 — passive requestor endpoint</h1>' +
-      '<p class="sub">Issuer <code>' + xmlEscape(config.value('saml.issuer')) +
+      '<p class="sub">Issuer <code>' + xmlEscape(IssuerNames.samlIssuer()) +
         '</code> at <code>' + xmlEscape(base) +
       PASSIVE_PATH + '</code></p>' +
       (disagreement ? '<div class="err">' + xmlEscape(disagreement) + '</div>' :
@@ -1876,7 +1879,7 @@ class WsFederation {
     const xml =
       '<?xml version="1.0" encoding="UTF-8"?>' +
       '<EntityDescriptor xmlns="' + SAML_METADATA_NS + '" ID="' + id + '"' +
-        ' entityID="' + xmlEscape(config.value('wsfed.entityId')) + '">' +
+        ' entityID="' + xmlEscape(IssuerNames.wsfedEntityId()) + '">' +
         '<RoleDescriptor ' +
         'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' +
           ' xmlns:fed="' + WSFED_NS + '"' +
@@ -2133,7 +2136,7 @@ class WsFederation {
 
     const issuer = isSaml11 ? (assertion.getAttribute('Issuer') || '') :
                    textByLocal(assertion, 'Issuer');
-    add('the issuer is this service', issuer === config.value('saml.issuer'),
+    add('the issuer is this service', issuer === IssuerNames.samlIssuer(),
         issuer || '(none)');
 
     const conditions = firstByLocal(assertion, 'Conditions');

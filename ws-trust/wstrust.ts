@@ -108,6 +108,8 @@ import validation = require('../common/validation');
 // SAML modules and carries saml.issuer instead; the two are separate
 // settings for that reason and default to the same value.
 import config = require('../common/config');
+// #480: the names this service signs under, in one place (a library).
+import IssuerNames = require('../common/issuer_names');
 import saml2 = require('../saml/saml2');
 import stats = require('../common/admin_stats');
 // The application registry (ou=applications in the embedded directory). A
@@ -413,7 +415,7 @@ class WsTrust {
   //     two cannot disagree.
   // ---------------------------------------------------------------------------
   private buildJwt(subject, audience, lifetimeMin, delegates?, requester?,
-                   application?) {
+                   application?, jwtIssuer?) {
     const {
       config, log, logArtifact, randomId, signJwtAs, subjectForName,
       delegationPolicy
@@ -422,7 +424,13 @@ class WsTrust {
     log.debug("Entering WsTrust.buildJwt().");
     const alg = String(config.value('wstrust.jwtAlgorithm') || 'RS256');
     const now = Math.floor(Date.now() / 1000);
-    const issuer = config.value('wstrust.issuer');
+    // THE REALM'S OAUTH ISSUER (#480, rcbj): the identifier
+    // /.well-known/oauth-authorization-server publishes, in every mode, so
+    // RFC 9068 section 4's check of `iss` against the authorization server's
+    // metadata holds — the key that signs this JWT is that server's, at its
+    // `jwks_uri`. It was `wstrust.issuer` until #480. Every `act` entry below
+    // carries the same issuer (#471).
+    const issuer = String(jwtIssuer || this.oauthIssuer(''));
     const claims: any = {
       iss: issuer,
       // THE PERSON'S SUBJECT (2026-09-14) — `urn:uuid:<entryUUID>`, as every
@@ -735,11 +743,13 @@ class WsTrust {
    * application is a JWT's `client_id`; none when absent
    * @param application - #483: the application the token is for, whose
    * claim settings govern; the AppliesTo's when absent
+   * @param jwtIssuer - #480: a JWT's `iss`, the realm's OAuth issuer at the
+   * request's base; the process's base when absent
    * @returns the token's XML, its reference, its token type and its id
    */
   buildToken(tokenType, subject, audience, lifetimeMin,
                       authnContextClassRef, delegates?, requester?,
-                      application?) {
+                      application?, jwtIssuer?) {
     const { buildSamlAssertion, authnContext, log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.buildToken(). tokenType=" + tokenType + ", " +
         "subject=" +
@@ -747,7 +757,7 @@ class WsTrust {
     if (tokenType === JWT_TOKEN_TYPE) {
       const forApp = application || this.appliesToApplication(audience);
       const built = this.buildJwt(subject, audience, lifetimeMin,
-                                  delegates, requester, forApp);
+                                  delegates, requester, forApp, jwtIssuer);
       const token = { xml: '<wsse:BinarySecurityToken ' +
         'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ' +
         'ValueType="urn:ietf:params:oauth:token-type:jwt">' + built.token +
@@ -761,11 +771,17 @@ class WsTrust {
     // #483: the AppliesTo's application, so its own claim settings (the
     // groups claim's, its custom attributes) govern the assertion as a
     // service provider's govern a SAML SSO one.
+    const samlApp = application || this.appliesToApplication(audience);
+    // #480: the Issuer is `saml.issuer` where somebody set it, and in product
+    // the SAML 2.0 entityID — this application's own where
+    // `saml2.perApplicationEntityId` is on, as SAML SSO names itself to it
+    // (`common/issuer_names.ts`).
     const assertion = buildSamlAssertion(subject, audience, lifetimeMin,
       { authnContextClassRef: authnContextClassRef ||
                               authnContext.AC_UNSPECIFIED,
         delegates: delegates || [],
-        application: application || this.appliesToApplication(audience) });
+        application: samlApp,
+        issuer: IssuerNames.samlIssuer(samlApp) });
     const idm = assertion.match(/\bID="([^"]+)"/);
     const id = idm ? idm[1] : '';
     const ref = '<wst:RequestedAttachedReference>' +
@@ -1248,7 +1264,7 @@ class WsTrust {
     return '';
   }
 
-  private delegatedSubject(doc) {
+  private delegatedSubject(doc, jwtIssuer?) {
     const { mode, log, firstByLocal } = this.deps;
     log.debug("Entering WsTrust.delegatedSubject().");
     const oboEl = firstByLocal(doc, 'OnBehalfOf');
@@ -1267,7 +1283,7 @@ class WsTrust {
     const jwtEl = firstByLocal(obo, 'Assertion') ? null
       : this.delegatedJwtElement(obo);
     if (jwtEl) {
-      const fromJwt = this.delegatedJwt(jwtEl, element);
+      const fromJwt = this.delegatedJwt(jwtEl, element, jwtIssuer);
       fromJwt.both = !!(oboEl && actAsEl);
       log.debug("Leaving WsTrust.delegatedSubject(). A JWT via " + element +
                 ".");
@@ -1368,7 +1384,7 @@ class WsTrust {
     return null;
   }
 
-  private delegatedJwt(jwtEl, element): any {
+  private delegatedJwt(jwtEl, element, jwtIssuer?): any {
     const { mode, config, log } = this.deps;
     log.debug("Entering WsTrust.delegatedJwt(). " + element);
     const token = String(jwtEl.textContent || '').trim();
@@ -1398,7 +1414,10 @@ class WsTrust {
                        message + '). In product mode a delegated JWT is ' +
                        'accepted only if this STS issued it.');
       }
-      const issuer = String(config.value('wstrust.issuer') || '');
+      // The issuer this STS's JWTs carry since #480: the realm's OAuth
+      // issuer. An access token the authorization server issued carries it
+      // too, under the same key — the realm is one issuer.
+      const issuer = String(jwtIssuer || this.oauthIssuer(''));
       if (!claims || String(claims.iss || '') !== issuer) {
         log.debug("Leaving WsTrust.delegatedJwt(). Product: another issuer.");
         return refused('STS-WSTRUST-0026', 'The ' + what + ' was issued by "' +
@@ -1545,7 +1564,7 @@ class WsTrust {
   // row from, and what the embedded LDAP directory grows a
   // `uid=<name>,ou=users` entry from. A path that accepts a credential without
   // calling it is a person who authenticated here and is in none of the three.
-  private authenticate(doc) {
+  private authenticate(doc, jwtIssuer?) {
     const { stats, delegation, mode, log } = this.deps;
     log.debug("Entering WsTrust.authenticate().");
     const credential = this.requesterCredential(doc);
@@ -1561,7 +1580,7 @@ class WsTrust {
         method: credential.method, note: credential.note
       });
     }
-    const delegatedBy = this.delegatedSubject(doc);
+    const delegatedBy = this.delegatedSubject(doc, jwtIssuer);
     if (delegatedBy.refused) {
       log.debug("Leaving WsTrust.authenticate(). The delegated token was " +
                 "refused.");
@@ -1832,7 +1851,10 @@ class WsTrust {
     // a Cancel the way it already refused an Issue and a Renew, which is the
     // answer a client should get: a credential this service rejects does not
     // become acceptable because of what was asked with it.
-    const auth: any = this.authenticate(doc);
+    // #480: the realm's OAuth issuer at this request's base, which a JWT
+    // this STS issues carries and a JWT presented to it must carry.
+    const jwtIssuer = this.oauthIssuer(String(options.base || ''));
+    const auth: any = this.authenticate(doc, jwtIssuer);
     if (!auth.ok) {
       log.debug("Leaving WsTrust.handleRst(). Authentication failed, " +
                 "answering with a SOAP Fault.");
@@ -2097,7 +2119,8 @@ class WsTrust {
       ? String(auth.delegation.requester || '')
       : (auth.kind === 'none' ? '' : String(auth.subject || ''));
     const tok = this.buildToken(tokenType, subject, audience, lifetimeMin,
-                           this.authnContextOf(auth), delegates, requester);
+                           this.authnContextOf(auth), delegates, requester,
+                           undefined, jwtIssuer);
 
     // Optional encryption (?encrypt=1): encrypt the SAML assertion to the
     // recipient certificate carried in the request's WS-Security signature
@@ -2461,29 +2484,66 @@ class WsTrust {
    * @returns the sentence saying they disagree, or '' when they agree
    */
   issuerDisagreement() {
-    const { config, log } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering WsTrust.issuerDisagreement().");
-    const jwtIssuer = String(config.value('wstrust.issuer') || '');
-    const samlIssuer = String(config.value('saml.issuer') || '');
-    if (jwtIssuer === samlIssuer) {
+    // #480: the STS's published name and the shared SAML Issuer, as signed.
+    // A JWT's `iss` is neither since #480 — it is the realm's OAuth issuer,
+    // named on its own line of GET /sts.
+    const stsName = String(IssuerNames.wstrustIssuer() || '');
+    const samlIssuer = String(IssuerNames.samlIssuer() || '');
+    if (stsName === samlIssuer) {
       log.debug("Leaving WsTrust.issuerDisagreement().");
       return '';
     }
     log.debug("Leaving WsTrust.issuerDisagreement().");
-    return 'wstrust.issuer ("' + jwtIssuer + '") and saml.issuer ("' +
-           samlIssuer + '") differ: a JWT from this STS names the first as ' +
-           'its iss and a SAML assertion from it names the second as its ' +
-           'Issuer, so a relying party configured with one will refuse the ' +
-           'other token type.';
+    return 'wstrust.issuer ("' + stsName + '") and saml.issuer ("' +
+           samlIssuer + '") differ: this STS publishes the first as its name ' +
+           'and a SAML assertion from it names the second as its Issuer, so ' +
+           'a relying party configured from the name will refuse the ' +
+           'assertion.';
+  }
+
+  // THE REALM'S OAUTH ISSUER at a base URL (#480): what
+  // /.well-known/oauth-authorization-server publishes for the realm's
+  // authorization server there, through `oauth2.issuerOf()` — asked LAZILY,
+  // `federation_slo.ts`'s arrangement, because the authorization server is
+  // loaded after this module. With no request (a caller handing handleRst()
+  // a body), the base is the process's own, with the ambient realm's prefix.
+  private oauthIssuer(base: string): string {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.oauthIssuer().");
+    let at = String(base || '');
+    if (!at) {
+      at = String(config.managementApiBaseUrl() || '')
+        .replace(/\/admin-api$/, '') +
+        String(require('../common/realms').currentPrefix() || '');
+    }
+    let out = at;
+    try {
+      out = String(require('../oauth-oidc/oauth2').issuerOf(at) || at);
+    } catch (e) {
+      // No authorization server loaded (this module tested on its own): the
+      // base is what it would have answered with no pinned issuer.
+      log.debug("Caught in WsTrust.oauthIssuer(): " + ((e && e.message) || e));
+      out = at;
+    }
+    log.debug("Leaving WsTrust.oauthIssuer(). " + out);
+    return out;
   }
 
   private stsDescriptionEndpoint(req, res) {
     const { config, log } = this.deps;
     log.debug("Entering the STS description endpoint.");
     const disagreement = this.issuerDisagreement();
+    // #480: the STS's name (`wstrust.issuer`; in product the SAML 2.0
+    // entityID where nobody set it), and on a line of its own the `iss` its
+    // JWTs carry, the realm's OAuth issuer.
     res.type('text/plain').send('WS-Trust STS mock. POST a SOAP ' +
                                 'RequestSecurityToken here.\nIssuer: ' +
-                                config.value('wstrust.issuer') + '\n' +
+                                IssuerNames.wstrustIssuer() + '\n' +
+                                'JWT issuer: ' +
+                                this.oauthIssuer(helpers.baseUrlOf(req)) +
+                                '\n' +
                                 (disagreement ?
                                  'WARNING: ' + disagreement + '\n' : ''));
     log.debug("Leaving the STS description endpoint.");
@@ -2705,7 +2765,8 @@ class WsTrust {
     try {
       const encrypt = req.query.encrypt === '1' || req.query.encrypt === 'true';
       const result = this.handleRst(req.body || '', contentType,
-                                    { encrypt: encrypt });
+                                    { encrypt: encrypt,
+                                      base: helpers.baseUrlOf(req) });
       // THE SESSION, IF THE EXCHANGE MADE ONE. See handleRst()'s note on
       // `signIn` for why the decision is made there and the act is performed
       // here.

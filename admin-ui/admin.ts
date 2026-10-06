@@ -388,6 +388,8 @@ const vcAction = adminActions.vcAction;
 const vpConfigAction = adminActions.vpConfigAction;
 const xacmlAction = adminActions.xacmlAction;
 import config = require('../common/config');
+// #480: the names this service signs under, in one place (a library).
+import IssuerNames = require('../common/issuer_names');
 // The credential lifecycle, for the activation link the users page issues. A
 // LEAF (rule 3): it registers no route and requires nothing here.
 import credentials = require('../common/credentials');
@@ -5053,7 +5055,7 @@ class AdminConsole {
       navAuthority: navState ? String(navState.authority || '') : '',
       roleLabels: roleLabels,
       realm: { id: realms.currentId(), name: realms.current().name },
-      wsTrustIssuer: config.value('wstrust.issuer'),
+      wsTrustIssuer: IssuerNames.wstrustIssuer(),
       realms: realms.active()
         ? realms.list().map(function (one) {
           // `prefix` for the static console's switcher, which moves between
@@ -5634,7 +5636,7 @@ class AdminConsole {
     log.debug("Entering AdminConsole.consoleJson().");
     const snap = stats.snapshot();
     const json = {
-      issuer: config.value('wstrust.issuer'),
+      issuer: IssuerNames.wstrustIssuer(),
       startedAt: new Date(snap.startedAt).toISOString(),
       uptimeMs: snap.uptimeMs,
       calls: snap.calls.total, tokensHeld: snap.tokens.held,

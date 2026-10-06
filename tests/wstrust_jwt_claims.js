@@ -55,7 +55,9 @@
 //       AppliesTo names and the token inside the element, never RFC 8693's
 //       "subject token" (#481).
 //
-// Every JWT verifies with this realm's own key (`helpers.verifyOwnJws()`).
+// Every JWT verifies with this realm's own key (`helpers.verifyOwnJws()`),
+// and its `iss` — and every `act` entry's — is the realm's OAuth issuer at
+// the request's base (#480), not `wstrust.issuer`.
 // IN PROCESS, in a throwaway realm, for `wstrust_fault_codes.js`'s reason:
 // the two modes' answers differ, and a job over HTTP runs in one.
 // ===========================================================================
@@ -80,6 +82,8 @@ const JWT = 'urn:ietf:params:oauth:token-type:jwt';
 const BACK = 'https://wj-back.example';
 const FINAL = 'https://wj-final.example';
 const FRONT = 'https://wj-front.example';
+// The base the RSTs are handed, as the route hands its request's (#480).
+const AS_BASE = 'https://sts.wj.example';
 
 function inMode(m, fn) {
   log.debug("Entering inMode(). " + m);
@@ -208,10 +212,12 @@ function inBothModes(t) {
       return inMode(m, function () {
         return wstrust.handleRst(rst(signed(requester, 'https://sts.test'),
                                      appliesTo, body, tokenType),
-                                 'application/soap+xml');
+                                 'application/soap+xml', { base: AS_BASE });
       });
     };
-    const issuer = String(config.value('wstrust.issuer'));
+    // The realm's OAuth issuer at the request's base (#480): what
+    // /.well-known/oauth-authorization-server publishes there.
+    const issuer = String(require('../oauth-oidc/oauth2').issuerOf(AS_BASE));
     const front = product ? 'urn:sts:client:wj-front-client'
                           : 'wj-front-client';
     const back = product ? 'urn:sts:client:wj-back' : 'wj-back';
@@ -311,10 +317,12 @@ function jwtInside(t) {
       return inMode(m, function () {
         return wstrust.handleRst(rst(signed(requester, 'https://sts.test'),
                                      appliesTo, body, tokenType),
-                                 'application/soap+xml');
+                                 'application/soap+xml', { base: AS_BASE });
       });
     };
-    const issuer = String(config.value('wstrust.issuer'));
+    // The realm's OAuth issuer at the request's base (#480): what
+    // /.well-known/oauth-authorization-server publishes there.
+    const issuer = String(require('../oauth-oidc/oauth2').issuerOf(AS_BASE));
     const front = product ? 'urn:sts:client:wj-front-client'
                           : 'wj-front-client';
     const back = product ? 'urn:sts:client:wj-back' : 'wj-back';
@@ -433,7 +441,7 @@ function registerRows(t) {
       return inMode(m, function () {
         return wstrust.handleRst(rst(signed('wj-front', 'https://sts.test'),
                                      BACK, body, tokenType),
-                                 'application/soap+xml');
+                                 'application/soap+xml', { base: AS_BASE });
       });
     };
     // The act that produced the token in `r`: its assertion ID or jti.

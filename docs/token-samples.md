@@ -464,8 +464,11 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6ImxvZ291dCtqd3QiLCJraWQiOiJzdHMt…ccHV_s7joyrUJCx-7
 WS-Trust issues a JWT when the `RequestSecurityToken` asks for
 `TokenType` `urn:ietf:params:oauth:token-type:jwt`. It comes back as a
 `wsse:BinarySecurityToken`; the whole response is under
-[WS-Trust](#ws-trust-rstr-carrying-a-jwt), below. Its issuer is
-`wstrust.issuer`, not the OAuth issuer.
+[WS-Trust](#ws-trust-rstr-carrying-a-jwt), below. **This sample predates
+#476 and #480.** Since then the header carries `typ: at+jwt`, and `iss` is
+the realm's OAuth 2.0 issuer, here `https://127.0.0.1:38081`, not
+`wstrust.issuer`. The JWT also carries `client_id` (the requester's
+application) and, for an ActAs, `act` (ws-trust/CLAUDE.md).
 
 *Encoded (shortened):*
 

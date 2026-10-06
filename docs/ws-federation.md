@@ -226,7 +226,7 @@ same in both modes. See [What is not checked](what-is-not-checked.md).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `wsfed.entityId` | `STS_WSFED_ENTITY_ID` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` | yes | The entityID in the federation metadata; the assertions' issuer is `saml.issuer`. |
+| `wsfed.entityId` | `STS_WSFED_ENTITY_ID` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` (development); `saml2.entityId` in product, unset | yes | The entityID in the federation metadata; the assertions' issuer is `saml.issuer`. Unset in product, both are the SAML 2.0 entityID, so they agree (#480). |
 | `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | The lifetime of the assertion and of the RSTR's `wsu:Lifetime`; per relying party with `wsfedAssertionLifetimeMin`. |
 | `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the mock relying party remembers a `wctx` it minted. |
 

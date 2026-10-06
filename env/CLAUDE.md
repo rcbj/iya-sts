@@ -136,3 +136,12 @@ is `KRB5_*` variables, and all fourteen were read against the check on the day
 it was written. A new file here, or a new variable in a launcher, that holds a
 value the console would refuse will stop the stack at start — which is the
 point, and the message says which line.
+
+## The three issuer names are not set in `local.js` (#480)
+
+`saml.issuer`, `wstrust.issuer` and `wsfed.entityId` were set to
+`urn:wstrust:mock:sts` in `local.js`, the image's default, so a product
+deployment signed with the placeholder. They are unset there now.
+Development still gets the placeholder, the shipped default. Product gets
+the SAML 2.0 entityID (`common/issuer_names.ts`). `docker-tests.js` and
+`test.js` keep the placeholder for the suites.
