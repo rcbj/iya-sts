@@ -343,7 +343,12 @@ refused in both modes: there is no unverified reading of XML to fall back on.
     one `del:Delegate` per party, least to most recent, as that profile
     orders them;
   * a **JWT** (`TokenType` `urn:ietf:params:oauth:token-type:jwt`) carries the
-    same chain as nested `act` claims, the most recent outermost.
+    same chain as nested `act` claims, the most recent outermost, in the
+    shape an OAuth 2.0 token exchange writes:
+    * each entry has `iss`;
+    * an application is named `urn:sts:client:<client_id>` in RFC 9700 mode
+      and by its bare client_id otherwise;
+    * the JWT's `client_id` is the requester's application.
 * **`OnBehalfOf` asks for impersonation** (1.3 section 9.2). The token is the
   subject's, and adds nobody to the chain; one the delegated assertion
   already carried is kept.

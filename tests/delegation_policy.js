@@ -648,9 +648,13 @@ function wsTrust(t) {
     .exec(r.body) || [])[1] || '';
   const claims = jwt ? JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url')
     .toString('utf8')) : {};
-  t.check(r.status === 200 && claims.act && claims.act.sub === 'dp-front' &&
-          !claims.act.act && claims.may_act &&
-          claims.may_act.sub === 'dp-front',
+  // The requester as this service's OAuth tokens name a client actor
+  // (#476): its client subject in the mode — product implies RFC 9700
+  // mode, so `urn:sts:client:` — with the token's own `iss` (#471).
+  t.check(r.status === 200 && claims.act &&
+          claims.act.sub === 'urn:sts:client:dp-front' &&
+          claims.act.iss === claims.iss && !claims.act.act &&
+          claims.may_act && claims.may_act.sub === 'dp-front',
           'L13. an ActAs JWT carries `act` naming the requester, and the ' +
           'subject\'s may_act', r.status + ' ' + JSON.stringify(claims));
   // The register is protocol-independent: the same acts are Monitoring →
