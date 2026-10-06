@@ -59,9 +59,16 @@
 // by both would be reconfigured by whichever ran last, and the two would
 // fail each other in a pool. So each job passes a TAG and its applications
 // are `webapp1-<tag>`, `apigw1-<tag>`, `esb1-<tag>` and `sp1-<tag>`, with
-// audiences `https://<name>-<tag>.example.com`. The person is the scenario's
-// `bob_end_user` in both, which is safe: neither job writes anything on
-// their entry but the password, and the two exchange as different clients.
+// audiences `https://<name>-<tag>.example.com`.
+//
+// AND ITS OWN PERSON (#482). The scenario's person is `bob_end_user`, and
+// each job signs in as `bob_end_user-<tag>`. Every chain job sets a fresh
+// random password on its person before it signs in. While they shared one
+// entry, two jobs running at once in the suite's pool could reset it
+// between the other's setting and its sign-in, and the sign-in failed with
+// the right password of a moment before. A person per job has nothing to
+// race on. The WS-Trust chain jobs take theirs from this cast, so all six
+// are apart.
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
@@ -89,6 +96,7 @@ const SECRET_METHODS = ["client_secret_basic", "client_secret_post"];
 // refresh token), and the one scope every access token must carry.
 const OIDC_SCOPE = "openid email profile offline_access";
 const COMMON_SCOPE = "app1-scope";
+// The scenario's person; each cast signs in as `<this>-<tag>` (#482).
 const USER = process.env.DELEGATION_USER || "bob_end_user";
 // Generated per process and never derivable: the entry outlives the run on a
 // kept deployment. The fixed ends satisfy a password policy's classes.
@@ -132,7 +140,7 @@ function castFor(tag) {
   esb.next = provider.identifier;
   provider.next = "";
   const cast = {
-    tag: tag, user: USER, password: USER_PASSWORD,
+    tag: tag, user: USER + "-" + tag, password: USER_PASSWORD,
     webapp: webapp, gateway: gateway, esb: esb, provider: provider,
     tiers: [webapp, gateway, esb, provider],
     redirectUri: "https://" + webapp.identifier + ".example.com/callback",

@@ -265,10 +265,9 @@ function fieldsFor(tier, semantics) {
   return fields;
 }
 
-// The person, freshly given this process's password IMMEDIATELY before they
-// sign in. bob_end_user is shared with the two OAuth chain jobs, each of
-// which sets its own random password on him, so in a pool the window between
-// setting it and using it should be as short as it can be.
+// The person, given this process's password before they sign in. Each job
+// has its own, `bob_end_user-<tag>` (#482, `token_exchange_chain_kit.js`),
+// so no other job can change the password in between.
 async function preparePerson(base, cast) {
   log.debug("Entering preparePerson().");
   await registry.ensurePerson(base, cast.user, cast.password);
