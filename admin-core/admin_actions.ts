@@ -195,6 +195,10 @@ import personEditor = require('../ldap/person_editor');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
 import devices = require('../common/devices');
+// #221: the service-account flag and the policy that governs it.
+import serviceAccounts = require('../common/service_accounts');
+import serviceAccountPolicy = require('../common/service_account_policy');
+import serviceAccountRotation = require('../common/service_account_rotation');
 import ciba = require('../oauth-oidc/ciba');
 import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
@@ -386,7 +390,10 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'remove-attribute',
                        // Several at once, a person's field grid's Save
                        // (2026-10-01).
-                       'update-fields'];
+                       'update-fields',
+                       // A service account (#221, 2026-10-06), and its
+                       // password rotated now.
+                       'set-service-account', 'rotate-password'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -460,7 +467,17 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // its auth_req_id) waiting for the person, as they would on /portal/ciba —
   // DEVELOPMENT ONLY (`mode.opensTestControls()`): in product only the
   // person answers.
-  'answer-ciba-request'];
+  'answer-ciba-request',
+  // A SERVICE ACCOUNT (#221, 2026-10-06): `set-service-account` makes the
+  // person one (`serviceAccount` true, the default), changes its `owner`,
+  // `destination` and `secretName`, or makes it a person again
+  // (`serviceAccount` false). `common/service_accounts.ts` checks and keeps
+  // it; where the realm's policy refuses a service account every browser
+  // sign-in, becoming one ends the person's sessions. `rotate-password`
+  // QUEUES a rotation of a service account's password on the scheduler's
+  // leader (`common/service_account_rotation.ts`): pushed first, committed
+  // after; the answer is the run's id, never a password.
+  'set-service-account', 'rotate-password'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -940,6 +957,9 @@ interface AdminActionsDeps {
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
   devices: typeof devices;
+  serviceAccounts: typeof serviceAccounts;
+  serviceAccountPolicy: typeof serviceAccountPolicy;
+  serviceAccountRotation: typeof serviceAccountRotation;
   ciba: typeof ciba;
   backchannel: typeof backchannel;
   oauth2: typeof oauth2;
@@ -1027,6 +1047,9 @@ class AdminActions {
       identityAssurance: identityAssurance,
       siop: siop,
       devices: devices,
+      serviceAccounts: serviceAccounts,
+      serviceAccountPolicy: serviceAccountPolicy,
+      serviceAccountRotation: serviceAccountRotation,
       ciba: ciba,
       backchannel: backchannel,
       oauth2: oauth2,
@@ -2739,6 +2762,39 @@ class AdminActions {
             message: done.removed + ' no longer signs ' + who + ' in.' };
     }
 
+    if (action === 'set-service-account') {
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "set-service-account.");
+      return this.serviceAccountAction(who, body, ctx, audited);
+    }
+
+    if (action === 'rotate-password') {
+      const { serviceAccountRotation } = this.deps;
+      const queued = serviceAccountRotation.requestRotation(
+        realms.currentId(), who,
+        { requestedBy: ctx.actor, via: ctx.via, channel: ctx.via });
+      audited('admin.service-account.rotate',
+              (queued.ok ? 'queued' : 'could not queue') + ' a rotation of ' +
+              'the password of ' + who,
+              { runId: queued.runId || null,
+                errors: queued.ok ? undefined : [queued.why] },
+              queued.ok ? 'success' : 'failure');
+      if (!queued.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "rotate-password was refused.");
+        return this.refusedBy(queued.errorCode || 'STS-SVCACCT-0040',
+                              { ok: false, errors: [queued.why] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "rotate-password.");
+      return { ok: true, username: who, runId: queued.runId,
+               alreadyQueued: queued.alreadyQueued,
+               message: 'A rotation of ' + who + '\'s password is queued ' +
+                        '(run ' + queued.runId + '): the new password is ' +
+                        'pushed to its destination first and committed ' +
+                        'after. Monitoring → Scheduler shows the run.' };
+    }
+
     // require-mfa and stop-requiring-mfa
     const wanted = action === 'require-mfa';
     const result = credentials.setMfaRequired(who, wanted);
@@ -2770,6 +2826,63 @@ class AdminActions {
                    ? ' The REALM still requires one (the authentication ' +
                      'policy).' : '')
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SERVICE ACCOUNT (#221): the flag, its owner and its push destination,
+  // set or cleared. The checks are `service_accounts.set()`'s; this audits,
+  // and where the realm keeps service accounts out of every browser it ends
+  // the sessions a person who has just become one still holds — the policy
+  // would refuse them at the next sign-in, and a session already open is the
+  // same browser.
+  // ---------------------------------------------------------------------------
+  private serviceAccountAction(who, body, ctx, audited) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug("Entering AdminActions.serviceAccountAction().");
+    const wanted = body.serviceAccount === undefined ? true
+      : this.truthy(body.serviceAccount);
+    const result = serviceAccounts.set(who, {
+      serviceAccount: wanted,
+      owner: body.owner,
+      destination: body.destination,
+      secretName: body.secretName
+    });
+    audited(wanted ? 'admin.service-account.set'
+                   : 'admin.service-account.cleared',
+            (result.ok ? '' : 'could not ') +
+            (wanted ? 'make ' + who + ' a service account'
+                    : 'make ' + who + ' an ordinary person again'),
+            { owner: String(body.owner || ''),
+              destination: String(body.destination || ''),
+              secretName: String(body.secretName || ''),
+              errors: result.ok ? undefined
+                : ((result as any).errors || []) },
+            result.ok ? 'success' : 'failure');
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.serviceAccountAction(). Refused.");
+      return this.refusedBy('STS-SVCACCT-0027', result);
+    }
+    const done = result as any;
+    let signedOut = null;
+    if (wanted && done.changed &&
+        !serviceAccountPolicy.allowsDoor('browser')) {
+      signedOut = this.signOutEverywhere(who, ctx,
+                                         'becoming a service account');
+    }
+    log.debug("Leaving AdminActions.serviceAccountAction().");
+    return { ok: true, username: done.username || who,
+             serviceAccount: wanted, account: done.account,
+             signedOut: signedOut,
+             message: wanted
+               ? who + ' is ' + (done.changed ? 'now' : 'still') + ' a ' +
+                 'service account' + (done.account && done.account.owner
+                   ? ', owned by ' + done.account.owner : '') + '.' +
+                 (signedOut ? ' This realm refuses a service account every ' +
+                   'browser sign-in, so their sessions were ended.' : '')
+               : who + ' is an ordinary person' +
+                 (done.changed ? ' again' : '') + '; the owner, the push ' +
+                 'destination and the rotation state are gone from the ' +
+                 'entry.' };
   }
 
   // ---------------------------------------------------------------------------
@@ -3424,6 +3537,19 @@ class AdminActions {
       const typed = this.userFieldsFrom(body);
       const invent = body.invent === undefined ? true :
                      this.truthy(body.invent);
+      // A SERVICE ACCOUNT FROM THE START (#221): checked BEFORE the person
+      // exists, so a refused owner or destination leaves nobody behind as an
+      // ordinary person.
+      const asServiceAccount = this.truthy(body.serviceAccount);
+      if (asServiceAccount) {
+        const { serviceAccounts } = this.deps;
+        const precheck = serviceAccounts.check(body, '');
+        if (precheck.ok !== true) {
+          log.debug("Leaving AdminActions.usersAction(). The service " +
+                    "account was refused before the create.");
+          return this.refusedBy('STS-SVCACCT-0027', precheck);
+        }
+      }
       const result = directoryWriter(username, {
         origin: 'console',
         note: String(body.note || '').trim() ||
@@ -3468,6 +3594,27 @@ class AdminActions {
                        entry: result.entry, typed: result.typed || [],
                        invented: !!result.invented, credential: credential };
       let credentialSaid = '';
+      if (asServiceAccount) {
+        const { serviceAccounts } = this.deps;
+        const flagged = serviceAccounts.set(result.username, {
+          serviceAccount: true, owner: body.owner,
+          destination: body.destination, secretName: body.secretName });
+        answer.serviceAccount = !!flagged.ok;
+        if (!flagged.ok) {
+          answer.serviceAccountError = ((flagged as any).errors || [])
+            .join(' ');
+        } else {
+          auditLog.record({
+            category: 'admin', action: 'admin.service-account.set',
+            actor: (body.actor || ''), target: result.username,
+            outcome: 'success',
+            summary: result.username + ' was created as a service account',
+            detail: { owner: String(body.owner || ''),
+                      destination: String(body.destination || ''),
+                      via: ctx.via }
+          });
+        }
+      }
       if (credential === 'password' || credential === 'generate') {
         const generated = credential === 'generate';
         if (!generated && String(body.password || '') === '') {
@@ -4872,6 +5019,10 @@ class AdminActions {
         value = String([].concat(fields.appRegistrationAccessToken || [])[0] ||
                        '');
       } else if (entry && asked !== 'didPrivateKeys' &&
+                 // A WITHHELD credential (a secret destination's, #221 P3)
+                 // is sealed too and is never revealed: it leaves this
+                 // service only on the wire to its own secrets manager.
+                 (applications.WITHHELD_FIELDS || []).indexOf(asked) < 0 &&
                  (applications.SEALED_FIELDS || []).indexOf(asked) >= 0) {
         // A SEALED CREDENTIAL BY ITS ATTRIBUTE (#446): an RFC 7523 or RFC
         // 7522 signing key an operator collects to sign the assertions,

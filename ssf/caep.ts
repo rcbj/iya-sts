@@ -121,6 +121,12 @@ interface CaepRow {
   sessionId: string;
   sub: string;
   username: string;
+  // A SESSION WHOSE SUBJECT IS NOT A PERSON (#221 P5): the application entry
+  // a SCIM or WS-Trust caller authenticated as, by its identifier, or the
+  // SPIFFE workload a SPIRE Server API caller is, by its SPIFFE ID. At most
+  // one is set, and then the subject names it instead of a `user`.
+  application?: string;
+  workload?: string;
   iss: string;
   deviceId: string;
   tenant: string;
@@ -626,6 +632,20 @@ class CaepRegister {
   subjectFor(row: Partial<CaepRow>): Record<string, any> {
     const { helpers: { log }, subjects } = this.deps;
     log.debug("Entering CaepRegister.subjectFor().");
+    // A SESSION OF AN APPLICATION OR A WORKLOAD (#221 P5) is named by SSF
+    // 1.0 section 3.3's `application` member — `opaque` with the
+    // application's identifier, `uri` with a SPIFFE ID (`ssf_subjects.js`
+    // argues both) — beside the session. No `user`: there is no person.
+    if (row.application || row.workload) {
+      const named = subjects.complexSubject({
+        application: row.application
+          ? { format: 'opaque', id: String(row.application) }
+          : { format: 'uri', uri: String(row.workload) },
+        session: { format: 'opaque', id: String(row.sessionId || '') } });
+      log.debug("Leaving CaepRegister.subjectFor(). " +
+                subjects.describeSubject(named));
+      return named;
+    }
     // `complexSubject()` adds the `"format": "complex"` SSF 1.0 final
     // requires, and drops a member with no value.
     const subject: Record<string, any> = subjects.complexSubject({
@@ -1151,6 +1171,19 @@ class CaepRegister {
         acr: String(session.acr || ''),
         amr: session.amr || []
       });
+      // WHAT KIND OF PRINCIPAL THE SESSION IS (#221 P5), decided ONCE, when
+      // the row is made: `ssf.ts` answers whether the name is a SPIFFE
+      // workload or an application entry rather than a person, so a SCIM
+      // client's session is not announced as a "user" whose `sub` is a
+      // client_id. Asked only here, because answering may read the
+      // registry and a SCIM bulk load presents one session per request.
+      const principal = typeof asked.classifyPrincipal === 'function'
+        ? asked.classifyPrincipal(row.username, row.sub) : null;
+      if (principal && principal.workload) {
+        row.workload = String(principal.workload);
+      } else if (principal && principal.application) {
+        row.application = String(principal.application);
+      }
       register.set(sessionId, row);
       this.trim();
     }

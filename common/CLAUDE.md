@@ -44,6 +44,7 @@ more than one family needs it, not because it felt general.
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
 | `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it, and **since 2026-09-27 `request_worker.ts` arms it for every dispatched request**: the front asks each for `Connection: close` (#77), so any early answer — a refusal, a 404, a sign-out with no session — closed a socket the front was still writing, and the answer was lost to `write EPIPE` and a 502 (`STS-WORKER-0030`; 17 in 2000 races measured, none armed). A LEAF over `config`. |
+| `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
 
@@ -10620,6 +10621,56 @@ holds it.
 `tests/authn_policy.js` holds the module, the inheritance, the mail guard,
 the retired settings and a kind registered later.
 
+## 3cd. `service_accounts.ts`, `service_account_policy.ts`, `service_account_rotation.ts`: A SERVICE ACCOUNT IS A PERSON WITH A FLAG (#221, 2026-10-06)
+
+**rcbj's decisions on #221 are the design**, and the issue's comments of
+2026-10-05 hold them: a service account is a PERSON entry carrying
+`stsServiceAccount` (an auxiliary class), not an application; it is governed
+by a THIRD policy kind on Directory → Policies, per realm and inherited from
+the default realm; browser sign-in is refused unless the realm allows it; and
+its password may ROTATE, pushed to a secrets manager first and committed only
+after, with the previous password kept for an overlap. `docs/service-accounts.md`
+is the operator's page; each file's header argues its part.
+
+* **ONE PREDICATE.** `ServiceAccounts.isServiceAccount(entry)` is asked by
+  every door; `isServiceAccountName()` for a door holding a name. No door
+  reads the attribute. The directory's only writer of the attributes is
+  `ldap_server.js`'s `writeServiceAccount()`, narrowed to the module's list,
+  and it keeps the auxiliary class beside the flag; an LDAP modify meets the
+  same rules (`serviceAccountWriteRefusal()`), and the attributes are never
+  self-writable whatever `ldap.selfWritableAttributes` says.
+* **THE DOORS ARE ASKED BEFORE THE PASSWORD IS, IN BOTH MODES**
+  (`credentials.serviceAccountDoorRefusal()`, beside the disabled account and
+  for its reason). The door is what the caller DECLARED — `door`, or a
+  browser by its `secondFactor` exemption — and a caller that declares
+  nothing is REFUSED for a service account (`secondFactorRefusal()`'s refuse
+  by default). The password grant declares `door: 'ropc'`, which is no app
+  password's door. The KDC asks the same question through
+  `krb5_person_keys.personDisabled()`, because the KDC is locked and that is
+  the question it asks. A browser session from ANY first factor is refused in
+  `authn.startSession()`; a KEYED session (SCIM, SPIRE) is a program's and
+  is not.
+* **THE EXEMPTION** is `mfaRequirementFor()` answering nothing required and
+  `secondFactorDemand()` answering nothing needed. A factor the account holds
+  is still asked at the sign-in screen — the authentication policy's "there
+  is no never" — which only matters where the realm lets it sign in there.
+* **THE PREVIOUS PASSWORD** is compared only where the current one did not
+  match, and only while its expiry, checked AT THE READ, is in the future. A
+  match on it is NEVER handed to the password observer: the KDC derives keys
+  from what it is handed against the CURRENT hash, and would store the old
+  password's keys as the new one's. The KDC keeps the retired key version
+  for at least the overlap (`holdUntil`), for tickets; the old password never
+  pre-authenticates.
+* **THE ROTATION'S ORDER IS THE GUARANTEE**: claim, generate, PUSH, and only
+  then `credentials.setPassword(..., { rotation })`, which keeps the replaced
+  hash. A failed push changes nothing. A commit that fails after a push that
+  succeeded is the one state that is not "nothing" and is an alarm at once
+  (STS-SVCACCT-0045). While rotation is on and the account names a
+  destination, `preparePassword()` refuses a password set by hand at every
+  door (STS-SVCACCT-0013).
+* **ITS STATE IS ON THE ENTRY** — rotated-at, the previous hash and its
+  expiry, failures — because any node may run the job next (#49).
+
 ## 3be. `mail_factor.ts`: THE EMAILED FACTOR AS A FACT ABOUT A PERSON (#64, 2026-09-23)
 
 The emailed six-digit code and the emailed sign-in link are drawn and checked
@@ -10829,4 +10880,96 @@ reply's `JSON.stringify` opens the keys of the rows it carries — the page, not
 the population. `requiredRolesFrom()` and `consent.globalConsentsFrom()` read a
 view already in hand, which is what `/admin/roles` and `/admin/consent` do now
 instead of reading each entry back out of the directory by identifier.
+
+## 3ce. `secret_destinations.ts` and `secrets.js`'s `pushSecret()`: WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06)
+
+rcbj's design on #221: a service account is a person entry with a flag (P1),
+its password is rotated automatically (P4), and **each new password is
+PUSHED to a secrets manager first, its hash committed only after the push
+succeeded** — a failed push changes nothing. This is the push and where it
+goes.
+
+**A DESTINATION IS AN APPLICATION ENTRY, NOT A ROW OF A STORE.** rcbj's answer
+to the design's open question 3: "Each push destination is an application
+entry in the realm, and the destination's write credential is held on that
+entry", so the rule that every credential sits on a user or an application
+entry keeps no exception. `applications.js` has a `secret-destination` row in
+`PROTOCOLS` and ten `secretDest*` attributes (`families:
+['secret-destination']`, so `familyRefusal()` refuses them on any other
+entry); the register is `applications.list()` filtered by
+`declaredFamiliesOf()`, and its `id` is the entry's DN — what P1's
+`stsSecretDestination` names. An entry declared for this family alone is
+refused every issuance in product mode by the declaration rule, which is
+right: a destination is something this service CALLS. Because it is an
+ordinary entry, its page under `/admin/applications` shows the location
+attributes in the field grid; Directory → Secret destinations is the page
+that MEANS them.
+
+**THE WRITE CREDENTIAL IS WRITE-ONLY, AND EVERY DOOR WAS CLOSED BY NAME.**
+`secretDestCredential` is in `SEALED_FIELDS` (sealed under the
+key-encryption key where keys persist; in development it is stored as the
+other sealed fields are, for `sealFieldValue()`'s reason) AND in
+`WITHHELD_FIELDS` (a sentence in `fields` and `attributes`, with no length,
+unlike Kerberos keys'), in `ldap_server.js`'s `SECRET_ATTRIBUTES`, out of the
+field grid (`gridExcludedAttributes()`), refused by `reveal-secret` (a
+withheld field is never revealed), `secret: true` so an update's audit
+sentence does not quote it, and a seal label of its own
+(`secret-destination-credential`, `/admin/encryption`'s table and
+`keystore.js`'s `DIRECTORY_CLASSES`). The one reader is
+`applications.secretDestinationCredentialOf()`, called by `push()` for the
+call that uses it.
+
+**`pushSecret()` LIVES IN `secrets.js`, BESIDE THE READ PATH**, because it is
+the same stores through the same SDKs, loaded through `loadSdk()` so
+`tests/secret_destinations.js` drives fakes. The credential always arrives
+with the target — no SDK is handed its ambient chain, which is the service's
+own read-only identity:
+
+| Provider | Write | A secret that does not exist |
+|---|---|---|
+| `aws` | `PutSecretValue`, region and keys from the entry | `ResourceNotFoundException` — the call never creates |
+| `gcp` | `AddSecretVersion` under `projects/<p>/secrets/<name>` | gRPC NOT_FOUND — the call never creates |
+| `azure` | `setSecret`, after `listPropertiesOfSecretVersions` | **checked first**: `setSecret` WOULD create one; the window between the two calls is the operator's own delete |
+| `vault` | KV v2 `POST <mount>/data/<name>` with `options.cas` = the `current_version` its metadata read | 404 on the metadata; a version written in between is `STS-SECDEST-0004` and nothing is overwritten |
+| `file` | written in place, `O_NOFOLLOW` and no `O_CREAT`, under the destination's directory | refused; a name that leaves the directory or a link is `STS-SECDEST-0007` |
+
+**NEVER CREATE, ONLY WRITE (least privilege, rcbj's design).** The secret must
+exist; the credential needs write on named secrets — plus, for Azure, `list`
+(metadata) to see it exists, and for Vault `read` on the metadata path. A
+missing secret is `STS-SECDEST-0003`.
+
+**`file` IS DEVELOPMENT ONLY** (rcbj's answer 5), behind
+`mode.acceptsFileSecretDestinations()` and its `REQUIREMENTS` row
+`secret-destinations`: in product a file destination is not offered, not
+added, reported not usable, and a push to it is `STS-SECDEST-0006`.
+
+**THE PAYLOAD** is `password` (the bare password; in Vault, whose versions are
+maps, the field `secretDestField` names, `value` by default — the field this
+service's own Vault reads default to) or `json` — `{username, password,
+realm, rotatedAt}`, the object a reader takes the password out of by its
+field, as `pick()` does here.
+
+**`push()` NEVER THROWS** and answers `{ ok, version }` or `{ ok: false,
+error, code }`, every outcome an audit row (`secret-destination.push`) that
+names the destination and the secret and never the value. `testPush()` writes
+a canary — `sts-test-push` and a random password from `crypto.js` — and
+refuses a secret a service account's rotation writes (`STS-SECDEST-0010`)
+where the service accounts' module can say so: it asks
+`require('./service_accounts').secretNameInUse(destinationId, secretName)`
+lazily, and until that function exists (#221 P1/P4) a test push trusts the
+name it is given — the page says a test push is for a test secret.
+
+**EVERY ADDRESS IS THE OPERATOR'S** — the root `CLAUDE.md`'s seventeenth
+outbound row. An Azure vault URL or a Vault address is https only
+(`STS-SECDEST-0008` at the push, `STS-SECDEST-0011` at the add); Vault's
+request is verified through `OutboundTls.verifiedOptions()` with the
+destination's own CA certificates beside the public roots, and the SDKs'
+through the process-wide host check. Internal addresses are NOT refused in
+product, unlike a caller-named fetch's, because a Vault is usually internal
+and only an administrator (Admin Write) can name one.
+
+**What has no test yet**: a real AWS, Google Cloud, Azure or Vault (the
+in-process test fakes all four; `tests/vendored/sts_secret_destinations.js`
+drives the register over HTTP and the `file` destination only); the sealing
+in product mode, which needs a persistent key-encryption key in process.
 

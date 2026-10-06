@@ -35,6 +35,7 @@
 import helpers = require('../common/helpers');
 import passwordPolicy = require('../common/password_policy');
 import authnPolicy = require('../common/authn_policy');
+import serviceAccountPolicy = require('../common/service_account_policy');
 
 const { log } = helpers;
 
@@ -233,6 +234,22 @@ PolicyKinds.register({
   auditAction: 'admin.authn-policy.change',
   appliesTo: 'the NEXT sign-in in this realm; a session already started ' +
              'keeps the factors it was started with',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in defaults where it has not'
+});
+
+// #221: the third kind, rcbj's "a third kind of policy, the service-account
+// policy ... set per realm and inherited from the default realm".
+PolicyKinds.register({
+  id: 'serviceAccount',
+  label: 'Service-account policy',
+  container: 'ou=serviceAccountPolicies',
+  governs: 'what a service account may do — the second factor, the ' +
+           'browser, the password doors — and how its password rotates',
+  module: serviceAccountPolicy as unknown as PolicyModule,
+  auditAction: 'admin.service-account-policy.change',
+  appliesTo: 'every service account in this realm from the next time it ' +
+             'signs in, binds or is rotated',
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
                'built-in defaults where it has not'
 });

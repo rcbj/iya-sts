@@ -584,7 +584,27 @@ const PROTOCOLS = [
           'key pair, or paste the public half of your own), the services in ' +
           'didService and the URIs in didAlsoKnownAs. Nothing is issued ' +
           'through this family: it is how the application is identified and ' +
-          'its keys found.' }
+          'its keys found.' },
+  // A SECRET PUSH DESTINATION (#221 P3, 2026-10-06): a secrets manager this
+  // service WRITES a service account's rotated password to. rcbj's answer on
+  // #221: "Each push destination is an application entry in the realm, and
+  // the destination's write credential is held on that entry" — so the
+  // register of destinations is the realm's application entries declared for
+  // this family, and `common/secret_destinations.ts` reads them. Like `ssf`,
+  // the application is something this service CALLS; like `did`, nothing is
+  // issued through it — and an entry declared for this family alone is
+  // refused every issuance in product mode by the declaration rule above.
+  { id: 'secret-destination', label: 'Secret push destination', kind: '',
+    kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'A secrets manager this service PUSHES a service account\'s ' +
+          'rotated password to (#221): AWS Secrets Manager, Google Cloud ' +
+          'Secret Manager, Azure Key Vault, or a HashiCorp Vault / OpenBao ' +
+          'KV version 2 engine — and, in development mode only, a file. ' +
+          'The secret must already exist there: a push writes a new version ' +
+          'and never creates one. The write credential ' +
+          '(secretDestCredential) is sealed on this entry and never shown. ' +
+          'Nothing is issued through this family.' }
 ];
 
 /**
@@ -3198,6 +3218,83 @@ const SCHEMA = {
             'DID document\'s alsoKnownAs: an absolute URI such as the ' +
             'application\'s web origin or its client_id URL. DID Core makes ' +
             'it a claim, not a proof; a relying party checks it.' },
+    // A SECRET PUSH DESTINATION (#221 P3, 2026-10-06): where a service
+    // account's rotated password is written, and with what. See the
+    // `secret-destination` row of PROTOCOLS and
+    // `common/secret_destinations.ts`, which reads these; every address here
+    // is the operator's, and no request can name one.
+    { name: 'secretDestProvider', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'WHICH SECRETS MANAGER THIS DESTINATION IS: aws (Secrets ' +
+            'Manager, PutSecretValue), gcp (Secret Manager, ' +
+            'AddSecretVersion), azure (Key Vault, setSecret), vault (a ' +
+            'HashiCorp Vault or OpenBao KV version 2 engine, a write with ' +
+            'check-and-set) or file (development mode only). A key ' +
+            'management service is not a destination: it stores keys, not ' +
+            'secrets.' },
+    { name: 'secretDestPayload', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'WHAT A PUSH WRITES: password (the bare password, the default) ' +
+            'or json — {"username", "password", "realm", "rotatedAt"}, the ' +
+            'object a reader takes the password out of by its field, as ' +
+            'this service\'s own secret reads do (keys.kekField and the ' +
+            'like). In Vault, whose versions are maps, password writes the ' +
+            'one field secretDestField names.' },
+    { name: 'secretDestRegion', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'aws: the AWS region the secrets are in (us-east-1).' },
+    { name: 'secretDestProject', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'gcp: the project a short secret name is in, so that a ' +
+            'service account names its secret as sts-svc-backup rather ' +
+            'than projects/<project>/secrets/sts-svc-backup. A full ' +
+            'resource name is taken as it is.' },
+    { name: 'secretDestEndpoint', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'azure: the vault URL (https://<name>.vault.azure.net). vault: ' +
+            'the Vault or OpenBao address (https://vault.example.com:8200). ' +
+            'https only — the write credential and a password cross it.' },
+    { name: 'secretDestMount', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'vault: where the KV version 2 engine is mounted; secret when ' +
+            'empty.' },
+    { name: 'secretDestField', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'vault, with the password payload: the field of the version the ' +
+            'password is written to; value when empty, which is the field ' +
+            'this service\'s own Vault reads default to.' },
+    { name: 'secretDestDirectory', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'file (DEVELOPMENT MODE ONLY): the absolute directory a secret ' +
+            'name is a file in. The file must already exist; a name that ' +
+            'leaves the directory is refused.' },
+    { name: 'secretDestCaCertificates', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      what: 'vault: the PEM certificates of the CA the Vault listener ' +
+            'chains to, trusted beside the public roots. Certificates are ' +
+            'public; the certificate is always verified.' },
+    { name: 'secretDestCredential', kind: 'single',
+      from: 'Directory → Secret destinations, the console, or by hand',
+      families: ['secret-destination'],
+      secret: true,
+      what: 'THE DESTINATION\'S WRITE CREDENTIAL, which may write versions ' +
+            'of named secrets and should be able to do nothing else: aws, a ' +
+            'JSON {"accessKeyId", "secretAccessKey"[, "sessionToken"]}; ' +
+            'gcp, a service account key file\'s JSON; azure, a JSON ' +
+            '{"tenantId", "clientId", "clientSecret"}; vault, a token. ' +
+            'Separate from the read-only credentials this service reads its ' +
+            'own key-encryption key and database password with. Sealed with ' +
+            'the key-encryption key when keys persist, WITHHELD from every ' +
+            'page, /admin-api reply and directory read, and never logged.' },
     { name: 'ssfReceiverId', kind: 'multi',
       from: 'SSF, the console, or by hand',
       identifier: true,
@@ -3974,6 +4071,19 @@ const EDITABLE = {
   saml2CustomAttributes: 'set',
   saml11CustomAttributes: 'set',
   didAlsoKnownAs: 'multi',
+  // A secret push destination (#221 P3): each one value, an empty write
+  // clearing it. The credential is write-only: sealed on the way in,
+  // withheld on the way out (SEALED_FIELDS, WITHHELD_FIELDS).
+  secretDestProvider: 'set',
+  secretDestPayload: 'set',
+  secretDestRegion: 'set',
+  secretDestProject: 'set',
+  secretDestEndpoint: 'set',
+  secretDestMount: 'set',
+  secretDestField: 'set',
+  secretDestDirectory: 'set',
+  secretDestCaCertificates: 'set',
+  secretDestCredential: 'set',
   ssfAllowedEvents: 'multi',
   // The per-receiver Shared Signals overrides, each one value an empty
   // write clears (the setting then decides); see their SCHEMA rows.
@@ -4833,6 +4943,13 @@ const ATTRIBUTE_CHOICES = {
   },
   scepDefaultProfile: function () {
     return enrollmentProfileChoices(true);
+  },
+  // A secret push destination (#221 P3), from the module that pushes.
+  secretDestProvider: function () {
+    return require('./secrets').DESTINATION_PROVIDERS.slice(0);
+  },
+  secretDestPayload: function () {
+    return require('./secrets').DESTINATION_PAYLOADS.slice(0);
   }
 };
 
@@ -4855,7 +4972,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthBackchannelAuthenticationRequestSigningAlg', 'gnapKeyProof',
   'gnapSymmetricAlg', 'gnapInteractionStartModes', 'gnapAccessTokenFormat',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
-  'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile'];
+  'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
+  'secretDestProvider', 'secretDestPayload'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),
@@ -4970,7 +5088,8 @@ function authMethodsProblem(values) {
 const LONG_TEXT_ATTRIBUTES = [
   'oauthJwks', 'samlSpMetadata', 'samlEncryptionCertificate',
   'samlSpMetadataSigningCertificate', 'oauthSamlAssertionSigningCertificate',
-  'gnapKey', 'gnapJweKey', 'oauthResourceMetadata'
+  'gnapKey', 'gnapJweKey', 'oauthResourceMetadata',
+  'secretDestCaCertificates'
 ];
 
 // THE ATTRIBUTES THE GRID DOES NOT DRAW, because a control of their own does:
@@ -4993,6 +5112,11 @@ function gridExcludedAttributes() {
   const out = ['appName', 'appAllowedProtocol',
                'oauthIssuedSoftwareStatement', 'appRegistrationAccessToken',
                'oauthScope', 'didPrivateKeys',
+               // A secret destination's write credential (#221 P3): set on
+               // Directory → Secret destinations, where the box is
+               // write-only; a grid cell would draw the withheld sentence
+               // as its value and save it back.
+               'secretDestCredential',
                // Drawn by their own Custom claims and Custom SAML
                // attributes sections (2026-10-01): a JSON array is not a
                // text box.
@@ -5185,6 +5309,14 @@ const FIELD_EXAMPLES = {
                    'Generate a key pair above',
   didService: 'LinkedDomains|https://app.example.com',
   didAlsoKnownAs: 'https://app.example.com',
+  // A secret push destination (#221 P3).
+  secretDestRegion: 'us-east-1',
+  secretDestProject: 'my-project',
+  secretDestEndpoint: 'https://vault.example.com:8200',
+  secretDestMount: 'secret',
+  secretDestField: 'value',
+  secretDestDirectory: '/run/sts-test-secrets',
+  secretDestCaCertificates: '-----BEGIN CERTIFICATE-----',
   ssfAllowedEvents: 'https://schemas.openid.net/secevent/caep/event-type/' +
                     'session-revoked',
   ssfCaepReasonLanguage: 'en',
@@ -5277,7 +5409,8 @@ const FIELD_FAMILY_PREFIXES = [
   ['acme', ['acme']],
   ['est', ['est']],
   ['scep', ['scep']],
-  ['enroll', ['acme', 'est', 'scep']]
+  ['enroll', ['acme', 'est', 'scep']],
+  ['secretDest', ['secret-destination']]
 ];
 
 /**
@@ -5304,7 +5437,9 @@ const FIELD_GROUPS = [
   { id: 'gnap', label: 'GNAP', families: ['gnap'] },
   { id: 'did', label: 'Decentralized Identifier (DID)', families: ['did'] },
   { id: 'enroll', label: 'Certificate enrollment',
-    families: ['acme', 'est', 'scep'] }
+    families: ['acme', 'est', 'scep'] },
+  { id: 'secret-destination', label: 'Secret push destination',
+    families: ['secret-destination'] }
 ];
 
 /**
@@ -6271,7 +6406,12 @@ const SEALED_FIELDS = ['oauthAssertionPrivateKey',
                        'gnapMacaroonKey',
                        // An application DID's private keys (2026-10-01),
                        // kept to sign its Domain Linkage Credentials.
-                       'didPrivateKeys'];
+                       'didPrivateKeys',
+                       // A secret destination's write credential (#221 P3).
+                       // WITHHELD as well (below): sealed so no dump holds
+                       // it, and withheld so no reader opens it — the only
+                       // reader is `secretDestinationCredentialOf()`.
+                       'secretDestCredential'];
 
 // The label each sealed field is sealed under, which is what
 // /admin/encryption counts by (admin-ui/encryption_admin.ts DATA_CLASSES). One
@@ -6281,6 +6421,7 @@ const SEAL_LABELS = {
   oauthSamlAssertionPrivateKey: 'application-private-key',
   gnapSymmetricKey: 'gnap-shared-key',
   gnapMacaroonKey: 'gnap-macaroon-key',
+  secretDestCredential: 'secret-destination-credential',
   // Not in SEALED_FIELDS: it is multi-valued and each value is sealed WHOLE,
   // as a record — see sealClientSecretText().
   oauthClientSecret: 'client-secret',
@@ -6317,7 +6458,11 @@ const WITHHELD_FIELDS = ['krb5ServiceKeys',
                          // Certificate enrollment (2026-09-13): a private key
                          // this service generated, and two working credentials.
                          'appEnrolledPrivateKey', 'appAcmeEabKey',
-                         'appScepChallenge'];
+                         'appScepChallenge',
+                         // A secret destination's write credential (#221
+                         // P3): it leaves this service only on the wire to
+                         // its own secrets manager.
+                         'secretDestCredential'];
 
 // ---------------------------------------------------------------------------
 // WHERE A MANAGED KEY PAIR CAME FROM (2026-09-13) — the closed vocabulary of
@@ -6377,8 +6522,16 @@ const KEY_SOURCE_ATTRIBUTES = Object.keys(KEY_PAIR_ATTRIBUTES).map(
 });
 
 
-function withheldSentence(value) {
+function withheldSentence(value, name) {
   log.debug("Entering withheldSentence().");
+  if (name === 'secretDestCredential') {
+    // NOT EVEN ITS LENGTH: a token's length says which kind of credential
+    // it is, and nothing about this one is anybody's business but its
+    // secrets manager's (#221 P3).
+    log.debug("Leaving withheldSentence(). A destination credential.");
+    return '(withheld: a secret destination\'s write credential, set, ' +
+           'never shown)';
+  }
   log.debug("Leaving withheldSentence().");
   return '(withheld: Kerberos key material, ' + String(value || '').length +
          ' characters, never shown)';
@@ -6401,8 +6554,9 @@ function withholdFields(fields) {
     if (out === fields) {
       out = Object.assign({}, fields);
     }
-    out[name] = Array.isArray(out[name]) ? out[name].map(withheldSentence)
-                                         : withheldSentence(out[name]);
+    out[name] = Array.isArray(out[name])
+      ? out[name].map(function (one) { return withheldSentence(one, name); })
+      : withheldSentence(out[name], name);
   });
   log.debug("Leaving withholdFields().");
   return out;
@@ -6558,6 +6712,54 @@ function openSealedFields(fields, identifier) {
   });
   log.debug("Leaving openSealedFields().");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// A SECRET DESTINATION'S WRITE CREDENTIAL, OPENED FOR THE ONE READER THAT
+// USES IT (#221 P3, 2026-10-06).
+//
+// `secretDestCredential` is in SEALED_FIELDS and in WITHHELD_FIELDS, so every
+// view — `fields` and `attributes` alike — carries a sentence in its place
+// and `reveal-secret` has nothing to hand over. `common/secret_destinations
+// .ts` needs the credential itself, at the moment it pushes, and asks here
+// rather than reading the entry around this module: this module owns the
+// seal and so owns the open. The plaintext is returned to the caller and
+// kept nowhere (`key-material-residency`).
+// ---------------------------------------------------------------------------
+/**
+ * Returns a secret destination's write credential, opened, for the push
+ * that uses it. Never drawn and never returned by any view.
+ *
+ * @param identifier - the destination application's identifier
+ * @returns the credential, or '' when there is none or it will not open
+ */
+function secretDestinationCredentialOf(identifier) {
+  log.debug("Entering secretDestinationCredentialOf().");
+  const loaded = load(identifier);
+  const stored = loaded.known
+    ? String([].concat(loaded.record.fields.secretDestCredential || [])[0] ||
+             '')
+    : '';
+  if (!stored) {
+    log.debug("Leaving secretDestinationCredentialOf(). None.");
+    return '';
+  }
+  if (!isSealed(stored)) {
+    log.debug("Leaving secretDestinationCredentialOf(). Stored clear.");
+    return stored;
+  }
+  const opened = keystore.open(stored, sealLabelOf('secretDestCredential'));
+  if (!opened) {
+    log.warn(errorCodes.tag('STS-REG-0023') +
+             'applications: the write credential on secret destination "' +
+             identifier + '" is sealed and will not open under this ' +
+             'process\'s key-encryption key. Set it again on Directory → ' +
+             'Secret destinations.');
+    log.debug("Leaving secretDestinationCredentialOf(). Will not open.");
+    return '';
+  }
+  log.debug("Leaving secretDestinationCredentialOf(). Opened.");
+  return opened;
 }
 
 // ---------------------------------------------------------------------------
@@ -9773,6 +9975,11 @@ function recordFromAttributes(attributes) {
     }
     record.fields[row.name] = row.kind === 'multi' ? values : values[0];
   });
+  // What its credentials were when it was read, for save() to compare with
+  // (#221 P5). Not enumerable: it is not a field and never written.
+  Object.defineProperty(record, CREDENTIAL_SNAPSHOT, {
+    value: credentialSnapshotOf(record.fields), enumerable: false,
+    writable: true, configurable: true });
   log.debug("Leaving recordFromAttributes(). identifier=" + record.identifier);
   return record;
 }
@@ -9827,15 +10034,340 @@ function load(identifier) {
            entry: entry };
 }
 
-function save(record) {
+function save(record, how) {
   log.debug("Entering save().");
   const backing = store();
   if (!backing) {
     log.debug("Leaving save().");
     return false;
   }
+  const written = !!backing.writeApplication(record.identifier,
+                                             attributesFor(record));
+  if (written && !(how && how.quiet)) {
+    noteCredentialWrite(record, how);
+  }
   log.debug("Leaving save().");
-  return !!backing.writeApplication(record.identifier, attributesFor(record));
+  return written;
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S CREDENTIALS CHANGED, SAID OVER CAEP (#221 P5).
+//
+// #145's rule is that a credential change is sent from the ONE function every
+// door writes it through, and for an application entry that function is
+// save(): the console's and `/admin-api`'s attribute edits
+// (updateApplication()), the four client-secret acts (finishClientSecretWrite),
+// the expiry sweep, RFC 7591 / 7592 registration and its update, `/admin/pki`'s
+// key pair issue and upload (storeIssuedJwtKeyPair() and the upload's
+// writes, each through updateApplication()), a SAML provider's metadata, and
+// the seeded applications all end there. So the record carries what its
+// credentials were when it was READ (recordFromAttributes() hangs the
+// snapshot on it), save() compares that with what it is writing, and each
+// credential that moved is one CAEP `credential-change` about the
+// APPLICATION (`ssf/account_signals.ts`, `application:`):
+//
+//   credential                        credential_type (urn:iya:sts:...)
+//   oauthClientSecret (by secret id)  ...:credential-type:client-secret
+//   oauthJwks / oauthJwksUri          ...:credential-type:jwk
+//   the RFC 7523 key pair               x509 (with its certificate), else jwk
+//   the RFC 7522 key pair, and its
+//     registered signing certificate    x509
+//   samlSigningCertificate (each),
+//     samlEncryptionCertificate         x509
+//
+// `change_type`: a credential that appears is `create`, one that goes is
+// `revoke`, one replaced is `update`. Client secrets are read by id: a new id
+// alone is `create` (add-secret), an id gone alone `revoke` (remove-secret,
+// the sweep), and a new id beside one gone or one whose expiry moved is
+// `update` (regenerate, and a rotation, which shortens the live ones).
+//
+// **ONE EVENT PER ACT, NOT PER WRITE.** A key pair issued on `/admin/pki` is
+// seven updateApplication() calls, each a save(); reported per save it would
+// be a `jwk` change and then an `x509` one about the same key. So a write is
+// QUEUED, keyed by realm and application, keeping the FIRST snapshot and the
+// LAST state, and the queue is flushed once the door's synchronous act has
+// finished (a microtask — `oauth-oidc/oauth_grant_signals.ts`'s arrangement;
+// nothing waits and nothing repeats).
+//
+// **CHEAP ON THE HOT PATH.** seen() saves on every authentication; the
+// snapshot is the raw stored strings, compared as they are, and a sealed
+// client secret is opened only when its stored values moved.
+//
+// Nothing here throws into the write, and nothing is sent where Shared
+// Signals is not loaded (account_signals.ts answers that). `how.actor`
+// (the console's or the API's principal) makes the initiating entity
+// `admin`; a write with no actor — a registration, the sweep, a seed — is
+// `system`. ONE WRITE IS QUIET: the seeding of this service's own
+// applications (seedInternalApplication()), when a realm or the process
+// starts — the service provisioning its own clients, which no receiver
+// could have known before they existed and which a development process
+// would otherwise announce on every start. A change to one AFTER it is
+// seeded is announced like any other. An ACME, EST or SCEP certificate for
+// an application is NOT here
+// (`appEnrolledCertificate`): `common/cert_enrollment.ts` reports it, with
+// its own reasons, as it does a person's.
+// ---------------------------------------------------------------------------
+const CREDENTIAL_SNAPSHOT = Symbol.for('sts.applications.credentialSnapshot');
+
+// The single-valued credential attributes, compared as strings, and the
+// multi-valued certificate one, compared as a set.
+const SNAPSHOT_SINGLE = ['oauthJwks', 'oauthJwksUri', 'oauthAssertionJwks',
+  'oauthAssertionCertificate', 'oauthSamlAssertionCertificate',
+  'oauthSamlAssertionSigningCertificate', 'samlEncryptionCertificate'];
+
+// realm id + '\n' + identifier -> { realmId, identifier, before, after, how }
+const pendingCredentialWrites = new Map();
+let credentialFlushQueued = false;
+
+/**
+ * Returns what an application's credential attributes hold, as the raw
+ * stored strings, for save() to compare.
+ *
+ * @param fields - the record's fields
+ * @returns the snapshot
+ */
+function credentialSnapshotOf(fields) {
+  log.debug("Entering credentialSnapshotOf().");
+  const f = fields || {};
+  const out = { secrets: valuesOf(f.oauthClientSecret).map(String).sort(),
+                samlSigning: valuesOf(f.samlSigningCertificate).map(String)
+                  .sort() };
+  SNAPSHOT_SINGLE.forEach(function (name) {
+    out[name] = String(valuesOf(f[name])[0] || '');
+  });
+  log.debug("Leaving credentialSnapshotOf().");
+  return out;
+}
+
+// Queues the comparison save() makes, merging writes of one act.
+function noteCredentialWrite(record, how) {
+  log.debug("Entering noteCredentialWrite().");
+  try {
+    const before = record[CREDENTIAL_SNAPSHOT] ||
+      credentialSnapshotOf({});
+    const after = credentialSnapshotOf(record.fields);
+    // The record has now been written as `after`; a second save() of the
+    // same object compares with that.
+    Object.defineProperty(record, CREDENTIAL_SNAPSHOT, {
+      value: after, enumerable: false, writable: true, configurable: true });
+    const realmId = String(realms.currentId() || '');
+    const key = realmId + '\n' + String(record.identifier);
+    const held = pendingCredentialWrites.get(key);
+    if (!held && JSON.stringify(before) === JSON.stringify(after)) {
+      log.debug("Leaving noteCredentialWrite(). No credential moved.");
+      return;
+    }
+    pendingCredentialWrites.set(key, {
+      realmId: realmId, identifier: String(record.identifier),
+      before: held ? held.before : before, after: after,
+      how: Object.assign({}, held ? held.how : {}, how || {}) });
+    if (!credentialFlushQueued) {
+      credentialFlushQueued = true;
+      Promise.resolve().then(flushCredentialWrites).catch(function (e) {
+        log.debug("Caught in noteCredentialWrite(): " +
+                  ((e && e.message) || e));
+        log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: the ' +
+                 'credential-change of an application could not be ' +
+                 'announced: ' + ((e && e.message) || e));
+      });
+    }
+  } catch (e) {
+    log.debug("Caught in noteCredentialWrite(): " + ((e && e.message) || e));
+    log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: whether "' +
+             record.identifier + '"\'s credentials moved could not be ' +
+             'decided, so no credential-change is sent: ' +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving noteCredentialWrite(). Queued.");
+}
+
+// Sends what the queued writes changed, each inside its realm. Answers the
+// number of events handed over (for a test).
+/**
+ * Announces every queued application credential change, each inside its own
+ * realm. Called once the act that queued them has finished.
+ *
+ * @returns the number of credential-change events handed over
+ */
+function flushCredentialWrites() {
+  log.debug("Entering flushCredentialWrites().");
+  credentialFlushQueued = false;
+  const due = Array.from(pendingCredentialWrites.values());
+  pendingCredentialWrites.clear();
+  let handed = 0;
+  due.forEach(function (one) {
+    const realm = realms.get(one.realmId);
+    const run = function () {
+      log.debug("Entering run(). " + one.identifier);
+      handed += announceCredentialChanges(one.identifier, one.before,
+                                          one.after, one.how);
+      log.debug("Leaving run().");
+    };
+    try {
+      if (realm) {
+        realms.run(realm, run);
+      } else {
+        run();
+      }
+    } catch (e) {
+      log.debug("Caught in flushCredentialWrites(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: the ' +
+               'credential-change of "' + one.identifier + '" could not be ' +
+               'announced: ' + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving flushCredentialWrites(). " + handed + " event(s).");
+  return handed;
+}
+
+// The ids and expiries of a list of stored client secret values, opened.
+function secretIdsOf(stored) {
+  log.debug("Entering secretIdsOf().");
+  const out = {};
+  (stored || []).map(parseClientSecretValue).forEach(function (one) {
+    if (one) {
+      out[one.id] = one.expiresAt || 0;
+    }
+  });
+  log.debug("Leaving secretIdsOf().");
+  return out;
+}
+
+// create / update / revoke for a credential that was `from` and is `to`.
+function changeTypeOf(from, to) {
+  log.debug("Entering changeTypeOf().");
+  const out = !from && to ? 'create' : (from && !to ? 'revoke'
+    : (from !== to ? 'update' : ''));
+  log.debug("Leaving changeTypeOf(). " + (out || 'none'));
+  return out;
+}
+
+/**
+ * Compares two credential snapshots of an application and reports each
+ * credential that moved as a CAEP credential-change about the application.
+ *
+ * @param identifier - the application's identifier
+ * @param before - the snapshot before the act
+ * @param after - the snapshot after it
+ * @param how - `actor`, or `initiatingEntity`
+ * @returns the number of events handed over
+ */
+function announceCredentialChanges(identifier, before, after, how) {
+  log.debug("Entering announceCredentialChanges(). " + identifier);
+  const b = before || credentialSnapshotOf({});
+  const a = after || credentialSnapshotOf({});
+  const said = how || {};
+  const entity = said.initiatingEntity
+    ? String(said.initiatingEntity) : (said.actor ? 'admin' : 'system');
+  const signals = require('../ssf/account_signals');
+  const base = { application: String(identifier), initiatingEntity: entity,
+                 via: String(said.via || 'the application registry') };
+  const changes = [];
+  // CLIENT SECRETS, by id — opened only when the stored values moved.
+  if (JSON.stringify(b.secrets) !== JSON.stringify(a.secrets)) {
+    const was = secretIdsOf(b.secrets);
+    const now = secretIdsOf(a.secrets);
+    const added = Object.keys(now).filter(function (id) {
+      return !(id in was);
+    });
+    const removed = Object.keys(was).filter(function (id) {
+      return !(id in now);
+    });
+    const moved = Object.keys(now).some(function (id) {
+      return (id in was) && was[id] !== now[id];
+    });
+    const type = added.length && (removed.length || moved) ? 'update'
+      : (added.length ? 'create' : (removed.length ? 'revoke' : ''));
+    if (type) {
+      changes.push({ credentialType: signals.CLIENT_SECRET_CREDENTIAL_TYPE,
+        changeType: type,
+        friendlyName: 'client secret ' + (added.length ? added : removed)
+          .join(', '),
+        reasonAdmin: 'A client secret of the application ' + identifier +
+          ' was ' + (type === 'create' ? 'added'
+            : type === 'revoke' ? 'removed' : 'replaced') + '.' });
+    }
+  }
+  // THE REGISTERED KEY SET: jwks or jwks_uri, one credential.
+  const keysWere = b.oauthJwks || b.oauthJwksUri;
+  const keysAre = a.oauthJwks || a.oauthJwksUri;
+  const keysType = changeTypeOf(keysWere ? b.oauthJwks + '\n' +
+                                b.oauthJwksUri : '',
+                                keysAre ? a.oauthJwks + '\n' +
+                                a.oauthJwksUri : '');
+  if (keysType) {
+    changes.push({ credentialType: signals.JWK_CREDENTIAL_TYPE,
+      changeType: keysType,
+      friendlyName: (a.oauthJwksUri || (!a.oauthJwks && b.oauthJwksUri))
+        ? 'jwks_uri' : 'jwks',
+      reasonAdmin: 'The registered keys (jwks / jwks_uri) of the ' +
+        'application ' + identifier + ' changed.' });
+  }
+  // THE RFC 7523 KEY PAIR: x509 where a certificate is beside it.
+  const pairWas = b.oauthAssertionCertificate || b.oauthAssertionJwks;
+  const pairIs = a.oauthAssertionCertificate || a.oauthAssertionJwks;
+  const pairType = changeTypeOf(pairWas, pairIs);
+  if (pairType) {
+    const pem = pairType === 'revoke' ? b.oauthAssertionCertificate
+                                      : a.oauthAssertionCertificate;
+    changes.push({ pem: pem,
+      credentialType: pem ? 'x509' : signals.JWK_CREDENTIAL_TYPE,
+      changeType: pairType, friendlyName: 'RFC 7523 signing key pair',
+      reasonAdmin: 'The RFC 7523 signing key pair of the application ' +
+        identifier + ' was ' + (pairType === 'create' ? 'issued'
+          : pairType === 'revoke' ? 'removed' : 'replaced') + '.' });
+  }
+  // EACH CERTIFICATE-SHAPED CREDENTIAL, one by one.
+  [['oauthSamlAssertionCertificate', 'RFC 7522 signing key pair'],
+   ['oauthSamlAssertionSigningCertificate',
+    'RFC 7522 registered signing certificate'],
+   ['samlEncryptionCertificate', 'SAML encryption certificate']]
+    .forEach(function (pair) {
+      const type = changeTypeOf(b[pair[0]], a[pair[0]]);
+      if (type) {
+        changes.push({ pem: type === 'revoke' ? b[pair[0]] : a[pair[0]],
+          credentialType: 'x509', changeType: type, friendlyName: pair[1],
+          reasonAdmin: 'The ' + pair[1] + ' of the application ' +
+            identifier + ' changed.' });
+      }
+    });
+  a.samlSigning.filter(function (one) {
+    return b.samlSigning.indexOf(one) < 0;
+  }).forEach(function (one) {
+    changes.push({ pem: one, credentialType: 'x509', changeType: 'create',
+      friendlyName: 'SAML signing certificate',
+      reasonAdmin: 'A SAML signing certificate was registered for the ' +
+        'application ' + identifier + '.' });
+  });
+  b.samlSigning.filter(function (one) {
+    return a.samlSigning.indexOf(one) < 0;
+  }).forEach(function (one) {
+    changes.push({ pem: one, credentialType: 'x509', changeType: 'revoke',
+      friendlyName: 'SAML signing certificate',
+      reasonAdmin: 'A SAML signing certificate of the application ' +
+        identifier + ' was removed.' });
+  });
+  changes.forEach(function (change) {
+    const notice = Object.assign({}, base, change, {
+      reasonUser: 'A credential of this application changed.' });
+    // A SAML certificate is often stored as bare base64 DER (the metadata's
+    // own form); the identifiers are read off a PEM.
+    if (change.pem && String(change.pem).indexOf('-----BEGIN') < 0) {
+      notice.pem = '-----BEGIN CERTIFICATE-----\n' +
+        (String(change.pem).replace(/\s+/g, '').match(/.{1,64}/g) || [])
+          .join('\n') + '\n-----END CERTIFICATE-----\n';
+    }
+    if (change.pem) {
+      signals.certificateChanged(notice);
+    } else {
+      delete notice.pem;
+      signals.credentialChanged(notice);
+    }
+  });
+  log.debug("Leaving announceCredentialChanges(). " + changes.length +
+            " change(s).");
+  return changes.length;
 }
 
 function addTo(list, value) {
@@ -12533,7 +13065,7 @@ function updateApplication(identifier, change) {
              message: 'Nothing changed: ' + attribute + ' already said that.' };
   }
   record.lastAt = record.lastAt || Date.now();
-  save(record);
+  save(record, { actor: asked.actor || '' });
   audit.audit({
     action: 'application.update', actor: asked.actor || '', protocol: 'console',
     channel: 'internal', target: String(identifier),
@@ -13344,7 +13876,7 @@ function finishClientSecretWrite(identifier, record, opts, detail, summary) {
     }
   }
   record.lastAt = record.lastAt || Date.now();
-  save(record);
+  save(record, { actor: opts.actor || '' });
   audit.audit({
     action: 'application.update', actor: opts.actor || '',
     protocol: 'console', channel: 'internal', target: String(identifier),
@@ -16222,7 +16754,10 @@ function seedInternalApplication(spec) {
   Object.keys(spec.attributes || {}).forEach(function (name) {
     setField(record, name, spec.attributes[name]);
   });
-  if (!save(record)) {
+  // QUIET (#221 P5): the service provisioning its own clients when a realm
+  // or the process starts is not a change to a principal anybody could have
+  // known — see save()'s header.
+  if (!save(record, { quiet: true })) {
     log.warn(errorCodes.tag('STS-REG-0020') +
              'applications: "' + spec.identifier + '" was not seeded — the ' +
              'ou=applications container is full (applications.max) or the ' +
@@ -16311,6 +16846,9 @@ module.exports = {
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,
   storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,
+  // #221 P5: the application credential-change diff, for its test.
+  flushCredentialWrites: flushCredentialWrites,
+  credentialSnapshotOf: credentialSnapshotOf,
   frontchannelOriginProblem: frontchannelOriginProblem,
   backchannelSchemeProblem: backchannelSchemeProblem,
   requiredRolesOf: requiredRolesOf,
@@ -16475,6 +17013,7 @@ module.exports = {
   declaredFamiliesOf: declaredFamiliesOf,
   declaredFamiliesFor: declaredFamiliesFor,
   didValueProblem: didValueProblem,
+  secretDestinationCredentialOf: secretDestinationCredentialOf,
   claimRowsProblem: claimRowsProblem,
   didDuplicateProblem: didDuplicateProblem,
   DID_SERVICE_TYPES: DID_SERVICE_TYPES,

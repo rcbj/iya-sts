@@ -111,6 +111,10 @@ import appPasswords = require('../common/app_passwords');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
 import devices = require('../common/devices');
+// #221: service accounts, tagged on the people list and described on a
+// person's page, and the policy that governs them.
+import serviceAccounts = require('../common/service_accounts');
+import serviceAccountPolicy = require('../common/service_account_policy');
 // THE SIGN-ON SESSION MAP, which `signOnSessionRows()` walks. It is the same
 // destructured-require trap one module along: admin.js pulls fourteen names
 // out of two modules through multi-line destructures, and a name taken from
@@ -501,6 +505,8 @@ interface AdminViewsDeps {
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
   devices: typeof devices;
+  serviceAccounts: typeof serviceAccounts;
+  serviceAccountPolicy: typeof serviceAccountPolicy;
   sessions: typeof authn.sessions;
   sessionStartedAt: typeof authn.sessionStartedAt;
   config: typeof config;
@@ -613,6 +619,8 @@ class AdminViews {
       identityAssurance: identityAssurance,
       siop: siop,
       devices: devices,
+      serviceAccounts: serviceAccounts,
+      serviceAccountPolicy: serviceAccountPolicy,
       sessions: authn.sessions,
       sessionStartedAt: authn.sessionStartedAt,
       config: config,
@@ -10674,6 +10682,18 @@ class AdminViews {
     // absorbed it — the same courtesy `listViewFromBack()` extends to a filter
     // carried across a form.
     const wantedFactor = String(req.query.factor || '');
+    // A SERVICE ACCOUNT IS A PERSON (#221), so it is on this list — TAGGED,
+    // and filterable by `kind`: `service` for service accounts only, `person`
+    // for everybody else. One read of the flag's holders, not one per row.
+    const wantedKind = ['service', 'person'].indexOf(
+      String(req.query.kind || '')) >= 0 ? String(req.query.kind) : '';
+    const serviceNames = new Set(this.deps.serviceAccounts.names()
+      .map(function (name) {
+        return String(name).toLowerCase();
+      }));
+    all.forEach(function (row) {
+      row.serviceAccount = serviceNames.has(String(row.key).toLowerCase());
+    });
     // Every protocol any known user authenticated through, for the filter. Read
     // off the data rather than written down, so a protocol that starts
     // recording authentications appears in the dropdown by itself and one that
@@ -10724,6 +10744,12 @@ class AdminViews {
           !(factors && !factors.mfaRequired)) return false;
       if (wantedFactor === 'unreadable' &&
           !(factors && factors.totp && !factors.totpUsable)) return false;
+      if (wantedKind === 'service' && !row.serviceAccount) {
+        return false;
+      }
+      if (wantedKind === 'person' && row.serviceAccount) {
+        return false;
+      }
       return true;
     });
     // PAGE, THEN DECORATE: the full factor row — keys, the authenticator's
@@ -10737,7 +10763,7 @@ class AdminViews {
     const paging = page.paging;
     const shown = page.shown;
     const filterParams = { q: wantedText, protocol: wantedProtocol,
-                           factor: wantedFactor,
+                           factor: wantedFactor, kind: wantedKind,
                            per: req.query.per ? paging.perPage : '' };
     const authenticatedHere = all.filter(function (
         row) { return row.authenticated; }).length;
@@ -10806,7 +10832,11 @@ class AdminViews {
           capped: population.capped, scanLimit: population.limit,
           registryCap: population.registryCap,
           filter: { q: wantedText || null, protocol: wantedProtocol || null,
-                    factor: wantedFactor || null },
+                    factor: wantedFactor || null, kind: wantedKind || null },
+          // #221: how many of the people are service accounts.
+          serviceAccounts: all.filter(function (row) {
+            return row.serviceAccount;
+          }).length,
           protocols: Object.keys(protocolsSeen).sort(),
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
@@ -11259,6 +11289,117 @@ class AdminViews {
    * @param risk - the person's current risk standing, read by `riskFor()`
    * @returns the JSON
    */
+  /**
+   * Builds Monitoring → Service accounts (#221): every service account in the
+   * realm with its push destination and the state of its rotation — when it
+   * last rotated, when it is next due, and how many rotations in a row have
+   * failed — paged, with the realm's rotation settings and the totals.
+   *
+   * @param query - the request's query (`page`, `per`, `failing`)
+   * @returns the page's JSON
+   */
+  serviceAccountsMonitorJson(query) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug("Entering AdminViews.serviceAccountsMonitorJson().");
+    const q = query || {};
+    const profile = serviceAccountPolicy.read();
+    const rotation = serviceAccountPolicy.rotation(profile);
+    const self = this;
+    const all = serviceAccounts.names().slice().sort().map(function (name) {
+      const one = self.serviceAccountJson(name);
+      return one ? Object.assign({ username: name }, one) : null;
+    }).filter(function (row) {
+      return !!row;
+    });
+    const failingOnly = String(q.failing || '') === 'true';
+    const rows = failingOnly ? all.filter(function (row) {
+      return row.rotation.failures > 0;
+    }) : all;
+    const listed = this.pagedRows(q, rows);
+    const out = {
+      policy: {
+        rotationEnabled: rotation.enabled,
+        intervalDays: profile.rotationIntervalDays,
+        overlapMinutes: profile.rotationOverlapMinutes,
+        alarmFailures: rotation.alarmFailures,
+        from: profile.from
+      },
+      totals: {
+        accounts: all.length,
+        withDestination: all.filter(function (row) {
+          return !!row.destination;
+        }).length,
+        rotating: all.filter(function (row) {
+          return row.rotation.rotates;
+        }).length,
+        failing: all.filter(function (row) {
+          return row.rotation.failures > 0;
+        }).length,
+        alarms: all.filter(function (row) {
+          return row.rotation.alarm;
+        }).length
+      },
+      filter: { failing: failingOnly },
+      accounts: listed.shown,
+      paging: this.pagingJson(listed.paging)
+    };
+    log.debug("Leaving AdminViews.serviceAccountsMonitorJson(). " +
+              all.length + " account(s).");
+    return out;
+  }
+
+  /**
+   * Describes a service account for its person page: its owner, destination
+   * and rotation state, and what the realm's policy lets it do.
+   *
+   * @param key - the person
+   * @returns the description, or null for an ordinary person
+   */
+  serviceAccountJson(key) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug("Entering AdminViews.serviceAccountJson().");
+    const facts = serviceAccounts.of(key);
+    if (!facts) {
+      log.debug("Leaving AdminViews.serviceAccountJson(). A person.");
+      return null;
+    }
+    const profile = serviceAccountPolicy.read();
+    const rotation = serviceAccountPolicy.rotation(profile);
+    const rotatedMs = facts.rotatedAt
+      ? Date.parse(facts.rotatedAt.replace(
+          /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2}).*$/,
+          '$1-$2-$3T$4:$5:$6Z'))
+      : NaN;
+    log.debug("Leaving AdminViews.serviceAccountJson().");
+    return {
+      owner: facts.owner || null, ownerKind: facts.ownerKind || null,
+      ownerName: facts.ownerName || null,
+      destination: facts.destination || null,
+      secretName: facts.secretName || null,
+      rotatedAt: facts.rotatedAt || null,
+      // The overlap: until when the previous password is still accepted.
+      previousPasswordUntil: facts.previousPasswordExpires > Date.now()
+        ? new Date(facts.previousPasswordExpires).toISOString() : null,
+      rotation: {
+        enabled: rotation.enabled,
+        rotates: rotation.enabled && !!facts.destination,
+        nextDueAt: rotation.enabled && facts.destination && !isNaN(rotatedMs)
+          ? new Date(rotatedMs + rotation.intervalMs).toISOString() : null,
+        failures: facts.rotation.failures,
+        lastError: facts.rotation.lastError || null,
+        lastAttemptAt: facts.rotation.lastAttempt
+          ? new Date(facts.rotation.lastAttempt).toISOString() : null,
+        alarm: facts.rotation.failures >= rotation.alarmFailures
+      },
+      policy: {
+        exemptFromSecondFactor: profile.exemptFromSecondFactor === true,
+        allowBrowserSignIn: profile.allowBrowserSignIn === true,
+        doors: serviceAccountPolicy.allowedDoors(profile),
+        from: profile.from
+      }
+    };
+  }
+
   userDetailJson(req, key, risk?: any) {
     const { log, subjectForName, stats } = this.deps;
     const self = this;
@@ -11421,6 +11562,10 @@ class AdminViews {
           // first thing somebody matching a relying party's records to this
           // page needs.
           subject: subjectForName(key),
+          // WHETHER THEY ARE A SERVICE ACCOUNT (#221): its owner, push
+          // destination and rotation state, and what this realm's
+          // service-account policy lets it do — null for an ordinary person.
+          serviceAccount: self.serviceAccountJson(key),
           // THE PERSON'S CURRENT RISK (#62) — null for a person never
           // assessed.
           risk: risk || null,
@@ -12345,6 +12490,8 @@ export = {
   devicesJson: slot.forward('devicesJson'),
   passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),
+  serviceAccountJson: slot.forward('serviceAccountJson'),
+  serviceAccountsMonitorJson: slot.forward('serviceAccountsMonitorJson'),
   riskFor: slot.forward('riskFor'),
   personCredentialsState: slot.forward('personCredentialsState'),
   usersJson: slot.forward('usersJson'),

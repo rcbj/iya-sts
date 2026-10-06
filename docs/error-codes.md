@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4076** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4120** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -73,15 +73,17 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 198
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
+* [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 45
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 348
 * [Device register (`STS-DEVICE`)](#sts-device) — 46
+* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 90
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 226
@@ -2830,6 +2832,31 @@ Raised from: attribute-sources/attribute_sources.ts, attribute-sources/attribute
 | `STS-ATTR-0014` | The directory would not store or remove an attribute source (no directory, or it is full) (#94). | HTTP 400 (console and API) |
 | `STS-ATTR-0015` | An attribute source's CA chain was refused: it is not PEM certificates, a block did not parse, a certificate is expired or not yet valid, or it is longer than 64 KiB (#94). | HTTP 400 (console and API) |
 
+## STS-SECDEST
+
+**Secret push destinations.** Where a service account's rotated password is pushed (#221): the destinations, each an application entry with its write credential sealed on it, and the write path to AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault, a Vault or OpenBao KV version 2 engine, and (development mode only) a file. No code here is a password or a credential.
+
+Raised from: common/secret_destinations.ts, common/secrets.js (pushSecret), mgmt-api/secret_destinations_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SECDEST-0001` | A secret destination's provider SDK is not installed: each is an optional package, installed into the image with STS_CLOUD_SDKS (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0002` | A secret destination is not usable: no or an unknown provider or payload, or a location or write credential its provider needs is missing (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0003` | The secret a push names does not exist at its destination. A push writes a new version of a secret that exists and never creates one (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0004` | A Vault or OpenBao KV version 2 write was refused by check-and-set: a newer version was written since the push read the secret's metadata, and nothing was overwritten (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0005` | A secrets manager refused a push or could not be reached: permission, network, TLS, or an answer it gave (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0006` | A file secret destination was named in product mode, where a file is not a destination (mode.acceptsFileSecretDestinations()) (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0007` | A file destination's secret name leaves its directory, or names something that is not a regular file (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0008` | A secret destination's address is not an https URL: a write credential and a password do not cross plain http (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0009` | A push or a test push named no secret destination of this realm (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0010` | A test push named a secret a service account's rotation writes: a canary is written to a test secret only (#221). | HTTP 400 (console and API) |
+| `STS-SECDEST-0011` | A secret destination's definition was refused on add or change: no identifier, an unknown provider or payload, a missing location, or a credential that is not the shape its provider takes (#221). | HTTP 400 (console and API) |
+| `STS-SECDEST-0012` | The secret destinations' act was asked for an action it does not have (#221). | HTTP 400 (console and API) |
+| `STS-SECDEST-0013` | A secret destinations action on /admin-api failed unexpectedly (#221). | HTTP 500 (API) |
+| `STS-SECDEST-0014` | A push named no usable secret: the name is empty, longer than 512 characters, holds a line break, or is not a path the store's request line takes; or there was no password to push (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0015` | A push failed in a way its provider's code did not name (#221). | none (a push answers ok: false; logged) |
+| `STS-SECDEST-0016` | A secret destination's write credential is not the shape its provider takes (a JSON object with the members it needs) (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+
 ## STS-SCIM
 
 **SCIM 2.0.** Provisioning at /scim/v2 and its six authentication schemes.
@@ -3370,6 +3397,8 @@ Raised from: ssf/.
 | `STS-SSF-0130` | The RISC account register is over risc.maxAccountsTracked and every row left is an account holder's opt-out (#260), which is never dropped to make room: RISC 1.0 section 2.8 makes the choice theirs. The register stays over its cap until the cap is raised. | none — logged; the opt-outs are kept |
 | `STS-SSF-0131` | An Add Subject request on a stream a person owns named somebody other than that person, and ssf.personStreamsSelfOnly is on. A person's stream carries events only about them. | HTTP 403 access_denied |
 | `STS-SSF-0132` | A Shared Signals act on a federation relationship whose signals are off (fedSignalsEnabled), or an unblock of a person the relationship has not blocked (#373). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0140` | A Shared Signals event about a non-human principal (#221 P5) could not be decided or started: a token-claims-change about an application's own token or role, the RISC account-purged of a deleted application entry, or the credential-change of a removed SPIFFE registration entry. The act itself stands. | none — logged; nothing is sent to a receiver |
+| `STS-SSF-0141` | Whether an application entry's credentials (client secrets, registered keys, key pairs, certificates) moved on a write could not be decided or announced, so no CAEP credential-change was sent for it (#221 P5). The write itself stands. | none — logged; nothing is sent to a receiver |
 
 ## STS-RISK
 
@@ -3884,6 +3913,41 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0044` | Remembering a browser was refused: devices.browserDevices is off in the realm, nobody is signed in, or the person holds their most devices (#265). | 400 on /portal/devices; the sign-in itself goes on |
 | `STS-DEVICE-0045` | A remembered browser's generation and binding could not be written onto its device entry, so the token it holds was not issued again (#265). | none — the browser keeps the token it has |
 | `STS-DEVICE-0046` | A device was marked compromised and what its keys were trusted with beyond a session — the GNAP grants whose client key is the device's, the OAuth tokens bound to its keys or certificates — could not all be ended (#432). The sessions, secret and certificates were. | none — an error in the log |
+
+## STS-SVCACCT
+
+**Service accounts.** Service accounts (#221): person entries carrying stsServiceAccount, the service-account policy that governs them (the third kind on Directory → Policies), the doors that policy closes, and the rotation that pushes a new password to a secrets manager before committing it.
+
+Raised from: common/service_accounts.ts, common/service_account_policy.ts, common/service_account_rotation.ts, common/credentials.ts, authn/authn.ts, kerberos/krb5_person_keys.ts, ldap/ldap_server.js.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SVCACCT-0001` | A service-account policy profile other than `default` was named; there is one profile per realm, and nothing assigns a second. | HTTP 400 (management API) |
+| `STS-SVCACCT-0002` | A service-account policy save was refused: a field was missing or out of range, the rotated password's length was below the password policy's minimum, or rotation was turned on in a realm with no push destination. | HTTP 400 (management API) |
+| `STS-SVCACCT-0003` | There is no embedded directory in this process, so a service-account policy could not be saved. | HTTP 400 (management API) |
+| `STS-SVCACCT-0004` | The directory would not store the service-account policy profile: it holds its maximum number of entries. | HTTP 400 (management API) |
+| `STS-SVCACCT-0010` | A service account was refused a browser sign-in — the sign-in screen, the portal, the console, or any first factor that starts a browser session — because the realm's service-account policy keeps allowBrowserSignIn off. | the protocol's own authentication failure (the sign-in screen redrawn; invalid_grant; a wrong password's answer) |
+| `STS-SVCACCT-0011` | A service account's password was refused at a password door (an LDAP bind, a UsernameToken, SCIM, SSF or EST Basic, the OAuth 2.0 password grant, or a door that declared nothing) that the realm's service-account policy does not open to it. Asked before the password is compared, in both modes. | the door's own wrong-password answer (invalidCredentials, a SOAP fault, HTTP 401, invalid_grant) |
+| `STS-SVCACCT-0012` | The KDC refused a service account because the realm's service-account policy does not open the Kerberos door to it. | KDC_ERR_CLIENT_REVOKED (18) |
+| `STS-SVCACCT-0013` | A password was set by hand — the console, the management API or an LDAP modify — for a service account whose password rotates through its push destination; only the rotation sets it. | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0020` | There is no directory in this process, so a person could not be made a service account. | HTTP 400 (management API) |
+| `STS-SVCACCT-0021` | A person named to be made a service account has no entry in this realm's directory. | HTTP 400 (management API) |
+| `STS-SVCACCT-0022` | An entry named to be made a service account is not a person entry (an application is a non-human identity of its own kind). | HTTP 400 (management API) |
+| `STS-SVCACCT-0023` | A service account named no owner while the realm's service-account policy requires one (requireOwner, on by default). | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0024` | A service account's owner names neither a person nor a group in this realm. | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0025` | A service account was named as its own owner. | HTTP 400 (management API) |
+| `STS-SVCACCT-0026` | A service account named a push destination without the secret's name there, or the reverse. | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0027` | The directory would not write a service account's attributes onto its entry. | HTTP 400 (management API) |
+| `STS-SVCACCT-0028` | A service account's secret name was too long, or carried spaces or control characters. | HTTP 400 (management API) |
+| `STS-SVCACCT-0029` | A service account's push destination is not a registered destination in this realm, or the destination register is not loaded in this process. | HTTP 400 (management API) |
+| `STS-SVCACCT-0030` | An LDAP add or modify wrote an attribute the password rotation maintains (stsPasswordRotatedAt, stsPreviousPassword, stsRotation*); refused in product mode as pwdHistory is. | constraintViolation (19) |
+| `STS-SVCACCT-0040` | A rotation was asked of an entry that is not a service account in this realm. | HTTP 400 (management API) |
+| `STS-SVCACCT-0041` | A rotation was asked of a service account that names no push destination. | HTTP 400 (management API) |
+| `STS-SVCACCT-0042` | ALARM: a service account's password has failed to rotate as many times in a row as the service-account policy's rotationAlarmFailures allows. Nothing changed each time; the old password still works. | none — an error in the log and an audit row |
+| `STS-SVCACCT-0043` | A rotation of a service account was not started because another rotation of the same account holds its claim. | none — the run reports it |
+| `STS-SVCACCT-0044` | A service account's rotated password could not be pushed to its destination (or the destination register is not loaded); nothing changed and the next run tries again. | none — a warning in the log and an audit row |
+| `STS-SVCACCT-0045` | ALARM: a service account's rotated password was pushed to its destination and could not be committed here, so the destination holds a password this service does not accept until the next rotation. | none — an error in the log and an audit row |
+| `STS-SVCACCT-0046` | No generated password of the service-account policy's length satisfied the password policy, so the rotation stopped before pushing anything. | none — a warning in the log and an audit row |
 
 ## STS-XACML
 
@@ -4411,7 +4475,7 @@ Raised from: portal/.
 | `STS-PORTAL-0072` | A new password from a reset link was refused before it was tried: missing, not typed twice alike, or the reserved password. | the reset form again, HTTP 400 |
 | `STS-PORTAL-0073` | A new password from a reset link was refused by the password policy or the store. | the reset form again, HTTP 400 |
 | `STS-PORTAL-0074` | The realm chooser in front of /portal was asked for a realm that is not defined. | HTTP 400 on /portal |
-| `STS-PORTAL-0075` | An account holder asked for a RISC opt-out move the section 2.8 state diagram does not allow from where their account is, or RISC is off. | HTTP 409, the page redrawn saying so |
+| `STS-PORTAL-0075` | An account holder asked for a RISC opt-out move the section 2.8 state diagram does not allow from where their account is, or RISC is off — or for any move on a service account, to which the opt-out gate does not apply (#221). | HTTP 409, the page redrawn saying so |
 | `STS-PORTAL-0076` | An account holder's RISC opt-out move was not recorded: Shared Signals is not running in this process, so there was no register to move. | HTTP 503, the page redrawn saying so |
 | `STS-PORTAL-0077` | A person's own app password was not made on /portal/app-passwords; the credential store's code is on the audit row. | HTTP 400 page |
 | `STS-PORTAL-0078` | A person asked /portal/app-passwords to revoke an app password they do not hold. | HTTP 404 page |

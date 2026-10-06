@@ -521,6 +521,8 @@ interface AdminApiDeps {
   // The attribute source operations (#94).
   loadAttributeSourcesApi():
     typeof import('../attribute-sources/attribute_sources_api');
+  // The secret push destinations' operations (#221 P3).
+  loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
   loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
@@ -630,6 +632,9 @@ class AdminApi {
       },
       loadAttributeSourcesApi: function () {
         return require('../attribute-sources/attribute_sources_api');
+      },
+      loadSecretDestinationsApi: function () {
+        return require('./secret_destinations_api');
       },
       loadClaimsProvidersApi: function () {
         return require('../oauth-oidc/claims_providers_api');
@@ -1222,6 +1227,20 @@ class AdminApi {
               '`never`: a person who holds a second factor is always asked ' +
               'for it.',
         example: { emailCodeTtlS: 240 }
+      },
+      // #221: the third kind.
+      serviceAccount: {
+        save: 'Writes `cn=default,ou=serviceAccountPolicies` in this ' +
+              'realm\'s directory, REPLACING what is there; a realm with no ' +
+              'entry of its own follows the default realm\'s. Every default ' +
+              'is the more secure one: no second-factor exemption, no ' +
+              'browser sign-in, no rotation, an owner required. Two rules ' +
+              'read other registers: `generatedLength` may not be below the ' +
+              'password policy\'s `minLength`, and `rotationEnabled` is ' +
+              'refused while the realm has no push destination. The seven ' +
+              '`allow*` door fields say which password doors a service ' +
+              'account may use.',
+        example: { rotationEnabled: false, allowBrowserSignIn: false }
       }
     };
     const cap = function (text) {
@@ -2313,7 +2332,7 @@ class AdminApi {
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
-            loadAttributeSourcesApi,
+            loadAttributeSourcesApi, loadSecretDestinationsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
     const self = this;
@@ -4142,6 +4161,43 @@ class AdminApi {
           log.debug("Leaving the management API devices monitor endpoint.");
         } },
 
+      // #221: Monitoring → Service accounts, the rotation's state per
+      // account. Rule 7.
+      { method: 'GET', path: BASE + '/service-accounts', tag: 'Users',
+        operationId: 'getServiceAccounts',
+        summary: 'Every service account and the state of its rotation',
+        description: 'Every service account in this realm (#221) — a person ' +
+                     'entry carrying `stsServiceAccount` — paged in ' +
+                     '`accounts`, each with `username`, `owner`, ' +
+                     '`destination`, `secretName`, `rotatedAt`, ' +
+                     '`previousPasswordUntil` (the overlap) and `rotation` ' +
+                     '(`rotates`, `nextDueAt`, `failures`, `lastError`, ' +
+                     '`lastAttemptAt`, `alarm`), and the realm\'s ' +
+                     '`policy` (`rotationEnabled`, `intervalDays`, ' +
+                     '`overlapMinutes`, `alarmFailures`, `from`) and ' +
+                     '`totals` (`accounts`, `withDestination`, `rotating`, ' +
+                     '`failing`, `alarms`). No password and no secret ' +
+                     'value is in the reply.',
+        mirrors: 'GET /admin/service-accounts',
+        parameters: ([
+          { name: 'failing', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true'] },
+            description: '`true`: only accounts whose last rotation ' +
+                         'failed.' }
+        ] as any[]).concat(this.pagingParameters()),
+        responseDescription: 'The accounts, the policy and the totals.',
+        responseSchema: { type: 'object',
+          description: '`policy`, `totals`, `filter`, `accounts` and ' +
+                       '`paging`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API service accounts " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.serviceAccountsMonitorJson(req.query));
+          log.debug("Leaving the management API service accounts " +
+                    "endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/device-registration', tag: 'Devices',
         operationId: 'getDeviceRegistration',
         summary: 'How a device is registered and recognised here',
@@ -5465,7 +5521,16 @@ class AdminApi {
             schema: { type: 'string',
                       enum: ['any', 'totp', 'key', 'none', 'unreadable'] },
             description: 'Only people holding a second factor of this ' +
-                         'kind, as on GET /admin-api/mfa.' }
+                         'kind, as on GET /admin-api/mfa.' },
+          // #221: a service account is a person, tagged `serviceAccount` on
+          // its row; this narrows the list to them, or leaves them out.
+          { name: 'kind', in: 'query', required: false,
+            schema: { type: 'string', enum: ['service', 'person'] },
+            description: '`service`: only service accounts (person entries ' +
+                         'carrying `stsServiceAccount`); `person`: ' +
+                         'everybody else. Each row says which in ' +
+                         '`serviceAccount`, and `serviceAccounts` counts ' +
+                         'them over the whole list.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'sessions',
             description: 'Sign-on session blocks, which default to ' +
@@ -5970,6 +6035,32 @@ class AdminApi {
                                                 'value has nothing to ' +
                                                 'mistype against and may ' +
                                                 'omit it.' },
+                // A SERVICE ACCOUNT FROM THE START (#221): checked before the
+                // person is created, so a refused one leaves nobody behind.
+                serviceAccount: { type: 'boolean',
+                                  description: 'Create the person as a ' +
+                                    'SERVICE ACCOUNT (#221): a person entry ' +
+                                    'carrying `stsServiceAccount`, governed ' +
+                                    'by the realm\'s service-account ' +
+                                    'policy. `owner`, and `destination` with ' +
+                                    '`secretName`, are read with it, and ' +
+                                    'checked BEFORE the person is created — ' +
+                                    'a refusal creates nobody.' },
+                owner: { type: 'string',
+                         description: 'With `serviceAccount`: the person or ' +
+                                      'group answerable for it — a DN, a ' +
+                                      'username or a group\'s cn. Required ' +
+                                      'while the policy\'s `requireOwner` is ' +
+                                      'on (the default).' },
+                destination: { type: 'string',
+                               description: 'With `serviceAccount`: the DN ' +
+                                            'of the push destination (an ' +
+                                            'application entry) its rotated ' +
+                                            'password is written to.' },
+                secretName: { type: 'string',
+                              description: 'With `destination`: the ' +
+                                           'secret\'s name or path there, ' +
+                                           'which must already exist.' },
                 deliver: { type: 'string', enum: ['show', 'mail'],
                            description: 'With `credential: activation`, `mail` (#63) sends ' +
                                         'the link to the ' +
@@ -6687,6 +6778,106 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The requirement as it now stands.' },
+
+          // A SERVICE ACCOUNT (#221, 2026-10-06), drawn on the person's
+          // /admin/users page and the new user screen. Rule 7.
+          { action: 'set-service-account',
+            operationId: 'setUserServiceAccount',
+            summary: 'Make somebody a service account, or a person again',
+            description: 'A service account is a PERSON entry carrying ' +
+                         '`stsServiceAccount` (#221): everything a person ' +
+                         'is — a password, app passwords, Kerberos keys, ' +
+                         'groups, roles, Shared Signals under their ' +
+                         '`iss_sub` — and governed by the realm\'s ' +
+                         'service-account policy (`GET /admin-api/policies`, ' +
+                         'kind `serviceAccount`): whether the second factor ' +
+                         'is exempt, whether a browser sign-in is allowed ' +
+                         '(not by default), which password doors open, and ' +
+                         'whether its password rotates and is pushed to a ' +
+                         'secrets manager.\n\n`serviceAccount` true (the ' +
+                         'default) sets or changes it: `owner`, a person or ' +
+                         'group in this realm, is required while the ' +
+                         'policy\'s `requireOwner` is on; `destination`, a ' +
+                         'push destination\'s DN, and `secretName` go ' +
+                         'together. `serviceAccount` false makes them an ' +
+                         'ordinary person again and clears the owner, the ' +
+                         'destination and the rotation state.\n\nWhere the ' +
+                         'policy refuses a service account every browser ' +
+                         'sign-in, becoming one ENDS the person\'s ' +
+                         'sessions (`signedOut`). SCIM does not carry the ' +
+                         'flag; an LDAP modify by a holder of Admin Write ' +
+                         'may, under the same rules.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                serviceAccount: { type: 'boolean',
+                                  description: 'true makes or keeps them a ' +
+                                               'service account (the ' +
+                                               'default); false makes them ' +
+                                               'a person again.' },
+                owner: { type: 'string',
+                         description: 'The person or group answerable for ' +
+                                      'the account: a DN, a username or a ' +
+                                      'group\'s cn.' },
+                destination: { type: 'string',
+                               description: 'The DN of the push destination ' +
+                                            '(an application entry).' },
+                secretName: { type: 'string',
+                              description: 'The secret\'s name or path at ' +
+                                           'the destination; it must ' +
+                                           'already exist there.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'svc-backup', serviceAccount: true,
+                           owner: 'cn=operations,ou=groups,dc=example,' +
+                                  'dc=com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The account as it now stands (`account`), ' +
+                                 'and the sessions ended (`signedOut`).' },
+
+          { action: 'rotate-password',
+            operationId: 'rotateServiceAccountPassword',
+            summary: 'Rotate a service account\'s password now',
+            description: 'QUEUES a rotation of the service account\'s ' +
+                         'password on the scheduler\'s leader (the job ' +
+                         '`service-accounts.rotate-now`, #221): a password ' +
+                         'drawn by the password policy\'s generator at the ' +
+                         'service-account policy\'s length is PUSHED to the ' +
+                         'account\'s destination first and committed here ' +
+                         'only once the push succeeded; the previous ' +
+                         'password is accepted for the policy\'s overlap. ' +
+                         'A failed push changes nothing. The answer is the ' +
+                         'run\'s id — `GET /admin-api/scheduler` shows its ' +
+                         'outcome — and never a password: the destination is ' +
+                         'where it is read.\n\nRefused for an entry that is ' +
+                         'not a service account, or one that names no ' +
+                         'destination. A rotating account\'s password ' +
+                         'cannot be set by hand (`set-password`, ' +
+                         '`reset-password`): this is the way.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The service account, as /admin-api/users names ' +
+                          'it.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'svc-backup' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run (`runId`, ' +
+                                 '`alreadyQueued`).' },
 
           // WHO MAY ACT FOR A PERSON (#108, 2026-09-23) — the person's half
           // of the delegation policy (`common/delegation_policy.ts`), drawn
@@ -21207,6 +21398,9 @@ class AdminApi {
       // THE ATTRIBUTE SOURCES (#94): the register and its six acts, the
       // console's own (`attribute-sources/attribute_sources_api.ts`).
       ...loadAttributeSourcesApi().ROUTES,
+      // THE SECRET PUSH DESTINATIONS (#221 P3): the register and its four
+      // acts, the console's own (`mgmt-api/secret_destinations_api.ts`).
+      ...loadSecretDestinationsApi().ROUTES,
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,

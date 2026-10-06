@@ -225,6 +225,7 @@ interface CredentialStore {
   setPasswordObserver?(fn: (name: string, password: string,
                             info?: Json) => void): unknown;
   secondFactorDemand?(name: string): Json;
+  serviceAccountRefusesDoor?(name: string, door: string): boolean;
 }
 
 // What `openRecord()` answers.
@@ -754,8 +755,15 @@ class Krb5PersonKeys {
     const byNow = retired + (ttlS === undefined ? this.retainedTtlSeconds()
                                                 : ttlS) * 1000;
     const stamped = Date.parse(String(entry.expiresAt || ''));
+    const bounded = Number.isFinite(stamped) ? Math.min(stamped, byNow)
+                                             : byNow;
+    // A SERVICE ACCOUNT'S ROTATION (#221) may hold the retired version for
+    // its overlap where that is longer than the bound above: the previous
+    // password is accepted that long, and a ticket issued under its key must
+    // be too. Stamped once, at the retirement, and never moved later.
+    const held = Date.parse(String(entry.holdUntil || ''));
     log.debug("Leaving Krb5PersonKeys.retainedUntilMs().");
-    return Number.isFinite(stamped) ? Math.min(stamped, byNow) : byNow;
+    return Number.isFinite(held) ? Math.max(bounded, held) : bounded;
   }
 
   // The entries of a `previous` list (sealed, with keys) or a `retained` list
@@ -784,7 +792,7 @@ class Krb5PersonKeys {
   // one replacing it is not retired (the same password adding enctypes is the
   // same version), so only the pruning happens.
   private retire(outgoing: Json, newKvno: number, nowMs: number,
-                 ttlS?: number): Json[] {
+                 ttlS?: number, holdMs?: number): Json[] {
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.retire().");
     const kept = this.withinBounds(outgoing && outgoing.previous, nowMs, ttlS);
@@ -800,6 +808,9 @@ class Krb5PersonKeys {
       retiredAt: new Date(nowMs).toISOString(),
       expiresAt: new Date(nowMs + (ttlS === undefined
         ? this.retainedTtlSeconds() : ttlS) * 1000).toISOString(),
+      // #221: a rotation's overlap, where one was asked for.
+      holdUntil: holdMs && holdMs > 0
+        ? new Date(nowMs + holdMs).toISOString() : undefined,
       keys: outgoing.keys
     };
     log.debug("Leaving Krb5PersonKeys.retire().");
@@ -976,9 +987,27 @@ class Krb5PersonKeys {
       return false;
     }
     const current = directory.readPerson(name);
-    log.debug('Leaving Krb5PersonKeys.personDisabled(). ' +
-              !!(current && current.disabled));
-    return !!(current && current.disabled);
+    if (current && current.disabled) {
+      log.debug('Leaving Krb5PersonKeys.personDisabled(). Disabled.');
+      return true;
+    }
+    // A SERVICE ACCOUNT WHOSE POLICY CLOSES THE KERBEROS DOOR (#221) is
+    // refused here too, in every mode and with the same KDC_ERR_CLIENT_REVOKED:
+    // the KDC is locked (kerberos/CLAUDE.md) and asks this one question about
+    // whether a client may have a ticket at all, and "this account may not
+    // use Kerberos" is that question's answer. The log says which it was.
+    const { credentials } = this.deps;
+    const closed = typeof credentials.serviceAccountRefusesDoor ===
+                     'function' &&
+                   !!credentials.serviceAccountRefusesDoor(name, 'kerberos');
+    if (closed) {
+      log.info(this.deps.errorCodes.tag('STS-SVCACCT-0012') + 'krb5: ' + name + ' is ' +
+               'a service account and this realm\'s service-account policy ' +
+               'does not open the Kerberos door to it; refused as a revoked ' +
+               'client.');
+    }
+    log.debug('Leaving Krb5PersonKeys.personDisabled(). ' + closed);
+    return closed;
   }
 
   // -------------------------------------------------------------------------
@@ -1129,7 +1158,9 @@ class Krb5PersonKeys {
     const next = previous.then(function () {
       return self.derive(name, password, event,
                          (info && typeof info.hash === 'string' &&
-                          info.hash) || null);
+                          info.hash) || null,
+                         // #221: a service account's rotation overlap.
+                         Number(info && info.retainPreviousMs) || 0);
     }).catch(function (e) {
       log.error(errorCodes.tag('STS-KRB-0107') + 'krb5-keys: deriving the ' +
                 'Kerberos keys for ' + name + ' failed: ' +
@@ -1170,7 +1201,8 @@ class Krb5PersonKeys {
   }
 
   private async derive(name: string, password: string,
-                       event: string, hash: string | null): Promise<Json> {
+                       event: string, hash: string | null,
+                       holdMs?: number): Promise<Json> {
     const { log, principals, config, errorCodes, audit,
             kcrypto } = this.deps;
     const directory = this.directory;
@@ -1261,7 +1293,7 @@ class Krb5PersonKeys {
                                            : { ok: false };
     const outgoing = againOpened.ok && againOpened.record.name === name
       ? againOpened.record : null;
-    const previous = this.retire(outgoing, kvno, nowMs);
+    const previous = this.retire(outgoing, kvno, nowMs, undefined, holdMs);
     const sealed = this.sealRecord({ v: RECORD_VERSION, name: name,
                                      realm: principals.REALM, kvno: kvno,
                                      salt: salt, stamp: stamp,

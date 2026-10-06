@@ -333,6 +333,21 @@ const DATA_CLASSES = [
          'server’s operator has somewhere to collect it.'
   },
   {
+    label: 'secret-destination-credential',
+    what: 'A secret push destination’s write credential — ' +
+          '`secretDestCredential` (#221): the key, token or service account ' +
+          'this service writes a service account’s rotated password to a ' +
+          'secrets manager with',
+    where: 'an attribute on the destination’s application entry under ' +
+           '`ou=applications`',
+    sealed: true,
+    why: 'Whoever holds it can write the passwords other systems read. ' +
+         'Sealed at rest when keys persist, and — unlike an application’s ' +
+         'signing key — WITHHELD from every reader as well: it is opened ' +
+         'only for the push that uses it, and never drawn, revealed or ' +
+         'returned by `/admin-api`.'
+  },
+  {
     label: 'person-private-key',
     what: 'The assertion signing key pairs `/admin/pki` issues to a PERSON — ' +
           '`stsAssertionPrivateKey` (2026-09-11) and, for RFC 7522, ' +

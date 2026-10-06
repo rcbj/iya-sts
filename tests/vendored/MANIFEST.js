@@ -553,6 +553,19 @@ const JOBS = [
   // pwdReset (account-credential-change-required). `local: true`: this
   // repository's own transmitter and directory, in a throwaway product realm.
   { file: 'sts_credential_signals.js',   browser: false, local: true },
+  // SHARED SIGNALS ABOUT AN APPLICATION (#221 P5, 2026-10-06): a receiver
+  // adds an application (SSF's complex subject, `application` opaque
+  // client_id) to its poll stream, the application's client secret is
+  // rotated on /admin-api, and ONE credential-change (client-secret, update)
+  // about the application arrives; another application's does not.
+  // `local: true`: this repository's own transmitter and management API, in
+  // a throwaway realm.
+  { file: 'sts_application_signals.js', browser: false, local: true },
+  // SERVICE ACCOUNTS (#221 P1, P2, P4): the flag through /admin-api, the
+  // users list's tag and filter, the third policy kind, Rotate now's
+  // refusals and Monitoring → Service accounts. `local: true`: this
+  // repository's own management API, in a throwaway realm.
+  { file: 'sts_service_accounts.js',     browser: false, local: true },
   // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
   // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
   // token is confined, and in the `cluster` mode both nodes name one leader
@@ -1251,6 +1264,11 @@ const JOBS = [
   // a sign-in carrying the attribute claim, and refuse on failure. Skips
   // without STS_TEST_ATTRIBUTE_DB_URL or a shared directory.
   { file: 'sts_attribute_sources.js',    browser: false, local: true },
+  // Secret push destinations (#221 P3): the register over /admin-api in a
+  // realm of its own — the write credential in no answer and refused by
+  // reveal-secret, and in development a file destination on the shared
+  // directory, test-pushed and read back. Refused in product mode.
+  { file: 'sts_secret_destinations.js',  browser: false, local: true },
   // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
   // attester made at run time, the challenge endpoint, PAR, the code and
   // refresh token bound to the client instance, the DPoP combined mode and

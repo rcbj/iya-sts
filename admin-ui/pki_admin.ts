@@ -2172,17 +2172,23 @@ class PkiAdmin {
       // asymmetry is the whole reason this line exists and the reason there is
       // no matching one for HTTP.
       pkiRevocation.publishSoon(scope, String(body.ca || '').trim());
-      // A PERSON'S CERTIFICATE REVOKED IS A CREDENTIAL CHANGE (#145). The
-      // authority's register says whose it was; the issuer is the authority's
-      // own subject, since that is what signed it. An application's, or one
-      // this register never recorded, has no person to tell.
+      // A PERSON'S CERTIFICATE REVOKED IS A CREDENTIAL CHANGE (#145), and
+      // so is an APPLICATION's (#221 P5), told under the application
+      // subject. The authority's register says whose it was; the issuer is
+      // the authority's own subject, since that is what signed it. One this
+      // register never recorded has nobody to tell.
       if (!done.already) {
         const caId = String(body.ca || '').trim();
         const serial = pkiRevocation.normalSerial(done.entry.serialHex);
         const held = pki.issuedKeyPairsFor(scope, caId).filter(function (one) {
           return pkiRevocation.normalSerial(one.serialHex) === serial;
         })[0];
-        if (held && held.subjectKind === 'person' && held.identifier) {
+        const kindOfHolder = held ? String(held.subjectKind || '') : '';
+        if (held && held.identifier &&
+            (kindOfHolder === 'person' || kindOfHolder === 'application')) {
+          const whose = kindOfHolder === 'application'
+            ? { application: String(held.identifier), username: '' }
+            : { username: String(held.identifier) };
           let authority = '';
           try {
             const issuer = pki.describeIssuer(scope, caId);
@@ -2193,7 +2199,7 @@ class PkiAdmin {
                       ((e && e.message) || e));
             // No authority to name: the event goes with the serial alone.
           }
-          accountSignals.credentialChanged({ username: held.identifier,
+          accountSignals.credentialChanged({ ...whose,
             credentialType: 'x509', changeType: 'revoke',
             x509Issuer: authority, x509Serial: serial,
             initiatingEntity: 'admin', via: '/admin/pki',
@@ -2206,8 +2212,8 @@ class PkiAdmin {
           // beside the CAEP revoke above. A CA's own revocation, and what it
           // does to the certificates under it, is #244's.
           if (done.entry.reason === 'keyCompromise') {
-            accountSignals.credentialCompromised({
-              username: held.identifier, credentialType: 'x509',
+            accountSignals.credentialCompromised({ ...whose,
+              credentialType: 'x509',
               initiatingEntity: 'admin', via: '/admin/pki',
               reasonAdmin: 'An administrator revoked the certificate ' +
                            serial + ' of ' + held.identifier + ' because ' +

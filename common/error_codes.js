@@ -294,6 +294,15 @@ const SUBSYSTEMS = [
           'attributes from, onto their entries (#94): a source\'s ' +
           'definition, its driver, its connection and password, the lookup, ' +
           'and the sign-in or scheduled refresh.' },
+  { id: 'SECDEST', label: 'Secret push destinations',
+    where: 'common/secret_destinations.ts, common/secrets.js (pushSecret), ' +
+           'mgmt-api/secret_destinations_api.ts',
+    what: 'Where a service account\'s rotated password is pushed (#221): ' +
+          'the destinations, each an application entry with its write ' +
+          'credential sealed on it, and the write path to AWS Secrets ' +
+          'Manager, Google Cloud Secret Manager, Azure Key Vault, a Vault ' +
+          'or OpenBao KV version 2 engine, and (development mode only) a ' +
+          'file. No code here is a password or a credential.' },
   { id: 'SCIM', label: 'SCIM 2.0',
     where: 'scim/',
     what: 'Provisioning at /scim/v2 and its six authentication schemes.' },
@@ -345,6 +354,16 @@ const SUBSYSTEMS = [
           'its attestation, compliance and status, the bounds on how many ' +
           'a person or an application holds, and the console\'s and the ' +
           'management API\'s doors to it.' },
+  { id: 'SVCACCT', label: 'Service accounts',
+    where: 'common/service_accounts.ts, common/service_account_policy.ts, ' +
+           'common/service_account_rotation.ts, common/credentials.ts, ' +
+           'authn/authn.ts, kerberos/krb5_person_keys.ts, ' +
+           'ldap/ldap_server.js',
+    what: 'Service accounts (#221): person entries carrying ' +
+          'stsServiceAccount, the service-account policy that governs them ' +
+          '(the third kind on Directory → Policies), the doors that policy ' +
+          'closes, and the rotation that pushes a new password to a secrets ' +
+          'manager before committing it.' },
   { id: 'XACML', label: 'XACML and access policy',
     where: 'xacml/, common/access_gate.ts, common/issuance_gate.js, ' +
            'common/roles.js',
@@ -12020,6 +12039,83 @@ const CODES = [
       'certificates, a block did not parse, a certificate is expired or ' +
       'not yet valid, or it is longer than 64 KiB (#94).',
     spec: 'HTTP 400 (console and API)' },
+  // ===== SECDEST ===========================================================
+  { code: 'STS-SECDEST-0001',
+    summary: 'A secret destination\'s provider SDK is not installed: ' +
+      'each is an optional package, installed into the image with ' +
+      'STS_CLOUD_SDKS (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0002',
+    summary: 'A secret destination is not usable: no or an unknown ' +
+      'provider or payload, or a location or write credential its ' +
+      'provider needs is missing (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0003',
+    summary: 'The secret a push names does not exist at its destination. ' +
+      'A push writes a new version of a secret that exists and ' +
+      'never creates one (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0004',
+    summary: 'A Vault or OpenBao KV version 2 write was refused by ' +
+      'check-and-set: a newer version was written since the push ' +
+      'read the secret\'s metadata, and nothing was overwritten ' +
+      '(#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0005',
+    summary: 'A secrets manager refused a push or could not be reached: ' +
+      'permission, network, TLS, or an answer it gave (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0006',
+    summary: 'A file secret destination was named in product mode, where ' +
+      'a file is not a destination ' +
+      '(mode.acceptsFileSecretDestinations()) (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0007',
+    summary: 'A file destination\'s secret name leaves its directory, or ' +
+      'names something that is not a regular file (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0008',
+    summary: 'A secret destination\'s address is not an https URL: a ' +
+      'write credential and a password do not cross plain http ' +
+      '(#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0009',
+    summary: 'A push or a test push named no secret destination of this ' +
+      'realm (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0010',
+    summary: 'A test push named a secret a service account\'s rotation ' +
+      'writes: a canary is written to a test secret only (#221).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-SECDEST-0011',
+    summary: 'A secret destination\'s definition was refused on add or ' +
+      'change: no identifier, an unknown provider or payload, a ' +
+      'missing location, or a credential that is not the shape ' +
+      'its provider takes (#221).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-SECDEST-0012',
+    summary: 'The secret destinations\' act was asked for an action it ' +
+      'does not have (#221).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-SECDEST-0013',
+    summary: 'A secret destinations action on /admin-api failed ' +
+      'unexpectedly (#221).',
+    spec: 'HTTP 500 (API)' },
+  { code: 'STS-SECDEST-0014',
+    summary: 'A push named no usable secret: the name is empty, longer ' +
+      'than 512 characters, holds a line break, or is not a path ' +
+      'the store\'s request line takes; or there was no password ' +
+      'to push (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0015',
+    summary: 'A push failed in a way its provider\'s code did not name ' +
+      '(#221).',
+    spec: 'none (a push answers ok: false; logged)' },
+  { code: 'STS-SECDEST-0016',
+    summary: 'A secret destination\'s write credential is not the shape ' +
+      'its provider takes (a JSON object with the members it ' +
+      'needs) (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
@@ -14303,6 +14399,19 @@ const CODES = [
       'signals are off (fedSignalsEnabled), or an unblock of a person the ' +
       'relationship has not blocked (#373).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-SSF-0140',
+    summary: 'A Shared Signals event about a non-human principal (#221 P5) ' +
+      'could not be decided or started: a token-claims-change about an ' +
+      'application\'s own token or role, the RISC account-purged of a ' +
+      'deleted application entry, or the credential-change of a removed ' +
+      'SPIFFE registration entry. The act itself stands.',
+    spec: 'none — logged; nothing is sent to a receiver' },
+  { code: 'STS-SSF-0141',
+    summary: 'Whether an application entry\'s credentials (client secrets, ' +
+      'registered keys, key pairs, certificates) moved on a write could not ' +
+      'be decided or announced, so no CAEP credential-change was sent for ' +
+      'it (#221 P5). The write itself stands.',
+    spec: 'none — logged; nothing is sent to a receiver' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -16678,6 +16787,127 @@ const CODES = [
       'could not ' +
       'all be ended (#432). The sessions, secret and certificates were.',
     spec: 'none — an error in the log' },
+  // ===== SVCACCT ===========================================================
+  { code: 'STS-SVCACCT-0001',
+    summary: 'A service-account policy profile other than `default` was ' +
+      'named; there is one profile per realm, and nothing assigns a second.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0002',
+    summary: 'A service-account policy save was refused: a field was missing ' +
+      'or out of range, the rotated password\'s length was below the ' +
+      'password policy\'s minimum, or rotation was turned on in a realm with ' +
+      'no push destination.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0003',
+    summary: 'There is no embedded directory in this process, so a ' +
+      'service-account policy could not be saved.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0004',
+    summary: 'The directory would not store the service-account policy ' +
+      'profile: it holds its maximum number of entries.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0010',
+    summary: 'A service account was refused a browser sign-in — the sign-in ' +
+      'screen, the portal, the console, or any first factor that starts a ' +
+      'browser session — because the realm\'s service-account policy keeps ' +
+      'allowBrowserSignIn off.',
+    spec: 'the protocol\'s own authentication failure (the sign-in screen ' +
+      'redrawn; invalid_grant; a wrong password\'s answer)' },
+  { code: 'STS-SVCACCT-0011',
+    summary: 'A service account\'s password was refused at a password door ' +
+      '(an LDAP bind, a UsernameToken, SCIM, SSF or EST Basic, the OAuth 2.0 ' +
+      'password grant, or a door that declared nothing) that the realm\'s ' +
+      'service-account policy does not open to it. Asked before the password ' +
+      'is compared, in both modes.',
+    spec: 'the door\'s own wrong-password answer (invalidCredentials, a SOAP ' +
+      'fault, HTTP 401, invalid_grant)' },
+  { code: 'STS-SVCACCT-0012',
+    summary: 'The KDC refused a service account because the realm\'s ' +
+      'service-account policy does not open the Kerberos door to it.',
+    spec: 'KDC_ERR_CLIENT_REVOKED (18)' },
+  { code: 'STS-SVCACCT-0013',
+    summary: 'A password was set by hand — the console, the management API ' +
+      'or an LDAP modify — for a service account whose password rotates ' +
+      'through its push destination; only the rotation sets it.',
+    spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0020',
+    summary: 'There is no directory in this process, so a person could not ' +
+      'be made a service account.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0021',
+    summary: 'A person named to be made a service account has no entry in ' +
+      'this realm\'s directory.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0022',
+    summary: 'An entry named to be made a service account is not a person ' +
+      'entry (an application is a non-human identity of its own kind).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0023',
+    summary: 'A service account named no owner while the realm\'s ' +
+      'service-account policy requires one (requireOwner, on by default).',
+    spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0024',
+    summary: 'A service account\'s owner names neither a person nor a group ' +
+      'in this realm.',
+    spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0025',
+    summary: 'A service account was named as its own owner.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0026',
+    summary: 'A service account named a push destination without the ' +
+      'secret\'s name there, or the reverse.',
+    spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0027',
+    summary: 'The directory would not write a service account\'s attributes ' +
+      'onto its entry.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0028',
+    summary: 'A service account\'s secret name was too long, or carried ' +
+      'spaces or control characters.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0029',
+    summary: 'A service account\'s push destination is not a registered ' +
+      'destination in this realm, or the destination register is not loaded ' +
+      'in this process.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0030',
+    summary: 'An LDAP add or modify wrote an attribute the password rotation ' +
+      'maintains (stsPasswordRotatedAt, stsPreviousPassword, stsRotation*); ' +
+      'refused in product mode as pwdHistory is.',
+    spec: 'constraintViolation (19)' },
+  { code: 'STS-SVCACCT-0040',
+    summary: 'A rotation was asked of an entry that is not a service account ' +
+      'in this realm.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0041',
+    summary: 'A rotation was asked of a service account that names no push ' +
+      'destination.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0042',
+    summary: 'ALARM: a service account\'s password has failed to rotate as ' +
+      'many times in a row as the service-account policy\'s ' +
+      'rotationAlarmFailures allows. Nothing changed each time; the old ' +
+      'password still works.',
+    spec: 'none — an error in the log and an audit row' },
+  { code: 'STS-SVCACCT-0043',
+    summary: 'A rotation of a service account was not started because ' +
+      'another rotation of the same account holds its claim.',
+    spec: 'none — the run reports it' },
+  { code: 'STS-SVCACCT-0044',
+    summary: 'A service account\'s rotated password could not be pushed to ' +
+      'its destination (or the destination register is not loaded); nothing ' +
+      'changed and the next run tries again.',
+    spec: 'none — a warning in the log and an audit row' },
+  { code: 'STS-SVCACCT-0045',
+    summary: 'ALARM: a service account\'s rotated password was pushed to its ' +
+      'destination and could not be committed here, so the destination holds ' +
+      'a password this service does not accept until the next rotation.',
+    spec: 'none — an error in the log and an audit row' },
+  { code: 'STS-SVCACCT-0046',
+    summary: 'No generated password of the service-account policy\'s length ' +
+      'satisfied the password policy, so the rotation stopped before pushing ' +
+      'anything.',
+    spec: 'none — a warning in the log and an audit row' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +
@@ -18830,7 +19060,8 @@ const CODES = [
   { code: 'STS-PORTAL-0075',
     summary: 'An account holder asked for a RISC opt-out move the section ' +
       '2.8 state diagram does not allow from where their account is, or ' +
-      'RISC is off.',
+      'RISC is off — or for any move on a service account, to which the ' +
+      'opt-out gate does not apply (#221).',
     spec: 'HTTP 409, the page redrawn saying so' },
   { code: 'STS-PORTAL-0076',
     summary: 'An account holder\'s RISC opt-out move was not recorded: ' +

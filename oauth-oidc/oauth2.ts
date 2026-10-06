@@ -14653,9 +14653,12 @@ class OAuth2Server {
           return self.oauthError(res, 400, 'invalid_grant', allowed.detail);
         }
       }
+      // `door: 'ropc'` (#221): the door a service account's policy names.
+      // Not an app password's door (`app_passwords.ts`), so nothing about
+      // a person's credentials changes here.
       const credential = await credentials.verifyAsync(username,
         String(body.password),
-        { via: 'the OAuth 2.0 password grant' });
+        { via: 'the OAuth 2.0 password grant', door: 'ropc' });
       if (!credential.ok) {
         log.info('oauth2: the password grant for "' + username +
                  '" was refused (' +

@@ -32,6 +32,7 @@ import WebKit = require('./web_kit');
 import AcmePage = require('../acme/web_acme');
 import ApplicationsPage = require('./web_applications');
 import AuditPage = require('./web_audit');
+import ServiceAccountsPage = require('./web_service_accounts');
 import AuthorizationServersPage = require('./web_authorization_servers');
 import AttributeSourcesPage =
   require('../attribute-sources/web_attribute_sources');
@@ -81,6 +82,7 @@ import SamlPage = require('../saml/web_saml');
 import SchedulerPage = require('./web_scheduler');
 import ScimPage = require('../scim/web_scim');
 import ScepPage = require('../scep/web_scep');
+import SecretDestinationsPage = require('./web_secret_destinations');
 import SecretsPage = require('./web_secrets');
 import SessionsPage = require('../logout/web_sessions');
 import SettingsForms = require('./web_settings');
@@ -331,6 +333,10 @@ const PAGES: WebPage[] = [
     render: function (view: Json): string {
       return DevicesPage.monitorHtml(view);
     } },
+  // #221: the rotation's state per service account.
+  { path: '/admin/service-accounts', title: 'Service accounts',
+    operation: '/admin-api/service-accounts',
+    render: ServiceAccountsPage.render },
   { path: '/admin/encryption', title: 'Encryption',
     operation: '/admin-api/encryption', render: EncryptionPage.render },
   { path: '/admin/error-codes', title: 'Error codes',
@@ -587,6 +593,11 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/scheduler', title: 'Scheduler',
     operation: '/admin-api/scheduler', render: SchedulerPage.render },
+  // THE SECRET PUSH DESTINATIONS (#221 P3): Directory, beside Attribute
+  // sources. Its controls follow the render context's `write`.
+  { path: '/admin/secret-destinations', title: 'Secret destinations',
+    operation: '/admin-api/secret-destinations',
+    render: SecretDestinationsPage.render },
   { path: '/admin/oidfed', title: 'OpenID Federation',
     operation: '/admin-api/oidfed', render: OidfedPage.render },
   { path: '/admin/scim', title: 'SCIM',

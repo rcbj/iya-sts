@@ -66,7 +66,10 @@ const LEFT_TO_THEIR_OWN_CONTROL = [
   // An application's own claim sets (2026-10-01), each one JSON array,
   // written by the Custom claims and Custom SAML attributes sections.
   'oauthClaimsAccessToken', 'oauthClaimsIdToken', 'oauthClaimsUserinfo',
-  'saml2CustomAttributes', 'saml11CustomAttributes'
+  'saml2CustomAttributes', 'saml11CustomAttributes',
+  // A secret destination's write credential (#221 P3): write-only, set on
+  // Directory → Secret destinations.
+  'secretDestCredential'
 ];
 
 function run(t) {

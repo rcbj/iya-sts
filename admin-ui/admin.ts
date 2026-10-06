@@ -1855,6 +1855,17 @@ const SECTIONS = [
                'it reads and the columns it writes, when it reads (at ' +
                'sign-in, once, on a schedule, on demand) and what a ' +
                'failure does, with its status, a test and a read-now.' },
+      // SECRET DESTINATIONS (#221 P3): in Directory for Attribute sources'
+      // reason — the register IS directory entries, the realm's
+      // application entries declared for `secret-destination`. Drawn by
+      // the static console (`admin-ui/web_secret_destinations.ts`).
+      { path: '/admin/secret-destinations', label: 'Secret destinations',
+        blurb: 'Where this realm pushes a service account\'s rotated ' +
+               'password: AWS Secrets Manager, Google Cloud Secret ' +
+               'Manager, Azure Key Vault or a Vault / OpenBao KV engine, ' +
+               'each an application entry holding its own write ' +
+               'credential (sealed, never shown), with whether it is ' +
+               'usable and a test push to a test secret.' },
       // -------------------------------------------------------------------
       // POLICIES (2026-09-12), asked for by rcbj as *Directory → Policies*,
       // with the password policy as the first kind of policy it configures.
@@ -2628,6 +2639,17 @@ const SECTIONS = [
                'against ended ones &mdash; and, day by day, how many were ' +
                'registered, removed, or evicted to make room at a ' +
                'person\'s bound.' },
+      // SERVICE ACCOUNTS (#221), after the device register: the state of
+      // each service account's password rotation. The account itself is a
+      // person, on Users; what is MONITORED is the rotation.
+      { path: '/admin/service-accounts', label: 'Service accounts',
+        blurb: 'Every service account &mdash; a person entry used by a ' +
+               'program &mdash; with its push destination, when its ' +
+               'password last rotated and is next due, how long the ' +
+               'previous one is still accepted, and how many rotations in a ' +
+               'row have failed. A failed push changes nothing; an alarm ' +
+               'is raised at the policy\'s threshold. No password is ' +
+               'drawn.' },
       // MAIL (#63, 2026-09-22), after the scheduler: what this service SENT
       // — the outbox, its dead letters, and in development the captured
       // messages. Drawn by `admin-ui/mail_admin.ts` out of `common/mail.ts`;

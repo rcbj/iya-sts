@@ -2064,6 +2064,23 @@ wrapper itself; `tests/vendored/sts_admin_closed_sets.js` (ours) holds the
 running service at every door, discovering every enum from the published
 document.
 
+## `/admin-api/secret-destinations` (#221 P3, 2026-10-06)
+
+The register of secret push destinations and its four acts —
+`add-destination`, `update-destination`, `remove-destination` and
+`test-push` — declared in `mgmt-api/secret_destinations_api.ts` and spread
+into the table as the attribute source operations are; each handler calls
+`common/secret_destinations.ts`'s `view()` or `act()`, which is also what the
+static console's page sends its forms to (rule 7, `mirrors: POST
+/admin/secret-destinations`). The audit actor is the body's `actor`, which
+`nameActor()` sets. **`credential` is the one member here that is
+WRITE-ONLY**: taken by add and update (`writeOnly: true` in the schema), and
+in no answer of this resource or of `/applications`; `reveal-secret` refuses
+it. The provider and payload `enum`s are read off `common/secrets.js`'s
+`DESTINATION_PROVIDERS` and `DESTINATION_PAYLOADS`, so the document cannot
+offer what the push refuses — `file` included, which the handler refuses in
+product mode (`STS-SECDEST-0006`). `common/CLAUDE.md` 3ce argues the rest.
+
 ## `/admin-api/devices` (#164, #218, 2026-09-26)
 
 Four GETs and one action resource, all `admin-ui/devices_admin.ts`'s own
