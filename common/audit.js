@@ -1016,6 +1016,69 @@ const ACTIONS = [
     label: 'An administrator reset a password and handed over the person\'s keytab' },
   { action: 'admin.user.attribute', category: 'admin',
     label: 'An administrator set, added or removed a person\'s attribute' },
+  // #221's three, written by admin-core/admin_actions.ts' service account
+  // action through `audited()` (2026-10-06): `set` reached the audit through
+  // a literal too and was caught; `cleared` and `rotate` are built only in
+  // that call and were as unqueryable.
+  { action: 'admin.service-account.set', category: 'admin',
+    label: 'An administrator made a person a service account, or changed ' +
+           'its owner or destination' },
+  { action: 'admin.service-account.cleared', category: 'admin',
+    label: 'An administrator made a service account an ordinary person ' +
+           'again' },
+  { action: 'admin.service-account.rotate', category: 'admin',
+    label: 'An administrator asked for a service account\'s password to be ' +
+           'rotated' },
+  // And eight more `audited()` wrote with no row, found the same day by
+  // widening tests/audit_vocabulary.js to read that helper's calls.
+  { action: 'admin.app-password.created', category: 'admin',
+    label: 'An administrator made an app password for a person' },
+  { action: 'admin.app-password.revoked', category: 'admin',
+    label: 'An administrator revoked a person\'s app password' },
+  { action: 'admin.ciba.answered', category: 'admin',
+    label: 'An administrator approved or denied a CIBA request (test ' +
+           'control)' },
+  { action: 'admin.device.removed', category: 'admin',
+    label: 'An administrator removed a person\'s device' },
+  { action: 'admin.ida.recorded', category: 'admin',
+    label: 'An administrator recorded an identity verification for a ' +
+           'person' },
+  { action: 'admin.ida.removed', category: 'admin',
+    label: 'An administrator removed a person\'s identity verification' },
+  { action: 'admin.siop.enrolled', category: 'admin',
+    label: 'An administrator enrolled a self-issued (SIOPv2) subject for a ' +
+           'person' },
+  { action: 'admin.siop.removed', category: 'admin',
+    label: 'An administrator removed a person\'s self-issued (SIOPv2) ' +
+           'subject' },
+  // A federation partner's Shared Signals (#153, #373): ssf_transmitters.ts
+  // records these through its own `audited()`, three by name and six as
+  // 'ssf.signals.' + the stream act — none had a row until the widened
+  // tests/audit_vocabulary.js read that helper (2026-10-06).
+  { action: 'ssf.signals.discover', category: 'signals',
+    label: 'A federation partner\'s Shared Signals configuration was ' +
+           'discovered' },
+  { action: 'ssf.signals.stream', category: 'signals',
+    label: 'A stream was created at a federation partner\'s Shared ' +
+           'Signals transmitter' },
+  { action: 'ssf.signals.unblock', category: 'signals',
+    label: 'Sign-ins a federation partner\'s signal had blocked were ' +
+           'allowed again' },
+  { action: 'ssf.signals.read-stream', category: 'signals',
+    label: 'A federation partner\'s stream was read' },
+  { action: 'ssf.signals.update-stream', category: 'signals',
+    label: 'A federation partner\'s stream was updated' },
+  { action: 'ssf.signals.delete-stream', category: 'signals',
+    label: 'A federation partner\'s stream was deleted' },
+  { action: 'ssf.signals.set-status', category: 'signals',
+    label: 'A federation partner\'s stream status was set' },
+  { action: 'ssf.signals.add-subject', category: 'signals',
+    label: 'A subject was added to a federation partner\'s stream' },
+  { action: 'ssf.signals.remove-subject', category: 'signals',
+    label: 'A subject was removed from a federation partner\'s stream' },
+  { action: 'ssf.signals.verify', category: 'signals',
+    label: 'A federation partner\'s stream was asked for a verification ' +
+           'event' },
   { action: 'application.key-issued', category: 'application',
     label: 'A hosted surface\'s client key pair was issued by the CA' },
   { action: 'enrollment.acme.account.create', category: 'protocol',
