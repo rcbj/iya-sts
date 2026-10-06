@@ -4695,6 +4695,36 @@ class Authn {
       return null;
     }
     // -------------------------------------------------------------------------
+    // A SERVICE ACCOUNT AT A BROWSER (#221), from any door that starts a
+    // browser session — the password screen, a passkey, a certificate,
+    // SPNEGO, a wallet, a federation partner — in either mode, where the
+    // realm's service-account policy keeps `allowBrowserSignIn` off (the
+    // default). A KEYED session (SCIM, the SPIRE Server API) is a program's
+    // record and is not asked; an unauthenticated one names nobody.
+    // -------------------------------------------------------------------------
+    if (extra.authenticated !== false && !extra.key &&
+        this.deps.credentials.serviceAccountRefusesDoor(username, 'browser')) {
+      log.info('authn: a session for "' + username + '" was REFUSED at the ' +
+               (via || 'sign-in') + ' door: it is a service account and this ' +
+               'realm\'s service-account policy refuses it every browser ' +
+               'sign-in.');
+      audit.audit({
+        action: 'session.refuse', actor: String(username || ''),
+        errorCode: 'STS-SVCACCT-0010',
+        protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+        summary: 'a session for ' + username + ' was refused at the ' +
+                 (via || 'sign-in') + ' door: a service account may not ' +
+                 'sign in at a browser in this realm',
+        detail: { why: 'stsServiceAccount is TRUE and the service-account ' +
+                       'policy\'s allowBrowserSignIn is off',
+                  application: String(extra.application || '') }
+      });
+      extra.refusedWith = 'STS-SVCACCT-0010';
+      log.debug("Leaving Authn.startSessionHere(). A service account at a " +
+                "browser.");
+      return null;
+    }
+    // -------------------------------------------------------------------------
     // THE AUTHENTICATION POLICY (#64), ASKED AT THE ONE LINE EVERY DOOR
     // REACHES. Which mechanism answered — the credential kind the door names —
     // and in which role: a first factor where this is the only `amr` value, or

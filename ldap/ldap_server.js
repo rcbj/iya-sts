@@ -369,6 +369,12 @@ const passwordPolicy = require('../common/password_policy');
 // the password policy's reason exactly: a LEAF whose store this directory is,
 // so the require moves no route and closes no cycle.
 const authnPolicy = require('../common/authn_policy');
+// THE SERVICE-ACCOUNT POLICY REGISTER AND THE SERVICE ACCOUNTS (#221,
+// 2026-10-06), `ou=serviceAccountPolicies` and the flag on a person, for the
+// two policies' reason exactly: LEAVES whose store this directory is, so the
+// requires move no route and close no cycle.
+const serviceAccountPolicy = require('../common/service_account_policy');
+const serviceAccounts = require('../common/service_accounts');
 const mode = require('../common/mode');
 // The attributes no outside source may write (#94), asked at the federated
 // write. A leaf.
@@ -891,6 +897,15 @@ function authnPoliciesDn() {
   log.debug("Entering authnPoliciesDn().");
   log.debug("Leaving authnPoliciesDn().");
   return 'ou=authnPolicies,' + baseDn();
+}
+
+// ou=serviceAccountPolicies is the SERVICE-ACCOUNT POLICY register (#221), a
+// third container beside the other two for their reason: rcbj asked for each
+// policy to stay separate. `common/service_account_policy.ts` owns the schema.
+function serviceAccountPoliciesDn() {
+  log.debug("Entering serviceAccountPoliciesDn().");
+  log.debug("Leaving serviceAccountPoliciesDn().");
+  return 'ou=serviceAccountPolicies,' + baseDn();
 }
 
 // The fourth and fifth, and they are `spiffe_registry.js`'s store the way
@@ -2674,6 +2689,14 @@ authnPolicy.SCHEMA.attributes.concat(authnPolicy.SCHEMA.personAttributes)
   .forEach(function (row) {
     learnName(row.name, 'the authentication policy schema');
   });
+// #221: the service-account policy's attributes, and the ones a service
+// account carries on its person entry.
+serviceAccountPolicy.SCHEMA.attributes.forEach(function (row) {
+  learnName(row.name, 'the service-account policy schema');
+});
+serviceAccounts.SCHEMA.personAttributes.forEach(function (row) {
+  learnName(row.name, 'the service-account schema');
+});
 xacmlStore.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML policy schema');
 });
@@ -3606,6 +3629,19 @@ function seed() {
       'cn=default, and the built-in defaults apply where neither exists. ' +
       'common/authn_policy.ts holds the schema; GET /admin/policies ' +
       'publishes it.'
+  }, { origin: 'seed' });
+  // And the service-account policy's (#221), for the same reason.
+  putEntry(serviceAccountPoliciesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'serviceAccountPolicies',
+    description: 'SERVICE-ACCOUNT POLICY profiles: what a service account ' +
+      '(a person entry carrying stsServiceAccount) may do in this realm — ' +
+      'the second factor, the browser, the password doors — and how its ' +
+      'password rotates. The profile is cn=default; while it is absent a ' +
+      'realm other than the default one follows the DEFAULT REALM\'s, and ' +
+      'the built-in defaults apply where neither exists. ' +
+      'common/service_account_policy.ts holds the schema; GET ' +
+      '/admin/policies publishes it.'
   }, { origin: 'seed' });
   putEntry(pepsDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -8257,6 +8293,31 @@ if (typeof authnPolicy.setDirectory === 'function') {
            'policy cannot be edited.');
 }
 
+// THE SERVICE-ACCOUNT POLICY REGISTER'S CONTAINER, AND THE SERVICE ACCOUNTS
+// THEMSELVES (#221), guarded the same way.
+if (typeof serviceAccountPolicy.setDirectory === 'function') {
+  serviceAccountPolicy.setDirectory({
+    allServiceAccountPolicies: allServiceAccountPolicies,
+    writeServiceAccountPolicy: writeServiceAccountPolicy,
+    deleteServiceAccountPolicy: deleteServiceAccountPolicy
+  });
+} else {
+  log.warn('ldap: common/service_account_policy.ts offers no setDirectory(), ' +
+           'so ou=serviceAccountPolicies is unreachable and the built-in ' +
+           'service-account policy cannot be edited.');
+}
+if (typeof serviceAccounts.setDirectory === 'function') {
+  serviceAccounts.setDirectory({
+    readServiceAccount: readServiceAccount,
+    writeServiceAccount: writeServiceAccount,
+    serviceAccountNames: serviceAccountNames,
+    resolveOwner: resolveServiceAccountOwner
+  });
+} else {
+  log.warn('ldap: common/service_accounts.ts offers no setDirectory(), so no ' +
+           'person can be made a service account in this process.');
+}
+
 if (typeof xacmlStore.setDirectory === 'function') {
   xacmlStore.setDirectory({ allPolicies: allPolicies,
                             writePolicy: writePolicy,
@@ -8927,7 +8988,13 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
           ? 'only an administrator may modify an entry other than your own'
           : 'only an administrator may ' + operation + ' an entry'), dn);
   }
-  const allowed = selfWritableAttributes();
+  // A SERVICE ACCOUNT'S ATTRIBUTES ARE NEVER SELF-WRITABLE (#221), whatever
+  // `ldap.selfWritableAttributes` says: rcbj's design has the flag set by an
+  // administrator, and a person who could clear it on their own entry could
+  // walk out from under the policy that governs them.
+  const allowed = selfWritableAttributes().filter(function (type) {
+    return SERVICE_ACCOUNT_ATTRIBUTES.indexOf(type) < 0;
+  });
   const refused = (changedTypes || []).filter(function (type, index, all) {
     return allowed.indexOf(type) < 0 && all.indexOf(type) === index;
   });
@@ -9000,6 +9067,9 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
 // ---------------------------------------------------------------------------
 const SECRET_ATTRIBUTES = [
   'userpassword', 'pwdhistory',
+  // A service account's previous password (#221): a verifier like
+  // userPassword during the rotation's overlap.
+  'stspreviouspassword',
   'oauthclientsecret', 'appregistrationaccesstoken', 'fedclientsecret',
   'oauthassertionprivatekey', 'oauthsamlassertionprivatekey',
   // An application DID's private keys (2026-10-01), sealed like the two
@@ -14763,6 +14833,19 @@ function ldapAddNow(req, res, next) {
   // putEntry(), for the NUL refusal's reason.
   const addedPassword = {};
   if (normalizeDn(parentDn(dn)) === normalizeDn(usersDn())) {
+    // A SERVICE ACCOUNT ADDED WHOLE (#221) meets the rules a modify does.
+    const lowered = {};
+    Object.keys(attributes).forEach(function (key) {
+      lowered[key.toLowerCase()] = attributes[key];
+    });
+    const accountRefusal = serviceAccountWriteRefusal(lowered,
+                                                      Object.keys(lowered));
+    if (accountRefusal) {
+      log.debug('Leaving the LDAP add handler. The service account was ' +
+                'refused.');
+      return next(ldapRefusal(req, '', 'an add of ' + dn +
+        ' was refused by the service-account rules', accountRefusal, dn));
+    }
     const policyRefusal = passwordWriteRefusal(dn, attributes, {},
       Object.keys(attributes).map(function (key) { return key.toLowerCase(); }),
       addedPassword);
@@ -15088,6 +15171,19 @@ function ldapModifyNow(req, res, next) {
       return next(ldapRefusal(req, '', 'a modify of ' + dn +
         ' was refused by the password rules', policyRefusal, dn));
     }
+    // AND A SERVICE ACCOUNT'S ATTRIBUTES (#221), against the entry as it will
+    // be, with its auxiliary class kept beside the flag.
+    const accountRefusal = serviceAccountWriteRefusal(working,
+      req.changes.map(function (change) {
+        return String(change.modification.type || '').toLowerCase();
+      }));
+    if (accountRefusal) {
+      log.debug('Leaving the LDAP modify handler. The service account was ' +
+                'refused.');
+      return next(ldapRefusal(req, '', 'a modify of ' + dn +
+        ' was refused by the service-account rules', accountRefusal, dn));
+    }
+    keepServiceAccountClass(working);
   }
   // A ROW WITH NO createTimestamp (one imported, or written by hand into a
   // store) used to be given `undefined` here, and the next reader of the
@@ -17038,6 +17134,263 @@ function deleteAuthnPolicy(name) {
   log.debug('Leaving deleteAuthnPolicy(). ' + entries.size +
             ' entry/entries left.');
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// ou=serviceAccountPolicies AS A STORE (#221). ou=authnPolicies' three
+// functions again, for the same reasons.
+// ---------------------------------------------------------------------------
+function serviceAccountPolicyDn(name) {
+  log.debug("Entering serviceAccountPolicyDn().");
+  log.debug("Leaving serviceAccountPolicyDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' +
+         serviceAccountPoliciesDn();
+}
+
+function allServiceAccountPolicies() {
+  log.debug('Entering allServiceAccountPolicies().');
+  const rows = entriesUnder(serviceAccountPoliciesDn()).map(function (stored) {
+    const object = entryObject(stored);
+    object.name = (stored.attributes.cn || [])[0] ||
+                  stored.dn.split(',')[0].replace(/^cn=/i, '');
+    return object;
+  });
+  log.debug('Leaving allServiceAccountPolicies(). ' + rows.length +
+            ' profile(s).');
+  return rows;
+}
+
+function writeServiceAccountPolicy(name, attributes) {
+  log.debug('Entering writeServiceAccountPolicy(). name=' + name);
+  const dn = serviceAccountPolicyDn(name);
+  const existing = getEntry(dn);
+  if (!existing && cappedEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writeServiceAccountPolicy(). The directory is full.');
+    return false;
+  }
+  if (!getEntry(serviceAccountPoliciesDn())) {
+    putEntry(serviceAccountPoliciesDn(), {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: 'serviceAccountPolicies'
+    }, { origin: 'service-account policy' });
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin
+                              : 'service-account policy' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writeServiceAccountPolicy(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deleteServiceAccountPolicy(name) {
+  log.debug('Entering deleteServiceAccountPolicy(). name=' + name);
+  const stored = getEntry(serviceAccountPolicyDn(name));
+  if (!stored) {
+    log.debug('Leaving deleteServiceAccountPolicy(). It was not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
+  log.debug('Leaving deleteServiceAccountPolicy(). ' + entries.size +
+            ' entry/entries left.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// A SERVICE ACCOUNT ON ITS PERSON ENTRY (#221): the four hooks
+// `common/service_accounts.ts` is given. ONE READER AND ONE WRITER, narrowed
+// to that module's attribute list, for writePersonFlag()'s reason — neither
+// may become a general attribute writer. The writer keeps the auxiliary
+// class `stsServiceAccount` with the flag: on while it is TRUE, gone with it.
+// ---------------------------------------------------------------------------
+const SERVICE_ACCOUNT_ATTRIBUTES = serviceAccounts.ATTRIBUTES.map(
+  function (name) {
+    return name.toLowerCase();
+  });
+
+function readServiceAccount(key) {
+  log.debug('Entering readServiceAccount().');
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored) {
+    log.debug('Leaving readServiceAccount(). No entry.');
+    return { found: false, person: false, dn: '', username: '', values: {} };
+  }
+  const values = {};
+  serviceAccounts.ATTRIBUTES.forEach(function (name) {
+    const held = stored.attributes[name.toLowerCase()] || [];
+    if (held.length) {
+      values[name] = String(held[0]);
+    }
+  });
+  const person = isPersonEntry(stored);
+  log.debug('Leaving readServiceAccount().');
+  return { found: true, person: person, dn: stored.dn,
+           username: person ? usernameOfEntry(stored) : '', values: values };
+}
+
+function writeServiceAccount(key, changes) {
+  log.debug('Entering writeServiceAccount().');
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored || !isPersonEntry(stored)) {
+    log.warn(errorCodes.tag('STS-LDAP-0078') + 'ldap: "' + key + '" is no ' +
+             'person in this realm, so its service-account attributes were ' +
+             'not written.');
+    log.debug('Leaving writeServiceAccount(). No person.');
+    return false;
+  }
+  Object.keys(changes || {}).forEach(function (name) {
+    const lower = name.toLowerCase();
+    if (SERVICE_ACCOUNT_ATTRIBUTES.indexOf(lower) < 0) {
+      return;
+    }
+    const value = changes[name];
+    if (value === null || value === undefined || value === '') {
+      delete stored.attributes[lower];
+    } else {
+      stored.attributes[lower] = [String(value)];
+    }
+  });
+  keepServiceAccountClass(stored.attributes);
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  touchDirectory(stored.dn);
+  log.debug('Leaving writeServiceAccount().');
+  return true;
+}
+
+// The auxiliary class follows the flag, wherever the flag was written — the
+// hook above and an administrator's LDAP modify alike.
+function keepServiceAccountClass(attributes) {
+  log.debug('Entering keepServiceAccountClass().');
+  const classes = (attributes.objectclass || []).filter(function (one) {
+    return String(one).toLowerCase() !==
+           serviceAccounts.OBJECT_CLASS.toLowerCase();
+  });
+  if (serviceAccounts.isServiceAccount(attributes)) {
+    classes.push(serviceAccounts.OBJECT_CLASS);
+  }
+  if (classes.length) {
+    attributes.objectclass = classes;
+  }
+  log.debug('Leaving keepServiceAccountClass().');
+}
+
+// Every service account in the ambient realm, by username. Only the holders
+// of the flag are visited (#349's walk), and only those pay isPersonEntry().
+function serviceAccountNames() {
+  log.debug('Entering serviceAccountNames().');
+  const out = [];
+  eachHolderOfAny(['stsserviceaccount'], function (entry) {
+    if (serviceAccounts.isServiceAccount(entry.attributes) &&
+        isPersonEntry(entry)) {
+      out.push(usernameOfEntry(entry));
+    }
+  });
+  log.debug('Leaving serviceAccountNames(). ' + out.length);
+  return out;
+}
+
+// An OWNER (rcbj: "a person or a group"): a DN, a username or a `urn:uuid:`
+// subject finds a person; a DN or a group's cn finds a group.
+function resolveServiceAccountOwner(value) {
+  log.debug('Entering resolveServiceAccountOwner().');
+  const text = String(value || '').trim();
+  let stored = text ? locateEntry(text).stored : null;
+  if (!stored && text && !DN_SHAPED.test(text)) {
+    stored = getEntry('cn=' + escapeDnValue(text) + ',' + groupsDn());
+  }
+  if (!stored) {
+    log.debug('Leaving resolveServiceAccountOwner(). Nobody.');
+    return { kind: '', dn: '', name: '' };
+  }
+  if (isPersonEntry(stored)) {
+    log.debug('Leaving resolveServiceAccountOwner(). A person.');
+    return { kind: 'person', dn: stored.dn, name: usernameOfEntry(stored) };
+  }
+  if (isUnder(stored.dn, groupsDn()) &&
+      normalizeDn(stored.dn) !== normalizeDn(groupsDn())) {
+    log.debug('Leaving resolveServiceAccountOwner(). A group.');
+    return { kind: 'group', dn: stored.dn,
+             name: String((stored.attributes.cn || [''])[0]) };
+  }
+  log.debug('Leaving resolveServiceAccountOwner(). Neither.');
+  return { kind: '', dn: stored.dn, name: '' };
+}
+
+// AN LDAP MODIFY OF A SERVICE ACCOUNT'S ATTRIBUTES (#221). Who may write them
+// at all is `directoryWriteRefusal()`'s — Admin Write in product, and never
+// the person themselves (NEVER_SELF_WRITABLE). This is what the attributes
+// must say afterwards, the same rules `service_accounts.set()` applies:
+//
+//   * the rotation's state and the previous password are MAINTAINED by this
+//     service, refused in product as pwdHistory is;
+//   * a service account names an owner while the realm's policy requires one;
+//   * the owner is a person or a group, and the destination and the secret's
+//     name come together.
+//
+// Answers null or the ldapjs error, recorded by the caller.
+const SERVICE_ACCOUNT_MAINTAINED = ['stspasswordrotatedat',
+  'stspreviouspassword', 'stspreviouspasswordexpires',
+  'stsrotationfailures', 'stsrotationlasterror', 'stsrotationlastattempt'];
+
+function serviceAccountWriteRefusal(working, touched) {
+  log.debug('Entering serviceAccountWriteRefusal().');
+  const changed = (touched || []).filter(function (type) {
+    return SERVICE_ACCOUNT_ATTRIBUTES.indexOf(type) >= 0;
+  });
+  if (!changed.length) {
+    log.debug('Leaving serviceAccountWriteRefusal(). Not one of them.');
+    return null;
+  }
+  const maintained = changed.filter(function (type) {
+    return SERVICE_ACCOUNT_MAINTAINED.indexOf(type) >= 0;
+  });
+  if (maintained.length && mode.verifiesCredentials()) {
+    log.debug('Leaving serviceAccountWriteRefusal(). Maintained.');
+    return coded('STS-SVCACCT-0030', new ldap.ConstraintViolationError(
+      maintained.join(', ') + ' are maintained by this service\'s password ' +
+      'rotation and cannot be written'));
+  }
+  if (!serviceAccounts.isServiceAccount(working)) {
+    log.debug('Leaving serviceAccountWriteRefusal(). Not a service account.');
+    return null;
+  }
+  const first = function (name) {
+    log.debug('Entering first().');
+    log.debug('Leaving first().');
+    return String((working[name] || [''])[0] || '').trim();
+  };
+  const owner = first('stsserviceaccountowner');
+  if (!owner && serviceAccountPolicy.requiresOwner()) {
+    log.debug('Leaving serviceAccountWriteRefusal(). No owner.');
+    return coded('STS-SVCACCT-0023', new ldap.ConstraintViolationError(
+      'this realm\'s service-account policy requires stsServiceAccountOwner ' +
+      '(a person or a group)'));
+  }
+  if (owner) {
+    const resolved = resolveServiceAccountOwner(owner);
+    if (resolved.kind !== 'person' && resolved.kind !== 'group') {
+      log.debug('Leaving serviceAccountWriteRefusal(). The owner is nobody.');
+      return coded('STS-SVCACCT-0024', new ldap.ConstraintViolationError(
+        'stsServiceAccountOwner must name a person or a group in this realm'));
+    }
+  }
+  if (!!first('stssecretdestination') !== !!first('stssecretname')) {
+    log.debug('Leaving serviceAccountWriteRefusal(). Half a destination.');
+    return coded('STS-SVCACCT-0026', new ldap.ConstraintViolationError(
+      'stsSecretDestination and stsSecretName go together'));
+  }
+  log.debug('Leaving serviceAccountWriteRefusal(). Allowed.');
+  return null;
 }
 
 // ---------------------------------------------------------------------------

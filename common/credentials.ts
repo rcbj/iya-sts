@@ -131,6 +131,11 @@ import passwordPolicy = require('./password_policy');
 // THE AUTHENTICATION POLICY (#64): which mechanisms are first and second
 // factors, and when a second is required. A LEAF, like the password policy.
 import authnPolicy = require('./authn_policy');
+// SERVICE ACCOUNTS AND THEIR POLICY (#221): which doors a service account may
+// use, whether it is exempt from the second factor, and the previous password
+// a rotation keeps for its overlap. Two LEAVES, like the policies above.
+import serviceAccounts = require('./service_accounts');
+import serviceAccountPolicy = require('./service_account_policy');
 // THE SECURITY KEY'S POLICY, AND IT IS THE ONE REQUIRE IN THIS FILE THAT
 // POINTS OUT OF `common/` (2026-09-10).
 //
@@ -270,6 +275,8 @@ interface CredentialsDeps {
   appPasswords: typeof appPasswords;
   passwordPolicy: typeof passwordPolicy;
   authnPolicy: typeof authnPolicy;
+  serviceAccounts: typeof serviceAccounts;
+  serviceAccountPolicy: typeof serviceAccountPolicy;
   webauthnPolicy: typeof webauthnPolicy;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnAttestation: typeof webauthnAttestation;
@@ -505,6 +512,8 @@ class Credentials {
       appPasswords: appPasswords,
       passwordPolicy: passwordPolicy,
       authnPolicy: authnPolicy,
+      serviceAccounts: serviceAccounts,
+      serviceAccountPolicy: serviceAccountPolicy,
       webauthnPolicy: webauthnPolicy,
       webauthnVerifier: webauthnVerifier,
       webauthnAttestation: webauthnAttestation,
@@ -860,7 +869,7 @@ class Credentials {
   // the work: a derivation queued for the old password and started after a
   // reset landed would otherwise stamp the old password's keys as the new
   // one's (seen on the cluster stack, 2026-09-24 — sts_kerberos_keytab).
-  private notifyPassword(name, password, event, hash?) {
+  private notifyPassword(name, password, event, hash?, retainPreviousMs?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.notifyPassword().");
     if (!this.passwordObserver || !name || !password) {
@@ -868,8 +877,12 @@ class Credentials {
       return;
     }
     try {
+      // `retainPreviousMs` (#221): a service account's rotation overlap, for
+      // which the KDC holds the retired key version at least as long.
       this.passwordObserver(name, String(password),
-                            { event: event, hash: hash || null });
+                            { event: event, hash: hash || null,
+                              retainPreviousMs: Number(retainPreviousMs) ||
+                                                0 });
     } catch (e) {
       // Swallowed with a reason: see the header. What is lost is whatever the
       // observer derives, and the log says so; the credential act it observed
@@ -942,6 +955,19 @@ class Credentials {
                via + ').');
       log.debug('Leaving Credentials.verifyPrepare(). Disabled.');
       return { done: this.disabledRefusal(name, via) };
+    }
+
+    // A SERVICE ACCOUNT AT A DOOR ITS POLICY DOES NOT OPEN (#221), in BOTH
+    // MODES and before the development-mode pass, for the disabled account's
+    // reason: it is the realm's policy about the account, not a check of the
+    // password — and so it is asked before the password is, which tells a
+    // guesser nothing.
+    const accountRefused = name ? this.serviceAccountDoorRefusal(name, opts)
+                                : null;
+    if (accountRefused) {
+      log.debug('Leaving Credentials.verifyPrepare(). A service account at ' +
+                'a door its policy closes.');
+      return { done: accountRefused };
     }
 
     if (!mode.verifiesCredentials()) {
@@ -1023,6 +1049,105 @@ class Credentials {
   }
 
   // The answer, once the comparison has been made in whichever process made it.
+  // ---------------------------------------------------------------------------
+  // A SERVICE ACCOUNT AND THE DOOR IT CAME THROUGH (#221). The door is what
+  // the caller declared: `door` for the password-only doors (`ldap`,
+  // `wstrust`, `scim`, `ssf`, `est`) and the password grant (`ropc`), and a
+  // `secondFactor` exemption for a BROWSER — the sign-in screen and its
+  // password-factor step say `asked-next`, the portal says `session-held`.
+  // A caller that declares NOTHING is refused for a service account: refuse
+  // by default, `secondFactorRefusal()`'s rule, so a door added tomorrow
+  // that says nothing is not a way round the policy. The answer is a wrong
+  // password's, with the code beside it.
+  // ---------------------------------------------------------------------------
+  private serviceAccountDoorOf(opts) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.serviceAccountDoorOf().');
+    const options = opts || {};
+    const door = options.secondFactor === 'asked-next' ||
+                 options.secondFactor === 'session-held'
+      ? 'browser' : String(options.door || '');
+    log.debug('Leaving Credentials.serviceAccountDoorOf(). ' + door);
+    return door;
+  }
+
+  /**
+   * Says whether a service account's policy closes a door to it.
+   *
+   * @param username - the account (any key the directory locates)
+   * @param door - `browser`, a password door's id, or `kerberos`
+   * @returns true when the name is a service account and the realm's
+   *   service-account policy does not open that door
+   */
+  serviceAccountRefusesDoor(username, door) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug('Entering Credentials.serviceAccountRefusesDoor(). ' + door);
+    const name = String(username == null ? '' : username).trim();
+    if (!name || !serviceAccounts.isServiceAccountName(name)) {
+      log.debug('Leaving Credentials.serviceAccountRefusesDoor(). Not one.');
+      return false;
+    }
+    const out = !serviceAccountPolicy.allowsDoor(String(door || ''));
+    log.debug('Leaving Credentials.serviceAccountRefusesDoor(). ' + out);
+    return out;
+  }
+
+  private serviceAccountDoorRefusal(name, opts) {
+    const { log } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug('Entering Credentials.serviceAccountDoorRefusal().');
+    const door = this.serviceAccountDoorOf(opts);
+    if (!this.serviceAccountRefusesDoor(name, door)) {
+      log.debug('Leaving Credentials.serviceAccountDoorRefusal(). Open.');
+      return null;
+    }
+    const via = (opts && opts.via) || 'unstated';
+    const browser = door === 'browser';
+    log.info('credentials: ' + name + ' is a SERVICE ACCOUNT and was refused ' +
+             'at ' + via + ': this realm\'s service-account policy ' +
+             (browser ? 'refuses it every browser sign-in'
+                      : (door ? 'does not open the "' + door + '" door to it'
+                              : 'opens no door that says nothing of itself')) +
+             '.');
+    log.debug('Leaving Credentials.serviceAccountDoorRefusal(). Refused.');
+    return coded(browser ? 'STS-SVCACCT-0010' : 'STS-SVCACCT-0011',
+      { ok: false, reason: 'service-account-door',
+        detail: name + ' is a service account, and this realm\'s ' +
+                'service-account policy does not let it in at ' + via +
+                ' (Directory → Policies)' });
+  }
+
+  // The previous password's hash while a rotation's overlap lasts, or ''.
+  private previousPasswordHash(name) {
+    const { log, serviceAccounts } = this.deps;
+    log.debug('Entering Credentials.previousPasswordHash().');
+    let out = '';
+    try {
+      const held = name ? serviceAccounts.previousPassword(name) : null;
+      out = held ? held.hash : '';
+    } catch (e) {
+      log.debug('Caught in Credentials.previousPasswordHash(): ' +
+                ((e && e.message) || e));
+      out = '';
+    }
+    log.debug('Leaving Credentials.previousPasswordHash(). ' + !!out);
+    return out;
+  }
+
+  // A match on the previous password is logged: it is the signal that a
+  // consumer has not picked the new one up yet.
+  private notePrevious(name, via, matched) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.notePrevious().');
+    if (matched) {
+      log.info('credentials: ' + name + ' presented its PREVIOUS password at ' +
+               (via || 'unstated') + ', inside the rotation\'s overlap; ' +
+               'accepted. Whatever sent it has not read the new one yet.');
+    }
+    log.debug('Leaving Credentials.notePrevious(). ' + !!matched);
+    return !!matched;
+  }
+
   private verifyFinish(ok, name, via) {
     const { log } = this.deps;
     const { PASSWORD_ATTRIBUTE } = Credentials;
@@ -1165,7 +1290,8 @@ class Credentials {
     log.debug('Entering Credentials.noteRefusal().');
     const reason = String((answer && answer.reason) || '');
     if (!answer || answer.ok || reason === 'no-store' ||
-        reason === 'store-error' || reason === 'password-reset-required') {
+        reason === 'store-error' || reason === 'password-reset-required' ||
+        reason === 'service-account-door') {
       log.debug('Leaving Credentials.noteRefusal(). Not a failure to record.');
       return;
     }
@@ -1220,12 +1346,22 @@ class Credentials {
       log.debug('Leaving Credentials.verify(). Decided without a derivation.');
       return ready.done;
     }
-    const ok = crypto.verifySecret(password, ready.stored);
-    const finished = this.verifyFinish(ok, ready.name, ready.via);
+    // A ROTATED SERVICE ACCOUNT'S PREVIOUS PASSWORD (#221), during the
+    // overlap only, and only where the current one did not match.
+    const previous = this.previousPasswordHash(ready.name);
+    const current = crypto.verifySecret(password, ready.stored);
+    const byPrevious = !current && !!previous &&
+      this.notePrevious(ready.name, ready.via,
+                        crypto.verifySecret(password, previous));
+    const finished = this.verifyFinish(current || byPrevious, ready.name,
+                                       ready.via);
     const answer = this.resetRefusal(finished, ready.name, opts) ||
       this.secondFactorRefusal(finished, ready.name, opts) || finished;
-    if (answer.ok && answer.reason === 'verified') {
-      // The plaintext was just CONFIRMED — see the password observer above.
+    // The plaintext was just CONFIRMED — see the password observer above —
+    // but NEVER the previous one (#221): the observer derives the KDC's
+    // keys from what it is handed against the CURRENT hash, and the old
+    // password would be stored as the new one's keys.
+    if (answer.ok && answer.reason === 'verified' && !byPrevious) {
       this.notifyPassword(ready.name, password, 'verified', ready.stored);
     }
     this.noteRefusal(username, opts, answer);
@@ -1270,12 +1406,27 @@ class Credentials {
       }
       log.debug('Leaving Credentials.verifyAsync() password step. On ' +
                 'libuv.');
+      const previous = this.previousPasswordHash(ready.name);
+      let byPrevious = false;
       return crypto.verifySecretAsync(password, ready.stored)
+        .then((current) => {
+          // #221: the previous password during a rotation's overlap, as in
+          // `verify()`.
+          if (current || !previous) {
+            return current;
+          }
+          return crypto.verifySecretAsync(password, previous)
+            .then((matched) => {
+              byPrevious = this.notePrevious(ready.name, ready.via, matched);
+              return byPrevious;
+            });
+        })
         .then((ok) => {
           const finished = this.verifyFinish(ok, ready.name, ready.via);
           const answer = this.resetRefusal(finished, ready.name, opts) ||
             this.secondFactorRefusal(finished, ready.name, opts) || finished;
-          if (answer.ok && answer.reason === 'verified') {
+          // Never the previous password to the observer — see `verify()`.
+          if (answer.ok && answer.reason === 'verified' && !byPrevious) {
             this.notifyPassword(ready.name, password, 'verified',
                                 ready.stored);
           }
@@ -1431,10 +1582,16 @@ class Credentials {
     const totp = !!this.totpOf(name);
     const requirement = this.mfaRequirementFor(name);
     const holds = key || totp;
+    // AN EXEMPT SERVICE ACCOUNT (#221) is asked for nothing at a door that
+    // cannot ask: the realm's service-account policy took it out of the
+    // second-factor rules, and a factor it happens to hold does not put it
+    // back in. Its `amr` is still `pwd` alone.
+    const exempt = !!requirement.exemptServiceAccount;
     const answer = { person: true, totp: totp, key: key, holds: holds,
                      required: !!requirement.required,
                      byUser: !!requirement.byUser,
-                     needed: holds || !!requirement.required };
+                     exemptServiceAccount: exempt,
+                     needed: !exempt && (holds || !!requirement.required) };
     log.debug('Leaving Credentials.secondFactorDemand(). needed=' +
               answer.needed);
     return answer;
@@ -1669,6 +1826,24 @@ class Credentials {
    * @returns `{ ok: true, hash, history, … }`, or a refusal with its reason
    *   and code
    */
+  /**
+   * Says whether a person is a service account whose password the realm
+   * rotates through a push destination (#221): rotation on in the policy, and
+   * a destination named on the account.
+   *
+   * @param username - the person
+   * @returns true when only the rotation may set its password
+   */
+  rotatesThroughDestination(username) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug('Entering Credentials.rotatesThroughDestination().');
+    const facts = username ? serviceAccounts.of(username) : null;
+    const out = !!facts && !!facts.destination &&
+                serviceAccountPolicy.rotation().enabled;
+    log.debug('Leaving Credentials.rotatesThroughDestination(). ' + out);
+    return out;
+  }
+
   preparePassword(username, password, opts?) {
     const { log, crypto, mode, passwordPolicy } = this.deps;
     const { PASSWORD_ATTRIBUTE } = Credentials;
@@ -1684,6 +1859,25 @@ class Credentials {
                                    'To take one away, remove ' +
                                    'the ' + PASSWORD_ATTRIBUTE + ' attribute ' +
                                    'from the entry.'] });
+    }
+    // A ROTATING SERVICE ACCOUNT'S PASSWORD IS SET BY ITS ROTATION ONLY
+    // (#221), at every door that sets a password — the console, the API, an
+    // LDAP modify — in both modes: the push destination is the source of
+    // truth, and a password set by hand would never reach it, so whatever
+    // reads it there would be refused at once.
+    if (!options.rotation && this.rotatesThroughDestination(name)) {
+      log.info('credentials: a password for ' + name + ' was refused: it ' +
+               'is a service account whose password rotates through its ' +
+               'push destination.');
+      log.debug('Leaving Credentials.preparePassword(). A rotating service ' +
+                'account.');
+      return coded('STS-SVCACCT-0013', { ok: false,
+        reason: 'service-account-rotates',
+        errors: [name + ' is a service account whose password rotates ' +
+                 'through its push destination, so it cannot be set by ' +
+                 'hand: the destination is where its consumers read it. ' +
+                 'Use Rotate now on its page, or POST /admin-api/users/' +
+                 'rotate-password.'] });
     }
     const profile = passwordPolicy.profileFor(name);
     const enforced = mode.verifiesCredentials();
@@ -1814,6 +2008,19 @@ class Credentials {
       log.debug('Leaving Credentials.setPassword(). Refused.');
       return prepared;
     }
+    // A ROTATION (#221) keeps the hash it replaces for its overlap: read
+    // here, with no await before the write below.
+    const rotation = opts && opts.rotation ? opts.rotation : null;
+    let replaced = '';
+    if (rotation) {
+      try {
+        replaced = directory.readPassword(name) || '';
+      } catch (e) {
+        log.debug('Caught in Credentials.setPassword(): ' +
+                  ((e && e.message) || e));
+        replaced = '';
+      }
+    }
     let written = false;
     try {
       written = directory.writePassword(name, prepared.hash,
@@ -1839,10 +2046,18 @@ class Credentials {
              'as a scrypt hash and CANNOT BE READ BACK — this service can ' +
              'never show it again, which is why the caller is given it once ' +
              'and only at the moment it is created.');
+    const overlapMs = rotation ? Math.max(0, Number(rotation.overlapMs) || 0)
+                               : 0;
+    if (rotation) {
+      // THE PREVIOUS PASSWORD, accepted until the overlap ends, and the
+      // rotation's time — `service_accounts.ts` keeps both on the entry.
+      this.deps.serviceAccounts.recordRotated(name, replaced,
+        Date.now() + overlapMs, this.deps.passwordPolicy.generalizedTime());
+    }
     // The plaintext was just WRITTEN — see the password observer above. After
     // the write and not before it, so an observer reading the stored hash back
     // reads the one this password produced.
-    this.notifyPassword(name, password, 'set', prepared.hash);
+    this.notifyPassword(name, password, 'set', prepared.hash, overlapMs);
     log.debug('Leaving Credentials.setPassword(). Written.');
     return { ok: true, username: name,
              message: 'The password for ' + name + ' is set. It is stored as ' +
@@ -7370,6 +7585,16 @@ class Credentials {
     const directory = this.directory;
     log.debug("Entering Credentials.mfaRequirementFor().");
     const name = String(username || '').trim();
+    // A SERVICE ACCOUNT IN A REALM THAT EXEMPTS THEM (#221): nothing is
+    // required of it, by its entry, the realm or a console role.
+    if (name && this.deps.serviceAccountPolicy.exemptFromSecondFactor() &&
+        this.deps.serviceAccounts.isServiceAccountName(name)) {
+      log.debug("Leaving Credentials.mfaRequirementFor(). An exempt service " +
+                "account.");
+      return { required: false, byUser: false, byRealm: false,
+               byAdministrator: false, offered: false,
+               exemptServiceAccount: true };
+    }
     let byUser = false;
     if (name && directory && typeof directory.readMfaRequired === 'function') {
       try {
@@ -7409,7 +7634,7 @@ class Credentials {
               ", offered=" + (offered && !required));
     return { required: required, byUser: byUser, byRealm: byRealm,
              byAdministrator: byAdministrator,
-             offered: offered && !required };
+             offered: offered && !required, exemptServiceAccount: false };
   }
 
   /**
@@ -8110,6 +8335,8 @@ export = {
   noteBootstrapPassword: slot.forward('noteBootstrapPassword'),
   mechanismsFor: slot.forward('mechanismsFor'),
   secondFactorDemand: slot.forward('secondFactorDemand'),
+  serviceAccountRefusesDoor: slot.forward('serviceAccountRefusesDoor'),
+  rotatesThroughDestination: slot.forward('rotatesThroughDestination'),
   bootstrap: slot.forward('bootstrap'),
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,

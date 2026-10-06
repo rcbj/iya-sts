@@ -10620,6 +10620,56 @@ holds it.
 `tests/authn_policy.js` holds the module, the inheritance, the mail guard,
 the retired settings and a kind registered later.
 
+## 3cd. `service_accounts.ts`, `service_account_policy.ts`, `service_account_rotation.ts`: A SERVICE ACCOUNT IS A PERSON WITH A FLAG (#221, 2026-10-06)
+
+**rcbj's decisions on #221 are the design**, and the issue's comments of
+2026-10-05 hold them: a service account is a PERSON entry carrying
+`stsServiceAccount` (an auxiliary class), not an application; it is governed
+by a THIRD policy kind on Directory → Policies, per realm and inherited from
+the default realm; browser sign-in is refused unless the realm allows it; and
+its password may ROTATE, pushed to a secrets manager first and committed only
+after, with the previous password kept for an overlap. `docs/service-accounts.md`
+is the operator's page; each file's header argues its part.
+
+* **ONE PREDICATE.** `ServiceAccounts.isServiceAccount(entry)` is asked by
+  every door; `isServiceAccountName()` for a door holding a name. No door
+  reads the attribute. The directory's only writer of the attributes is
+  `ldap_server.js`'s `writeServiceAccount()`, narrowed to the module's list,
+  and it keeps the auxiliary class beside the flag; an LDAP modify meets the
+  same rules (`serviceAccountWriteRefusal()`), and the attributes are never
+  self-writable whatever `ldap.selfWritableAttributes` says.
+* **THE DOORS ARE ASKED BEFORE THE PASSWORD IS, IN BOTH MODES**
+  (`credentials.serviceAccountDoorRefusal()`, beside the disabled account and
+  for its reason). The door is what the caller DECLARED — `door`, or a
+  browser by its `secondFactor` exemption — and a caller that declares
+  nothing is REFUSED for a service account (`secondFactorRefusal()`'s refuse
+  by default). The password grant declares `door: 'ropc'`, which is no app
+  password's door. The KDC asks the same question through
+  `krb5_person_keys.personDisabled()`, because the KDC is locked and that is
+  the question it asks. A browser session from ANY first factor is refused in
+  `authn.startSession()`; a KEYED session (SCIM, SPIRE) is a program's and
+  is not.
+* **THE EXEMPTION** is `mfaRequirementFor()` answering nothing required and
+  `secondFactorDemand()` answering nothing needed. A factor the account holds
+  is still asked at the sign-in screen — the authentication policy's "there
+  is no never" — which only matters where the realm lets it sign in there.
+* **THE PREVIOUS PASSWORD** is compared only where the current one did not
+  match, and only while its expiry, checked AT THE READ, is in the future. A
+  match on it is NEVER handed to the password observer: the KDC derives keys
+  from what it is handed against the CURRENT hash, and would store the old
+  password's keys as the new one's. The KDC keeps the retired key version
+  for at least the overlap (`holdUntil`), for tickets; the old password never
+  pre-authenticates.
+* **THE ROTATION'S ORDER IS THE GUARANTEE**: claim, generate, PUSH, and only
+  then `credentials.setPassword(..., { rotation })`, which keeps the replaced
+  hash. A failed push changes nothing. A commit that fails after a push that
+  succeeded is the one state that is not "nothing" and is an alarm at once
+  (STS-SVCACCT-0045). While rotation is on and the account names a
+  destination, `preparePassword()` refuses a password set by hand at every
+  door (STS-SVCACCT-0013).
+* **ITS STATE IS ON THE ENTRY** — rotated-at, the previous hash and its
+  expiry, failures — because any node may run the job next (#49).
+
 ## 3be. `mail_factor.ts`: THE EMAILED FACTOR AS A FACT ABOUT A PERSON (#64, 2026-09-23)
 
 The emailed six-digit code and the emailed sign-in link are drawn and checked

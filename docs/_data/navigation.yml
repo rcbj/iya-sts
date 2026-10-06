@@ -51,6 +51,7 @@
     - { title: Signing out, url: /signing-out.html }
     - { title: Risk scoring, url: /risk-scoring.html }
     - { title: Devices, url: /devices.html }
+    - { title: Service accounts, url: /service-accounts.html }
     - { title: "Mail: reset, verification, notices", url: /mail.html }
     - { title: Attribute sources, url: /attribute-sources.html }
 

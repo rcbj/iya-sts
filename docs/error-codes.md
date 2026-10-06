@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4075** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4101** of them, in **42** subsystems.
 
 ## Where a code appears
 
@@ -82,6 +82,7 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 348
 * [Device register (`STS-DEVICE`)](#sts-device) — 46
+* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 90
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 226
@@ -3884,6 +3885,41 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0044` | Remembering a browser was refused: devices.browserDevices is off in the realm, nobody is signed in, or the person holds their most devices (#265). | 400 on /portal/devices; the sign-in itself goes on |
 | `STS-DEVICE-0045` | A remembered browser's generation and binding could not be written onto its device entry, so the token it holds was not issued again (#265). | none — the browser keeps the token it has |
 | `STS-DEVICE-0046` | A device was marked compromised and what its keys were trusted with beyond a session — the GNAP grants whose client key is the device's, the OAuth tokens bound to its keys or certificates — could not all be ended (#432). The sessions, secret and certificates were. | none — an error in the log |
+
+## STS-SVCACCT
+
+**Service accounts.** Service accounts (#221): person entries carrying stsServiceAccount, the service-account policy that governs them (the third kind on Directory → Policies), the doors that policy closes, and the rotation that pushes a new password to a secrets manager before committing it.
+
+Raised from: common/service_accounts.ts, common/service_account_policy.ts, common/service_account_rotation.ts, common/credentials.ts, authn/authn.ts, kerberos/krb5_person_keys.ts, ldap/ldap_server.js.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SVCACCT-0001` | A service-account policy profile other than `default` was named; there is one profile per realm, and nothing assigns a second. | HTTP 400 (management API) |
+| `STS-SVCACCT-0002` | A service-account policy save was refused: a field was missing or out of range, the rotated password's length was below the password policy's minimum, or rotation was turned on in a realm with no push destination. | HTTP 400 (management API) |
+| `STS-SVCACCT-0003` | There is no embedded directory in this process, so a service-account policy could not be saved. | HTTP 400 (management API) |
+| `STS-SVCACCT-0004` | The directory would not store the service-account policy profile: it holds its maximum number of entries. | HTTP 400 (management API) |
+| `STS-SVCACCT-0010` | A service account was refused a browser sign-in — the sign-in screen, the portal, the console, or any first factor that starts a browser session — because the realm's service-account policy keeps allowBrowserSignIn off. | the protocol's own authentication failure (the sign-in screen redrawn; invalid_grant; a wrong password's answer) |
+| `STS-SVCACCT-0011` | A service account's password was refused at a password door (an LDAP bind, a UsernameToken, SCIM, SSF or EST Basic, the OAuth 2.0 password grant, or a door that declared nothing) that the realm's service-account policy does not open to it. Asked before the password is compared, in both modes. | the door's own wrong-password answer (invalidCredentials, a SOAP fault, HTTP 401, invalid_grant) |
+| `STS-SVCACCT-0012` | The KDC refused a service account because the realm's service-account policy does not open the Kerberos door to it. | KDC_ERR_CLIENT_REVOKED (18) |
+| `STS-SVCACCT-0013` | A password was set by hand — the console, the management API or an LDAP modify — for a service account whose password rotates through its push destination; only the rotation sets it. | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0020` | There is no directory in this process, so a person could not be made a service account. | HTTP 400 (management API) |
+| `STS-SVCACCT-0021` | A person named to be made a service account has no entry in this realm's directory. | HTTP 400 (management API) |
+| `STS-SVCACCT-0022` | An entry named to be made a service account is not a person entry (an application is a non-human identity of its own kind). | HTTP 400 (management API) |
+| `STS-SVCACCT-0023` | A service account named no owner while the realm's service-account policy requires one (requireOwner, on by default). | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0024` | A service account's owner names neither a person nor a group in this realm. | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0025` | A service account was named as its own owner. | HTTP 400 (management API) |
+| `STS-SVCACCT-0026` | A service account named a push destination without the secret's name there, or the reverse. | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0027` | The directory would not write a service account's attributes onto its entry. | HTTP 400 (management API) |
+| `STS-SVCACCT-0028` | A service account's secret name was too long, or carried spaces or control characters. | HTTP 400 (management API) |
+| `STS-SVCACCT-0029` | A service account's push destination is not a registered destination in this realm, or the destination register is not loaded in this process. | HTTP 400 (management API) |
+| `STS-SVCACCT-0030` | An LDAP add or modify wrote an attribute the password rotation maintains (stsPasswordRotatedAt, stsPreviousPassword, stsRotation*); refused in product mode as pwdHistory is. | constraintViolation (19) |
+| `STS-SVCACCT-0040` | A rotation was asked of an entry that is not a service account in this realm. | HTTP 400 (management API) |
+| `STS-SVCACCT-0041` | A rotation was asked of a service account that names no push destination. | HTTP 400 (management API) |
+| `STS-SVCACCT-0042` | ALARM: a service account's password has failed to rotate as many times in a row as the service-account policy's rotationAlarmFailures allows. Nothing changed each time; the old password still works. | none — an error in the log and an audit row |
+| `STS-SVCACCT-0043` | A rotation of a service account was not started because another rotation of the same account holds its claim. | none — the run reports it |
+| `STS-SVCACCT-0044` | A service account's rotated password could not be pushed to its destination (or the destination register is not loaded); nothing changed and the next run tries again. | none — a warning in the log and an audit row |
+| `STS-SVCACCT-0045` | ALARM: a service account's rotated password was pushed to its destination and could not be committed here, so the destination holds a password this service does not accept until the next rotation. | none — an error in the log and an audit row |
+| `STS-SVCACCT-0046` | No generated password of the service-account policy's length satisfied the password policy, so the rotation stopped before pushing anything. | none — a warning in the log and an audit row |
 
 ## STS-XACML
 

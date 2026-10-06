@@ -5897,6 +5897,13 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#218). GET /admin/device-registration over JSON: the ' +
           'enrolment methods and which are built, the recognition kinds, ' +
           'the vocabularies and the Devices settings.' },
+  { path: '/admin-api/service-accounts', group: 'Management API',
+    name: 'Service accounts and their rotation', specs: ['openapi'],
+    what: 'NON-SPEC (#221). GET /admin/service-accounts over JSON: every ' +
+          'service account (a person entry carrying stsServiceAccount) ' +
+          'with its push destination, when its password last rotated and ' +
+          'is next due, and how many rotations in a row failed; the ' +
+          'realm\'s rotation settings and the totals. No secret value.' },
   { path: '/admin-api/devices/monitor', group: 'Management API',
     name: 'The device register, counted', specs: ['openapi'],
     what: 'NON-SPEC (#218). GET /admin/devices/monitor over JSON: the ' +

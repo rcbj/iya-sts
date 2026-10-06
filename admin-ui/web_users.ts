@@ -63,11 +63,13 @@ class UsersPage {
     const wantedText = json.filter.q || '';
     const wantedProtocol = json.filter.protocol || '';
     const wantedFactor = json.filter.factor || '';
+    // #221: service accounts only, or everybody else.
+    const wantedKind = json.filter.kind || '';
     const paging = json.paging;
     const shown = json.users;
     const factorCounts = json.factors;
     const filterParams = { q: wantedText, protocol: wantedProtocol,
-                           factor: wantedFactor,
+                           factor: wantedFactor, kind: wantedKind,
                            per: ctx.query.per ? paging.perPage : '' };
     const nav = kit.pageNavPair('/admin/users', filterParams, paging);
 
@@ -96,9 +98,14 @@ class UsersPage {
       // question *who holds no second factor* is a question about the people
       // this table already lists, and a second table of the same people would
       // be a second answer to who they are.
+      // A SERVICE ACCOUNT IS TAGGED (#221): it is a person, so it is on this
+      // list, and the tag is what tells a reader it is a program's account.
       return '<tr><td><a href="' + kit.esc(href) + '">' +
              kit.shortened(row.name, 40) +
-        '</a></td><td>' +
+        '</a>' + (row.serviceAccount
+          ? ' <span class="tag" title="A service account: a person entry ' +
+            'used by a program, governed by the service-account policy">' +
+            'service account</span>' : '') + '</td><td>' +
         UsersPage.sourceCell(row, json.registryKeeps) + '</td><td ' +
         'class="' + (row.authenticated ? 'state-valid' : 'state-none') + '">' +
           (row.authenticated ? row.authentications + '&times;' :
@@ -255,10 +262,19 @@ class UsersPage {
                  (wantedFactor === pair[0] ? ' selected' : '') + '>' +
                  kit.esc(pair[1]) + '</option>';
         }).join('') + '</select>' +
+        // #221: a service account is a person, tagged; this narrows to
+        // them, or leaves them out.
+        '<label for="kind">Kind</label><select id="kind" name="kind">' +
+        [['', 'everybody'], ['service', 'service accounts'],
+         ['person', 'everybody but service accounts']].map(function (pair) {
+          return '<option value="' + kit.esc(pair[0]) + '"' +
+                 (wantedKind === pair[0] ? ' selected' : '') + '>' +
+                 kit.esc(pair[1]) + '</option>';
+        }).join('') + '</select>' +
         '<label for="per">Per page</label><select id="per" name="per">' +
       perOptions + '</select><button ' +
         'class="secondary">Filter</button>' +
-        (wantedText || wantedProtocol || wantedFactor
+        (wantedText || wantedProtocol || wantedFactor || wantedKind
           ? ' <a href="/admin/users">clear</a>' : '') +
       '</div></form>' +
 
@@ -624,6 +640,30 @@ class UsersPage {
         ' If the password is refused the person is still created, with no ' +
         'credential, and the page says why.') +
         kit.mailLinkBox('the activation link', json.mailAvailable) +
+
+        // A SERVICE ACCOUNT FROM THE START (#221): the box, its owner and its
+        // push destination, checked before the person is created — so a
+        // refused owner creates nobody.
+        '<h2>A service account?</h2>' +
+        '<div class="formrow"><label><input type="checkbox" ' +
+        'name="serviceAccount" value="true"' +
+        (given.serviceAccount === 'true' || given.serviceAccount === true
+          ? ' checked' : '') + '> Service account — a person entry used by ' +
+        'a program</label></div>' +
+        '<div class="formrow"><label>Owner (a person or group) <input ' +
+        'type="text" name="owner" size="40" value="' +
+        kit.esc(given.owner || '') + '" placeholder="uid=alice,ou=users,... ' +
+        'or a group\'s cn"></label></div>' +
+        '<div class="formrow"><label>Push destination DN <input type="text" ' +
+        'name="destination" size="40" value="' +
+        kit.esc(given.destination || '') + '"></label><label>Secret name ' +
+        '<input type="text" name="secretName" size="28" value="' +
+        kit.esc(given.secretName || '') + '"></label></div>' +
+        kit.note('Ticked, the person is governed by this realm\'s <a ' +
+        'href="/admin/policies#serviceAccount">service-account policy</a>: ' +
+        'by default no browser sign-in, the second factor NOT exempt, an ' +
+        'owner required, and no rotation. The owner and the destination are ' +
+        'checked BEFORE the person is created, so a refusal creates nobody.') +
 
         // THE FIELD GRID (rcbj, 2026-10-01): the same typed fields, under the
         // same group headings, as a person's Attributes tab, drawn from
@@ -1078,6 +1118,10 @@ class UsersPage {
               html: UsersPage.userCredentialControlsSection(key, json.factors,
                                                        gate, back,
                                                        page.delegation) },
+            // Whether they are a SERVICE ACCOUNT (#221), and its rotation.
+            { id: 'ucred-service', label: 'Service account',
+              html: UsersPage.serviceAccountSection(key, json.serviceAccount,
+                                                    gate, back) },
             // What they can SIGN a grant with (2026-09-13).
             { id: 'ucred-keys', label: 'Key pairs',
               html: UsersPage.userCredentialsSection(key, page.keyPairs, gate,
@@ -3468,6 +3512,117 @@ class UsersPage {
            }).join('') + '</select></label></div>');
     return heading + state + signalsNote + account + reset + passkeys + mfa +
       delegationBlock;
+  }
+
+  /**
+   * Draws a person's Service account tab (#221): whether they are one, its
+   * owner, push destination and rotation, what the realm's policy lets it
+   * do, and — for Admin Write — the forms that set, change or clear it and
+   * rotate its password now.
+   *
+   * @param key - the person's key
+   * @param account - `json.serviceAccount`, or null for an ordinary person
+   * @param gate - the gate state; `write` draws the forms
+   * @param back - the list to return to after an action
+   * @returns the section as HTML
+   */
+  static serviceAccountSection(key, account, gate, back) {
+    const heading = '<h2 id="service-account">Service account</h2>';
+    const lead = kit.note('A <strong>service account</strong> is a person ' +
+      'entry used by a program (#221): everything a person is, governed by ' +
+      'this realm\'s <a href="/admin/policies#serviceAccount">' +
+      'service-account policy</a> — whether the second factor is exempt, ' +
+      'whether a browser sign-in is allowed, which password doors open, ' +
+      'and whether its password rotates and is pushed to a secrets ' +
+      'manager.');
+    const state = account
+      ? '<table class="key"><tr><th>What</th><th>Now</th></tr>' +
+        '<tr><th>Owner</th><td>' + (account.owner
+          ? '<code>' + kit.esc(account.owner) + '</code> (' +
+            kit.esc(account.ownerKind || 'unknown') + ')'
+          : '<span class="state-none">none</span>') + '</td></tr>' +
+        '<tr><th>Push destination</th><td>' + (account.destination
+          ? '<code>' + kit.esc(account.destination) + '</code>, secret <code>' +
+            kit.esc(account.secretName || '') + '</code>'
+          : '<span class="state-none">none — the password is never ' +
+            'rotated</span>') + '</td></tr>' +
+        '<tr><th>Last rotated</th><td>' +
+          kit.esc(account.rotatedAt || 'never') +
+          (account.previousPasswordUntil
+            ? ' — the previous password works until ' +
+              kit.esc(account.previousPasswordUntil) : '') + '</td></tr>' +
+        '<tr><th>Rotation</th><td>' + (account.rotation.rotates
+          ? 'on' + (account.rotation.nextDueAt
+              ? ', next due ' + kit.esc(account.rotation.nextDueAt) : '')
+          : '<span class="state-none">off' + (account.rotation.enabled
+              ? ' for this account (no destination)'
+              : ' in this realm') + '</span>') +
+          (account.rotation.failures
+            ? ' — <strong' + (account.rotation.alarm
+                ? ' class="state-expired"' : '') + '>' +
+              kit.esc(String(account.rotation.failures)) + ' failure(s) in ' +
+              'a row</strong>, last <code>' +
+              kit.esc(account.rotation.lastError || '') + '</code>'
+            : '') + '</td></tr>' +
+        '<tr><th>The policy lets it</th><td>' +
+          (account.policy.exemptFromSecondFactor
+            ? 'skip the second factor; ' : 'meet the second-factor rules; ') +
+          (account.policy.allowBrowserSignIn
+            ? 'sign in at a browser; ' : 'never sign in at a browser; ') +
+          'use ' + kit.esc(account.policy.doors.join(', ') || 'no door') +
+        '</td></tr></table>'
+      : kit.note('<strong>' + kit.esc(key) + ' is an ordinary ' +
+                 'person.</strong>');
+    if (!gate.write) {
+      return heading + lead + state +
+        kit.note('Making somebody a service account needs <strong>Admin ' +
+                 'Write</strong>.');
+    }
+    const field = function (name, label, value, placeholder) {
+      return '<div class="formrow"><label>' + label + ' <input type="text" ' +
+        'name="' + name + '" size="60" value="' + kit.esc(value || '') +
+        '" placeholder="' + kit.esc(placeholder) + '"></label></div>';
+    };
+    const form = function (action, label, title, extra, danger?) {
+      return '<form method="post" action="/admin/users">' +
+        '<input type="hidden" name="action" value="' + kit.esc(action) + '">' +
+        '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+        '<input type="hidden" name="from" value="user">' +
+        '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+        extra +
+        '<div class="formrow"><button' + (danger ? ' class="danger"' : '') +
+        ' title="' + kit.esc(title) + '">' + label + '</button></div></form>';
+    };
+    const fields = field('owner', 'Owner (a person or group)',
+                         account && account.owner,
+                         'uid=alice,ou=users,... or a group\'s cn') +
+      field('destination', 'Push destination DN', account &&
+            account.destination, 'cn=vault-prod,ou=applications,...') +
+      field('secretName', 'Secret name or path', account &&
+            account.secretName, 'iya/svc-backup');
+    const set = form('set-service-account', account
+      ? 'Save the service account' : 'Make them a service account',
+      'Writes stsServiceAccount, its owner and its push destination.',
+      '<input type="hidden" name="serviceAccount" value="true">' + fields) +
+      (account ? '' : kit.note('Where this realm refuses a service account ' +
+        'every browser sign-in (the default), making them one ENDS their ' +
+        'sessions.'));
+    const rotate = account && account.destination
+      ? '<h3>Rotate the password now</h3>' +
+        kit.note('Generates a new password, PUSHES it to the destination ' +
+          'first and commits it only once the push succeeded; the previous ' +
+          'password keeps working for the policy\'s overlap. A failed push ' +
+          'changes nothing.') +
+        form('rotate-password', 'Rotate now', 'Rotates the password through ' +
+             'the push destination.', '')
+      : '';
+    const clear = account
+      ? form('set-service-account', 'Make them an ordinary person',
+             'Clears stsServiceAccount, the owner, the destination and the ' +
+             'rotation state.',
+             '<input type="hidden" name="serviceAccount" value="false">', true)
+      : '';
+    return heading + lead + state + set + rotate + clear;
   }
 
   // Not a 404: this service has simply never seen the name, or has forgotten

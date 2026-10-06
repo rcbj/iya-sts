@@ -267,6 +267,14 @@ class ProtocolStack {
     // factors. A library over the directory slot, like the password policy.
     this.build('common/authn_policy', require('./authn_policy'),
                'AuthnPolicy');
+    // #221: the service-account policy (the third kind on Directory →
+    // Policies) and the service accounts it governs — person entries with a
+    // flag. Two libraries over the directory slot, like the policies above;
+    // `credentials` below asks both.
+    this.build('common/service_account_policy',
+               require('./service_account_policy'), 'ServiceAccountPolicy');
+    this.build('common/service_accounts', require('./service_accounts'),
+               'ServiceAccounts');
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
                'WebauthnPolicy');
     // #105: a registration's attestation statement, verified. A library
@@ -1611,6 +1619,13 @@ class ProtocolStack {
     // keystore, the scheduler, the audit log — it reaches lazily.
     this.build('common/data_key_rotation', require('./data_key_rotation'),
                'DataKeyRotation');
+    // 23b-ii-b. SERVICE-ACCOUNT PASSWORD ROTATION (#221 P4): a library that
+    // registers its three scheduler jobs when built and no route, beside the
+    // two rotations above. After `ssf/ssf`, whose credential-change it sends,
+    // and `ldap/ldap_server`, whose entries it rotates — both lazily, so the
+    // order is for a reader; the push destinations it reaches lazily too.
+    this.build('common/service_account_rotation',
+               require('./service_account_rotation'), 'ServiceAccountRotation');
     // 23b-iii. THE KRBTGT KEY'S ROTATION (#169, 2026-09-23): a library that
     // registers its two scheduler jobs when built and no route. After
     // `ldap/ldap_server` (21), whose directory slot the register it drives

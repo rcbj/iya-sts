@@ -32,6 +32,7 @@ import WebKit = require('./web_kit');
 import AcmePage = require('../acme/web_acme');
 import ApplicationsPage = require('./web_applications');
 import AuditPage = require('./web_audit');
+import ServiceAccountsPage = require('./web_service_accounts');
 import AuthorizationServersPage = require('./web_authorization_servers');
 import AttributeSourcesPage =
   require('../attribute-sources/web_attribute_sources');
@@ -331,6 +332,10 @@ const PAGES: WebPage[] = [
     render: function (view: Json): string {
       return DevicesPage.monitorHtml(view);
     } },
+  // #221: the rotation's state per service account.
+  { path: '/admin/service-accounts', title: 'Service accounts',
+    operation: '/admin-api/service-accounts',
+    render: ServiceAccountsPage.render },
   { path: '/admin/encryption', title: 'Encryption',
     operation: '/admin-api/encryption', render: EncryptionPage.render },
   { path: '/admin/error-codes', title: 'Error codes',
