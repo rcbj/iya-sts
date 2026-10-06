@@ -50,7 +50,10 @@
 //   N2. an OnBehalfOf act's note says the token adds nobody;
 //   N3. the consumed token's note follows the mode: VERIFIED in product
 //       (an assertion's certificate and Conditions, a JWT's key, issuer and
-//       exp), NOT verified in development (#479).
+//       exp), NOT verified in development (#479);
+//   N4. the row's authorizedBy is in WS-Trust's words: the application the
+//       AppliesTo names and the token inside the element, never RFC 8693's
+//       "subject token" (#481).
 //
 // Every JWT verifies with this realm's own key (`helpers.verifyOwnJws()`).
 // IN PROCESS, in a throwaway realm, for `wstrust_fault_codes.js`'s reason:
@@ -465,6 +468,16 @@ function registerRows(t) {
           : /NOT verified/.test(consumed)),
                 'N3 (' + m + ', ' + one[0] + '). the consumed assertion\'s ' +
                 'note says whether it was verified', consumed);
+        const element = one[0] === 'ActAs' ? '<wst14:ActAs>'
+                                           : '<wst:OnBehalfOf>';
+        const said = String(act.authorizedBy || '');
+        t.check(r.status === 200 &&
+                said.indexOf('", the application the AppliesTo names (the ' +
+                             'token inside ' + element + ' was issued for ' +
+                             '"wj-front")') > 0 &&
+                said.indexOf('subject token') < 0,
+                'N4 (' + m + ', ' + one[0] + '). authorizedBy names the ' +
+                'AppliesTo and the token inside ' + element, said);
         t.check(r.status === 200 && one[2].test(String(act.note || '')),
                 (one[0] === 'ActAs' ? 'N1' : 'N2') + ' (' + m + ', ' +
                 (one[1] ? 'JWT' : 'SAML') + '). the ' + one[0] + ' act\'s ' +
