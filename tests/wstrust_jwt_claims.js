@@ -47,7 +47,10 @@
 //   N1. an ActAs act's note says the token issued names who acted — the
 //       Delegation Restriction for an assertion, the nested `act` for a
 //       JWT (#478; it said no ActAs token carried that);
-//   N2. an OnBehalfOf act's note says the token adds nobody.
+//   N2. an OnBehalfOf act's note says the token adds nobody;
+//   N3. the consumed token's note follows the mode: VERIFIED in product
+//       (an assertion's certificate and Conditions, a JWT's key, issuer and
+//       exp), NOT verified in development (#479).
 //
 // Every JWT verifies with this realm's own key (`helpers.verifyOwnJws()`).
 // IN PROCESS, in a throwaway realm, for `wstrust_fault_codes.js`'s reason:
@@ -453,6 +456,15 @@ function registerRows(t) {
         const r = ask((one[0] === 'ActAs' ? actAs : onBehalfOf)(
           signed('wj-alice', 'wj-front')), one[1]);
         const act = actFor(r);
+        const consumed = String(((act.consumed || []).filter(function (c) {
+          return c.kind === 'delegated token';
+        })[0] || {}).note || '');
+        t.check(r.status === 200 && (m === 'product'
+          ? /VERIFIED against this realm's own signing certificate/
+            .test(consumed)
+          : /NOT verified/.test(consumed)),
+                'N3 (' + m + ', ' + one[0] + '). the consumed assertion\'s ' +
+                'note says whether it was verified', consumed);
         t.check(r.status === 200 && one[2].test(String(act.note || '')),
                 (one[0] === 'ActAs' ? 'N1' : 'N2') + ' (' + m + ', ' +
                 (one[1] ? 'JWT' : 'SAML') + '). the ' + one[0] + ' act\'s ' +

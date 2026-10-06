@@ -993,6 +993,7 @@ function assertAct(cast, act, expect) {
 // that token's vocabulary — a SAML Delegation Restriction or a JWT's `act`
 // — and an OnBehalfOf act's says it adds nobody (#478; until then it said
 // no ActAs token carried the composite fact, and the jobs WARNed on it).
+// The consumed token's note says whether it was verified, by mode (#479).
 // What is still only reported, as a WARN naming the finding, answers the
 // list this returns.
 function actNotes(act, element, product, jwt) {
@@ -1014,14 +1015,22 @@ function actNotes(act, element, product, jwt) {
       "the OnBehalfOf act's note should say the token adds nobody and " +
       "says: \"" + note + "\"");
   }
+  // The consumed token's note follows the mode (#479): product verified it,
+  // development did not.
   const delegated = (act.consumed || []).filter(function (one) {
     return one.kind === "delegated token";
-  })[0];
-  if (product && delegated &&
-      /signature and Conditions are not checked/.test(delegated.note)) {
-    out.push("the consumed token's note says its signature and " +
-             "Conditions are not checked, and a product service verifies " +
-             "both (checkedAssertion())");
+  })[0] || {};
+  const consumed = String(delegated.note || "");
+  if (product) {
+    assert.ok(/VERIFIED/.test(consumed) &&
+              consumed.indexOf(jwt ? "a JWT" : "a SAML assertion") >= 0 &&
+              !/not checked/.test(consumed),
+      "a product service verified the consumed " + (jwt ? "JWT" :
+      "assertion") + " and the act's note says: \"" + consumed + "\"");
+  } else {
+    assert.ok(/NOT verified/.test(consumed), "a development service did " +
+              "not verify the consumed token and the act's note says: \"" +
+              consumed + "\"");
   }
   out.forEach(function (one) {
     log.warn("[finding] " + one + ".");

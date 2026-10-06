@@ -66,6 +66,12 @@ issued; both change what the console can draw.
   WS-Security credential, which this service never issued and cannot name. That
   wall is still recorded beside the followable one, because "it began somewhere
   this register cannot name" and "this is where it began" are different answers.
+  **Its note says what was CHECKED, by mode (#479).** In product the token
+  was verified, and the note says so: an assertion against this realm's
+  certificate and inside its Conditions, a JWT against this realm's key,
+  with its issuer and `exp` checked. In development it was not, and the
+  note says that. Until #479 the development sentence was written in every
+  mode.
 
 The requester also carries an `application` where this registry already holds an
 entry under the name it authenticated as. It stays a LOOKUP: an unknown name
