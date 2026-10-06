@@ -158,7 +158,9 @@ function run(t) {
   // startup warning asked for the issuer name, which product aligns with the
   // SAML entityID, and the read built the SSO module's DEFAULT instance before
   // the root installed it — so the root's install refused and a product
-  // service did not start. Development never reached that read.
+  // service did not start. Development never reached that read until #494
+  // aligned the name in both modes; the guard in `issuer_names.ts` is what
+  // both children above and this one now stand on.
   t.log.info('=== the whole stack in PRODUCT mode: still the root\'s ===');
   const product = runChild(t, 'stack', {
     STS_MODE: 'product', STS_PERSISTENCE_MODE: 'memory'

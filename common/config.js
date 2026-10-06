@@ -8272,10 +8272,11 @@ const SETTINGS = [
                  'is the realm\'s SAML 2.0 entityID - and for a token to a ' +
                  'REGISTERED application (a WS-Trust AppliesTo, a ' +
                  'WS-Federation wtrealm) that application\'s own entityID, ' +
-                 '<entityID>:<application> where saml2.perApplicationEntityId ' +
-                 'is on, the name SAML SSO and /saml2/metadata/{sp} give it. ' +
-                 'An address nobody registered gets the shared entityID. Set, ' +
-                 'it is every assertion\'s Issuer.' },
+                 '<entityID>:<application> where ' +
+                 'saml2.perApplicationEntityId is on, the name SAML SSO and ' +
+                 '/saml2/metadata/{sp} give it. An address nobody registered ' +
+                 'gets the shared entityID. Set, it is every assertion\'s ' +
+                 'Issuer.' },
 
   // The one setting on this page that changes what goes INTO an assertion's
   // validity window rather than how long that window is. It is deliberately
@@ -9130,8 +9131,8 @@ const SETTINGS = [
     env: 'STS_WSFED_ENTITY_ID', legacyEnv: 'STS_ISSUER', type: 'string',
     dflt: '', runtime: true,
     description: 'The entityID in the federation metadata at ' +
-                 '/FederationMetadata/2007-06/FederationMetadata.xml. Unset, in ' +
-                 'either mode (#480, #494), it is the realm\'s SAML 2.0 ' +
+                 '/FederationMetadata/2007-06/FederationMetadata.xml. Unset, ' +
+                 'in either mode (#480, #494), it is the realm\'s SAML 2.0 ' +
                  'entityID, and a registered relying party\'s own document, ' +
                  '/wsfed/metadata/{rp}, names that application\'s entityID - ' +
                  'the Issuer of the assertions it is sent - so the metadata ' +
