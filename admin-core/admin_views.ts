@@ -9026,8 +9026,8 @@ class AdminViews {
     };
     // The configuration tab's fields: every field but the credentials and
     // those a tab of their own edits (#392: the CORS origins are the
-    // Browser origins tab's), typed as the grid types them, with the
-    // entry's values.
+    // Browser origins tab's; #458: the required roles are the Roles tab's),
+    // typed as the grid types them, with the entry's values.
     const ownTab = applications.PAGE_TAB_ATTRIBUTES || [];
     const configFields = applications.applicationFields()
       .filter(function (one) {
@@ -9218,7 +9218,7 @@ class AdminViews {
                                                              row.identifier);
     const credentialsState = this.applicationCredentialsState(row);
     const softwareStatementState = this.applicationSoftwareStatementState(row);
-    const rolesState = this.applicationRolesState(row.identifier);
+    const rolesState = this.applicationRolesState(row.identifier, row);
     const signalsState = this.applicationSignalsState(req, row);
     const enrollmentState = this.applicationEnrollmentState(req, row);
     const claimsState = this.applicationClaimsState(row);
@@ -9300,6 +9300,10 @@ class AdminViews {
           // its carries, and the roles it could be granted. Granting and
           // removing are `POST /admin-api/roles/add-member` and
           // `remove-member` with `kind: application`, the console's own act.
+          // AND THE ROLES IT REQUIRES (#458), the Roles tab's other section:
+          // `required` and `requirable`, written through
+          // `POST /admin-api/applications/add` and `remove` with
+          // `attribute: appRequiredRole`.
           applicationRoles: rolesState,
           delegatedPermissions: {
             held: permissionState.held,
@@ -9335,18 +9339,43 @@ class AdminViews {
   //
   // `offerable` is every role it does not hold that admits applications: a
   // role restricted to people is not offered, and would be refused.
+  //
+  // AND THE OTHER RELATION, ON THE SAME TAB (#458): `required` is the
+  // entry's `appRequiredRole` — the roles somebody must hold before anything
+  // is issued for this application — read as STORED, not through
+  // `requiredRolesFrom()`, because that reader answers EVERYBODY for an empty
+  // list and the page has to show (and offer to remove) exactly what is on
+  // the entry. Each value says what it resolves to, by the rule the issuance
+  // PEP holds a requirement to (#310): a built-in role, a realm-wide role of
+  // that name, or THIS application's own role of that name — never another
+  // application's. One that resolves to nothing is a requirement nobody can
+  // satisfy, which refuses everybody and looks exactly like a broken
+  // application, so it is marked rather than drawn like the others.
+  //
+  // `requirable` is what the add control offers: the built-in roles but
+  // EVERYBODY (an empty list already means everybody, and EVERYBODY beside a
+  // narrower role would quietly undo it), the realm-wide roles and this
+  // application's own roles by their name inside it, less those already
+  // required. Membership types do not narrow it — a role restricted to
+  // applications is still a role a client_credentials subject can meet.
   // ---------------------------------------------------------------------------
   /**
-   * The roles an application holds as itself, and those it could be granted.
+   * The roles an application holds as itself, those it could be granted, the
+   * roles it requires of whoever uses it and those it could require.
    *
    * @param identifier - the application
-   * @returns `{ held, offerable }`: `held` rows carry `name`, `id`,
-   *   `displayName`, `application` (whose role it is, or empty for a
-   *   realm-wide one), `carriedAs` and `permissions`; `offerable` is role
-   *   names
+   * @param row - the application's registry view, when the caller has it;
+   *   read by identifier otherwise
+   * @returns `{ held, offerable, required, requirable }`: `held` rows carry
+   *   `name`, `id`, `displayName`, `application` (whose role it is, or empty
+   *   for a realm-wide one), `carriedAs` and `permissions`; `offerable` is
+   *   role names; `required` rows carry `name` (as stored), `resolves`
+   *   (`built-in`, `realm`, `application` or `none`), `displayName` and
+   *   `role` (the register's name for it, or empty); `requirable` is the
+   *   names a requirement may be given
    */
-  applicationRolesState(identifier) {
-    const { log, roles } = this.deps;
+  applicationRolesState(identifier, row?) {
+    const { log, roles, applications } = this.deps;
     log.debug("Entering AdminViews.applicationRolesState(). identifier=" +
               identifier);
     const key = String(identifier || '').toLowerCase();
@@ -9370,9 +9399,57 @@ class AdminViews {
     }).map(function (role) {
       return role.name;
     });
+    // The requirement's two lists (#458), against this application's own
+    // roles by their name inside it.
+    const view = row || applications.get(identifier);
+    const fields = (view && view.fields) || {};
+    const stored = [].concat(fields.appRequiredRole === undefined ||
+      fields.appRequiredRole === null ? [] : fields.appRequiredRole)
+      .map(function (one) { return String(one).trim(); })
+      .filter(function (one) { return one.length > 0; });
+    const ownOf = function (role) {
+      return !!role.application &&
+             String(role.application).toLowerCase() === key;
+    };
+    const required = stored.map(function (name) {
+      if (roles.isBuiltIn(name)) {
+        return { name: name, resolves: 'built-in', displayName: '',
+                 role: name };
+      }
+      const own = all.filter(function (role) {
+        return ownOf(role) && role.localName === name;
+      })[0];
+      if (own) {
+        return { name: name, resolves: 'application',
+                 displayName: own.displayName || '', role: own.name };
+      }
+      const wide = all.filter(function (role) {
+        return !role.application && role.name === name;
+      })[0];
+      if (wide) {
+        return { name: name, resolves: 'realm',
+                 displayName: wide.displayName || '', role: wide.name };
+      }
+      return { name: name, resolves: 'none', displayName: '', role: '' };
+    });
+    const candidates = roles.BUILT_IN_NAMES.filter(function (name) {
+      return name !== roles.DEFAULT_REQUIRED_ROLE;
+    }).concat(all.filter(function (role) {
+      return !role.application;
+    }).map(function (role) {
+      return role.name;
+    })).concat(all.filter(ownOf).map(function (role) {
+      return role.localName || role.name;
+    }));
+    const requirable = candidates.filter(function (name, at) {
+      return candidates.indexOf(name) === at && stored.indexOf(name) < 0;
+    });
     log.debug("Leaving AdminViews.applicationRolesState(). " + held.length +
-              " held, " + offerable.length + " offerable.");
-    return { held: held, offerable: offerable };
+              " held, " + offerable.length + " offerable, " +
+              required.length + " required, " + requirable.length +
+              " requirable.");
+    return { held: held, offerable: offerable, required: required,
+             requirable: requirable };
   }
 
   // ---------------------------------------------------------------------------

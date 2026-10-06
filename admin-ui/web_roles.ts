@@ -333,10 +333,11 @@ class RolesPage {
       kit.note('<strong>The other relation, and it is edited somewhere ' +
       'else.</strong> An application demands roles through ' +
       '<code>appRequiredRole</code> on its own entry, which is where it is ' +
-      'written &mdash; on the application\'s page, in the attribute ' +
-      'editor, or with an <code>ldapmodify</code>. This table RESOLVES it, ' +
-      'which that page cannot: it says whether anything actually defines ' +
-      'each role named. <strong>Only NARROWED applications are ' +
+      'written &mdash; on the <em>Roles</em> tab of the application\'s ' +
+      'page, as <em>Roles a person must hold to use it</em>, or with an ' +
+      '<code>ldapmodify</code>. This table RESOLVES it for the whole ' +
+      'realm at once: it says whether anything actually defines each role ' +
+      'named. <strong>Only NARROWED applications are ' +
       'listed.</strong> Every other application in this realm requires ' +
       '<code>' +
       kit.esc(register.defaultRequired) + '</code>, which everybody ' +
