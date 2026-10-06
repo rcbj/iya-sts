@@ -1173,8 +1173,10 @@ class ConsoleRuntime {
     }
     // A SECRET SHOWN ONCE is drawn in place — never on a URL, never in the
     // history — and is gone when the reader moves on.
+    // Its way back is to the tab the form was on, as an act's return is.
     const once = WebAnswers.once(page, action, fields, json, {
-      back: back, base: this.env.location.origin + this.prefix,
+      back: back + String(this.env.location.hash || ''),
+      base: this.env.location.origin + this.prefix,
       realmRoot: (this.shell && this.shell.realmRoot) ||
                  this.env.location.origin });
     if (once) {
