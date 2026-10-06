@@ -549,6 +549,46 @@ A statement that does not verify is refused; one that verifies and chains to
 none of these is self-asserted. **Protocols → Device registration** lists the
 shipped roots by subject and fingerprint.
 
+### Google's Android attestation status list
+
+A chain can reach Google's roots and still contain a certificate that Google
+has **revoked or suspended**, for example a leaked batch key. Google publishes
+these certificates by serial number at
+`https://android.googleapis.com/attestation/status` (#256). Every certificate
+of an Android chain is looked up in that list. This happens both when a device
+registers and when a WebAuthn `android-key` statement arrives at sign-in:
+
+- **Revoked or suspended:** the device key is *self-asserted* (product refuses
+  it, `STS-DEVICE-0047`) and the WebAuthn statement is *untrusted*
+  (`STS-AUTHN-0297`).
+- **Not on the list:** the key is attested as before, and its summary names the
+  list version that was checked.
+- **No current list** (never downloaded, the download failing, or older than
+  `devices.androidStatusStaleHours`): the key is still attested, with its
+  revocation **unchecked** and the reason. When
+  `devices.androidRevocationRequired` is on in product mode, an unchecked chain
+  counts as unattested instead (`STS-DEVICE-0048`).
+
+The list is the risk dataset `android.attestation-status`, shown on
+**Monitoring → Risk**. The `devices.android-status-refresh` scheduler job
+downloads it daily from `devices.androidStatusUrl`, which is Google's address by
+default. The list can also be uploaded there by hand. Each key keeps its
+chain's serial numbers, so whenever a new list is activated, and daily, the
+`devices.android-status-recheck` job looks them up again:
+
+- A device key the new list revokes is **downgraded to self-asserted**. The
+  device's level is recomputed, an audit row is written, and a CAEP
+  `credential-change` (`update`) is sent. The device's *status* is not
+  changed: the attestation no longer proves where the key lives, which is not
+  the same as the device being compromised.
+- A security key's attestation is marked untrusted in the same way. The key
+  still signs its person in.
+- A key registered before this check was added has no serial numbers stored,
+  so it cannot be rechecked. Its page says *revocation unknown*.
+
+**Protocols → Device registration** shows the active list, its age, the
+address and the job (`GET /admin-api/device-registration`, `androidStatus`).
+
 ## Configuration
 
 Drawn on **Protocols → Device registration**; the live source is that page and
@@ -565,6 +605,11 @@ Drawn on **Protocols → Device registration**; the live source is that page and
 | `devices.maxChallenges` | `STS_DEVICES_MAX_CHALLENGES` | `10000` | yes | Unanswered enrolment challenges held per realm. |
 | `devices.androidAttestationTrustAnchors` | `STS_DEVICES_ANDROID_ATTESTATION_TRUST_ANCHORS` | *(empty: Google's)* | yes | Android Key Attestation roots, replacing the shipped ones. |
 | `devices.androidMinimumSecurityLevel` | `STS_DEVICES_ANDROID_MINIMUM_SECURITY_LEVEL` | `trusted-environment` | yes | `trusted-environment` or `strongbox`. |
+| `devices.androidStatusUrl` | `STS_DEVICES_ANDROID_STATUS_URL` | Google's status list | yes | Where `devices.android-status-refresh` downloads the status list from; empty dials nobody. |
+| `devices.androidStatusRefreshS` | `STS_DEVICES_ANDROID_STATUS_REFRESH_S` | `86400` | yes | How often it is downloaded. |
+| `devices.androidStatusMaxBytes` | `STS_DEVICES_ANDROID_STATUS_MAX_BYTES` | `16777216` | yes | The most read of one download. |
+| `devices.androidStatusStaleHours` | `STS_DEVICES_ANDROID_STATUS_STALE_HOURS` | `48` | yes | After this long the active list is stale and chains are unchecked. |
+| `devices.androidRevocationRequired` | `STS_DEVICES_ANDROID_REVOCATION_REQUIRED` | `false` | yes | In product mode, an unchecked chain is not attested. |
 | `devices.appleAppAttestTrustAnchors` | `STS_DEVICES_APPLE_APP_ATTEST_TRUST_ANCHORS` | *(empty: Apple's)* | yes | App Attest roots, replacing the shipped one. |
 | `devices.appleAppAttestAppIds` | `STS_DEVICES_APPLE_APP_ATTEST_APP_IDS` | *(empty)* | yes | `TEAMID.bundle.id` of the apps whose keys are registered; empty accepts none. |
 | `devices.appleAppAttestAllowDevelopment` | `STS_DEVICES_APPLE_APP_ATTEST_ALLOW_DEVELOPMENT` | `false` | yes | Accept App Attest's development environment. |

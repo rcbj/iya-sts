@@ -117,7 +117,21 @@ const CATALOGUE: Record<string, Json> = {
     latestOnly: true,
     what: 'Every FIDO-certified authenticator model and its status reports. ' +
           'A security key whose model the metadata reports REVOKED or ' +
-          'compromised is a risk signal; the rest is shown, not scored.' }
+          'compromised is a risk signal; the rest is shown, not scored.' },
+  // GOOGLE'S ANDROID KEY ATTESTATION STATUS LIST (#256): which attestation
+  // certificates Google has REVOKED or SUSPENDED, by serial number. An
+  // Android chain is looked up certificate by certificate
+  // (`lookupAttestationSerials()`, asked by `common/attestation_revocation.ts`)
+  // at a device's registration and at a WebAuthn `android-key` statement.
+  // Kept as keyed rows in the table the MDS3 entries use (`rowKind`), the
+  // latest list only; stale after `devices.androidStatusStaleHours`.
+  'android.attestation-status': { kind: 'android-status', rowKind: 'fido',
+    title: 'Android key attestation status (Google)', stale: 'android',
+    formats: ['android-attestation-status-json'],
+    provider: 'google-android-attestation', latestOnly: true,
+    what: 'The Android attestation certificates Google has revoked or ' +
+          'suspended — a leaked batch key, a compromised intermediate. An ' +
+          'Android chain naming one is not attested.' }
 };
 
 // WHO A DATASET COMES FROM, AND ON WHAT TERMS, is `risk_terms.ts`'s: the
@@ -148,6 +162,11 @@ const FORMATS: Record<string, Json> = {
   'fido-mds3-jwt': { provider: 'fido-mds3',
     what: 'The MDS3 BLOB exactly as FIDO publishes it: one signed JWT, whose ' +
           'x5c chain must end at the FIDO root.' },
+  'android-attestation-status-json': { provider: 'google-android-attestation',
+    what: 'Google\'s attestation status list as it publishes it: a JSON ' +
+          'object whose `entries` are keyed by a certificate\'s serial ' +
+          'number in lower-case hexadecimal, each with a `status` ' +
+          '(REVOKED or SUSPENDED) and a `reason`.' },
   'ip-list': { provider: '',
     what: 'One address, CIDR block or "first - last" range per line; text ' +
           'after # or ; is a comment. The Tor Project\'s exit list and ' +
@@ -687,6 +706,10 @@ class RiskDatasets {
       log.debug("Leaving RiskDatasets.importVersion(). An MDS3 BLOB.");
       return this.importMds(o, meta);
     }
+    if (entry.kind === 'android-status') {
+      log.debug("Leaving RiskDatasets.importVersion(). Android status.");
+      return this.importAndroidStatus(o, meta);
+    }
     const began = await store.beginVersion(meta);
     if (!began) {
       log.debug("Leaving RiskDatasets.importVersion(). Already recorded.");
@@ -887,7 +910,8 @@ class RiskDatasets {
     for (const v of gone) {
       const entry = CATALOGUE[v.dataset];
       if (entry) {
-        rows += await this.dropRows(entry.kind, String(v.realm || ''),
+        rows += await this.dropRows(RiskDatasets.rowKindOf(entry),
+                                    String(v.realm || ''),
                                     v.dataset, v.version);
       }
       log.warn(errorCodes.tag('STS-RISK-0035') + 'risk: ' + v.dataset +
@@ -1101,6 +1125,343 @@ class RiskDatasets {
                                   : ' verified') + ': ' + written +
                       ' authenticator key(s) loaded' +
                       (activated ? ', now active' : '') + '.' };
+  }
+
+  // The kind of row a dataset is stored as: its own kind, or `rowKind`
+  // where it is kept in another kind's table (#256's status list, in the
+  // keyed table the MDS3 entries use).
+  /**
+   * Returns the kind of row a dataset is stored as.
+   *
+   * @param entry - the catalogue entry
+   * @returns `rowKind` where set, else the entry's kind
+   */
+  static rowKindOf(entry: Json): string {
+    log.debug("Entering RiskDatasets.rowKindOf().");
+    log.debug("Leaving RiskDatasets.rowKindOf().");
+    return String((entry && (entry.rowKind || entry.kind)) || '');
+  }
+
+  // A certificate serial as the list keys it (#256): lower-case hexadecimal
+  // with no leading zeros, whichever way it was written. `pki.js` reads a
+  // certificate's serial in the same form (`certificateSerialHex()`).
+  /**
+   * Normalises a certificate serial number as Google's list keys it:
+   * lower-case hexadecimal, no leading zeros, no separators.
+   *
+   * @param serial - the serial, hex, with or without colons or `0x`
+   * @returns the normalised serial, or '' for one that is not hex
+   */
+  static androidSerialKey(serial: unknown): string {
+    log.debug("Entering RiskDatasets.androidSerialKey().");
+    const hex = String(serial == null ? '' : serial).trim().toLowerCase()
+      .replace(/^0x/, '').replace(/[:\s]/g, '');
+    if (!/^[0-9a-f]+$/.test(hex)) {
+      log.debug("Leaving RiskDatasets.androidSerialKey(). Not hex.");
+      return '';
+    }
+    const out = hex.replace(/^0+(?=.)/, '');
+    log.debug("Leaving RiskDatasets.androidSerialKey().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // GOOGLE'S STATUS LIST AS ROWS (#256): one per entry, keyed by the
+  // normalised serial, its status the list's (`REVOKED` or `SUSPENDED`), and
+  // `compromised` where the reason says a key or a CA was compromised. The
+  // whole entry is kept as its one status report.
+  // -------------------------------------------------------------------------
+  /**
+   * Turns Google's attestation status list into rows, one per listed
+   * certificate.
+   *
+   * @param list - the parsed list: `{ entries: { serial: entry } }`
+   * @returns the rows, or null for a document that is not such a list
+   */
+  static androidStatusRowsOf(list: Json): Json[] | null {
+    log.debug("Entering RiskDatasets.androidStatusRowsOf().");
+    const entries = list && typeof list === 'object' && !Array.isArray(list)
+      ? list.entries : null;
+    if (!entries || typeof entries !== 'object' || Array.isArray(entries)) {
+      log.debug("Leaving RiskDatasets.androidStatusRowsOf(). Not a list.");
+      return null;
+    }
+    const rows: Json[] = [];
+    Object.keys(entries).forEach(function (serial: string): void {
+      const key = RiskDatasets.androidSerialKey(serial);
+      const e = entries[serial] || {};
+      const status = String(e.status || '').toUpperCase();
+      if (!key || ['REVOKED', 'SUSPENDED'].indexOf(status) < 0) {
+        return;
+      }
+      const reason = String(e.reason || 'UNSPECIFIED').toUpperCase();
+      rows.push({
+        keyKind: 'android-serial', key: key,
+        description: String(e.comment || '').slice(0, 500),
+        latestStatus: status,
+        latestStatusAt: Date.parse(String(e.expires || '')) || 0,
+        compromised: ['KEY_COMPROMISE', 'CA_COMPROMISE'].indexOf(reason) >= 0,
+        statusReports: [{ status: status, reason: reason,
+                          expires: String(e.expires || ''),
+                          comment: String(e.comment || '').slice(0, 500) }],
+        metadataStatement: {}
+      });
+    });
+    log.debug("Leaving RiskDatasets.androidStatusRowsOf(). " + rows.length +
+              ".");
+    return rows;
+  }
+
+  // -------------------------------------------------------------------------
+  // ONE VERSION OF GOOGLE'S STATUS LIST (#256), as `importMds()` imports a
+  // BLOB: refused whole when it is not a list, the latest only (every older
+  // version's rows dropped at activation), and a duplicate of the active
+  // list not loaded again. NOT signed — Google serves it over TLS from its
+  // own host, and the download's TLS is verified (`fetchPublished()`) — so
+  // there is no signature to verify; an upload is believed as the operator
+  // who uploaded it. An empty list is a real answer (nothing revoked), so it
+  // is loaded rather than refused. Activating one asks
+  // `attestation_revocation.ts` to recheck the stored chains.
+  // -------------------------------------------------------------------------
+  private async importAndroidStatus(o: Json, meta: Json): Promise<Json> {
+    const { log, store, now, config } = this.deps;
+    log.debug("Entering RiskDatasets.importAndroidStatus().");
+    const text = o.path
+      ? await RiskExpand.readText(o.path,
+          Number(config.value('devices.androidStatusMaxBytes')), o.limits)
+      : String(o.content);
+    const refuse = async (code: string, why: string): Promise<Json> => {
+      log.debug("Entering refuse(). " + code);
+      await store.beginVersion(meta);
+      await store.finishVersion('', meta.dataset, meta.version, {
+        state: 'refused', rowCount: 0, loadedAt: now(), refusal: why,
+        errorCode: code });
+      log.debug("Leaving refuse().");
+      return this.refused(code, why, o, meta.version);
+    };
+    if (o.sha256 && String(o.sha256).toLowerCase() !== meta.sha256) {
+      log.debug("Leaving RiskDatasets.importAndroidStatus(). Checksum.");
+      return refuse('STS-RISK-0002', 'The file\'s SHA-256 is ' + meta.sha256 +
+                    ', not the ' + o.sha256 + ' that was named.');
+    }
+    let parsed: Json = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in RiskDatasets.importAndroidStatus(): " +
+                ((e && e.message) || e));
+      parsed = null;
+    }
+    const rows = parsed ? RiskDatasets.androidStatusRowsOf(parsed) : null;
+    if (!rows) {
+      log.debug("Leaving RiskDatasets.importAndroidStatus(). Not a list.");
+      return refuse('STS-RISK-0045', 'This is not Google\'s attestation ' +
+                    'status list: a JSON object whose `entries` are keyed ' +
+                    'by certificate serial. Nothing was loaded.');
+    }
+    const staged = Object.assign({}, meta, {
+      version: String(o.version || 'sha-' + meta.sha256.slice(0, 16)),
+      verification: o.source === 'url' ? 'tls' : meta.verification });
+    const began = await store.beginVersion(staged);
+    if (!began) {
+      log.debug("Leaving RiskDatasets.importAndroidStatus(). Already " +
+                "recorded.");
+      return { ok: true, duplicate: true, dataset: staged.dataset,
+               version: staged.version,
+               message: 'This list (' + staged.version + ') is already ' +
+                        'recorded; nothing was loaded again.' };
+    }
+    this.begun(o, { dataset: staged.dataset, realm: '',
+                    version: staged.version, sha256: meta.sha256 });
+    let written = 0;
+    for (let i = 0; i < rows.length; i += BATCH_ROWS) {
+      written += await store.insertRows('fido', '', staged.dataset,
+                                        staged.version,
+                                        rows.slice(i, i + BATCH_ROWS));
+    }
+    await store.finishVersion('', staged.dataset, staged.version, {
+      state: 'ready', rowCount: written, loadedAt: now() });
+    let activated = false;
+    if (o.activate !== false) {
+      const answer = await store.activate('', staged.dataset, 'fido',
+                                          staged.version, now());
+      activated = !!(answer && answer.activated);
+    }
+    let dropped = 0;
+    if (activated) {
+      for (const v of await store.listVersions('', staged.dataset)) {
+        if (v.version !== staged.version && v.state !== 'refused' &&
+            v.rowCount) {
+          dropped += await this.dropRows('fido', '', staged.dataset,
+                                         v.version);
+          await store.markRowsDeleted('', staged.dataset, v.version, now());
+        }
+      }
+      this.androidListActivated(staged.version);
+    }
+    this.auditRow('risk.dataset.import', o, staged.version, 'success', '',
+                  'Android attestation status list ' + staged.version + ': ' +
+                  written + ' revoked or suspended certificate(s)' +
+                  (activated ? ', now active' : '') +
+                  (dropped ? '; ' + dropped + ' older row(s) deleted' : ''));
+    log.info('risk: Android attestation status list ' + staged.version +
+             ': ' + written + ' revoked or suspended certificate(s)' +
+             (activated ? ', now active' : '') + '.');
+    log.debug("Leaving RiskDatasets.importAndroidStatus(). Loaded.");
+    return { ok: true, dataset: staged.dataset, realm: '',
+             version: staged.version, state: activated ? 'active' : 'ready',
+             rows: written, skipped: 0, activated: activated,
+             sha256: meta.sha256,
+             message: 'Android attestation status list loaded: ' + written +
+                      ' revoked or suspended certificate(s)' +
+                      (activated ? ', now active' : '') + '.' };
+  }
+
+  // A NEW LIST IS ACTIVE (#256): the chains already stored are rechecked
+  // against it, once for the cluster, by `attestation_revocation.ts`'s job.
+  // Reached lazily — that module is built after this one — and never into
+  // the import, which has already succeeded.
+  private androidListActivated(version: string): void {
+    const { log } = this.deps;
+    log.debug("Entering RiskDatasets.androidListActivated().");
+    try {
+      const revocation = require('../common/attestation_revocation');
+      if (typeof revocation.requestRecheck === 'function') {
+        revocation.requestRecheck('the list ' + version + ' was activated');
+      }
+    } catch (e) {
+      log.debug("Caught in RiskDatasets.androidListActivated(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-DEVICE-0049') + 'risk: the stored ' +
+               'Android chains could not be queued for a recheck against ' +
+               'list ' + version + ': ' + ((e && e.message) || e) + '. The ' +
+               'daily recheck job will reach them.');
+    }
+    log.debug("Leaving RiskDatasets.androidListActivated().");
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE ACTIVE LIST SAYS ABOUT A CHAIN (#256): `checked` false — no
+  // active list, or a stale one, with `why` — decides nothing and says so;
+  // otherwise `hits`, each listed serial with its status and reason. One
+  // lookup per certificate; a chain is a handful.
+  // -------------------------------------------------------------------------
+  /**
+   * Looks the serials of an Android attestation chain up in the active status
+   * list.
+   *
+   * @param serials - the chain's certificate serials, in any hex form
+   * @returns `{ checked, version, why, hits: [{ serial, status, reason,
+   *   compromised }] }`
+   */
+  async lookupAttestationSerials(serials: unknown[]): Promise<Json> {
+    const { log, store, now } = this.deps;
+    log.debug("Entering RiskDatasets.lookupAttestationSerials().");
+    const id = 'android.attestation-status';
+    const active = (await this.activeVersions()).get('\u0000' + id);
+    if (!active) {
+      log.debug("Leaving RiskDatasets.lookupAttestationSerials(). No list.");
+      return { checked: false, version: '', hits: [],
+               why: 'no Android attestation status list is loaded' };
+    }
+    if (this.isStale(CATALOGUE[id], active, now())) {
+      log.debug("Leaving RiskDatasets.lookupAttestationSerials(). Stale.");
+      return { checked: false, version: active.version, hits: [],
+               why: 'the Android attestation status list ' + active.version +
+                    ' is stale (devices.androidStatusStaleHours)' };
+    }
+    const hits: Json[] = [];
+    for (const one of serials || []) {
+      const key = RiskDatasets.androidSerialKey(one);
+      if (!key) {
+        continue;
+      }
+      const row = await store.lookupFido(id, active.version, 'android-serial',
+                                         key);
+      if (row) {
+        const report = (row.statusReports || [])[0] || {};
+        hits.push({ serial: key, status: String(row.latestStatus || ''),
+                    reason: String(report.reason || ''),
+                    compromised: !!row.compromised });
+      }
+    }
+    log.debug("Leaving RiskDatasets.lookupAttestationSerials(). " +
+              hits.length + " listed.");
+    return { checked: true, version: active.version, hits: hits, why: '' };
+  }
+
+  /**
+   * Describes the active Android attestation status list for the console and
+   * the API: its version, when it was loaded, its size, whether it is stale,
+   * the address and the job.
+   *
+   * @returns the snapshot
+   */
+  async androidStatusSnapshot(): Promise<Json> {
+    const { log, store, now, config } = this.deps;
+    log.debug("Entering RiskDatasets.androidStatusSnapshot().");
+    const id = 'android.attestation-status';
+    const active = (await this.activeVersions()).get('\u0000' + id);
+    const out = {
+      active: active ? String(active.version) : '',
+      loadedAt: active ? Number(active.loadedAt || 0) : 0,
+      rows: active ? Number(active.rowCount || 0) : 0,
+      stale: active ? this.isStale(CATALOGUE[id], active, now()) : false,
+      staleAfterHours: Number(config.value('devices.androidStatusStaleHours')),
+      url: String(config.value('devices.androidStatusUrl') || ''),
+      required: config.value('devices.androidRevocationRequired') === true,
+      job: 'devices.android-status-refresh'
+    };
+    void store;
+    log.debug("Leaving RiskDatasets.androidStatusSnapshot(). active=" +
+              out.active);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE LIST, DOWNLOADED (#256), as `refreshMds()` downloads a BLOB: the
+  // operator's address (`devices.androidStatusUrl`), which no request can
+  // name, through `federation_http.fetchPublished()` — the outbound kill
+  // switch, https only, internal addresses refused in product, no redirect,
+  // a timeout — with a cap of its own. A list identical to the active one is
+  // a duplicate version (the version is its digest) and loads nothing.
+  // -------------------------------------------------------------------------
+  /**
+   * Downloads Google's Android attestation status list and imports it.
+   *
+   * @returns what was done
+   */
+  async refreshAndroidStatus(): Promise<Json> {
+    const { log, config } = this.deps;
+    log.debug("Entering RiskDatasets.refreshAndroidStatus().");
+    const url = String(config.value('devices.androidStatusUrl') || '');
+    if (!url) {
+      log.debug("Leaving RiskDatasets.refreshAndroidStatus(). No address.");
+      return { fetched: false, why: 'devices.androidStatusUrl is empty' };
+    }
+    const fetched = await this.deps.federationHttp().fetchPublished(url, {
+      accept: 'application/json',
+      maxBytes: Number(config.value('devices.androidStatusMaxBytes')) });
+    if (!fetched.ok) {
+      log.warn(errorCodes.tag('STS-RISK-0046') + 'risk: the Android ' +
+               'attestation status list could not be downloaded from ' + url +
+               ': ' + String(fetched.why || fetched.status) + '.');
+      log.debug("Leaving RiskDatasets.refreshAndroidStatus(). Not fetched.");
+      throw errorCodes.mark(new Error('the list could not be downloaded: ' +
+                                      String(fetched.why || fetched.status)),
+                            'STS-RISK-0046');
+    }
+    const result = await this.importVersion({
+      dataset: 'android.attestation-status',
+      format: 'android-attestation-status-json',
+      content: Buffer.from(fetched.body).toString('utf8'),
+      source: 'url', sourceUri: url,
+      actor: 'the devices.android-status-refresh job' });
+    log.debug("Leaving RiskDatasets.refreshAndroidStatus(). ok=" +
+              !!result.ok);
+    return { fetched: true, imported: !!result.ok && !result.duplicate,
+             duplicate: !!result.duplicate, version: result.version,
+             rows: result.rows, errors: result.errors || [] };
   }
 
   // The statuses MDS3 section 3.1.4 uses to say an authenticator model can
@@ -1490,7 +1851,8 @@ class RiskDatasets {
                              'STS-RISK-0001');
     }
     const answer = await store.activate(String(realm || ''), dataset,
-                                        entry.kind, version, now());
+                                        RiskDatasets.rowKindOf(entry),
+                                        version, now());
     if (!answer || !answer.activated) {
       log.debug("Leaving RiskDatasets.activateVersion(). Refused.");
       const why = 'Version "' + version + '" of ' + dataset + ' cannot be ' +
@@ -1566,8 +1928,8 @@ class RiskDatasets {
         (row ? 'it is ' + row.state + '.' : 'it is not recorded.')] },
         'STS-RISK-0007');
     }
-    const gone = await this.dropRows(entry.kind, String(realm || ''), dataset,
-                                     version);
+    const gone = await this.dropRows(RiskDatasets.rowKindOf(entry),
+                                     String(realm || ''), dataset, version);
     await store.markRowsDeleted(String(realm || ''), dataset, version, now());
     this.auditRow('risk.dataset.delete', { dataset: dataset, realm: realm,
                                            actor: actor, source: 'admin' },
@@ -1590,6 +1952,12 @@ class RiskDatasets {
     }
     if (entry.stale === 'iplist') {
       return Number(config.value('risk.ipListStaleAfterHours')) * 3600000;
+    }
+    if (entry.stale === 'android') {
+      // Counted from when THIS DEPLOYMENT loaded it: Google's list carries no
+      // date of its own.
+      return Number(config.value('devices.androidStatusStaleHours')) *
+             3600000;
     }
     return 0;
   }
@@ -1939,8 +2307,8 @@ class RiskDatasets {
         if (!entry || !due) {
           continue;
         }
-        out.rows += await this.dropRows(entry.kind, realm, v.dataset,
-                                        v.version);
+        out.rows += await this.dropRows(RiskDatasets.rowKindOf(entry), realm,
+                                        v.dataset, v.version);
         if (v.state === 'superseded') {
           await store.markRowsDeleted(realm, v.dataset, v.version, at);
           out.versions += 1;
@@ -2118,6 +2486,11 @@ export = {
   deleteVersion: slot.forward('deleteVersion'),
   lookup: slot.forward('lookup'),
   lookupAuthenticator: slot.forward('lookupAuthenticator'),
+  lookupAttestationSerials: slot.forward('lookupAttestationSerials'),
+  androidStatusSnapshot: slot.forward('androidStatusSnapshot'),
+  refreshAndroidStatus: slot.forward('refreshAndroidStatus'),
+  androidSerialKey: RiskDatasets.androidSerialKey,
+  androidStatusRowsOf: RiskDatasets.androidStatusRowsOf,
   lookupAuthenticatorBy: slot.forward('lookupAuthenticatorBy'),
   mdsState: slot.forward('mdsState'),
   mdsSnapshot: slot.forward('mdsSnapshot'),

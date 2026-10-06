@@ -1159,6 +1159,12 @@ class ProtocolStack {
     // reaches lazily. Built here, with the risk modules it belongs beside.
     this.build('common/breached_passwords',
                require('./breached_passwords'), 'BreachedPasswords');
+    // GOOGLE'S ANDROID ATTESTATION STATUS LIST, CONSULTED (#256): a library
+    // the two Android verifiers reach lazily, whose list is the risk dataset
+    // above; it registers its download and recheck jobs when built, and no
+    // route. Here, beside the datasets it reads.
+    this.build('common/attestation_revocation',
+               require('./attestation_revocation'), 'AttestationRevocation');
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');

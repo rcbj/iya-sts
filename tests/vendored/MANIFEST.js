@@ -598,6 +598,13 @@ const JOBS = [
   // missing token, the wrong body type. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_admin_risk_upload.js',    browser: false, local: true },
+  // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256): a synthetic list
+  // uploaded through POST /admin-api/risk/upload with no terms to accept,
+  // active with a row per REVOKED or SUSPENDED entry, named by
+  // /admin-api/device-registration's androidStatus on every process; a
+  // document that is not the list refused; a newer list replacing it.
+  // `local: true`: this repository's own /admin-api.
+  { file: 'sts_android_attestation_status.js', browser: false, local: true },
   // MONITORING → GEOLOCATION (#255, 2026-09-26): the live window counting
   // this job's own sign-in, every window and level in its shape with every
   // count at or over risk.geoMinimumCount or held back, the four refusals,

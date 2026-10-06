@@ -634,6 +634,30 @@ class DevicesAdmin {
    * @param req - the request
    * @returns the view
    */
+  /**
+   * Builds `/admin/device-registration`'s view with the state of Google's
+   * Android attestation status list (#256), which is read from the store.
+   *
+   * @param req - the request
+   * @returns `registrationView()`'s answer with `androidStatus`
+   */
+  async registrationViewWithStatus(req: Req): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering DevicesAdmin.registrationViewWithStatus().");
+    const view = this.registrationView(req);
+    try {
+      view.androidStatus = await require('../risk/risk_datasets')
+        .androidStatusSnapshot();
+    } catch (e) {
+      log.debug("Caught in DevicesAdmin.registrationViewWithStatus(): " +
+                ((e && e.message) || e));
+      view.androidStatus = { active: '', error: String((e && e.message) ||
+                                                       e) };
+    }
+    log.debug("Leaving DevicesAdmin.registrationViewWithStatus().");
+    return view;
+  }
+
   registrationView(req: Req): Json {
     const { log, admin, devices } = this.deps;
     log.debug("Entering DevicesAdmin.registrationView().");
@@ -858,5 +882,6 @@ export = {
   action: slot.forward('action'),
   mdmFeed: slot.forward('mdmFeed'),
   registrationView: slot.forward('registrationView'),
+  registrationViewWithStatus: slot.forward('registrationViewWithStatus'),
   monitorView: slot.forward('monitorView')
 };

@@ -130,6 +130,21 @@ const PROVIDERS: Record<string, Json> = {
            'against the FIDO root before anything is kept, and only the ' +
            'latest BLOB kept; never shipped, and tested with a synthetic ' +
            'BLOB.' },
+  // GOOGLE'S ANDROID KEY ATTESTATION STATUS LIST (#256): a public list of
+  // revoked attestation certificates, published for exactly this use and
+  // under no licence of its own, so there is nothing to accept
+  // (`noAcceptance`) — and the download job, on by default, must not wait
+  // for an acceptance nobody is asked for.
+  'google-android-attestation': {
+    title: 'Google Android key attestation status',
+    licence: 'published by Google for attestation verifiers',
+    licenceName: '', licenceUrl: '', attribution: '',
+    url: 'https://developer.android.com/privacy-and-security/security-key-attestation',
+    termsUrl: '', supported: true, noAcceptance: true,
+    terms: 'The revocation status of Android key attestation certificates, ' +
+           'which Google publishes for every verifier to consult. Fetched ' +
+           'by the deployment, never shipped, and tested with a synthetic ' +
+           'list.' },
   'hibp-pwned-passwords': { title: 'Pwned Passwords (Have I Been Pwned)',
     licence: 'HIBP Pwned Passwords terms', licenceName: '', licenceUrl: '',
     attribution: '', url: 'https://haveibeenpwned.com/Passwords',
@@ -230,7 +245,8 @@ class RiskTerms {
     log.debug("Entering RiskTerms.needsAcceptance(). " + providerId);
     const p = PROVIDERS[providerId];
     log.debug("Leaving RiskTerms.needsAcceptance().");
-    return !!p && p.supported && providerId !== 'operator';
+    return !!p && p.supported && providerId !== 'operator' &&
+           !p.noAcceptance;
   }
 
   // -------------------------------------------------------------------------

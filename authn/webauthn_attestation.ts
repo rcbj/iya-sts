@@ -192,6 +192,9 @@ interface WebauthnAttestationDeps {
   metadata(): Json;
   // Revocation, lazily for the same reason: it loads the PKI's register.
   revocation(): Json;
+  // Google's Android attestation status list (#256), lazily for the same
+  // reason: it reads the risk datasets.
+  androidRevocation(): Json;
 }
 
 /**
@@ -241,6 +244,9 @@ class WebauthnAttestation {
       },
       revocation: function (): Json {
         return require('../common/revocation_status');
+      },
+      androidRevocation: function (): Json {
+        return require('../common/attestation_revocation');
       }
     };
   }
@@ -365,6 +371,11 @@ class WebauthnAttestation {
     }
     recorded.trusted = trust.trusted;
     recorded.anchor = trust.anchor;
+    // #256: what Google's status list said of an android-key chain, and its
+    // serials, kept for the recheck.
+    if (trust.androidRevocation) {
+      recorded.androidRevocation = trust.androidRevocation;
+    }
     // STEP 25, under the policy and the settings that demand trust.
     if (settings.demandsTrust && !trust.trusted) {
       const selfOrNone = ['none', 'self'].indexOf(statement.type) >= 0;
@@ -1141,9 +1152,35 @@ class WebauthnAttestation {
                why: 'android-safetynet is not trusted here ' +
                     '(webauthn.attestationAllowSafetynet)' };
     }
+    // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256), for an `android-key`
+    // statement: every certificate of the verified path asked about. A
+    // revoked or suspended one — or an unchecked path where the realm
+    // requires a check in product — makes the statement UNTRUSTED, as an
+    // unanchored one is, and a policy that demands trust refuses it. The
+    // answer and the serials are kept for the recheck either way.
+    let androidRevocation: Json = null;
+    if (statement.format === 'android-key') {
+      const revocation = this.deps.androidRevocation();
+      androidRevocation = await revocation.consult(
+        path.chain.map(function (one: Json): Buffer {
+          return one.der;
+        }));
+      if (revocation.untrusts(androidRevocation)) {
+        log.info(this.deps.errorCodes.tag('STS-AUTHN-0297') + 'webauthn: ' +
+                 'an android-key attestation chained to an anchor and is ' +
+                 'NOT trusted: ' + revocation.describe(androidRevocation) +
+                 '.');
+        log.debug("Leaving WebauthnAttestation.trustOf(). Android " +
+                  "revocation.");
+        return { trusted: false, anchor: '',
+                 why: revocation.describe(androidRevocation),
+                 androidRevocation: androidRevocation };
+      }
+    }
     log.debug("Leaving WebauthnAttestation.trustOf(). Trusted, " + anchor +
               ".");
-    return { trusted: true, anchor: anchor, why: '' };
+    return { trusted: true, anchor: anchor, why: '',
+             androidRevocation: androidRevocation };
   }
 
   // The chain's revocation, through `revocation_status.verdictFor()` — the

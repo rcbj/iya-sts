@@ -2858,6 +2858,99 @@ class Credentials {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // ANDROID ATTESTATION REVOKED AFTER THE FACT (#256), for a person's WebAuthn
+  // credential as `devices.ts` does it for a device key: the keys whose
+  // `android-key` statement was TRUSTED and whose chain serials were kept,
+  // and the one write that makes such a statement untrusted when a newer
+  // status list revokes or suspends a certificate of it. The key stays and
+  // signs the person in as before; what changes is what its attestation is
+  // said to prove, which is what a policy reads.
+  // ---------------------------------------------------------------------------
+  /**
+   * Lists every WebAuthn credential in the realm whose trusted `android-key`
+   * attestation kept its chain's serials.
+   *
+   * @returns `[{ username, credentialId, chainSerials }]`
+   */
+  androidAttestedCredentials() {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.androidAttestedCredentials().');
+    const out = [];
+    let people = [];
+    try {
+      people = directory && typeof directory.persons === 'function'
+        ? directory.persons() || [] : [];
+    } catch (e) {
+      log.debug('Caught in Credentials.androidAttestedCredentials(): ' +
+                ((e && e.message) || e));
+      people = [];
+    }
+    people.forEach((name) => {
+      this.keysOf(name).forEach(function (key) {
+        const att = key && key.attestation;
+        if (att && att.format === 'android-key' && att.trusted === true &&
+            att.androidRevocation &&
+            Array.isArray(att.androidRevocation.chainSerials) &&
+            att.androidRevocation.chainSerials.length) {
+          out.push({ username: String(name),
+                     credentialId: String(key.credentialId),
+                     chainSerials: att.androidRevocation.chainSerials
+                       .slice() });
+        }
+      });
+    });
+    log.debug('Leaving Credentials.androidAttestedCredentials(). ' +
+              out.length + '.');
+    return out;
+  }
+
+  /**
+   * Makes a WebAuthn credential's `android-key` attestation untrusted because
+   * Google's status list revokes or suspends a certificate of its chain.
+   *
+   * @param username - the person
+   * @param credentialId - the credential
+   * @param revocation - `attestation_revocation.consult()`'s answer
+   * @returns true when the record was rewritten
+   */
+  untrustKeyAttestation(username, credentialId, revocation) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.untrustKeyAttestation().');
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.untrustKeyAttestation(). No store.');
+      return false;
+    }
+    const keys = this.keysOf(username);
+    const found = keys.filter(function (one) {
+      return one.credentialId === String(credentialId);
+    })[0];
+    if (!found || !found.attestation || found.attestation.trusted !== true) {
+      log.debug('Leaving Credentials.untrustKeyAttestation(). Nothing to do.');
+      return false;
+    }
+    found.attestation = Object.assign({}, found.attestation, {
+      trusted: false, anchor: '',
+      androidRevocation: Object.assign({},
+        found.attestation.androidRevocation || {}, revocation || {}) });
+    try {
+      const written = !!directory.replaceWebauthn(
+        String(username || '').trim(), keys.map(function (one) {
+          return JSON.stringify(one);
+        }));
+      log.debug('Leaving Credentials.untrustKeyAttestation(). ' + written);
+      return written;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0296') + 'credentials: the ' +
+                'revoked attestation of a security key of ' + username +
+                ' could not be recorded: ' + e.message);
+      log.debug('Leaving Credentials.untrustKeyAttestation(). Threw.');
+      return false;
+    }
+  }
+
   // Update the signature counter after a successful assertion. WebAuthn's
   // replay defence: an authenticator's counter only ever goes up, so a counter
   // that went backwards is a cloned key. `webauthn.js` performs the CHECK; this
@@ -8331,6 +8424,8 @@ export = {
   confirmKeyEnrolment: slot.forward('confirmKeyEnrolment'),
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
+  androidAttestedCredentials: slot.forward('androidAttestedCredentials'),
+  untrustKeyAttestation: slot.forward('untrustKeyAttestation'),
   noteKeyCloned: slot.forward('noteKeyCloned'),
   noteBootstrapPassword: slot.forward('noteBootstrapPassword'),
   mechanismsFor: slot.forward('mechanismsFor'),

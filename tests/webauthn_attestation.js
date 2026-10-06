@@ -415,6 +415,42 @@ async function run(t) {
                  return kit.androidKey(cc, google, 'software-origin');
                }, '', trustedAs('basic'));
   clear(['webauthn.attestationAndroidSoftwareKeys']);
+  // #256: GOOGLE'S ANDROID ATTESTATION STATUS LIST. A leaf the list revokes
+  // makes the statement untrusted, with the reason recorded; an unlisted one
+  // stays trusted, the list's answer and the serials recorded either way.
+  const statusList = async function (serials, tag) {
+    const entries = {};
+    serials.forEach(function (one) {
+      entries[one] = { status: 'REVOKED', reason: 'KEY_COMPROMISE' };
+    });
+    return require('../risk/risk_datasets').importVersion({
+      dataset: 'android.attestation-status',
+      format: 'android-attestation-status-json',
+      content: JSON.stringify({ entries: entries, tag: tag }),
+      source: 'upload', actor: 'the test' });
+  };
+  await expect('C16b. android-key whose leaf Google\'s status list ' +
+               'revokes: verified and UNTRUSTED, the reason recorded (#256)',
+               async function (cc) {
+                 const made = await kit.androidKey(cc, google);
+                 await statusList([require('../common/pki')
+                   .certificateSerialHex(made.leaf.der)], 'c16b');
+                 return made;
+               }, '', function (res) {
+                 const r = res.attestation.androidRevocation;
+                 return untrustedAs('basic')(res) && r &&
+                        r.status === 'revoked' &&
+                        r.reason === 'KEY_COMPROMISE' &&
+                        r.chainSerials.length >= 1;
+               });
+  await expect('C16c. and one the list does not name stays trusted, the ' +
+               'answer kept for the recheck (#256)',
+               function (cc) { return kit.androidKey(cc, google); },
+               '', function (res) {
+                 const r = res.attestation.androidRevocation;
+                 return trustedAs('basic')(res) && r && r.status === 'good' &&
+                        r.chainSerials.length >= 1;
+               });
 
   // android-safetynet
   await expect('C17. android-safetynet: verified, and UNTRUSTED while ' +

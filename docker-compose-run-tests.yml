@@ -565,6 +565,11 @@ services:
       # refused. The screen is held in process with the API stubbed
       # (tests/breached_passwords.js).
       - STS_RISK_BREACH_CHECK=${STS_RISK_BREACH_CHECK:-off}
+      # Nor Google's Android attestation status list (#256): the suite dials
+      # nothing outside its own network, and the list is held in process and
+      # by an upload (tests/attestation_revocation.js,
+      # tests/vendored/sts_android_attestation_status.js).
+      - STS_DEVICES_ANDROID_STATUS_URL=${STS_DEVICES_ANDROID_STATUS_URL:-}
       # Every job here comes from ONE /24, and many refuse a password on
       # purpose, so the default network threshold (20 an hour) put the
       # network-failures signal on every first sign-in after the first few

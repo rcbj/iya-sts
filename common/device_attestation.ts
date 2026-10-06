@@ -67,12 +67,10 @@
 // ---------------------------------------------------------------------------
 // WHAT IS NOT DONE, AND WHY.
 //
-//   * **Google's attestation revocation list** (android.googleapis.com/
-//     attestation/status) is not consulted: it is a URL somebody else
-//     serves, and this service dials such a URL only as a scheduler job
-//     with the operator's say-so (root CLAUDE.md, the dialling row). A
-//     compromised Android batch key is what the list reports; until a job
-//     imports it, an operator removes such devices by hand.
+//   * ~~Google's attestation revocation list is not consulted~~ — it is
+//     since #256 (2026-10-06): every certificate of a chain that reaches
+//     Google's roots is looked up in the list `attestation_revocation.ts`
+//     reads, and a revoked or suspended one leaves the key self-asserted.
 //   * **Freshness of a TPM statement**: draft-ietf-lamps-csr-attestation
 //     section 6.2 leaves it to the CA ("may choose to ignore attestations
 //     that are stale"), and EST and SCEP give the attester no nonce without
@@ -142,6 +140,9 @@ interface DeviceAttestationDeps {
   errorCodes: typeof errorCodes;
   webauthnCodec: typeof webauthnCodec;
   now: () => number;
+  // Google's Android attestation status list (#256), reached lazily: it
+  // reaches the risk datasets, which are built later in the root.
+  revocation: () => Json;
 }
 
 /**
@@ -185,7 +186,10 @@ class DeviceAttestation {
     helpers.log.debug("Leaving DeviceAttestation.defaultDeps().");
     return { log: helpers.log, config: config, stsCrypto: stsCrypto,
              pki: pki, errorCodes: errorCodes, webauthnCodec: webauthnCodec,
-             now: Date.now };
+             now: Date.now,
+             revocation: function (): Json {
+               return require('./attestation_revocation');
+             } };
   }
 
   // A refusal with its code and the sentence.
@@ -422,14 +426,33 @@ class DeviceAttestation {
         config.value('devices.androidAttestationTrustAnchors')));
     const said = 'Android Key Attestation, version ' +
       description.attestationVersion + ', security level ' + level;
+    if (!chain.ok) {
+      log.debug("Leaving DeviceAttestation.android(). Unanchored.");
+      return { ok: true, attestation: this.record('self-asserted',
+        'android-key-attestation', said + ', which verified and does NOT ' +
+        'chain to a trusted root: ' + chain.why + '.') };
+    }
+    // GOOGLE'S STATUS LIST (#256): every certificate of the chain asked
+    // about. A revoked or suspended one, or an unchecked chain where the
+    // realm requires a check in product, leaves the key self-asserted; the
+    // chain's serials and the answer are kept for the recheck.
+    const revocation = this.deps.revocation();
+    const verdict = await revocation.consult(ders);
+    const untrusted = revocation.untrusts(verdict);
+    if (untrusted) {
+      log.info(this.deps.errorCodes.tag(verdict.status === 'unchecked'
+                 ? 'STS-DEVICE-0048' : 'STS-DEVICE-0047') +
+               'devices: an Android Key Attestation chained to ' +
+               chain.anchor + ' and is NOT attested: ' +
+               revocation.describe(verdict) + '.');
+    }
     log.debug("Leaving DeviceAttestation.android(). " +
-              (chain.ok ? 'Anchored.' : 'Unanchored.'));
-    return { ok: true, attestation: chain.ok
-      ? this.record('attested', 'android-key-attestation', said +
-                    ', chained to ' + chain.anchor + '.')
-      : this.record('self-asserted', 'android-key-attestation', said +
-                    ', which verified and does NOT chain to a trusted ' +
-                    'root: ' + chain.why + '.') };
+              (untrusted ? 'Revoked or unchecked.' : 'Anchored.'));
+    return { ok: true, attestation: Object.assign(
+      this.record(untrusted ? 'self-asserted' : 'attested',
+        'android-key-attestation', said + ', chained to ' + chain.anchor +
+        '; ' + revocation.describe(verdict) + '.'),
+      { chainSerials: verdict.chainSerials, revocation: verdict }) };
   }
 
   // =========================================================================

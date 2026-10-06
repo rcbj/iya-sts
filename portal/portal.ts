@@ -2909,6 +2909,13 @@ class Portal {
         ? 'no attestation sent (' + att.type + ')'
         : 'verified, from an authenticator no trusted root vouches for';
     }
+    // #256: Google's Android attestation status list on an android-key key.
+    const r = att && att.format === 'android-key' ? att.androidRevocation
+                                                  : null;
+    if (r && (r.status === 'revoked' || r.status === 'suspended')) {
+      text += '; Google reports its attestation certificate ' +
+              String(r.status).toUpperCase();
+    }
     log.debug('Leaving Portal.attestationText().');
     return this.esc(text);
   }

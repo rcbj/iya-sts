@@ -549,6 +549,13 @@ const ACTIONS = [
     label: 'A device was removed' },
   { action: 'device.evict', category: 'directory',
     label: 'A device was removed to make room at its person\'s bound' },
+  // #256: Google's Android attestation status list revoked a chain.
+  { action: 'device.attestation-revoked', category: 'directory',
+    label: 'A device key is no longer attested: Google\'s Android ' +
+           'attestation status list revokes its chain' },
+  { action: 'webauthn.attestation-revoked', category: 'authentication',
+    label: 'A security key\'s attestation is no longer trusted: Google\'s ' +
+           'Android attestation status list revokes its chain' },
   { action: 'device.key-add', category: 'directory',
     label: 'A key was added to a device' },
   { action: 'device.key-remove', category: 'directory',

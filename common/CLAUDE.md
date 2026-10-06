@@ -10881,6 +10881,40 @@ the population. `requiredRolesFrom()` and `consent.globalConsentsFrom()` read a
 view already in hand, which is what `/admin/roles` and `/admin/consent` do now
 instead of reading each entry back out of the directory by identifier.
 
+## 3cf. `attestation_revocation.ts`: GOOGLE'S ANDROID ATTESTATION STATUS LIST, CONSULTED (#256, 2026-10-06)
+
+An Android Key Attestation chain that verifies to Google's roots can still be
+one Google has REVOKED (a leaked batch key, a compromised intermediate), and
+Google says which by serial at its status list. Both Android verifiers now
+ask it about every certificate of the chain: `device_attestation.ts`'s
+`android()` and `authn/webauthn_attestation.ts`'s `trustOf()` for an
+`android-key` statement. rcbj's four decisions are in the module's header.
+
+* **THE LIST IS A RISK DATASET**, `android.attestation-status` beside
+  `fido.mds3` in `risk/risk_datasets.ts`, for the versions, the
+  verify-before-active, the staleness (`devices.androidStatusStaleHours`),
+  the upload door and the console's table it already has. Its rows are keyed
+  rows in the table the MDS3 entries use (`rowKind: 'fido'`, key kind
+  `android-serial`), so it needed no schema change; serials are normalised on
+  both sides (`pki.certificateSerialHex()`, `RiskDatasets.androidSerialKey()`).
+  The provider needs no terms acceptance (`noAcceptance` in `risk_terms.ts`):
+  the job is on by default and must not wait for one nobody is asked for.
+* **UNCHECKED IS NOT REVOKED.** No list, or a stale one, leaves the chain
+  attested with the reason; `mode.refusesUncheckedAttestationRevocation()` —
+  product with `devices.androidRevocationRequired` — is the one place that
+  makes it unattested.
+* **WHAT IS KEPT** on each key's attestation record: the chain's serials and
+  the verdict. A key registered before #256 kept no serials and cannot be
+  rechecked; the pages say so rather than guess.
+* **THE RECHECK** (`devices.android-status-recheck`) runs when a list is
+  activated and daily, over every realm: a device key the list now revokes is
+  downgraded through `devices.downgradeKeyAttestation()` (self-asserted, the
+  device's level recomputed, audited, CAEP credential-change `update`); a
+  WebAuthn credential's statement becomes untrusted through
+  `credentials.untrustKeyAttestation()` with the same signals. The device's
+  STATUS is never touched: a leaked batch key says the attestation proves
+  nothing, not that this device was compromised.
+
 ## 3ce. `secret_destinations.ts` and `secrets.js`'s `pushSecret()`: WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06)
 
 rcbj's design on #221: a service account is a person entry with a flag (P1),

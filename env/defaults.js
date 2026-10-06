@@ -506,28 +506,33 @@ var config = {
 
   // --- Devices ---------------------------------------------------------
   devices: {
-    maxPerPerson: 20,                                   // Devices one person may hold
-    maxPerApplication: 1000,                            // Devices one application may own
-    maxKeysPerDevice: 10,                               // Keys one device may hold
-    eventsKept: 5000,                                   // Device events kept for monitoring
-    complianceFeedMaxReports: 500,                      // Compliance reports per feed request
-    challengeTtlSeconds: 300,                           // Enrolment challenge lifetime (seconds)
-    maxChallenges: 10000,                               // Enrolment challenges held
-    androidAttestationTrustAnchors: "",                 // Android Key Attestation roots (PEM)
-    androidMinimumSecurityLevel: "trusted-environment", // Android Key Attestation: least security level
-    appleAppAttestTrustAnchors: "",                     // Apple App Attest root (PEM)
-    appleAppAttestAppIds: "",                           // Apple App Attest app identifiers
-    appleAppAttestAllowDevelopment: false,              // Apple App Attest: accept the development environment
-    tpmTrustAnchors: "",                                // TPM attestation roots (PEM)
-    lastUsedResolutionSeconds: 60,                      // Last-used resolution (seconds)
-    expectRegistered: false,                            // Expect every person to sign in from a registered device
-    requireCompliantDevice: false,                      // Require a compliant registered device
-    compliantDeviceAttested: false,                     // A compliant device must also be attested
-    refuseCompromised: true,                            // Refuse a compromised device
-    browserDevices: true,                               // Remembered browsers
-    browserTokenLifetimeDays: 180,                      // Remembered browser cookie lifetime (days)
-    browserReissueGraceSeconds: 60,                     // Remembered browser: previous token accepted for (seconds)
-    browserTokenCertificateHeader: "x5u"                // Remembered browser token certificate header
+    maxPerPerson: 20,                                                      // Devices one person may hold
+    maxPerApplication: 1000,                                               // Devices one application may own
+    maxKeysPerDevice: 10,                                                  // Keys one device may hold
+    eventsKept: 5000,                                                      // Device events kept for monitoring
+    complianceFeedMaxReports: 500,                                         // Compliance reports per feed request
+    challengeTtlSeconds: 300,                                              // Enrolment challenge lifetime (seconds)
+    maxChallenges: 10000,                                                  // Enrolment challenges held
+    androidAttestationTrustAnchors: "",                                    // Android Key Attestation roots (PEM)
+    androidMinimumSecurityLevel: "trusted-environment",                    // Android Key Attestation: least security level
+    androidStatusUrl: "https://android.googleapis.com/attestation/status", // Android attestation status list address
+    androidStatusRefreshS: 86400,                                          // Download the Android status list every (seconds)
+    androidStatusMaxBytes: 16777216,                                       // Largest Android status list (bytes)
+    androidStatusStaleHours: 48,                                           // Android status list is stale after (hours)
+    androidRevocationRequired: false,                                      // An Android attestation needs a current status list
+    appleAppAttestTrustAnchors: "",                                        // Apple App Attest root (PEM)
+    appleAppAttestAppIds: "",                                              // Apple App Attest app identifiers
+    appleAppAttestAllowDevelopment: false,                                 // Apple App Attest: accept the development environment
+    tpmTrustAnchors: "",                                                   // TPM attestation roots (PEM)
+    lastUsedResolutionSeconds: 60,                                         // Last-used resolution (seconds)
+    expectRegistered: false,                                               // Expect every person to sign in from a registered device
+    requireCompliantDevice: false,                                         // Require a compliant registered device
+    compliantDeviceAttested: false,                                        // A compliant device must also be attested
+    refuseCompromised: true,                                               // Refuse a compromised device
+    browserDevices: true,                                                  // Remembered browsers
+    browserTokenLifetimeDays: 180,                                         // Remembered browser cookie lifetime (days)
+    browserReissueGraceSeconds: 60,                                        // Remembered browser: previous token accepted for (seconds)
+    browserTokenCertificateHeader: "x5u"                                   // Remembered browser token certificate header
   },
 
   // --- PKI -------------------------------------------------------------
