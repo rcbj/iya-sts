@@ -4364,8 +4364,11 @@ function holdsLiveIssuance(username, sub) {
     if (live || CLAIM_BEARING_KINDS.indexOf(record.kind) < 0) {
       return;
     }
-    const theirs = (name && record.username === name) ||
-                   (subject && record.sub === subject);
+    // An application's own token (#221 P5) is filed under its client_id,
+    // and is not a person's of the same name.
+    const theirs = !applicationOfToken(record) &&
+                   ((name && record.username === name) ||
+                    (subject && record.sub === subject));
     const state = theirs ? tokenStateOf(record, nowMs) : '';
     if (state === 'valid' || state === 'no expiry stated') {
       live = true;
@@ -4401,16 +4404,44 @@ function holdsLiveIssuance(username, sub) {
 //
 // Access and ID Tokens, and SAML assertions: the three kinds whose CLAIMS a
 // relying party holds. A refresh token carries none of them — the tokens it
-// mints next are built afresh — and a token with no person behind it (a
-// client_credentials grant) names an application, whose subject waits on
-// #221. One walk of each register, in the ambient realm.
+// mints next are built afresh. One walk of each register, in the ambient
+// realm.
+//
+// **AN APPLICATION'S OWN TOKEN IS A HOLDER OF ITS OWN (#221 P5).** A
+// client_credentials token has no person behind it, and is recorded under its
+// client (recordToken() above files `username` as the client_id). Until #221
+// it was listed here as though that client_id were a person, and the fan-out
+// sent an `iss_sub` "user" nobody had. It is listed under `application:` and
+// the client_id now, with `application` set on the row and on what `match`
+// sees, so `ssf.ts` names the application (`applicationClaimsEmit()`).
 // ---------------------------------------------------------------------------
 const SET_OF_KIND = { access_token: 'access_token', id_token: 'id_token',
                       'SAML 2.0': 'saml2', 'SAML 1.1': 'saml11' };
 
+// The application a token record is an application's OWN token for: the
+// client of a client_credentials grant, or '' for a token with a person
+// behind it (#221 P5).
+/**
+ * Returns the application a token is that application's own token for (a
+ * client_credentials grant's client), or '' for a person's token.
+ *
+ * @param record - a token record
+ * @returns the client_id, or ''
+ */
+function applicationOfToken(record) {
+  log.debug("Entering applicationOfToken().");
+  const one = record || {};
+  const out = one.grant === 'client_credentials'
+    ? String(one.client_id || one.username || '') : '';
+  log.debug("Leaving applicationOfToken(). " + (out || '(a person\'s)'));
+  return out;
+}
+
 /**
  * Lists every person holding a live access token, ID Token or SAML assertion,
- * each with the newest such artifact and its claim set.
+ * each with the newest such artifact and its claim set — and every
+ * application holding a live token of its own (client_credentials), as a row
+ * with `application` set and no `username`.
  *
  * @param match - a predicate over the artifacts to consider; all when omitted
  * @returns the bearers
@@ -4429,6 +4460,18 @@ function liveClaimBearers(match) {
                              claimSet: fromSet, at: at });
     }
   };
+  // Keyed apart from every person: a username cannot carry the prefix's
+  // NUL, so an application and a person of the same name are two holders.
+  const keepApplication = function (application, record, fromSet, at) {
+    log.debug("Entering keepApplication(). " + application);
+    const key = '\u0000application:' + application;
+    const held = newest.get(key);
+    if (!held || at > held.at) {
+      newest.set(key, { username: '', sub: '', application: application,
+                        record: record, claimSet: fromSet, at: at });
+    }
+    log.debug("Leaving keepApplication().");
+  };
   tokens.forEach(function (record) {
     const fromSet = SET_OF_KIND[record.kind];
     if (!fromSet || !record.username) {
@@ -4438,7 +4481,14 @@ function liveClaimBearers(match) {
     if (state !== 'valid' && state !== 'no expiry stated') {
       return;
     }
-    if (!accept(Object.assign({}, record, { claimSet: fromSet }))) {
+    const application = applicationOfToken(record);
+    if (!accept(Object.assign({}, record, { claimSet: fromSet,
+                                            application: application }))) {
+      return;
+    }
+    if (application) {
+      keepApplication(application, record, fromSet,
+                      Number(record.iat || 0) * 1000);
       return;
     }
     keep(String(record.username), String(record.sub || ''), record, fromSet,
@@ -4486,8 +4536,12 @@ function liveClaimBearers(match) {
 function claimValuesFor(setId, record, names) {
   log.debug("Entering claimValuesFor(). set=" + setId);
   const held = record || {};
-  const context = { username: String(held.username || ''),
-                    subject: String(held.username || ''),
+  // An application's own token (#221 P5) is built for no person: its
+  // claims are what an issuance with no username would carry — the
+  // application's roles among them (resolvedRoleClaims()).
+  const person = applicationOfToken(held) ? '' : String(held.username || '');
+  const context = { username: person,
+                    subject: person,
                     sub: String(held.sub || ''),
                     client_id: String(held.client_id || ''),
                     audience: String(held.audience || '') };
@@ -6110,6 +6164,7 @@ module.exports = {
   // The fan-out's two halves (#238): who holds a live artifact a
   // configuration change shaped, and what its claims would say now.
   liveClaimBearers: liveClaimBearers,
+  applicationOfToken: applicationOfToken,
   claimValuesFor: claimValuesFor,
   claimNamesFor: claimNamesFor,
   announceClaimsReshaped: announceClaimsReshaped,

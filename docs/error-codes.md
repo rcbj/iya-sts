@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4075** of them, in **41** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4077** of them, in **41** subsystems.
 
 ## Where a code appears
 
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 45
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 118
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 44
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 348
@@ -3370,6 +3370,8 @@ Raised from: ssf/.
 | `STS-SSF-0130` | The RISC account register is over risc.maxAccountsTracked and every row left is an account holder's opt-out (#260), which is never dropped to make room: RISC 1.0 section 2.8 makes the choice theirs. The register stays over its cap until the cap is raised. | none — logged; the opt-outs are kept |
 | `STS-SSF-0131` | An Add Subject request on a stream a person owns named somebody other than that person, and ssf.personStreamsSelfOnly is on. A person's stream carries events only about them. | HTTP 403 access_denied |
 | `STS-SSF-0132` | A Shared Signals act on a federation relationship whose signals are off (fedSignalsEnabled), or an unblock of a person the relationship has not blocked (#373). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0140` | A Shared Signals event about a non-human principal (#221 P5) could not be decided or started: a token-claims-change about an application's own token or role, the RISC account-purged of a deleted application entry, or the credential-change of a removed SPIFFE registration entry. The act itself stands. | none — logged; nothing is sent to a receiver |
+| `STS-SSF-0141` | Whether an application entry's credentials (client secrets, registered keys, key pairs, certificates) moved on a write could not be decided or announced, so no CAEP credential-change was sent for it (#221 P5). The write itself stands. | none — logged; nothing is sent to a receiver |
 
 ## STS-RISK
 
@@ -4410,7 +4412,7 @@ Raised from: portal/.
 | `STS-PORTAL-0072` | A new password from a reset link was refused before it was tried: missing, not typed twice alike, or the reserved password. | the reset form again, HTTP 400 |
 | `STS-PORTAL-0073` | A new password from a reset link was refused by the password policy or the store. | the reset form again, HTTP 400 |
 | `STS-PORTAL-0074` | The realm chooser in front of /portal was asked for a realm that is not defined. | HTTP 400 on /portal |
-| `STS-PORTAL-0075` | An account holder asked for a RISC opt-out move the section 2.8 state diagram does not allow from where their account is, or RISC is off. | HTTP 409, the page redrawn saying so |
+| `STS-PORTAL-0075` | An account holder asked for a RISC opt-out move the section 2.8 state diagram does not allow from where their account is, or RISC is off — or for any move on a service account, to which the opt-out gate does not apply (#221). | HTTP 409, the page redrawn saying so |
 | `STS-PORTAL-0076` | An account holder's RISC opt-out move was not recorded: Shared Signals is not running in this process, so there was no register to move. | HTTP 503, the page redrawn saying so |
 | `STS-PORTAL-0077` | A person's own app password was not made on /portal/app-passwords; the credential store's code is on the audit row. | HTTP 400 page |
 | `STS-PORTAL-0078` | A person asked /portal/app-passwords to revoke an app password they do not hold. | HTTP 404 page |

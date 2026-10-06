@@ -553,6 +553,14 @@ const JOBS = [
   // pwdReset (account-credential-change-required). `local: true`: this
   // repository's own transmitter and directory, in a throwaway product realm.
   { file: 'sts_credential_signals.js',   browser: false, local: true },
+  // SHARED SIGNALS ABOUT AN APPLICATION (#221 P5, 2026-10-06): a receiver
+  // adds an application (SSF's complex subject, `application` opaque
+  // client_id) to its poll stream, the application's client secret is
+  // rotated on /admin-api, and ONE credential-change (client-secret, update)
+  // about the application arrives; another application's does not.
+  // `local: true`: this repository's own transmitter and management API, in
+  // a throwaway realm.
+  { file: 'sts_application_signals.js', browser: false, local: true },
   // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
   // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
   // token is confined, and in the `cluster` mode both nodes name one leader

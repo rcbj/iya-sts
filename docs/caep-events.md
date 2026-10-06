@@ -376,8 +376,15 @@ standing still belongs to [risk scoring](risk-scoring.md).
 - a refresh token retired by rotation, since its successor carries the grant
   on;
 - a refresh refused because its Grant Management grant was merged or replaced;
-- an ID Token;
-- a grant with no person behind it (client credentials).
+- an ID Token.
+
+**An application's own grant** (client credentials, with no person behind it)
+is announced since [#221](https://github.com/rcbj/iya-sts/issues/221): the
+same `session-revoked`, with the grant as the session and the APPLICATION as
+the subject — `{ "format": "complex", "application": { "format": "opaque",
+"id": "<client_id>" }, "session": { "format": "opaque", "id":
+"oauth-grant:<grant>" } }` — and no `user` member (see *Applications and
+workloads* below).
 
 CIBA's tokens are issued on the sign-on session the person approved on, so
 signing out of that session revokes their refresh token as it does every
@@ -527,8 +534,12 @@ somebody left the group that authorises them.
   does `appRequiredRole`, which changes who may be issued a token rather than
   any claim in one. The UserInfo claim set sends nothing: a UserInfo response
   is built on every call. **An application's own tokens** (a
-  `client_credentials` grant, with no person) are not the subject of these
-  events yet — see [#221](https://github.com/rcbj/iya-sts/issues/221).
+  `client_credentials` grant, with no person) are told too
+  ([#221](https://github.com/rcbj/iya-sts/issues/221)): the application is the
+  holder, the event names it by its `application` member, and the claims are
+  what its newest live token would carry now. A role given to or taken from an
+  application (`roleMemberApplication`) is the same event with its roles
+  claim.
 
 ## `credential-change`
 
@@ -594,6 +605,25 @@ session should be allowed to do next.
   A certificate that an earlier act already orphaned is not announced again.
   The events go out in batches, so a realm with thousands of certificates does
   not flood the queue.
+
+  **An application's credentials are sent too**
+  ([#221](https://github.com/rcbj/iya-sts/issues/221)), about the APPLICATION
+  (*Applications and workloads*, below):
+
+  | Credential | `credential_type` | Doors |
+  |---|---|---|
+  | Client secret | `urn:iya:sts:credential-type:client-secret` | add (`create`), regenerate or rotate (`update`), remove or expire (`revoke`) — the console, `/admin-api`, RFC 7591/7592 registration, the expiry job |
+  | Registered keys (`jwks` / `jwks_uri`) | `urn:iya:sts:credential-type:jwk` | set, replaced or cleared on the application |
+  | RFC 7523 signing key pair | `x509` (with its certificate), else `...:jwk` | issued or uploaded on `/admin/pki`; one event per act |
+  | RFC 7522 key pair and registered signing certificate, SAML signing and encryption certificates | `x509` | written on the application |
+  | TLS client certificate (RFC 8705 `tls_client_auth`) | `x509` | issued or revoked on `/admin/applications`; revoked on `/admin/pki`; an act on the authority above it |
+  | ACME, EST or SCEP certificate | `x509` | issue and revoke over the protocol; an act on the authority above it |
+  | ACME EAB key, SCEP challenge | `...:acme-eab-key`, `password` | created or deleted |
+
+  A certificate revoked for `keyCompromise` (or an authority above it for
+  `cACompromise`) also sends RISC `credential-compromise` about the
+  application. The applications this service seeds for its own surfaces are
+  not announced when they are seeded.
 
 ## `assurance-level-change`
 
@@ -713,12 +743,45 @@ families that are not a browser start one, through the same
   ended;
 - a **SPIRE Server API** caller, keyed by its SPIFFE ID, the same way.
 
-**Where the session has no person as its subject** — a SPIFFE workload, or an
-application's own credential rather than a person's — the event's `user`
-names whatever the directory filed that caller under. What a non-human
-subject should be, and whether such a session should be announced at all, is
-[#221](https://github.com/rcbj/iya-sts/issues/221)'s question (service
-accounts), which is open.
+**Where the session has no person as its subject**
+([#221](https://github.com/rcbj/iya-sts/issues/221)), it is still announced,
+and its subject names the principal that authenticated instead of a `user`:
+
+- a SPIRE Server API caller — or any caller named by a SPIFFE ID — is the
+  WORKLOAD: `application` with format `uri` and the SPIFFE ID;
+- a SCIM or WS-Trust caller that authenticated as an application entry (its
+  own client credentials) is the APPLICATION: `application` with format
+  `opaque` and the application's identifier;
+- a caller whose name is a person's — a service account among them — is the
+  person, as before.
+
+## Applications and workloads
+
+A non-human principal is named by SSF 1.0's complex subject's
+`application` member:
+
+```json
+{ "format": "complex",
+  "application": { "format": "opaque", "id": "my-client-id" } }
+```
+
+`opaque`, with the identifier the realm's application registry holds the
+entry under — the `client_id` for an OAuth client — because that is the value
+a receiver already holds, and a `client_id` is usually not a URI. A SPIFFE
+workload is the same member with `"format": "uri"` and its SPIFFE ID. A
+receiver subscribes to one with `POST /ssf/subjects/add`, naming the complex
+subject or the bare member (`{ "format": "opaque", "id": "my-client-id" }`);
+either covers every event about the application, with or without a session.
+
+A **SPIFFE registration entry removed** is `credential-change` about the
+workload, with a plain `uri` subject (its SPIFFE ID) and `credential_type`
+`urn:iya:sts:credential-type:spiffe-registration`: `update` while another
+entry still names the SPIFFE ID, `delete` when the last one goes. No
+`session-revoked` is sent: SPIFFE has no revocation, and an SVID already
+issued stays valid until it expires.
+
+A **service account** is a person entry flagged as one, so it is named and
+told exactly as a person is.
 
 ## What never produces a CAEP event
 

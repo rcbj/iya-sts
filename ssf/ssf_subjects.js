@@ -898,6 +898,130 @@ function subjectForUser(userid, format, issuer, facts) {
   return fallback;
 }
 
+// ---------------------------------------------------------------------------
+// A NON-HUMAN PRINCIPAL'S SUBJECT (#221 P5, 2026-10-06).
+//
+// SSF 1.0 section 3.3 gives the complex subject an `application` member, and
+// CAEP 1.0 says its events are about "human or robotic users, devices,
+// sessions, and applications". Until #221 this transmitter named only people,
+// so every act on an application entry — a client secret rotated, its
+// certificate revoked, its own client_credentials tokens reshaped, the entry
+// deleted — went unsaid, or (for a client_credentials token, which the token
+// register files under the client's identifier) went out as an `iss_sub`
+// "person" whose `sub` was a client_id.
+//
+// **AN APPLICATION IS `{ "format": "complex", "application": { "format":
+// "opaque", "id": <identifier> } }`**, the identifier being the one this
+// realm's registry holds the entry under — the `client_id` for an OAuth
+// client (the entityID for a SAML provider, the wtrealm for a WS-Federation
+// one). Argued in `ssf/CLAUDE.md`, *An application's own subject*; in short:
+//
+//   * `opaque`, not `uri`: a client_id is very often not a URI ("my-app"),
+//     and RFC 9493 section 3.2.4 makes `uri` an absolute URI, so `uri` would
+//     have to be built by wrapping it — a name nobody was ever issued, which
+//     a receiver could not match against the client_id it holds. `opaque`
+//     carries the value the receiver already has, verbatim.
+//   * not `iss_sub`: section 3.2.3's issuer-scoped pair is what a PERSON is
+//     named by here (the `sub` of their ID Token), and a receiver reading an
+//     `iss_sub` reads a user. The SET's own `iss` already scopes the opaque
+//     id to this realm, which is what RFC 9493 section 3.2.4 asks of an
+//     opaque identifier ("unique within the scope of the issuer").
+//   * always COMPLEX, never a bare `opaque`: a bare one says nothing about
+//     what KIND of principal it names, and a receiver keying people by an
+//     opaque id would file an application under a person of the same bytes.
+//     The `application` member is the kind.
+//
+// **A SPIFFE WORKLOAD IS THE SAME MEMBER WITH FORMAT `uri`** — its SPIFFE ID,
+// which IS an absolute URI and is the name every workload already holds — and
+// a registration entry's removal names it as a plain `uri` subject, which a
+// stream that added `{ "format": "uri", "uri": <SPIFFE ID> }` is sent by the
+// member rule (`ssf_streams.ts`, `streamCoversSubject()`).
+// ---------------------------------------------------------------------------
+/**
+ * The `application` member naming an application entry: `opaque`, with the
+ * identifier the registry holds it under (an OAuth client's `client_id`).
+ *
+ * @param identifier - the application's identifier
+ * @returns the Subject Identifier, or null for an empty identifier
+ */
+function applicationMember(identifier) {
+  log.debug('Entering applicationMember().');
+  const id = String(identifier == null ? '' : identifier);
+  log.debug('Leaving applicationMember(). ' + (id ? 'Named.' : 'Nobody.'));
+  return id ? { format: 'opaque', id: id } : null;
+}
+
+/**
+ * The complex subject naming an application entry, with an optional session
+ * (an OAuth grant of its own, or a session it authenticated).
+ *
+ * @param identifier - the application's identifier
+ * @param sessionId - a session identifier, or empty for none
+ * @returns the complex subject, or null for an empty identifier
+ */
+function applicationSubject(identifier, sessionId) {
+  log.debug('Entering applicationSubject().');
+  const member = applicationMember(identifier);
+  if (!member) {
+    log.debug('Leaving applicationSubject(). No identifier.');
+    return null;
+  }
+  const out = complexSubject({ application: member,
+    session: sessionId ? { format: 'opaque', id: String(sessionId) } : null });
+  log.debug('Leaving applicationSubject().');
+  return out;
+}
+
+/**
+ * The plain `uri` subject naming a SPIFFE workload by its SPIFFE ID.
+ *
+ * @param spiffeId - the SPIFFE ID
+ * @returns the Subject Identifier, or null for an empty one
+ */
+function workloadSubject(spiffeId) {
+  log.debug('Entering workloadSubject().');
+  const uri = String(spiffeId == null ? '' : spiffeId);
+  log.debug('Leaving workloadSubject().');
+  return uri ? { format: 'uri', uri: uri } : null;
+}
+
+/**
+ * The complex subject naming a SPIFFE workload as the `application` member
+ * (format `uri`), with an optional session.
+ *
+ * @param spiffeId - the SPIFFE ID
+ * @param sessionId - a session identifier, or empty for none
+ * @returns the complex subject, or null for an empty SPIFFE ID
+ */
+function workloadComplexSubject(spiffeId, sessionId) {
+  log.debug('Entering workloadComplexSubject().');
+  const member = workloadSubject(spiffeId);
+  if (!member) {
+    log.debug('Leaving workloadComplexSubject(). No SPIFFE ID.');
+    return null;
+  }
+  const out = complexSubject({ application: member,
+    session: sessionId ? { format: 'opaque', id: String(sessionId) } : null });
+  log.debug('Leaving workloadComplexSubject().');
+  return out;
+}
+
+/**
+ * The application identifier a subject names in its `application` member
+ * with format `opaque`, or '' for any other subject.
+ *
+ * @param subject - the subject
+ * @returns the identifier, or ''
+ */
+function applicationIdOf(subject) {
+  log.debug('Entering applicationIdOf().');
+  const member = isComplex(subject) ? subject.application : null;
+  const id = member && typeof member === 'object' &&
+    member.format === 'opaque' ? String(member.id || '') : '';
+  log.debug('Leaving applicationIdOf(). ' + (id || '(none)'));
+  return id;
+}
+
 /**
  * Subject Identifiers for Security Event Tokens (RFC 9493) and SSF's complex
  * subject: the formats, a validator that refuses by name, and the subject this
@@ -920,5 +1044,10 @@ module.exports = {
   validateSubjectId: validateSubjectId,
   subjectKey: subjectKey,
   describeSubject: describeSubject,
-  subjectForUser: subjectForUser
+  subjectForUser: subjectForUser,
+  applicationMember: applicationMember,
+  applicationSubject: applicationSubject,
+  workloadSubject: workloadSubject,
+  workloadComplexSubject: workloadComplexSubject,
+  applicationIdOf: applicationIdOf
 };

@@ -1048,6 +1048,54 @@ class SpiffeRegistry {
     return { ok: true, errors: [], id: id, entry: this.entryById(id) };
   }
 
+  // -------------------------------------------------------------------------
+  // A REGISTRATION ENTRY REMOVED, SAID OVER CAEP (#221 P5).
+  //
+  // A registration entry is what lets a workload be ISSUED an SVID here, so
+  // its removal is a change to the workload's credential: CAEP
+  // `credential-change` about the WORKLOAD, named by its SPIFFE ID as a
+  // plain `uri` subject (`ssf_subjects.js` argues it), with this service's
+  // `urn:iya:sts:credential-type:spiffe-registration`. `delete` when it was
+  // the LAST entry naming that SPIFFE ID — no SVID can be issued for it here
+  // any more — and `update` when others still name it, because the
+  // conditions under which one may be issued narrowed and did not end.
+  //
+  // **NOT `session-revoked`.** Nothing ended: SPIFFE has no revocation, an
+  // SVID already issued verifies until it expires (the paragraph above), and
+  // a workload holds no session here — the Workload API has none. Sending one
+  // would tell a receiver to tear down something that is still valid.
+  //
+  // Found through `ssf/account_signals.ts` (a `require.cache` lookup, never a
+  // load of SSF), and never into the delete.
+  // -------------------------------------------------------------------------
+  private signalRegistrationRemoved(existing, id, remaining, actor): void {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeRegistry.signalRegistrationRemoved().');
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialChanged({ workload: String(existing.spiffeId),
+        username: '',
+        credentialType: signals.SPIFFE_REGISTRATION_CREDENTIAL_TYPE,
+        changeType: remaining ? 'update' : 'delete',
+        friendlyName: 'SPIFFE registration entry ' + id,
+        initiatingEntity: actor ? 'admin' : 'system',
+        via: 'the SPIFFE registry',
+        reasonAdmin: 'The SPIFFE registration entry ' + id + ' for ' +
+          existing.spiffeId + ' was deleted' + (remaining
+            ? '; ' + remaining + ' other entry/entries still name it.'
+            : ', the last naming it, so no SVID can be issued for it here.'),
+        reasonUser: 'A registration that lets this workload be issued an ' +
+          'SVID was removed.' });
+    } catch (e) {
+      log.debug('Caught in SpiffeRegistry.signalRegistrationRemoved(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-SSF-0140') + 'spiffe: the ' +
+               'credential-change for the removed registration entry ' + id +
+               ' could not be started: ' + ((e && e.message) || e));
+    }
+    log.debug('Leaving SpiffeRegistry.signalRegistrationRemoved().');
+  }
+
   /**
    * Deletes a registration entry, and audits it.
    *
@@ -1094,6 +1142,7 @@ class SpiffeRegistry {
                 'entries still name ' + existing.spiffeId + ', so its ' +
                 'directory entry is left active.');
     }
+    this.signalRegistrationRemoved(existing, id, remaining, actor);
     log.debug('Leaving SpiffeRegistry.deleteEntry(). Removed.');
     return { ok: true, errors: [], id: id };
   }

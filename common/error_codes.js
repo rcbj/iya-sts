@@ -14303,6 +14303,19 @@ const CODES = [
       'signals are off (fedSignalsEnabled), or an unblock of a person the ' +
       'relationship has not blocked (#373).',
     spec: 'console / /admin-api refusal (HTTP 400)' },
+  { code: 'STS-SSF-0140',
+    summary: 'A Shared Signals event about a non-human principal (#221 P5) ' +
+      'could not be decided or started: a token-claims-change about an ' +
+      'application\'s own token or role, the RISC account-purged of a ' +
+      'deleted application entry, or the credential-change of a removed ' +
+      'SPIFFE registration entry. The act itself stands.',
+    spec: 'none — logged; nothing is sent to a receiver' },
+  { code: 'STS-SSF-0141',
+    summary: 'Whether an application entry\'s credentials (client secrets, ' +
+      'registered keys, key pairs, certificates) moved on a write could not ' +
+      'be decided or announced, so no CAEP credential-change was sent for ' +
+      'it (#221 P5). The write itself stands.',
+    spec: 'none — logged; nothing is sent to a receiver' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -18825,7 +18838,8 @@ const CODES = [
   { code: 'STS-PORTAL-0075',
     summary: 'An account holder asked for a RISC opt-out move the section ' +
       '2.8 state diagram does not allow from where their account is, or ' +
-      'RISC is off.',
+      'RISC is off — or for any move on a service account, to which the ' +
+      'opt-out gate does not apply (#221).',
     spec: 'HTTP 409, the page redrawn saying so' },
   { code: 'STS-PORTAL-0076',
     summary: 'An account holder\'s RISC opt-out move was not recorded: ' +

@@ -2666,18 +2666,23 @@ class CertEnrollment {
                 notAfter: record.notAfter }
     });
     // A PERSON's certificate is one of their credentials, and CAEP says so
-    // with its issuer and serial (#145). An application's is not a person's
-    // and has no CAEP subject here.
-    if (kind === 'person') {
-      accountSignals.certificateChanged({ username: resolved.entry.id,
+    // with its issuer and serial (#145); an APPLICATION's is one of its own,
+    // said under the application subject (#221 P5).
+    if (kind === 'person' || kind === 'application') {
+      accountSignals.certificateChanged({
+        username: kind === 'person' ? resolved.entry.id : '',
+        application: kind === 'application' ? resolved.entry.id : '',
         pem: issued.certificatePem, changeType: 'create',
         friendlyName: profile.profile + ' certificate',
         initiatingEntity: allowed.admin ? 'admin' : 'user',
         via: FAMILY_LABELS[family],
         reasonAdmin: 'A ' + profile.profile + ' certificate was issued to ' +
+                     (kind === 'application' ? 'the application ' : '') +
                      resolved.entry.id + ' over ' + FAMILY_LABELS[family] +
                      '.',
-        reasonUser: 'A certificate was issued to you.' });
+        reasonUser: kind === 'application'
+          ? 'A certificate was issued to this application.'
+          : 'A certificate was issued to you.' });
     }
     if (replacing) {
       const by = asked.principal ? String(asked.principal.id) : '';
@@ -3233,8 +3238,14 @@ class CertEnrollment {
     // Revoked, told to a person's receivers whether or not the audit row is
     // quiet (#145): a certificate superseded by its renewal is still one the
     // person no longer holds, and that act is the system's.
-    if (found.entry && found.entry.kind === 'person') {
-      accountSignals.certificateChanged({ username: found.entry.id,
+    // An APPLICATION's enrolled certificate is told the same way, under the
+    // application subject (#221 P5).
+    const holderKind = found.entry ? String(found.entry.kind || '') : '';
+    if (holderKind === 'person' || holderKind === 'application') {
+      const whose = holderKind === 'application'
+        ? { application: String(found.entry.id), username: '' }
+        : { username: String(found.entry.id) };
+      accountSignals.certificateChanged({ ...whose,
         pem: found.record.certificatePem, changeType: 'revoke',
         friendlyName: String(found.record.profile || '') + ' certificate',
         initiatingEntity: reason === 'superseded' ? 'system'
@@ -3249,7 +3260,7 @@ class CertEnrollment {
       // which RISC 1.0 section 2.7 says as `credential-compromise` — beside
       // the CAEP `credential-change` above, which says only that it went.
       if (reason === 'keyCompromise') {
-        accountSignals.credentialCompromised({ username: found.entry.id,
+        accountSignals.credentialCompromised({ ...whose,
           credentialType: 'x509',
           initiatingEntity: String(by || '') === String(found.entry.id)
             ? 'user' : 'admin',
@@ -3702,26 +3713,30 @@ class CertEnrollment {
   //
   // Binding an EAB key to an account and redeeming a challenge send nothing
   // here: each is followed by the certificate it produced, which `issue()`
-  // already sends as `x509`. Only a PERSON's credential is sent; an
-  // application's has no CAEP subject here. `by` is the actor: the person
-  // themselves is `user`, and anybody else — an unnamed caller of the API
-  // included — `admin`: nothing automatic makes or deletes either.
+  // already sends as `x509`. A person's credential is sent about the
+  // person, and an APPLICATION's (#221 P5) about the application. `by` is
+  // the actor: the holder themselves is `user`, and anybody else — an
+  // unnamed caller of the API included — `admin`: nothing automatic makes or
+  // deletes either.
   // -------------------------------------------------------------------------
   private signalEnrolmentCredential(entry, which: 'eab' | 'scep',
                                     change: string, by, id: string): void {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.signalEnrolmentCredential(). " +
               which + " " + change);
-    if (!entry || entry.kind !== 'person') {
+    if (!entry || (entry.kind !== 'person' &&
+                   entry.kind !== 'application')) {
       log.debug("Leaving CertEnrollment.signalEnrolmentCredential(). Not " +
-                "a person's.");
+                "a person's or an application's.");
       return;
     }
     const actor = String(by || '');
     const initiating = actor && actor === String(entry.id) ? 'user' : 'admin';
     const what = which === 'eab' ? 'ACME External Account Binding key'
                                  : 'SCEP challenge password';
-    accountSignals.credentialChanged({ username: String(entry.id),
+    accountSignals.credentialChanged({
+      username: entry.kind === 'person' ? String(entry.id) : '',
+      application: entry.kind === 'application' ? String(entry.id) : '',
       credentialType: which === 'eab'
         ? accountSignals.ACME_EAB_KEY_CREDENTIAL_TYPE : 'password',
       changeType: change, initiatingEntity: initiating,
