@@ -291,8 +291,11 @@ credentials carry none needs its issuer listed in `oid4vp.statusOptionalIssuers`
 | **Weaker.** A receiver (`POST /ssf/receive`, the console and portal receivers, a federation partner's push or poll) records a SET whose signature does not verify and answers 202. Nothing acts on it. | [RFC 8935](https://www.rfc-editor.org/rfc/rfc8935) section 2.3: a SET that fails validation SHALL be answered 400, for example `invalid_key`. [RFC 8936](https://www.rfc-editor.org/rfc/rfc8936) reports the same through `setErrs`. | Refused, 400 `invalid_key` | `ssf.receiveRequireSignature`, default `false`. See [Signals received](signals-received.md). |
 | **Different.** A person with no `mail` is named in automatic RISC and CAEP event subjects by an invented `@example.com` address. | [RFC 9493](https://www.rfc-editor.org/rfc/rfc9493) section 3.2.2: the `email` format identifies the subject by their email address. | The entry's real value or `iss_sub` is used. RISC's identifier events are not sent without a real value. | `global.mode` |
 
-Events about non-human subjects, such as applications and service accounts, are
-not sent (open: #221).
+Events about an application are sent under SSF 1.0's complex subject with an
+`application` member (`opaque`, the client_id), and a service account is a
+person entry, named as one (#221). RISC 1.0 section 2.8's opt-out is not
+applied to an application or a service account — neither has an account holder
+to make the choice — and the register and the portal say so.
 
 ## X.509 certificates and revocation
 

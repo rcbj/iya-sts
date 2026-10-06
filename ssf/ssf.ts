@@ -3745,7 +3745,8 @@ class SharedSignals {
     // refused, which reads at the far end as a bad subject rather than as a
     // misconfigured transmitter.
     const due: Json = caep.observe(Object.assign({}, notice || {},
-        { issuer: this.issuerFor((notice || {}).req || null) }));
+        { issuer: this.issuerFor((notice || {}).req || null),
+          classifyPrincipal: this.principalOfSession.bind(this) }));
     if (!due) {
       log.debug('Leaving SharedSignals.caepAutoEmit(). Nothing is due.');
       return Promise.resolve({ sent: 0, streams: 0 });
@@ -3803,6 +3804,66 @@ class SharedSignals {
       log.debug('Leaving SharedSignals.caepAutoEmit(). Failed.');
       return { sent: 0, streams: candidates.length, why: e.message };
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHO A SESSION IS ABOUT, WHEN IT IS NOT A PERSON (#221 P5, rcbj's question 4
+  // of 2026-09-27: whether such sessions are announced, and under what).
+  //
+  // Three families start a session for a caller that need not be a person —
+  // a SCIM client (`scim_auth.ts`), a SPIRE Server API caller
+  // (`spiffe_grpc.ts`) and a WS-Trust requester (`wstrust.ts`) — and they
+  // ARE announced, as they were: a receiver that cares what an application
+  // or a workload is doing with this service is owed the same
+  // session-established / presented / revoked a person's sign-in gets. What
+  // changed is the subject. Until #221 it was a `user` naming "whatever the
+  // directory filed that caller under", which for a SCIM client
+  // authenticated with its own client credentials was an `iss_sub` whose
+  // `sub` was empty or a client_id. Now:
+  //
+  //   * a SPIFFE ID (`spiffe://...`) is a WORKLOAD — `application` with
+  //     format `uri` — even where the directory filed a person entry under
+  //     it: what authenticated is the workload's SVID;
+  //   * a name that resolves to a PERSON entry (it has a `urn:uuid:` `sub`)
+  //     is a person, unchanged — a service account (#221 P1) among them;
+  //   * a name that is an APPLICATION entry's identifier is the application
+  //     — `application` with format `opaque`;
+  //   * anything else is left as it was.
+  //
+  // Asked once per session, when its CAEP row is made (`caep.observe()`).
+  // ---------------------------------------------------------------------------
+  /**
+   * Says what kind of principal a session's subject is when it is not a
+   * person: a SPIFFE workload or an application entry.
+   *
+   * @param username - the name the session was started for
+   * @param sub - the person subject the directory gave it, or ''
+   * @returns `{ workload }`, `{ application }`, or null for a person (or a
+   * name nothing here recognises)
+   */
+  principalOfSession(username: string, sub: string): Json {
+    const { log, applications } = this.deps;
+    log.debug('Entering SharedSignals.principalOfSession().');
+    const name = String(username || '');
+    if (/^spiffe:\/\//i.test(name)) {
+      log.debug('Leaving SharedSignals.principalOfSession(). A workload.');
+      return { workload: name };
+    }
+    if (!name || /^urn:uuid:/i.test(String(sub || ''))) {
+      log.debug('Leaving SharedSignals.principalOfSession(). A person.');
+      return null;
+    }
+    let known = false;
+    try {
+      known = !!applications.get(name);
+    } catch (e) {
+      log.debug('Caught in SharedSignals.principalOfSession(): ' +
+                ((e && e.message) || e));
+      known = false;
+    }
+    log.debug('Leaving SharedSignals.principalOfSession(). ' +
+              (known ? 'An application.' : 'Unknown.'));
+    return known ? { application: name } : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -4735,11 +4796,13 @@ class SharedSignals {
   // ---------------------------------------------------------------------------
   // CAEP token-claims-change TO EVERY HOLDER A CONFIGURATION CHANGE MOVED
   // (#238): an application's permissions or allowed scopes, a claim set, a
-  // claim setting, a federation release list. One event PER PERSON — a CAEP
-  // subject names a principal, and an application-scoped subject waits on
-  // #221 — to each person holding a live artifact `match` accepts
-  // (`admin_stats.liveClaimBearers()`, which is the live-issuance check), with
-  // the claims `claimsFor(bearer)` answers for their newest such artifact.
+  // claim setting, a federation release list. One event PER HOLDER — a CAEP
+  // subject names a principal — to each person holding a live artifact
+  // `match` accepts (`admin_stats.liveClaimBearers()`, which is the
+  // live-issuance check), with the claims `claimsFor(bearer)` answers for
+  // their newest such artifact. An application holding a live token of its
+  // OWN (client_credentials, no person) is a holder too since #221 P5, and is
+  // told under the application subject (`applicationClaimsEmit()`).
   //
   // **IN SLICES, SO A LARGE REALM DOES NOT WEDGE ANYTHING.** FAN_OUT_SLICE
   // holders at a time, each slice's deliveries awaited and the next slice
@@ -4794,6 +4857,11 @@ class SharedSignals {
       }
       const slice = bearers.slice(from, from + SharedSignals.FAN_OUT_SLICE);
       return Promise.all(slice.map((bearer: Json) => {
+        // AN APPLICATION'S OWN TOKENS (#221 P5): a client_credentials token
+        // is about no person, and is announced under the application.
+        if (bearer.application) {
+          return this.applicationClaimsEmit(bearer, asked);
+        }
         return this.claimsAutoEmit({ kind: 'claims',
           username: bearer.username, liveChecked: true,
           claims: function () {
@@ -4824,6 +4892,76 @@ class SharedSignals {
                ((e && e.message) || e));
       return { sent: sent, streams: people,
                why: String((e && e.message) || e) };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // CAEP token-claims-change ABOUT AN APPLICATION'S OWN TOKENS (#221 P5).
+  //
+  // A client_credentials token names no person: `admin_stats.js` files it
+  // under the client, and until #221 the fan-out sent it as an `iss_sub`
+  // "person" whose `sub` was the client_id — a receiver told that somebody
+  // it had never heard of held changed claims. The holder is the APPLICATION
+  // (`ssf_subjects.js`, *A non-human principal's subject*), and it is told
+  // exactly what claimsAutoEmit() tells a person: the claims `claimsFor()`
+  // answers for its newest live token, through the same act switch
+  // (`claims`) and the same streams, with no session (the token is the
+  // application's own, from no sign-on). `bearer` is a row
+  // `liveClaimBearers()` answered with `application` set, so the live check
+  // is already made. Never rejects.
+  // ---------------------------------------------------------------------------
+  /**
+   * Sends CAEP `token-claims-change` about an application's own live token
+   * (client_credentials), under the application subject.
+   *
+   * @param bearer - a `liveClaimBearers()` row with `application` set
+   * @param asked - the fan-out's notice: `claimsFor`, `protocol`, the
+   * initiating entity and the reasons
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
+  applicationClaimsEmit(bearer: Json, asked: Json): Promise<EmitResult> {
+    const { log, caep, subjects } = this.deps;
+    log.debug('Entering SharedSignals.applicationClaimsEmit().');
+    const application = String((bearer && bearer.application) || '');
+    const notice = asked || {};
+    if (!this.enabled() || !application ||
+        caep.autoEmitActs().indexOf('claims') < 0) {
+      log.debug('Leaving SharedSignals.applicationClaimsEmit(). Off, not an ' +
+                'emitted act, or no application named.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    return Promise.resolve().then(() => {
+      const given: Json = typeof notice.claimsFor === 'function'
+        ? notice.claimsFor(bearer) : null;
+      const claims = given && typeof given === 'object' &&
+        !Array.isArray(given) ? given : null;
+      if (!claims || !Object.keys(claims).length) {
+        log.debug('Leaving SharedSignals.applicationClaimsEmit(). No claim ' +
+                  'moved.');
+        return { sent: 0, streams: 0, why: 'no claim moved' };
+      }
+      const which = Object.keys(claims).join(', ');
+      log.debug('Leaving SharedSignals.applicationClaimsEmit().');
+      return this.emitProtocolEvent({
+        req: null, protocol: String(notice.protocol || 'Applications'),
+        type: 'token-claims-change',
+        subject: subjects.applicationSubject(application, ''),
+        values: { claims: claims },
+        initiatingEntity: String(notice.initiatingEntity || 'admin'),
+        reasonAdmin: (notice.reasonAdmin
+          ? String(notice.reasonAdmin) : 'A configuration change') +
+          ' (the application ' + application + '\'s own token: ' + which +
+          ')',
+        reasonUser: 'Claims in an access token already issued to this ' +
+                    'application changed.' });
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.applicationClaimsEmit(): ' +
+                ((e && e.message) || e));
+      log.warn(this.deps.errorCodes.tag('STS-SSF-0140') + 'caep: a ' +
+               'token-claims-change about the application ' + application +
+               ' could not be decided: ' + ((e && e.message) || e));
+      return { sent: 0, streams: 0, why: String((e && e.message) || e) };
     });
   }
 
@@ -5251,7 +5389,13 @@ class SharedSignals {
     const { subjectForName: helpersSubjectFor } = this.deps.helpers;
     log.debug('Entering SharedSignals.emitCredentialChange().');
     const options = asked || {};
-    const username = String(options.username || '');
+    // WHOSE CREDENTIAL (#221 P5): a person by `username`, an application
+    // entry by `application` (its identifier) or a SPIFFE workload by
+    // `workload` (its SPIFFE ID). `username` below is the name the log, the
+    // audit row and the reasons use for whichever it is.
+    const application = String(options.application || '');
+    const workload = String(options.workload || '');
+    const username = String(options.username || application || workload);
     if (!this.enabled() || !username) {
       log.debug('Leaving SharedSignals.emitCredentialChange(). ' +
                 'SSF is off or nobody named.');
@@ -5299,10 +5443,15 @@ class SharedSignals {
       return Promise.resolve({ sent: 0, streams: 0,
                                why: verdict.errors.join(' ') });
     }
-    // The person's own subject, as every token names them (2026-09-14).
-    const subject = subjects.complexSubject({ user: { format: 'iss_sub',
-      iss: this.issuerFor(null),
-      sub: helpersSubjectFor(username) || username } });
+    // The person's own subject, as every token names them (2026-09-14); an
+    // application's or a workload's as `ssf_subjects.js` argues (#221 P5).
+    const subject = application
+      ? subjects.applicationSubject(application, '')
+      : workload
+        ? subjects.workloadSubject(workload)
+        : subjects.complexSubject({ user: { format: 'iss_sub',
+            iss: this.issuerFor(null),
+            sub: helpersSubjectFor(username) || username } });
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
              this.coversSubject(record, subject);
@@ -5369,8 +5518,10 @@ class SharedSignals {
   // events carry the same `device` member (`caep.subjectFor()`), so a
   // receiver that added the device to its stream sees both.
   //
-  // An application's device has no `user`: an application has no CAEP user
-  // subject here (#145), and the device alone is still one principal.
+  // An application's device has no `user`: there is no person, and the
+  // device alone is still one principal. (Its owner application is not added
+  // as an `application` member: the register names the owner, but a device's
+  // events are about the DEVICE, and #221 P5 changed nothing here.)
   // ---------------------------------------------------------------------------
   /**
    * Returns a registered device's subject: `iss_sub` with this realm's issuer
@@ -6264,6 +6415,10 @@ export = {
   emitClaimsChange: slot.forward('emitClaimsChange'),
   claimsFanOut: slot.forward('claimsFanOut'),
   emitIdentityAssuranceChange: slot.forward('emitIdentityAssuranceChange'),
+  // An application's own token's claims, and what kind of principal a
+  // session is (#221 P5), for `tests/application_signals.js`.
+  applicationClaimsEmit: slot.forward('applicationClaimsEmit'),
+  principalOfSession: slot.forward('principalOfSession'),
   // A person's risk level changed (#62 P4): `risk/risk_engine.ts` sends it.
   riskAutoEmit: slot.forward('riskAutoEmit'),
   riscReport: slot.forward('riscReport'),

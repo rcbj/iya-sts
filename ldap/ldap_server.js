@@ -15009,6 +15009,9 @@ server.del('', function (req, res, next) {
     noteMembershipChange(stored.dn, deletedAttributes, {});
   } else if (!deletedPerson && isRoleEntry(stored)) {
     noteRoleChange(stored.dn, deletedAttributes, {});
+  } else if (!deletedPerson && isUnder(stored.dn, applicationsDn()) &&
+             normalizeDn(stored.dn) !== normalizeDn(applicationsDn())) {
+    noteApplicationRemoved(stored, 'an LDAP delete');
   }
   // Note what is NOT done here: the DN is left in any group that lists it as a
   // member. See the header — referential integrity is a directory feature and
@@ -16576,6 +16579,7 @@ function deleteApplicationEntry(identifier) {
   entries.delete(normalizeDn(stored.dn));
   touchDirectory();
   auditDirectory('entry.delete', stored.dn, stored.attributes, false);
+  noteApplicationRemoved(stored, 'the application registry');
   log.debug('Leaving deleteApplicationEntry(). ' + entries.size + ' ' +
       'entry/entries left.');
   return true;
@@ -18809,9 +18813,15 @@ function noteMembershipChange(groupDn, before, after, options) {
 // it told nobody. The people affected are the `roleMemberUser` values that
 // moved and every member of a `roleMemberGroup` group that moved — or, for a
 // role created, deleted or renamed (`everyMember`), all of them. A
-// description edited moves nobody. `roleMemberApplication` is an
-// application's own role, and an application has no CAEP subject here yet
-// (#221). The kind is `roles`; RISC has no reading of it.
+// description edited moves nobody. The kind is `roles`; RISC has no reading
+// of it.
+//
+// `roleMemberApplication` is an APPLICATION's own role (#221 P5): the roles
+// claim of every live token the application holds of its OWN (a
+// client_credentials grant) moved, and that is told as a CAEP
+// token-claims-change about the application — `noteApplicationRoleChange()`,
+// through `ssf/account_signals.ts`'s claims fan-out, which lists only the
+// applications that hold such a token.
 // ---------------------------------------------------------------------------
 function isRoleEntry(stored) {
   log.debug('Entering isRoleEntry().');
@@ -18911,8 +18921,83 @@ function noteRoleChange(dn, before, after, options) {
       username: usernameOfEntry(stored), realm: realmFor(stored.dn).id,
       role: role });
   });
+  noteApplicationRoleChange(moved('rolememberapplication'), role);
   log.debug('Leaving noteRoleChange(). ' + people.size + ' person(s) ' +
             'affected.');
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S OWN ROLE MOVED (#221 P5): CAEP token-claims-change about
+// each application in `names` that holds a live token of its own, naming the
+// roles claim as such a token would now carry it — read through the same
+// claim builder the issuance used (`admin_stats.claimValuesFor()`, which
+// builds an application's own token for no person) — or `null` where the
+// claim is gone. LAZILY required, and never into the write.
+// ---------------------------------------------------------------------------
+function noteApplicationRoleChange(names, role) {
+  log.debug('Entering noteApplicationRoleChange(). ' + (names || []).length);
+  if (!names || !names.length) {
+    log.debug('Leaving noteApplicationRoleChange(). No application moved.');
+    return;
+  }
+  const wanted = new Set(names.map(function (one) {
+    return String(one).trim().toLowerCase();
+  }));
+  try {
+    const claimName = String(config.value('roles.claimName') || 'roles');
+    require('../ssf/account_signals').claimsFanOut({
+      protocol: 'Directory', initiatingEntity: 'admin',
+      reasonAdmin: 'The role "' + role + '" changed which applications ' +
+                   'hold it',
+      match: function (token) {
+        return !!token.application && token.claimSet === 'access_token' &&
+               wanted.has(String(token.application).toLowerCase());
+      },
+      claimsFor: function (bearer) {
+        const now = stats.claimValuesFor('access_token', bearer.record,
+                                         [claimName]);
+        const out = {};
+        out[claimName] = now[claimName] === undefined ? null
+                                                      : now[claimName];
+        return out;
+      } });
+  } catch (e) {
+    log.debug('Caught in noteApplicationRoleChange(): ' +
+              ((e && e.message) || e));
+    log.warn(errorCodes.tag('STS-SSF-0140') + 'ldap: a token-claims-change ' +
+             'for the applications holding "' + role + '" could not be ' +
+             'started: ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving noteApplicationRoleChange().');
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION ENTRY DELETED IS RISC account-purged ABOUT IT (#221 P5).
+// Both doors that delete one reach here — `deleteApplicationEntry()`, which
+// the registry's delete (the console, `/admin-api`) uses, and the LDAP
+// delete handler — so neither can forget it. The identifier is read off the
+// entry as it was. LAZILY required, and never into the delete.
+// ---------------------------------------------------------------------------
+function noteApplicationRemoved(stored, via) {
+  log.debug('Entering noteApplicationRemoved(). ' + via);
+  const a = (stored && stored.attributes) || {};
+  const identifier = String((a.appidentifier || [])[0] || '');
+  if (!identifier) {
+    log.debug('Leaving noteApplicationRemoved(). No identifier.');
+    return;
+  }
+  try {
+    require('../ssf/account_signals').applicationPurged({
+      application: identifier, dn: String(stored.dn), via: via,
+      realm: realmFor(stored.dn).id });
+  } catch (e) {
+    log.debug('Caught in noteApplicationRemoved(): ' +
+              ((e && e.message) || e));
+    log.warn(errorCodes.tag('STS-SSF-0140') + 'ldap: the account-purged ' +
+             'about the application "' + identifier + '" could not be ' +
+             'started: ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving noteApplicationRemoved().');
 }
 
 // The lock value on an attribute snapshot, or ''.

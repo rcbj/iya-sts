@@ -4675,6 +4675,16 @@ class Portal {
     }
     const username = session.user.username;
     const now = risc.optOutOf(username);
+    // A SERVICE ACCOUNT (#221) has no holder to make section 2.8's choice,
+    // and the page SAYS so rather than offering a button that does nothing.
+    if (now.applies === false) {
+      log.debug('Leaving Portal.participationCard(). The opt-out does not ' +
+                'apply.');
+      return '<div class="card"><h2>Sharing security events about your ' +
+        'account</h2><p>Security events about this account <strong>are ' +
+        'shared</strong>, and cannot be stopped from here.</p><p ' +
+        'class="note">' + self.esc(String(now.why || '')) + '</p></div>';
+    }
     const hours = Number(config.value('risc.optOutDelayHours'));
     const said = now.state === 'opt-in'
       ? 'Security events about your account <strong>are shared</strong> ' +
@@ -5737,9 +5747,11 @@ class Portal {
         log.debug('Leaving POST ' + BASE + '/signals. Not a move from ' +
                   'here.');
         errorCodes.mark(res, 'STS-PORTAL-0075');
+        const held = risc.enabled() ? risc.optOutOf(username) : null;
         return self.send(res, 409, self.signalsPage(session, null,
-          'That is not a change your account can make now: it is ' +
-          risc.optOutOf(username).state + '.', 1));
+          held && held.applies === false ? String(held.why || '')
+            : 'That is not a change your account can make now: it is ' +
+              risc.optOutOf(username).state + '.', 1));
       }
       const before = risc.optOutOf(username).state;
       await self.deps.accountSignals.optOutMoved({ username: username,

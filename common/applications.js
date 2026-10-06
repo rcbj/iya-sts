@@ -9773,6 +9773,11 @@ function recordFromAttributes(attributes) {
     }
     record.fields[row.name] = row.kind === 'multi' ? values : values[0];
   });
+  // What its credentials were when it was read, for save() to compare with
+  // (#221 P5). Not enumerable: it is not a field and never written.
+  Object.defineProperty(record, CREDENTIAL_SNAPSHOT, {
+    value: credentialSnapshotOf(record.fields), enumerable: false,
+    writable: true, configurable: true });
   log.debug("Leaving recordFromAttributes(). identifier=" + record.identifier);
   return record;
 }
@@ -9827,15 +9832,340 @@ function load(identifier) {
            entry: entry };
 }
 
-function save(record) {
+function save(record, how) {
   log.debug("Entering save().");
   const backing = store();
   if (!backing) {
     log.debug("Leaving save().");
     return false;
   }
+  const written = !!backing.writeApplication(record.identifier,
+                                             attributesFor(record));
+  if (written && !(how && how.quiet)) {
+    noteCredentialWrite(record, how);
+  }
   log.debug("Leaving save().");
-  return !!backing.writeApplication(record.identifier, attributesFor(record));
+  return written;
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S CREDENTIALS CHANGED, SAID OVER CAEP (#221 P5).
+//
+// #145's rule is that a credential change is sent from the ONE function every
+// door writes it through, and for an application entry that function is
+// save(): the console's and `/admin-api`'s attribute edits
+// (updateApplication()), the four client-secret acts (finishClientSecretWrite),
+// the expiry sweep, RFC 7591 / 7592 registration and its update, `/admin/pki`'s
+// key pair issue and upload (storeIssuedJwtKeyPair() and the upload's
+// writes, each through updateApplication()), a SAML provider's metadata, and
+// the seeded applications all end there. So the record carries what its
+// credentials were when it was READ (recordFromAttributes() hangs the
+// snapshot on it), save() compares that with what it is writing, and each
+// credential that moved is one CAEP `credential-change` about the
+// APPLICATION (`ssf/account_signals.ts`, `application:`):
+//
+//   credential                        credential_type (urn:iya:sts:...)
+//   oauthClientSecret (by secret id)  ...:credential-type:client-secret
+//   oauthJwks / oauthJwksUri          ...:credential-type:jwk
+//   the RFC 7523 key pair               x509 (with its certificate), else jwk
+//   the RFC 7522 key pair, and its
+//     registered signing certificate    x509
+//   samlSigningCertificate (each),
+//     samlEncryptionCertificate         x509
+//
+// `change_type`: a credential that appears is `create`, one that goes is
+// `revoke`, one replaced is `update`. Client secrets are read by id: a new id
+// alone is `create` (add-secret), an id gone alone `revoke` (remove-secret,
+// the sweep), and a new id beside one gone or one whose expiry moved is
+// `update` (regenerate, and a rotation, which shortens the live ones).
+//
+// **ONE EVENT PER ACT, NOT PER WRITE.** A key pair issued on `/admin/pki` is
+// seven updateApplication() calls, each a save(); reported per save it would
+// be a `jwk` change and then an `x509` one about the same key. So a write is
+// QUEUED, keyed by realm and application, keeping the FIRST snapshot and the
+// LAST state, and the queue is flushed once the door's synchronous act has
+// finished (a microtask — `oauth-oidc/oauth_grant_signals.ts`'s arrangement;
+// nothing waits and nothing repeats).
+//
+// **CHEAP ON THE HOT PATH.** seen() saves on every authentication; the
+// snapshot is the raw stored strings, compared as they are, and a sealed
+// client secret is opened only when its stored values moved.
+//
+// Nothing here throws into the write, and nothing is sent where Shared
+// Signals is not loaded (account_signals.ts answers that). `how.actor`
+// (the console's or the API's principal) makes the initiating entity
+// `admin`; a write with no actor — a registration, the sweep, a seed — is
+// `system`. ONE WRITE IS QUIET: the seeding of this service's own
+// applications (seedInternalApplication()), when a realm or the process
+// starts — the service provisioning its own clients, which no receiver
+// could have known before they existed and which a development process
+// would otherwise announce on every start. A change to one AFTER it is
+// seeded is announced like any other. An ACME, EST or SCEP certificate for
+// an application is NOT here
+// (`appEnrolledCertificate`): `common/cert_enrollment.ts` reports it, with
+// its own reasons, as it does a person's.
+// ---------------------------------------------------------------------------
+const CREDENTIAL_SNAPSHOT = Symbol.for('sts.applications.credentialSnapshot');
+
+// The single-valued credential attributes, compared as strings, and the
+// multi-valued certificate one, compared as a set.
+const SNAPSHOT_SINGLE = ['oauthJwks', 'oauthJwksUri', 'oauthAssertionJwks',
+  'oauthAssertionCertificate', 'oauthSamlAssertionCertificate',
+  'oauthSamlAssertionSigningCertificate', 'samlEncryptionCertificate'];
+
+// realm id + '\n' + identifier -> { realmId, identifier, before, after, how }
+const pendingCredentialWrites = new Map();
+let credentialFlushQueued = false;
+
+/**
+ * Returns what an application's credential attributes hold, as the raw
+ * stored strings, for save() to compare.
+ *
+ * @param fields - the record's fields
+ * @returns the snapshot
+ */
+function credentialSnapshotOf(fields) {
+  log.debug("Entering credentialSnapshotOf().");
+  const f = fields || {};
+  const out = { secrets: valuesOf(f.oauthClientSecret).map(String).sort(),
+                samlSigning: valuesOf(f.samlSigningCertificate).map(String)
+                  .sort() };
+  SNAPSHOT_SINGLE.forEach(function (name) {
+    out[name] = String(valuesOf(f[name])[0] || '');
+  });
+  log.debug("Leaving credentialSnapshotOf().");
+  return out;
+}
+
+// Queues the comparison save() makes, merging writes of one act.
+function noteCredentialWrite(record, how) {
+  log.debug("Entering noteCredentialWrite().");
+  try {
+    const before = record[CREDENTIAL_SNAPSHOT] ||
+      credentialSnapshotOf({});
+    const after = credentialSnapshotOf(record.fields);
+    // The record has now been written as `after`; a second save() of the
+    // same object compares with that.
+    Object.defineProperty(record, CREDENTIAL_SNAPSHOT, {
+      value: after, enumerable: false, writable: true, configurable: true });
+    const realmId = String(realms.currentId() || '');
+    const key = realmId + '\n' + String(record.identifier);
+    const held = pendingCredentialWrites.get(key);
+    if (!held && JSON.stringify(before) === JSON.stringify(after)) {
+      log.debug("Leaving noteCredentialWrite(). No credential moved.");
+      return;
+    }
+    pendingCredentialWrites.set(key, {
+      realmId: realmId, identifier: String(record.identifier),
+      before: held ? held.before : before, after: after,
+      how: Object.assign({}, held ? held.how : {}, how || {}) });
+    if (!credentialFlushQueued) {
+      credentialFlushQueued = true;
+      Promise.resolve().then(flushCredentialWrites).catch(function (e) {
+        log.debug("Caught in noteCredentialWrite(): " +
+                  ((e && e.message) || e));
+        log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: the ' +
+                 'credential-change of an application could not be ' +
+                 'announced: ' + ((e && e.message) || e));
+      });
+    }
+  } catch (e) {
+    log.debug("Caught in noteCredentialWrite(): " + ((e && e.message) || e));
+    log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: whether "' +
+             record.identifier + '"\'s credentials moved could not be ' +
+             'decided, so no credential-change is sent: ' +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving noteCredentialWrite(). Queued.");
+}
+
+// Sends what the queued writes changed, each inside its realm. Answers the
+// number of events handed over (for a test).
+/**
+ * Announces every queued application credential change, each inside its own
+ * realm. Called once the act that queued them has finished.
+ *
+ * @returns the number of credential-change events handed over
+ */
+function flushCredentialWrites() {
+  log.debug("Entering flushCredentialWrites().");
+  credentialFlushQueued = false;
+  const due = Array.from(pendingCredentialWrites.values());
+  pendingCredentialWrites.clear();
+  let handed = 0;
+  due.forEach(function (one) {
+    const realm = realms.get(one.realmId);
+    const run = function () {
+      log.debug("Entering run(). " + one.identifier);
+      handed += announceCredentialChanges(one.identifier, one.before,
+                                          one.after, one.how);
+      log.debug("Leaving run().");
+    };
+    try {
+      if (realm) {
+        realms.run(realm, run);
+      } else {
+        run();
+      }
+    } catch (e) {
+      log.debug("Caught in flushCredentialWrites(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-SSF-0141') + 'applications: the ' +
+               'credential-change of "' + one.identifier + '" could not be ' +
+               'announced: ' + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving flushCredentialWrites(). " + handed + " event(s).");
+  return handed;
+}
+
+// The ids and expiries of a list of stored client secret values, opened.
+function secretIdsOf(stored) {
+  log.debug("Entering secretIdsOf().");
+  const out = {};
+  (stored || []).map(parseClientSecretValue).forEach(function (one) {
+    if (one) {
+      out[one.id] = one.expiresAt || 0;
+    }
+  });
+  log.debug("Leaving secretIdsOf().");
+  return out;
+}
+
+// create / update / revoke for a credential that was `from` and is `to`.
+function changeTypeOf(from, to) {
+  log.debug("Entering changeTypeOf().");
+  const out = !from && to ? 'create' : (from && !to ? 'revoke'
+    : (from !== to ? 'update' : ''));
+  log.debug("Leaving changeTypeOf(). " + (out || 'none'));
+  return out;
+}
+
+/**
+ * Compares two credential snapshots of an application and reports each
+ * credential that moved as a CAEP credential-change about the application.
+ *
+ * @param identifier - the application's identifier
+ * @param before - the snapshot before the act
+ * @param after - the snapshot after it
+ * @param how - `actor`, or `initiatingEntity`
+ * @returns the number of events handed over
+ */
+function announceCredentialChanges(identifier, before, after, how) {
+  log.debug("Entering announceCredentialChanges(). " + identifier);
+  const b = before || credentialSnapshotOf({});
+  const a = after || credentialSnapshotOf({});
+  const said = how || {};
+  const entity = said.initiatingEntity
+    ? String(said.initiatingEntity) : (said.actor ? 'admin' : 'system');
+  const signals = require('../ssf/account_signals');
+  const base = { application: String(identifier), initiatingEntity: entity,
+                 via: String(said.via || 'the application registry') };
+  const changes = [];
+  // CLIENT SECRETS, by id — opened only when the stored values moved.
+  if (JSON.stringify(b.secrets) !== JSON.stringify(a.secrets)) {
+    const was = secretIdsOf(b.secrets);
+    const now = secretIdsOf(a.secrets);
+    const added = Object.keys(now).filter(function (id) {
+      return !(id in was);
+    });
+    const removed = Object.keys(was).filter(function (id) {
+      return !(id in now);
+    });
+    const moved = Object.keys(now).some(function (id) {
+      return (id in was) && was[id] !== now[id];
+    });
+    const type = added.length && (removed.length || moved) ? 'update'
+      : (added.length ? 'create' : (removed.length ? 'revoke' : ''));
+    if (type) {
+      changes.push({ credentialType: signals.CLIENT_SECRET_CREDENTIAL_TYPE,
+        changeType: type,
+        friendlyName: 'client secret ' + (added.length ? added : removed)
+          .join(', '),
+        reasonAdmin: 'A client secret of the application ' + identifier +
+          ' was ' + (type === 'create' ? 'added'
+            : type === 'revoke' ? 'removed' : 'replaced') + '.' });
+    }
+  }
+  // THE REGISTERED KEY SET: jwks or jwks_uri, one credential.
+  const keysWere = b.oauthJwks || b.oauthJwksUri;
+  const keysAre = a.oauthJwks || a.oauthJwksUri;
+  const keysType = changeTypeOf(keysWere ? b.oauthJwks + '\n' +
+                                b.oauthJwksUri : '',
+                                keysAre ? a.oauthJwks + '\n' +
+                                a.oauthJwksUri : '');
+  if (keysType) {
+    changes.push({ credentialType: signals.JWK_CREDENTIAL_TYPE,
+      changeType: keysType,
+      friendlyName: (a.oauthJwksUri || (!a.oauthJwks && b.oauthJwksUri))
+        ? 'jwks_uri' : 'jwks',
+      reasonAdmin: 'The registered keys (jwks / jwks_uri) of the ' +
+        'application ' + identifier + ' changed.' });
+  }
+  // THE RFC 7523 KEY PAIR: x509 where a certificate is beside it.
+  const pairWas = b.oauthAssertionCertificate || b.oauthAssertionJwks;
+  const pairIs = a.oauthAssertionCertificate || a.oauthAssertionJwks;
+  const pairType = changeTypeOf(pairWas, pairIs);
+  if (pairType) {
+    const pem = pairType === 'revoke' ? b.oauthAssertionCertificate
+                                      : a.oauthAssertionCertificate;
+    changes.push({ pem: pem,
+      credentialType: pem ? 'x509' : signals.JWK_CREDENTIAL_TYPE,
+      changeType: pairType, friendlyName: 'RFC 7523 signing key pair',
+      reasonAdmin: 'The RFC 7523 signing key pair of the application ' +
+        identifier + ' was ' + (pairType === 'create' ? 'issued'
+          : pairType === 'revoke' ? 'removed' : 'replaced') + '.' });
+  }
+  // EACH CERTIFICATE-SHAPED CREDENTIAL, one by one.
+  [['oauthSamlAssertionCertificate', 'RFC 7522 signing key pair'],
+   ['oauthSamlAssertionSigningCertificate',
+    'RFC 7522 registered signing certificate'],
+   ['samlEncryptionCertificate', 'SAML encryption certificate']]
+    .forEach(function (pair) {
+      const type = changeTypeOf(b[pair[0]], a[pair[0]]);
+      if (type) {
+        changes.push({ pem: type === 'revoke' ? b[pair[0]] : a[pair[0]],
+          credentialType: 'x509', changeType: type, friendlyName: pair[1],
+          reasonAdmin: 'The ' + pair[1] + ' of the application ' +
+            identifier + ' changed.' });
+      }
+    });
+  a.samlSigning.filter(function (one) {
+    return b.samlSigning.indexOf(one) < 0;
+  }).forEach(function (one) {
+    changes.push({ pem: one, credentialType: 'x509', changeType: 'create',
+      friendlyName: 'SAML signing certificate',
+      reasonAdmin: 'A SAML signing certificate was registered for the ' +
+        'application ' + identifier + '.' });
+  });
+  b.samlSigning.filter(function (one) {
+    return a.samlSigning.indexOf(one) < 0;
+  }).forEach(function (one) {
+    changes.push({ pem: one, credentialType: 'x509', changeType: 'revoke',
+      friendlyName: 'SAML signing certificate',
+      reasonAdmin: 'A SAML signing certificate of the application ' +
+        identifier + ' was removed.' });
+  });
+  changes.forEach(function (change) {
+    const notice = Object.assign({}, base, change, {
+      reasonUser: 'A credential of this application changed.' });
+    // A SAML certificate is often stored as bare base64 DER (the metadata's
+    // own form); the identifiers are read off a PEM.
+    if (change.pem && String(change.pem).indexOf('-----BEGIN') < 0) {
+      notice.pem = '-----BEGIN CERTIFICATE-----\n' +
+        (String(change.pem).replace(/\s+/g, '').match(/.{1,64}/g) || [])
+          .join('\n') + '\n-----END CERTIFICATE-----\n';
+    }
+    if (change.pem) {
+      signals.certificateChanged(notice);
+    } else {
+      delete notice.pem;
+      signals.credentialChanged(notice);
+    }
+  });
+  log.debug("Leaving announceCredentialChanges(). " + changes.length +
+            " change(s).");
+  return changes.length;
 }
 
 function addTo(list, value) {
@@ -12533,7 +12863,7 @@ function updateApplication(identifier, change) {
              message: 'Nothing changed: ' + attribute + ' already said that.' };
   }
   record.lastAt = record.lastAt || Date.now();
-  save(record);
+  save(record, { actor: asked.actor || '' });
   audit.audit({
     action: 'application.update', actor: asked.actor || '', protocol: 'console',
     channel: 'internal', target: String(identifier),
@@ -13344,7 +13674,7 @@ function finishClientSecretWrite(identifier, record, opts, detail, summary) {
     }
   }
   record.lastAt = record.lastAt || Date.now();
-  save(record);
+  save(record, { actor: opts.actor || '' });
   audit.audit({
     action: 'application.update', actor: opts.actor || '',
     protocol: 'console', channel: 'internal', target: String(identifier),
@@ -16222,7 +16552,10 @@ function seedInternalApplication(spec) {
   Object.keys(spec.attributes || {}).forEach(function (name) {
     setField(record, name, spec.attributes[name]);
   });
-  if (!save(record)) {
+  // QUIET (#221 P5): the service provisioning its own clients when a realm
+  // or the process starts is not a change to a principal anybody could have
+  // known — see save()'s header.
+  if (!save(record, { quiet: true })) {
     log.warn(errorCodes.tag('STS-REG-0020') +
              'applications: "' + spec.identifier + '" was not seeded — the ' +
              'ou=applications container is full (applications.max) or the ' +
@@ -16311,6 +16644,9 @@ module.exports = {
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,
   storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,
+  // #221 P5: the application credential-change diff, for its test.
+  flushCredentialWrites: flushCredentialWrites,
+  credentialSnapshotOf: credentialSnapshotOf,
   frontchannelOriginProblem: frontchannelOriginProblem,
   backchannelSchemeProblem: backchannelSchemeProblem,
   requiredRolesOf: requiredRolesOf,

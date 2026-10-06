@@ -42,8 +42,8 @@ The vocabularies run over that pipe:
 
 | Vocabulary | Events | About | Emitted on its own when |
 |---|---|---|---|
-| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person changes, a directory change moves a claim of somebody holding live tokens, a registered device's compliance, risk level or credentials change |
-| **RISC** | 14 | an account | a person is deleted, disabled or enabled; any mail address or telephone number changes or is removed, or is given to an account after another released it; the recovery address is added, changed, removed or verified; an administrator resets a password (optionally marking it compromised) or issues a reset or activation link, or sets `pwdReset` over LDAP; recovery codes are cleared, confirmed or used; the account holder opts out or back in on `/portal/signals`; a person's registered device is compromised or removed; this service detects a compromised credential (below) |
+| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person or an application changes, a directory change moves a claim of somebody (or an application) holding live tokens, a registered device's compliance, risk level or credentials change, a SPIFFE registration entry is removed |
+| **RISC** | 14 | an account | a person or an application entry is deleted; a person is disabled or enabled; any mail address or telephone number changes or is removed, or is given to an account after another released it; the recovery address is added, changed, removed or verified; an administrator resets a password (optionally marking it compromised) or issues a reset or activation link, or sets `pwdReset` over LDAP; recovery codes are cleared, confirmed or used; the account holder opts out or back in on `/portal/signals`; a person's registered device is compromised or removed; this service detects a compromised credential (below) |
 
 Since #164 every CAEP and RISC event type has an act here that sends it: a
 registered device's compliance changing (`device-compliance-change`), its risk
@@ -106,7 +106,18 @@ They can cancel during the wait, or opt back in afterwards. The wait stops
 somebody who has just taken an account over from silencing it at once.
 **Only the holder moves it**: an administrator's Reset or Clear on the RISC
 register keeps the account's opt state, and a pending opt-out still becomes
-effective on schedule.
+effective on schedule. **An application and a service account have no
+holder to make the choice** ([#221](https://github.com/rcbj/iya-sts/issues/221)),
+so the opt-out does not apply to either: every event about them is exchanged,
+`/admin/risc-accounts` and its row's notes say the gate does not apply, and
+`/portal/signals` shows a service account the reason instead of a button.
+
+**Applications are subjects too** (#221). An application is named by SSF 1.0's
+complex subject's `application` member, `{ "format": "opaque", "id":
+"<client_id>" }`; a receiver adds it to a stream like any subject. Its
+credentials, its own tokens' claims, its own grant and its deletion are
+sent about it — see [the CAEP events](caep-events.md), *Applications and
+workloads*.
 
 **Every value of `mail`, `telephoneNumber` and `mobile` counts.** A second
 address changing, or a `mobile` beside a `telephoneNumber`, is an
