@@ -20081,6 +20081,20 @@ const CODES = [
       'storing it in the clear where keys persist would put a working ' +
       'client credential in every directory dump.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0214',
+    summary: 'An application carries its own directory-attribute selection ' +
+      'for a claim set or for its Verifiable Credentials ' +
+      '(oauthClaimAttributes*, saml2ClaimAttributes, saml11ClaimAttributes, ' +
+      'vcCredentialClaimAttributes) that is not a JSON array of catalogue ' +
+      'attribute names; it is ignored at issuance and the realm\'s ' +
+      'selection is issued (#495).',
+    spec: 'none (logged at issuance; nothing is refused)' },
+  { code: 'STS-REG-0215',
+    summary: 'An application\'s own directory-attribute selection was ' +
+      'refused: an unknown claim set, an attribute the catalogue does not ' +
+      'hold, a value that is not a JSON array of names, or an application ' +
+      'not declared for the set\'s protocol (#495).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-REG-0294',
     summary: 'An access type was not declared on an application: no such ' +
       'application, or the definition built from the fields does not read ' +

@@ -67,6 +67,11 @@ const LEFT_TO_THEIR_OWN_CONTROL = [
   // written by the Custom claims and Custom SAML attributes sections.
   'oauthClaimsAccessToken', 'oauthClaimsIdToken', 'oauthClaimsUserinfo',
   'saml2CustomAttributes', 'saml11CustomAttributes',
+  // And their directory-attribute selections and the credential claims
+  // (#495), drawn as the catalogue's checkboxes.
+  'oauthClaimAttributesAccessToken', 'oauthClaimAttributesIdToken',
+  'oauthClaimAttributesUserinfo', 'saml2ClaimAttributes',
+  'saml11ClaimAttributes', 'vcCredentialClaimAttributes',
   // A secret destination's write credential (#221 P3): write-only, set on
   // Directory → Secret destinations.
   'secretDestCredential'

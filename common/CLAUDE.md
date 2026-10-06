@@ -9747,6 +9747,36 @@ issues exactly what the realm does.
 
 `tests/application_claims.js` holds it.
 
+### An application's own attribute selections and credential claims (#495, 2026-10-06)
+
+The other half of each set — `claim_attributes.ts`'s ticked catalogue — and
+`vc_claims.ts`'s Credential claims selection may also be held per
+application, one JSON array of catalogue attribute names on its entry
+(`claim_attributes.APP_SELECTION_ATTRIBUTES`: `oauthClaimAttributesAccessToken`,
+`oauthClaimAttributesIdToken`, `oauthClaimAttributesUserinfo`,
+`saml2ClaimAttributes`, `saml11ClaimAttributes`; and
+`vcCredentialClaimAttributes`). **A different rule from the rows: held, it
+REPLACES the realm's selection** — a selection is a set, not a list of named
+rows, and "the application scope takes precedence" (rcbj) has to be able to
+DROP an attribute the realm ticks. Absent is the realm's; `[]` is none.
+
+* **Which application:** `admin_stats.claimApplicationOf()`, lifted out of
+  `effectiveClaimSet()` so the rows and the selection of one set can never
+  answer for two different applications. The resolver passes it to
+  `claimsFor()`; the issuer asks it with the access token's `client_id`.
+* **The metadata stays the realm's.** OpenID4VCI's issuer metadata is one
+  document for every client; a client's selection decides what its
+  credentials carry, and a wallet's requested paths are filtered against it
+  (`rowsForPaths(paths, format, base)`).
+* **Checked at the write and at issuance:** `applications.claimSelectionProblem()`
+  (`STS-REG-0215`, the catalogue asked lazily through each module's
+  `checkNames()`); a stored value that fails is ignored at issuance with
+  `STS-REG-0214` and the realm's selection is used.
+* **Not done**, as for the rows: no CAEP `token-claims-change` on an
+  application's change.
+
+`tests/application_claim_selections.js` holds it.
+
 ## 3ay. `identity_assurance.ts`: a person's identity verifications, and `verified_claims` (#127, 2026-09-23)
 
 OpenID Connect for Identity Assurance 1.0. **A verification is a RECORD ON THE

@@ -12916,6 +12916,65 @@ class AdminApi {
             responseDescription: 'The application\'s rows for that set ' +
                                  'after the change, in `claims`.' },
 
+          // AN APPLICATION'S OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495): the
+          // catalogue sections of its OAuth / OpenID Connect, SAML and
+          // Verifiable Credentials sub-tabs.
+          { action: 'set-claim-attributes',
+            operationId: 'setApplicationClaimAttributes',
+            summary: 'Set an application\'s own directory-attribute ' +
+                     'selection for a claim set or its credentials',
+            description: 'Writes the application\'s own selection of ' +
+                         'catalogue attributes for one set — `access_token`, ' +
+                         '`id_token`, `userinfo`, `saml2`, `saml11`, or ' +
+                         '`credential` (its OpenID4VCI credentials). HELD, ' +
+                         'IT REPLACES THE REALM\'S SELECTION for that set: ' +
+                         'the realm\'s ticked attributes are not issued to ' +
+                         'this application, and an empty `attributes` ' +
+                         'issues none. The catalogue is the one `GET ' +
+                         '/admin-api/claims` lists. Refused ' +
+                         '(`STS-REG-0215`) for an attribute the catalogue ' +
+                         'does not hold, or a set whose protocol the ' +
+                         'application is not declared for.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                set: { type: 'string',
+                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
+                              'saml11', 'credential'] },
+                attributes: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['application', 'set', 'attributes'],
+              examples: [{ application: 'my-web-app', set: 'id_token',
+                           attributes: ['mail', 'givenName', 'sn'] },
+                         { application: 'my-wallet', set: 'credential',
+                           attributes: ['givenName', 'sn'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The selection now held, in `attributes`.' },
+          { action: 'inherit-claim-attributes',
+            operationId: 'inheritApplicationClaimAttributes',
+            summary: 'Return an application to the realm\'s ' +
+                     'directory-attribute selection for a set',
+            description: 'Takes the application\'s own selection for one ' +
+                         'set off its entry, so the realm\'s selection is ' +
+                         'in force for it again.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                set: { type: 'string',
+                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
+                              'saml11', 'credential'] }
+              },
+              required: ['application', 'set'],
+              examples: [{ application: 'my-web-app', set: 'id_token' }],
+              additionalProperties: false
+            },
+            responseDescription: '`inherited: true`.' },
+
           // THE ACCESS TYPES TAB (#432 phase 4): one entry of the access-type
           // catalogue RFC 9396 and GNAP share.
           { action: 'set-access-type',

@@ -3969,6 +3969,54 @@ function applicationClaimSet(id, application) {
   return checked.claims;
 }
 
+// WHICH APPLICATION AN ISSUANCE'S CLAIMS ARE FOR, by name: asked by the
+// typed rows below and by the directory-attribute selection
+// (`claim_attributes.ts`, #495), so the two halves of one claim set cannot
+// disagree about whose configuration is in force.
+//
+// `application` FIRST (#483): a caller that resolved the application an
+// issuance is for names it, and the strings below are only how a caller
+// that did not is looked up. WS-Trust needs it: its audience is an
+// AppliesTo URI, which an OBSERVED entry named by that very URI (the one
+// `applications.seen()` files) answers to before `forAppliesTo()` is
+// asked — so the registered application's rows were found for the first
+// token and never again.
+/**
+ * Names the application an issuance's claims are for: the resolved
+ * application, else the client_id for the JSON sets and the audience for
+ * the SAML ones.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context
+ * @returns the name, or '' when the context names none
+ */
+function claimApplicationNameOf(id, context) {
+  log.debug("Entering claimApplicationNameOf(). id=" + id);
+  const isSaml = id === 'saml2' || id === 'saml11';
+  const name = context
+    ? (context.application || (isSaml ? context.audience
+                                      : (context.client_id ||
+                                         context.clientId)))
+    : '';
+  log.debug("Leaving claimApplicationNameOf().");
+  return name ? String(name) : '';
+}
+
+/**
+ * Finds the application an issuance's claims are for.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context
+ * @returns the application's view, or null
+ */
+function claimApplicationOf(id, context) {
+  log.debug("Entering claimApplicationOf(). id=" + id);
+  const name = claimApplicationNameOf(id, context);
+  const found = name ? applicationForClaims(name) : null;
+  log.debug("Leaving claimApplicationOf(). " + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
 /**
  * Returns the claim rows in force for an issuance: the realm's set, with the
  * application's own rows added and winning by name.
@@ -3981,20 +4029,8 @@ function applicationClaimSet(id, application) {
 function effectiveClaimSet(id, context) {
   log.debug("Entering effectiveClaimSet(). id=" + id);
   const realmRows = claimSet(id);
-  const isSaml = id === 'saml2' || id === 'saml11';
-  // `application` FIRST (#483): a caller that resolved the application an
-  // issuance is for names it, and the strings below are only how a caller
-  // that did not is looked up. WS-Trust needs it: its audience is an
-  // AppliesTo URI, which an OBSERVED entry named by that very URI (the one
-  // `applications.seen()` files) answers to before `forAppliesTo()` is
-  // asked — so the registered application's rows were found for the first
-  // token and never again.
-  const name = context
-    ? (context.application || (isSaml ? context.audience
-                                      : (context.client_id ||
-                                         context.clientId)))
-    : '';
-  const own = name ? applicationClaimSet(id, String(name)) : [];
+  const name = claimApplicationNameOf(id, context);
+  const own = name ? applicationClaimSet(id, name) : [];
   if (!own.length) {
     log.debug("Leaving effectiveClaimSet(). The realm's.");
     return realmRows;
@@ -6160,6 +6196,9 @@ module.exports = {
   APP_CLAIM_ATTRIBUTES: APP_CLAIM_ATTRIBUTES,
   applicationClaimSet: applicationClaimSet,
   effectiveClaimSet: effectiveClaimSet,
+  // The application an issuance's claims are for (#495), asked by
+  // claim_attributes.ts for an application's own attribute selection.
+  claimApplicationOf: claimApplicationOf,
   // Filled by claim_attributes.js at its require time; see the note above it.
   // The inversion is what keeps the four issuance sites unchanged.
   setAttributeResolver: setAttributeResolver,

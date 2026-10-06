@@ -9186,6 +9186,8 @@ class AdminViews {
       },
       lifetimes: { rows: states.lifetimes.rows, skew: states.lifetimes.skew },
       claims: states.claims.sets,
+      // The directory-attribute selections beside those rows (#495).
+      claimSelections: states.claims.selections,
       enrollment: {
         credentials: this.applicationEnrollmentState(req, row, 'enrolled'),
         config: this.applicationEnrollmentState(req, row, 'enrolledConfig')
@@ -9280,7 +9282,8 @@ class AdminViews {
     const rolesState = this.applicationRolesState(row.identifier, row);
     const signalsState = this.applicationSignalsState(req, row);
     const enrollmentState = this.applicationEnrollmentState(req, row);
-    const claimsState = this.applicationClaimsState(row);
+    const claimsState = this.applicationClaimsState(row,
+      req && req.query ? req.query.claimsUser : '');
     const lifetimesState = this.applicationTokenLifetimesState(row);
     log.debug("Leaving AdminViews.applicationDetailJson().");
     return {
@@ -9342,6 +9345,11 @@ class AdminViews {
           // tabs' sections, as data. See applicationClaimsState() and
           // applicationTokenLifetimesState().
           customClaims: claimsState.json,
+          // ITS OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495): per set, the
+          // realm's, its own (null while it inherits) and the one in force,
+          // its credential claims likewise, and what each would carry for
+          // one person.
+          claimSelections: claimsState.selections,
           tokenLifetimes: lifetimesState.json,
           // THE SOFTWARE STATEMENTS SECTION, AS DATA (2026-09-13): the issuers
           // this application vouches for as a publisher, the statement this
@@ -9812,9 +9820,12 @@ class AdminViews {
    * Answers an application's own claim sets beside the realm's.
    *
    * @param row - the application's view
-   * @returns `{ sets, json }`, one member per set it is declared for
+   * @param previewUser - optional; the person the selections are previewed
+   *   for (`?claimsUser=`), `alice` by default as on the realm's pages
+   * @returns `{ sets, json, selections }`, one member of `sets` per set it
+   *   is declared for
    */
-  applicationClaimsState(row) {
+  applicationClaimsState(row, previewUser?) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.applicationClaimsState(). identifier=" +
               (row && row.identifier));
@@ -9854,9 +9865,81 @@ class AdminViews {
                attribute: stats.APP_CLAIM_ATTRIBUTES[id],
                realm: realmRows, own: own, effective: effective };
     });
+    const selections = this.applicationClaimSelections(row,
+      sets.map(function (one) { return one.id; }), previewUser);
     log.debug("Leaving AdminViews.applicationClaimsState(). " + sets.length +
               " set(s).");
-    return { sets: sets, json: sets };
+    return { sets: sets, json: sets, selections: selections };
+  }
+
+  // AN APPLICATION'S OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495): for each of
+  // its declared claim sets, the realm's selection, its own (null while it
+  // inherits the realm's) and the one in force — its own when held, which
+  // REPLACES the realm's — with what that would put in the artifact for one
+  // person, built by the issuance path's function; and, for an OpenID4VCI
+  // client, its credential claims the same way. The catalogue and every
+  // attribute's value for the person ride along once, as on the realm's
+  // pages, so a box can be judged before it is ticked.
+  /**
+   * Answers an application's own directory-attribute selections beside the
+   * realm's, with a preview for one person.
+   *
+   * @param row - the application's view
+   * @param setIds - the claim sets it is declared for
+   * @param previewUser - the person previewed, `alice` by default
+   * @returns `{ catalogue, preview, sets, credential }`
+   */
+  applicationClaimSelections(row, setIds, previewUser) {
+    const { log, stats, claimAttributes, vcClaims } = this.deps;
+    log.debug("Entering AdminViews.applicationClaimSelections().");
+    const user = String(previewUser || '').trim() || 'alice';
+    const sets = setIds.map(function (id) {
+      const own = claimAttributes.applicationSelection(id, row);
+      const preview = claimAttributes.previewFor(id, user, row);
+      return {
+        id: id, label: stats.CLAIM_SETS[id].label,
+        attribute: claimAttributes.APP_SELECTION_ATTRIBUTES[id],
+        realm: claimAttributes.selectedNames(id),
+        own: own,
+        inherited: own === null,
+        effective: own === null ? claimAttributes.selectedNames(id) : own,
+        claims: preview.claims, report: preview.report
+      };
+    });
+    const declared = [].concat((row && row.allowedProtocols) || []);
+    let credential = null;
+    if (declared.indexOf('oid4vci') >= 0) {
+      const ownRows = vcClaims.applicationRows(row);
+      const built = vcClaims.subjectClaimsFor(user, {},
+        ownRows || vcClaims.selectedRows());
+      credential = {
+        attribute: vcClaims.APP_SELECTION_ATTRIBUTE,
+        realm: vcClaims.selectedNames(),
+        own: ownRows ? ownRows.map(function (one) { return one.ldap; })
+                     : null,
+        inherited: !ownRows,
+        effective: (ownRows || vcClaims.selectedRows())
+          .map(function (one) { return one.ldap; }),
+        claims: built.claims, report: built.report,
+        // What an ldp_vc credential cannot carry of the realm's selection;
+        // the page names it beside the client's own.
+        ldpOmitted: vcClaims.ldpOmitted()
+      };
+    }
+    const catalogue = vcClaims.VC_ATTRIBUTES.map(function (one) {
+      return { ldap: one.ldap, claim: one.claim.join('.'), label: one.label,
+               schema: one.schema, ldpTerm: one.ldpTerm || '',
+               generated: !!one.from };
+    });
+    const out = { catalogue: catalogue,
+                  preview: Object.assign({ user: user },
+                                         claimAttributes.catalogueValuesFor(
+                                           user)),
+                  sets: sets, credential: credential };
+    log.debug("Leaving AdminViews.applicationClaimSelections(). " +
+              sets.length + " set(s)" + (credential ? " and credentials."
+                                                    : "."));
+    return out;
   }
 
   // THE TOKEN LIFETIMES IN FORCE FOR AN APPLICATION (2026-10-01): its OAuth

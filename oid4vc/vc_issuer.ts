@@ -2108,8 +2108,12 @@ class VcIssuer {
     // as an empty selection: the whole configured set is issued, exactly as
     // before.
     const asked = this.requestedClaimPaths(accessToken, configId);
-    const rows = asked ? vcClaims.rowsForPaths(asked, vciFormatOf(configId)) :
-                 null;
+    // THE CLIENT'S OWN SELECTION (#495), replacing the realm's for a
+    // credential issued on its access token; null is the realm's.
+    const own = this.applicationRowsFor(t.client_id || t.azp || '');
+    const rows = asked
+      ? vcClaims.rowsForPaths(asked, vciFormatOf(configId), own || undefined)
+      : own;
     const built = vcClaims.subjectClaimsFor(user, t, rows);
     const claims = Object.assign({ sub: t.sub ||
                                         ('urn:uuid:' + crypto.randomUUID()) },
@@ -2141,6 +2145,30 @@ class VcIssuer {
   // array), so a caller that could not tell them apart would issue an empty
   // credential to every wallet that used a scope.
   // ---------------------------------------------------------------------------
+  // THE APPLICATION A CREDENTIAL IS ISSUED TO (#495): the access token's
+  // client, found as the claim sets find theirs. A registry that throws
+  // costs the client's own selection and never the credential.
+  private applicationRowsFor(clientId) {
+    const { log, stats, vcClaims } = this.deps;
+    log.debug("Entering VcIssuer.applicationRowsFor().");
+    if (!clientId) {
+      log.debug("Leaving VcIssuer.applicationRowsFor(). No client.");
+      return null;
+    }
+    try {
+      const application = stats.claimApplicationOf('access_token',
+                                                   { client_id: clientId });
+      log.debug("Leaving VcIssuer.applicationRowsFor().");
+      return application ? vcClaims.applicationRows(application) : null;
+    } catch (e) {
+      log.debug("Caught in VcIssuer.applicationRowsFor(): " +
+                ((e && e.message) || e));
+      // The realm's selection is issued: see the comment above.
+      log.debug("Leaving VcIssuer.applicationRowsFor(). Failed.");
+      return null;
+    }
+  }
+
   private requestedClaimPaths(accessToken, configId) {
     const { log, STS, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.requestedClaimPaths(). configId=" +
