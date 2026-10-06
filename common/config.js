@@ -5410,6 +5410,62 @@ const SETTINGS = [
                  'have: a TEE (`trusted-environment`) or a separate ' +
                  'secure element (`strongbox`). A SOFTWARE key is never ' +
                  'attested, whatever this says.' },
+  // GOOGLE'S ANDROID KEY ATTESTATION STATUS LIST (#256): which attestation
+  // certificates Google has revoked or suspended — a leaked batch key, a
+  // compromised intermediate. Downloaded by the
+  // `devices.android-status-refresh` job into the risk datasets
+  // (`android.attestation-status`) and consulted for every certificate of an
+  // Android chain, at a device's registration and at a WebAuthn `android-key`
+  // statement. `common/attestation_revocation.ts` argues it.
+  { key: 'devices.androidStatusUrl', group: 'Devices',
+    label: 'Android attestation status list address',
+    env: 'STS_DEVICES_ANDROID_STATUS_URL', type: 'string',
+    dflt: 'https://android.googleapis.com/attestation/status', runtime: true,
+    description: 'Where the `devices.android-status-refresh` job downloads ' +
+                 'Google\'s Android key attestation status list from (#256): ' +
+                 'Google\'s own address by default. Fetched through the ' +
+                 'outbound rules every published document is ' +
+                 '(`federation.outbound`, https, internal addresses refused ' +
+                 'in product), with no redirect and a cap of its own. Empty ' +
+                 'dials nobody; the list can still be uploaded on ' +
+                 'Monitoring → Risk.' },
+  { key: 'devices.androidStatusRefreshS', group: 'Devices',
+    label: 'Download the Android status list every (seconds)',
+    env: 'STS_DEVICES_ANDROID_STATUS_REFRESH_S', type: 'int', dflt: 86400,
+    min: 3600, max: 604800, runtime: true,
+    description: 'How often `devices.android-status-refresh` downloads the ' +
+                 'list from `devices.androidStatusUrl`: daily by default. A ' +
+                 'list identical to the active one is not loaded again.' },
+  { key: 'devices.androidStatusMaxBytes', group: 'Devices',
+    label: 'Largest Android status list (bytes)',
+    env: 'STS_DEVICES_ANDROID_STATUS_MAX_BYTES', type: 'int',
+    dflt: 16777216, min: 65536, max: 268435456, runtime: true,
+    description: 'The most the job reads of the list before it stops. ' +
+                 'Google\'s is a JSON document that grows as it revokes; it ' +
+                 'has a cap of its own rather than ' +
+                 '`federation.maxResponseBytes`, which is sized for a token ' +
+                 'response.' },
+  { key: 'devices.androidStatusStaleHours', group: 'Devices',
+    label: 'Android status list is stale after (hours)',
+    env: 'STS_DEVICES_ANDROID_STATUS_STALE_HOURS', type: 'int', dflt: 48,
+    min: 1, max: 8760, runtime: true,
+    description: 'How long after it was loaded the active list still says ' +
+                 'anything. Past it the list is stale, and an Android chain ' +
+                 'is recorded with its revocation UNCHECKED, as with no ' +
+                 'list at all — which `devices.androidRevocationRequired` ' +
+                 'decides the consequence of.' },
+  { key: 'devices.androidRevocationRequired', group: 'Devices',
+    label: 'An Android attestation needs a current status list',
+    env: 'STS_DEVICES_ANDROID_REVOCATION_REQUIRED', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'OFF BY DEFAULT. Off, an Android attestation whose ' +
+                 'revocation could not be checked — no list, a stale one — ' +
+                 'is still recorded as attested, with the reason. On, in ' +
+                 'PRODUCT mode, such a chain is recorded as self-asserted, ' +
+                 'which product refuses for a device key and which makes a ' +
+                 'WebAuthn statement untrusted. WEAKER OFF: a leaked batch ' +
+                 'key goes unnoticed while the list cannot be read; on, an ' +
+                 'install that cannot reach Google attests no Android key.' },
   { key: 'devices.appleAppAttestTrustAnchors', group: 'Devices',
     label: 'Apple App Attest root (PEM)',
     env: 'STS_DEVICES_APPLE_APP_ATTEST_TRUST_ANCHORS', type: 'string',

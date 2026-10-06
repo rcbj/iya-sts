@@ -1353,6 +1353,29 @@ function acceptsUnattestedDeviceKeys() {
   return !isProduct();
 }
 
+// Is an Android attestation whose REVOCATION could not be checked — no
+// current Android attestation status list (#256), never fetched, failing, or
+// stale — refused as unattested? Development records it attested with the
+// reason, whatever the setting, because a client under test reaches no
+// Google. Product does the same unless `devices.androidRevocationRequired`
+// is on (off by default, so an install that cannot reach Google still
+// attests), and then records the chain self-asserted — which
+// `acceptsUnattestedDeviceKeys()` then refuses for a device key, and which
+// makes a WebAuthn `android-key` statement untrusted.
+// `common/attestation_revocation.ts` asks it.
+/**
+ * Tells whether an Android attestation whose revocation status could not be
+ * checked is treated as unattested.
+ *
+ * @returns true in product mode with devices.androidRevocationRequired on
+ */
+function refusesUncheckedAttestationRevocation() {
+  log.debug("Entering refusesUncheckedAttestationRevocation().");
+  log.debug("Leaving refusesUncheckedAttestationRevocation().");
+  return isProduct() &&
+         config.value('devices.androidRevocationRequired') === true;
+}
+
 // May a password alone open a PASSWORD-ONLY DOOR for a person who holds, or
 // is required to hold, a second factor (#101, 2026-09-22)? An LDAP simple
 // bind, a WS-Security UsernameToken, SCIM and SSF HTTP Basic and EST Basic
@@ -3143,7 +3166,22 @@ const REQUIREMENTS = [
              'chained to an anchor registers a key. An administrator ' +
              'entering a key by value is an administrator\'s act and is ' +
              'accepted in both modes, recorded proof admin, self-asserted.',
-    where: 'common/device_enrolment.ts, common/cert_enrollment.ts' }
+    where: 'common/device_enrolment.ts, common/cert_enrollment.ts' },
+  // 2026-10-06 (#256).
+  { id: 'android-attestation-revocation',
+    what: 'An Android attestation whose revocation could not be checked is ' +
+          'not trusted, where the realm says so',
+    development: 'With no current Android attestation status list (never ' +
+                 'downloaded, the download failing, or stale) an Android ' +
+                 'chain is recorded attested, its revocation UNCHECKED, ' +
+                 'whatever devices.androidRevocationRequired says. A chain ' +
+                 'the list revokes or suspends is self-asserted in both ' +
+                 'modes.',
+    product: 'The same by default. With devices.androidRevocationRequired ' +
+             'on, an unchecked chain is recorded self-asserted: a device key ' +
+             'is then refused (STS-DEVICE-0024) and a WebAuthn android-key ' +
+             'statement untrusted.',
+    where: 'common/attestation_revocation.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -3672,6 +3710,7 @@ module.exports = {
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,
   acceptsUnattestedDeviceKeys: acceptsUnattestedDeviceKeys,
+  refusesUncheckedAttestationRevocation: refusesUncheckedAttestationRevocation,
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,

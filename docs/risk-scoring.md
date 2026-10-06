@@ -422,6 +422,7 @@ certificate chain presented to it.
 | `iplist.reputation` | an IP reputation list | the same |
 | `iplist.operator-deny`, `iplist.operator-allow` | your own lists, one per realm | the same |
 | `fido.mds3` | every FIDO-certified authenticator model and its status reports, by AAGUID | the MDS3 BLOB exactly as FIDO publishes it: one signed JWT |
+| `android.attestation-status` | the Android attestation certificates Google has revoked or suspended, by serial (#256); consulted by device registration and WebAuthn, not scored ([Devices](devices.md#googles-android-attestation-status-list)) | Google's status list as it publishes it: JSON `entries` keyed by lower-case hex serial; downloaded daily by `devices.android-status-refresh` |
 
 ### Uploading a file
 
@@ -494,7 +495,9 @@ recorded under your name, so do it as the person responsible for the
 deployment. Pass the provider names to the loader's `--accept-terms`, or
 accept on Monitoring → Risk or with `POST /admin-api/risk/accept-terms`. The
 provider names are `dbip-lite`, `ipinfo-lite`, `tor-project`, `firehol` and
-`fido-mds3`. Your own allow and deny lists need no acceptance.
+`fido-mds3`. Your own allow and deny lists need no acceptance, and nor does
+Google's Android attestation status list (`google-android-attestation`), a
+public list published for every verifier to consult.
 
 **2. Download the files.** DB-IP Lite's city and ASN data, the Tor exit list,
 FireHOL's level 1 reputation list and the FIDO metadata are published at the
@@ -514,6 +517,7 @@ To script the same thing, use `POST /admin-api/risk/upload`.
 | `torbulkexitlist` | `iplist.tor-exit` | `ip-list` |
 | `firehol_level1.netset` | `iplist.reputation` | `ip-list` |
 | the FIDO MDS3 BLOB | `fido.mds3` | `fido-mds3-jwt` |
+| Google's Android attestation status list | `android.attestation-status` | `android-attestation-status-json` |
 
 **Or run the install-time loader instead.** It downloads and imports every
 file in one command, which suits an automated installation. It reads a

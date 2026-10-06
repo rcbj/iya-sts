@@ -5797,6 +5797,19 @@ const CODES = [
     summary: 'A person\'s delegation semantics named something other than ' +
       'delegation or impersonation (#186).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0296',
+    summary: 'A security key\'s attestation, revoked by Google\'s Android ' +
+      'attestation status list, could not be recorded as untrusted on the ' +
+      'person\'s entry (#256).',
+    spec: 'none — an error in the log' },
+  { code: 'STS-AUTHN-0297',
+    summary: 'A WebAuthn android-key attestation is untrusted: a certificate ' +
+      'of its chain is revoked or suspended in Google\'s Android attestation ' +
+      'status list, or its revocation could not be checked where the realm ' +
+      'requires it (#256). At registration a policy demanding trust refuses ' +
+      'it; at a recheck a stored key\'s attestation becomes untrusted.',
+    spec: 'the registration\'s own refusal where trust is demanded ' +
+      '(STS-AUTHN-0235); none at a recheck' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -14654,6 +14667,17 @@ const CODES = [
       'was still sent; only the standing, and the risk-response policy\'s ' +
       'reaction to it, are missing.',
     spec: 'WebAuthn Level 3 section 6.1.1' },
+  { code: 'STS-RISK-0045',
+    summary: 'An upload or download meant as Google\'s Android attestation ' +
+      'status list was not one: not JSON, or not an object whose `entries` ' +
+      'are keyed by certificate serial (#256). Nothing was loaded.',
+    spec: 'HTTP 400 (management API); none for the download job' },
+  { code: 'STS-RISK-0046',
+    summary: 'The devices.android-status-refresh job could not download ' +
+      'Google\'s Android attestation status list from ' +
+      'devices.androidStatusUrl (#256); the active list, if any, is ' +
+      'unchanged.',
+    spec: 'none — a warning in the log and a failed run' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +
@@ -16787,6 +16811,24 @@ const CODES = [
       'could not ' +
       'all be ended (#432). The sessions, secret and certificates were.',
     spec: 'none — an error in the log' },
+  { code: 'STS-DEVICE-0047',
+    summary: 'An Android Key Attestation chain names a certificate Google\'s ' +
+      'attestation status list revokes or suspends (#256): at registration ' +
+      'the key is recorded self-asserted (refused in product), and at a ' +
+      'recheck an attested key is downgraded to self-asserted.',
+    spec: 'the registration\'s own refusal in product (STS-DEVICE-0024); ' +
+      'none at a recheck' },
+  { code: 'STS-DEVICE-0048',
+    summary: 'An Android Key Attestation chain\'s revocation could not be ' +
+      'checked — no current Android attestation status list, or a stale one ' +
+      '— and devices.androidRevocationRequired treats that as unattested in ' +
+      'product mode (#256).',
+    spec: 'the registration\'s own refusal in product (STS-DEVICE-0024)' },
+  { code: 'STS-DEVICE-0049',
+    summary: 'A newly activated Android attestation status list could not ' +
+      'queue the recheck of the stored chains (#256); the daily ' +
+      'devices.android-status-recheck run reaches them.',
+    spec: 'none — a warning in the log' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile other than `default` was ' +

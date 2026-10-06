@@ -2453,7 +2453,33 @@ class UsersPage {
       '.') + '">' + (att.trusted ? 'verified, trusted' : 'verified, ' +
       'untrusted') + '</span>' +
       (att.model ? ' — ' + kit.esc(att.model) : '') +
-      ' <code>' + kit.esc(att.format) + '</code>';
+      ' <code>' + kit.esc(att.format) + '</code>' +
+      UsersPage.androidRevocationText(att);
+  }
+
+  // What Google's Android attestation status list said of an android-key
+  // chain (#256): good, revoked or suspended with the serial, or unchecked
+  // with why — and, for a key registered before the check, nothing to say.
+  static androidRevocationText(att) {
+    const r = att && att.androidRevocation;
+    if (!att || att.format !== 'android-key') {
+      return '';
+    }
+    if (!r) {
+      return ' <small class="state-none">revocation unknown (registered ' +
+        'before the Android status list was consulted)</small>';
+    }
+    const status = String(r.status || 'unchecked');
+    return ' <small class="' + (status === 'good' ? 'state-valid'
+      : status === 'unchecked' ? 'state-none' : 'state-expired') + '">' +
+      (status === 'good' ? 'not revoked'
+        : status === 'unchecked' ? 'revocation unchecked: ' +
+          kit.esc(r.why || '')
+        : kit.esc(status.toUpperCase()) + ' — certificate <code>' +
+          kit.esc(r.serial || '') + '</code>' +
+          (r.reason ? ' (' + kit.esc(r.reason) + ')' : '')) +
+      (r.listVersion ? ', list <code>' + kit.esc(r.listVersion) + '</code>'
+                     : '') + '</small>';
   }
 
   // ---------------------------------------------------------------------------

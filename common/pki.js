@@ -11907,6 +11907,35 @@ function verifyIssuedDirectly(leafDer, authorities, opts) {
 }
 
 
+// ----- A certificate's serial, as a status list keys it (#256) --------------
+//
+// Google's Android key attestation status list keys each entry by the
+// certificate's serial number in lower-case hexadecimal with no leading
+// zeros; `risk_datasets.androidSerialKey()` normalises the list's side the
+// same way. '' for bytes that are not a certificate.
+/**
+ * Returns a certificate's serial number as lower-case hexadecimal with no
+ * leading zeros.
+ *
+ * @param {Buffer|string} der - the certificate, DER bytes or PEM
+ * @returns {string} the serial, or '' for a value that is not a certificate
+ */
+function certificateSerialHex(der) {
+  log.debug("Entering certificateSerialHex().");
+  let out = '';
+  try {
+    const cert = new nodeCrypto.X509Certificate(
+      typeof der === 'string' ? der : Buffer.from(der || []));
+    out = String(cert.serialNumber || '').toLowerCase()
+      .replace(/^0+(?=.)/, '');
+  } catch (e) {
+    log.debug("Caught in certificateSerialHex(): " + ((e && e.message) || e));
+    out = '';
+  }
+  log.debug("Leaving certificateSerialHex().");
+  return out;
+}
+
 // ----- WebAuthn attestation certificates (#105) -----------------------------
 //
 // What `authn/webauthn_attestation.ts` asks of an attestation certificate —
@@ -13061,6 +13090,7 @@ module.exports = {
   pathRuleProblem: pathRuleProblem,
   // --- WebAuthn attestation certificates (#105) ---
   attestationCertificateFacts: attestationCertificateFacts,
+  certificateSerialHex: certificateSerialHex,
   attestationKeyIdentifier: attestationKeyIdentifier,
   // --- the FIDO MDS3 BLOB (#62 P5) ---
   fidoMdsRoots: fidoMdsRoots,

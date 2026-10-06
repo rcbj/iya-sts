@@ -301,6 +301,10 @@ interface Attestation {
   format: string;
   summary: string;
   verifiedAt: string;
+  // #256: an Android chain's serials, kept so a later status list can be
+  // asked about it, and what the list said (`attestation_revocation.ts`).
+  chainSerials?: string[];
+  revocation?: Json;
 }
 
 interface DeviceKey {
@@ -1479,6 +1483,103 @@ class Devices {
     return out;
   }
 
+  // =========================================================================
+  // ANDROID ATTESTATION REVOKED AFTER THE FACT (#256). `attestation_revocation
+  // .ts`'s recheck asks for every key that is attested by an Android chain
+  // whose serials were kept, and downgrades one a newer status list revokes
+  // or suspends: rcbj's decision 2 — the key is self-asserted with the
+  // reason, the device's level follows its keys, an audit row, and a CAEP
+  // credential-change (`update`) about the key. The device's STATUS is not
+  // touched: a leaked batch key says the attestation proves nothing, not
+  // that this device was compromised.
+  // =========================================================================
+  /**
+   * Lists every key in the realm attested by an Android chain whose serials
+   * were kept, for the status list's recheck.
+   *
+   * @returns `[{ deviceId, keyId, chainSerials }]`
+   */
+  androidAttestedKeys(): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering Devices.androidAttestedKeys().");
+    const out: Json[] = [];
+    this.all().forEach(function (device: Device): void {
+      device.keys.forEach(function (key: DeviceKey): void {
+        const att = key.attestation;
+        if (att && att.level === 'attested' &&
+            att.format === 'android-key-attestation' &&
+            Array.isArray(att.chainSerials) && att.chainSerials.length) {
+          out.push({ deviceId: device.id, keyId: key.id,
+                     chainSerials: att.chainSerials.slice() });
+        }
+      });
+    });
+    log.debug("Leaving Devices.androidAttestedKeys(). " + out.length + ".");
+    return out;
+  }
+
+  /**
+   * Downgrades one key's Android attestation to self-asserted because
+   * Google's status list revokes or suspends a certificate of its chain,
+   * recomputes the device's level, audits it and sends CAEP
+   * credential-change.
+   *
+   * @param deviceId - the device
+   * @param keyId - the key
+   * @param revocation - `attestation_revocation.consult()`'s answer
+   * @returns `{ ok, changed, level }`, or a refusal
+   */
+  downgradeKeyAttestation(deviceId: unknown, keyId: unknown,
+                          revocation: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering Devices.downgradeKeyAttestation().");
+    const device = this.byId(deviceId);
+    const key = device ? device.keys.filter(function (one: DeviceKey) {
+      return one.id === String(keyId || '');
+    })[0] : null;
+    if (!device || !key) {
+      log.debug("Leaving Devices.downgradeKeyAttestation(). Gone.");
+      return this.refuse('STS-DEVICE-0007', 'There is no device "' +
+        String(deviceId || '') + '" with the key "' + String(keyId || '') +
+        '".');
+    }
+    if (!key.attestation || key.attestation.level !== 'attested') {
+      log.debug("Leaving Devices.downgradeKeyAttestation(). Not attested.");
+      return { ok: true, changed: false, level: device.attestation };
+    }
+    const r = revocation || {};
+    const why = 'Google\'s Android attestation status list ' +
+      String(r.listVersion || '') + ' marks certificate ' +
+      String(r.serial || '?') + ' of its chain ' +
+      String(r.status || 'revoked').toUpperCase() +
+      (r.reason ? ' (' + String(r.reason) + ')' : '');
+    key.attestation = Object.assign({}, key.attestation, {
+      level: 'self-asserted', verifiedAt: '',
+      summary: (String(key.attestation.summary || '') + ' DOWNGRADED: ' +
+                why + '.').slice(0, 500),
+      revocation: r });
+    const before = device.attestation;
+    device.attestation = Devices.levelOf(device.keys);
+    if (!this.write(device)) {
+      log.debug("Leaving Devices.downgradeKeyAttestation(). Not written.");
+      return this.refuse('STS-DEVICE-0009', 'The directory did not store ' +
+                         'device ' + device.id + '.');
+    }
+    log.warn(this.deps.errorCodes.tag('STS-DEVICE-0047') + 'devices: the ' +
+             'key ' + key.id + ' of device ' + device.id + ' is no longer ' +
+             'attested: ' + why + '.');
+    this.recordAudit('device.attestation-revoked', 'system', device,
+      'the key ' + key.id + ' of device ' + device.id + ' is self-asserted ' +
+      'now: ' + why, { keyId: key.id, levelBefore: before,
+                       level: device.attestation,
+                       errorCode: 'STS-DEVICE-0047' });
+    this.credentialChanged(device, 'update', key, undefined, 'system',
+                           'Its attestation was revoked: ' + why + '.');
+    log.debug("Leaving Devices.downgradeKeyAttestation(). " +
+              device.attestation + ".");
+    return { ok: true, changed: true, level: device.attestation };
+  }
+
   // CAEP credential-change about one of a device's credentials — a key
   // (`key`) or, with none, its Native SSO secret.
   private credentialChanged(device: Device, changeType: string,
@@ -2191,10 +2292,17 @@ class Devices {
       kind: kind, thumbprint: read.thumbprint,
       label: label.value || kind + ' key', added: now,
       addedBy: String(actor || ''), proof: proof,
-      attestation: { level: level, format: format,
+      attestation: Object.assign({ level: level, format: format,
                      summary: String(att.summary || '').slice(0, 500),
                      verifiedAt: level === 'attested'
                        ? String(att.verifiedAt || now) : '' },
+                     // #256: an Android chain's serials and what Google's
+                     // status list said of them, as the verifier recorded.
+                     Array.isArray(att.chainSerials)
+                       ? { chainSerials: att.chainSerials.map(String)
+                             .slice(0, 10) } : {},
+                     att.revocation && typeof att.revocation === 'object'
+                       ? { revocation: att.revocation } : {}),
       material: read.material
     };
     log.debug("Leaving Devices.prepareKey(). " + kind);
@@ -3235,6 +3343,8 @@ export = {
   listFor: slot.forward('listFor'),
   listForOwner: slot.forward('listForOwner'),
   byId: slot.forward('byId'),
+  androidAttestedKeys: slot.forward('androidAttestedKeys'),
+  downgradeKeyAttestation: slot.forward('downgradeKeyAttestation'),
   bySecret: slot.forward('bySecret'),
   byCredentialId: slot.forward('byCredentialId'),
   holdsAny: slot.forward('holdsAny'),

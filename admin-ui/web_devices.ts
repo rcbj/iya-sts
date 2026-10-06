@@ -376,6 +376,43 @@ class DevicesPage {
     return facts + apps + keys + forms;
   }
 
+  /**
+   * Draws the state of Google's Android attestation status list (#256).
+   *
+   * @param status - the view's `androidStatus`
+   * @returns the section as HTML
+   */
+  static androidStatusHtml(status: Json): string {
+    const esc = kit.esc.bind(kit);
+    const s = status || {};
+    return '<h2>Android attestation status list</h2>' +
+      kit.note('Every certificate of an Android Key Attestation chain — at ' +
+        'a device\'s registration and at a WebAuthn android-key statement — ' +
+        'is looked up in Google\'s list of revoked and suspended ' +
+        'attestation certificates. A chain it names is not attested. ' +
+        'The list is the risk dataset <code>android.attestation-status' +
+        '</code> on <a href="/admin/risk">Risk</a>, downloaded by <code>' +
+        esc(s.job || 'devices.android-status-refresh') + '</code> from ' +
+        (s.url ? '<code>' + esc(s.url) + '</code>'
+               : '<strong>nowhere</strong> (devices.androidStatusUrl is ' +
+                 'empty; upload it on Risk)') + '.') +
+      '<table class="key"><tr><th>Active list</th><td>' +
+      (s.active ? '<code>' + esc(s.active) + '</code>, ' +
+                  esc(String(s.rows || 0)) + ' certificate(s), loaded ' +
+                  esc(s.loadedAt ? new Date(s.loadedAt).toISOString() : '?') +
+                  (s.stale ? ' — <strong class="state-expired">STALE' +
+                             '</strong> (older than ' +
+                             esc(String(s.staleAfterHours)) + ' hours)' : '')
+                : '<span class="state-none">none — Android chains are ' +
+                  'recorded with their revocation UNCHECKED</span>') +
+      '</td></tr><tr><th>An unchecked chain</th><td>' +
+      (s.required ? 'is <strong>not attested</strong> in product mode ' +
+                    '(devices.androidRevocationRequired)'
+                  : 'is still attested, with the reason recorded ' +
+                    '(devices.androidRevocationRequired is off)') +
+      '</td></tr></table>';
+  }
+
   static registrationHtml(json: Json): string {
     const esc = kit.esc.bind(kit);
     const state = function (built: boolean): string {
@@ -427,6 +464,8 @@ class DevicesPage {
               '</small>';
           }).join('<br>') : '—') + '</td></tr>';
       }).join('') + '</tbody></table>' +
+      // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256).
+      DevicesPage.androidStatusHtml(json.androidStatus) +
       '<h2>Enrolment challenges</h2>' +
       kit.note('The challenges <code>/portal/devices</code> issues are ' +
         'held in <code>' + esc(json.challenges.store) + '</code>, per ' +

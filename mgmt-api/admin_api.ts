@@ -4214,11 +4214,16 @@ class AdminApi {
         responseDescription: 'The enrolment methods and the settings.',
         responseSchema: { type: 'object',
           description: '`enrolment`, `recognition`, the vocabularies, ' +
-                       '`mdmFeed` and `settings`.' },
-        handler: function (req, res) {
+                       '`mdmFeed`, `settings` and `androidStatus` — Google\'s ' +
+                       'Android attestation status list (#256): `active` ' +
+                       '(its version, \'\' for none), `loadedAt`, `rows`, ' +
+                       '`stale`, `staleAfterHours`, `url`, `required` and ' +
+                       '`job`.' },
+        handler: async function (req, res) {
           log.debug("Entering the management API device registration " +
                     "endpoint.");
-          self.sendJson(res, 200, devicesAdmin.registrationView(req));
+          self.sendJson(res, 200,
+                        await devicesAdmin.registrationViewWithStatus(req));
           log.debug("Leaving the management API device registration " +
                     "endpoint.");
         } },
