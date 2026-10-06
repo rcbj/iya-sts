@@ -1757,6 +1757,25 @@ function capturesMail() {
   return !isProduct();
 }
 
+// May a secret push destination be a FILE on this container's disk (#221 P3)?
+// rcbj's answer 5 on #221: the file destination is for development mode only.
+// Development answers yes — it is how the test suite exercises a rotation
+// without a secrets manager. Product answers no: a destination naming
+// `file` is reported unusable, and a push to it is refused
+// (STS-SECDEST-0006), because a password written to the service's own disk
+// is not in a secrets manager.
+/**
+ * Tells whether a secret push destination may write a file on this
+ * container's disk rather than to a secrets manager.
+ *
+ * @returns true in development mode
+ */
+function acceptsFileSecretDestinations() {
+  log.debug("Entering acceptsFileSecretDestinations().");
+  log.debug("Leaving acceptsFileSecretDestinations().");
+  return !isProduct();
+}
+
 // May a link this service MAILS be built on the listener's configured address
 // when `global.publicBaseUrl` is empty (#63)? Never on the request's — a link
 // in a message is not answered to whoever asked, so a `Host` header it came
@@ -2279,6 +2298,19 @@ const REQUIREMENTS = [
              'link is mailed only when global.publicBaseUrl is set ' +
              '(STS-MAIL-0015).',
     where: 'common/mail.ts' },
+  { id: 'secret-destinations',
+    what: 'A service account\'s rotated password is pushed to a secrets ' +
+          'manager, never to this container\'s disk',
+    development: 'A secret push destination may be a FILE: a push writes ' +
+                 'the password into an existing file under the ' +
+                 'destination\'s directory, which is how the test suite ' +
+                 'exercises a rotation without a secrets manager.',
+    product: 'A destination naming `file` is reported unusable and a push ' +
+             'to it is refused (STS-SECDEST-0006). AWS Secrets Manager, ' +
+             'Google Cloud Secret Manager, Azure Key Vault and a Vault or ' +
+             'OpenBao KV version 2 engine remain, each over verified TLS ' +
+             'with the destination\'s own write credential (#221).',
+    where: 'common/secrets.js, common/secret_destinations.ts' },
   { id: 'outbound-tls',
     what: 'An outbound request verifies the certificate of whoever answers, ' +
           'and does not go out over plain http',
@@ -3660,6 +3692,7 @@ module.exports = {
   skipsOutboundTlsVerification: skipsOutboundTlsVerification,
   dialsPlainHttpOutbound: dialsPlainHttpOutbound,
   capturesMail: capturesMail,
+  acceptsFileSecretDestinations: acceptsFileSecretDestinations,
   mailsLinksFromListenerAddress: mailsLinksFromListenerAddress,
   acceptsNonconformingResourceMetadata: acceptsNonconformingResourceMetadata,
   gatesConsole: gatesConsole,

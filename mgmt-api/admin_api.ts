@@ -521,6 +521,8 @@ interface AdminApiDeps {
   // The attribute source operations (#94).
   loadAttributeSourcesApi():
     typeof import('../attribute-sources/attribute_sources_api');
+  // The secret push destinations' operations (#221 P3).
+  loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
   loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
@@ -630,6 +632,9 @@ class AdminApi {
       },
       loadAttributeSourcesApi: function () {
         return require('../attribute-sources/attribute_sources_api');
+      },
+      loadSecretDestinationsApi: function () {
+        return require('./secret_destinations_api');
       },
       loadClaimsProvidersApi: function () {
         return require('../oauth-oidc/claims_providers_api');
@@ -2327,7 +2332,7 @@ class AdminApi {
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
-            loadAttributeSourcesApi,
+            loadAttributeSourcesApi, loadSecretDestinationsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
     const self = this;
@@ -21393,6 +21398,9 @@ class AdminApi {
       // THE ATTRIBUTE SOURCES (#94): the register and its six acts, the
       // console's own (`attribute-sources/attribute_sources_api.ts`).
       ...loadAttributeSourcesApi().ROUTES,
+      // THE SECRET PUSH DESTINATIONS (#221 P3): the register and its four
+      // acts, the console's own (`mgmt-api/secret_destinations_api.ts`).
+      ...loadSecretDestinationsApi().ROUTES,
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,

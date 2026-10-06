@@ -1264,6 +1264,11 @@ const JOBS = [
   // a sign-in carrying the attribute claim, and refuse on failure. Skips
   // without STS_TEST_ATTRIBUTE_DB_URL or a shared directory.
   { file: 'sts_attribute_sources.js',    browser: false, local: true },
+  // Secret push destinations (#221 P3): the register over /admin-api in a
+  // realm of its own — the write credential in no answer and refused by
+  // reveal-secret, and in development a file destination on the shared
+  // directory, test-pushed and read back. Refused in product mode.
+  { file: 'sts_secret_destinations.js',  browser: false, local: true },
   // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
   // attester made at run time, the challenge endpoint, PAR, the code and
   // refresh token bound to the client instance, the DPoP combined mode and

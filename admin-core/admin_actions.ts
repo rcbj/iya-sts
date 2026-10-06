@@ -5019,6 +5019,10 @@ class AdminActions {
         value = String([].concat(fields.appRegistrationAccessToken || [])[0] ||
                        '');
       } else if (entry && asked !== 'didPrivateKeys' &&
+                 // A WITHHELD credential (a secret destination's, #221 P3)
+                 // is sealed too and is never revealed: it leaves this
+                 // service only on the wire to its own secrets manager.
+                 (applications.WITHHELD_FIELDS || []).indexOf(asked) < 0 &&
                  (applications.SEALED_FIELDS || []).indexOf(asked) >= 0) {
         // A SEALED CREDENTIAL BY ITS ATTRIBUTE (#446): an RFC 7523 or RFC
         // 7522 signing key an operator collects to sign the assertions,

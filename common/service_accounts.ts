@@ -457,6 +457,29 @@ class ServiceAccounts {
     return out;
   }
 
+  /**
+   * Says whether a secret at a destination is one a service account's
+   * rotation writes — what `secret_destinations.testPush()` asks before it
+   * writes a canary, so a test can never overwrite a live password.
+   *
+   * @param destination - the destination's DN
+   * @param secretName - the secret's name or path
+   * @returns true when a service account in this realm names that pair
+   */
+  secretNameInUse(destination: string, secretName: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.secretNameInUse().");
+    const dn = String(destination || '').replace(/\s*,\s*/g, ',')
+      .toLowerCase();
+    const name = String(secretName || '');
+    const out = this.list().some(function (one) {
+      return one.secretName === name &&
+             one.destination.replace(/\s*,\s*/g, ',').toLowerCase() === dn;
+    });
+    log.debug("Leaving ServiceAccounts.secretNameInUse(). " + out);
+    return out;
+  }
+
   // -------------------------------------------------------------------------
   // SETTING THE FLAG.
   // -------------------------------------------------------------------------
@@ -803,6 +826,7 @@ export = {
   of: slot.forward('of'),
   list: slot.forward('list'),
   names: slot.forward('names'),
+  secretNameInUse: slot.forward('secretNameInUse'),
   check: slot.forward('check'),
   set: slot.forward('set'),
   previousPassword: slot.forward('previousPassword'),

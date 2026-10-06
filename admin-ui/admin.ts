@@ -1855,6 +1855,17 @@ const SECTIONS = [
                'it reads and the columns it writes, when it reads (at ' +
                'sign-in, once, on a schedule, on demand) and what a ' +
                'failure does, with its status, a test and a read-now.' },
+      // SECRET DESTINATIONS (#221 P3): in Directory for Attribute sources'
+      // reason — the register IS directory entries, the realm's
+      // application entries declared for `secret-destination`. Drawn by
+      // the static console (`admin-ui/web_secret_destinations.ts`).
+      { path: '/admin/secret-destinations', label: 'Secret destinations',
+        blurb: 'Where this realm pushes a service account\'s rotated ' +
+               'password: AWS Secrets Manager, Google Cloud Secret ' +
+               'Manager, Azure Key Vault or a Vault / OpenBao KV engine, ' +
+               'each an application entry holding its own write ' +
+               'credential (sealed, never shown), with whether it is ' +
+               'usable and a test push to a test secret.' },
       // -------------------------------------------------------------------
       // POLICIES (2026-09-12), asked for by rcbj as *Directory → Policies*,
       // with the password policy as the first kind of policy it configures.

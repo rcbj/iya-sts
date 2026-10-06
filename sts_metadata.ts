@@ -6336,6 +6336,19 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#94). add-source, update-source, remove-source, ' +
           'test-source, refresh-source and refresh-person: the console\'s ' +
           'six acts, each audited.' },
+  { path: '/admin-api/secret-destinations', group: 'Management API',
+    name: 'Secret push destinations', specs: ['openapi'],
+    what: 'NON-SPEC (#221). What Directory → Secret destinations draws: ' +
+          'the application entries declared for secret-destination — ' +
+          'where a service account\'s rotated password is pushed — each ' +
+          'with its provider, location, payload and whether it is usable. ' +
+          'Never a write credential.' },
+  { path: '/admin-api/secret-destinations/:action', group: 'Management API',
+    name: 'Change the secret push destinations', specs: ['openapi'],
+    what: 'NON-SPEC (#221). add-destination, update-destination, ' +
+          'remove-destination and test-push (a canary version written to a ' +
+          'test secret): the console\'s four acts, each audited. The write ' +
+          'credential is taken and never returned.' },
   { path: '/admin-api/roles', group: 'Management API', name: 'Roles',
     specs: ['openapi', 'xacml30'],
     what: 'NON-SPEC. The role register, both relations. `roles` is ' +

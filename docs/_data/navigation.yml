@@ -54,6 +54,7 @@
     - { title: Service accounts, url: /service-accounts.html }
     - { title: "Mail: reset, verification, notices", url: /mail.html }
     - { title: Attribute sources, url: /attribute-sources.html }
+    - { title: Secret push destinations, url: /secret-destinations.html }
 
 - section: Verifiable credentials
   items:

@@ -294,6 +294,15 @@ const SUBSYSTEMS = [
           'attributes from, onto their entries (#94): a source\'s ' +
           'definition, its driver, its connection and password, the lookup, ' +
           'and the sign-in or scheduled refresh.' },
+  { id: 'SECDEST', label: 'Secret push destinations',
+    where: 'common/secret_destinations.ts, common/secrets.js (pushSecret), ' +
+           'mgmt-api/secret_destinations_api.ts',
+    what: 'Where a service account\'s rotated password is pushed (#221): ' +
+          'the destinations, each an application entry with its write ' +
+          'credential sealed on it, and the write path to AWS Secrets ' +
+          'Manager, Google Cloud Secret Manager, Azure Key Vault, a Vault ' +
+          'or OpenBao KV version 2 engine, and (development mode only) a ' +
+          'file. No code here is a password or a credential.' },
   { id: 'SCIM', label: 'SCIM 2.0',
     where: 'scim/',
     what: 'Provisioning at /scim/v2 and its six authentication schemes.' },
@@ -12030,6 +12039,83 @@ const CODES = [
       'certificates, a block did not parse, a certificate is expired or ' +
       'not yet valid, or it is longer than 64 KiB (#94).',
     spec: 'HTTP 400 (console and API)' },
+  // ===== SECDEST ===========================================================
+  { code: 'STS-SECDEST-0001',
+    summary: 'A secret destination\'s provider SDK is not installed: ' +
+      'each is an optional package, installed into the image with ' +
+      'STS_CLOUD_SDKS (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0002',
+    summary: 'A secret destination is not usable: no or an unknown ' +
+      'provider or payload, or a location or write credential its ' +
+      'provider needs is missing (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0003',
+    summary: 'The secret a push names does not exist at its destination. ' +
+      'A push writes a new version of a secret that exists and ' +
+      'never creates one (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0004',
+    summary: 'A Vault or OpenBao KV version 2 write was refused by ' +
+      'check-and-set: a newer version was written since the push ' +
+      'read the secret\'s metadata, and nothing was overwritten ' +
+      '(#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0005',
+    summary: 'A secrets manager refused a push or could not be reached: ' +
+      'permission, network, TLS, or an answer it gave (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0006',
+    summary: 'A file secret destination was named in product mode, where ' +
+      'a file is not a destination ' +
+      '(mode.acceptsFileSecretDestinations()) (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0007',
+    summary: 'A file destination\'s secret name leaves its directory, or ' +
+      'names something that is not a regular file (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0008',
+    summary: 'A secret destination\'s address is not an https URL: a ' +
+      'write credential and a password do not cross plain http ' +
+      '(#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0009',
+    summary: 'A push or a test push named no secret destination of this ' +
+      'realm (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0010',
+    summary: 'A test push named a secret a service account\'s rotation ' +
+      'writes: a canary is written to a test secret only (#221).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-SECDEST-0011',
+    summary: 'A secret destination\'s definition was refused on add or ' +
+      'change: no identifier, an unknown provider or payload, a ' +
+      'missing location, or a credential that is not the shape ' +
+      'its provider takes (#221).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-SECDEST-0012',
+    summary: 'The secret destinations\' act was asked for an action it ' +
+      'does not have (#221).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-SECDEST-0013',
+    summary: 'A secret destinations action on /admin-api failed ' +
+      'unexpectedly (#221).',
+    spec: 'HTTP 500 (API)' },
+  { code: 'STS-SECDEST-0014',
+    summary: 'A push named no usable secret: the name is empty, longer ' +
+      'than 512 characters, holds a line break, or is not a path ' +
+      'the store\'s request line takes; or there was no password ' +
+      'to push (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
+  { code: 'STS-SECDEST-0015',
+    summary: 'A push failed in a way its provider\'s code did not name ' +
+      '(#221).',
+    spec: 'none (a push answers ok: false; logged)' },
+  { code: 'STS-SECDEST-0016',
+    summary: 'A secret destination\'s write credential is not the shape ' +
+      'its provider takes (a JSON object with the members it ' +
+      'needs) (#221).',
+    spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +

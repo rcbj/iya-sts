@@ -82,6 +82,7 @@ import SamlPage = require('../saml/web_saml');
 import SchedulerPage = require('./web_scheduler');
 import ScimPage = require('../scim/web_scim');
 import ScepPage = require('../scep/web_scep');
+import SecretDestinationsPage = require('./web_secret_destinations');
 import SecretsPage = require('./web_secrets');
 import SessionsPage = require('../logout/web_sessions');
 import SettingsForms = require('./web_settings');
@@ -592,6 +593,11 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/scheduler', title: 'Scheduler',
     operation: '/admin-api/scheduler', render: SchedulerPage.render },
+  // THE SECRET PUSH DESTINATIONS (#221 P3): Directory, beside Attribute
+  // sources. Its controls follow the render context's `write`.
+  { path: '/admin/secret-destinations', title: 'Secret destinations',
+    operation: '/admin-api/secret-destinations',
+    render: SecretDestinationsPage.render },
   { path: '/admin/oidfed', title: 'OpenID Federation',
     operation: '/admin-api/oidfed', render: OidfedPage.render },
   { path: '/admin/scim', title: 'SCIM',

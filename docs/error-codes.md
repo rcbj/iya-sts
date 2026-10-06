@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4103** of them, in **42** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4119** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -73,6 +73,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 198
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
+* [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 45
@@ -2830,6 +2831,31 @@ Raised from: attribute-sources/attribute_sources.ts, attribute-sources/attribute
 | `STS-ATTR-0013` | An attribute source's refresh could not be queued on the scheduler (#94). | HTTP 400 (console and API) |
 | `STS-ATTR-0014` | The directory would not store or remove an attribute source (no directory, or it is full) (#94). | HTTP 400 (console and API) |
 | `STS-ATTR-0015` | An attribute source's CA chain was refused: it is not PEM certificates, a block did not parse, a certificate is expired or not yet valid, or it is longer than 64 KiB (#94). | HTTP 400 (console and API) |
+
+## STS-SECDEST
+
+**Secret push destinations.** Where a service account's rotated password is pushed (#221): the destinations, each an application entry with its write credential sealed on it, and the write path to AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault, a Vault or OpenBao KV version 2 engine, and (development mode only) a file. No code here is a password or a credential.
+
+Raised from: common/secret_destinations.ts, common/secrets.js (pushSecret), mgmt-api/secret_destinations_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SECDEST-0001` | A secret destination's provider SDK is not installed: each is an optional package, installed into the image with STS_CLOUD_SDKS (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0002` | A secret destination is not usable: no or an unknown provider or payload, or a location or write credential its provider needs is missing (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0003` | The secret a push names does not exist at its destination. A push writes a new version of a secret that exists and never creates one (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0004` | A Vault or OpenBao KV version 2 write was refused by check-and-set: a newer version was written since the push read the secret's metadata, and nothing was overwritten (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0005` | A secrets manager refused a push or could not be reached: permission, network, TLS, or an answer it gave (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0006` | A file secret destination was named in product mode, where a file is not a destination (mode.acceptsFileSecretDestinations()) (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0007` | A file destination's secret name leaves its directory, or names something that is not a regular file (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0008` | A secret destination's address is not an https URL: a write credential and a password do not cross plain http (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0009` | A push or a test push named no secret destination of this realm (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0010` | A test push named a secret a service account's rotation writes: a canary is written to a test secret only (#221). | HTTP 400 (console and API) |
+| `STS-SECDEST-0011` | A secret destination's definition was refused on add or change: no identifier, an unknown provider or payload, a missing location, or a credential that is not the shape its provider takes (#221). | HTTP 400 (console and API) |
+| `STS-SECDEST-0012` | The secret destinations' act was asked for an action it does not have (#221). | HTTP 400 (console and API) |
+| `STS-SECDEST-0013` | A secret destinations action on /admin-api failed unexpectedly (#221). | HTTP 500 (API) |
+| `STS-SECDEST-0014` | A push named no usable secret: the name is empty, longer than 512 characters, holds a line break, or is not a path the store's request line takes; or there was no password to push (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0015` | A push failed in a way its provider's code did not name (#221). | none (a push answers ok: false; logged) |
+| `STS-SECDEST-0016` | A secret destination's write credential is not the shape its provider takes (a JSON object with the members it needs) (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
 
 ## STS-SCIM
 

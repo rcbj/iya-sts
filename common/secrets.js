@@ -106,6 +106,8 @@
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
+// The file destination's paths (#221 P3).
+const path = require('path');
 // A LOGGER OF ITS OWN RATHER THAN helpers.js's, AND IT HAS TO BE.
 // `helpers.js` requires this module — it is where the signing keys are built —
 // so requiring it back would close a cycle, and a cycle in node does not fail
@@ -121,6 +123,9 @@ const bunyan = require('bunyan');
 // is where the signing keys are built.
 const nodeCrypto = require('crypto');
 const config = require('./config');
+// THE MODE, for the one destination that exists in development only (#221
+// P3). A LEAF requiring `config` and `error_codes`, both already here.
+const mode = require('./mode');
 // THE FAILURE CODES. A LEAF with no requires, and NOT audit.js, which requires
 // helpers.js, which requires keystore.js, which requires this. A provider's
 // error is marked with its condition NON-ENUMERABLY (the message is left alone,
@@ -3647,8 +3652,557 @@ async function storeReport() {
  * A library: no route. No secret is ever logged or cached on disk.
  * @namespace
  */
+// ===========================================================================
+// THE WRITE PATH (#221 P3, 2026-10-06): A SERVICE ACCOUNT'S ROTATED PASSWORD,
+// PUSHED TO A SECRETS MANAGER.
+//
+// Everything above READS: this service's own key-encryption key and database
+// password, with read-only credentials. Below is the other direction, beside
+// the read path rather than in a module of its own, because it is the same
+// four stores reached through the same SDKs: a service account's password is
+// generated here, pushed as a NEW VERSION of a secret, and only then committed
+// (rcbj's decision 5 on #221 — P4's rotation calls this through
+// `common/secret_destinations.ts`, which owns WHERE; this owns HOW).
+//
+//   aws     Secrets Manager `PutSecretValue`
+//   gcp     Secret Manager `AddSecretVersion`
+//   azure   Key Vault `setSecret`, after a check that the secret exists
+//   vault   a KV version 2 write with check-and-set (`options.cas`)
+//   file    DEVELOPMENT MODE AND THE TEST SUITE ONLY
+//           (`mode.acceptsFileSecretDestinations()`)
+//
+// The KMS providers are not destinations: they hold keys, not secrets.
+//
+// **A PUSH NEVER CREATES A SECRET.** The secret must already exist, so the
+// destination's credential needs write on NAMED secrets and nothing else —
+// least privilege, rcbj's decision. `PutSecretValue` and `AddSecretVersion`
+// refuse a secret that does not exist by themselves; Key Vault's `setSecret`
+// would create one, so its versions are LISTED first (metadata only, the
+// `list` permission — never a value), and Vault's metadata is read first for
+// the version the check-and-set names. A missing secret is STS-SECDEST-0003.
+// Key Vault's check and its write are two calls, and a secret deleted between
+// them is created by the second; the window is the operator's own act.
+//
+// **THE CREDENTIAL ARRIVES WITH THE TARGET AND IS NEVER THE PROCESS'S.** Each
+// destination holds its own write credential, sealed on its application entry
+// (`applications.secretDestinationCredentialOf()`), separate from the
+// read-only ones above. So no SDK here is handed its ambient chain: an AWS
+// client is built with the destination's keys, a Google client with its
+// service account, Azure's with a client-secret credential, Vault's request
+// with its token. A destination with no credential is refused before any SDK
+// is loaded (`secret_destinations.ts` reports it as not usable).
+//
+// **NOTHING WRITTEN IS LOGGED OR RETURNED**: the payload, the password and the
+// credential go to the store and nowhere else. A failure's message names the
+// destination, the secret's name and what the store said — never what was
+// being written. A provider's own error text is passed on, because it is the
+// sentence that fixes a permission, and no store echoes a value in one.
+//
+// **EVERY ADDRESS IS THE OPERATOR'S.** The provider, region, vault URL,
+// endpoint and directory are attributes of the destination's entry, written by
+// an administrator (Admin Write); no request can name one. Anything dialled by
+// URL is https only (STS-SECDEST-0008) and verified — Vault's request through
+// `common/outbound_tls.ts`'s `verifiedOptions()`, beside the destination's own
+// CA certificates, and the SDKs through the process-wide host check that
+// module installs. The root `CLAUDE.md`'s seventeenth outbound row.
+// ===========================================================================
+/**
+ * The providers a secret push destination may name.
+ */
+const DESTINATION_PROVIDERS = ['aws', 'gcp', 'azure', 'vault', 'file'];
+
+/**
+ * What a push may write: the bare password, or the JSON object.
+ */
+const DESTINATION_PAYLOADS = ['password', 'json'];
+
+// A refusal carrying its code, as every failure in this file does.
+function pushRefusal(message, code) {
+  log.debug("Entering pushRefusal(). " + code);
+  log.debug("Leaving pushRefusal().");
+  return errorCodes.mark(new Error(message), code);
+}
+
+// The one sentence for a missing SDK, said for a destination rather than for
+// the key-encryption key (missingModule()'s).
+function missingDestinationSdk(pkg, provider, err) {
+  log.debug("Entering missingDestinationSdk().");
+  log.debug("Leaving missingDestinationSdk().");
+  return pushRefusal('a "' + provider + '" secret destination needs the ' +
+    pkg + ' package and it is not installed. It is an optional package, ' +
+    'installed into the image with STS_CLOUD_SDKS. The underlying error ' +
+    'was: ' + ((err && err.message) || err), 'STS-SECDEST-0001');
+}
+
+// What is written: the password alone, or the object a reader takes it out
+// of by its field.
+function payloadOf(target) {
+  log.debug("Entering payloadOf(). " + target.payload);
+  const value = target.value || {};
+  if (target.payload === 'json') {
+    log.debug("Leaving payloadOf(). The object.");
+    return { text: JSON.stringify({ username: String(value.username || ''),
+                                    password: String(value.password || ''),
+                                    realm: String(value.realm || ''),
+                                    rotatedAt: String(value.rotatedAt ||
+                                                      '') }),
+             object: { username: String(value.username || ''),
+                       password: String(value.password || ''),
+                       realm: String(value.realm || ''),
+                       rotatedAt: String(value.rotatedAt || '') } };
+  }
+  log.debug("Leaving payloadOf(). The password.");
+  return { text: String(value.password || ''), object: null };
+}
+
+// A credential given as a JSON object, with the members a provider needs.
+function credentialObject(target, members, shape) {
+  log.debug("Entering credentialObject(). " + target.provider);
+  let parsed = null;
+  try {
+    parsed = JSON.parse(String(target.credential || ''));
+  } catch (e) {
+    log.debug("Caught in credentialObject(): " + ((e && e.message) || e));
+    parsed = null;
+  }
+  const missing = !parsed || typeof parsed !== 'object' ||
+    Array.isArray(parsed) ? members : members.filter(function (one) {
+      return !parsed[one];
+    });
+  if (missing.length) {
+    // The members are named and the value is not, ever.
+    throw pushRefusal('the write credential of secret destination "' +
+      target.label + '" is not ' + shape + ': it needs ' +
+      missing.join(', ') + '.', 'STS-SECDEST-0016');
+  }
+  log.debug("Leaving credentialObject().");
+  return parsed;
+}
+
+// What a provider's error said, for a refusal: its name and message.
+function storeSaid(e) {
+  log.debug("Entering storeSaid().");
+  log.debug("Leaving storeSaid().");
+  return String((e && (e.name || e.code)) || 'Error') + ': ' +
+    String((e && e.message) || e);
+}
+
+// ---------------------------------------------------------------------------
+// aws — PutSecretValue, which adds a version to a secret that exists and
+// answers ResourceNotFoundException for one that does not. It never creates.
+// ---------------------------------------------------------------------------
+async function pushAws(target) {
+  log.debug("Entering pushAws().");
+  const credential = credentialObject(target,
+    ['accessKeyId', 'secretAccessKey'],
+    'an AWS access key as JSON {"accessKeyId", "secretAccessKey"}');
+  let sdk;
+  try {
+    sdk = loadSdk('@aws-sdk/client-secrets-manager');
+  } catch (e) {
+    throw missingDestinationSdk('@aws-sdk/client-secrets-manager', 'aws', e);
+  }
+  const client = new sdk.SecretsManagerClient({
+    region: target.region,
+    credentials: { accessKeyId: String(credential.accessKeyId),
+                   secretAccessKey: String(credential.secretAccessKey),
+                   sessionToken: credential.sessionToken
+                     ? String(credential.sessionToken) : undefined }
+  });
+  let answer;
+  try {
+    answer = await client.send(new sdk.PutSecretValueCommand({
+      SecretId: target.secretName,
+      SecretString: payloadOf(target).text }));
+  } catch (e) {
+    if (e && (e.name === 'ResourceNotFoundException' ||
+              e.__type === 'ResourceNotFoundException')) {
+      throw pushRefusal('AWS Secrets Manager has no secret "' +
+        target.secretName + '" in ' + target.region + ': a push writes a ' +
+        'version of a secret that exists and never creates one.',
+        'STS-SECDEST-0003');
+    }
+    throw pushRefusal('AWS Secrets Manager refused the new version of "' +
+      target.secretName + '": ' + storeSaid(e), 'STS-SECDEST-0005');
+  }
+  log.debug("Leaving pushAws().");
+  return String((answer && answer.VersionId) || '');
+}
+
+// ---------------------------------------------------------------------------
+// gcp — AddSecretVersion, under `projects/<p>/secrets/<name>`; a short name is
+// completed with the destination's project. NOT_FOUND (5) for a secret that
+// does not exist; it never creates one.
+// ---------------------------------------------------------------------------
+async function pushGcp(target) {
+  log.debug("Entering pushGcp().");
+  const credential = credentialObject(target, ['client_email', 'private_key'],
+    'a Google service account key (its JSON file)');
+  let parent = String(target.secretName);
+  if (parent.indexOf('projects/') !== 0) {
+    if (!target.project) {
+      throw pushRefusal('secret destination "' + target.label + '" names ' +
+        'no project, so the short secret name "' + parent + '" says nothing ' +
+        'about where it is. Set its project, or name the secret as ' +
+        'projects/<project>/secrets/<name>.', 'STS-SECDEST-0002');
+    }
+    parent = 'projects/' + target.project + '/secrets/' + parent;
+  }
+  let sdk;
+  try {
+    sdk = loadSdk('@google-cloud/secret-manager');
+  } catch (e) {
+    throw missingDestinationSdk('@google-cloud/secret-manager', 'gcp', e);
+  }
+  const client = new sdk.SecretManagerServiceClient({
+    credentials: { client_email: String(credential.client_email),
+                   private_key: String(credential.private_key) },
+    projectId: target.project || credential.project_id || undefined });
+  let answer;
+  try {
+    [answer] = await client.addSecretVersion({
+      parent: parent,
+      payload: { data: Buffer.from(payloadOf(target).text, 'utf8') } });
+  } catch (e) {
+    if (e && (e.code === 5 || e.code === 'NOT_FOUND')) {
+      throw pushRefusal('Google Cloud Secret Manager has no secret "' +
+        parent + '": a push adds a version to a secret that exists and ' +
+        'never creates one.', 'STS-SECDEST-0003');
+    }
+    throw pushRefusal('Google Cloud Secret Manager refused the new version ' +
+      'of "' + parent + '": ' + storeSaid(e), 'STS-SECDEST-0005');
+  }
+  const name = String((answer && answer.name) || '');
+  log.debug("Leaving pushGcp().");
+  return name.slice(name.lastIndexOf('/') + 1);
+}
+
+// ---------------------------------------------------------------------------
+// azure — setSecret, which CREATES a secret that does not exist; so the
+// secret's versions are listed first (metadata, the `list` permission), and a
+// secret with none is refused here rather than created there.
+// ---------------------------------------------------------------------------
+async function pushAzure(target) {
+  log.debug("Entering pushAzure().");
+  const credential = credentialObject(target,
+    ['tenantId', 'clientId', 'clientSecret'],
+    'an Entra ID client secret as JSON {"tenantId", "clientId", ' +
+    '"clientSecret"}');
+  let secretsSdk;
+  let identitySdk;
+  try {
+    secretsSdk = loadSdk('@azure/keyvault-secrets');
+  } catch (e) {
+    throw missingDestinationSdk('@azure/keyvault-secrets', 'azure', e);
+  }
+  try {
+    identitySdk = loadSdk('@azure/identity');
+  } catch (e) {
+    throw missingDestinationSdk('@azure/identity', 'azure', e);
+  }
+  const client = new secretsSdk.SecretClient(target.endpoint,
+    new identitySdk.ClientSecretCredential(String(credential.tenantId),
+                                           String(credential.clientId),
+                                           String(credential.clientSecret)));
+  let exists = false;
+  try {
+    const versions = client.listPropertiesOfSecretVersions(target.secretName);
+    for await (const one of versions) {
+      exists = !!one;
+      break;
+    }
+  } catch (e) {
+    if (!(e && (e.statusCode === 404 || e.code === 'SecretNotFound'))) {
+      throw pushRefusal('Azure Key Vault ' + target.endpoint + ' would not ' +
+        'say whether "' + target.secretName + '" exists: ' + storeSaid(e) +
+        '. The destination\'s credential needs list (metadata) and set on ' +
+        'secrets.', 'STS-SECDEST-0005');
+    }
+    log.debug("Caught in pushAzure(): " + ((e && e.message) || e));
+    exists = false;
+  }
+  if (!exists) {
+    throw pushRefusal('Azure Key Vault ' + target.endpoint + ' has no ' +
+      'secret "' + target.secretName + '": a push adds a version to a ' +
+      'secret that exists and never creates one.', 'STS-SECDEST-0003');
+  }
+  const payload = payloadOf(target);
+  let answer;
+  try {
+    answer = await client.setSecret(target.secretName, payload.text,
+      payload.object ? { contentType: 'application/json' } : {});
+  } catch (e) {
+    throw pushRefusal('Azure Key Vault ' + target.endpoint + ' refused the ' +
+      'new version of "' + target.secretName + '": ' + storeSaid(e),
+      'STS-SECDEST-0005');
+  }
+  log.debug("Leaving pushAzure().");
+  return String((answer && answer.properties && answer.properties.version) ||
+                '');
+}
+
+// A path segment of a Vault request line: refused rather than spliced when it
+// is not one, for certAuthMount()'s reason.
+function vaultSegment(text, what, code) {
+  log.debug("Entering vaultSegment(). " + what);
+  const raw = String(text || '').trim().replace(/^\/+|\/+$/g, '');
+  if (!raw || !/^[A-Za-z0-9._\-\/]+$/.test(raw) ||
+      /(^|\/)\.\.?(\/|$)/.test(raw)) {
+    throw pushRefusal(what + ' "' + raw + '" is not a path this service ' +
+      'will put into a request. Use letters, digits, "-", "_", "." and "/" ' +
+      'only.', code);
+  }
+  log.debug("Leaving vaultSegment().");
+  return raw;
+}
+
+// One request to Vault over verified TLS: the destination's CA beside the
+// public roots, RFC 9525's host check, ten seconds.
+function vaultRequest(target, method, path, body) {
+  log.debug("Entering vaultRequest(). " + method + " " + path);
+  const https = require('https');
+  // LAZILY: `outbound_tls` requires `helpers`, which requires `keystore`,
+  // which requires this file — a require at load would close that cycle.
+  const OutboundTls = require('./outbound_tls');
+  const url = new URL(path, String(target.endpoint).replace(/\/+$/, '') + '/');
+  const text = body === undefined ? '' : JSON.stringify(body);
+  const options = Object.assign({
+    method: method,
+    headers: Object.assign({ 'X-Vault-Token': String(target.credential),
+                             'Accept': 'application/json' },
+      text ? { 'Content-Type': 'application/json',
+               'Content-Length': Buffer.byteLength(text) } : {}),
+    timeout: 10000
+  }, OutboundTls.verifiedOptions(target.caCertificates || null));
+  log.debug("Leaving vaultRequest(). Sent.");
+  return new Promise(function (resolve, reject) {
+    const req = https.request(url, options, function (res) {
+      const chunks = [];
+      res.on('data', function (chunk) { chunks.push(chunk); });
+      res.on('end', function () {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        let json = null;
+        try {
+          json = raw ? JSON.parse(raw) : null;
+        } catch (e) {
+          log.debug("Caught in vaultRequest(): " + ((e && e.message) || e));
+          json = null;
+        }
+        resolve({ status: res.statusCode || 0, json: json });
+      });
+    });
+    req.on('timeout', function () {
+      req.destroy(new Error('no answer within 10 seconds'));
+    });
+    req.on('error', reject);
+    req.end(text || undefined);
+  });
+}
+
+// What a Vault error body said, for a refusal.
+function vaultSaid(answer) {
+  log.debug("Entering vaultSaid().");
+  const errors = answer && answer.json && answer.json.errors;
+  log.debug("Leaving vaultSaid().");
+  return 'HTTP ' + (answer ? answer.status : 0) +
+    (Array.isArray(errors) && errors.length ? ' — ' + errors.join('; ') : '');
+}
+
+// ---------------------------------------------------------------------------
+// vault — HashiCorp Vault or OpenBao, a KV version 2 engine. The secret's
+// METADATA is read first (the `read` capability on <mount>/metadata/<name>,
+// which holds no value): 404 is a secret that does not exist, and its
+// `current_version` is what the write's check-and-set names, so a version
+// written by somebody else since is a conflict (STS-SECDEST-0004) and never
+// overwritten.
+// ---------------------------------------------------------------------------
+async function pushVault(target) {
+  log.debug("Entering pushVault().");
+  const mount = vaultSegment(target.mount || 'secret', 'The KV mount',
+                             'STS-SECDEST-0002');
+  const name = vaultSegment(target.secretName, 'The secret name',
+                            'STS-SECDEST-0014');
+  let meta;
+  try {
+    meta = await vaultRequest(target, 'GET', 'v1/' + mount + '/metadata/' +
+                              name);
+  } catch (e) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' could not be ' +
+      'reached: ' + storeSaid(e), 'STS-SECDEST-0005');
+  }
+  if (meta.status === 404) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' has no secret "' +
+      mount + '/' + name + '": a push writes a version of a secret that ' +
+      'exists and never creates one.', 'STS-SECDEST-0003');
+  }
+  if (meta.status !== 200 || !meta.json || !meta.json.data) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' would not give ' +
+      'the metadata of "' + mount + '/' + name + '": ' + vaultSaid(meta) +
+      '. The destination\'s token needs read on ' + mount + '/metadata/' +
+      name + ' and create or update on ' + mount + '/data/' + name + '.',
+      'STS-SECDEST-0005');
+  }
+  const current = Number(meta.json.data.current_version || 0);
+  const payload = payloadOf(target);
+  const data = payload.object ||
+    { [String(target.field || 'value')]: payload.text };
+  let written;
+  try {
+    written = await vaultRequest(target, 'POST', 'v1/' + mount + '/data/' +
+                                 name, { options: { cas: current },
+                                         data: data });
+  } catch (e) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' could not be ' +
+      'reached: ' + storeSaid(e), 'STS-SECDEST-0005');
+  }
+  const said = vaultSaid(written);
+  if (written.status !== 200 && /check-and-set/i.test(said)) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' holds a newer ' +
+      'version of "' + mount + '/' + name + '" than the ' + current +
+      ' this push read, so it was not overwritten: ' + said + '. Nothing ' +
+      'changed; the next push reads the version again.', 'STS-SECDEST-0004');
+  }
+  if (written.status !== 200 || !written.json || !written.json.data) {
+    throw pushRefusal('the Vault at ' + target.endpoint + ' refused the new ' +
+      'version of "' + mount + '/' + name + '": ' + said,
+      'STS-SECDEST-0005');
+  }
+  log.debug("Leaving pushVault().");
+  return String(written.json.data.version || '');
+}
+
+// ---------------------------------------------------------------------------
+// file — DEVELOPMENT MODE AND THE TEST SUITE ONLY (rcbj's answer 5 on #221).
+// The secret's name is a file under the destination's directory; it must
+// exist and be a regular file, and it is opened with O_NOFOLLOW and without
+// O_CREAT — so a push cannot create a file, and cannot be led out of the
+// directory by a name or a link. Written in place, truncated, mode untouched.
+// ---------------------------------------------------------------------------
+function pushFile(target) {
+  log.debug("Entering pushFile().");
+  if (!mode.acceptsFileSecretDestinations()) {
+    throw pushRefusal('secret destination "' + target.label + '" is a file, ' +
+      'and a file is a destination in development mode only: a password ' +
+      'written to this container\'s disk is not a secrets manager.',
+      'STS-SECDEST-0006');
+  }
+  const directory = String(target.directory || '');
+  if (!directory || !path.isAbsolute(directory)) {
+    throw pushRefusal('secret destination "' + target.label + '" names no ' +
+      'absolute directory.', 'STS-SECDEST-0002');
+  }
+  const base = path.resolve(directory);
+  const file = path.resolve(base, String(target.secretName || ''));
+  if (file === base || file.indexOf(base + path.sep) !== 0) {
+    throw pushRefusal('the secret name "' + target.secretName + '" leaves ' +
+      'the directory of secret destination "' + target.label + '".',
+      'STS-SECDEST-0007');
+  }
+  let stat = null;
+  try {
+    stat = fs.lstatSync(file);
+  } catch (e) {
+    log.debug("Caught in pushFile(): " + ((e && e.message) || e));
+    stat = null;
+  }
+  if (!stat) {
+    throw pushRefusal('there is no file "' + file + '" for secret ' +
+      'destination "' + target.label + '": a push writes a secret that ' +
+      'exists and never creates one.', 'STS-SECDEST-0003');
+  }
+  if (!stat.isFile()) {
+    throw pushRefusal('"' + file + '" is not a regular file (a link or a ' +
+      'directory), so it is not written.', 'STS-SECDEST-0007');
+  }
+  const flags = fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW || 0);
+  const fd = fs.openSync(file, flags);
+  try {
+    fs.ftruncateSync(fd, 0);
+    fs.writeSync(fd, payloadOf(target).text);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  log.debug("Leaving pushFile().");
+  return String(fs.statSync(file).mtimeMs);
+}
+
+/**
+ * Pushes a new version of one secret to a secrets manager: the write path a
+ * service account's rotation stands on (#221). Never creates a secret.
+ *
+ * @param target - the destination and the write: `provider`, `label`,
+ *   `secretName`, `payload` ('password' or 'json'), `value` ({ username,
+ *   password, realm, rotatedAt }), `credential`, and the provider's own
+ *   `region`, `project`, `endpoint`, `mount`, `field`, `directory`,
+ *   `caCertificates`
+ * @returns the version the store answered, as text
+ * @throws an Error carrying an STS-SECDEST code; its message never holds
+ *   the value written or the credential
+ */
+async function pushSecret(target) {
+  log.debug("Entering pushSecret(). provider=" +
+            (target && target.provider));
+  const t = target || {};
+  if (DESTINATION_PROVIDERS.indexOf(t.provider) < 0) {
+    throw pushRefusal('"' + t.provider + '" is not a secret destination ' +
+      'provider. It is one of ' + DESTINATION_PROVIDERS.join(', ') + '.',
+      'STS-SECDEST-0002');
+  }
+  if (DESTINATION_PAYLOADS.indexOf(t.payload) < 0) {
+    throw pushRefusal('"' + t.payload + '" is not a payload a destination ' +
+      'writes. It is one of ' + DESTINATION_PAYLOADS.join(', ') + '.',
+      'STS-SECDEST-0002');
+  }
+  if (!String(t.secretName || '').trim() ||
+      String(t.secretName).length > 512 || /[\r\n\0]/.test(t.secretName)) {
+    throw pushRefusal('a secret name is required: one line, at most 512 ' +
+      'characters.', 'STS-SECDEST-0014');
+  }
+  if (!(t.value && t.value.password)) {
+    throw pushRefusal('there is no password to push.', 'STS-SECDEST-0014');
+  }
+  if (t.provider !== 'file' && !t.credential) {
+    throw pushRefusal('secret destination "' + t.label + '" holds no write ' +
+      'credential.', 'STS-SECDEST-0002');
+  }
+  if ((t.provider === 'azure' || t.provider === 'vault') &&
+      !/^https:\/\/[^\s\/?#]+/i.test(String(t.endpoint || ''))) {
+    throw pushRefusal('secret destination "' + t.label + '" is reached at ' +
+      '"' + (t.endpoint || '') + '", which is not an https URL. A write ' +
+      'credential and a password do not cross plain http.',
+      'STS-SECDEST-0008');
+  }
+  if (t.provider === 'aws' && !t.region) {
+    throw pushRefusal('secret destination "' + t.label + '" names no AWS ' +
+      'region.', 'STS-SECDEST-0002');
+  }
+  let version = '';
+  if (t.provider === 'aws') {
+    version = await pushAws(t);
+  } else if (t.provider === 'gcp') {
+    version = await pushGcp(t);
+  } else if (t.provider === 'azure') {
+    version = await pushAzure(t);
+  } else if (t.provider === 'vault') {
+    version = await pushVault(t);
+  } else {
+    version = pushFile(t);
+  }
+  log.info('secrets: a new version of "' + t.secretName + '" was pushed to ' +
+           'secret destination "' + t.label + '" (' + t.provider + ')' +
+           (version ? ', version ' + version : '') + '.');
+  log.debug("Leaving pushSecret().");
+  return { version: version };
+}
+
 module.exports = {
   PROVIDER_IDS: PROVIDER_IDS,
+  // The write path (#221 P3): a service account's rotated password pushed
+  // to a secrets manager, and the two closed sets a destination names.
+  DESTINATION_PROVIDERS: DESTINATION_PROVIDERS,
+  DESTINATION_PAYLOADS: DESTINATION_PAYLOADS,
+  pushSecret: pushSecret,
   providerFor: providerFor,
   current: current,
   readKek: readKek,

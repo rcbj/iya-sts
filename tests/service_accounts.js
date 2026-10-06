@@ -42,6 +42,10 @@
 //      committed with the previous password accepted for the overlap, and
 //      not after it; the clean-up clears it; and while rotation is on a
 //      password cannot be set by hand.
+//   I. END TO END against P3's own register, with a `file` destination
+//      (development only): an account names it, Rotate writes the new
+//      password into the existing file and commits it with the previous one
+//      kept, and a Test push to that secret is refused.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -525,7 +529,19 @@ function rotationWith(destinations) {
 
 async function rotation(t) {
   log.debug('Entering rotation().');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svc221-r-'));
   await withRealm(t, 'svc-rotate', async function () {
+    // A DESTINATION IN THE REALM, so the policy may turn rotation on (B5);
+    // the pushes below go to a fake, which the rotation is built with.
+    const registered = await require('../common/secret_destinations').act(
+      { action: 'add-destination', identifier: 'svc-r-file',
+        provider: 'file', directory: dir },
+      { actor: 'tester', via: 'test' });
+    t.check(registered.ok, 'H0. the realm has a push destination',
+            JSON.stringify(registered));
     await withSettings({ 'global.mode': 'product' }, async function () {
       person('svc-r');
       person('svc-r-owner');
@@ -605,7 +621,63 @@ async function rotation(t) {
               'H14. and off where it does not (the default)');
     });
   });
+  fs.rmSync(dir, { recursive: true, force: true });
   log.debug('Leaving rotation().');
+}
+
+async function endToEnd(t) {
+  log.debug('Entering endToEnd().');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const destinations = require('../common/secret_destinations');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svc221-'));
+  try {
+    await withRealm(t, 'svc-e2e', async function () {
+      person('svc-e');
+      person('svc-e-owner');
+      fs.writeFileSync(path.join(dir, 'svc-e'), 'before', { mode: 0o600 });
+      const added = await destinations.act({ action: 'add-destination',
+        identifier: 'svc-e-file', provider: 'file', directory: dir },
+        { actor: 'tester', via: 'test' });
+      t.check(added.ok && added.destination && added.destination.usable,
+              'I1. a file destination is registered', JSON.stringify(added));
+      const made = serviceAccounts.set('svc-e', { serviceAccount: true,
+        owner: 'svc-e-owner', destination: added.destination.id,
+        secretName: 'svc-e' });
+      t.check(made.ok && made.account.destination === added.destination.id,
+              'I2. the account names it, checked against the register',
+              JSON.stringify(made));
+      const notThere = serviceAccounts.set('svc-e', { serviceAccount: true,
+        owner: 'svc-e-owner', destination: 'cn=nope,ou=applications,' +
+          ldap.baseDn(), secretName: 'x' });
+      t.equal(errorCodes.codeOf(notThere), 'STS-SVCACCT-0029',
+              'I3. a DN that is no destination is refused');
+      savePolicy({ rotationEnabled: true });
+      try {
+        const done = await rotationModule.rotateOne('svc-e',
+                                                    { trigger: 'test' });
+        const written = fs.readFileSync(path.join(dir, 'svc-e'), 'utf8');
+        const facts = serviceAccounts.of('svc-e');
+        t.check(done.ok && written !== 'before' && written.length >= 32 &&
+                facts.rotatedAt && facts.previousPasswordExpires > Date.now(),
+                'I4. Rotate writes the new password into the existing file ' +
+                'and commits it, the previous one kept',
+                JSON.stringify(done));
+        const canary = await destinations.testPush(added.destination.id,
+                                                   'svc-e');
+        t.check(!canary.ok && fs.readFileSync(path.join(dir, 'svc-e'),
+                                              'utf8') === written,
+                'I5. a Test push to a service account\'s secret is refused ' +
+                'and writes nothing', JSON.stringify(canary));
+      } finally {
+        policy.reset('default');
+      }
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  log.debug('Leaving endToEnd().');
 }
 
 module.exports = {
@@ -625,6 +697,7 @@ module.exports = {
     await consoleAndApi(t);
     await ldapModify(t);
     await rotation(t);
+    await endToEnd(t);
     log.debug('Leaving run().');
   }
 };
