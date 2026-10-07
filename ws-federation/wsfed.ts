@@ -923,8 +923,8 @@ class WsFederation {
         'wtrealm is "' + realm + '", and no relying party is registered ' +
         'under that name in this realm. In product mode this identity ' +
         'provider issues a token only to a relying party registered ahead ' +
-        'of time (the console or /admin-api); one that was ' +
-        'only seen is not registered.');
+        'of time (the console, /admin-api, RFC 7591 or an LDAP add under ' +
+        'ou=applications); one that was only seen is not registered.');
     }
 
     // wreply is optional (13.2.1). With none, the response goes to this

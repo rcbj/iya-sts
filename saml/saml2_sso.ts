@@ -2897,8 +2897,9 @@ class Saml2Sso {
                  : 'The AuthnRequest names no Issuer, so no ') +
           'SAML 2.0 service provider is registered under it in this realm. ' +
           'In product mode this identity provider answers only a service ' +
-          'provider registered ahead of time (the console, /admin-api or ' +
-          'verified metadata); one that was only seen is not registered, ' +
+          'provider registered ahead of time (the console, /admin-api, ' +
+          'RFC 7591, an LDAP add under ou=applications or verified ' +
+          'metadata); one that was only seen is not registered, ' +
           'and no Response is sent anywhere.');
       }
     }

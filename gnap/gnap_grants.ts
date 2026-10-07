@@ -645,8 +645,10 @@ class GnapGrants {
     return this.refusal('STS-GNAP-0902', 'the application "' +
         String(app && app.identifier) + '" this key or instance belongs to ' +
         'is not registered with this authorization server; in product mode ' +
-        'an application must be provisioned before it can make requests, ' +
-        'and one created on first sight is not (RFC 9635 section 2.3.3).',
+        'an application must be registered (the console, /admin-api, RFC ' +
+        '7591 or an LDAP add under ou=applications) before it can make ' +
+        'requests, and one created on first sight is not (RFC 9635 section ' +
+        '2.3.3).',
                         kind === KIND_RS ? 'invalid_resource_server' :
                         'invalid_client', 401);
   }
