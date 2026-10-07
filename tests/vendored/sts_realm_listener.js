@@ -222,15 +222,22 @@ async function main() {
 
   if (EXPECTED_NODES > 1) {
     log.info("== 6. Both nodes answer on the realm's port");
+    // The other node binds the realm's port when replication tells it of the
+    // listener, and the balancer sends it nothing until its next health
+    // check passes, so the job asks for up to 20 s. Sixteen asks 20 ms apart
+    // were done before node-a's listener was in the balancer's pool: it
+    // came up a second after node-b's in the 2026-10-07 cluster run, and
+    // only node-b answered.
     const nodes = new Set();
-    for (let i = 0; i < 16 && nodes.size < 2; i += 1) {
+    const until = Date.now() + 20000;
+    for (let i = 0; Date.now() < until && nodes.size < 2; i += 1) {
       const r = await request("GET", OWN_BASE + "/realm/" + REALM +
                               "/admin-api/cluster");
       const self = r.json && r.json.status && r.json.status.self;
       if (self) {
         nodes.add(String(self.name || self.nodeId));
       }
-      await new Promise(function (res) { setTimeout(res, 20); });
+      await new Promise(function (res) { setTimeout(res, 250); });
     }
     check("both nodes answer on the realm's own port", function () {
       assert.ok(nodes.size >= 2, "answered by " +
