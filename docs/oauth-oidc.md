@@ -1710,7 +1710,7 @@ POST /oauth2/register
 
 GET /.well-known/openid-configuration
   "frontchannel_logout_supported": true
-  "frontchannel_logout_session_required": true
+  "frontchannel_logout_session_supported": true
 
 id_token: { …, "sid": "EO-iqvyoBaXVAwJMzzHQuEcBlw4dcI36" }
 

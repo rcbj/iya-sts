@@ -6303,8 +6303,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'appDelegationSubjectGroup and appDelegationSemantics — and the ' +
           'people carrying stsNotDelegated or stsMayAct. Three paged lists. ' +
           'Read only; the attributes are edited through ' +
-          '/admin-api/applications/update and /admin-api/users/set-not-' +
-          'delegated and /set-may-act. Mirrors GET /admin/delegation.' },
+          '/admin-api/applications/set, /add, /remove or /update-fields, ' +
+          'and /admin-api/users/set-not-delegated and /set-may-act. ' +
+          'Mirrors GET /admin/delegation.' },
   { path: '/admin-api/permissions', group: 'Management API',
     name: 'Delegated permissions',
     // Not the four the delegation resource cites: those are four ways of
@@ -6377,7 +6378,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'button. Moving a form is not moving an action. A PERMISSION MUST ' +
           'BE DEFINED BEFORE IT CAN BE GRANTED, which is the one ordering ' +
           'rule here and is checked in applications.updateApplication() so ' +
-          'that these five, the generic POST /admin-api/applications/update ' +
+          'that these five, the generic POST /admin-api/applications/add ' +
           'and the console agree about it. An ungranted permission is ' +
           'refused invalid_scope in product mode; in development it is ' +
           'honoured, logged and marked unless ' +

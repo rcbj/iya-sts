@@ -1608,8 +1608,9 @@ class DelegationPage {
   // /admin-api/delegation/policy answers with. READ ONLY here: each value is
   // an attribute on an application or a person, so it is edited where every
   // attribute of one is — the application's page (and POST
-  // /admin-api/applications/update) and the person's page (and POST
-  // /admin-api/users/set-not-delegated, /set-may-act). A second form here
+  // /admin-api/applications/set, /add and /remove) and the person's page
+  // (and POST /admin-api/users/set-not-delegated, /set-may-act). A second
+  // form here
   // would be a second door onto the same attribute, which this console
   // refuses everywhere else.
   // ---------------------------------------------------------------------------

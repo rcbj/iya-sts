@@ -19662,7 +19662,10 @@ class AdminApi {
       // — the configured half of those two families, as the Kerberos one is
       // `policy` on the acts above. READ ONLY here, like the console section
       // it mirrors: the attributes are EDITED through POST
-      // /admin-api/applications/update and the two person flags through POST
+      // /admin-api/applications/set for the single-valued ones
+      // (appNotDelegated, appDefaultDelegationSemantics), /add and /remove
+      // for the rest, or /update-fields — there is no `applications/update`
+      // (#286) — and the two person flags through POST
       // /admin-api/users/set-not-delegated and /set-may-act, which is where
       // every application and person attribute is edited (rule 7 by
       // construction). Paged, three lists on three parameters.
@@ -20002,7 +20005,7 @@ class AdminApi {
                          'granted it, and the check is in ' +
                          '`applications.updateApplication()` so that this ' +
                          'operation, the console form and the generic `POST ' +
-                         '/admin-api/applications/update` cannot disagree ' +
+                         '/admin-api/applications/add` cannot disagree ' +
                          'about it.\n\nA second permission of the SAME NAME ' +
                          'is refused rather than merged — a permission has ' +
                          'one description, and two rows with one name would ' +
