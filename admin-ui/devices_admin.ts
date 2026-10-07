@@ -709,7 +709,8 @@ class DevicesAdmin {
                devices.DEVICE_SECRET_CREDENTIAL_TYPE + ')',
                'the device member on session-established, session-presented ' +
                'and session-revoked'],
-        risc: ['credential-compromise', 'sessions-revoked'],
+        risc: ['credential-compromise', 'sessions-revoked (where ' +
+               'risc.autoEmitTypes names it; not by default)'],
         subject: 'complex: device (iss_sub — this realm\'s issuer and the ' +
                  'device id) and user (the owner, where a person)'
       },

@@ -799,7 +799,8 @@ const SPECS: Spec[] = [
               'credential-compromise for each credential a person\'s ' +
               'device held when it is marked compromised, and the ' +
               'deprecated sessions-revoked when it is compromised or ' +
-              'removed — both with a complex subject naming the account AND ' +
+              'removed (only where risc.autoEmitTypes names it, which the ' +
+              'default does not) — both with a complex subject naming the account AND ' +
               'the device, which is what makes "every session of the ' +
               'account" true of what was ended; and from the ACCOUNT HOLDER ' +
               'on ' +

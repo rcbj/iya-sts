@@ -13422,7 +13422,7 @@ const SETTINGS = [
           'account-credential-change-required,' +
           'recovery-information-changed,recovery-activated,' +
           'credential-compromise,opt-out-initiated,opt-out-cancelled,' +
-          'opt-out-effective,opt-in,sessions-revoked',
+          'opt-out-effective,opt-in',
     runtime: true,
     // Mirrors ssf/risc.ts's AUTO_ACTS, short and under RISC_PREFIX.
     csvValues: withEventTypeUris(
@@ -13452,13 +13452,14 @@ const SETTINGS = [
                  'opt-in, and opt-out-effective when risc.optOutDelayHours ' +
                  'has passed. From the device register (#164): a person\'s ' +
                  'device marked compromised emits credential-compromise ' +
-                 'for each credential it held, and a device compromised or ' +
-                 'removed emits the deprecated sessions-revoked — with the ' +
-                 'DEVICE beside the person in a complex subject, which is ' +
-                 'what makes "every session of the account" true of every ' +
-                 'session on that device. Each ended session also sends ' +
-                 'CAEP session-revoked, the event RISC 1.0 section 2.11 ' +
-                 'points at; drop sessions-revoked here to send only that.' },
+                 'for each credential it held. Each session a compromised ' +
+                 'or removed device ends sends CAEP session-revoked, the ' +
+                 'event RISC 1.0 section 2.11 points new implementations ' +
+                 'at, so the DEPRECATED sessions-revoked is not in the ' +
+                 'default (#269). Add it for a receiver that still needs ' +
+                 'it: it goes out with the DEVICE beside the person in a ' +
+                 'complex subject, meaning every session of the account ' +
+                 'on that device.' },
 
   { key: 'risc.recycleWindowDays', group: 'RISC',
     label: 'Recycled identifier window (days)',

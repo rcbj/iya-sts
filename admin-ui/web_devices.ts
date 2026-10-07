@@ -310,8 +310,8 @@ class DevicesPage {
           'of its keys authenticated, revokes its Native SSO secret and ' +
           'every certificate this service\'s EST or SCEP Issuing CA issued ' +
           'it (keyCompromise), raises its risk level to HIGH, and — for a ' +
-          'person\'s device — sends RISC credential-compromise and ' +
-          'sessions-revoked. It stays in the register, recognised and ' +
+          'person\'s device — sends RISC credential-compromise (and ' +
+          'sessions-revoked, where risc.autoEmitTypes names it). It stays in the register, recognised and ' +
           'saying so.') +
         '<form method="post" action="' + LIST + '">' +
         hidden('action', 'set-status') + hidden('id', d.id) +

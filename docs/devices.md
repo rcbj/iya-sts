@@ -353,8 +353,8 @@ or `POST /admin-api/devices/set-status` with `"status":"compromised"`):
   ([#432](https://github.com/rcbj/iya-sts/issues/432)). A WebAuthn key binds
   no token;
 * raises its risk level to `HIGH`;
-* sends RISC `credential-compromise` and `sessions-revoked` for a person's
-  device (below).
+* sends RISC `credential-compromise` for a person's device, and
+  `sessions-revoked` where `risc.autoEmitTypes` names it (below).
 
 The device stays in the register, recognised and marked compromised.
 **Restoring it** puts back the risk level the compromise raised; nothing
@@ -363,13 +363,14 @@ next Native SSO sign-in.
 
 **Removing a device** ends the sessions it authenticated and revokes its
 certificates with reason **cessationOfOperation** (keyCompromise when it was
-compromised), and sends RISC `sessions-revoked` for a person's device.
+compromised). For a person's device it sends RISC `sessions-revoked` where
+`risc.autoEmitTypes` names it.
 
 ## What goes out over Shared Signals
 
 Each event is sent to every stream that asked for its type and covers its
 subject, when `caep.autoEmitTypes` or `risc.autoEmitTypes` names it (all of
-them do by default).
+them do by default, except RISC `sessions-revoked`).
 
 | Event | When |
 |---|---|
@@ -378,7 +379,7 @@ them do by default).
 | CAEP `credential-change` | a device key is added (`create`), re-issued over EST (`update`) or removed (`delete`); a Native SSO secret is issued (`create`) or revoked (`revoke`); a device is removed (`delete`, per credential) |
 | CAEP `session-established`, `session-presented`, `session-revoked` | as for every session — and the subject names the **device** when a registered device authenticated the session |
 | RISC `credential-compromise` | a person's device is marked compromised: one per kind of credential it held |
-| RISC `sessions-revoked` | a person's device is marked compromised or removed |
+| RISC `sessions-revoked` | a person's device is marked compromised or removed — only where `risc.autoEmitTypes` names it, which the default does not |
 
 **The subject** is SSF's complex subject with a `device` member —
 `{"format":"iss_sub","iss":<this realm's issuer>,"sub":<the device id>}`, the
@@ -405,9 +406,10 @@ transmitter and receiver agree on.
 
 **RISC and the deprecated `sessions-revoked`.** RISC 1.0 says new
 implementations should use CAEP's `session-revoked`, and each ended session
-does send one. `sessions-revoked` is sent as well, with the device beside the
-person in the subject, meaning *every session of this account on this
-device*. Remove it from `risc.autoEmitTypes` to send only the CAEP events.
+sends one. So `sessions-revoked` is not in `risc.autoEmitTypes`' default
+([#269](https://github.com/rcbj/iya-sts/issues/269)). Add it for a receiver
+that still needs it: it goes out with the device beside the person in the
+subject, meaning *every session of this account on this device*.
 
 ## Risk scoring
 

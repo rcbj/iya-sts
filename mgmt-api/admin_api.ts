@@ -4152,8 +4152,10 @@ class AdminApi {
                          'revoked for keyCompromise, its risk level raised ' +
                          'to HIGH (CAEP risk-level-change, principal ' +
                          'DEVICE), and for a person\'s device RISC ' +
-                         'credential-compromise and sessions-revoked are ' +
-                         'sent naming the person and the device. `active` ' +
+                         'credential-compromise is sent naming the person ' +
+                         'and the device (and the deprecated ' +
+                         'sessions-revoked, where risc.autoEmitTypes names ' +
+                         'it). `active` ' +
                          'restores it and puts back the risk level the ' +
                          'compromise raised; nothing revoked comes back. ' +
                          'Answers `sessionsEnded` and ' +
