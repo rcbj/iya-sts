@@ -804,9 +804,11 @@ class SamlPage {
       'service has recorded</h2><table><tbody><tr><td>Assertion consumers ' +
       'seen</td><td>' +
         (acs.length ? kit.codeList(acs) : '<span class="sub">none</span>') +
-        ' <span class="sub">&mdash; the <code>shire</code> parameter. Not ' +
-        'checked against any registration, like every other return URL ' +
-        'here.</span></td></tr><tr><td>Browser profiles used</td><td>' +
+        ' <span class="sub">&mdash; the <code>shire</code> parameter. In ' +
+        'product mode it must be one of the ' +
+        '<code>samlAssertionConsumerService</code> values on this entry, ' +
+        'compared exactly; development records and accepts any.</span>' +
+        '</td></tr><tr><td>Browser profiles used</td><td>' +
         (profiles.length ?
          kit.esc(profiles.map(SamlPage.saml11ProfileLabel.bind(SamlPage))
            .join(', '))
@@ -825,16 +827,22 @@ class SamlPage {
       'issued to it</td><td>' +
       kit.esc(String(json.authentications || 0)) +
         '</td></tr></tbody></table><h2>What is NOT here, and why</h2><p ' +
-      'class="sub">The SAML 2.0 page has three rows this one does not, and ' +
-      'none of them is missing work. <strong>No logout return ' +
+      'class="sub">The SAML 2.0 page has rows this one does not, and none ' +
+      'of them is missing work. <strong>No logout return ' +
       'address</strong>: SAML 1.1 has no Single Logout, so there is nothing ' +
-      'to send anywhere. <strong>No request signature and no signing ' +
-      'certificate</strong>: there is no request, so there is nothing for a ' +
-      'relying party to sign. <strong>No response binding</strong>: which of ' +
-      'the two browser profiles is used is chosen HERE, by ' +
-      '<code>saml11.defaultProfile</code> or the non-spec ' +
-      '<code>profile</code> parameter, because nothing in SAML 1.1 lets a ' +
-      'relying party ask.</p><p class="sub"><a href="/saml11/rp">The mock ' +
+      'to send anywhere. <strong>No request signature on the browser ' +
+      'side</strong>: the inter-site transfer service takes no request ' +
+      'message, so nothing there is signed. The relying party\'s ' +
+      '<code>samlSigningCertificate</code> still matters, at the SOAP ' +
+      'responder: it authenticates the caller of an artifact resolution or ' +
+      'a query, by a signed <code>&lt;samlp:Request&gt;</code> or that ' +
+      'certificate at the TLS handshake. <strong>No response binding ' +
+      'asked for in the protocol</strong>: which of the two browser ' +
+      'profiles is used is chosen by the non-spec <code>profile</code> ' +
+      'parameter, else the binding registered for the <code>shire</code> ' +
+      'on this entry (<code>samlAcsEndpoint</code>, from consumed ' +
+      'metadata), else <code>saml11.defaultProfile</code>.</p><p ' +
+      'class="sub"><a href="/saml11/rp">The mock ' +
       'relying party</a> will run either profile against this service and ' +
       'show every check.</p>';
 

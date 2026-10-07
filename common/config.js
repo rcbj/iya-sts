@@ -8982,8 +8982,10 @@ const SETTINGS = [
                  'the assertion over SOAP. POST is the default because it ' +
                  'needs no server behind the relying party\'s assertion ' +
                  'consumer, so it is the one that works when somebody points ' +
-                 'this at a URL and watches. A request naming `profile` or ' +
-                 'carrying `SAMLart` overrides it.' },
+                 'this at a URL and watches. The non-spec `profile` ' +
+                 'parameter overrides it, and so does the binding a ' +
+                 'relying party registered for the `shire` it sends ' +
+                 '(samlAcsEndpoint, from consumed metadata).' },
 
   { key: 'saml11.doNotCacheCondition', group: 'SAML 1.1 assertions',
     label: 'Mark a Browser/POST assertion DoNotCache',
