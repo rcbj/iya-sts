@@ -1389,9 +1389,9 @@ async function theApplicationsPageIsDecidedByThePolicy() {
   // ------------------------------------------------------------------
   const pages = [["/portal", "Overview"],
                  ["/portal/applications", "Applications"],
-                 ["/portal/password", "Password"], ["/portal/keys",
-                                                    "Security " +
-                     "keys"]];
+                 ["/portal/password", "Password"],
+                 // "Passkeys" since #470, which renamed the page.
+                 ["/portal/keys", "Passkeys"]];
   for (const [path, label] of pages) {
     const page = await b.go("GET", path);
     check(path + " answers 200 for the person signed in", function () {
