@@ -805,14 +805,56 @@ device (`device_recognition.recognize()`, through `registeredDeviceFor()`)
 BEFORE it asks the engine, and hands it in as `registeredDevice`; a door that
 assesses after the session hands in the event's. The recognition is
 remembered on the request, so the event built a moment later is the same
-answer and the device's last use moves once. **The gap**: the sign-in
-screen assesses BEFORE its own WebAuthn ceremony (P3's order — the
-assessment decides whether to ask for one), so a linked platform credential
-presented THERE is on the session's event, and so in the policy, the acr and
-the token claims (phase 6), but not in that sign-in's score. A certificate
-on the connection is scored at every door, and a door that assesses after
-its credential (the wallet, federation, a session started directly) scores
-whatever it recognised.
+answer and the device's last use moves once. A certificate on the
+connection is scored at every door, and a door that assesses after its
+credential (federation, SPNEGO, a session started directly) scores whatever
+it recognised.
+
+**A DOOR THAT ASSESSES BEFORE A WEBAUTHN CEREMONY IS AMENDED AFTER IT (#259,
+2026-10-07, rcbj's option 3).** The sign-in screen assesses BEFORE its own
+ceremony (P3's order — the assessment decides whether to ask for one), and so
+do the wallet and the emailed first factor before a key as their second. Until
+#259 a linked platform credential presented THERE was on the session's
+event, and so in the policy, the acr and the token claims (phase 6), and NOT
+in that sign-in's score: a person signing in from their own registered device
+could be `unregistered-device`, and the lowering factors never applied. Now:
+
+* **The door says so**: `assessSignIn({ deviceAwaited: true })`. The
+  assessment holds back the one thing the device decides in the history — the
+  `device-id` feature — and its device level, and carries `deviceAwaited`
+  (the fingerprint and whether there was history enough) on the answer. It
+  is an ordinary field because the answer crosses `pendingMfa`, a persisted,
+  replicated step, and it is set after the row is written, so no store
+  keeps it.
+* **The session's start amends it** (`authn.startSessionHere()`, the funnel
+  every finisher reaches), with the device that authentication recognises —
+  the event's recognition — BEFORE the issuance policy is asked, so the
+  decision, the session's risk and Monitoring → Risk read one answer.
+  `RiskEngine.amend()` asks only the device's signals again
+  (`deviceSignals()`, the function `assessNow()` uses; `DEVICE_SIGNALS` is
+  what it takes off first), takes off `new-device` where the device is the
+  person's own, and re-makes the score from the model's own score with the
+  known-context cap and the UNSCORED rule as `assessNow()` applies them. It
+  never ADDS `new-device`: the fingerprint was looked up when the sign-in
+  was assessed.
+* **One assessment, one history move.** The amendment rewrites the SAME row
+  (`store.amendAssessment()`, `riskAmendAssessment()` in postgres) and counts
+  only the held-back `device-id` — `registered:<id>` for the person's own
+  device, the fingerprint otherwise. The total, the address, the browser, the
+  TLS stack, the credential and the failures were counted once, by the
+  assessment. An assessment never amended (a sign-in refused before its
+  session) counts no device.
+* **A change of level is a change**: the standing is set to the amended
+  level, and the risk-response policy is asked about the move from the
+  assessed level, its reactions claimed under `<id>:device` — the assessed
+  level's reactions were claimed under the id, and would otherwise refuse
+  the amended level's as already taken. The person's own device takes the
+  amended level. A write that fails is `STS-RISK-0047`; the session stands
+  on the amended answer.
+* **Synchronous**, because the policy is asked about it in the same tick;
+  the writes are not awaited, as `settle()`'s are not.
+
+`tests/device_risk.js` I holds it.
 
 | Signal | Factor | When |
 |---|---|---|

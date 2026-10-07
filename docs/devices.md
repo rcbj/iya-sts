@@ -445,12 +445,17 @@ proved the sign-in adds up to eight signals. Each is a factor on the score, and
 * **Monitoring → Risk** shows the device beside the browser on each
   assessment.
 
-**Where the screen's own WebAuthn step is not scored.** The sign-in screen
+**The screen's own WebAuthn step is scored too.** The sign-in screen
 scores the sign-in before its WebAuthn ceremony, because the score decides
-whether to ask for one. A platform credential presented in that step is
-therefore not in that sign-in's score. It is still on the session, so the
-policy, the acr and the claim below all see it. A client certificate on the
-connection is scored at every door.
+whether to ask for one. When the ceremony is done, the same assessment is
+amended with the device the key belongs to, before the session is decided.
+Only the device's signals are worked out again, and the history counts the
+sign-in once. So a person signing in with a platform credential linked to
+their own registered device is not `unregistered-device`, and a compliant
+device lowers the score. This works whether the key is the first factor or the
+second, and after a password, a wallet or an emailed code. Monitoring → Risk
+shows the amended assessment. A client certificate on the connection is
+scored at every door.
 
 ## The issuance policy
 

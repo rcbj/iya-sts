@@ -74,7 +74,9 @@ const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskGeography',
                     // #215: an import's progress, and the ones a stopped
                     // process left loading.
-                    'riskTouchVersion', 'riskAbandonStalled'];
+                    'riskTouchVersion', 'riskAbandonStalled',
+                    // #259: an assessment amended with its device.
+                    'riskAmendAssessment'];
 
 // The most assessments one realm holds in memory, as for failures.
 const MAX_MEMORY_ASSESSMENTS = 50000;
@@ -1589,6 +1591,39 @@ class RiskStore {
     return Promise.resolve(false);
   }
 
+  // AN ASSESSMENT AMENDED WITH THE DEVICE ITS SIGN-IN PROVED (#259): the
+  // same row, its signals, score and level rewritten — `risk_engine.ts`'s
+  // `amend()`. In the database `riskAmendAssessment()`; in memory the row is
+  // found and amended. The decision on it is `settleAssessment()`'s.
+  /**
+   * Rewrites an assessment's signals, score and level, for one amended with
+   * the registered device its sign-in proved.
+   *
+   * @param a - the assessment's id, realm, signals, score and level
+   * @param sealing - whether there is a key to seal under
+   * @returns whether it was found and amended
+   */
+  amendAssessment(a: Json, sealing: boolean): Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.amendAssessment(). " + a.id);
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.amendAssessment(). Database.");
+      return Promise.resolve(this.driver.riskAmendAssessment(a));
+    }
+    const held = this.assessments.get(String(a.realm || '')) || [];
+    for (let i = held.length - 1; i >= 0; i--) {
+      if (held[i].id === a.id) {
+        held[i].signals = a.signals || [];
+        held[i].score = Number(a.score);
+        held[i].level = String(a.level || '');
+        log.debug("Leaving RiskStore.amendAssessment(). Memory.");
+        return Promise.resolve(true);
+      }
+    }
+    log.debug("Leaving RiskStore.amendAssessment(). Not held.");
+    return Promise.resolve(false);
+  }
+
   // A reaction to a change of risk, claimed once per assessment (#62 P4) —
   // see the driver's `riskClaimAction()`. True when this caller may take it.
   /**
@@ -1987,6 +2022,7 @@ export = {
   bandOf: RiskStore.bandOf,
   BANDS: RiskStore.BANDS,
   settleAssessment: slot.forward('settleAssessment'),
+  amendAssessment: slot.forward('amendAssessment'),
   subjectOf: slot.forward('subjectOf'),
   claimAction: slot.forward('claimAction'),
   setFeedback: slot.forward('setFeedback'),

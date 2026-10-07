@@ -36,6 +36,14 @@
 //   G. AUTHN HANDS IT OVER: a sign-in whose WebAuthn credential is linked
 //      to a device is assessed with that device on the assessment.
 //   H. THE PAGE: Monitoring → Risk draws the device beside the browser.
+//   I. A CEREMONY AFTER THE ASSESSMENT (#259): an assessment made before a
+//      WebAuthn ceremony (`deviceAwaited`) holds back the device feature,
+//      and the session's start amends the SAME assessment with the device
+//      its linked credential names — `unregistered-device` gone, the
+//      lowering factor on, one row, the device counted once and the
+//      fingerprint not at all; with no device the fingerprint is counted
+//      and the score kept; and the issuance policy decides on the amended
+//      level.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -152,7 +160,8 @@ function childMain() {
                                    uaFingerprint: 'fp-drisk',
                                    credential: { kind: 'password' } },
                                  e.context || {}),
-          registeredDevice: fact || null, userAgent: UA });
+          registeredDevice: fact || null, userAgent: UA,
+          deviceAwaited: e.deviceAwaited === true });
       }
 
       // --- A. the index ----------------------------------------------------
@@ -404,6 +413,115 @@ function childMain() {
            html.indexOf('/admin/devices?device=' + id) >= 0,
            'H1. Monitoring → Risk draws the registered device on the ' +
            'assessment, linked to its page', html.slice(0, 300));
+
+      // --- I. a ceremony after the assessment (#259) -----------------------
+      config.setOverride('risk.minimumHistory', 1);
+      const riskStore = require(ROOT + '/risk/risk_store');
+      const countOf = async function (value) {
+        const c = await riskStore.featureCounts(REALM, subOf(ALICE),
+          [{ feature: 'device-id', value: value }], false);
+        return c.length ? Number(c[0].count) : 0;
+      };
+      const rowOf = async function (assessmentId) {
+        const all = await engine.view(REALM, { subject: subOf(ALICE),
+                                               days: 1 });
+        return { total: all.assessments.total,
+                 row: all.assessments.rows.filter(function (r) {
+                   return r.id === assessmentId;
+                 })[0] || null };
+      };
+      const fakeRes = function () {
+        return { headers: [], set: function () {}, req: null };
+      };
+      const FP = 'fp-await-' + RUN;
+      const registeredBefore = await countOf('registered:' + id);
+      const awaited = await signIn(ALICE, null,
+        { context: { device: FP }, deviceAwaited: true });
+      note(awaited && has(awaited, 'unregistered-device') &&
+           awaited.deviceAwaited && awaited.deviceAwaited.fingerprint === FP &&
+           (await countOf(FP)) === 0,
+           'I1. an assessment made before a ceremony is unregistered-device ' +
+           'and holds back its device feature', JSON.stringify([
+             signalsOf(awaited), awaited && awaited.deviceAwaited,
+             await countOf(FP)]));
+      const totalBefore = (await rowOf(awaited.id)).total;
+      const viaKey = { credential: { kind: 'webauthn',
+                                     id: 'drisk-cred-' + RUN },
+                       risk: awaited, cookie: false };
+      const keyed = authn.startSession(fakeRes(), ALICE, ['pwd', 'hwk'],
+                                       'mfa', 'Test', viaKey);
+      await settle(600);
+      const keyedRisk = keyed && authn.sessionById(keyed.id)
+        ? authn.sessionById(keyed.id).risk : null;
+      note(keyedRisk && keyedRisk.assessmentId === awaited.id &&
+           keyedRisk.signals.indexOf('unregistered-device') < 0 &&
+           (keyedRisk.signals.indexOf('compliant-device') >= 0 ||
+            keyedRisk.signals.indexOf('compliant-attested-device') >= 0) &&
+           keyedRisk.device.registered === id &&
+           keyedRisk.score < awaited.score,
+           'I2. the session\'s start amends that SAME assessment with the ' +
+           'device its linked credential names: unregistered-device gone, ' +
+           'the lowering factor on, the score below the assessed one',
+           JSON.stringify({ assessed: [awaited.score, signalsOf(awaited)],
+                            amended: keyedRisk }));
+      const amendedRow = await rowOf(awaited.id);
+      note(amendedRow.total === totalBefore && amendedRow.row &&
+           signalsOf(amendedRow.row).indexOf('unregistered-device') < 0 &&
+           amendedRow.row.level === keyedRisk.level &&
+           amendedRow.row.signals[0].device &&
+           amendedRow.row.signals[0].device.id === id,
+           'I3. one row, rewritten: no second assessment, and the stored ' +
+           'one carries the device and the amended level',
+           JSON.stringify(amendedRow));
+      note((await countOf('registered:' + id)) === registeredBefore + 1 &&
+           (await countOf(FP)) === 0,
+           'I4. the history counts the device once, as registered:<id>, ' +
+           'and never the fingerprint it held back',
+           JSON.stringify([registeredBefore, await countOf('registered:' + id),
+                           await countOf(FP)]));
+      const FP2 = 'fp-await-2-' + RUN;
+      const plain = await signIn(ALICE, null,
+        { context: { device: FP2 }, deviceAwaited: true });
+      const viaPassword = { credential: { kind: 'password' }, risk: plain,
+                            cookie: false };
+      const passworded = authn.startSession(fakeRes(), ALICE, ['pwd'], '1',
+                                            'Test', viaPassword);
+      await settle(600);
+      const plainRisk = passworded && authn.sessionById(passworded.id)
+        ? authn.sessionById(passworded.id).risk : null;
+      note(plainRisk && plainRisk.assessmentId === plain.id &&
+           plainRisk.signals.indexOf('unregistered-device') >= 0 &&
+           plainRisk.level === plain.level &&
+           Math.abs(plainRisk.score - plain.score) < 1e-12 &&
+           (await countOf(FP2)) === 1,
+           'I5. with no device recognised the score and signals stand, and ' +
+           'the held fingerprint is counted once',
+           JSON.stringify([plain.score, plainRisk, await countOf(FP2)]));
+      // THE DECISION IS THE AMENDED ONE: a factor that makes the person's
+      // own compliant device decisive, enforced in development, refuses
+      // the session on the amended level — the assessed one, without the
+      // device, would not have been HIGH.
+      config.setOverride('risk.signalFactors', 'compliant-device=100000,' +
+                         'compliant-attested-device=100000');
+      config.setOverride('risk.enforceInDevelopment', true);
+      const toRefuse = await signIn(ALICE, null,
+        { context: { device: FP }, deviceAwaited: true });
+      const refusedDetail = { credential: { kind: 'webauthn',
+                                            id: 'drisk-cred-' + RUN },
+                              risk: toRefuse, cookie: false };
+      const refused = authn.startSession(fakeRes(), ALICE, ['pwd', 'hwk'],
+                                         'mfa', 'Test', refusedDetail);
+      await settle(600);
+      config.clearOverride('risk.enforceInDevelopment');
+      config.clearOverride('risk.signalFactors');
+      note(toRefuse && toRefuse.level !== 'HIGH' && refused === null &&
+           refusedDetail.refusedWith === 'STS-RISK-0016' &&
+           refusedDetail.risk.level === 'HIGH',
+           'I6. the issuance policy decides on the AMENDED assessment: the ' +
+           'device made it HIGH, and the session was refused on risk',
+           JSON.stringify([toRefuse && toRefuse.level, refused === null,
+                           refusedDetail.refusedWith,
+                           refusedDetail.risk && refusedDetail.risk.level]));
     });
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
@@ -462,7 +580,8 @@ module.exports = {
             'unregistered-device and its scope, non-compliant-device, ' +
             'compromised-device, the two lowering factors, the device ' +
             'feature replacing the fingerprint, the device\'s own risk ' +
-            'level with CAEP risk-level-change (DEVICE), and the index ' +
-            'lookups the sign-in path uses',
+            'level with CAEP risk-level-change (DEVICE), the index ' +
+            'lookups the sign-in path uses, and (#259) an assessment made ' +
+            'before a WebAuthn ceremony amended with the device it proved',
   run: run
 };

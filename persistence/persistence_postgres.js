@@ -6027,6 +6027,23 @@ function create(options) {
       });
     },
 
+    // AN ASSESSMENT AMENDED WITH ITS DEVICE (#259): the sign-in screen
+    // assesses before its WebAuthn ceremony, and the session's start
+    // rewrites the same row's signals, score and level once the device the
+    // ceremony proved is known. The decision stays `riskSettleAssessment()`'s.
+    riskAmendAssessment: function (a) {
+      log.debug("Entering riskAmendAssessment(). " + a.id);
+      log.debug("Leaving riskAmendAssessment().");
+      return pool.query(
+        'UPDATE sts_risk_assessments SET signals = $3::jsonb, score = $4, ' +
+        'level = $5 WHERE realm = $1 AND id = $2',
+        [a.realm || '', a.id, JSON.stringify(a.signals || []),
+         Number(a.score), a.level || '']
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
     // A REACTION TO A CHANGE OF RISK, CLAIMED ONCE (#62 P4): `actions` holds
     // one key per reaction naming the assessment it was last taken for, and
     // the claim succeeds only where that is not already this one — so a
