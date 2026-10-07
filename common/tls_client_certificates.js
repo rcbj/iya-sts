@@ -82,7 +82,9 @@
 // own Intermediate on an assertion's path.
 // ===========================================================================
 
-const nodeCrypto = require('crypto');
+// This service's one cryptographic module (#453): the register slot's random
+// part, the memo's digest and the leaf's parse. `helpers.js` loads it first.
+const crypto = require('./crypto');
 const { log } = require('./helpers');
 const config = require('./config');
 const realms = require('./realms');
@@ -205,7 +207,7 @@ function slotFor(holder, kind) {
   const k = kindOf(kind) || 'person';
   log.debug("Leaving slotFor().");
   return KINDS[k].slot + String(holder) + ':' +
-    nodeCrypto.randomBytes(6).toString('hex');
+    crypto.randomBytes(6).toString('hex');
 }
 
 // `{ kind, id }` for a slot this module wrote, or null.
@@ -937,8 +939,7 @@ function identityOf(input) {
                                                 : Buffer.from(input.leaf);
   const heldKey = (typeof status.heldAuthorityKey === 'function')
     ? status.heldAuthorityKey() : '';
-  const key = nodeCrypto.createHash('sha256').update(leafBytes)
-    .digest('hex') + '|' + heldKey;
+  const key = crypto.digest('sha256', leafBytes, 'hex') + '|' + heldKey;
   if (memo.has(key)) {
     memoCount.hit();
     log.debug("Leaving identityOf(). Memoised.");
@@ -955,7 +956,7 @@ function identityOf(input) {
     answer = { issuedHere: false, accepted: false };
   } else {
     const first = links[0];
-    const leaf = new nodeCrypto.X509Certificate(leafBytes);
+    const leaf = crypto.parseCertificate(leafBytes);
     const commonName = subjectCnOf(leaf);
     const eku = Array.isArray(leaf.keyUsage) ? leaf.keyUsage : [];
     const uris = String(leaf.subjectAltName || '').split(/,\s*/)

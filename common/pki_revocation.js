@@ -58,12 +58,11 @@
 // second thing to seal, purge with the realm, and share with a request worker.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `config`, `pki`,
-// `realms`, `error_codes` and the two vendored PKI modules plus pkijs and
-// asn1js; none of them requires it back.
+// `crypto`, `realms`, `error_codes` and the two vendored PKI modules plus
+// pkijs and asn1js; none of them requires it back.
 // ===========================================================================
 
 const bunyan = require('bunyan');
-const nodeCrypto = require('crypto');
 const asn1js = require('asn1js');
 const pkijs = require('pkijs');
 const config = require('./config');
@@ -74,6 +73,10 @@ const log = bunyan.createLogger({
 });
 
 const pki = require('./pki');
+// THE ONE CRYPTOGRAPHIC MODULE (#453): the key identifiers, the OCSP CertID
+// hashes, the Web Crypto engine pkijs signs with and the key it signs under.
+// A leaf that requires nothing here; `pki.js` above requires it already.
+const stsCrypto = require('./crypto');
 // For DEFAULT_ID only. `pki.js` requires it already and it requires nothing
 // here, so this is a cache hit and closes no cycle.
 const realms = require('./realms');
@@ -906,15 +909,12 @@ function derFromPem(pem) {
 // pkijs wants a Web Crypto engine. node 18+ has one on the global, which is
 // what `common/vendored/key_material.js` already relies on — this is the same
 // initialisation, said again here because requiring that module for its side
-// effect would be a dependency nobody could see.
+// effect would be a dependency nobody could see. `crypto.js` hands the engine
+// over since #453, as the one place this service touches node's crypto.
 (function initEngine() {
   log.debug("Entering initEngine().");
   try {
-    if (typeof crypto !== 'undefined' && crypto.subtle) {
-      // `any`: pkijs's declared engine interface lags its own class.
-      pkijs.setEngine('webcrypto', /** @type {any} */ (
-        new pkijs.CryptoEngine({ name: 'webcrypto', crypto: crypto })));
-    }
+    stsCrypto.installPkijsWebCrypto(pkijs);
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0062') + 'pki_revocation: the Web ' +
                                                'Crypto engine could not be ' +
@@ -961,7 +961,7 @@ async function importSigningKey(tier) {
         ? { name: 'Ed25519' }
         : { name: params.name, hash: params.hash });
   log.debug("Leaving importSigningKey().");
-  return crypto.subtle.importKey('pkcs8', pkcs8, algorithm, false, ['sign']);
+  return stsCrypto.importPkcs8SigningKey(pkcs8, algorithm);
 }
 
 // How long a CRL claims to be fresh. Short by default and settable, because
@@ -1203,9 +1203,9 @@ async function buildCrl(scopeId, caId) {
   // what an SKI conventionally is.
   const keyIdentifier = akid
     ? Buffer.from(akid.parsedValue.valueBlock.valueHexView)
-    : nodeCrypto.createHash('sha1').update(Buffer.from(
+    : stsCrypto.sha1Digest('key-identifier', Buffer.from(
       issuerCert.subjectPublicKeyInfo.subjectPublicKey.valueBlock
-        .valueHexView)).digest();
+        .valueHexView));
   extensions.push(new pkijs.Extension({
     extnID: '2.5.29.35', critical: false,
     extnValue: new asn1js.Sequence({
@@ -1532,8 +1532,8 @@ async function certIdMatches(certId, issuerCert) {
   const nameDer = issuerCert.subject.toSchema().toBER(false);
   const keyDer = issuerCert.subjectPublicKeyInfo.subjectPublicKey.valueBlock
     .valueHexView;
-  const nameHash = Buffer.from(await crypto.subtle.digest(hash, nameDer));
-  const keyHash = Buffer.from(await crypto.subtle.digest(hash, keyDer));
+  const nameHash = stsCrypto.ocspCertIdHash(hash, nameDer);
+  const keyHash = stsCrypto.ocspCertIdHash(hash, keyDer);
   const gotName = Buffer.from(certId.issuerNameHash.valueBlock.valueHexView);
   const gotKey = Buffer.from(certId.issuerKeyHash.valueBlock.valueHexView);
   log.debug("Leaving certIdMatches().");
@@ -1790,9 +1790,11 @@ async function answerOcsp(scopeId, caId, requestDer) {
   // not unique across a rebuild — every reissued authority here keeps its
   // subject — and a key hash is.
   basic.tbsResponseData.responderID = new asn1js.OctetString({
-    valueHex: nodeCrypto.createHash('sha1').update(Buffer.from(
+    // RFC 6960 section 4.2.2.3's KeyHash is exactly RFC 5280's first
+    // key-identifier method: the SHA-1 of the subjectPublicKey BIT STRING.
+    valueHex: stsCrypto.sha1Digest('key-identifier', Buffer.from(
       issuerCert.subjectPublicKeyInfo.subjectPublicKey.valueBlock
-        .valueHexView)).digest()
+        .valueHexView))
   });
   basic.tbsResponseData.producedAt = now;
   basic.tbsResponseData.responses = responses;

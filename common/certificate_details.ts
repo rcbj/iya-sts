@@ -81,7 +81,9 @@ const log = bunyan.createLogger({
   level: config.value('global.logLevel')
 });
 
-import nodeCrypto = require('crypto');
+// This service's one cryptographic module (#453): the fingerprints and the
+// key import the key facts are read through.
+import stsCrypto = require('./crypto');
 import pkijs = require('pkijs');
 import asn1js = require('asn1js');
 // The parent project's own inspector, byte-identical. DO NOT EDIT IT HERE.
@@ -99,7 +101,7 @@ interface Logger {
 // each is described here by what this module reads of it.
 interface CertificateDetailsDeps {
   log: Logger;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   pkijs: typeof pkijs;
   asn1js: typeof asn1js;
   x509: typeof x509;
@@ -208,7 +210,7 @@ class CertificateDetails {
     log.debug("Leaving CertificateDetails.defaultDeps().");
     return {
       log: log,
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       pkijs: pkijs,
       asn1js: asn1js,
       x509: x509,
@@ -305,11 +307,10 @@ class CertificateDetails {
    * @returns lower-case hex with no separators
    */
   fingerprintOf(pem: unknown): string {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering CertificateDetails.fingerprintOf().");
     log.debug("Leaving CertificateDetails.fingerprintOf().");
-    return nodeCrypto.createHash('sha256').update(this.pemToDer(pem))
-      .digest('hex');
+    return stsCrypto.digest('sha256', this.pemToDer(pem), 'hex');
   }
 
   private parse(pem: unknown): { der: Buffer; cert: pkijs.Certificate } {
@@ -384,11 +385,11 @@ class CertificateDetails {
   // an ANSWER rather than an error — the SubjectPublicKeyInfo still names its
   // algorithm and its size.
   private keyFactsOf(spkiDer: Uint8Array): KeyFacts | null {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering CertificateDetails.keyFactsOf().");
     try {
-      const key = nodeCrypto.createPublicKey({ key: Buffer.from(spkiDer),
-                                               format: 'der', type: 'spki' });
+      const key = stsCrypto.publicKeyOf({ key: Buffer.from(spkiDer),
+                                          format: 'der', type: 'spki' });
       const out: KeyFacts = { type: key.asymmetricKeyType };
       const details = key.asymmetricKeyDetails || {};
       if (details.modulusLength) {
@@ -445,7 +446,7 @@ class CertificateDetails {
    *   signature algorithms
    */
   async describe(pem: string) {
-    const { log, x509, nodeCrypto } = this.deps;
+    const { log, x509, stsCrypto } = this.deps;
     const self = this;
     log.debug("Entering CertificateDetails.describe().");
     const parsed = this.parse(pem);
@@ -507,10 +508,9 @@ class CertificateDetails {
         extensionCount: extensions.length
       },
       fingerprints: {
-        sha1: this.colonHex(nodeCrypto.createHash('sha1').update(parsed.der)
-          .digest()),
-        sha256: this.colonHex(nodeCrypto.createHash('sha256')
-          .update(parsed.der).digest())
+        sha1: this.colonHex(stsCrypto.sha1Digest('certificate-fingerprint',
+                                                 parsed.der)),
+        sha256: this.colonHex(stsCrypto.digest('sha256', parsed.der))
       },
       fields: {
         tbsCertificate: {
@@ -540,8 +540,7 @@ class CertificateDetails {
             publicKeyHex: publicKeyBytes.toString('hex'),
             // The SHA-256 of the whole SubjectPublicKeyInfo, which is what an
             // HPKP-style pin and `STS_SPKI_PIN` are made of.
-            spkiSha256: nodeCrypto.createHash('sha256').update(spkiDer)
-              .digest('base64')
+            spkiSha256: stsCrypto.digest('sha256', spkiDer, 'base64')
           },
           issuerUniqueID: uniqueId(cert.issuerUniqueID),
           subjectUniqueID: uniqueId(cert.subjectUniqueID),

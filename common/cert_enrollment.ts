@@ -73,7 +73,6 @@
 //     finishes loading).
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import net = require('net');
 import asn1js = require('asn1js');
 import pkijs = require('pkijs');
@@ -83,6 +82,10 @@ const { log } = helpers;
 import applications = require('./applications');
 import audit = require('./audit');
 import config = require('./config');
+// This service's one cryptographic module (#453): every certificate parse,
+// digest, random value, key import and signature check below. A leaf that
+// requires nothing here; `helpers.js` above has loaded it already.
+import stsCrypto = require('./crypto');
 import credentials = require('./credentials');
 import enrollmentProfiles = require('./enrollment_profiles');
 import errorCodes = require('./error_codes');
@@ -293,7 +296,7 @@ const EAB_CLAIM_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // file used to reach for itself, passed in so that the composition root can
 // build one and a test can build one with stubs.
 interface CertEnrollmentDeps {
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   net: typeof net;
   asn1js: typeof asn1js;
   pkijs: typeof pkijs;
@@ -411,7 +414,7 @@ class CertEnrollment {
     log.debug("Entering CertEnrollment.defaultDeps().");
     log.debug("Leaving CertEnrollment.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       net: net,
       asn1js: asn1js,
       pkijs: pkijs,
@@ -635,12 +638,12 @@ class CertEnrollment {
    *   several, or cannot be read
    */
   entryNamedByCertificate(certificate) {
-    const { nodeCrypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.entryNamedByCertificate().");
     let cert = null;
     try {
-      cert = certificate ? new nodeCrypto.X509Certificate(certificate) : null;
+      cert = certificate ? stsCrypto.parseCertificate(certificate) : null;
     } catch (e) {
       log.debug("Caught in CertEnrollment.entryNamedByCertificate(): " +
                 ((e && e.message) || e));
@@ -971,14 +974,12 @@ class CertEnrollment {
   }
 
   secretsEqual(presented, expected) {
-    const { nodeCrypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     log.debug("Entering CertEnrollment.secretsEqual().");
-    const a = nodeCrypto.createHash('sha256').update(String(presented || ''))
-      .digest();
-    const b = nodeCrypto.createHash('sha256').update(String(expected || ''))
-      .digest();
+    const a = stsCrypto.digest('sha256', String(presented || ''));
+    const b = stsCrypto.digest('sha256', String(expected || ''));
     log.debug("Leaving CertEnrollment.secretsEqual().");
-    return nodeCrypto.timingSafeEqual(a, b) && !!expected;
+    return stsCrypto.bytesEqualConstantTime(a, b) && !!expected;
   }
 
   /**
@@ -1105,7 +1106,7 @@ class CertEnrollment {
    * @returns a promise of `ok` and the principal, or a refusal
    */
   async authenticatePresentedCertificate(pem, via?, options?) {
-    const { nodeCrypto, log, pki, realms, x509 } = this.deps;
+    const { stsCrypto, log, pki, realms, x509 } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.authenticatePresentedCertificate().");
     const opts = options || {};
@@ -1119,7 +1120,7 @@ class CertEnrollment {
     }
     let cert = null;
     try {
-      cert = new nodeCrypto.X509Certificate(pem);
+      cert = stsCrypto.parseCertificate(pem);
     } catch (e) {
       log.debug("Caught in " +
                 "CertEnrollment.authenticatePresentedCertificate(): " +
@@ -1888,7 +1889,7 @@ class CertEnrollment {
   }
 
   async proofOfPossession(csr, spkiPem, desc) {
-    const { nodeCrypto, log, x509 } = this.deps;
+    const { stsCrypto, log, x509 } = this.deps;
     log.debug("Entering CertEnrollment.proofOfPossession(). kind=" + desc.kind);
     try {
       const tbs = csr.tbsView ? Buffer.from(csr.tbsView)
@@ -1901,8 +1902,8 @@ class CertEnrollment {
         return !!ok;
       }
       if (desc.kind === 'okp') {
-        const key = nodeCrypto.createPublicKey(spkiPem);
-        const ok = nodeCrypto.verify(null, tbs, key, signature);
+        const key = stsCrypto.publicKeyOf(spkiPem);
+        const ok = stsCrypto.signatureValid(null, tbs, key, signature);
         log.debug("Leaving CertEnrollment.proofOfPossession(). Ed25519=" + ok);
         return !!ok;
       }
@@ -2423,7 +2424,7 @@ class CertEnrollment {
    *   (audited)
    */
   async issue(spec?) {
-    const { nodeCrypto, log, helpers, audit, config, errorCodes, pki,
+    const { stsCrypto, log, helpers, audit, config, errorCodes, pki,
             realms } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.issue().");
@@ -2583,7 +2584,7 @@ class CertEnrollment {
     let thumbprint = '';
     let subjectDn = '';
     try {
-      const cert = new nodeCrypto.X509Certificate(issued.certificatePem);
+      const cert = stsCrypto.parseCertificate(issued.certificatePem);
       thumbprint = cert.fingerprint256.replace(/:/g, '').toLowerCase();
       subjectDn = helpers.dnRfc4514(cert.subject);
     } catch (e) {
@@ -2761,13 +2762,13 @@ class CertEnrollment {
   // key's thumbprint (`crypto.certificateSpkiThumbprint()` over the
   // certificate that will carry this key), asked before anything is issued.
   spkiThumbprintOf(publicKeyPem) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering CertEnrollment.spkiThumbprintOf().");
     const body = String(publicKeyPem || '').replace(/-----[^-]+-----/g, '')
       .replace(/\s+/g, '');
     log.debug("Leaving CertEnrollment.spkiThumbprintOf().");
-    return nodeCrypto.createHash('sha256').update(Buffer.from(body, 'base64'))
-      .digest('base64url');
+    return stsCrypto.digest('sha256', Buffer.from(body, 'base64'),
+                            'base64url');
   }
 
   // ---------------------------------------------------------------------------
@@ -2835,7 +2836,7 @@ class CertEnrollment {
   // ---------------------------------------------------------------------------
   async issueForDevice(spec) {
     const { log, audit, config, errorCodes, pki, realms, mode, devices,
-            deviceAttestation, deviceRecognition, nodeCrypto } = this.deps;
+            deviceAttestation, deviceRecognition, stsCrypto } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.issueForDevice().");
     const asked = spec || {};
@@ -3052,7 +3053,7 @@ class CertEnrollment {
                                     attested.attestation.format);
     let certThumbprint = '';
     try {
-      certThumbprint = new nodeCrypto.X509Certificate(issued.certificatePem)
+      certThumbprint = stsCrypto.parseCertificate(issued.certificatePem)
         .fingerprint256.replace(/:/g, '').toLowerCase();
     } catch (e) {
       log.debug("Caught in CertEnrollment.issueForDevice(): " +
@@ -3436,12 +3437,12 @@ class CertEnrollment {
   // `redeemScepChallengeOnce()`) is held in one cell. A single-cell service
   // appends nothing, so its identifiers are what they always were.
   credentialId(prefix, entry) {
-    const { nodeCrypto, log, cellLocator } = this.deps;
+    const { stsCrypto, log, cellLocator } = this.deps;
     log.debug("Entering CertEnrollment.credentialId().");
     log.debug("Leaving CertEnrollment.credentialId().");
     return prefix + '-' + (entry.kind === 'person' ? 'p' : 'a') + '-' +
            Buffer.from(entry.id, 'utf8').toString('base64url') + '-' +
-           cellLocator.stamp(nodeCrypto.randomBytes(8).toString('hex'));
+           cellLocator.stamp(stsCrypto.randomBytes(8).toString('hex'));
   }
 
   entryOfCredentialId(prefix, id) {
@@ -3503,7 +3504,7 @@ class CertEnrollment {
    *   expiry and the target; or a refusal
    */
   createEab(spec?) {
-    const { nodeCrypto, log, audit } = this.deps;
+    const { stsCrypto, log, audit } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.createEab().");
     const asked = spec || {};
@@ -3530,7 +3531,7 @@ class CertEnrollment {
                          'Delete one first.');
     }
     const kid = self.credentialId('eab', resolved.entry);
-    const hmacKey = nodeCrypto.randomBytes(32).toString('base64url');
+    const hmacKey = stsCrypto.randomBytes(32).toString('base64url');
     const sealed = self.sealText(hmacKey, 'acme-eab-key',
                                  resolved.entry.kind === 'person' ? 'cell'
                                                                   : '');
@@ -3886,7 +3887,7 @@ class CertEnrollment {
    *   and the target; or a refusal
    */
   createScepChallenge(spec?) {
-    const { nodeCrypto, log, audit } = this.deps;
+    const { stsCrypto, log, audit } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.createScepChallenge().");
     const asked = spec || {};
@@ -3916,12 +3917,12 @@ class CertEnrollment {
                          'challenges. Delete one first.');
     }
     const id = self.credentialId('scep', resolved.entry);
-    const secret = nodeCrypto.randomBytes(24).toString('base64url');
+    const secret = stsCrypto.randomBytes(24).toString('base64url');
     const lifetimeS = self.lifetimeOf(asked.lifetimeS,
                                       'scep.challengeLifetimeS');
     const record = {
       id: id,
-      sha256: nodeCrypto.createHash('sha256').update(secret).digest('hex'),
+      sha256: stsCrypto.digest('sha256', secret, 'hex'),
       profile: profile.profile,
       createdAt: new Date(nowMs).toISOString(),
       expiresAt: new Date(nowMs + lifetimeS * 1000).toISOString(),
@@ -3964,7 +3965,7 @@ class CertEnrollment {
    * @returns `ok`, the id, the entry and the profile; or a refusal
    */
   redeemScepChallenge(challenge, options?) {
-    const { nodeCrypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.redeemScepChallenge().");
     const opts = options || {};
@@ -3987,10 +3988,10 @@ class CertEnrollment {
                 "challenge.");
       return generic;
     }
-    const presented = nodeCrypto.createHash('sha256').update(secret).digest();
+    const presented = stsCrypto.digest('sha256', secret);
     const expected = Buffer.from(String(record.sha256 || ''), 'hex');
     if (expected.length !== presented.length ||
-        !nodeCrypto.timingSafeEqual(presented, expected)) {
+        !stsCrypto.bytesEqualConstantTime(presented, expected)) {
       log.debug("Leaving CertEnrollment.redeemScepChallenge(). Wrong secret.");
       return generic;
     }

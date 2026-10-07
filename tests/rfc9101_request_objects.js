@@ -356,7 +356,7 @@ function childMain() {
             '2l. the realm\'s key set carries an RSA and an EC request object ' +
             'encryption key, use enc, with no private member in the JWK');
     const blob = keystore.serialise(set);
-    const back = keystore.deserialise(blob, crypto);
+    const back = keystore.deserialise(blob);
     note(blob.requestObjectEncKeys && /PRIVATE KEY/.test(
               blob.requestObjectEncKeys.rsa.privateKeyPem) &&
             back.requestObjectEncKeys.ec.publicJwk.kid === keys.ec.publicJwk.kid,

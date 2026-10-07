@@ -157,7 +157,6 @@
 
 import https = require('https');
 import http = require('http');
-import nodeCrypto = require('crypto');
 
 import helpers = require('./helpers');
 import config = require('./config');
@@ -1220,10 +1219,8 @@ class OidcRelyingParty {
   private pkcePair(): { verifier: string; challenge: string } {
     const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.pkcePair().");
-    const verifier = nodeCrypto.randomBytes(32).toString('base64url');
-    const challenge = nodeCrypto.createHash('sha256')
-                                .update(verifier)
-                                .digest('base64url');
+    const verifier = stsCrypto.randomBytes(32).toString('base64url');
+    const challenge = stsCrypto.digest('sha256', verifier, 'base64url');
     log.debug("Leaving OidcRelyingParty.pkcePair().");
     return { verifier: verifier, challenge: challenge };
   }
@@ -1578,8 +1575,7 @@ class OidcRelyingParty {
     for (let i = 0; i < candidates.length; i++) {
       let key = null;
       try {
-        key = nodeCrypto.createPublicKey({ key: candidates[i],
-                                           format: 'jwk' });
+        key = stsCrypto.publicKeyFromJwk(candidates[i]);
       } catch (e) {
         lastWhy = 'a published key could not be read: ' + e.message;
         continue;
@@ -1671,8 +1667,8 @@ class OidcRelyingParty {
   dpopKey(): DpopKey {
     const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.dpopKey().");
-    const pair = nodeCrypto.generateKeyPairSync('ec',
-                                                { namedCurve: 'P-256' });
+    const pair = stsCrypto.generateKeyPairSync('ec',
+                                               { namedCurve: 'P-256' });
     const jwk = pair.publicKey.export({ format: 'jwk' });
     log.debug("Leaving OidcRelyingParty.dpopKey().");
     return {
@@ -1705,7 +1701,7 @@ class OidcRelyingParty {
     log.debug("Entering OidcRelyingParty.dpopProof(). " + method + " " + url);
     const o = opts || {};
     const payload: Record<string, unknown> = {
-      jti: nodeCrypto.randomBytes(16).toString('hex'),
+      jti: stsCrypto.randomBytes(16).toString('hex'),
       htm: String(method || 'POST').toUpperCase(),
       // WITHOUT QUERY OR FRAGMENT, which is what section 4.2 asks for and
       // what `dpop.htuOf()` compares against on the other side.
@@ -1716,8 +1712,9 @@ class OidcRelyingParty {
       payload.nonce = String(o.nonce);
     }
     if (o.accessToken) {
-      payload.ath = stsCrypto.b64u(nodeCrypto.createHash('sha256')
-        .update(String(o.accessToken), 'ascii').digest());
+      // The token's bytes as `ascii` read them, as they always were here.
+      payload.ath = stsCrypto.b64u(stsCrypto.digest('sha256',
+        Buffer.from(String(o.accessToken), 'ascii')));
     }
     // A DPoP proof is verified by the `jwk` in its own header (RFC 9449
     // section 4.2) — an x5c or x5t beside it would name a certificate nobody
@@ -1839,7 +1836,7 @@ class OidcRelyingParty {
       iss: surface.clientId,
       sub: surface.clientId,
       aud: this.assertionAudience(host),
-      jti: nodeCrypto.randomBytes(16).toString('base64url'),
+      jti: stsCrypto.randomBytes(16).toString('base64url'),
       iat: now,
       exp: now + ASSERTION_LIFETIME_S
     }, key.privateKeyPem, { algorithm: SURFACE_SIGNING_ALG,
@@ -2016,7 +2013,7 @@ class OidcRelyingParty {
     claims.iat = now;
     claims.nbf = now;
     claims.exp = now + REQUEST_OBJECT_LIFETIME_S;
-    claims.jti = nodeCrypto.randomBytes(16).toString('base64url');
+    claims.jti = stsCrypto.randomBytes(16).toString('base64url');
     // certificate-header: none — a request object is verified against the
     // key registered on the surface's own entry.
     const requestObject = stsCrypto.signJws(claims, key.privateKeyPem,
@@ -2120,7 +2117,7 @@ class OidcRelyingParty {
     let verified: any = null;
     try {
       const key = spec.family === 'pq' ? jwk
-        : nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' })
+        : stsCrypto.publicKeyFromJwk(jwk)
           .export({ type: 'spki', format: 'pem' });
       verified = stsCrypto.verifyCompactJws(jwt, key, { algorithms: [alg] });
     } catch (e) {
@@ -2496,8 +2493,8 @@ class OidcRelyingParty {
       }
 
       const pkce = self.pkcePair();
-      const state = nodeCrypto.randomBytes(24).toString('base64url');
-      const nonce = nodeCrypto.randomBytes(24).toString('base64url');
+      const state = stsCrypto.randomBytes(24).toString('base64url');
+      const nonce = stsCrypto.randomBytes(24).toString('base64url');
       store.set(state, {
         surface: surface.id,
         nonce: nonce,

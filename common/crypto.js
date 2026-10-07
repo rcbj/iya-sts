@@ -14629,6 +14629,137 @@ async function biscuitAttenuate(value, publicKey, prepare) {
 
 // --- #453 group B (common, keys and certificates): begin ---
 
+// THE OCSP CertID HASHES (RFC 6960 section 4.1.1), under the hash the
+// REQUESTER named. `pki_revocation.js` compares a request's issuerNameHash
+// and issuerKeyHash with its own authority's, computed under that hash rather
+// than against a stored value, because a responder that only knew SHA-1 would
+// answer `unknown` to every modern client — and one that only knew SHA-256
+// would answer it to every old one. So SHA-1 is on this list, under the
+// `ocsp-cert-id` purpose, and nothing outside the four is computed. The
+// names are Web Crypto's spelling, which is what that file's OID table maps
+// to. It was Web Crypto's asynchronous digest until #453; this is node's
+// one-shot over the same bytes, so the hashes are the same.
+const OCSP_CERT_ID_HASHES = Object.freeze({
+  'SHA-1': null,
+  'SHA-256': 'sha256',
+  'SHA-384': 'sha384',
+  'SHA-512': 'sha512'
+});
+
+/**
+ * Returns an OCSP CertID hash (RFC 6960 section 4.1.1) of a value under the
+ * hash a request named.
+ *
+ * @param hashName - `SHA-1`, `SHA-256`, `SHA-384` or `SHA-512`
+ * @param data - the bytes (a Buffer, a typed array or an ArrayBuffer)
+ * @returns the digest
+ * @throws Error for a hash outside the list
+ */
+function ocspCertIdHash(hashName, data) {
+  log.debug("Entering ocspCertIdHash(). " + hashName);
+  if (!Object.prototype.hasOwnProperty.call(OCSP_CERT_ID_HASHES, hashName)) {
+    log.debug("Leaving ocspCertIdHash(). Unknown hash.");
+    // error-code: none — a programming error; the caller maps a closed OID
+    // table onto these names and answers `unknown` for anything else
+    throw new Error('crypto: an OCSP CertID hash is one of ' +
+                    Object.keys(OCSP_CERT_ID_HASHES).join(', ') +
+                    ', not "' + hashName + '"');
+  }
+  const bytes = Buffer.from(/** @type {any} */ (data || []));
+  const name = OCSP_CERT_ID_HASHES[hashName];
+  const out = name === null ? sha1Digest('ocsp-cert-id', bytes)
+                            : digest(name, bytes);
+  log.debug("Leaving ocspCertIdHash().");
+  return out;
+}
+
+// pkijs SIGNS A CRL AND AN OCSP RESPONSE THROUGH A WEB CRYPTO ENGINE, and the
+// engine is node's own Web Crypto implementation. Until #453
+// `pki_revocation.js` handed pkijs the global `crypto` itself; it is the
+// same object as `nodeCrypto.webcrypto` on every node this service runs on
+// (globalThis.crypto has been it since node 19), and this file is now the
+// one place that hands it over. Throws what pkijs throws, which the caller
+// logs under its own code.
+/**
+ * Installs node's Web Crypto implementation as pkijs's engine, which is
+ * what pkijs signs CRLs and OCSP responses with.
+ *
+ * @param pkijs - the pkijs module
+ * @returns true when installed; false where node offers no Web Crypto
+ */
+function installPkijsWebCrypto(pkijs) {
+  log.debug("Entering installPkijsWebCrypto().");
+  const webcrypto = /** @type {any} */ (nodeCrypto.webcrypto);
+  if (!webcrypto || !webcrypto.subtle) {
+    log.debug("Leaving installPkijsWebCrypto(). No Web Crypto.");
+    return false;
+  }
+  // `any`: pkijs's declared engine interface lags its own class.
+  pkijs.setEngine('webcrypto', /** @type {any} */ (
+    new pkijs.CryptoEngine({ name: 'webcrypto', crypto: webcrypto })));
+  log.debug("Leaving installPkijsWebCrypto().");
+  return true;
+}
+
+// The Web Crypto algorithms an authority's key is imported for, to sign a
+// CRL or an OCSP response with pkijs. The caller derives the parameters from
+// the AUTHORITY'S key (`pki_revocation.js`'s signingParamsFor()); this list
+// is what may be asked for.
+const PKCS8_SIGNING_ALGORITHMS = ['ECDSA', 'Ed25519', 'RSA-PSS',
+                                  'RSASSA-PKCS1-v1_5'];
+
+/**
+ * Imports a PKCS#8 private key as a non-extractable Web Crypto signing key,
+ * for pkijs to sign a CRL or an OCSP response with.
+ *
+ * @param pkcs8 - the DER (an ArrayBuffer or a Buffer)
+ * @param algorithm - the Web Crypto import parameters; `name` is one of
+ *   PKCS8_SIGNING_ALGORITHMS
+ * @returns {Promise<any>} a promise of the CryptoKey
+ * @throws Error for an algorithm outside the list
+ */
+function importPkcs8SigningKey(pkcs8, algorithm) {
+  log.debug("Entering importPkcs8SigningKey(). " +
+            (algorithm && algorithm.name));
+  if (!algorithm ||
+      PKCS8_SIGNING_ALGORITHMS.indexOf(algorithm.name) < 0) {
+    log.debug("Leaving importPkcs8SigningKey(). Unknown algorithm.");
+    // error-code: none — a programming error; the caller derives the name
+    // from a closed table of key kinds
+    throw new Error('crypto: a PKCS#8 signing key is imported for ' +
+                    PKCS8_SIGNING_ALGORITHMS.join(', ') + ', not "' +
+                    (algorithm && algorithm.name) + '"');
+  }
+  log.debug("Leaving importPkcs8SigningKey().");
+  return /** @type {any} */ (nodeCrypto.webcrypto).subtle.importKey(
+    'pkcs8', pkcs8, algorithm, false, ['sign']);
+}
+
+// COMPARE TWO BYTE STRINGS IN CONSTANT TIME. `constantTimeEquals()` above
+// compares two SECRETS given as text — it reads each through `String()`, so
+// two Buffers would be compared as their UTF-8 decodings, and two different
+// byte strings that decode to the same replacement characters would compare
+// equal. This one takes bytes as bytes: a digest against a digest, an AAD
+// binding against what was unwrapped. A length difference is a plain false
+// (node's `timingSafeEqual()` throws on one), found in variable time, which
+// is not a hole for the reason `constantTimeEquals()` gives.
+// HOT PATH: a presented secret's digest is compared per enrollment request,
+// so no Entering/Leaving pair.
+/**
+ * Compares two byte strings in constant time; only a length difference is
+ * found in variable time.
+ *
+ * @param a - one value (a Buffer or a typed array)
+ * @param b - the other
+ * @returns true when they are the same bytes
+ */
+function bytesEqualConstantTime(a, b) {
+  const left = Buffer.from(/** @type {any} */ (a || []));
+  const right = Buffer.from(/** @type {any} */ (b || []));
+  return left.length === right.length &&
+         nodeCrypto.timingSafeEqual(left, right);
+}
+
 // --- #453 group B: end ---
 
 // (separator between group regions)
@@ -15707,6 +15838,12 @@ module.exports = {
   // --- #453 group A exports: end ---
   //
   // --- #453 group B exports: begin ---
+  OCSP_CERT_ID_HASHES: OCSP_CERT_ID_HASHES,
+  ocspCertIdHash: ocspCertIdHash,
+  installPkijsWebCrypto: installPkijsWebCrypto,
+  PKCS8_SIGNING_ALGORITHMS: PKCS8_SIGNING_ALGORITHMS,
+  importPkcs8SigningKey: importPkcs8SigningKey,
+  bytesEqualConstantTime: bytesEqualConstantTime,
   // --- #453 group B exports: end ---
   //
   // --- #453 group C exports: begin ---
