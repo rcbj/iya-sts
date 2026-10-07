@@ -70,7 +70,6 @@
   items:
     - { title: XACML 3.0 and ALFA, url: /xacml.html }
     - { title: Delegation and impersonation, url: /delegation.html }
-    - { title: "Delegation chains, token by token", url: /delegation-chains.html }
     - { title: Remote PEP, url: /remote-pep.html }
 
 - section: Shared Signals

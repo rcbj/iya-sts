@@ -51,8 +51,6 @@ and service provider ·
 reachable by a machine with an OAuth 2.0 access token ·
 [Delegation and impersonation](delegation.md): who may obtain a token about
 somebody else, the same controls for RFC 8693, WS-Trust and Kerberos ·
-[Delegation chains, token by token](delegation-chains.md): a four-tier chain
-through each protocol, with every token it issued ·
 configuration recipes, in the console and through the API, for each
 [OAuth 2.0 grant](configure-oauth2-grants.md),
 [OpenID Connect flow](configure-oidc-flows.md) and
