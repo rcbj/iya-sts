@@ -64,11 +64,13 @@
 import https = require('https');
 import tls = require('tls');
 import dns = require('dns');
-import nodeCrypto = require('crypto');
 import bunyan = require('bunyan');
 import config = require('./config');
 import errorCodes = require('./error_codes');
 import cells = require('./cells');
+// This service's one cryptographic module (#453), for the inter-cell leaf's
+// key pair. A leaf that requires nothing here.
+import stsCrypto = require('./crypto');
 
 const log = bunyan.createLogger({ name: 'sts-cell-channel' });
 
@@ -182,7 +184,8 @@ class CellChannel {
                       'built, so no inter-cell certificate can be issued: ' +
                       (scoped.errors || []).join(' '));
     }
-    const pair = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const pair = stsCrypto.generateKeyPairSync('ec',
+                                               { namedCurve: 'P-256' });
     const publicKeyPem = pair.publicKey.export({ type: 'spki',
                                                  format: 'pem' }).toString();
     const keyPem = pair.privateKey.export({ type: 'pkcs8',

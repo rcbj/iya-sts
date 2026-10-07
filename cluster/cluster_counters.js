@@ -78,8 +78,10 @@
 // ===========================================================================
 
 const bunyan = require('bunyan');
-const nodeCrypto = require('crypto');
 const config = require('../common/config');
+// The one place this service hashes and draws random values (#453). A leaf
+// over `config`, so this require cannot close a cycle.
+const stsCrypto = require('../common/crypto');
 const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
 
@@ -120,8 +122,7 @@ function digestOf(scope, key) {
   // key computes alike.
   const text = String(scope) + '\n' + String(key);
   const keyed = require('../common/keystore').keyedDigest('cluster-counter', text);
-  const out = keyed || nodeCrypto.createHash('sha256').update(text)
-    .digest('base64url');
+  const out = keyed || stsCrypto.digest('sha256', text, 'base64url');
   log.debug("Leaving digestOf().");
   return out;
 }

@@ -120,7 +120,6 @@
 // service can detect several of them and fix none.
 // ===========================================================================
 
-const crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle, and it registers no route, so its position is not a position at all.

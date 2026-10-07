@@ -61,7 +61,7 @@
 // exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 
 import helpers = require('../common/helpers');
 const { log } = helpers;
@@ -100,7 +100,7 @@ interface KeyPairPem {
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface ScepRaDeps {
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   log: typeof log;
   config: typeof config;
   errorCodes: typeof errorCodes;
@@ -122,8 +122,8 @@ class ScepRa {
   /**
    * Builds the RA's owner.
    *
-   * @param deps - node's crypto, the logger, settings, error codes, `pki.js`,
-   *   the enrollment core and a lazy loader of the revocation module
+   * @param deps - `common/crypto.js`, the logger, settings, error codes,
+   *   `pki.js`, the enrollment core and a lazy loader of the revocation module
    */
   constructor(private readonly deps: ScepRaDeps) {
     deps.log.debug("Entering ScepRa.constructor().");
@@ -141,7 +141,7 @@ class ScepRa {
     log.debug("Entering ScepRa.defaultDeps().");
     log.debug("Leaving ScepRa.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       log: log,
       config: config,
       errorCodes: errorCodes,
@@ -197,7 +197,7 @@ class ScepRa {
    *   would be served
    */
   staleness(realmId, held) {
-    const { log, nodeCrypto, core } = this.deps;
+    const { log, stsCrypto, core } = this.deps;
     log.debug("Entering ScepRa.staleness().");
     if (!held || !held.certificatePem || !held.privateKeyPem) {
       log.debug("Leaving ScepRa.staleness(). Missing.");
@@ -209,7 +209,7 @@ class ScepRa {
     }
     let bits = 0;
     try {
-      const key = new nodeCrypto.X509Certificate(held.certificatePem).publicKey;
+      const key = stsCrypto.parseCertificate(held.certificatePem).publicKey;
       bits = key.asymmetricKeyType === 'rsa'
         ? key.asymmetricKeyDetails.modulusLength : 0;
     } catch (e) {
@@ -238,23 +238,17 @@ class ScepRa {
    * @returns a promise of `ok` and the new record, or a refusal
    */
   async issue(realmId, previous, reason) {
-    const { log, nodeCrypto, pki, errorCodes, core,
+    const { log, stsCrypto, pki, errorCodes, core,
             loadPkiRevocation } = this.deps;
     log.debug("Entering ScepRa.issue(). reason=" + reason);
     const bits = this.wantedBits();
-    const pair = await new Promise<KeyPairPem>(function (resolve, reject) {
-      nodeCrypto.generateKeyPair('rsa', {
-        modulusLength: bits,
-        publicKeyEncoding: { type: 'spki', format: 'pem' },
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
-      }, function (err, publicKey, privateKey) {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve({ publicKeyPem: publicKey, privateKeyPem: privateKey });
-      });
+    const generated = await stsCrypto.generateKeyPairAsync('rsa', {
+      modulusLength: bits,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
     });
+    const pair: KeyPairPem = { publicKeyPem: generated.publicKey,
+                               privateKeyPem: generated.privateKey };
     const made = await pki.certify(realmId, 'scep', {
       slot: SLOT,
       label: 'SCEP RA',
@@ -397,7 +391,7 @@ class ScepRa {
    *   (held and wanted), validity, thumbprint and certificate
    */
   describe(realmId) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering ScepRa.describe().");
     const held = this.recordOf(realmId);
     if (!held) {
@@ -407,7 +401,7 @@ class ScepRa {
     }
     let keyAlg = '';
     try {
-      const key = new nodeCrypto.X509Certificate(held.certificatePem).publicKey;
+      const key = stsCrypto.parseCertificate(held.certificatePem).publicKey;
       keyAlg = 'rsa-' + key.asymmetricKeyDetails.modulusLength;
     } catch (e) {
       log.debug("Caught in ScepRa.describe(): " + ((e && e.message) || e));

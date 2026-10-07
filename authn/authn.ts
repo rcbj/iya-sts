@@ -100,9 +100,9 @@
 // object, as before, so the replacement is what they call. `Authn` is exported
 // beside them for the composition root.
 // ---------------------------------------------------------------------------
-import crypto = require('crypto');
-// The constant-time comparison a session handle is checked with. A LEAF that
-// never requires anything here back (rule 3r).
+// The constant-time comparison a session handle is checked with, its digest,
+// and every challenge's random bytes (#453). A LEAF that never requires
+// anything here back (rule 3r).
 import stsCrypto = require('../common/crypto');
 // CAEP credential-change for a credential set at sign-in (#145). A library
 // over `helpers` and `crypto` that sends nothing where Shared Signals is not
@@ -1285,7 +1285,6 @@ interface AuthnDeps {
   // keystore and the device register, which a process loading this file for
   // one of its helpers has no need of.
   browserDevices: () => any;
-  crypto: typeof crypto;
   stsCrypto: typeof stsCrypto;
   realms: typeof realms;
   app: typeof app;
@@ -1358,7 +1357,6 @@ class Authn {
       browserDevices: function () {
         return require('../common/browser_devices');
       },
-      crypto: crypto,
       stsCrypto: stsCrypto,
       realms: realms,
       app: app,
@@ -1767,11 +1765,10 @@ class Authn {
   // session persisted before this change costs one sign-in.
   // ---------------------------------------------------------------------------
   private handleHashOf(handle) {
-    const { crypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     log.debug("Entering Authn.handleHashOf().");
     log.debug("Leaving Authn.handleHashOf().");
-    return crypto.createHash('sha256').update(String(handle), 'utf8')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(handle), 'base64url');
   }
 
   // Mints a fresh handle onto the session and returns the cookie VALUE. The
@@ -7587,7 +7584,7 @@ class Authn {
                                username: string, outcome: any,
                                assessment?: any,
                                opts?: { first?: string }): any {
-    const { log, randomId, gate, credentials, crypto, config } = this.deps;
+    const { log, randomId, gate, credentials, stsCrypto, config } = this.deps;
     const firstIsEmail = !!(opts && opts.first === 'email');
     log.debug("Entering Authn.beginSecondFactorAfterWallet(). username=" +
               username);
@@ -7711,7 +7708,7 @@ class Authn {
         const setupId = randomId(24);
         pendingMfa.set(setupId, {
           authn: record, username: username,
-          challenge: crypto.randomBytes(32).toString('base64url'),
+          challenge: stsCrypto.randomBytes(32).toString('base64url'),
           factor: 'enrol', alternate: '', backup: false, passwordless: false,
           requiredBy: requirement.byUser ? 'account' : 'realm',
           firstAmr: firstAmr, mfaAllowed: mfaAllowed,
@@ -7737,7 +7734,7 @@ class Authn {
     const mfaId = randomId(24);
     pendingMfa.set(mfaId, {
       authn: record, username: username,
-      challenge: crypto.randomBytes(32).toString('base64url'),
+      challenge: stsCrypto.randomBytes(32).toString('base64url'),
       factor: factor,
       alternate: riskFactor === 'security-key' ? ''
         : ((factor === 'webauthn' && enrolled.totp) ? 'totp'
@@ -9131,7 +9128,7 @@ class Authn {
   // ---------------------------------------------------------------------------
   private async finishPasswordSignIn(req, res, base, record, username,
                                      passwordless, secondFactor) {
-    const { crypto, log, randomId, gate, credentials, audit,
+    const { stsCrypto, log, randomId, gate, credentials, audit,
       errorCodes } = this.deps;
     log.debug("Entering Authn.finishPasswordSignIn(). username=" + username);
 
@@ -9484,7 +9481,7 @@ class Authn {
       const setupId = randomId(24);
       pendingMfa.set(setupId, {
         authn: record, username: username,
-        challenge: crypto.randomBytes(32).toString('base64url'),
+        challenge: stsCrypto.randomBytes(32).toString('base64url'),
         // `enrol` until a mechanism is chosen; `enrol-totp` once an
         // authenticator app's secret has been shown; `webauthn` once a security
         // key is chosen, which is then the ordinary ceremony — it registers a
@@ -9536,7 +9533,7 @@ class Authn {
       const offerId = randomId(24);
       pendingMfa.set(offerId, {
         authn: record, username: username,
-        challenge: crypto.randomBytes(32).toString('base64url'),
+        challenge: stsCrypto.randomBytes(32).toString('base64url'),
         factor: 'enrol', alternate: '', backup: false, passwordless: false,
         requiredBy: 'administrator', optional: true, mfaAllowed: mfaAllowed,
         risk: assessment || undefined, riskDecision: riskDecision,
@@ -9564,7 +9561,7 @@ class Authn {
       const mfaId = randomId(24);
       pendingMfa.set(mfaId, {
         authn: record, username: username,
-        challenge: crypto.randomBytes(32).toString('base64url'),
+        challenge: stsCrypto.randomBytes(32).toString('base64url'),
         // WHICH MECHANISM IS BEING ASKED FOR. On the record for the reason
         // `passwordless` is on it: the POST at the other end is an answer and
         // says nothing about what was asked. It is ONE register for both
@@ -9994,7 +9991,7 @@ class Authn {
   // It offers only what the application allows.
   // ---------------------------------------------------------------------------
   private enrolAfterProof(res: any, step: any, amr: string[]): void {
-    const { log, randomId, crypto, audit, oauthError, errorCodes } =
+    const { log, randomId, stsCrypto, audit, oauthError, errorCodes } =
       this.deps;
     log.debug('Entering Authn.enrolAfterProof(). username=' + step.username);
     const allowed = Array.isArray(step.mfaAllowed) ? step.mfaAllowed : [];
@@ -10017,7 +10014,7 @@ class Authn {
     const setupId = randomId(24);
     pendingMfa.set(setupId, {
       authn: step.authn, username: step.username,
-      challenge: crypto.randomBytes(32).toString('base64url'),
+      challenge: stsCrypto.randomBytes(32).toString('base64url'),
       factor: 'enrol', alternate: '', backup: false, passwordless: false,
       requiredBy: 'application', proved: true, mfaAllowed: allowed,
       firstAmr: first, risk: step.risk, riskDecision: step.riskDecision,
@@ -10869,10 +10866,10 @@ class Authn {
   // pending record when the screen is drawn and kept there until a POST
   // takes it. Persisted with the record, so any node answers the POST.
   private passkeyChallengeFor(record) {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering Authn.passkeyChallengeFor().");
     if (!record.passkeyChallenge) {
-      record.passkeyChallenge = crypto.randomBytes(32).toString('base64url');
+      record.passkeyChallenge = stsCrypto.randomBytes(32).toString('base64url');
       if (record.id && pending.has(record.id)) {
         pending.set(record.id, record);
       }

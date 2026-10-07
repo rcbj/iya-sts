@@ -46,8 +46,9 @@
 // nothing that registers one. `ldap_server.js` fills its directory slot.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+// The one place this service hashes (#453).
+import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
@@ -590,8 +591,7 @@ class AttributeSources {
     // another node) holds its own — so a row read under the old definition
     // must not be reachable under the new one anywhere.
     const cacheKey = realmId + '\n' + source.id + '\n' + key + '\n' +
-      nodeCrypto.createHash('sha256').update(JSON.stringify(source))
-        .digest('base64url');
+      stsCrypto.digest('sha256', JSON.stringify(source), 'base64url');
     const held = cached ? lookups.get(cacheKey) : undefined;
     if (held && now() - held.at <= CACHE_MS) {
       lookupCount.hit();

@@ -105,7 +105,8 @@
 // default when this module loads. `PepRegistry` is exported for the root.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+// The one place this service hashes (#453).
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -345,7 +346,7 @@ class PepRegistry {
       realms: realms,
       store: store as unknown as PolicyRepository,
       sha256Base64: function (text) {
-        return crypto.createHash('sha256').update(text).digest('base64');
+        return crypto.digest('sha256', text, 'base64');
       }
     };
   }

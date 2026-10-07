@@ -100,7 +100,7 @@
 //
 //   * **`Totp` TAKES ITS DEPENDENCIES THROUGH ITS CONSTRUCTOR** — the logger,
 //     the settings reader, `crypto.js`'s HOTP half, the realm registry, the
-//     error codes, node's `randomBytes` and a LAZY loader for `qrcode` (still
+//     error codes, `crypto.randomBytes` and a LAZY loader for `qrcode` (still
 //     required only when a QR code is drawn, for `qrSvgDataUri()`'s reason).
 //     Nothing inside the class reaches for a module on its own.
 //   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**, because `credentials.ts`,
@@ -112,7 +112,6 @@
 //     `Totp` is exported beside them for that root.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import config = require('./config');
 import crypto = require('./crypto');
@@ -245,7 +244,7 @@ class Totp {
   /**
    * Returns the dependencies the composition root builds the instance with.
    *
-   * @returns the real modules, node's `randomBytes` and a lazy require of
+   * @returns the real modules, `crypto.randomBytes` and a lazy require of
    *   `qrcode`
    */
   static defaultDeps(): TotpDeps {
@@ -259,7 +258,7 @@ class Totp {
       authnPolicy: authnPolicy,
       errorCodes: errorCodes as unknown as TotpDeps['errorCodes'],
       randomBytes: function (size: number): Buffer {
-        return nodeCrypto.randomBytes(size);
+        return crypto.randomBytes(size);
       },
       loadQrcode: function () {
         return require('qrcode');

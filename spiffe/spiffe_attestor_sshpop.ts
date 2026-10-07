@@ -36,7 +36,7 @@
 // way — and a client may read the code, so this answers the same.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import net = require('net');
 import helpers = require('../common/helpers');
 const { log, nowSec } = helpers;
@@ -60,7 +60,7 @@ const DEFAULT_TEMPLATE = '/{{ .PluginName }}/{{ .Fingerprint }}';
 interface SshpopDeps {
   log: typeof log;
   nowSec: typeof nowSec;
-  crypto: typeof nodeCrypto;
+  crypto: typeof stsCrypto;
   net: typeof net;
   config: typeof config;
   errorCodes: typeof errorCodes;
@@ -109,7 +109,7 @@ class SshpopAttestor {
   static defaultDeps(): SshpopDeps {
     helpers.log.debug("Entering SshpopAttestor.defaultDeps().");
     helpers.log.debug("Leaving SshpopAttestor.defaultDeps().");
-    return { log: log, nowSec: nowSec, crypto: nodeCrypto, net: net,
+    return { log: log, nowSec: nowSec, crypto: stsCrypto, net: net,
              config: config, errorCodes: errorCodes, spiffeId: spiffeId,
              rpc: rpc, pki: pki, agentPath: agentPath };
   }
@@ -310,8 +310,8 @@ class SshpopAttestor {
       throw rpc.statusError(status.INTERNAL, 'failed to combine nonces: ' +
                             'invalid response nonce size');
     }
-    const toBeSigned = crypto.createHash('sha256').update(nonce)
-      .update(theirs).digest();
+    const toBeSigned = crypto.digest('sha256',
+                                     Buffer.concat([nonce, theirs]));
     if (!(await pki.verifySshSignature(cert, toBeSigned, {
       format: String(signature.Format || ''),
       blob: Buffer.from(String(signature.Blob || ''), 'base64')
@@ -323,8 +323,7 @@ class SshpopAttestor {
     // 6. THE AGENT.
     const templateData = {
       PluginName: this.type,
-      Fingerprint: crypto.createHash('sha256').update(cert.blob)
-        .digest('base64url'),
+      Fingerprint: crypto.digest('sha256', cert.blob, 'base64url'),
       Hostname: hostname,
       Nonce: cert.nonce.toString('base64'),
       Serial: cert.serial.toString(),

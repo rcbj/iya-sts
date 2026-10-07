@@ -88,16 +88,23 @@ their failInfo with them.
 4. **Signed attributes are verified over the bytes that arrived**, tag swapped
    to SET; the ones this service signs are DER-sorted.
 
-### Why the codec is in `scep/` and not `common/crypto.js`
+### The codec is in `scep/`; its cryptography is `common/crypto.js`'s (#453)
 
-Rule 3r is about primitives having one policy. This is an ENVELOPE only SCEP
-reads, over node's own primitives, with every algorithm it accepts in a table
-`admin-ui/crypto_metadata.ts` reads (`algorithms()`) — the arrangement
-`gnap/gnap_httpsig.ts` had until #178 moved it into `common/crypto.js`.
-**rcbj's rule of 2026-10-05 ends it here too**: every cryptographic operation,
-in every protocol, goes through the common module. #453 moves these
-primitives; until then this heading records a decision that has been
-reversed.
+`scep_cms.ts` reads and writes the CMS envelope — the ASN.1, the attribute
+tables, the refusals — and every cryptographic operation inside it is a named
+function of `common/crypto.js`, group F's region of section 17: the content
+cipher (`scepContentEncrypt()` / `scepContentDecrypt()`, AES-CBC only, with
+`SCEP_CONTENT_CIPHERS` the closed list), the RSA key transport
+(`cmsKeyTransportDecrypt()` for PKCS#1 v1.5 or OAEP, `cmsKeyTransportEncrypt()`
+for the reply), the messageDigest attribute check
+(`cmsMessageDigestMatches()`), and the SignerInfo signature through
+`signBytes()` / `signatureValid()`. Until #453 the codec called node's
+primitives itself, an arrangement rule 3r tolerated for an envelope only SCEP
+reads; rcbj's rule of 2026-10-05 — every cryptographic operation, in every
+protocol, through the common module — ended it, and
+`tests/crypto_centralised.js` keeps it ended. The RA never signs with SHA-1:
+`certRep()` limits its digest to SHA-2, and a request naming SHA-1 or MD5 is
+refused `badAlg` before any signature is checked.
 
 ### The RA certificate
 

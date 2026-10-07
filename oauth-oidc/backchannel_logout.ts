@@ -134,7 +134,7 @@
 // keeps its own API.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -516,10 +516,9 @@ class BackchannelLogout {
   deliveryIdFor(sessionId: string, clientId: string, first: unknown): string {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.deliveryIdFor().");
-    const digest = nodeCrypto.createHash('sha256')
-      .update(String(sessionId) + '\n' + String(clientId) + '\n' +
-              String(first || 0))
-      .digest('base64url').slice(0, 22);
+    const digest = stsCrypto.digest('sha256',
+      String(sessionId) + '\n' + String(clientId) + '\n' +
+      String(first || 0), 'base64url').slice(0, 22);
     log.debug("Leaving BackchannelLogout.deliveryIdFor().");
     return digest;
   }

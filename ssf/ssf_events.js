@@ -84,7 +84,6 @@
 // harvest-now-decrypt-later argument is actually about.
 // ---------------------------------------------------------------------------
 
-const nodeCrypto = require('crypto');
 const { log, signJwtAs, signJwtAsAsync, randomId, nowSec, allSigningKeys,
   STS, kidNamesKey } = require('../common/helpers');
 const config = require('../common/config');
@@ -2057,7 +2056,7 @@ function publicKeyForHeader(header) {
     // the certificate this service publishes for it.
     try {
       log.debug('Leaving publicKeyForHeader(). The service RSA key.');
-      return { key: nodeCrypto.createPublicKey(ownRsa.certPem), pq: false };
+      return { key: stsCrypto.publicKeyOf(ownRsa.certPem), pq: false };
     } catch (e) {
       log.debug('Leaving publicKeyForHeader(). The certificate would not ' +
                 'load: ' + e.message);
@@ -2081,8 +2080,7 @@ function publicKeyForHeader(header) {
   }
   try {
     log.debug('Leaving publicKeyForHeader(). ' + found.alg + '.');
-    return { key: nodeCrypto.createPublicKey({ key: found.publicJwk,
-      format: 'jwk' }), pq: false };
+    return { key: stsCrypto.publicKeyFromJwk(found.publicJwk), pq: false };
   } catch (e) {
     log.debug('Leaving publicKeyForHeader(). The JWK would not load: ' +
               e.message);

@@ -101,7 +101,7 @@
 // without the root builds a default one at load.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 // WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
 // this module mints and read where it is presented. A leaf library.
 import cellLocator = require('../common/cell_locator');
@@ -368,7 +368,7 @@ class PushedRequests {
     // browser that carries it may reach another cell, whose edge relays the
     // authorization request here.
     const requestUri = REQUEST_URI_PREFIX + cellLocator.stamp(
-      crypto.randomBytes(REFERENCE_BYTES).toString('base64url'));
+      stsCrypto.randomBytes(REFERENCE_BYTES).toString('base64url'));
     const params = Object.assign({}, options.params || {});
     delete params.request;
     delete params.request_uri;

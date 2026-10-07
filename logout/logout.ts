@@ -131,7 +131,8 @@
 // operation for each control.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+// The one place this service hashes (#453).
+import crypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 
@@ -362,10 +363,7 @@ class Logout {
     const { log, crypto } = this.deps;
     log.debug("Entering Logout.handleFor().");
     log.debug("Leaving Logout.handleFor().");
-    return crypto.createHash('sha256')
-                 .update(String(secret), 'utf8')
-                 .digest('hex')
-                 .slice(0, 16);
+    return crypto.digest('sha256', String(secret), 'hex').slice(0, 16);
   }
 
   // How many rows one inventory will draw. See `logout.maxRows`: the cap is on

@@ -38,7 +38,6 @@
 
 'use strict';
 
-const crypto = require('crypto');
 // The service's shared logger when this module is loaded inside the service,
 // and a silent fallback when it is loaded ON ITS OWN — which the debugger's
 // cross-implementation test does, copying this one file next to its own
@@ -61,8 +60,11 @@ try {
   loadProblem = 'the service logger is not reachable: ' +
                 ((e && e.message) || e);
 }
-// `common/crypto.js` for base64url, and the same standalone case: without it,
-// Node's own `base64url` encoding, which is what that function wraps.
+// `common/crypto.js` for base64url, the SHA-256 of the client data and every
+// signature check (#453: every cryptographic operation of the service is
+// that file's), and the same standalone case: without it, Node's own
+// `base64url` encoding, which is what that function wraps, and node's
+// `crypto` reached by `standaloneNodeCrypto()` below.
 let stsCrypto = null;
 try {
   stsCrypto = require('../common/crypto');
@@ -392,10 +394,26 @@ function parseClientData(buf, expectedType) {
   return { json: json, text: text, typeMatches: json.type === expectedType };
 }
 
+// THE ONE PLACE THIS FILE REACHES NODE'S `crypto` ITSELF, and only when it
+// is loaded ON ITS OWN (#453): the debugger's cross-implementation test
+// stages this one file without `common/crypto.js` beside it, and a verifier
+// with no digest and no signature check could not be checked by anybody. In
+// the service `stsCrypto` is always there and this is never called, which is
+// why the require is here, inside the function, and not at the top.
+function standaloneNodeCrypto() {
+  log.debug("Entering standaloneNodeCrypto().");
+  log.debug("Leaving standaloneNodeCrypto().");
+  return require('crypto');
+}
+
 function sha256(buf) {
   log.debug("Entering sha256().");
-  log.debug("Leaving sha256().");
-  return crypto.createHash('sha256').update(buf).digest();
+  if (stsCrypto) {
+    log.debug("Leaving sha256().");
+    return stsCrypto.digest('sha256', buf);
+  }
+  log.debug("Leaving sha256(). Standalone.");
+  return standaloneNodeCrypto().createHash('sha256').update(buf).digest();
 }
 
 // Every check by name, in order, so a caller can report WHICH one failed. A
@@ -474,6 +492,7 @@ function verifyWithJwk(jwk, data, signature, allowInsecure) {
     log.debug("Leaving verifyWithJwk(). " + ok);
     return ok;
   }
+  const crypto = standaloneNodeCrypto();
   const name = COSE_ALGS[String(coseAlg)];
   const bare = Object.assign({}, jwk);
   delete bare.alg;

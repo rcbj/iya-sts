@@ -138,7 +138,7 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `Saml2Sso` takes every module this file used to require (node's
-// `zlib` and `crypto`, the XML parser, the realm and application registries,
+// `zlib`, the XML parser, the realm and application registries,
 // helpers, the SAML 2.0 builders, the SP-metadata reader, the session
 // functions of `authn.js`, the issuance gate, `mode`, this directory's four
 // libraries and the two cluster libraries) through its constructor, typed as
@@ -160,7 +160,6 @@ import zlib = require('zlib');
 import realms = require('../common/realms');
 // The other listeners SAML 2.0 is on, for its metadata (#472). A LEAF.
 import listenerMap = require('../common/listener_map');
-import crypto = require('crypto');
 import xmldom = require('@xmldom/xmldom');
 // Every signature and every cipher in this service is in one module since
 // 2026-08-27. This file signs four documents and verifies two, and xml-crypto
@@ -479,7 +478,6 @@ const CLAIM_SKEW_MS = 60 * 1000;
 interface Saml2SsoDeps {
   zlib: typeof zlib;
   realms: typeof realms;
-  crypto: typeof crypto;
   xmldom: typeof xmldom;
   stsCrypto: typeof stsCrypto;
   app: typeof app;
@@ -536,7 +534,6 @@ class Saml2Sso {
     return {
       zlib: zlib,
       realms: realms,
-      crypto: crypto,
       xmldom: xmldom,
       stsCrypto: stsCrypto,
       app: app,
@@ -918,7 +915,7 @@ class Saml2Sso {
    * @returns the segment
    */
   slugOf(identifier) {
-    const { crypto } = this.deps;
+    const { stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.slugOf().");
     const text = String(identifier == null ? '' : identifier);
@@ -927,8 +924,7 @@ class Saml2Sso {
       return text;
     }
     log.debug("Leaving Saml2Sso.slugOf().");
-    return 'app-' + crypto.createHash('sha256').update(text, 'utf8')
-      .digest('hex').slice(0, 12);
+    return 'app-' + stsCrypto.digest('sha256', text, 'hex').slice(0, 12);
   }
 
   // The entityID a path segment names, and whether this service had heard of
@@ -2129,7 +2125,7 @@ class Saml2Sso {
   // answering it with a stable username would be a lie a service provider
   // cannot detect.
   private nameIdValueFor(format, session) {
-    const { crypto, personAttributes } = this.deps;
+    const { stsCrypto, personAttributes } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.nameIdValueFor(). format=" + format);
     const username = (session.user && session.user.username) || '';
@@ -2138,10 +2134,8 @@ class Saml2Sso {
       // session get the SAME transient id, which is what a service provider
       // correlating two logins in one session expects, and a new one after
       // signing out.
-      const handle = crypto.createHash('sha256')
-        .update(String(session.id || '') + '|' + username, 'utf8')
-                           .digest('hex')
-                           .slice(0, 32);
+      const handle = stsCrypto.digest('sha256',
+        String(session.id || '') + '|' + username, 'hex').slice(0, 32);
       log.debug("Leaving Saml2Sso.nameIdValueFor(). A transient identifier.");
       return '_' + handle;
     }
@@ -2517,16 +2511,14 @@ class Saml2Sso {
   //
   // The whole 44 bytes are base64, which is what travels in `SAMLart`.
   private mintArtifact(idpEntityId, endpointIndex) {
-    const { crypto } = this.deps;
+    const { stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.mintArtifact(). idp=" + idpEntityId);
     const header = Buffer.alloc(4);
     header.writeUInt16BE(0x0004, 0);
     header.writeUInt16BE(endpointIndex || 0, 2);
-    const sourceId = crypto.createHash('sha1')
-                           .update(String(idpEntityId), 'utf8')
-                           .digest();
-    const handle = samlCells.stampHandle(crypto.randomBytes(20));
+    const sourceId = stsCrypto.samlArtifactSourceId(idpEntityId);
+    const handle = samlCells.stampHandle(stsCrypto.randomBytes(20));
     const artifact = Buffer.concat([header, sourceId,
                                     handle]).toString('base64');
     log.debug("Leaving Saml2Sso.mintArtifact(). " + artifact.length +
@@ -2540,7 +2532,7 @@ class Saml2Sso {
   // stored one, so it is not answered here — it is the unknown artifact it
   // looks like, and `resolveArtifact()` says so as it always did.
   private isForeignArtifact(artifact, scopedEntityId): boolean {
-    const { crypto } = this.deps;
+    const { stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.isForeignArtifact().");
     const bytes = Buffer.from(String(artifact || ''), 'base64');
@@ -2549,10 +2541,8 @@ class Saml2Sso {
                 "artifact.");
       return false;
     }
-    const own = crypto.createHash('sha1')
-                      .update(String(this.idpEntityIdFor(scopedEntityId)),
-                              'utf8')
-                      .digest();
+    const own = stsCrypto.samlArtifactSourceId(
+      this.idpEntityIdFor(scopedEntityId));
     const foreign = !own.equals(bytes.subarray(4, 24));
     log.debug("Leaving Saml2Sso.isForeignArtifact(). " + foreign);
     return foreign;

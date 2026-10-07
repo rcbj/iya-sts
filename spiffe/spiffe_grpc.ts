@@ -129,7 +129,7 @@ import authn = require('../authn/authn');
 // (rule 3): with no decider installed `check()` answers "allowed", so a
 // process without the XACML family behaves exactly as this file did before.
 import accessGate = require('../common/access_gate');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 // For the server's own SVID and the roots it verifies clients against. Both
 // register nothing, so neither can move a route or close a cycle.
 import spiffeId = require('./spiffe_id');
@@ -201,7 +201,7 @@ interface SpiffeGrpcDeps {
   auth: typeof auth;
   authn: typeof authn;
   accessGate: typeof accessGate;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   spiffeId: typeof spiffeId;
   ca: typeof ca;
   peer: typeof peer;
@@ -288,7 +288,7 @@ class SpiffeGrpc {
       auth: auth,
       authn: authn,
       accessGate: accessGate,
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       spiffeId: spiffeId,
       ca: ca,
       peer: peer,
@@ -747,16 +747,15 @@ class SpiffeGrpc {
    * @returns the session, or null when nobody authenticated
    */
   sessionForCaller(caller) {
-    const { log, nodeCrypto, authn, errorCodes } = this.deps;
+    const { log, stsCrypto, authn, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.sessionForCaller().');
     if (!caller || !caller.authenticated || !caller.spiffeId) {
       log.debug('Leaving SpiffeGrpc.sessionForCaller(). Nobody authenticated.');
       return null;
     }
     try {
-      const key = nodeCrypto.createHash('sha256')
-        .update('spire-server-api ' + String(caller.spiffeId))
-        .digest('hex').slice(0, 24);
+      const key = stsCrypto.digest('sha256',
+        'spire-server-api ' + String(caller.spiffeId), 'hex').slice(0, 24);
       const session = authn.startSession(
         { set: function () {}, req: null }, caller.spiffeId,
         ['swk'], '1', 'SPIRE Server API',

@@ -13407,6 +13407,1693 @@ function spkiDerOf(key) {
 }
 
 // ===========================================================================
+// SECTION 17 — THE REST OF THE SERVICE'S OPERATIONS (#453, 2026-10-07).
+//
+// rcbj's rule of 2026-10-05 again: "All crypto operations across all
+// protocols and use cases are to be centralized in a common module." Section
+// 15 gave `gnap/` what it needed; #453 moved every other feature module off
+// node's `crypto` — 130 files on the day — and these are the operations they
+// still did directly: a certificate parsed, a private key imported, a key
+// pair generated, an HMAC, a one-shot signature and its check, and the
+// SHA-1 that a handful of specifications still name. `tests/
+// crypto_centralised.js` fails on a `require('crypto')` anywhere else.
+//
+// Each takes its algorithm from a closed list, as section 15's do, so a
+// feature module cannot choose one this file has not written down.
+// ===========================================================================
+
+// SHA-1 is in no list a caller may choose from (section 15's DIGESTS). Where
+// a SPECIFICATION fixes it, the caller names which one, and the purpose is
+// the argument for it. A new purpose is a new row here, and the row says
+// which text requires it.
+/** The purposes SHA-1 is computed for, each the text that fixes it. */
+const SHA1_PURPOSES = Object.freeze({
+  // SAML 2.0 Bindings 3.6.4 and SAML 1.1 Bindings 4.1.1.7: an artifact's
+  // SourceID is the SHA-1 of the issuer's entity id (or its source URL).
+  'saml-artifact-source-id': 'SAML 2.0 Bindings 3.6.4, SAML 1.1 4.1.1.7',
+  // RFC 9562 section 5.5: a name-based UUID, version 5, is SHA-1.
+  'uuid-v5': 'RFC 9562 section 5.5',
+  // RFC 5280 section 4.2.1.2 method (1): a key identifier is the SHA-1 of
+  // the subjectPublicKey BIT STRING.
+  'key-identifier': 'RFC 5280 section 4.2.1.2',
+  // RFC 6960 section 4.1.1: an OCSP CertID's issuerNameHash and
+  // issuerKeyHash under the hash it names; SHA-1 is what every client sends.
+  'ocsp-cert-id': 'RFC 6960 section 4.1.1',
+  // RFC 5019 section 6.2 RECOMMENDS an OCSP response's ETag be the hex
+  // SHA-1 of the response. Opaque to the client, which only compares it.
+  'ocsp-etag': 'RFC 5019 section 6.2',
+  // A certificate's SHA-1 fingerprint, DRAWN for an operator comparing it
+  // with what older tooling prints. Never compared by this service.
+  'certificate-fingerprint': 'display only',
+  // SPIRE's agent path for a node attestor, which hashes with SHA-1 so the
+  // SPIFFE ID matches the one SPIRE itself mints for the same node.
+  'spire-agent-path': 'SPIRE server node attestor agent paths'
+});
+
+// HOT PATH: a certificate fingerprint is drawn per row of a console list,
+// so no Entering/Leaving pair. It would drown the log.
+/**
+ * Returns the SHA-1 of a value, for one of the purposes a specification
+ * fixes it for.
+ *
+ * @param purpose - a key of SHA1_PURPOSES
+ * @param data - the bytes, or a string read as UTF-8
+ * @param encoding - `hex`, `base64` or `base64url`; a Buffer when absent
+ * @returns {any} the digest
+ * @throws Error for a purpose not in the list
+ */
+function sha1Digest(purpose, data, encoding) {
+  if (!Object.prototype.hasOwnProperty.call(SHA1_PURPOSES, purpose)) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: sha1Digest() is for ' +
+                    Object.keys(SHA1_PURPOSES).join(', ') +
+                    ', not "' + purpose + '"');
+  }
+  const hash = nodeCrypto.createHash('sha1')
+    .update(typeof data === 'string' ? Buffer.from(data, 'utf8')
+                                     : Buffer.from(data || []));
+  return encoding ? hash.digest(encoding) : hash.digest();
+}
+
+// An HMAC, by name, over the SHA-2 functions. (HOTP's HMAC-SHA-1 is
+// `hotpCode()`'s, and RFC 4226 is its argument.)
+const HMAC_DIGESTS = ['sha256', 'sha384', 'sha512'];
+
+// HOT PATH: a CSRF token is MACed on every form drawn and posted, so no
+// Entering/Leaving pair.
+/**
+ * Returns the HMAC of a value under a key.
+ *
+ * @param algorithm - `sha256`, `sha384` or `sha512`
+ * @param key - the key: bytes, a string, or a secret KeyObject
+ * @param data - the bytes, or a string read as UTF-8
+ * @param encoding - `hex`, `base64` or `base64url`; a Buffer when absent
+ * @returns {any} the MAC
+ * @throws Error for an algorithm outside the list
+ */
+function hmac(algorithm, key, data, encoding) {
+  if (HMAC_DIGESTS.indexOf(algorithm) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: hmac() uses ' + HMAC_DIGESTS.join(', ') +
+                    ', not "' + algorithm + '"');
+  }
+  const mac = nodeCrypto.createHmac(algorithm, key)
+    .update(typeof data === 'string' ? Buffer.from(data, 'utf8')
+                                     : Buffer.from(data || []));
+  return encoding ? mac.digest(encoding) : mac.digest();
+}
+
+// HOT PATH: a presented client certificate is parsed on every request over
+// mutual TLS, and a console page parses one per row, so no Entering/Leaving
+// pair. It throws exactly what node's constructor throws, because every
+// caller already handles that.
+/**
+ * Parses a certificate.
+ *
+ * @param input - PEM text, DER bytes, or an already parsed certificate
+ * @returns the X509Certificate
+ * @throws Error when the input is not a certificate
+ */
+function parseCertificate(input) {
+  if (input instanceof nodeCrypto.X509Certificate) {
+    return input;
+  }
+  return new nodeCrypto.X509Certificate(input);
+}
+
+/**
+ * Answers whether a value is a parsed certificate.
+ *
+ * @param value - anything
+ * @returns true for an X509Certificate
+ */
+function isParsedCertificate(value) {
+  return value instanceof nodeCrypto.X509Certificate;
+}
+
+/**
+ * Imports a private key.
+ *
+ * @param input - anything node's `createPrivateKey()` takes: a PEM, a
+ *   `{ key, format, type }` object, a private JWK as `{ key, format: 'jwk' }`,
+ *   or a private KeyObject (returned as it is)
+ * @returns the private KeyObject
+ * @throws Error when the input is not a private key
+ */
+function privateKeyFrom(input) {
+  log.debug("Entering privateKeyFrom().");
+  const key = input && input.type === 'private' &&
+              input instanceof nodeCrypto.KeyObject
+    ? input
+    : nodeCrypto.createPrivateKey(input);
+  log.debug("Leaving privateKeyFrom().");
+  return key;
+}
+
+/**
+ * Answers whether a value is a key object (public, private or secret).
+ *
+ * @param value - anything
+ * @returns true for a KeyObject
+ */
+function isKeyObject(value) {
+  return value instanceof nodeCrypto.KeyObject;
+}
+
+// The kinds of key pair a caller may generate here. ML-DSA and ML-KEM are
+// `pq_native.js`'s and `generateSigningJwkPair()`'s; DSA and plain DH are
+// not on the list, and PKINIT's groups are section 16's.
+const KEY_PAIR_TYPES = ['rsa', 'rsa-pss', 'ec', 'ed25519', 'ed448',
+                        'x25519', 'x448'];
+
+/**
+ * Refuses a key pair type outside KEY_PAIR_TYPES.
+ *
+ * @param type - the type asked for
+ * @throws Error for a type outside the list
+ */
+function checkKeyPairType(type) {
+  if (KEY_PAIR_TYPES.indexOf(type) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: a key pair is one of ' +
+                    KEY_PAIR_TYPES.join(', ') + ', not "' + type + '"');
+  }
+}
+
+/**
+ * Generates a key pair synchronously.
+ *
+ * @param type - one of KEY_PAIR_TYPES
+ * @param options - node's options for that type (modulusLength,
+ *   namedCurve, publicKeyEncoding, privateKeyEncoding, ...)
+ * @returns {any} `{ publicKey, privateKey }`, KeyObjects or encoded as the
+ *   options ask
+ */
+function generateKeyPairSync(type, options) {
+  log.debug("Entering generateKeyPairSync(). " + type);
+  checkKeyPairType(type);
+  const pair = nodeCrypto.generateKeyPairSync(
+    /** @type {any} */ (type), /** @type {any} */ (options || {}));
+  log.debug("Leaving generateKeyPairSync().");
+  return pair;
+}
+
+// libuv's thread pool rather than this thread: an RSA key of 3072 bits or
+// more takes long enough to stall every request behind it.
+/**
+ * Generates a key pair on libuv's thread pool.
+ *
+ * @param type - one of KEY_PAIR_TYPES
+ * @param options - as for `generateKeyPairSync()`
+ * @returns {Promise<any>} a promise of `{ publicKey, privateKey }`
+ */
+function generateKeyPairAsync(type, options) {
+  log.debug("Entering generateKeyPairAsync(). " + type);
+  checkKeyPairType(type);
+  log.debug("Leaving generateKeyPairAsync().");
+  return new Promise(function (resolve, reject) {
+    nodeCrypto.generateKeyPair(/** @type {any} */ (type),
+      /** @type {any} */ (options || {}),
+      function (err, publicKey, privateKey) {
+        if (err) {
+          log.debug("Caught in generateKeyPairAsync(): " +
+                    ((err && err.message) || err));
+          reject(err);
+          return;
+        }
+        resolve({ publicKey: publicKey, privateKey: privateKey });
+      });
+  });
+}
+
+// The hashes a one-shot signature is made under (`null` for EdDSA and
+// ML-DSA, whose algorithms fix their own), and the wider list one is
+// CHECKED under: SHA-1 is verified where a peer's protocol still sends it
+// (WebAuthn's RS1, a SCEP client's PKCS#7) and this service never signs
+// with it.
+const SIGN_HASHES = [null, 'sha256', 'sha384', 'sha512'];
+const VERIFY_HASHES = [null, 'sha1', 'sha256', 'sha384', 'sha512'];
+
+/**
+ * Normalises and checks a one-shot signature's hash name.
+ *
+ * @param hash - the name, or null/undefined
+ * @param allowed - the list it must be in
+ * @returns the name, or null
+ * @throws Error for a name outside the list
+ */
+function signatureHash(hash, allowed) {
+  const name = hash === undefined || hash === null || hash === ''
+    ? null
+    : String(hash).toLowerCase().replace(/^sha-/, 'sha');
+  if (allowed.indexOf(name) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    // or a hash it has already matched against a table of its own
+    throw new Error('crypto: a signature hash is one of ' +
+                    allowed.join(', ') + ', not "' + hash + '"');
+  }
+  return name;
+}
+
+// HOT PATH: signatures are made per token and per response, so no
+// Entering/Leaving pair. It is node's `crypto.sign()` with the hash checked.
+/**
+ * Signs bytes with a private key (node's one-shot `sign()`).
+ *
+ * @param hash - `sha256`, `sha384`, `sha512`, or null for EdDSA and ML-DSA
+ * @param data - the bytes
+ * @param key - a private KeyObject, a PEM, or `{ key, dsaEncoding,
+ *   padding, saltLength }`
+ * @returns the signature
+ * @throws Error for a hash outside the list, or what node throws
+ */
+function signBytes(hash, data, key) {
+  return nodeCrypto.sign(signatureHash(hash, SIGN_HASHES),
+    Buffer.from(data), key);
+}
+
+// HOT PATH, as signBytes(). It throws what node throws for an unusable key,
+// which is what every caller was written against.
+/**
+ * Checks a signature over bytes (node's one-shot `verify()`).
+ *
+ * @param hash - as for signBytes(), and `sha1`
+ * @param data - the bytes signed
+ * @param key - a public KeyObject, a PEM, or `{ key, dsaEncoding,
+ *   padding, saltLength }`
+ * @param signature - the signature
+ * @returns true when it verifies
+ * @throws Error for a hash outside the list, or what node throws
+ */
+function signatureValid(hash, data, key, signature) {
+  return nodeCrypto.verify(signatureHash(hash, VERIFY_HASHES),
+    Buffer.from(data), key, Buffer.from(signature));
+}
+
+/**
+ * Answers whether this build of node computes a named digest.
+ *
+ * @param name - node's name for it
+ * @returns true when it does
+ */
+function digestSupported(name) {
+  log.debug("Entering digestSupported(). " + name);
+  const yes = nodeCrypto.getHashes().indexOf(String(name)) >= 0;
+  log.debug("Leaving digestSupported().");
+  return yes;
+}
+
+/** The OpenSSL option that refuses TLS renegotiation on a server socket. */
+const TLS_NO_RENEGOTIATION = nodeCrypto.constants.SSL_OP_NO_RENEGOTIATION;
+
+// ---------------------------------------------------------------------------
+// #453 SWEEP GROUP REGIONS. Each group of the sweep added what it needed
+// between its own two markers, so the groups merged without touching one
+// another's lines.
+// ---------------------------------------------------------------------------
+
+// --- #453 group A (gnap token libraries): begin ---
+
+// ===========================================================================
+// GNAP'S THREE TOKEN LIBRARIES, HELD HERE AND NOWHERE ELSE (#453, rcbj's
+// decision of 2026-10-05).
+//
+// The `macaroon`, `biscuit` and `zcap` GNAP token formats each sit on a
+// library that does its format's cryptography: `macaroon` (the HMAC-SHA256
+// caveat chain), `@biscuit-auth/biscuit-wasm` (Ed25519 block signatures,
+// inside WebAssembly) and `jsonld-signatures` with the Digital Bazaar ZCAP
+// and Ed25519 packages. Until #453 `gnap/token_*.ts` required them directly.
+// Now THIS FILE is the only module that requires any of them, and what
+// `gnap/` keeps is the format's grammar — the caveat grammar and the access
+// model of a macaroon, the Datalog of a biscuit, the capability document of
+// a zcap — handed in here as data or as a callback that builds data.
+//
+// **WHAT WRAPPING DOES NOT CHANGE: the macaroon and biscuit computations are
+// still the libraries' own.** The macaroon library has no hook for supplying
+// the HMAC, and the biscuit engine none for an external Ed25519 signer, so
+// both still compute inside the library. What moved is where KEYS are
+// handled (a root key is checked and a KeyObject turned into the library's
+// key object here, so `gnap/` never holds the library's key types), where
+// the algorithms and key sizes are decided (`MACAROON_MIN_ROOT_KEY_BYTES`,
+// Ed25519 for a biscuit), and who may call the library at all. Reimplementing
+// a format's cryptography here stays a later option (most worth it for the
+// macaroon's small HMAC chain).
+//
+// **THE ZCAP COMPATIBILITY SUITE IS THE EXCEPTION, AND THE SIGNATURE IS
+// MADE HERE.** `Ed25519Signature2020` takes a `signer` (`sign({ data })`)
+// and a `verifier` (`verify({ data, signature })`) in place of a key pair —
+// confirmed against the installed `@digitalbazaar/ed25519-signature-2020`
+// 5.4.0, whose `sign()` calls `this.signer.sign({ data: verifyData })` and
+// whose `verifySignature()` uses `this.verifier` when one is set. So the
+// library only canonicalises (URDNA2015) and hashes, and the Ed25519
+// signature over its bytes is `signRawSignature()` / `verifyRawSignature()`
+// here: the private key never reaches the library. Ed25519 is
+// deterministic, so a capability signed this way is BYTE-IDENTICAL to one
+// the library signed with the key pair it used to be handed (probed on
+// 2026-10-07: the same JSON, and the same answers for a good proof, an
+// altered capability and a proof naming another key).
+//
+// The three JCS suites (`eddsa-jcs-2022` and the two post-quantum ones) were
+// already made and checked by `oid4vc/vc_data_integrity.ts` through this
+// file, wrapped by `gnap/token_zcap.ts` in a jsonld-signatures suite object.
+// That stays: REUSING it is the alternative #453 asked to be checked, and it
+// is the one that keeps those tokens byte-compatible, because it IS the
+// implementation that made them. This file may not require it (a leaf), so
+// `token_zcap.ts` builds that suite object and hands it in; jsonld-signatures
+// hands a `-jcs-` proof to the suite untouched, so here it only runs the
+// ZCAP purpose (chain, root, controller) around it.
+//
+// Every library is loaded LAZILY, once, by the first call that needs it —
+// never when this file is required — so a process that never sees a GNAP
+// token pays nothing. A failed load is forgotten so a later call may try
+// again (a file briefly unreadable during a deploy should not disable a
+// format for the life of the process).
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// MACAROONS (`macaroon` 3, libmacaroons v2).
+// ---------------------------------------------------------------------------
+
+/** The shortest macaroon root key accepted, in bytes. */
+const MACAROON_MIN_ROOT_KEY_BYTES = 32;
+
+/** @type {any} */
+let macaroonLibrary = null;
+
+// The npm `macaroon` package, required at the first use.
+function macaroonLib() {
+  log.debug("Entering macaroonLib().");
+  if (!macaroonLibrary) {
+    macaroonLibrary = require('macaroon');
+  }
+  log.debug("Leaving macaroonLib().");
+  return macaroonLibrary;
+}
+
+/**
+ * Answers whether a value is a usable macaroon root key: bytes, at least
+ * `MACAROON_MIN_ROOT_KEY_BYTES` long.
+ *
+ * @param rootKey - the candidate
+ * @returns true when it is usable
+ */
+function macaroonRootKeyUsable(rootKey) {
+  log.debug("Entering macaroonRootKeyUsable().");
+  const ok = rootKey instanceof Uint8Array &&
+    rootKey.length >= MACAROON_MIN_ROOT_KEY_BYTES;
+  log.debug("Leaving macaroonRootKeyUsable(). " + ok);
+  return ok;
+}
+
+// A library macaroon as plain data — what the v2 serialiser in
+// `gnap/token_macaroon.ts` reads — so the library's object never leaves
+// this file. The getters already copy, so nothing here aliases its state.
+function macaroonView(mac) {
+  log.debug("Entering macaroonView().");
+  const view = {
+    location: mac.location,
+    identifier: mac.identifier,
+    caveats: mac.caveats,
+    signature: mac.signature
+  };
+  log.debug("Leaving macaroonView().");
+  return view;
+}
+
+/**
+ * Mints a version 2 macaroon: an identifier and first-party caveats chained
+ * under HMAC-SHA256 from a root key.
+ *
+ * @param rootKey - the root key, at least `MACAROON_MIN_ROOT_KEY_BYTES`
+ * @param identifier - the macaroon's identifier
+ * @param location - its location hint
+ * @param caveats - the first-party caveats, in order
+ * @returns `{ location, identifier, caveats, signature }`
+ * @throws Error for an unusable root key, or what the library throws
+ */
+function macaroonMint(rootKey, identifier, location, caveats) {
+  log.debug("Entering macaroonMint(). " + (caveats || []).length +
+            " caveat(s).");
+  if (!macaroonRootKeyUsable(rootKey)) {
+    log.debug("Leaving macaroonMint(). Root key unusable.");
+    // error-code: none — the caller checks macaroonRootKeyUsable() first
+    // and refuses with its own code; this is the backstop
+    throw new Error('a macaroon root key must be at least ' +
+                    MACAROON_MIN_ROOT_KEY_BYTES + ' bytes');
+  }
+  const mac = macaroonLib().newMacaroon({
+    identifier: identifier,
+    location: location,
+    rootKey: rootKey,
+    version: 2
+  });
+  (caveats || []).forEach(function (c) {
+    mac.addFirstPartyCaveat(c);
+  });
+  const view = macaroonView(mac);
+  log.debug("Leaving macaroonMint().");
+  return view;
+}
+
+/**
+ * Reads a libmacaroons v2 binary macaroon WITHOUT verifying it.
+ *
+ * @param bytes - the serialised macaroon
+ * @returns `{ location, identifier, caveats, signature }`
+ * @throws Error when the bytes are not a v2 macaroon (the library's text)
+ */
+function macaroonImport(bytes) {
+  log.debug("Entering macaroonImport().");
+  const view = macaroonView(
+      macaroonLib().importMacaroon(new Uint8Array(bytes)));
+  log.debug("Leaving macaroonImport().");
+  return view;
+}
+
+/**
+ * Verifies a macaroon's HMAC chain under its root key. Every first-party
+ * caveat is accepted while the chain is walked: what a caveat MEANS is the
+ * caller's grammar, read once the chain is known to be good.
+ *
+ * @param bytes - the serialised macaroon
+ * @param rootKey - the root key
+ * @returns true when the chain verifies
+ */
+function macaroonVerify(bytes, rootKey) {
+  log.debug("Entering macaroonVerify().");
+  if (!macaroonRootKeyUsable(rootKey)) {
+    log.debug("Leaving macaroonVerify(). Root key unusable.");
+    return false;
+  }
+  try {
+    macaroonLib().importMacaroon(new Uint8Array(bytes))
+      .verify(rootKey, function () {
+        return null;
+      }, []);
+  } catch (e) {
+    log.debug("Caught in macaroonVerify(): " + ((e && e.message) || e));
+    log.debug("Leaving macaroonVerify(). The chain does not verify.");
+    return false;
+  }
+  log.debug("Leaving macaroonVerify(). Verified.");
+  return true;
+}
+
+/**
+ * Appends first-party caveats to a macaroon: the attenuation anybody holding
+ * one can make, keyed by its current signature and needing no root key.
+ *
+ * @param bytes - the serialised macaroon
+ * @param caveats - the caveats to append, in order
+ * @returns `{ location, identifier, caveats, signature }` of the result
+ * @throws Error when the bytes are not a v2 macaroon, or what the library
+ *   throws
+ */
+function macaroonAttenuate(bytes, caveats) {
+  log.debug("Entering macaroonAttenuate(). " + (caveats || []).length +
+            " caveat(s).");
+  const mac = macaroonLib().importMacaroon(new Uint8Array(bytes)).clone();
+  (caveats || []).forEach(function (c) {
+    mac.addFirstPartyCaveat(c);
+  });
+  const view = macaroonView(mac);
+  log.debug("Leaving macaroonAttenuate().");
+  return view;
+}
+
+// ---------------------------------------------------------------------------
+// ZCAP-LD DELEGATIONS (`@digitalbazaar/zcap`, `jsonld-signatures`, and the
+// Ed25519 2020 suite and key class). The ZCAP and Ed25519 packages are ES
+// modules, loaded by dynamic import; `import()` stays a real dynamic import
+// in this CommonJS file.
+// ---------------------------------------------------------------------------
+
+/** The compatibility proof suite, signed and verified here. */
+const ZCAP_LEGACY_SUITE = 'Ed25519Signature2020';
+const ZCAP_SUITE_CONTEXT_URL =
+  'https://w3id.org/security/suites/ed25519-2020/v1';
+const ZCAP_SECURITY_V2_URL = 'https://w3id.org/security/v2';
+
+/** @type {Promise<any> | null} */
+let zcapLoading = null;
+
+// The libraries, once. A failure clears the promise so a later call may try
+// again.
+function zcapLibraries() {
+  log.debug("Entering zcapLibraries().");
+  if (!zcapLoading) {
+    zcapLoading = Promise.all([
+      import('@digitalbazaar/zcap'),
+      import('@digitalbazaar/ed25519-signature-2020'),
+      import('@digitalbazaar/ed25519-verification-key-2020')
+    ]).then(function (/** @type {any[]} */ mods) {
+      const security = require('@digitalbazaar/security-context');
+      return {
+        jsigs: require('jsonld-signatures'),
+        zcap: mods[0],
+        Ed25519Signature2020: mods[1].Ed25519Signature2020,
+        suiteContext: mods[1].suiteContext,
+        Ed25519VerificationKey2020: mods[2].Ed25519VerificationKey2020,
+        securityContexts: security.contexts
+      };
+    }).catch(function (e) {
+      log.debug("Caught in zcapLibraries(): " + ((e && e.message) || e));
+      zcapLoading = null;
+      throw e;
+    });
+  }
+  log.debug("Leaving zcapLibraries().");
+  return zcapLoading;
+}
+
+/**
+ * Loads the ZCAP libraries, once, so a caller can refuse a load failure in
+ * its own words before it does anything else.
+ *
+ * @returns a promise that rejects with the load's error
+ */
+async function zcapReady() {
+  log.debug("Entering zcapReady().");
+  await zcapLibraries();
+  log.debug("Leaving zcapReady().");
+}
+
+// An Ed25519VerificationKey2020 for a public KeyObject — the library's key
+// class, built from the key's JWK `x` and never leaving this file.
+async function zcapPublicPair(lib, keyId, controller, publicKey) {
+  log.debug("Entering zcapPublicPair().");
+  const jwk = publicKey.export({ format: 'jwk' });
+  const pair = await lib.Ed25519VerificationKey2020.fromJsonWebKey({
+    id: keyId, controller: controller, type: 'JsonWebKey',
+    publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }
+  });
+  log.debug("Leaving zcapPublicPair().");
+  return pair;
+}
+
+/**
+ * The Ed25519VerificationKey2020 verification method a compatibility-suite
+ * controller document lists for a key.
+ *
+ * @param keyId - the method's id, `<controller>#<fragment>`
+ * @param controller - the controller document's URL
+ * @param publicKey - an Ed25519 public KeyObject
+ * @returns the method, without a `@context`
+ */
+async function zcapVerificationMethod(keyId, controller, publicKey) {
+  log.debug("Entering zcapVerificationMethod().");
+  const lib = await zcapLibraries();
+  const pair = await zcapPublicPair(lib, keyId, controller, publicKey);
+  const method = pair.export({ publicKey: true, includeContext: false });
+  log.debug("Leaving zcapVerificationMethod().");
+  return method;
+}
+
+// THE SIGNER AND THE VERIFIER THE COMPATIBILITY SUITE IS HANDED (see the
+// header): the library canonicalises, this file signs and checks.
+function zcapEd25519Signer(keyId, privateKey) {
+  log.debug("Entering zcapEd25519Signer().");
+  log.debug("Leaving zcapEd25519Signer().");
+  return {
+    id: keyId,
+    algorithm: 'Ed25519',
+    sign: async function sign(/** @type {any} */ options) {
+      log.debug("Entering sign().");
+      const out = signRawSignature({ family: 'eddsa' }, privateKey,
+                                   options.data);
+      log.debug("Leaving sign().");
+      return new Uint8Array(out);
+    }
+  };
+}
+
+function zcapEd25519Verifier(keyId, publicKey) {
+  log.debug("Entering zcapEd25519Verifier().");
+  log.debug("Leaving zcapEd25519Verifier().");
+  return {
+    id: keyId,
+    algorithm: 'Ed25519',
+    verify: async function verify(/** @type {any} */ options) {
+      log.debug("Entering verify().");
+      const ok = await verifyRawSignature({ family: 'eddsa' }, publicKey,
+                                          options.data, options.signature);
+      log.debug("Leaving verify(). " + ok);
+      return ok;
+    }
+  };
+}
+
+// THE OFFLINE DOCUMENT LOADER. Nothing is fetched: it serves the ONE root
+// capability `rootTarget` derives, the ZCAP context (the zcap package's own
+// loader) and — for the compatibility suite only — that suite's context,
+// security v2 (jsonld-signatures FRAMES a non-DID controller document with
+// it), the controller document and the one verification method. Any other
+// URL throws, so a proof naming another key or a chain to another root is a
+// load failure and so a verification failure. A JCS suite needs none of the
+// compatibility documents: its signature is not over JSON-LD and its
+// controller document is handed to the purpose.
+function zcapLoader(lib, rootController, rootTarget, legacy) {
+  log.debug("Entering zcapLoader().");
+  const root = lib.zcap.createRootCapability({
+    controller: rootController, invocationTarget: rootTarget });
+  function answer(documentUrl, document) {
+    log.debug("Entering answer().");
+    log.debug("Leaving answer().");
+    return { contextUrl: null, documentUrl: documentUrl, document: document,
+             tag: 'static' };
+  }
+  log.debug("Leaving zcapLoader().");
+  return lib.zcap.extendDocumentLoader(async function offlineLoader(
+      /** @type {string} */ documentUrl) {
+    log.debug("Entering offlineLoader().");
+    if (legacy) {
+      if (documentUrl === ZCAP_SUITE_CONTEXT_URL) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl,
+                      lib.suiteContext.contexts.get(ZCAP_SUITE_CONTEXT_URL));
+      }
+      if (documentUrl === ZCAP_SECURITY_V2_URL) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl,
+                      lib.securityContexts.get(ZCAP_SECURITY_V2_URL));
+      }
+      if (documentUrl === legacy.controller) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl, legacy.controllerDocument);
+      }
+      if (documentUrl === legacy.keyId) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl,
+                      legacy.pair.export({ publicKey: true,
+                                           includeContext: true }));
+      }
+    }
+    if (documentUrl === root.id) {
+      log.debug("Leaving offlineLoader().");
+      return answer(documentUrl, root);
+    }
+    log.debug("Leaving offlineLoader().");
+    throw new Error('the offline ZCAP document loader serves no document ' +
+                    'at ' + documentUrl);
+  });
+}
+
+/**
+ * Signs a capability as ONE ZCAP delegation from the root capability its
+ * `invocationTarget` derives, which `controller` controls.
+ *
+ * `options`: `cryptosuite`; `controller` and `keyId`; and either, for
+ * `Ed25519Signature2020`, `privateKey` (an Ed25519 KeyObject), `date` and
+ * `controllerDocument` (served by the offline loader), or, for a JCS suite,
+ * `suite` — the caller's jsonld-signatures suite object, which makes the
+ * proof through `oid4vc/vc_data_integrity.ts`.
+ *
+ * @param capability - the unsigned capability
+ * @param options - as above
+ * @returns a promise of the signed capability
+ * @throws Error (rejects) with the libraries' reason when they refuse
+ */
+async function zcapDelegate(capability, options) {
+  const o = options || {};
+  log.debug("Entering zcapDelegate(). " + o.cryptosuite);
+  const lib = await zcapLibraries();
+  let suite;
+  let legacy = null;
+  if (o.cryptosuite === ZCAP_LEGACY_SUITE) {
+    legacy = {
+      controller: o.controller, keyId: o.keyId,
+      controllerDocument: o.controllerDocument,
+      pair: await zcapPublicPair(lib, o.keyId, o.controller,
+                                 nodeCrypto.createPublicKey(o.privateKey))
+    };
+    suite = new lib.Ed25519Signature2020({
+      signer: zcapEd25519Signer(o.keyId, o.privateKey), date: o.date });
+  } else {
+    suite = o.suite;
+  }
+  const signed = await lib.jsigs.sign(capability, {
+    suite: suite,
+    purpose: new lib.zcap.CapabilityDelegation(
+        { parentCapability: capability.parentCapability }),
+    documentLoader: zcapLoader(lib, o.controller,
+                               capability.invocationTarget, legacy)
+  });
+  log.debug("Leaving zcapDelegate().");
+  return signed;
+}
+
+/**
+ * Verifies a capability's delegation proof: one link from the root
+ * capability `rootTarget` derives, controlled by `controller`.
+ *
+ * `options`: `cryptosuite`; `controller`, `keyId`, `controllerDocument`;
+ * `rootTarget`, `expectedRootCapability`, `date`; and `publicKey` (an
+ * Ed25519 KeyObject) for `Ed25519Signature2020`, or `suite` for a JCS suite.
+ * The compatibility suite's controller document is LOADED (from the offline
+ * loader); a JCS suite's is handed to the purpose.
+ *
+ * @param doc - the capability
+ * @param options - as above
+ * @returns a promise of jsonld-signatures' `{ verified, error }`; a throw
+ *   is answered as `{ verified: false, error }`
+ */
+async function zcapVerifyDelegation(doc, options) {
+  const o = options || {};
+  log.debug("Entering zcapVerifyDelegation(). " + o.cryptosuite);
+  let result;
+  try {
+    const lib = await zcapLibraries();
+    let verifyOptions;
+    if (o.cryptosuite === ZCAP_LEGACY_SUITE) {
+      const legacy = {
+        controller: o.controller, keyId: o.keyId,
+        controllerDocument: o.controllerDocument,
+        pair: await zcapPublicPair(lib, o.keyId, o.controller, o.publicKey)
+      };
+      verifyOptions = {
+        suite: new lib.Ed25519Signature2020({
+          verifier: zcapEd25519Verifier(o.keyId, o.publicKey) }),
+        purpose: new lib.zcap.CapabilityDelegation({
+          expectedRootCapability: o.expectedRootCapability,
+          allowTargetAttenuation: true,
+          date: o.date
+        }),
+        documentLoader: zcapLoader(lib, o.controller, o.rootTarget, legacy)
+      };
+    } else {
+      verifyOptions = {
+        suite: o.suite,
+        purpose: new lib.zcap.CapabilityDelegation({
+          expectedRootCapability: o.expectedRootCapability,
+          allowTargetAttenuation: true,
+          date: o.date,
+          controller: o.controllerDocument
+        }),
+        documentLoader: zcapLoader(lib, o.controller, o.rootTarget, null)
+      };
+    }
+    result = await lib.jsigs.verify(doc, verifyOptions);
+  } catch (e) {
+    log.debug("Caught in zcapVerifyDelegation(): " + ((e && e.message) || e));
+    // jsigs reports through `result`; a throw is malformed input it could
+    // not even start on, which is the same answer for the caller.
+    result = { verified: false, error: e };
+  }
+  log.debug("Leaving zcapVerifyDelegation(). " +
+            !!(result && result.verified));
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// BISCUITS (`@biscuit-auth/biscuit-wasm`, Biscuit v3).
+//
+// THE LOADER, AND WHY IT IS NOT `require()`. The package is built with
+// wasm-pack's `bundler` target: its entry point is `import * as wasm from
+// "./biscuit_bg.wasm"`, which only a bundler resolves, and its exports map
+// has an `import` condition and nothing else, so `require()` and `import()`
+// of the package both fail in node. `biscuitInstantiate()` does what a
+// bundler would: compile `module/biscuit_bg.wasm`, build the import object
+// by importing every module `WebAssembly.Module.imports()` names (relative
+// to `module/`), instantiate, hand the instance to the glue with
+// `__wbg_set_wasm()` and call `__wbindgen_start()`. The package directory is
+// found by walking this file's own `module.paths`, as `require` would,
+// because the exports map hides `package.json` from `require.resolve`; from
+// `common/` that reaches the package root's `node_modules`.
+//
+// WHY THE WHOLE LOADER MOVED HERE rather than only the key handling: the
+// handle the loader produces IS the library — the key classes, the token
+// parser and the builders are all members of it — so a loader left in
+// `gnap/` would be a second holder of the library and a second place keys
+// could be turned into its key objects. What stays in `gnap/token_biscuit.ts`
+// is everything that is not the library: the Datalog it writes and the
+// queries it reads the model back with, handed in as source, parameters and
+// rule text. The library's objects (tokens, authorizers, builders) are made,
+// used and FREED here, inside one call each.
+//
+// `__wbindgen_start()` prints "biscuit-wasm loading" through `console.log`.
+// It is synchronous, so `console.log` is replaced for exactly that call and
+// put back in a `finally`; the line goes to the debug log instead of stdout.
+//
+// **Load the module once per process**: a second instance in the same
+// process is not supported, which is one more reason there is one holder.
+// ---------------------------------------------------------------------------
+
+const BISCUIT_PACKAGE = '@biscuit-auth/biscuit-wasm';
+
+// The run limits of the priming evaluation below — `gnap/token_biscuit.ts`'s
+// LIMITS, the bound on every real evaluation, which it passes on each call.
+// The prime's answer is discarded, so these only bound its cost.
+const BISCUIT_PRIME_LIMITS = { max_facts: 10000, max_iterations: 100,
+                               max_time_micro: 250000 };
+
+/** @type {Promise<any> | null} */
+let biscuitLoading = null;
+
+// Where the package is installed, walking the directories `require` would.
+function biscuitPackageDir() {
+  log.debug("Entering biscuitPackageDir().");
+  const fs = require('fs');
+  const path = require('path');
+  // `module` is typed as this file's exports by the checker; its `paths`
+  // are node's, the node_modules directories `require` walks from here.
+  const dirs = /** @type {any} */ (module).paths || [];
+  for (let i = 0; i < dirs.length; i++) {
+    const candidate = path.join(dirs[i], BISCUIT_PACKAGE);
+    if (fs.existsSync(path.join(candidate, 'package.json'))) {
+      log.debug("Leaving biscuitPackageDir().");
+      return candidate;
+    }
+  }
+  log.debug("Leaving biscuitPackageDir(). Not installed.");
+  return null;
+}
+
+// THE FIRST RULE-APPLYING EVALUATION AFTER LOAD, ABSORBED HERE (#432,
+// 2026-10-03). The library's first evaluation that applies a rule can be
+// refused on its run limits whatever the budget; later ones measure
+// correctly. So the load runs ONE throwaway evaluation that applies a rule,
+// before any token is judged, and discards its answer. The limits are not
+// raised: no budget changes the first answer, and every later evaluation is
+// bounded as before, so the bound on a hostile block stands.
+function biscuitPrime(bg) {
+  log.debug("Entering biscuitPrime().");
+  /** @type {any} */
+  let authorizer = null;
+  try {
+    const builder = new bg.AuthorizerBuilder();
+    builder.addCode('prime(1); primed($x) <- prime($x); allow if true;');
+    authorizer = builder.buildUnauthenticated();
+    authorizer.authorizeWithLimits(BISCUIT_PRIME_LIMITS);
+    log.debug("Leaving biscuitPrime(). It did not time out this time.");
+  } catch (e) {
+    // Expected: the first evaluation may be refused (see above). Anything
+    // else is logged and left — the evaluations that matter report their
+    // own refusals.
+    log.debug("Caught in biscuitPrime(): " + biscuitErrorText(e));
+    log.debug("Leaving biscuitPrime(). Primed.");
+  } finally {
+    if (authorizer) {
+      authorizer.free();
+    }
+  }
+}
+
+// The library's errors are plain objects; a string for the debug log.
+function biscuitErrorText(e) {
+  log.debug("Entering biscuitErrorText().");
+  if (e instanceof Error) {
+    log.debug("Leaving biscuitErrorText().");
+    return e.message;
+  }
+  try {
+    log.debug("Leaving biscuitErrorText().");
+    return JSON.stringify(e);
+  } catch (err) {
+    log.debug("Caught in biscuitErrorText(): " +
+              ((err && err.message) || err));
+    log.debug("Leaving biscuitErrorText().");
+    // A cyclic or exotic value: String() is the best available description.
+    return String(e);
+  }
+}
+
+async function biscuitInstantiate() {
+  log.debug("Entering biscuitInstantiate().");
+  const fs = require('fs');
+  const path = require('path');
+  const url = require('url');
+  const dir = biscuitPackageDir();
+  if (!dir) {
+    log.debug("Leaving biscuitInstantiate(). Package not installed.");
+    throw new Error(BISCUIT_PACKAGE + ' is not installed');
+  }
+  const moduleDir = path.join(dir, 'module');
+  /** @type {any} */
+  const wasmBytes = fs.readFileSync(path.join(moduleDir, 'biscuit_bg.wasm'));
+  const compiled = await WebAssembly.compile(wasmBytes);
+  /** @type {Record<string, any>} */
+  const imports = {};
+  const wanted = WebAssembly.Module.imports(compiled);
+  for (let i = 0; i < wanted.length; i++) {
+    const name = wanted[i].module;
+    if (!imports[name]) {
+      imports[name] = await import(url.pathToFileURL(
+          path.join(moduleDir, name)).href);
+    }
+  }
+  const bg = imports['./biscuit_bg.js'];
+  if (!bg || typeof bg.__wbg_set_wasm !== 'function') {
+    log.debug("Leaving biscuitInstantiate(). Glue module not found.");
+    throw new Error('the biscuit glue module ./biscuit_bg.js was not ' +
+                    'among the WASM imports');
+  }
+  const instance = await WebAssembly.instantiate(compiled, imports);
+  /** @type {any} */
+  const exported = instance.exports;
+  bg.__wbg_set_wasm(exported);
+  if (typeof exported.__wbindgen_start === 'function') {
+    const original = console.log;
+    console.log = function () {
+      log.debug('biscuit-wasm: ' + Array.prototype.join.call(arguments, ' '));
+    };
+    try {
+      exported.__wbindgen_start();
+    } finally {
+      console.log = original;
+    }
+  }
+  biscuitPrime(bg);
+  log.debug("Leaving biscuitInstantiate(). Loaded.");
+  return bg;
+}
+
+// The one lazy load, shared by every call; a failure allows a new attempt.
+function biscuitLibrary() {
+  log.debug("Entering biscuitLibrary().");
+  if (!biscuitLoading) {
+    biscuitLoading = biscuitInstantiate().catch(function (e) {
+      log.debug("Caught in biscuitLibrary(): " + ((e && e.message) || e));
+      biscuitLoading = null;
+      throw e;
+    });
+  }
+  log.debug("Leaving biscuitLibrary().");
+  return biscuitLoading;
+}
+
+/**
+ * Loads the biscuit WebAssembly library, once, so a caller can refuse a
+ * load failure in its own words before it does anything else.
+ *
+ * @returns a promise that rejects with the load's error
+ */
+async function biscuitReady() {
+  log.debug("Entering biscuitReady().");
+  await biscuitLibrary();
+  log.debug("Leaving biscuitReady().");
+}
+
+// An Ed25519 KeyObject's raw `d` (private) or `x` (public), or null: the
+// one key kind a biscuit root key is here.
+function biscuitRawKey(keyObject, member) {
+  log.debug("Entering biscuitRawKey().");
+  if (!keyObject || typeof keyObject.export !== 'function' ||
+      keyObject.asymmetricKeyType !== 'ed25519') {
+    log.debug("Leaving biscuitRawKey().");
+    return null;
+  }
+  const jwk = keyObject.export({ format: 'jwk' });
+  log.debug("Leaving biscuitRawKey().");
+  return jwk[member] ? Buffer.from(jwk[member], 'base64url') : null;
+}
+
+// The token, verified under the root public key; `{ ok:false, stage }` for
+// a key that is not an Ed25519 public KeyObject ('key') or a token that does
+// not parse or verify ('parse'). The caller frees `token`.
+function biscuitParse(bg, value, publicKey) {
+  log.debug("Entering biscuitParse().");
+  const x = biscuitRawKey(publicKey, 'x');
+  if (!x) {
+    log.debug("Leaving biscuitParse(). Public key unusable.");
+    return { ok: false, stage: 'key', error: null };
+  }
+  try {
+    const root = bg.PublicKey.fromBytes(new Uint8Array(x),
+                                        bg.SignatureAlgorithm.Ed25519);
+    const token = bg.Biscuit.fromBase64(value, root);
+    log.debug("Leaving biscuitParse(). Parsed.");
+    return { ok: true, token: token };
+  } catch (e) {
+    log.debug("Caught in biscuitParse(): " + biscuitErrorText(e));
+    log.debug("Leaving biscuitParse(). Refused.");
+    return { ok: false, stage: 'parse', error: e };
+  }
+}
+
+/**
+ * Mints a biscuit whose authority block is the caller's Datalog, sealed
+ * with an Ed25519 root key.
+ *
+ * `prepare()` builds the block (`{ source, params }`); it is called inside
+ * the library step, so a throw from it is answered as the library's.
+ *
+ * @param privateKey - an Ed25519 private KeyObject
+ * @param prepare - builds `{ source, params }`
+ * @returns a promise of `{ ok: true, value, revocationIds }`, or
+ *   `{ ok: false, stage, error }` — stage `key` (not an Ed25519 private
+ *   KeyObject), `load` (the library could not be loaded) or `library`
+ */
+async function biscuitMint(privateKey, prepare) {
+  log.debug("Entering biscuitMint().");
+  const d = biscuitRawKey(privateKey, 'd');
+  if (!d) {
+    log.debug("Leaving biscuitMint(). Private key unusable.");
+    return { ok: false, stage: 'key', error: null };
+  }
+  let bg;
+  try {
+    bg = await biscuitLibrary();
+  } catch (e) {
+    log.debug("Caught in biscuitMint(): " + ((e && e.message) || e));
+    log.debug("Leaving biscuitMint(). Library unavailable.");
+    return { ok: false, stage: 'load', error: e };
+  }
+  try {
+    const root = bg.PrivateKey.fromBytes(new Uint8Array(d),
+                                         bg.SignatureAlgorithm.Ed25519);
+    const p = prepare();
+    const builder = bg.Biscuit.builder();
+    builder.addCodeWithParameters(p.source, p.params, {});
+    const token = builder.build(root);
+    const value = token.toBase64();
+    // One revocation identifier per block, the authority block's first.
+    const revocationIds = [].concat(token.getRevocationIdentifiers() || [])
+      .map(function (/** @type {unknown} */ one) {
+        return String(one);
+      });
+    token.free();
+    log.debug("Leaving biscuitMint(). Minted.");
+    return { ok: true, value: value, revocationIds: revocationIds };
+  } catch (e) {
+    log.debug("Caught in biscuitMint(): " + biscuitErrorText(e));
+    log.debug("Leaving biscuitMint(). Library failure.");
+    return { ok: false, stage: 'library', error: e };
+  }
+}
+
+/**
+ * Verifies a biscuit under its root public key and runs an authorizer over
+ * it: the caller's Datalog facts and policies, then each query in order,
+ * then the authorization itself, every evaluation bounded by `limits`.
+ *
+ * A query that throws stops the run (the queries after it and the
+ * authorization are not run). The library's errors come back as they were
+ * thrown, for the caller to read (`RunLimit`, `FailedLogic`).
+ *
+ * @param value - the token, URL-safe base64
+ * @param publicKey - an Ed25519 public KeyObject
+ * @param run - `{ authorizer, queries, limits }`: `authorizer()` builds
+ *   `{ source, params }` (called inside the build step), `queries` the
+ *   rule texts, `limits` the run limits
+ * @returns a promise of `{ ok: false, stage, error }` — stage `key`,
+ *   `load`, `parse` or `build` — or `{ ok: true, rows, queryError,
+ *   authorizeError, blocks }`: `rows[i]` the terms of each fact query `i`
+ *   produced; `authorizeError` undefined when authorization was not run,
+ *   null when it passed
+ */
+async function biscuitAuthorize(value, publicKey, run) {
+  log.debug("Entering biscuitAuthorize().");
+  let bg;
+  try {
+    bg = await biscuitLibrary();
+  } catch (e) {
+    log.debug("Caught in biscuitAuthorize(): " + ((e && e.message) || e));
+    log.debug("Leaving biscuitAuthorize(). Library unavailable.");
+    return { ok: false, stage: 'load', error: e };
+  }
+  const parsed = biscuitParse(bg, value, publicKey);
+  if (!parsed.ok) {
+    log.debug("Leaving biscuitAuthorize(). " + parsed.stage);
+    return parsed;
+  }
+  const token = parsed.token;
+  /** @type {any} */
+  let authorizer = null;
+  try {
+    try {
+      const p = run.authorizer();
+      const builder = new bg.AuthorizerBuilder();
+      builder.addCodeWithParameters(p.source, p.params, {});
+      authorizer = builder.buildAuthenticated(token);
+    } catch (e) {
+      log.debug("Caught in biscuitAuthorize(): " + biscuitErrorText(e));
+      log.debug("Leaving biscuitAuthorize(). Authorizer not built.");
+      return { ok: false, stage: 'build', error: e };
+    }
+    const rows = [];
+    let queryError = null;
+    const queries = run.queries || [];
+    for (let i = 0; i < queries.length; i++) {
+      try {
+        rows.push(authorizer.queryWithLimits(bg.Rule.fromString(queries[i]),
+                                             run.limits)
+          .map(function (/** @type {any} */ f) {
+            return f.terms();
+          }));
+      } catch (e) {
+        log.debug("Caught in biscuitAuthorize(): " + biscuitErrorText(e));
+        queryError = e;
+        break;
+      }
+    }
+    let authorizeError;
+    if (!queryError) {
+      try {
+        authorizer.authorizeWithLimits(run.limits);
+        authorizeError = null;
+      } catch (e) {
+        log.debug("Caught in biscuitAuthorize(): " + biscuitErrorText(e));
+        authorizeError = e;
+      }
+    }
+    const blocks = token.countBlocks();
+    log.debug("Leaving biscuitAuthorize(). blocks=" + blocks);
+    return { ok: true, rows: rows, queryError: queryError,
+             authorizeError: authorizeError, blocks: blocks };
+  } finally {
+    if (authorizer) {
+      authorizer.free();
+    }
+    token.free();
+  }
+}
+
+/**
+ * Appends a block to a biscuit — the attenuation a resource server makes
+ * without the authorization server. The token is verified first: the
+ * library will not open one it has not verified.
+ *
+ * `prepare()` is called once the token has parsed, and answers the block
+ * (`{ source, params }`) or `{ refusal }`, which is passed back untouched.
+ *
+ * @param value - the token, URL-safe base64
+ * @param publicKey - an Ed25519 public KeyObject
+ * @param prepare - builds the block, or refuses
+ * @returns a promise of `{ ok: true, value }`, or `{ ok: false, stage,
+ *   error }` — stage `key`, `load`, `parse` or `library` — or
+ *   `{ ok: false, stage: 'prepare', refusal }`
+ */
+async function biscuitAttenuate(value, publicKey, prepare) {
+  log.debug("Entering biscuitAttenuate().");
+  let bg;
+  try {
+    bg = await biscuitLibrary();
+  } catch (e) {
+    log.debug("Caught in biscuitAttenuate(): " + ((e && e.message) || e));
+    log.debug("Leaving biscuitAttenuate(). Library unavailable.");
+    return { ok: false, stage: 'load', error: e };
+  }
+  const parsed = biscuitParse(bg, value, publicKey);
+  if (!parsed.ok) {
+    log.debug("Leaving biscuitAttenuate(). " + parsed.stage);
+    return parsed;
+  }
+  try {
+    const block = prepare();
+    if (block.refusal) {
+      log.debug("Leaving biscuitAttenuate(). Refused by the caller.");
+      return { ok: false, stage: 'prepare', refusal: block.refusal };
+    }
+    let out;
+    try {
+      const builder = bg.Biscuit.block_builder();
+      builder.addCodeWithParameters(block.source, block.params, {});
+      const next = parsed.token.appendBlock(builder);
+      out = next.toBase64();
+      next.free();
+    } catch (e) {
+      log.debug("Caught in biscuitAttenuate(): " + biscuitErrorText(e));
+      log.debug("Leaving biscuitAttenuate(). Library refused.");
+      return { ok: false, stage: 'library', error: e };
+    }
+    log.debug("Leaving biscuitAttenuate(). Appended.");
+    return { ok: true, value: out };
+  } finally {
+    parsed.token.free();
+  }
+}
+
+// --- #453 group A: end ---
+
+// (separator between group regions)
+
+// --- #453 group B (common, keys and certificates): begin ---
+
+// THE OCSP CertID HASHES (RFC 6960 section 4.1.1), under the hash the
+// REQUESTER named. `pki_revocation.js` compares a request's issuerNameHash
+// and issuerKeyHash with its own authority's, computed under that hash rather
+// than against a stored value, because a responder that only knew SHA-1 would
+// answer `unknown` to every modern client — and one that only knew SHA-256
+// would answer it to every old one. So SHA-1 is on this list, under the
+// `ocsp-cert-id` purpose, and nothing outside the four is computed. The
+// names are Web Crypto's spelling, which is what that file's OID table maps
+// to. It was Web Crypto's asynchronous digest until #453; this is node's
+// one-shot over the same bytes, so the hashes are the same.
+const OCSP_CERT_ID_HASHES = Object.freeze({
+  'SHA-1': null,
+  'SHA-256': 'sha256',
+  'SHA-384': 'sha384',
+  'SHA-512': 'sha512'
+});
+
+/**
+ * Returns an OCSP CertID hash (RFC 6960 section 4.1.1) of a value under the
+ * hash a request named.
+ *
+ * @param hashName - `SHA-1`, `SHA-256`, `SHA-384` or `SHA-512`
+ * @param data - the bytes (a Buffer, a typed array or an ArrayBuffer)
+ * @returns the digest
+ * @throws Error for a hash outside the list
+ */
+function ocspCertIdHash(hashName, data) {
+  log.debug("Entering ocspCertIdHash(). " + hashName);
+  if (!Object.prototype.hasOwnProperty.call(OCSP_CERT_ID_HASHES, hashName)) {
+    log.debug("Leaving ocspCertIdHash(). Unknown hash.");
+    // error-code: none — a programming error; the caller maps a closed OID
+    // table onto these names and answers `unknown` for anything else
+    throw new Error('crypto: an OCSP CertID hash is one of ' +
+                    Object.keys(OCSP_CERT_ID_HASHES).join(', ') +
+                    ', not "' + hashName + '"');
+  }
+  const bytes = Buffer.from(/** @type {any} */ (data || []));
+  const name = OCSP_CERT_ID_HASHES[hashName];
+  const out = name === null ? sha1Digest('ocsp-cert-id', bytes)
+                            : digest(name, bytes);
+  log.debug("Leaving ocspCertIdHash().");
+  return out;
+}
+
+// pkijs SIGNS A CRL AND AN OCSP RESPONSE THROUGH A WEB CRYPTO ENGINE, and the
+// engine is node's own Web Crypto implementation. Until #453
+// `pki_revocation.js` handed pkijs the global `crypto` itself; it is the
+// same object as `nodeCrypto.webcrypto` on every node this service runs on
+// (globalThis.crypto has been it since node 19), and this file is now the
+// one place that hands it over. Throws what pkijs throws, which the caller
+// logs under its own code.
+/**
+ * Installs node's Web Crypto implementation as pkijs's engine, which is
+ * what pkijs signs CRLs and OCSP responses with.
+ *
+ * @param pkijs - the pkijs module
+ * @returns true when installed; false where node offers no Web Crypto
+ */
+function installPkijsWebCrypto(pkijs) {
+  log.debug("Entering installPkijsWebCrypto().");
+  const webcrypto = /** @type {any} */ (nodeCrypto.webcrypto);
+  if (!webcrypto || !webcrypto.subtle) {
+    log.debug("Leaving installPkijsWebCrypto(). No Web Crypto.");
+    return false;
+  }
+  // `any`: pkijs's declared engine interface lags its own class.
+  pkijs.setEngine('webcrypto', /** @type {any} */ (
+    new pkijs.CryptoEngine({ name: 'webcrypto', crypto: webcrypto })));
+  log.debug("Leaving installPkijsWebCrypto().");
+  return true;
+}
+
+// The Web Crypto algorithms an authority's key is imported for, to sign a
+// CRL or an OCSP response with pkijs. The caller derives the parameters from
+// the AUTHORITY'S key (`pki_revocation.js`'s signingParamsFor()); this list
+// is what may be asked for.
+const PKCS8_SIGNING_ALGORITHMS = ['ECDSA', 'Ed25519', 'RSA-PSS',
+                                  'RSASSA-PKCS1-v1_5'];
+
+/**
+ * Imports a PKCS#8 private key as a non-extractable Web Crypto signing key,
+ * for pkijs to sign a CRL or an OCSP response with.
+ *
+ * @param pkcs8 - the DER (an ArrayBuffer or a Buffer)
+ * @param algorithm - the Web Crypto import parameters; `name` is one of
+ *   PKCS8_SIGNING_ALGORITHMS
+ * @returns {Promise<any>} a promise of the CryptoKey
+ * @throws Error for an algorithm outside the list
+ */
+function importPkcs8SigningKey(pkcs8, algorithm) {
+  log.debug("Entering importPkcs8SigningKey(). " +
+            (algorithm && algorithm.name));
+  if (!algorithm ||
+      PKCS8_SIGNING_ALGORITHMS.indexOf(algorithm.name) < 0) {
+    log.debug("Leaving importPkcs8SigningKey(). Unknown algorithm.");
+    // error-code: none — a programming error; the caller derives the name
+    // from a closed table of key kinds
+    throw new Error('crypto: a PKCS#8 signing key is imported for ' +
+                    PKCS8_SIGNING_ALGORITHMS.join(', ') + ', not "' +
+                    (algorithm && algorithm.name) + '"');
+  }
+  log.debug("Leaving importPkcs8SigningKey().");
+  return /** @type {any} */ (nodeCrypto.webcrypto).subtle.importKey(
+    'pkcs8', pkcs8, algorithm, false, ['sign']);
+}
+
+// COMPARE TWO BYTE STRINGS IN CONSTANT TIME. `constantTimeEquals()` above
+// compares two SECRETS given as text — it reads each through `String()`, so
+// two Buffers would be compared as their UTF-8 decodings, and two different
+// byte strings that decode to the same replacement characters would compare
+// equal. This one takes bytes as bytes: a digest against a digest, an AAD
+// binding against what was unwrapped. A length difference is a plain false
+// (node's `timingSafeEqual()` throws on one), found in variable time, which
+// is not a hole for the reason `constantTimeEquals()` gives.
+// HOT PATH: a presented secret's digest is compared per enrollment request,
+// so no Entering/Leaving pair.
+/**
+ * Compares two byte strings in constant time; only a length difference is
+ * found in variable time.
+ *
+ * @param a - one value (a Buffer or a typed array)
+ * @param b - the other
+ * @returns true when they are the same bytes
+ */
+function bytesEqualConstantTime(a, b) {
+  const left = Buffer.from(/** @type {any} */ (a || []));
+  const right = Buffer.from(/** @type {any} */ (b || []));
+  return left.length === right.length &&
+         nodeCrypto.timingSafeEqual(left, right);
+}
+
+// --- #453 group B: end ---
+
+// (separator between group regions)
+
+// --- #453 group C (common, cluster, persistence, ldap, risk): begin ---
+
+// --- #453 group C: end ---
+
+// (separator between group regions)
+
+// --- #453 group D (oauth-oidc, federation, saml, ssf, portal): begin ---
+
+// A SAML ARTIFACT'S SourceID (SAML 2.0 Bindings 3.6.4, SAML 1.1 Bindings
+// 4.1.1.7): the SHA-1 of the issuer's identifier — the entityID in 2.0, the
+// providerID in 1.1 — read as UTF-8. It is an INDEX, not a security hash: it
+// lets a party holding artifacts from several identity providers tell whose
+// one it holds without asking anybody.
+//
+// It is one function rather than a sha1Digest() call at each site because
+// four sites compute it — `saml/saml2_sso.ts` and `saml/saml11_sso.ts` each
+// MINT an artifact with it and then CHECK a presented artifact against it
+// (#160) — and the mint and the check must agree to the byte or every
+// artifact this service issued reads as foreign. One definition is what makes
+// that agreement structural rather than a matter of four call sites being
+// spelled alike. The two versions differ in where the 20 bytes sit in the
+// artifact, never in how they are computed, so that stays with each caller.
+//
+// HOT PATH: computed for every artifact minted and every one resolved, so no
+// Entering/Leaving pair. It would drown the log.
+/**
+ * Returns a SAML artifact's SourceID: the SHA-1 of the issuer's entityID
+ * (2.0) or providerID (1.1), as UTF-8.
+ *
+ * @param issuerId - the entityID or providerID
+ * @returns the 20 bytes
+ */
+function samlArtifactSourceId(issuerId) {
+  return sha1Digest('saml-artifact-source-id', String(issuerId));
+}
+
+// --- #453 group D: end ---
+
+// (separator between group regions)
+
+// --- #453 group E (oid4vc, oidfed, authn, admin, pki): begin ---
+
+// WebAuthn's TPM attestation (Level 3 section 8.3) asks that certInfo's
+// extraData be the hash of attToBeSigned "using the hash algorithm employed
+// in alg" — the statement's own COSE algorithm, whose signature was checked
+// a step before. So the hash is not the caller's choice: it is the one
+// COSE_SIGNATURE_ALGS (section 10) names for that algorithm, SHA-1 for RS1
+// among them, which `verifyCoseSignature()` has already refused unless the
+// realm allowed insecure algorithms. An algorithm that fixes no separate
+// hash (EdDSA, ML-DSA) answers null, and the caller reports the mismatch.
+/**
+ * Returns the digest of bytes under the hash a COSE signature algorithm
+ * names (WebAuthn TPM attestation's extraData).
+ *
+ * @param coseAlg - the COSE algorithm identifier
+ * @param data - the bytes
+ * @returns {Buffer|null} the digest, or null when the algorithm is not in
+ *   COSE_SIGNATURE_ALGS or names no hash of its own
+ */
+function coseAlgorithmDigest(coseAlg, data) {
+  log.debug("Entering coseAlgorithmDigest(). alg=" + coseAlg);
+  const spec = COSE_SIGNATURE_ALGS[String(coseAlg)];
+  if (!spec || !spec.hash) {
+    log.debug("Leaving coseAlgorithmDigest(). No hash of its own.");
+    return null;
+  }
+  const out = nodeCrypto.createHash(spec.hash).update(Buffer.from(data))
+    .digest();
+  log.debug("Leaving coseAlgorithmDigest(). " + spec.hash);
+  return out;
+}
+
+// --- #453 group E: end ---
+
+// (separator between group regions)
+
+// --- #453 group F (spiffe, scep, est, acme, scim, kerberos, tls): begin ---
+
+// Group F's operations: SPIFFE, SCEP, EST, ACME, SCIM, Kerberos and TLS.
+// Everything else those modules did is section 13's, 15's or 17's.
+
+// RFC 5652 section 11.2: a SignedData's messageDigest attribute is the digest
+// of the encapsulated content under the SignerInfo's digestAlgorithm. SCEP's
+// pkiMessage is the one CMS this service verifies such an attribute in
+// (`scep/scep_cms.ts`), and its digest table is SHA-2 only (its decision 1),
+// so this takes section 15's DIGESTS and never SHA-1.
+/**
+ * Checks a CMS messageDigest signed attribute against the content it names.
+ *
+ * @param algorithm - the SignerInfo's digest, one of section 15's DIGESTS
+ * @param content - the encapsulated content
+ * @param claimed - the messageDigest attribute's octets; null when absent
+ * @returns true when the attribute is the content's digest
+ * @throws Error for an algorithm outside DIGESTS
+ */
+function cmsMessageDigestMatches(algorithm, content, claimed) {
+  log.debug("Entering cmsMessageDigestMatches(). " + algorithm);
+  const computed = digest(algorithm, content || Buffer.alloc(0));
+  if (!claimed) {
+    log.debug("Leaving cmsMessageDigestMatches(). No attribute.");
+    return false;
+  }
+  const ok = bytesEqualConstantTime(claimed, computed);
+  log.debug("Leaving cmsMessageDigestMatches(). " + ok);
+  return ok;
+}
+
+// SCEP's content ciphers. RFC 8894 section 3.5.2 still permits DES-EDE3-CBC,
+// a 64-bit block cipher (Sweet32), and `scep/scep_cms.ts` refuses it badAlg
+// before it gets here (its decision 2); this list is the same refusal said
+// again where the cipher is run, so nothing can reach a weaker one.
+const SCEP_CONTENT_CIPHERS = ['aes-128-cbc', 'aes-192-cbc', 'aes-256-cbc'];
+
+/**
+ * Refuses a SCEP content cipher outside SCEP_CONTENT_CIPHERS.
+ *
+ * @param cipher - node's name for it
+ * @throws Error for a cipher outside the list
+ */
+function checkScepContentCipher(cipher) {
+  if (SCEP_CONTENT_CIPHERS.indexOf(cipher) < 0) {
+    // error-code: none — a programming error; the caller names a cipher from
+    // its own table, which is inside this list
+    throw new Error('crypto: a SCEP content cipher is one of ' +
+                    SCEP_CONTENT_CIPHERS.join(', ') + ', not "' + cipher +
+                    '"');
+  }
+}
+
+/**
+ * Encrypts a SCEP envelope's content (an EnvelopedData's
+ * encryptedContent), with CBC's PKCS#7 padding.
+ *
+ * @param cipher - one of SCEP_CONTENT_CIPHERS
+ * @param key - the content-encryption key
+ * @param iv - the sixteen-byte IV
+ * @param plaintext - the content
+ * @returns the ciphertext
+ * @throws Error for a cipher outside the list, or what node throws
+ */
+function scepContentEncrypt(cipher, key, iv, plaintext) {
+  log.debug("Entering scepContentEncrypt(). " + cipher);
+  checkScepContentCipher(cipher);
+  const c = nodeCrypto.createCipheriv(cipher, key, iv);
+  const out = Buffer.concat([c.update(plaintext), c.final()]);
+  log.debug("Leaving scepContentEncrypt().");
+  return out;
+}
+
+// It throws what node throws for a padding that does not check, because the
+// caller (`ScepCms.readEnvelope()`) catches it and gives a wrong key and a bad
+// padding ONE answer — the implicit rejection its decision 3 argues.
+/**
+ * Decrypts a SCEP envelope's content.
+ *
+ * @param cipher - one of SCEP_CONTENT_CIPHERS
+ * @param key - the content-encryption key
+ * @param iv - the sixteen-byte IV
+ * @param ciphertext - the encryptedContent
+ * @returns the plaintext
+ * @throws Error for a cipher outside the list, or what node throws
+ */
+function scepContentDecrypt(cipher, key, iv, ciphertext) {
+  log.debug("Entering scepContentDecrypt(). " + cipher);
+  checkScepContentCipher(cipher);
+  const d = nodeCrypto.createDecipheriv(cipher, key, iv);
+  const out = Buffer.concat([d.update(ciphertext), d.final()]);
+  log.debug("Leaving scepContentDecrypt().");
+  return out;
+}
+
+// CMS key transport (RFC 5652 section 6.2.1) with RSA: RSAES-PKCS1-v1_5
+// (RFC 8017 section 7.2), which every SCEP client in the field sends, and
+// RSAES-OAEP (RFC 3560). OAEP's hash is the sender's choice and SHA-1 is its
+// default (RFC 8017 appendix A.2.1): SHA-1 in OAEP is a mask generator, not
+// a signature, and no collision on it opens an envelope. v1.5 decryption is
+// the Marvin attack's target (CVE-2023-46809); node 24 has OpenSSL's IMPLICIT
+// REJECTION, and a runtime without it throws `ERR_INVALID_ARG_VALUE`, which
+// the caller looks for — so what node throws is thrown unchanged.
+const CMS_KEY_TRANSPORTS = ['rsaes-pkcs1-v1_5', 'rsaes-oaep'];
+const CMS_OAEP_HASHES = ['sha1', 'sha256', 'sha384', 'sha512'];
+
+/**
+ * Unwraps a CMS content-encryption key with an RSA private key.
+ *
+ * @param transport - `rsaes-pkcs1-v1_5` or `rsaes-oaep`
+ * @param privateKey - the recipient's private key (a PEM or a KeyObject)
+ * @param encryptedKey - the KeyTransRecipientInfo's encryptedKey
+ * @param oaepHash - for OAEP, one of CMS_OAEP_HASHES
+ * @returns the content-encryption key
+ * @throws Error for a transport or hash outside the lists, or what node
+ *   throws
+ */
+function cmsKeyTransportDecrypt(transport, privateKey, encryptedKey,
+                                oaepHash) {
+  log.debug("Entering cmsKeyTransportDecrypt(). " + transport);
+  if (CMS_KEY_TRANSPORTS.indexOf(transport) < 0) {
+    log.debug("Leaving cmsKeyTransportDecrypt(). Unknown transport.");
+    // error-code: none — a programming error; the caller names a constant
+    throw new Error('crypto: a CMS key transport is one of ' +
+                    CMS_KEY_TRANSPORTS.join(', ') + ', not "' + transport +
+                    '"');
+  }
+  if (transport === 'rsaes-pkcs1-v1_5') {
+    const key = nodeCrypto.privateDecrypt({
+      key: privateKey,
+      padding: nodeCrypto.constants.RSA_PKCS1_PADDING
+    }, encryptedKey);
+    log.debug("Leaving cmsKeyTransportDecrypt(). PKCS#1 v1.5.");
+    return key;
+  }
+  if (CMS_OAEP_HASHES.indexOf(oaepHash) < 0) {
+    log.debug("Leaving cmsKeyTransportDecrypt(). Unknown OAEP hash.");
+    // error-code: none — a programming error; the caller maps the OID through
+    // a table inside this list
+    throw new Error('crypto: an OAEP hash is one of ' +
+                    CMS_OAEP_HASHES.join(', ') + ', not "' + oaepHash + '"');
+  }
+  const key = nodeCrypto.privateDecrypt({
+    key: privateKey,
+    padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash: oaepHash
+  }, encryptedKey);
+  log.debug("Leaving cmsKeyTransportDecrypt(). OAEP " + oaepHash + ".");
+  return key;
+}
+
+// The reply side is RSAES-PKCS1-v1_5 only: it is what every SCEP client
+// decrypts, forge and OpenSSL's PKCS7 included, and ENCRYPTING with v1.5
+// gives no oracle — the attack is on the party that decrypts.
+/**
+ * Wraps a CMS content-encryption key to an RSA public key with
+ * RSAES-PKCS1-v1_5.
+ *
+ * @param publicKey - the recipient's public key (a KeyObject or a PEM)
+ * @param contentKey - the content-encryption key
+ * @returns the encryptedKey
+ * @throws what node throws for a key that is not RSA
+ */
+function cmsKeyTransportEncrypt(publicKey, contentKey) {
+  log.debug("Entering cmsKeyTransportEncrypt().");
+  const wrapped = nodeCrypto.publicEncrypt({
+    key: publicKey,
+    padding: nodeCrypto.constants.RSA_PKCS1_PADDING
+  }, contentKey);
+  log.debug("Leaving cmsKeyTransportEncrypt().");
+  return wrapped;
+}
+
+// A TPM 2.0 object's Name is nameAlg ‖ H_nameAlg(TPMT_PUBLIC) (Library Part
+// 1, section 16), and nameAlg is the TPM's choice: SHA-1 is a TPM_ALG_ID a
+// TPM may name (TPM_HASHES above), so computing a Name with it is what the
+// specification fixes, not a choice made here. `tpmName()` does it for a
+// parsed public area; `spiffe/spiffe_tpm.ts` hashes its own and compares a
+// Name against another's algorithm, so it needs the hash on its own.
+/**
+ * Hashes bytes under one of the TPM's name algorithms.
+ *
+ * @param hash - a value of TPM_HASHES (`sha1`, `sha256`, `sha384`,
+ *   `sha512`)
+ * @param bytes - what is hashed (a TPMT_PUBLIC)
+ * @returns the digest
+ * @throws Error for a hash outside TPM_HASHES
+ */
+function tpmNameDigest(hash, bytes) {
+  log.debug("Entering tpmNameDigest(). " + hash);
+  const known = Object.keys(TPM_HASHES).some(function (id) {
+    return TPM_HASHES[id] === hash;
+  });
+  if (!known) {
+    log.debug("Leaving tpmNameDigest(). Unknown.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the TPM hash algorithm ' + hash + ' is not supported');
+  }
+  const out = nodeCrypto.createHash(hash).update(bytes).digest();
+  log.debug("Leaving tpmNameDigest().");
+  return out;
+}
+
+// SPIRE sizes a credential-activation secret by the EK's name hash, so the
+// `tpm_devid` attestor asks for that size by TPM_ALG_ID.
+/**
+ * Returns the digest size, in octets, of a TPM_ALG_ID hash.
+ *
+ * @param algId - the TPM_ALG_ID
+ * @returns the size
+ * @throws Error for one not in TPM_HASHES, as `tpmHashName()` does
+ */
+function tpmDigestSize(algId) {
+  log.debug("Entering tpmDigestSize(). alg=" + algId);
+  const size = nodeCrypto.createHash(tpmHashName(algId)).digest().length;
+  log.debug("Leaving tpmDigestSize(). " + size);
+  return size;
+}
+
+// RFC 7616 (HTTP Digest Access Authentication) section 3.2 names its own
+// algorithms: SHA-256, SHA-512-256 and MD5. MD5 is there because most of
+// the installed base of Digest clients speaks nothing else; SCIM offers it
+// only when `scim.digestMd5` is set, in development (#182), and the digest
+// is a hash over a password a client proves knowledge of, not a signature.
+const HTTP_DIGEST_HASHES = ['sha256', 'sha512-256', 'md5'];
+
+// It runs once per Digest challenge and answer, so it logs as an ordinary
+// function. The text is passed to node as given, so an absent one throws
+// where the caller always met it.
+/**
+ * Computes an RFC 7616 digest (H() or KD()'s hash) as lowercase hex.
+ *
+ * @param hash - one of HTTP_DIGEST_HASHES, by node's name
+ * @param text - the string hashed, read as UTF-8
+ * @returns the digest, hex
+ * @throws Error for a hash outside the list
+ */
+function httpDigestHash(hash, text) {
+  log.debug("Entering httpDigestHash(). " + hash);
+  if (HTTP_DIGEST_HASHES.indexOf(hash) < 0) {
+    log.debug("Leaving httpDigestHash(). Unknown.");
+    // error-code: none — a programming error; the caller's table is inside
+    // this list
+    throw new Error('crypto: an HTTP Digest hash is one of ' +
+                    HTTP_DIGEST_HASHES.join(', ') + ', not "' + hash + '"');
+  }
+  const out = nodeCrypto.createHash(hash).update(text, 'utf8').digest('hex');
+  log.debug("Leaving httpDigestHash().");
+  return out;
+}
+
+// --- #453 group F: end ---
+
+// ===========================================================================
 // SECTION 16 — PKINIT: CMS SIGNED DATA, DIFFIE-HELLMAN AND THE AS REPLY KEY
 // (#179, 2026-10-05).
 //
@@ -14364,6 +16051,76 @@ function pkinitKdf(kdfOid, z, otherInfo, etype) {
  * @namespace
  */
 module.exports = {
+  // --- section 17: the rest of the service's operations (#453) ---
+  SHA1_PURPOSES: SHA1_PURPOSES,
+  sha1Digest: sha1Digest,
+  HMAC_DIGESTS: HMAC_DIGESTS,
+  hmac: hmac,
+  parseCertificate: parseCertificate,
+  isParsedCertificate: isParsedCertificate,
+  privateKeyFrom: privateKeyFrom,
+  isKeyObject: isKeyObject,
+  KEY_PAIR_TYPES: KEY_PAIR_TYPES,
+  generateKeyPairSync: generateKeyPairSync,
+  generateKeyPairAsync: generateKeyPairAsync,
+  signBytes: signBytes,
+  signatureValid: signatureValid,
+  digestSupported: digestSupported,
+  TLS_NO_RENEGOTIATION: TLS_NO_RENEGOTIATION,
+  // --- #453 group A exports: begin ---
+  // GNAP's three token libraries, held here and nowhere else (#453).
+  MACAROON_MIN_ROOT_KEY_BYTES: MACAROON_MIN_ROOT_KEY_BYTES,
+  macaroonRootKeyUsable: macaroonRootKeyUsable,
+  macaroonMint: macaroonMint,
+  macaroonImport: macaroonImport,
+  macaroonVerify: macaroonVerify,
+  macaroonAttenuate: macaroonAttenuate,
+  ZCAP_LEGACY_SUITE: ZCAP_LEGACY_SUITE,
+  zcapReady: zcapReady,
+  zcapVerificationMethod: zcapVerificationMethod,
+  zcapDelegate: zcapDelegate,
+  zcapVerifyDelegation: zcapVerifyDelegation,
+  biscuitReady: biscuitReady,
+  biscuitMint: biscuitMint,
+  biscuitAuthorize: biscuitAuthorize,
+  biscuitAttenuate: biscuitAttenuate,
+  // --- #453 group A exports: end ---
+  //
+  // --- #453 group B exports: begin ---
+  OCSP_CERT_ID_HASHES: OCSP_CERT_ID_HASHES,
+  ocspCertIdHash: ocspCertIdHash,
+  installPkijsWebCrypto: installPkijsWebCrypto,
+  PKCS8_SIGNING_ALGORITHMS: PKCS8_SIGNING_ALGORITHMS,
+  importPkcs8SigningKey: importPkcs8SigningKey,
+  bytesEqualConstantTime: bytesEqualConstantTime,
+  // --- #453 group B exports: end ---
+  //
+  // --- #453 group C exports: begin ---
+  // --- #453 group C exports: end ---
+  //
+  // --- #453 group D exports: begin ---
+  samlArtifactSourceId: samlArtifactSourceId,
+  // --- #453 group D exports: end ---
+  //
+  // --- #453 group E exports: begin ---
+  coseAlgorithmDigest,
+  // --- #453 group E exports: end ---
+  //
+  // --- #453 group F exports: begin ---
+  cmsMessageDigestMatches: cmsMessageDigestMatches,
+  SCEP_CONTENT_CIPHERS: SCEP_CONTENT_CIPHERS,
+  scepContentEncrypt: scepContentEncrypt,
+  scepContentDecrypt: scepContentDecrypt,
+  CMS_KEY_TRANSPORTS: CMS_KEY_TRANSPORTS,
+  CMS_OAEP_HASHES: CMS_OAEP_HASHES,
+  cmsKeyTransportDecrypt: cmsKeyTransportDecrypt,
+  cmsKeyTransportEncrypt: cmsKeyTransportEncrypt,
+  tpmNameDigest: tpmNameDigest,
+  tpmDigestSize: tpmDigestSize,
+  HTTP_DIGEST_HASHES: HTTP_DIGEST_HASHES,
+  httpDigestHash: httpDigestHash,
+  // --- #453 group F exports: end ---
+  //
   // --- section 16: PKINIT's CMS, key agreement and reply key (#179) ---
   PKINIT_OID: PKINIT_OID,
   PKINIT_CMS_DIGEST_OIDS: PKINIT_CMS_DIGEST_OIDS,

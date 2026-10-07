@@ -109,7 +109,7 @@ import personAssertions = require('../common/person_assertions');
 import helpers = require('../common/helpers');
 import x509 = require('../common/vendored/x509');
 import pkijs = require('pkijs');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import pqcSupport = require('../common/pqc_support');
 import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
@@ -731,8 +731,7 @@ class CertificateViews {
       log.debug("Leaving CertificateViews.pqcOf(). No certificate.");
       return pqcSupport.of({ certificatePem: pem });
     }
-    const key = 'pqc:' + nodeCrypto.createHash('sha256')
-      .update(String(pem)).digest('hex');
+    const key = 'pqc:' + stsCrypto.digest('sha256', String(pem), 'hex');
     if (facts.has(key)) {
       factsCount.hit();
       log.debug("Leaving CertificateViews.pqcOf(). Held.");

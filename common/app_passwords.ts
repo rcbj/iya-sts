@@ -68,7 +68,6 @@
 // the instance, and the module's export names are FACADES forwarding to it.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import config = require('./config');
 import crypto = require('./crypto');
@@ -190,7 +189,7 @@ class AppPasswords {
   /**
    * Returns the dependencies the default instance is built from.
    *
-   * @returns the service logger, settings, `crypto.js` and node's `randomInt`
+   * @returns the service logger, settings, `crypto.js` and its `randomInt`
    */
   static defaultDeps(): AppPasswordsDeps {
     helpers.log.debug("Entering AppPasswords.defaultDeps().");
@@ -200,7 +199,7 @@ class AppPasswords {
       config: config,
       crypto: crypto as unknown as AppPasswordsDeps['crypto'],
       randomInt: function (min: number, max: number): number {
-        return nodeCrypto.randomInt(min, max);
+        return crypto.randomInt(min, max);
       }
     };
   }

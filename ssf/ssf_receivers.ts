@@ -112,10 +112,10 @@
 // the test rule 3e sets.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
-// For `deriveSharedCredential()` alone — see `receiverToken()`. A LIBRARY
+// For `deriveSharedCredential()` — see `receiverToken()` — and, since #453,
+// the constant-time compare in `sameSecret()`. A LIBRARY
 // (rule 3): it registers no route, so requiring it here moves nothing and it
 // cannot join a cycle.
 import stsCrypto = require('../common/crypto');
@@ -241,7 +241,6 @@ interface Loose {
 }
 
 interface SsfReceiversDeps {
-  nodeCrypto: typeof nodeCrypto;
   log: typeof helpers.log;
   randomId: typeof helpers.randomId;
   iso: typeof helpers.iso;
@@ -1187,15 +1186,13 @@ class SsfReceivers {
   }
 
   private sameSecret(presented?, expected?) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering SsfReceivers.sameSecret().");
-    const a = Buffer.from(String(presented), 'utf8');
-    const b = Buffer.from(String(expected), 'utf8');
-    if (a.length !== b.length) {
-      log.debug("Leaving SsfReceivers.sameSecret(). Different lengths.");
-      return false;
-    }
-    const same = nodeCrypto.timingSafeEqual(a, b);
+    // String() here, not inside constantTimeEquals(), which reads a missing
+    // value as '' where this always read it as 'undefined'. A length
+    // difference answers false there, as the check that stood here did.
+    const same = stsCrypto.constantTimeEquals(String(presented),
+                                              String(expected));
     log.debug("Leaving SsfReceivers.sameSecret(). " + same);
     return same;
   }
@@ -1710,7 +1707,6 @@ class SsfReceivers {
     helpers.log.debug("Entering SsfReceivers.defaultDeps().");
     helpers.log.debug("Leaving SsfReceivers.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
       log: helpers.log,
       randomId: helpers.randomId,
       iso: helpers.iso,

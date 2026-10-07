@@ -70,8 +70,10 @@
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
-import nodeCrypto = require('crypto');
 import config = require('../common/config');
+// The one place this service draws random values (#453). A leaf over
+// `config`, so this require cannot close a cycle.
+import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import capabilities = require('./cluster_capabilities');
 import InstanceSlot = require('../common/instance_slot');
@@ -206,7 +208,7 @@ class ClusterSecrets {
       log: log,
       errorCodes: errorCodes,
       env: process.env,
-      randomBytes: nodeCrypto.randomBytes,
+      randomBytes: stsCrypto.randomBytes,
       clusterStore: ClusterSecrets.persistenceClusterStore,
       isActiveActive: ClusterSecrets.clusterIsActiveActive
     };

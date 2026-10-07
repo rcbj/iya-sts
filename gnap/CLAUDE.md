@@ -38,10 +38,28 @@ node's `crypto`. HTTP message signatures, the detached-JWS check
 `publicKeyOf()`, `spkiDerOf()`) and certificate parsing
 (`pki.certificateFromDer()`) are all in `common/`. A new GNAP feature that
 needs a cryptographic operation adds it to `common/crypto.js` (or `pki.js`)
-and calls it from here. The three token libraries (`macaroon`,
-`jsonld-signatures` for zcap, and the biscuit engine) still perform their
-formats' own cryptography inside the library; whether those move behind
-`crypto.js` is an open question on #453.
+and calls it from here.
+
+**The three token libraries are `common/crypto.js`'s too (#453, rcbj's
+decision of 2026-10-05)**: `macaroon`, `jsonld-signatures` with the Digital
+Bazaar ZCAP and Ed25519 packages, and `@biscuit-auth/biscuit-wasm` are
+required by `crypto.js` and by nothing in `gnap/`. `crypto.js` loads each
+lazily, turns the realm's keys into the library's key objects, decides the
+algorithms and key sizes (`MACAROON_MIN_ROOT_KEY_BYTES`, Ed25519 for a
+biscuit), and runs the library: `macaroonMint()` / `macaroonImport()` /
+`macaroonVerify()` / `macaroonAttenuate()`, `zcapDelegate()` /
+`zcapVerifyDelegation()` / `zcapVerificationMethod()`, and `biscuitMint()` /
+`biscuitAuthorize()` / `biscuitAttenuate()`. The token modules keep the
+formats' grammar — the caveat grammar and access model, the capability
+document and its controller documents, the Datalog and the model queries —
+and hand it over as data or a callback. **What wrapping does not change**:
+the macaroon HMAC chain and the biscuit block signatures are still computed
+inside those libraries, which have no hook for an external MAC or signer.
+`Ed25519Signature2020` does have one, so that suite is handed a signer and a
+verifier backed by `signRawSignature()` / `verifyRawSignature()` and the
+library only canonicalises; the three JCS zcap suites stay on
+`oid4vc/vc_data_integrity.ts`, which already signs through `crypto.js`.
+`crypto.js`'s group A header argues the split.
 
 ## The modules
 
@@ -94,19 +112,21 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
 * **`macaroon@3`'s `exportBinary()` is broken for V2.** `token_macaroon.ts`
   writes the V2 binary encoding itself (`encodeBinaryV2()`), and
   `tests/vendored/sts_gnap_rs.js` decodes it with a decoder of its own.
-* **`@biscuit-auth/biscuit-wasm` needs a custom WebAssembly loader** that walks
-  `Module.imports`, and every authorization must go through
+* **`@biscuit-auth/biscuit-wasm` needs a custom WebAssembly loader** (in
+  `common/crypto.js` since #453) that walks `Module.imports`, and every
+  authorization must go through
   `authorizeWithLimits` — Datalog carried in a token is code a holder wrote.
 * **The biscuit library's first rule-applying evaluation after it is loaded
   can come back as a run-limit refusal whatever the budget** (#432,
   2026-10-03), so raising `LIMITS` is not the fix. It surfaced only when the
   #432 lanes merged and `tests/gnap_delegation.js` happened to verify a
-  token with an audience first. `token_biscuit.ts`'s `primeRunClock()` runs
+  token with an audience first. `common/crypto.js`'s `biscuitPrime()` runs
   one throwaway evaluation at load, and `tests/gnap_token_formats.js`
   verifies first in fresh processes. **Load the module once per process**:
   a second instance in the same process is not supported.
 * **`@digitalbazaar/zcap` and the jsonld-signatures stack are ESM**, loaded by
-  dynamic import, with an **offline document loader**: the contexts are
+  dynamic import (in `common/crypto.js` since #453), with an **offline
+  document loader**: the contexts are
   vendored and nothing is fetched. Under a JCS suite the loader serves only
   the root capability.
 * **A ZCAP `invocationTarget` must be an absolute URI and an RS identifier

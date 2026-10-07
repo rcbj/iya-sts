@@ -71,7 +71,6 @@
 
 import bunyan = require('bunyan');
 import fs = require('fs');
-import nodeCrypto = require('crypto');
 import path = require('path');
 import stream = require('stream');
 import config = require('../common/config');
@@ -126,7 +125,7 @@ const MAX_PARTS = 40;
  * can tell its files from another process's.
  */
 const PROCESS_TAG = String(process.pid) + 'x' +
-  nodeCrypto.randomBytes(4).toString('hex');
+  stsCrypto.randomBytes(4).toString('hex');
 const FILE_NAME = /^risk-upload-([a-z0-9]+)-[0-9a-f-]{36}\.part$/;
 
 /** The id of the per-process upload clean-up job. */
@@ -516,7 +515,7 @@ class RiskUpload {
   private newTarget(): string {
     const { log } = this.deps;
     log.debug("Entering RiskUpload.newTarget().");
-    const name = 'risk-upload-' + PROCESS_TAG + '-' + nodeCrypto.randomUUID() +
+    const name = 'risk-upload-' + PROCESS_TAG + '-' + stsCrypto.randomUuid() +
                  '.part';
     log.debug("Leaving RiskUpload.newTarget().");
     return path.join(this.directory(), name);

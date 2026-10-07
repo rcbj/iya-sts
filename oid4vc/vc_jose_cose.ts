@@ -54,7 +54,6 @@
 // CBOR `vc_status_codec.ts`'s.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
@@ -266,8 +265,8 @@ class VcJoseCose {
     const { log } = this.deps;
     log.debug("Entering VcJoseCose.digestOf().");
     log.debug("Leaving VcJoseCose.digestOf().");
-    return crypto.createHash('sha256').update(disclosure, 'ascii')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', Buffer.from(disclosure, 'ascii'),
+                            'base64url');
   }
 
   // ---------------------------------------------------------------------------
@@ -318,7 +317,7 @@ class VcJoseCose {
         throw new Error('"' + last + '" is mandatory to disclose ' +
                         '(VC-JOSE-COSE section 3.2.1).');
       }
-      const salt = crypto.randomBytes(16).toString('base64url');
+      const salt = stsCrypto.randomBytes(16).toString('base64url');
       if (typeof last === 'number') {
         if (!Array.isArray(parent)) {
           throw new Error('"' + segments.join('.') + '" indexes a ' +

@@ -100,8 +100,10 @@
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
-import nodeCrypto = require('crypto');
 import config = require('../common/config');
+// The one place this service draws random values (#453). A leaf over
+// `config`, so this require cannot close a cycle.
+import stsCrypto = require('../common/crypto');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import capabilities = require('../cluster/cluster_capabilities');
@@ -318,7 +320,7 @@ class LdapClusterConnections {
     return {
       log: log,
       errorCodes: errorCodes,
-      randomBytes: nodeCrypto.randomBytes,
+      randomBytes: stsCrypto.randomBytes,
       loadCluster: LdapClusterConnections.clusterFromRequire,
       loadPersistence: LdapClusterConnections.persistenceFromRequire
     };

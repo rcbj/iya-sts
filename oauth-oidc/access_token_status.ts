@@ -88,7 +88,6 @@
 // GNAP token store LAZILY, so nothing it loads can close a cycle back.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import config = require('../common/config');
@@ -485,7 +484,7 @@ class AccessTokenStatus {
     log.debug("Entering AccessTokenStatus.allocate(). kind=" + opts.kind);
     const { expiresAt } = this.wanted(opts);
     for (let attempt = 0; attempt < ALLOCATION_ATTEMPTS; attempt++) {
-      const idx = crypto.randomInt(0, LIST_SIZE);
+      const idx = stsCrypto.randomInt(0, LIST_SIZE);
       if (!this.freeLocally(idx)) {
         continue;
       }
@@ -534,7 +533,7 @@ class AccessTokenStatus {
               opts.kind);
     const { expiresAt } = this.wanted(opts);
     for (let attempt = 0; attempt < ALLOCATION_ATTEMPTS; attempt++) {
-      const idx = crypto.randomInt(0, LIST_SIZE);
+      const idx = stsCrypto.randomInt(0, LIST_SIZE);
       if (!this.freeLocally(idx)) {
         continue;
       }
@@ -694,7 +693,7 @@ class AccessTokenStatus {
     const { log, realms, now } = this.deps;
     log.debug("Entering AccessTokenStatus.reuse(). " + form);
     const key = realms.currentId() + '|' + form;
-    const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+    const digest = stsCrypto.digest('sha256', bytes, 'hex');
     const held = signedLists.get(key);
     if (held && held.digest === digest &&
         now() - held.signedAt < held.ttlMs / 2) {

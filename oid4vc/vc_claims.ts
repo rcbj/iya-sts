@@ -85,7 +85,7 @@
 // the instance — and a process without the root builds a default at load.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 // TRUST REALMS: the claim selection below is per realm.
 import realms = require('../common/realms');
 import helpers = require('../common/helpers');
@@ -853,9 +853,7 @@ class VcClaims {
   private randomFor(seedText: unknown) {
     const { log } = this.deps;
     log.debug("Entering VcClaims.randomFor().");
-    const digest = crypto.createHash('sha256')
-                         .update(String(seedText), 'utf8')
-                         .digest();
+    const digest = crypto.digest('sha256', String(seedText));
     let state = digest.readUInt32LE(0);
     log.debug("Leaving VcClaims.randomFor().");
     return () => {

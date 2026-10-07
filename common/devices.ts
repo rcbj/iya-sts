@@ -194,7 +194,6 @@
 // other per-person store in `common/` is.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -595,8 +594,7 @@ class Devices {
   static hashOf(secret: unknown): string {
     helpers.log.debug("Entering Devices.hashOf().");
     helpers.log.debug("Leaving Devices.hashOf().");
-    return nodeCrypto.createHash('sha256').update(String(secret || ''), 'utf8')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(secret || ''), 'base64url');
   }
 
   private store(operation: string, ...args: any[]): any {
@@ -805,7 +803,7 @@ class Devices {
                            { name: 'devices.events',
                              counter: eventsCounter,
                              setting: 'devices.eventsKept' });
-    events.set(nodeCrypto.randomUUID(), Object.assign({
+    events.set(stsCrypto.randomUuid(), Object.assign({
       at: this.deps.now(), kind: kind, device: device.id,
       ownerKind: device.ownerKind, method: device.enrolment.method,
       reason: String(reason || '')
@@ -1899,7 +1897,7 @@ class Devices {
                ', last used ' + victim.lastUsed + ', was removed to make ' +
                'room for a new one.');
     }
-    const secret = nodeCrypto.randomBytes(32).toString('base64url');
+    const secret = stsCrypto.randomBytes(32).toString('base64url');
     const device = Devices.blank(ownerDn, 'person',
       String(spec.label || '').slice(0, MAX_LABEL) || 'a device',
       { method: 'native-sso', at: now, actor: String(spec.username || '') });
@@ -1925,7 +1923,7 @@ class Devices {
     helpers.log.debug("Entering Devices.blank().");
     helpers.log.debug("Leaving Devices.blank().");
     return {
-      id: nodeCrypto.randomUUID(), dn: '', owner: ownerDn,
+      id: stsCrypto.randomUuid(), dn: '', owner: ownerDn,
       ownerKind: ownerKind, label: label, applications: [], keys: [],
       attestation: 'self-asserted', compliance: 'unknown',
       complianceChange: null, status: 'active', statusChange: null,
@@ -2163,7 +2161,7 @@ class Devices {
     const ids = stsCrypto.certificateIdentifiers(pem);
     let notAfter = '';
     try {
-      notAfter = new Date(new nodeCrypto.X509Certificate(pem).validTo)
+      notAfter = new Date(stsCrypto.parseCertificate(pem).validTo)
         .toISOString();
     } catch (e) {
       // A post-quantum certificate node cannot load: its key and its names
@@ -2293,7 +2291,7 @@ class Devices {
     }
     const now = this.nowIso();
     const key: DeviceKey = {
-      id: 'k-' + nodeCrypto.randomBytes(9).toString('base64url'),
+      id: 'k-' + stsCrypto.randomBytes(9).toString('base64url'),
       kind: kind, thumbprint: read.thumbprint,
       label: label.value || kind + ' key', added: now,
       addedBy: String(actor || ''), proof: proof,
@@ -3048,8 +3046,7 @@ class Devices {
       } else if (key.kind === 'jwk' && key.material && key.material.jwk) {
         try {
           spkiThumbprints.push(this.deps.stsCrypto.publicKeySpkiThumbprint(
-            nodeCrypto.createPublicKey({ key: key.material.jwk,
-                                         format: 'jwk' })));
+            stsCrypto.publicKeyFromJwk(key.material.jwk)));
         } catch (e) {
           // A JWK node cannot import is matched by its RFC 7638 thumbprint
           // alone.

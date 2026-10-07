@@ -79,7 +79,6 @@
 // another caller nobody updated.
 // ===========================================================================
 
-const crypto = require('crypto');
 // One thumbprint computation for the whole service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
 const { log, b64u } = require('../common/helpers');

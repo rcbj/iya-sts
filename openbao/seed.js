@@ -143,7 +143,14 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const nodeCrypto = require('crypto');
+// THE SERVICE'S OWN crypto module (#453: node's `crypto` is required nowhere
+// else), for random bytes and a certificate's expiry. This script runs in the
+// image this repository builds (`openbao/CLAUDE.md`, *Why the two one-shot
+// containers run OUR image*), mounted at /usr/src/sts/openbao, so
+// `../common/crypto` is the image's own. Requiring it loads the settings
+// table over `env/defaults.js` and nothing else: no store, no socket, and no
+// variable the seeder is given names a setting.
+const stsCrypto = require('../common/crypto');
 
 // This script's own logger. Its level is LOG_LEVEL, and info without one.
 const log = require('bunyan').createLogger({ name: 'sts-bao-seed',
@@ -587,7 +594,7 @@ async function ensureSecrets(token) {
     // NO KEY YET. Offered with `cas: 0` — written only if the path has no
     // version at all — so of two seeders racing an empty store exactly one
     // writes, and the other is told so and reads back the winner's.
-    const offered = nodeCrypto.randomBytes(32).toString('base64');
+    const offered = stsCrypto.randomBytes(32).toString('base64');
     const created = await writeSecrets(token,
       { kek: offered, databasePassword: DB_PASSWORD },
       held.version ? held.version : 0);
@@ -755,7 +762,7 @@ async function ensureAdminSecrets(token) {
       } else if (!pinned && !data[one.field] && one.generate) {
         // 24 characters of base64url's alphabet without its two symbols, the
         // shape the compose file's wrapper used to mint into a file.
-        data[one.field] = nodeCrypto.randomBytes(32).toString('base64')
+        data[one.field] = stsCrypto.randomBytes(32).toString('base64')
           .replace(/[^A-Za-z0-9]/g, '').slice(0, 24);
         changed.push(one.field + ' (generated)');
       }
@@ -967,7 +974,7 @@ function ownKey(keyFile) {
 function daysLeft(certFile) {
   log.debug("Entering daysLeft().");
   try {
-    const cert = new nodeCrypto.X509Certificate(fs.readFileSync(certFile));
+    const cert = stsCrypto.parseCertificate(fs.readFileSync(certFile));
     const out = (Date.parse(cert.validTo) - Date.now()) / 86400000;
     log.debug("Leaving daysLeft().");
     return Number.isFinite(out) ? out : null;
@@ -1128,7 +1135,7 @@ async function proveReadOnly() {
   // of another key must be refused.
   const ad = Buffer.from('sts seed proof', 'utf8').toString('base64');
   const sealed = await call('POST', '/v1/transit/encrypt/' + TRANSIT_KEY,
-    { plaintext: nodeCrypto.randomBytes(32).toString('base64'),
+    { plaintext: stsCrypto.randomBytes(32).toString('base64'),
       associated_data: ad }, asService);
   const ct = sealed.body && sealed.body.data && sealed.body.data.ciphertext;
   const opened = ct ? await call('POST', '/v1/transit/decrypt/' + TRANSIT_KEY,

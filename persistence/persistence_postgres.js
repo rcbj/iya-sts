@@ -117,8 +117,10 @@
 // refusals below. It reaches for no setting and no store, so this driver still
 // reaches for nothing.
 const errorCodes = require('../common/error_codes');
-// node's own, for the process origin's UUID.
-const nodeCrypto = require('crypto');
+// The process origin's UUID, a jitter and a reservation are drawn from
+// `common/crypto.js` (#453), required where each is drawn rather than here,
+// as `walkDirectory()` already does: requiring this driver loads no setting,
+// so an out-of-process tool (`risk/risk_install.ts`) may load it.
 // A LEAF with no requires: the three-way merge a directory upsert is written
 // through when another node has changed the row (#46 section 3).
 const directoryMerge = require('./directory_merge');
@@ -2306,7 +2308,8 @@ function create(options) {
   // (2026-09-18)** — see `adoptOrigin()` below. The random value here is what
   // a process uses when it has no stable name, or when the name is still held
   // by a live process, which is exactly the case the paragraph above guards.
-  let processId = String(process.pid) + '-' + nodeCrypto.randomUUID();
+  let processId = String(process.pid) + '-' +
+    require('../common/crypto').randomUuid();
   // The claim this process holds on a stable origin, or null.
   let originClaim = null;
 
@@ -2672,8 +2675,8 @@ function create(options) {
         await new Promise(function (resolve) {
           // node's generator, as every random value here is (tests/
           // random_values.js); a jitter needs no more, and asks no less.
-          setTimeout(resolve, 10 + nodeCrypto.randomInt(0, 40) *
-                              (attempt + 1));
+          const jitter = require('../common/crypto').randomInt(0, 40);
+          setTimeout(resolve, 10 + jitter * (attempt + 1));
         });
       }
     }
@@ -4132,7 +4135,7 @@ function create(options) {
       const ttlMs = Math.max(1000, Number(o.ttlMs) || 30000);
       const waitMs = Math.max(0, Number(o.waitMs) || 0);
       const pollMs = Math.max(100, Number(o.pollMs) || 2000);
-      const reservation = nodeCrypto.randomUUID();
+      const reservation = require('../common/crypto').randomUuid();
       const started = Date.now();
       const self = this;
       function attempt() {

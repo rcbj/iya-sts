@@ -98,7 +98,9 @@
 // the root builds a default instance at load, as loading it always did.
 // ===========================================================================
 
-import crypto = require('crypto');
+// `common/crypto.js`, the one place this service computes a digest (#453);
+// the deps still call it `crypto`.
+import stsCrypto = require('../common/crypto');
 import applications = require('../common/applications');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
@@ -121,7 +123,7 @@ import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 type Json = any;
 
 interface AuthorizationDetailsDeps {
-  crypto: typeof crypto;
+  crypto: typeof stsCrypto;
   applications: typeof applications;
   config: typeof config;
   errorCodes: typeof errorCodes;
@@ -229,7 +231,7 @@ class AuthorizationDetails {
     helpers.log.debug("Entering AuthorizationDetails.defaultDeps().");
     helpers.log.debug("Leaving AuthorizationDetails.defaultDeps().");
     return {
-      crypto: crypto,
+      crypto: stsCrypto,
       applications: applications,
       config: config,
       errorCodes: errorCodes,
@@ -1356,9 +1358,8 @@ class AuthorizationDetails {
     const { log, crypto } = this.deps;
     log.debug("Entering AuthorizationDetails.digestOf().");
     log.debug("Leaving AuthorizationDetails.digestOf().");
-    return crypto.createHash('sha256')
-      .update(JSON.stringify(this.canonical(details || [])))
-      .digest('base64url');
+    return crypto.digest('sha256',
+      JSON.stringify(this.canonical(details || [])), 'base64url');
   }
 
   private consentKey(username: unknown, clientId: unknown,

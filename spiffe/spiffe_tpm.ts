@@ -40,7 +40,6 @@
 // TPM 2.0 has no post-quantum algorithm; a TPM is RSA or ECC, and so is this.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 const { log } = helpers;
 // The signature check and the credential are crypto, and live where every
@@ -148,7 +147,6 @@ interface TpmPublic {
 
 interface TpmDeps {
   log: typeof log;
-  crypto: typeof nodeCrypto;
   stsCrypto: typeof stsCrypto;
 }
 
@@ -160,7 +158,7 @@ class Tpm {
   /**
    * Builds the reader over its dependencies.
    *
-   * @param deps - the logger, node's crypto and `common/crypto.js`
+   * @param deps - the logger and `common/crypto.js`
    */
   constructor(private readonly deps: TpmDeps) {
     deps.log.debug("Entering Tpm.constructor().");
@@ -175,7 +173,7 @@ class Tpm {
   static defaultDeps(): TpmDeps {
     helpers.log.debug("Entering Tpm.defaultDeps().");
     helpers.log.debug("Leaving Tpm.defaultDeps().");
-    return { log: log, crypto: nodeCrypto, stsCrypto: stsCrypto };
+    return { log: log, stsCrypto: stsCrypto };
   }
 
   /**
@@ -312,8 +310,8 @@ class Tpm {
    * @param pub - the decoded public area
    * @returns the key object
    */
-  keyOf(pub: TpmPublic): nodeCrypto.KeyObject {
-    const { log, crypto } = this.deps;
+  keyOf(pub: TpmPublic): import('crypto').KeyObject {
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering Tpm.keyOf().");
     if (pub.type === ALG.RSA) {
       const e = Buffer.alloc(4);
@@ -321,9 +319,9 @@ class Tpm {
       let start = 0;
       while (start < 3 && e[start] === 0) start++;
       log.debug("Leaving Tpm.keyOf(). RSA.");
-      return crypto.createPublicKey({ format: 'jwk', key: {
+      return stsCrypto.publicKeyFromJwk({
         kty: 'RSA', n: pub.modulus.toString('base64url'),
-        e: e.subarray(start).toString('base64url') } as any });
+        e: e.subarray(start).toString('base64url') });
     }
     const curve = CURVES[pub.curve];
     if (!curve) {
@@ -334,12 +332,12 @@ class Tpm {
     }
     const pad = Buffer.alloc(curve.bytes);
     log.debug("Leaving Tpm.keyOf(). ECC.");
-    return crypto.createPublicKey({ format: 'jwk', key: {
+    return stsCrypto.publicKeyFromJwk({
       kty: 'EC', crv: curve.crv,
       x: Buffer.concat([pad, pub.x]).subarray(-curve.bytes)
         .toString('base64url'),
       y: Buffer.concat([pad, pub.y]).subarray(-curve.bytes)
-        .toString('base64url') } as any });
+        .toString('base64url') });
   }
 
   // TPM2B_NAME's contents for an object: nameAlg ‖ H_nameAlg(TPMT_PUBLIC).
@@ -351,13 +349,13 @@ class Tpm {
    * @returns the name
    */
   name(pub: TpmPublic): Buffer {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering Tpm.name().");
     const alg = Buffer.alloc(2);
     alg.writeUInt16BE(pub.nameAlg, 0);
     log.debug("Leaving Tpm.name().");
-    return Buffer.concat([alg, crypto.createHash(this.hashName(pub.nameAlg))
-      .update(pub.raw).digest()]);
+    return Buffer.concat([alg, stsCrypto.tpmNameDigest(this.hashName(
+      pub.nameAlg), pub.raw)]);
   }
 
   // Does `name` (a TPM2B_NAME's contents) name `pub`? Computed with the
@@ -371,7 +369,7 @@ class Tpm {
    * @returns whether it matches
    */
   nameMatches(name: Buffer, pub: TpmPublic): boolean {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering Tpm.nameMatches().");
     if (!name || name.length < 2) {
       log.debug("Leaving Tpm.nameMatches(). Not a digest name.");
@@ -380,7 +378,7 @@ class Tpm {
     const alg = name.readUInt16BE(0);
     let digest = null;
     try {
-      digest = crypto.createHash(this.hashName(alg)).update(pub.raw).digest();
+      digest = stsCrypto.tpmNameDigest(this.hashName(alg), pub.raw);
     } catch (e) {
       log.debug("Caught in Tpm.nameMatches(): " + ((e && e.message) || e));
       log.debug("Leaving Tpm.nameMatches(). Unknown algorithm.");

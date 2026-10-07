@@ -54,7 +54,6 @@ import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
-import nodeCrypto = require('crypto');
 
 type Req = any;
 type Res = any;
@@ -186,7 +185,7 @@ class CryptoMetadataDocument {
       log.debug("Leaving CryptoMetadataDocument.certificateOf(). None.");
       return null;
     }
-    const x509 = new nodeCrypto.X509Certificate(pem);
+    const x509 = stsCrypto.parseCertificate(pem);
     let points: Json = null;
     if (record) {
       try {
@@ -205,8 +204,7 @@ class CryptoMetadataDocument {
       serialNumber: x509.serialNumber,
       notBefore: new Date(x509.validFrom).toISOString(),
       notAfter: new Date(x509.validTo).toISOString(),
-      sha256Fingerprint: nodeCrypto.createHash('sha256').update(x509.raw)
-        .digest('hex'),
+      sha256Fingerprint: stsCrypto.digest('sha256', x509.raw, 'hex'),
       selfSigned: !record,
       crl: points ? [points.http, points.ldap] : [],
       ocsp: points ? points.ocsp : null,
@@ -232,7 +230,7 @@ class CryptoMetadataDocument {
       let currentPem = '';
       if (row.unit === 'jose:RS256') {
         currentPem = keys.selfSignedCertPem || keys.certPem;
-        current.jwk = Object.assign(nodeCrypto.createPublicKey(currentPem)
+        current.jwk = Object.assign(stsCrypto.publicKeyOf(currentPem)
           .export({ format: 'jwk' }), { kid: row.kid, use: 'sig' });
       } else if (row.unit === 'xml:RS256') {
         currentPem = xml.selfSignedCertPem;
@@ -512,7 +510,7 @@ class CryptoMetadataDocument {
     const a = m.algorithms;
     const xml = '<?xml version="1.0" encoding="UTF-8"?>' +
       '<cm:CryptoMetadata xmlns:cm="' + XML_NS + '" ID="_cm' +
-      nodeCrypto.randomBytes(8).toString('hex') + '" specVersion="' +
+      stsCrypto.randomBytes(8).toString('hex') + '" specVersion="' +
       m.specVersion + '" issuer="' + self.esc(m.issuer) + '" realm="' +
       self.esc(m.realm) + '" generatedAt="' + self.esc(m.generatedAt) + '">' +
       '<cm:Rotation scheduled="' + (m.rotation.scheduled ? 'true' : 'false') +
