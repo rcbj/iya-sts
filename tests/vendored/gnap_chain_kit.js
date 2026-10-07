@@ -124,19 +124,18 @@
 // picture; a rerun reconciles them and replaces every key.
 //
 // THE CAPTURE HOOK. With STS_CHAIN_CAPTURE naming a directory, each job
-// writes `<job>.json` there: `{ protocol, useCase, layers }`, one layer per
-// hop — what each tier was handed, raw and decoded — so the four protocols'
-// chains can be compared side by side. No private key and no secret is in
-// it. Unset, nothing is written.
+// writes `<job>.json` there through `chain_capture.js`, the helper every
+// chain kit shares: one layer per hop — what each tier was handed, raw and
+// decoded — so the protocols' chains can be compared side by side. No
+// private key and no secret is in it. Unset, nothing is written.
 //
 // OWNED HERE (a LOCAL helper, tests/vendored/MANIFEST.js).
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
 const crypto = require("crypto");
-const fs = require("fs");
-const path = require("path");
 const registry = require("./sts_applications.js");
+const capture = require("./chain_capture.js");
 const chain = require("./token_exchange_chain_kit.js");
 const gnap = require("./gnap_client.js");
 const flowLib = require("./gnap_flow.js");
@@ -881,33 +880,64 @@ function newCapture(tag) {
   return { protocol: "GNAP", useCase: "", layers: [] };
 }
 
+// WHICH ACT MADE A LAYER, from what the jobs say about it: the ID Token is
+// the OpenID Connect sign-in, a derived token is RFC 9767 section 4, and the
+// first access token is the grant itself — by a user assertion with no
+// interaction (impersonation) or by the person's approval (delegation).
+function mechanismOf(layer) {
+  log.debug("Entering mechanismOf().");
+  if (layer.mechanism) {
+    log.debug("Leaving mechanismOf(). Named.");
+    return layer.mechanism;
+  }
+  if (layer.kind === "ID Token") {
+    log.debug("Leaving mechanismOf(). Sign-in.");
+    return "OpenID Connect authorization code";
+  }
+  if (/^derived by /.test(String(layer.notes || ""))) {
+    log.debug("Leaving mechanismOf(). Derivation.");
+    return "GNAP token derivation (RFC 9767 section 4)";
+  }
+  if (/user assertion/.test(String(layer.notes || ""))) {
+    log.debug("Leaving mechanismOf(). Assertion.");
+    return "GNAP grant by user assertion, no interaction";
+  }
+  log.debug("Leaving mechanismOf(). Approval.");
+  return "GNAP grant approved through interaction";
+}
+
 // `layer`: { hop, requester, target, kind, format, value, header, claims,
-// act, notes }. Copied member by member, so nothing else rides along.
+// act, notes } — written through chain_capture.js, the helper every chain
+// kit shares, so the twelve chains have one shape. The nested `act` becomes
+// that helper's `actChain`, oldest first.
 function captureLayer(G, layer) {
   log.debug("Entering captureLayer(). " + layer.hop);
-  G.capture.layers.push({
+  const entry = {
     hop: layer.hop, requester: layer.requester, target: layer.target,
     kind: layer.kind, format: layer.format, value: layer.value,
     header: layer.header === undefined ? null : layer.header,
     claims: layer.claims === undefined ? null : layer.claims,
     act: layer.act === undefined ? null : layer.act,
-    notes: layer.notes || "" });
+    notes: layer.notes || "" };
+  G.capture.layers.push(entry);
+  capture.layer({
+    hop: entry.hop, requester: entry.requester, target: entry.target,
+    mechanism: mechanismOf(layer), kind: entry.kind, format: entry.format,
+    value: entry.value, header: entry.header, claims: entry.claims,
+    actChain: capture.actChain(entry.act,
+                               entry.claims && entry.claims.iss),
+    notes: entry.notes });
   log.debug("Leaving captureLayer().");
 }
 
+// The record's own fields. The file itself is written by chain_capture.js
+// as each layer arrives; this names the protocol, the use case, the service
+// and its mode on it. Unset STS_CHAIN_CAPTURE, nothing is written.
 function writeCapture(G, job, useCase) {
   log.debug("Entering writeCapture(). " + job);
-  const dir = process.env.STS_CHAIN_CAPTURE;
-  if (!dir) {
-    log.debug("Leaving writeCapture(). Not asked for.");
-    return;
-  }
-  const out = { protocol: G.capture.protocol, useCase: useCase,
-                layers: G.capture.layers };
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, job + ".json");
-  fs.writeFileSync(file, JSON.stringify(out, null, 2) + "\n");
-  log.info("[capture] " + out.layers.length + " layer(s) written to " + file);
+  capture.set({ protocol: G.capture.protocol, useCase: useCase,
+                service: G.base,
+                mode: G.product ? "product" : "development" });
   log.debug("Leaving writeCapture().");
 }
 
