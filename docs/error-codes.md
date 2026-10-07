@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4167** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4174** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -64,8 +64,8 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 258
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 701
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 102
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 704
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 105
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 31
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 21
 * [Federation (`STS-FED`)](#sts-fed) — 141
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 46
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 349
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 350
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 92
@@ -2119,6 +2119,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0944` | An access token issued to the admin console as a public client was presented at a resource carrying no cnf.jkt. Such a token is honoured only DPoP-bound (#446). | invalid_token (HTTP 401) |
 | `STS-OAUTH-0945` | An authorization request reached a session whose sign-in mechanism the client does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does. | HTTP 302 to the sign-in screen |
 | `STS-OAUTH-0946` | An authorization request with prompt=none reached a session whose sign-in mechanism the client does not allow (appAuthnMechanism, #457), and prompt=none forbids asking. | login_required (OIDC Core 3.1.2.6) |
+| `STS-OAUTH-0947` | Product mode: an authorization request (or a pushed one) named a client_id that is no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before anything was decided or recorded (#496). | invalid_client (HTTP 400, not redirected, RFC 6749 4.1.2.1) |
+| `STS-OAUTH-0948` | Product mode: an authorization request named no client_id, so there is no registered client to serve (#496). | invalid_request (HTTP 400, not redirected, RFC 6749 4.1.2.1) |
+| `STS-OAUTH-0949` | Product mode: a token request named a client that is no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the client was counted or recorded (#496). | invalid_client (HTTP 401, RFC 6749 section 5.2) |
 
 ## STS-SAML
 
@@ -2230,6 +2233,9 @@ Raised from: saml/.
 | `STS-SAML-0100` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a sign-in mechanism the service provider does not allow (appAuthnMechanism, #457). | Responder / RequestDenied |
 | `STS-SAML-0101` | A SAML 1.1 sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-SAML-0102` | A SAML 1.1 flow back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
+| `STS-SAML-0103` | Product mode: an AuthnRequest named an Issuer that is no registered SAML 2.0 service provider (no appRegisteredBy; an entry a sighting filed is not a registration), or none, and was refused before its signature was checked or anything recorded (#496). | HTTP 403 page (no Response to an unregistered ACS) |
+| `STS-SAML-0104` | Product mode: a LogoutRequest named an Issuer that is no registered SAML 2.0 service provider, or none; no session was ended (#496). | HTTP 403 page |
+| `STS-SAML-0105` | Product mode: a SAML 1.1 browser flow named (or let this service infer) a relying party that is not registered, and was refused before its addresses were read (#496). | HTTP 403 page |
 
 ## STS-WSTRUST
 
@@ -3892,6 +3898,7 @@ Raised from: gnap/.
 | `STS-GNAP-0899` | The person at a GNAP approval page was sent to sign in again for the authentication level the rights need, and came back still short of it; the request is denied (#432 phase 6, RFC 9470). | RFC 9635 section 3.6 (request_denied, HTTP 403), at the next continuation |
 | `STS-GNAP-0900` | The mail notice for a GNAP grant waiting for its resource owner could not be queued; the grant waits on the portal regardless (#432 phase 6). | log only |
 | `STS-GNAP-0901` | A GNAP grant could not wait for its resource owner: the user the request names is not a person the directory holds (#432 phase 6). | RFC 9635 section 2.4 (unknown_user, HTTP 400) |
+| `STS-GNAP-0902` | Product mode: a GNAP request was proved with a key, or named an instance identifier, belonging to an application nobody registered (no appRegisteredBy; an entry created on first sight in development is not a registration) (#496). | invalid_client or invalid_resource_server (HTTP 401, RFC 9635 section 2.3.3) |
 
 ## STS-DEVICE
 

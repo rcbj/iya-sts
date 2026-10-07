@@ -1872,6 +1872,8 @@ on [What is not checked](what-is-not-checked.md).
 | Client authentication | nothing is required: a client may send only a `client_id` | a confidential client must present its credential and it must verify; a public client (`token_endpoint_auth_method=none`) is allowed |
 | RFC 9700 | only where `oauth2.rfc9700` or `oauth2.oauth21` is set | **always**, for every realm — see [OAuth security](oauth-security.md) |
 | Unknown client or authorization server | created the first time it is named | refused; create it ahead of time |
+| A client nobody **registered** — unknown, or recorded only because a development request named it | served | the authorization endpoint answers a 400 page and never redirects (`invalid_client`; no `client_id` at all is `invalid_request`); the token endpoint answers 401 `invalid_client` before anything is recorded (#496). Registered means through the console, `/admin-api`, `POST /oauth2/register` or an OpenID Federation |
+| Token exchange to an audience or resource nobody registered | the issuance policy notes it would refuse, and issues | refused `invalid_target`; an application a development request merely recorded is not a target |
 | Redirect URIs | any | only one registered for the client |
 | Password grant | offered; accepts any password but `invalid` | not offered (RFC 9700 section 2.4) |
 | Grants for a public client | all | authorization code and refresh only |

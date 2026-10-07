@@ -972,12 +972,19 @@ class Saml2Sso {
   // (`appAllowedProtocol`) — not merely any application whose slug matches,
   // because an OAuth client's name is not a service provider this identity
   // provider has agreed to publish itself to.
+  //
+  // AND, IN PRODUCT, ONE SOMEBODY REGISTERED (#496): `appRegisteredBy` on
+  // the entry, #494's word. A development sighting writes the
+  // `saml2-service-provider` kind onto an entry, so the kind alone let an
+  // entry development had merely seen through every per-SP path in product.
   private isRegisteredServiceProvider(entityId): boolean {
-    const { applications } = this.deps;
+    const { applications, mode } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.isRegisteredServiceProvider().");
     const record: any = entityId ? applications.get(entityId) : null;
     const answer = !!record &&
+      (mode.issuesToUnregisteredApplications() ||
+       !!String(record.registeredBy || '')) &&
       ((record.kinds || []).indexOf('saml2-service-provider') >= 0 ||
        applications.declaredFamiliesOf(record).indexOf('saml2') >= 0);
     log.debug("Leaving Saml2Sso.isRegisteredServiceProvider(). " + answer);
@@ -2860,6 +2867,42 @@ class Saml2Sso {
     // request only where one is required. Refused on a PAGE, for the reason an
     // unregistered address is: the AssertionConsumerServiceURL a Response
     // would go to is part of what the signature was meant to protect.
+    // --- A SERVICE PROVIDER NOBODY REGISTERED GETS NOTHING, IN PRODUCT -------
+    // (#496). rcbj: in product an unregistered application gets nothing but
+    // a 404 or its protocol's own "unknown application" error, and nothing
+    // is learnt from it. Asked on the request's first arrival, BEFORE the
+    // signature check — which writes a `saml2.request.signature` audit row,
+    // and on a refusal filed a sighting on any entry the Issuer named — and
+    // answered on a PAGE: no Response may go to an AssertionConsumerService
+    // nobody registered. "Registered" is #494's word (`appRegisteredBy`), so
+    // an entry a development sighting filed is refused like none. ONE thing
+    // is still asked first: a Metadata Query lookup for an entityID with no
+    // entry, which `queueMdqLookup()` makes in product only with a realm
+    // trust anchor and turns into a registration only when the answer
+    // verifies (#112) — the operator's MDQ is consulted, nothing is taken
+    // from the request, and the request itself is refused either way.
+    if (!held && !mode.issuesToUnregisteredApplications()) {
+      const named = String(request.issuer || scoped.entityId || '');
+      const entry: any = named ? applications.get(named) : null;
+      if (!entry || !String(entry.registeredBy || '')) {
+        if (named && !entry) {
+          this.deps.spMetadata.queueMdqLookup(named);
+        }
+        errorCodes.mark(res, 'STS-SAML-0103');
+        log.debug("Leaving Saml2Sso.singleSignOnChecked(). The service " +
+                  "provider is not registered.");
+        return this.samlError(res, 403, 'That service provider is not ' +
+                              'registered',
+          (named ? 'The AuthnRequest\'s Issuer is "' + named + '", and no '
+                 : 'The AuthnRequest names no Issuer, so no ') +
+          'SAML 2.0 service provider is registered under it in this realm. ' +
+          'In product mode this identity provider answers only a service ' +
+          'provider registered ahead of time (the console, /admin-api or ' +
+          'verified metadata); one that was only seen is not registered, ' +
+          'and no Response is sent anywhere.');
+      }
+    }
+
     let verification = held ? held.verification : null;
     if (!verification) {
       const claimed = request.issuer || scoped.entityId;
@@ -4756,7 +4799,7 @@ class Saml2Sso {
   }
 
   private singleLogout(req, res) {
-    const { errorCodes, validation } = this.deps;
+    const { applications, errorCodes, mode, validation } = this.deps;
     const { endSession } = this.deps.authn;
     const { STS, baseUrlOf, firstByLocal, log, logArtifact, textByLocal,
             xmlEscape } = this.deps.helpers;
@@ -4859,6 +4902,28 @@ class Saml2Sso {
     }
     const requestId = root.getAttribute('ID') || '';
     const spEntityId = textByLocal(root, 'Issuer') || scoped.entityId;
+    // A SERVICE PROVIDER NOBODY REGISTERED ENDS NOTHING, IN PRODUCT (#496):
+    // asked before the signature check (its audit row, its metadata lookup)
+    // and before any session is looked at. With signed requests not
+    // required, an unsigned LogoutRequest from an Issuer nobody registered
+    // ended the browser's session. A page, for the reason the signature
+    // refusal below is one: there is no registered SingleLogoutService to
+    // send a LogoutResponse to.
+    const sloEntry: any = spEntityId ? applications.get(spEntityId) : null;
+    if (!mode.issuesToUnregisteredApplications() &&
+        (!sloEntry || !String(sloEntry.registeredBy || ''))) {
+      errorCodes.mark(res, 'STS-SAML-0104');
+      log.debug("Leaving Saml2Sso.singleLogout(). The service provider is " +
+                "not registered.");
+      return this.samlError(res, 403, 'That service provider is not ' +
+                            'registered',
+        (spEntityId ? 'The LogoutRequest\'s Issuer is "' + spEntityId +
+                      '", and no '
+                    : 'The LogoutRequest names no Issuer, so no ') +
+        'SAML 2.0 service provider is registered under it in this realm. ' +
+        'In product mode only a registered service provider may end a ' +
+        'session here; nothing was ended.');
+    }
     // THE SIGNATURE (#37), before anything is decrypted or ended: a
     // LogoutRequest whose signature fails, or an unsigned one where signed
     // requests are required, ends NO session. saml-profiles-2.0-os section

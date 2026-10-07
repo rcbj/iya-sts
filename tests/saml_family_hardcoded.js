@@ -377,6 +377,9 @@ function run(t) {
   // -------------------------------------------------------------------------
   t.log.info('E. WS-Trust');
   // -------------------------------------------------------------------------
+  // The registry needs the directory; a full `npm test` has loaded it by
+  // now, and a run of this file alone has not.
+  require('../ldap/ldap_server');
   const sfhApp = require('../common/applications').createApplication({
     identifier: 'sfh-rp-' + process.pid, protocols: ['wstrust'],
     fields: { wstrustAppliesTo: [SFH_APPLIES_TO] } });
@@ -674,6 +677,13 @@ function run(t) {
   // (`saml2.requireSignedAuthnRequests` is on there by default), and what this
   // check is about is the address rule. `tests/saml_request_signatures.js`
   // holds the signature rule.
+  // #496: a REGISTERED service provider — product refuses an Issuer
+  // nobody registered before the address is read.
+  const prodSp = require('../common/applications').createApplication({
+    identifier: 'https://prod-sp-' + stamp + '.test', protocols: ['saml2'],
+    fields: {} });
+  t.check(prodSp && prodSp.ok, 'precondition: the service provider is ' +
+          'registered', JSON.stringify(prodSp));
   const prodSso = withMode(config, 'product', function () {
     config.setOverride('saml2.requireSignedAuthnRequests', 'off');
     try {

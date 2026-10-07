@@ -81,7 +81,8 @@ type TargetKind = 'audience' | 'appliesTo';
 interface DelegationPolicyDeps {
   log: typeof helpers.log;
   config: { value(key: string): any };
-  mode: { authorizesDelegation(): boolean; current(): string };
+  mode: { authorizesDelegation(): boolean; current(): string;
+          issuesToUnregisteredApplications(): boolean };
   applications: Json;
   credentials: Json;
   gate: Json;
@@ -281,6 +282,19 @@ class DelegationPolicy {
         : (applications.forAudience(wanted) ||
            applications.forClientId(wanted));
       found = found || applications.get(wanted) || null;
+    }
+    // IN PRODUCT A TARGET NOBODY REGISTERED IS NO TARGET (#496). An entry a
+    // development sighting filed (no `appRegisteredBy`) resolved here, so a
+    // token exchange to an audience development had merely seen was decided
+    // as a registered target with no relationships. rcbj: in product an
+    // unregistered application gets nothing, so it resolves to nothing and
+    // is the policy's `unregistered-target` (RFC 8693's `invalid_target`).
+    // Development keeps the sighting, and its "would have refused" notes.
+    if (found && !this.deps.mode.issuesToUnregisteredApplications() &&
+        !String(found.registeredBy || '')) {
+      log.debug("DelegationPolicy.resolveTarget(): " + found.identifier +
+                " is not registered; product resolves it to nothing.");
+      found = null;
     }
     log.debug("Leaving DelegationPolicy.resolveTarget(). " +
               (found ? found.identifier : 'Unregistered.'));

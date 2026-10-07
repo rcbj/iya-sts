@@ -1686,9 +1686,15 @@ function publishesMetadataForUnregisteredProviders() {
 // relying party would be entitled to accept. The rule is rcbj's on #496: in
 // product an unregistered application gets nothing but a 404 or its
 // protocol's own "unknown application" error.
+// The same question is asked of every door where a request names an
+// application (#496, widened by rcbj the same day): an OAuth 2.0 client and
+// an RFC 8693 target, a SAML service provider or relying party, a GNAP
+// client — each refusing in its own protocol's words, each with its own row
+// in REQUIREMENTS below.
 /**
  * Tells whether a token may be issued for an application nobody registered
- * (a WS-Trust AppliesTo, a WS-Federation wtrealm), or for no application.
+ * (a WS-Trust AppliesTo, a WS-Federation wtrealm, an OAuth client, a SAML
+ * service provider, a GNAP client), or for no application.
  *
  * @returns true in development mode
  */
@@ -2871,6 +2877,57 @@ const REQUIREMENTS = [
              'wtrealm names no registered relying party is refused with a ' +
              '404 page (STS-WSFED-0021) before the sign-in screen.',
     where: 'ws-trust/wstrust.ts, ws-federation/wsfed.ts' },
+  { id: 'unregistered-oauth-clients',
+    what: 'An OAuth 2.0 client is served only when registered (#496)',
+    development: 'The authorization endpoint asks nothing about the ' +
+                 'client_id beyond its redirect URIs, and the token ' +
+                 'endpoint files a client it has seen before refusing it. ' +
+                 'An RFC 8693 audience a sighting filed is a target, and an ' +
+                 'assertion\'s audience naming one is a relying party.',
+    product: 'An authorization request or PAR naming a client_id nobody ' +
+             'registered (appRegisteredBy unset — a sighting is not a ' +
+             'registration) is a 400 on this server, never redirected ' +
+             '(STS-OAUTH-0947; none named: STS-OAUTH-0948); a token request ' +
+             'naming one is 401 invalid_client (STS-OAUTH-0949) before it ' +
+             'is counted or recorded. An RFC 8693 audience or resource ' +
+             'naming an unregistered application is the policy\'s ' +
+             'unregistered-target (invalid_target, STS-OAUTH-0793), and an ' +
+             'exchanged assertion\'s audience must be a registered ' +
+             'application under any-declared-relying-party.',
+    where: 'oauth-oidc/oauth2.ts, common/delegation_policy.ts, ' +
+           'oauth-oidc/exchange_assertions.ts' },
+  { id: 'unregistered-saml-providers',
+    what: 'A SAML service provider or relying party is answered only when ' +
+          'registered (#496)',
+    development: 'An AuthnRequest, a LogoutRequest and a SAML 1.1 browser ' +
+                 'flow are answered for any Issuer; the signature check ' +
+                 'records it, and an entry a sighting filed counts as a ' +
+                 'service provider on the per-SP paths.',
+    product: 'An AuthnRequest whose Issuer is no registered SAML 2.0 ' +
+             'service provider (appRegisteredBy unset — a sighting is not ' +
+             'a registration) is a 403 page before its signature is ' +
+             'checked (STS-SAML-0103; only a Metadata Query lookup for an ' +
+             'unknown entityID is still queued, under the trust-anchor ' +
+             'rule); a LogoutRequest from one ends nothing (STS-SAML-0104); ' +
+             'a SAML 1.1 flow for an unregistered relying party is a 403 ' +
+             'page (STS-SAML-0105). The per-SP paths, the attribute ' +
+             'authority and the SAML 1.1 responder count only a registered ' +
+             'entry, and an MDQ lookup treats an unregistered entry as ' +
+             'unknown.',
+    where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, saml/sp_metadata.ts' },
+  { id: 'unregistered-gnap-clients',
+    what: 'A GNAP client or resource server is served only when ' +
+          'registered (#496)',
+    development: 'An unknown proved key is made an application entry on ' +
+                 'first sight, and that entry\'s key and instance ' +
+                 'identifier are accepted from then on.',
+    product: 'An unknown key is refused (STS-GNAP-0082), and so is a key or ' +
+             'an instance identifier belonging to an entry nobody ' +
+             'registered (appRegisteredBy unset — one created on first ' +
+             'sight is not a registration): 401 invalid_client or ' +
+             'invalid_resource_server (STS-GNAP-0902), before the entry is ' +
+             'sighted again or anything is issued.',
+    where: 'gnap/gnap_grants.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +

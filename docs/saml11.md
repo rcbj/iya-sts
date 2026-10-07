@@ -233,6 +233,7 @@ subject and the attributes.
 
 | | Development | Product |
 |---|---|---|
+| A relying party nobody **registered** — unknown, or recorded only because a development request named it | answered | a 403 page before its addresses are read (#496); the per-RP paths and the responder count only a registered entry |
 | `shire` | used as it stands; with none, the mock relying party | must be a registered `samlAssertionConsumerService`, exact match, no mock fallback; an address development merely observed is refused until confirmed |
 | `AttributeQuery`, `AuthenticationQuery` | answered, to anybody who can reach the port — logged as such | answered only to a registered, authenticated relying party about a person it holds a live session for, by the NameIdentifier it was given |
 | Artifact resolver authentication | not required (follows `saml2.requireSignedAuthnRequests`) | required |

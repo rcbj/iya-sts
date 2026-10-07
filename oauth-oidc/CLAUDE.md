@@ -5183,3 +5183,44 @@ WebCrypto key), and the registration-time check for the seeded row.
 
 `tests/console_public_client.js` holds the rule end to end, with the entry
 declared public in a child process.
+
+## A CLIENT NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496, 2026-10-06)
+
+rcbj, widening #496: in product an application that is not registered gets
+nothing but a 404 or its protocol's own "unknown application" error, and
+nothing is learnt from it. "Registered" is #494's word, `appRegisteredBy`
+(`IssuerNames.registeredApplication()`): the console, `/admin-api`, RFC 7591,
+an OpenID Federation (automatic registration runs BEFORE the authorization
+endpoint reads the client, so a federation client is registered by then)
+and the seeds. An entry a development sighting filed is a sighting. Behind
+`mode.issuesToUnregisteredApplications()`, the `unregistered-oauth-clients`
+row on `/admin/mode`. Development is unchanged.
+
+* **The authorization endpoint** (and PAR, through the same
+  `vetAuthorizationRequest()`) asked nothing about the client until #496:
+  an unknown `client_id` was refused only by the redirect URI rule
+  (`STS-OAUTH-0121`), and ACCEPTED where `oauth2.redirectUris` was set.
+  `unregisteredClientRefusal()` is asked right after the shape check, as a
+  400 on this server and never redirected (RFC 6749 section 4.1.2.1):
+  `invalid_client`, `STS-OAUTH-0947`; no `client_id`, `invalid_request`,
+  `STS-OAUTH-0948`.
+* **The token endpoint** asks the same question before the failed-secret
+  counter and the `seen()` that wrote an unregistered entry's grant type and
+  scope onto it: 401 `invalid_client`, `STS-OAUTH-0949`. An unknown client
+  was refused anyway (`STS-OAUTH-0193`), and a seen-only one only because a
+  sighting writes no credential (`STS-OAUTH-0553`). A clientless grant names
+  no client and is not asked.
+* **RFC 8693's target**: `DelegationPolicy.resolveTarget()` resolves an
+  entry with no `appRegisteredBy` to nothing in product, so an exchange to
+  an audience development merely saw is the policy's `unregistered-target`
+  (`invalid_target`, `STS-OAUTH-0793`); and
+  `ExchangeAssertions.applicationNamed()` holds an exchanged assertion's
+  audience to a registered application under `any-declared-relying-party`.
+* **NOT DONE: RFC 8707 `resource` outside an exchange.** A resource value
+  is shape-checked and becomes the token's `aud`, registered or not. Whether
+  a resource indicator names an "application" is open on #496: this
+  service's own resource servers (`/admin-api`, `/scim/v2`, Shared Signals,
+  UserInfo, the debugger's api) are not all application entries, so refusing
+  every resource no registered application declares needs that list first.
+
+`tests/unregistered_applications.js` (O1–O3) holds it in both modes.

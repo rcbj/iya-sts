@@ -553,6 +553,7 @@ being answered.
 | Unsigned request, or signed with no registered certificate | accepted (`saml2.requireSignedAuthnRequests=auto`) | refused |
 | `AssertionConsumerServiceURL` with no consumed metadata | used as it stands; with none, the registered address or `/saml2/sp` | must be a registered `samlAssertionConsumerService`, exact match, no mock fallback; an address development merely observed is refused until confirmed |
 | An unknown entityID's request, or a metadata request for one | accepted, and its application entry created | answered without creating an entry; its AuthnRequest is refused — no registered return address and no signature (an MDQ lookup can register it) |
+| An AuthnRequest or LogoutRequest from a service provider nobody **registered** — unknown, or recorded only because a development request named it | answered | a 403 page before the signature is checked, and nothing recorded; a LogoutRequest ends nothing (#496). Only an MDQ lookup for an entityID with no entry is still started, under the trust-anchor rule. The per-SP paths, the attribute authority and an MDQ lookup count only a registered entry |
 | Encryption wanted and no certificate | sent **in clear**, with a WARN | refused with a `Responder` status and no assertion |
 | Encryption to an observed request certificate | yes | only once an operator confirms it |
 | `WantAssertionsSigned` in the SP's metadata with `saml2.signAssertion` off | the setting wins, and the request is logged | the assertion is signed — as it is for every service provider (#181) |

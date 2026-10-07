@@ -359,8 +359,9 @@ function childMain() {
     const port = server.address().port;
 
     // PKCE ON EVERY REQUEST, INCLUDING THE DEVELOPMENT ONES (2026-09-17).
-    // `ab-client` is never registered here — development mode creates it
-    // because it was named — so this service cannot see it to be confidential
+    // `ab-client` is registered below as a PUBLIC client (until #496 it was
+    // never registered, and development created it because it was named), so
+    // this service cannot see it to be confidential
     // and RFC 9700 section 2.1.1 requires PKCE of it. Product mode enforces
     // the BCP since public clients were allowed (`common/mode.js`,
     // `enforcesOauthSecurityBcp()`), so without this the product half of
@@ -387,6 +388,22 @@ function childMain() {
       }).filter(function (one) { return /^sts_session=./.test(one); })[0] ||
         '';
     };
+
+    // `ab-client` IS REGISTERED FIRST (#496). Product mode serves only a
+    // client registered ahead of time, and an entry development files
+    // because a client was named is a sighting, not a registration — the
+    // product half below got an unredirected 400 (STS-OAUTH-0947) and no
+    // `authn` id. Registered before the development run, so that run does
+    // not file it first.
+    const abClient = inDefault(function () {
+      return require(ROOT + '/common/applications').createApplication({
+        identifier: 'ab-client', protocols: ['oauth2', 'oidc'],
+        fields: { oauthClientId: 'ab-client',
+                  oauthRedirectUri: ['https://rp.ab.example/cb'],
+                  oauthTokenEndpointAuthMethod: 'none' } });
+    });
+    note(abClient && abClient.ok, 'precondition: ab-client is registered',
+         JSON.stringify(abClient));
 
     // Development first: any password, the change page, a mismatch, success.
     config.clearOverride('global.mode');

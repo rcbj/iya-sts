@@ -32,7 +32,35 @@
 //   U7. WS-Federation: product refuses a wsignin1.0 whose wtrealm names no
 //       registered relying party, or only a seen one, with a 404 page
 //       (STS-WSFED-0021) before the sign-in screen and writes nothing; a
-//       registered wtrealm passes the check; development is unchanged.
+//       registered wtrealm passes the check; development is unchanged;
+//   O1. OAuth, product: an authorization request naming a client_id nobody
+//       registered, one only seen, or none is a 400 that is not redirected
+//       (STS-OAUTH-0947 / 0948); a registered one passes the check;
+//       development asks nothing;
+//   O2. OAuth, product: a token request naming an unregistered or seen-only
+//       client is 401 invalid_client (STS-OAUTH-0949) and writes nothing on
+//       the seen-only entry; development is not refused for it;
+//   O3. RFC 8693: the delegation policy resolves a seen-only target to
+//       nothing in product (its unregistered-target) and to the entry in
+//       development; an exchanged assertion's audience naming a seen-only
+//       entry is no relying party in product;
+//   S1. SAML 2.0, product: an AuthnRequest from an unregistered or a
+//       seen-only Issuer is a 403 page (STS-SAML-0103) and writes nothing on
+//       the seen-only entry; a registered one passes the check; development
+//       answers both;
+//   S2. a LogoutRequest from an unregistered Issuer ends nothing
+//       (STS-SAML-0104);
+//   S3. the per-SP metadata path: a seen-only service provider is a 404
+//       in product (STS-SAML-0082), a registered one is answered;
+//   S4. SAML 1.1: a browser flow for an unregistered or seen-only relying
+//       party is a 403 page (STS-SAML-0105);
+//   S5. a Metadata Query lookup a request starts for a seen-only entityID
+//       is gated as for an unknown one in product (STS-SAML-0080);
+//   G1. GNAP, product: a proved key, or an instance identifier, belonging
+//       to an entry development created on first sight is 401
+//       invalid_client (STS-GNAP-0902) and the entry is not sighted again;
+//       a registered client's key is identified; development identifies
+//       the seen-only one.
 //
 // IN PROCESS, in a throwaway realm: the cases are product's and
 // development's, and a job over HTTP runs in one mode.
@@ -443,6 +471,344 @@ function wsfed(t) {
   log.debug("Leaving wsfed().");
 }
 
+// A request enough for the OAuth server's two doors: the query for the
+// authorization endpoint, a form body for the token endpoint.
+function oauthReq(query, form) {
+  log.debug("Entering oauthReq().");
+  const headers = { host: 'sts.ua.example',
+                    'content-type': 'application/x-www-form-urlencoded' };
+  log.debug("Leaving oauthReq().");
+  return { method: form ? 'POST' : 'GET', path: '/oauth2/token',
+           url: '/oauth2/token', originalUrl: '/oauth2/token',
+           query: query || {}, headers: headers, cookies: {},
+           body: form ? new URLSearchParams(form).toString() : '',
+           protocol: 'https', secure: true, ip: '127.0.0.1',
+           socket: { remoteAddress: '127.0.0.1' },
+           get: function (k) {
+             return headers[String(k).toLowerCase()];
+           } };
+}
+
+async function oauth(t, seenOnlyClient) {
+  log.debug("Entering oauth().");
+  const oauth2 = require('../oauth-oidc/oauth2');
+  const server = new oauth2.OAuth2Server(oauth2.OAuth2Server.defaultDeps());
+  const vet = function (m, clientId) {
+    log.debug("Entering vet(). " + m + ' ' + clientId);
+    const query = { response_type: 'code', scope: 'openid',
+                    redirect_uri: 'https://ua-client.example/cb',
+                    code_challenge: 'x'.repeat(43),
+                    code_challenge_method: 'S256' };
+    if (clientId) {
+      query.client_id = clientId;
+    }
+    const out = inMode(m, function () {
+      return server.vetAuthorizationRequest(oauthReq(query));
+    });
+    log.debug("Leaving vet().");
+    return out;
+  };
+  const unknown = 'ua-nobody-client-' + process.pid;
+  const product = [vet('product', unknown), vet('product', seenOnlyClient),
+                   vet('product', '')];
+  t.check(product[0].code === 'STS-OAUTH-0947' &&
+          product[0].error === 'invalid_client' &&
+          product[0].redirect === false && product[0].status === 400 &&
+          product[1].code === 'STS-OAUTH-0947' &&
+          product[2].code === 'STS-OAUTH-0948' &&
+          product[2].error === 'invalid_request' && !product[2].redirect,
+          'O1. product: an authorization request naming an unregistered ' +
+          'client, a seen-only one, or none is a 400 on this server, never ' +
+          'redirected (STS-OAUTH-0947 / 0948)', JSON.stringify(product));
+  const registered = vet('product', 'ua-oauth');
+  const dev = vet('development', unknown);
+  t.check(registered.code !== 'STS-OAUTH-0947' &&
+          dev.code !== 'STS-OAUTH-0947' && dev.code !== 'STS-OAUTH-0948',
+          'O1b. a registered client passes the check in product, and ' +
+          'development asks nothing', JSON.stringify([registered, dev]));
+
+  const token = async function (m, clientId) {
+    log.debug("Entering token(). " + m + ' ' + clientId);
+    const res = fakeRes();
+    config.setOverride('global.mode', m);
+    try {
+      await server.tokenGrant(oauthReq({}, {
+        grant_type: 'client_credentials', client_id: clientId,
+        client_secret: 'not-the-secret-0123456789' }), res);
+    } finally {
+      config.clearOverride('global.mode');
+    }
+    log.debug("Leaving token().");
+    return { status: res.statusCode, code: errorCodes.codeOf(res) || '',
+             body: res.body.slice(0, 300) };
+  };
+  const before = applications.get(seenOnlyClient);
+  const refused = [await token('product', unknown),
+                   await token('product', seenOnlyClient)];
+  const after = applications.get(seenOnlyClient);
+  t.check(refused.every(function (r) {
+    return r.status === 401 && r.code === 'STS-OAUTH-0949' &&
+      /invalid_client/.test(r.body);
+  }) && before && after &&
+          JSON.stringify(after.fields.oauthGrantType || null) ===
+            JSON.stringify(before.fields.oauthGrantType || null) &&
+          after.lastAt === before.lastAt && !applications.get(unknown),
+          'O2. product: a token request naming an unregistered or seen-only ' +
+          'client is 401 invalid_client (STS-OAUTH-0949), and nothing is ' +
+          'written', JSON.stringify(refused));
+  const devToken = await token('development', unknown);
+  t.check(devToken.code !== 'STS-OAUTH-0949',
+          'O2b. development is not refused for an unregistered client',
+          JSON.stringify(devToken));
+
+  const policy = require('../common/delegation_policy');
+  const resolved = ['product', 'development'].map(function (m) {
+    return inMode(m, function () {
+      return [policy.resolveTarget(seenOnlyClient, 'audience'),
+              policy.resolveTarget('ua-oauth', 'audience')];
+    });
+  });
+  const exchange = require('../oauth-oidc/exchange_assertions')
+    .ExchangeAssertions;
+  const named = ['product', 'development'].map(function (m) {
+    return inMode(m, function () {
+      return [exchange.applicationNamed(seenOnlyClient),
+              exchange.applicationNamed('ua-oauth')];
+    });
+  });
+  t.check(resolved[0][0] === '' && resolved[0][1] === 'ua-oauth' &&
+          resolved[1][0] === seenOnlyClient &&
+          resolved[1][1] === 'ua-oauth' &&
+          named[0][0] === '' && named[0][1] === 'ua-oauth' &&
+          named[1][0] === seenOnlyClient,
+          'O3. RFC 8693: a seen-only target resolves to nothing in product ' +
+          '(the policy\'s unregistered-target) and to its entry in ' +
+          'development; an exchanged assertion\'s audience likewise',
+          JSON.stringify({ resolved: resolved, named: named }));
+  log.debug("Leaving oauth().");
+}
+
+// The routes a module registers, on a stand-in app: path -> handler.
+function routesOf(module) {
+  log.debug("Entering routesOf().");
+  const routes = {};
+  const add = function (method) {
+    return function (path, fn) {
+      routes[method + ' ' + path] = fn;
+    };
+  };
+  module.registerRoutes({ get: add('GET'), post: add('POST'),
+                          all: add('ALL'), use: function () {},
+                          contentSecurityPolicy: function () {
+                            return '';
+                          } });
+  log.debug("Leaving routesOf().");
+  return routes;
+}
+
+async function ask2(handler, m, query) {
+  log.debug("Entering ask2().");
+  const res = fakeRes();
+  const req = oauthReq(query);
+  req.params = {};
+  config.setOverride('global.mode', m);
+  let threw = '';
+  try {
+    await Promise.resolve(handler(req, res));
+  } catch (e) {
+    // A development request goes on to the sign-in screen, which this
+    // stand-in may not carry everything for; what is held here is only
+    // whether the refusal answered.
+    log.debug("Caught in ask2(): " + ((e && e.message) || e));
+    threw = String((e && e.message) || e);
+  } finally {
+    config.clearOverride('global.mode');
+  }
+  log.debug("Leaving ask2().");
+  return { status: res.statusCode, code: errorCodes.codeOf(res) || '',
+           threw: threw, body: res.body.slice(0, 300) };
+}
+
+function deflated(xml) {
+  log.debug("Entering deflated().");
+  log.debug("Leaving deflated().");
+  return require('zlib').deflateRawSync(Buffer.from(xml)).toString('base64');
+}
+
+async function saml(t, seenSp) {
+  log.debug("Entering saml().");
+  const routes2 = routesOf(require('../saml/saml2_sso'));
+  const routes11 = routesOf(require('../saml/saml11_sso'));
+  const authn = function (issuer) {
+    return { SAMLRequest: deflated('<samlp:AuthnRequest ' +
+      'xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" ' +
+      'xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_ua1" ' +
+      'Version="2.0" IssueInstant="' + new Date().toISOString() + '">' +
+      '<saml:Issuer>' + issuer + '</saml:Issuer></samlp:AuthnRequest>') };
+  };
+  const unknown = 'https://ua-nobody-sp-' + process.pid + '.example';
+  const sso = routes2['GET /saml2/sso'];
+  const before = applications.get(seenSp);
+  const refused = [await ask2(sso, 'product', authn(unknown)),
+                   await ask2(sso, 'product', authn(seenSp))];
+  const after = applications.get(seenSp);
+  t.check(refused.every(function (r) {
+    return r.status === 403 && r.code === 'STS-SAML-0103' &&
+      /not registered/.test(r.body);
+  }) && !applications.get(unknown) && before && after &&
+          after.lastAt === before.lastAt &&
+          JSON.stringify(after.fields.samlAuthnRequestVerification || null) ===
+            JSON.stringify(before.fields.samlAuthnRequestVerification || null),
+          'S1. product: an AuthnRequest from an unregistered or seen-only ' +
+          'Issuer is a 403 page (STS-SAML-0103), and nothing is written',
+          JSON.stringify(refused));
+  const passes = [await ask2(sso, 'product', authn('ua-sp')),
+                  await ask2(sso, 'development', authn(unknown))];
+  t.check(passes.every(function (r) {
+    return r.code !== 'STS-SAML-0103';
+  }), 'S1b. a registered service provider passes the check in product, ' +
+      'and development answers an unregistered one',
+          JSON.stringify(passes));
+
+  const slo = routes2['GET /saml2/slo'];
+  const logout = await ask2(slo, 'product', { SAMLRequest: deflated(
+    '<samlp:LogoutRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:' +
+    'protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ' +
+    'ID="_ua2" Version="2.0" IssueInstant="' + new Date().toISOString() +
+    '"><saml:Issuer>' + unknown + '</saml:Issuer><saml:NameID>ua-alice' +
+    '</saml:NameID></samlp:LogoutRequest>') });
+  t.check(logout.status === 403 && logout.code === 'STS-SAML-0104',
+          'S2. product: a LogoutRequest from an unregistered Issuer ends ' +
+          'nothing (STS-SAML-0104)', JSON.stringify(logout));
+
+  const metadata = routes2['GET /saml2/metadata/:sp'];
+  const askMetadata = async function (sp) {
+    log.debug("Entering askMetadata().");
+    const res = fakeRes();
+    const req = oauthReq({});
+    req.params = { sp: sp };
+    config.setOverride('global.mode', 'product');
+    try {
+      await Promise.resolve(metadata(req, res));
+    } finally {
+      config.clearOverride('global.mode');
+    }
+    log.debug("Leaving askMetadata().");
+    return { status: res.statusCode, code: errorCodes.codeOf(res) || '' };
+  };
+  const md = [await askMetadata(seenSp), await askMetadata('ua-sp')];
+  t.check(md[0].status === 404 && md[0].code === 'STS-SAML-0082' &&
+          md[1].status === 200,
+          'S3. product: /saml2/metadata/{sp} is a 404 for a seen-only ' +
+          'service provider (STS-SAML-0082) and answered for a registered ' +
+          'one', JSON.stringify(md));
+
+  const sso11 = routes11['GET /saml11/sso'];
+  const flow = function (rp) {
+    return { providerId: rp, shire: 'https://ua-rp11.example/acs',
+             target: 'https://ua-rp11.example/', time:
+               String(Math.floor(Date.now() / 1000)) };
+  };
+  const refused11 = [await ask2(sso11, 'product', flow(unknown)),
+                     await ask2(sso11, 'product', flow(seenSp))];
+  t.check(refused11.every(function (r) {
+    return r.status === 403 && r.code === 'STS-SAML-0105';
+  }), 'S4. product: a SAML 1.1 flow for an unregistered or seen-only ' +
+      'relying party is a 403 page (STS-SAML-0105)',
+          JSON.stringify(refused11));
+
+  const spMetadata = require('../saml/sp_metadata');
+  config.setOverride('saml2.mdqBaseUrl', 'https://mdq.ua.example/');
+  config.setOverride('global.mode', 'product');
+  let gated;
+  try {
+    gated = await spMetadata.mdqImport(seenSp, { origin: 'request' });
+  } finally {
+    config.clearOverride('global.mode');
+    config.clearOverride('saml2.mdqBaseUrl');
+  }
+  t.check(gated && gated.ok === false &&
+          errorCodes.codeOf(gated) === 'STS-SAML-0080',
+          'S5. product: a Metadata Query lookup a request starts for a ' +
+          'seen-only entityID is gated as for an unknown one ' +
+          '(STS-SAML-0080)', JSON.stringify(gated));
+  log.debug("Leaving saml().");
+}
+
+async function gnap(t) {
+  log.debug("Entering gnap().");
+  const nodeCrypto = require('crypto');
+  const grantsModule = require('../gnap/gnap_grants');
+  const keys = require('../gnap/gnap_keys');
+  // A GNAP JWK carries alg and kid (STS-GNAP-0012 otherwise).
+  const jwkOf = function () {
+    return Object.assign(nodeCrypto.generateKeyPairSync('ed25519').publicKey
+      .export({ format: 'jwk' }), { alg: 'EdDSA',
+                                    kid: nodeCrypto.randomUUID() });
+  };
+  const seenJwk = jwkOf();
+  const regJwk = jwkOf();
+  const seenKey = { proof: 'httpsig', jwk: seenJwk };
+  const regKey = { proof: 'httpsig', jwk: regJwk };
+  const seenId = keys.describe(seenKey).identity;
+  const seenApp = 'ua-gnap-seen-' + process.pid;
+  const instance = 'ua-gnap-instance-' + process.pid;
+  inMode('development', function () {
+    return applications.seen({ identifier: seenApp, kind: 'gnap-client',
+      protocol: 'GNAP', counts: false,
+      fields: { gnapKey: JSON.stringify(seenJwk), gnapKeyIdentity: seenId,
+                gnapInstanceId: instance },
+      note: 'filed by ' + __filename });
+  });
+  const reg = applications.createApplication({ identifier: 'ua-gnap',
+    protocols: ['gnap'], fields: { gnapKey: JSON.stringify(regKey) } });
+  t.check(reg && reg.ok && !!applications.get(seenApp) &&
+          !applications.get(seenApp).registeredBy,
+          'precondition: a seen-only and a registered GNAP client',
+          JSON.stringify(reg));
+  // THE PROOF IS STUBBED: what is held is who the key belongs to, which
+  // is decided after the proof verifies.
+  const deps = grantsModule.GnapGrants.defaultDeps();
+  deps.proof = Object.assign({}, deps.proof, {
+    verifyRequestOnce: function () {
+      return Promise.resolve({ ok: true });
+    } });
+  const grants = new grantsModule.GnapGrants(deps);
+  const identify = async function (m, member) {
+    log.debug("Entering identify(). " + m);
+    config.setOverride('global.mode', m);
+    try {
+      const out = await grants.identifyCaller(oauthReq({}), {}, member,
+                                              'gnap-client');
+      log.debug("Leaving identify().");
+      return { ok: !!out.ok, code: out.errorCode || '',
+               error: out.gnapError || '', status: out.status || 0,
+               app: out.app ? out.app.identifier : '' };
+    } finally {
+      config.clearOverride('global.mode');
+    }
+  };
+  const before = applications.get(seenApp);
+  const refused = [await identify('product', { key: seenKey }),
+                   await identify('product', { reference: instance })];
+  const after = applications.get(seenApp);
+  t.check(refused.every(function (r) {
+    return !r.ok && r.code === 'STS-GNAP-0902' &&
+      r.error === 'invalid_client' && r.status === 401;
+  }) && before && after && after.lastAt === before.lastAt,
+          'G1. product: a key and an instance identifier of a client ' +
+          'development created on first sight are 401 invalid_client ' +
+          '(STS-GNAP-0902), and the entry is not sighted again',
+          JSON.stringify(refused));
+  const served = [await identify('product', { key: regKey }),
+                  await identify('development', { key: seenKey })];
+  t.check(served[0].ok && served[0].app === 'ua-gnap' && served[1].ok &&
+          served[1].app === seenApp,
+          'G1b. product identifies a registered client\'s key, and ' +
+          'development the seen-only one', JSON.stringify(served));
+  log.debug("Leaving gnap().");
+}
+
 function fixtures(t) {
   log.debug("Entering fixtures().");
   ['ua-alice', 'ua-front'].forEach(function (name) {
@@ -457,7 +823,15 @@ function fixtures(t) {
                 appAllowedToDelegateTo: ['ua-app'] } }),
     applications.createApplication({ identifier: 'ua-rp',
       protocols: ['wsfed'],
-      fields: { wsfedReplyUrl: [BASE + '/wsfed/rp'] } })
+      fields: { wsfedReplyUrl: [BASE + '/wsfed/rp'] } }),
+    applications.createApplication({ identifier: 'ua-oauth',
+      protocols: ['oauth2', 'oidc'],
+      fields: { oauthClientId: 'ua-oauth',
+                oauthRedirectUri: ['https://ua-client.example/cb'],
+                oauthTokenEndpointAuthMethod: 'none',
+                oauthGrantType: ['authorization_code'] } }),
+    applications.createApplication({ identifier: 'ua-sp',
+      protocols: ['saml2', 'saml11'], fields: {} })
   ];
   t.check(made.every(function (one) { return one && one.ok; }),
           'precondition: the applications were registered',
@@ -482,8 +856,34 @@ function fixtures(t) {
                                fields: { wstrustAppliesTo: aliased },
                                note: 'filed by ' + __filename });
   });
+  // A SEEN-ONLY OAuth client: a development sighting, with the redirect URI
+  // it was observed at.
+  const seenClient = 'ua-seen-client-' + process.pid;
+  inMode('development', function () {
+    return applications.seen({ identifier: seenClient,
+                               kind: 'oauth2-client',
+                               protocol: 'OAuth 2.0 / OIDC',
+                               fields: { oauthClientId: seenClient,
+                                         oauthGrantType: 'authorization_code',
+                                         oauthRedirectUri:
+                                           'https://ua-client.example/cb' },
+                               note: 'filed by ' + __filename });
+  });
+  t.check(!!applications.get(seenClient) &&
+          !applications.get(seenClient).registeredBy,
+          'precondition: development filed ' + seenClient + ' unregistered');
+  // A SEEN-ONLY SAML service provider and relying party.
+  const seenSp = 'https://ua-seen-sp-' + process.pid + '.example';
+  inMode('development', function () {
+    return applications.seen({ identifier: seenSp,
+                               kind: ['saml2-service-provider',
+                                      'saml11-relying-party'],
+                               protocol: 'SAML 2.0',
+                               note: 'filed by ' + __filename });
+  });
   log.debug("Leaving fixtures().");
-  return { seenOnly: seenOnly, aliased: aliased };
+  return { seenOnly: seenOnly, aliased: aliased, seenClient: seenClient,
+           seenSp: seenSp };
 }
 
 function run(t) {
@@ -498,8 +898,9 @@ function run(t) {
     log.debug("Leaving run().");
     return undefined;
   }
+  let done;
   try {
-    realms.run(made.realm, function () {
+    done = realms.run(made.realm, function () {
       const f = fixtures(t);
       const unknown = wstrustRefusals(t, f.seenOnly, f.aliased);
       delegated(t, f.seenOnly);
@@ -507,12 +908,25 @@ function run(t) {
       notAsked(t);
       development(t, unknown);
       wsfed(t);
+      return oauth(t, f.seenClient).then(function () {
+        return saml(t, f.seenSp);
+      }).then(function () {
+        return gnap(t);
+      });
     });
-  } finally {
+  } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     realms.remove(id);
+    throw e;
   }
   log.debug("Leaving run().");
-  return undefined;
+  return Promise.resolve(done).then(function () {
+    realms.remove(id);
+  }, function (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
+    realms.remove(id);
+    throw e;
+  });
 }
 
 module.exports = {

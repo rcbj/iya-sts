@@ -1138,8 +1138,11 @@ async function main() {
     cookie = '';
     res = await request('GET', '/saml11/sso?' + form({
       TARGET: 'https://guessed.example.com/app/page', shire: acs, profile: 'post' }));
+    // 403 since #496: a relying party nobody registered — and none named
+    // is none registered — is refused before its address is read.
     check('a flow naming no relying party is REFUSED in product mode',
-          res.status === 400 && !samlResponseIn(res.body),
+          res.status === 403 && /not registered/.test(res.body) &&
+          !samlResponseIn(res.body),
           'status ' + res.status + ' ' + res.body.slice(0, 160));
   } else {
     cookie = '';
@@ -1278,11 +1281,11 @@ async function main() {
   cookie = '';
   res = await resume('/saml11/sso?' + form({ providerId: unregistered, shire: acs,
                                              TARGET: target, profile: 'post' }), USER_UNREGISTERED);
-  // Product mode answers only at a registered return address, and an
-  // application nobody registered has none, so it is refused there.
+  // Product mode answers only a registered relying party (#496: a 403 page
+  // before its return address is read), so it is refused there.
   check(PRODUCT ? 'autocreateApplications=false: an unregistered relying party is REFUSED'
                 : 'autocreateApplications=false still ANSWERS the flow',
-        PRODUCT ? (res.status === 400 && !samlResponseIn(res.body))
+        PRODUCT ? (res.status === 403 && !samlResponseIn(res.body))
                 : !!samlResponseIn(res.body),
         'status ' + res.status);
   res = await request('GET', '/admin-api/saml11?rp=' + encodeURIComponent(unregistered));
