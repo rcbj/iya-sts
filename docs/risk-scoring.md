@@ -389,6 +389,15 @@ if the script is blocked. The service keeps only a keyed digest of the
 identifier, never the identifier. A browser this person has never signed in
 from is the signal `new-device` (×2).
 
+The history counts the fingerprint, or the person's own registered device,
+as its own feature, `device-id`. It is not the model's device type (desktop,
+mobile, tablet), which is a level of the User-Agent. Until October 2026
+(#506) both were counted under one name, `device`. The fingerprints counted
+there are not converted: nothing reads them any more, and they are deleted
+under `risk.historyRetentionDays` like any history nobody adds to. The one effect
+you may see: the first sign-in after the upgrade from a browser a person has
+used before can carry `new-device` once.
+
 **A browser fingerprint is personal data** about the person's device,
 collected without them doing anything, so turning it on is your decision to
 make and document. Before you turn it on, complete a privacy impact

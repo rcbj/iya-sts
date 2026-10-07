@@ -108,6 +108,12 @@ type Json = any;
 // of each is the feature itself; the rest are its levels, coarsest last.
 // `risk_score_weightings` is 1 for both in the notebook, so its power is not
 // carried.
+//
+// A level's name is its feature key in `sts_risk_feature_counts`. `device`
+// is the paper's DEVICE TYPE (desktop, mobile, tablet); the browser
+// fingerprint / registered device the evaluators ask about is the engine's
+// `device-id`, and shared this name until #506 (`risk_engine.ts`,
+// HISTORY_FEATURES). No name of the engine's may be a level here.
 // ---------------------------------------------------------------------------
 /**
  * The features and their weightings: each feature's name and its levels,
