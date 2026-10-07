@@ -3091,13 +3091,16 @@ class AdminApi {
                                         'listener this call arrived on.' }
               },
               required: ['value'],
-              // The console moved to the `admin` listener and the API kept
-              // on `main` as well: an example that took the management API
-              // off the listener the caller is on would lock its own caller
-              // out (sts_admin_api_operations replays every example and
-              // reads the resource back through the same port).
+              // Both served on the `admin` listener AND kept on `main`,
+              // advertised there. An example that took either off the
+              // listener its caller is on locks that caller out:
+              // sts_admin_api_operations replays every example and reads the
+              // resource back through the same port, and sts_admin_console's
+              // realm switcher then lands on that realm's console through
+              // `main` (both 404, STS-TLS-0047, on 2026-10-07).
               examples: [{ value: {
-                'admin-console': { listeners: ['admin'] },
+                'admin-console': { listeners: ['main', 'admin'],
+                                   advertised: 'main' },
                 'management-api': { listeners: ['main', 'admin'],
                                     advertised: 'main' } } }],
               additionalProperties: false
