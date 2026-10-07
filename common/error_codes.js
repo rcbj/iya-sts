@@ -1631,6 +1631,13 @@ const CODES = [
     summary: 'A block of sequence numbers could not be leased from the ' +
       'store; the next half-spent block asks again (#465).',
     spec: '' },
+  { code: 'STS-STORE-0078',
+    summary: 'A postgres connection string (persistence.databaseUrl, the ' +
+      'read or global database, or cell_convert\'s) was not dialled: its ' +
+      'sslmode is disable or allow, or it is not a postgres:// URL, so it ' +
+      'would or might connect in the clear. Every connection is TLS (#273). ' +
+      'Fatal at persistence.start().',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

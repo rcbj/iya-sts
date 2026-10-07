@@ -1106,7 +1106,7 @@ the file the row names.
 | ~~Persist anything it MINTS~~ — **reversed 2026-09-06, in product mode on postgres only** | `persistence/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | Deliver a response to an address nobody registered, **in product mode** — an address development merely observed is marked and refused until confirmed | `common/applications.js`, `saml/CLAUDE.md`, `common/oidc_rp.ts` |
 | Start with demonstration data, invent a claim value, or open a test control to anybody, **in product mode** | `common/mode.js`, `common/CLAUDE.md` |
-| Dial its database in the clear — and it does not authenticate that server either | `persistence/CLAUDE.md` |
+| Dial its database in the clear, in any mode — a connection string that would (`sslmode=disable` or `allow`, or not a URL) stops it starting since #273; it does not authenticate that server by default either | `persistence/CLAUDE.md` |
 | Send mail to an address a request supplies, through a relay a caller names, or in the clear (#63) — every recipient is a directory entry, the only address dialled is the operator's configured relay or provider endpoint, a mailed link is built on `global.publicBaseUrl` and never on the request, and SMTP is STARTTLS-required or implicit TLS with the relay verified in both modes | `common/CLAUDE.md` (`mail.ts`) |
 | ~~Coordinate several processes through that store~~ — **reversed 2026-09-06**: the change log is the contract; it shares state and not sockets | `persistence/CLAUDE.md`, `common/CLAUDE.md` |
 | Recall anything it has already ISSUED — it DISOWNS them, which is a different claim | `logout/CLAUDE.md`, `common/CLAUDE.md` |

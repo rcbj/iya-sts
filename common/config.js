@@ -15480,7 +15480,11 @@ const SETTINGS = [
     dflt: 'postgres://sts:sts@localhost:5432/sts', runtime: false,
     restartReason: 'the connection pool is opened before the listener binds',
     description: 'The PostgreSQL connection string persistence.mode=postgres ' +
-                 'dials — postgres://user:password@host:5432/database. The ' +
+                 'dials — postgres://user:password@host:5432/database — ' +
+                 'ALWAYS over TLS (#273): a string with no sslmode is ' +
+                 'sslmode=require, and sslmode=disable or allow, or a ' +
+                 'string that is not a postgres:// URL, stops the service ' +
+                 'starting (STS-STORE-0078). The ' +
                  'default is a LOCAL DEVELOPMENT one matching the Postgres ' +
                  'service in this repository\'s docker-compose.yml (user, ' +
                  'password and database all "sts"), so turning persistence ' +
@@ -15627,10 +15631,10 @@ const SETTINGS = [
   // TLS TO THE DATABASE, and the one knob that is about TRUST rather than
   // about encryption.
   //
-  // The connection string carries `sslmode`, which is postgres's own spelling
-  // and is where the ENCRYPTION decision belongs — `?sslmode=require` is in
-  // the compose default and the database refuses a plaintext connection
-  // anyway, because every `host` rule in its pg_hba.conf is `hostssl`.
+  // ENCRYPTION is not a decision at all since #273: every connection is TLS,
+  // and a string whose `sslmode` says otherwise is refused at start. The
+  // compose stack's database refuses a plaintext connection as well, because
+  // every `host` rule in its pg_hba.conf is `hostssl`.
   //
   // What a connection string cannot say is whether to BELIEVE the certificate,
   // because node's `pg` takes that as a TLS option rather than as a URL
@@ -15652,9 +15656,10 @@ const SETTINGS = [
                  'nobody, so there is nothing for a client to verify it ' +
                  'against and turning this on would refuse every connection ' +
                  'with a message about a self-signed certificate. THE ' +
-                 'CONNECTION IS STILL ENCRYPTED either way — `sslmode` in ' +
-                 'persistence.databaseUrl decides that, the database\'s own ' +
-                 'pg_hba.conf requires it, and this decides only whether the ' +
+                 'CONNECTION IS STILL ENCRYPTED either way — this service ' +
+                 'never dials its database in the clear (#273), the ' +
+                 'database\'s own pg_hba.conf requires TLS too, and this ' +
+                 'decides only whether the ' +
                  'server is AUTHENTICATED. Turn it on when you point this at ' +
                  'a real database whose certificate chains to something ' +
                  'NODE_EXTRA_CA_CERTS names.' },

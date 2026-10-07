@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4210** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4211** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 89
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 77
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 78
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
@@ -378,6 +378,7 @@ Raised from: persistence/.
 | `STS-STORE-0075` | The sequence numbers of the audit log and the delegation register could not be leased from the shared store at start-up, so this process numbers its rows with its own counter, unique only within this process (#465). | — |
 | `STS-STORE-0076` | A sequence stream spent both of its leased blocks with no new lease from the store, so it numbers from this process's own fallback range until the process restarts (#465). | — |
 | `STS-STORE-0077` | A block of sequence numbers could not be leased from the store; the next half-spent block asks again (#465). | — |
+| `STS-STORE-0078` | A postgres connection string (persistence.databaseUrl, the read or global database, or cell_convert's) was not dialled: its sslmode is disable or allow, or it is not a postgres:// URL, so it would or might connect in the clear. Every connection is TLS (#273). Fatal at persistence.start(). | — |
 
 ## STS-CLUSTER
 

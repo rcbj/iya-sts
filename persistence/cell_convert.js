@@ -227,9 +227,10 @@ function sqlStore(options) {
   log.debug("Entering sqlStore().");
   const dial = require('./persistence_postgres')
     .dialOptions(options.url, options.verifyTls);
-  if (dial.notUrl) {
-    log.debug('cell_convert: the ' + options.name + ' connection string is ' +
-              'not a URL, so its sslmode was left as it is.');
+  if (dial.refused) {
+    throw new Error(errorCodes.tag('STS-STORE-0078') + 'cell_convert: the ' +
+                    options.name + ' connection string is not dialled: ' +
+                    dial.refused + ' (#273).');
   }
   const Pool = /** @type {any} */ (require('pg')).Pool;
   const pool = new Pool({ connectionString: dial.connectionString,
