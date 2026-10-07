@@ -1919,3 +1919,94 @@ database with no key source — the parent project's in-process jobs — refuses
 nobody, so **nothing is owed to the parent project**.
 `tests/risk_decisions.js` M3 holds it over an in-process AS exchange.
 
+
+---
+
+## PORT 88 IS ANSWERED IN A REQUEST WORKER (2026-10-07, rcbj's decision)
+
+**THE RACE.** The KDC answered TCP and UDP 88 in the FRONT process, from the
+front's copy of the store, while everything HTTP — a sign-out, a password set,
+an authenticator enrolled — is answered by a request worker. Each learns of
+the other's writes through the change log. `sts_kerberos_signout` in
+single-node: a sign-in's principal row written here, a global logout answered
+3 s later by a worker that had not received it, so it stamped nothing
+(STS-LOGOUT-0007, "ended 0 of 1") and the old TGT was honoured. The
+`catchUpWithWorkers()` of 2026-09-23 covered the other direction (a KDC read
+of a worker's write) by making the front process wait, which is the cost
+rcbj wants off the main event loop.
+
+**THE CUT** (`krb5_kdc.js`, the block above `answerSocketMessage()`). The
+sockets, the TCP length prefix, the datagram and the write of the reply stay
+in the front process; each complete message is the request pool's OPERATION
+`krb5.message`, LDAP's and SPIFFE's arrangement. A worker runs the SAME
+`handleMessage()` — MS-KKDCP has run it in workers since HTTP was dispatched,
+so nothing it touches is new to a worker. `runOperation()` puts the message
+behind the pool's read barrier, which orders it against the HTTP writes and
+reads around it with both ends in workers. **No catch-up remains on the
+dispatched path**: the front process waits for nothing, and
+`catchUpWithWorkers()` returns at once in a worker (it used to pull the change
+log a second time per MS-KKDCP request there, because `pool.size()` answers
+the CONFIGURED count in a worker too). It still runs in the front process when
+a message is answered there.
+
+* **What crosses**: the bytes (a Buffer, revived by `worker_channel.ts`), the
+  client's address as the socket saw it (the PROXY header's, with
+  `global.proxyProtocol`), the transport and the port. The worker enters the
+  same audit source the socket handlers enter, so every row the message
+  causes names the client, and #499's risk assessment reads the same address.
+  **No realm crosses**: the sockets pass none, and `routeOf()` chooses it from
+  the Kerberos realm name in the bytes.
+* **What comes back**: the reply and its REFUSAL, which `errorReply()` hangs
+  under a Symbol that a structured clone drops; the front process puts it
+  back, so `recordRawRefusal()` writes the transport's row as before.
+* **No affinity**: a message carries its own credential.
+* **Not dispatched** — no pool module (the parent project's in-process
+  copies), `krb5` not in `workers.dispatch`, no worker ready — is answered in
+  the front process exactly as before, `catchUpWithWorkers()` included.
+* **A worker that fails mid-message is not retried here** (LDAP's rule: it
+  may have written — an AuthPack or an OTP step spent, a principal
+  registered, a risk assessment recorded). The client is told
+  KDC_ERR_SVC_UNAVAILABLE (29), STS-KRB-0204, which MIT and Heimdal read as
+  "try again / the next KDC"; a worker answering no bytes is the same error
+  with STS-KRB-0205.
+* **The worker table is filled only in a worker** (`registerWorkerOperation()`
+  at the foot of the file, gated on `STS_REQUEST_WORKER`, idempotent) —
+  `spiffe/CLAUDE.md`, *The worker table is filled only in a worker*.
+
+**WHAT THE KDC HOLDS IN PROCESS MEMORY, CHECKED FOR THE MOVE.** Nothing it
+needs to agree on across processes:
+
+* the principal database (a persisted per-realm map) and its derived-key
+  cache (`krb5.long-term-keys`, a cache, re-derived on a miss);
+* FAST's cookie and PKINIT's freshness token — sealed under the krbtgt key,
+  opened by any process holding it;
+* the OTP step (`authn.totp-step`, a cluster counter), the encrypted
+  challenge, the PKINIT AuthPack (`krb5.pkinit-authpack`) and the acceptor's
+  Authenticator (`krb5.authenticator`) — cluster claims;
+* **the PKINIT KDC certificate** (`pki.issueKdcKeyPair()`) — one per realm per
+  process, in that process's memory only, by design (a slot per node, pid and
+  thread). Each worker makes its own on its first PKINIT request; a client
+  verifies it to the service Root, so which worker answered does not matter;
+* `krb5_delegation.ts`'s `seeded` set — which realms' DEVELOPMENT fixture
+  rules this process has written; idempotent;
+* **`admin_stats`' per-process records** (`recordTicket()`,
+  `recordAuthentication()`): a port-88 sign-in is now recorded in the worker
+  that answered it, as an MS-KKDCP one always was. `admin_stats.users` is one
+  of the three stores that do not fan in (`common/CLAUDE.md`), so a console
+  page drawn by another process under-reports it; the audit log and the
+  principal row are the durable record.
+
+**THE PARENT PROJECT'S COPY CLOSURE OWES NOTHING.** `request_pool.js` was
+already required lazily here (`catchUpWithWorkers()`), and `request_worker`
+is required only when `STS_REQUEST_WORKER` is set, which the parent's
+in-process jobs never set; both requires are guarded.
+
+**CELLS (#98, #317).** `answerSocketMessage()` is now the one function both
+sockets call before `handleMessage()`, which is where the message router
+#317 asks the parent project for would sit. Port 88 is still not placed in
+the client's home cell.
+
+Tests: `tests/kdc_broker_operations.js` sections 1 to 5 (the real pool with a
+stub worker thread, the two fallbacks, a dying worker, the table, a whole AS
+exchange through the table function with the address on the authentication
+row, and no catch-up in a worker); seven mutants, all caught.
