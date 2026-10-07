@@ -823,7 +823,7 @@ became TypeScript: call its `registerRoutes(app)`). The failure when this is
 forgotten is a 404 (Express's `Cannot GET`) or an empty route filter, not a
 load error.
 
-Two rules that are not optional here:
+Three rules that are not optional here:
 
 * **MUTATION-TEST IT BEFORE COMMITTING IT.** Break the thing it guards, watch it
   go red, put it back. The whole reason this directory exists is that three
@@ -890,6 +890,22 @@ Two rules that are not optional here:
   back the five `STS_PERSISTENCE_*` variables, the override it sets and the
   realm it creates, and it STOPS the store before removing the realm, so a
   scheduled flush cannot fire against a table the realm has already gone from.
+* **START FROM A KNOWN STATE (rcbj, 2026-10-07).** A new test, in-process
+  or a protocol job, asserts only against state it created or chose itself:
+  its own realm, application, person, setting or stream. It never picks up
+  something another job left behind, such as "the last realm in the
+  switcher", "the first application listed" or "whatever the default realm
+  holds now". Realms are left standing on purpose (*No job removes a realm*,
+  below), so the service a job meets holds whatever every earlier job wrote;
+  a test that reads that is testing the run order. What forced the rule:
+  on 2026-10-07 `sts_admin_api_operations` replayed #472's
+  `setListenerApplications` example in its own realm, which moved that
+  realm's console off the main port, and `sts_admin_console`'s realm-switcher
+  check, which presses the LAST realm in the list, then landed there and got
+  404 (STS-TLS-0047), a failure about listeners in a job that does not test
+  them. **The rule binds new tests, not the existing ones**: rcbj's decision
+  is not to retrofit every older job, so an older job that reads shared
+  state is fixed when it next breaks, by making it choose its own.
 
 ## What is in here
 
