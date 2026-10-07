@@ -173,12 +173,16 @@ function childMain() {
       return { type: 'gd-photos', actions: actions || ['read'],
                locations: uris };
     };
+    // The ID Token is ISSUED TO the presenting client unless `extra` says
+    // otherwise (#497): RFC 9635 section 11.13 refuses an assertion a
+    // client presents that was issued to somebody else (I0).
     const impersonate = function (id, who, access, extra) {
       return keys[id].send('POST', GRANT, { json: {
         client: { key: keys[id].keyObject() },
         access_token: { access: access },
         user: { assertions: [{ format: 'id_token',
-                               value: idToken(who, extra) }] } } });
+                               value: idToken(who, Object.assign(
+                                 { aud: id }, extra || {})) }] } } });
     };
     const newestAct = function () {
       return delegation.list()[0] || {};
@@ -189,7 +193,21 @@ function childMain() {
     };
 
     // ===================================================== I. IMPERSONATION
-    let r = await impersonate('gd-plain', 'gd-alice', [right([RS.a])]);
+    // I0 (#497): an ID Token issued to ANOTHER client is a captured
+    // assertion (RFC 9635 section 11.13), refused in every mode before the
+    // delegation policy is asked — even for a client whose semantics allow
+    // impersonation.
+    let r = await impersonate('gd-imp', 'gd-alice', [right([RS.a])],
+                              { aud: 'gd-rp' });
+    note(r.status === 403 && lastCode() === 'STS-GNAP-0073',
+         'I0. development: an ID Token issued to another client is refused ' +
+         '— STS-GNAP-0073', r.status + ' ' + lastCode() + ' ' + r.text);
+    r = await impersonate('gd-imp', 'gd-alice', [right([RS.a])],
+                          { aud: ['gd-rp', 'gd-imp'] });
+    note(r.status === 200,
+         'I0b. …and one whose audience includes the presenting client is not',
+         r.status + ' ' + r.text);
+    r = await impersonate('gd-plain', 'gd-alice', [right([RS.a])]);
     let act = newestAct();
     note(r.status === 200 && r.json && r.json.access_token,
          'I1. development: a client whose semantics do not include ' +

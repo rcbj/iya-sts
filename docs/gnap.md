@@ -312,6 +312,16 @@ mode** issues the token and records that it *would have been refused*. A
 refused, is listed on **Monitoring → Delegation** and at `GET
 /admin-api/delegation` under protocol `GNAP`.
 
+**The assertion must have been issued to the client presenting it**, in
+both modes: an ID Token's `aud` must name the client (its identifier or one
+of its `oauthClientId` values), and a SAML assertion's `Audience` likewise.
+An assertion issued to another client is refused `unknown_user`
+(`STS-GNAP-0073`): RFC 9635 section 11.13 names a captured assertion
+presented by a client that is not its audience as the way an end user is
+impersonated. A web application that signed a person in with OpenID Connect
+presents its own ID Token; it cannot hand that token to a back-end service
+to present in its place.
+
 A client that skips interaction **without** a user assertion acts for nobody:
 nothing is asked, and no subject information is released.
 

@@ -1969,7 +1969,10 @@ class GnapGrants {
       oauthIssuer: oauth2.issuerOf(this.realmBase(req)),
       // A user reference resolves only for the client it was issued to
       // (#432 phase 7, gnap_subject.ts).
-      client: identifier
+      client: identifier,
+      // And an assertion only for the client it was issued to (#497, RFC
+      // 9635 section 11.13): every name the presenting client goes by.
+      clientNames: [identifier].concat(this.fieldValues(app, 'oauthClientId'))
     });
     if (!resolved.ok) {
       log.debug("Leaving GnapGrants.createGrant(). User refused.");
