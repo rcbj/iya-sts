@@ -1639,7 +1639,12 @@ const LOCAL_HELPERS = [
   // gnap_client.js, each token verified and introspected by its tier, the
   // original grant, the register and the optional capture. It takes the
   // protocol-independent half from token_exchange_chain_kit.js.
-  'gnap_chain_kit.js'
+  'gnap_chain_kit.js',
+  // THE CHAIN JOBS' OPTIONAL RECORD OF WHAT EACH LAYER WAS ISSUED: off
+  // unless STS_CHAIN_CAPTURE names a directory, then `<job>.json` there with
+  // every token, assertion or ticket, decoded. Required by the three chain
+  // kits above and by the GNAP one. Nothing from the service.
+  'chain_capture.js'
 ];
 
 // ---------------------------------------------------------------------------

@@ -138,6 +138,7 @@ const assert = require("assert");
 const crypto = require("crypto");
 const registry = require("./sts_applications.js");
 const chain = require("./token_exchange_chain_kit.js");
+const capture = require("./chain_capture.js");
 const { DOMParser } = require("@xmldom/xmldom");
 const { SignedXml } = require("xml-crypto");
 
@@ -206,6 +207,9 @@ function castFor(tag, tokenType) {
   cast.requesters = cast.tiers.filter(function (tier) {
     return !!tier.next;
   });
+  capture.set({ protocol: "WS-Trust (" + (tokenType === "jwt"
+    ? "JWT" : tokenType === "saml11" ? "SAML 1.1 assertions"
+      : "SAML 2.0 assertions") + ")" });
   log.debug("Leaving castFor().");
   return cast;
 }
@@ -381,6 +385,7 @@ async function provisionCast(base, cast, semantics) {
   await provisionGroupAndRole(base, cast);
   log.info("=== Provisioning the four applications and three service " +
            "accounts (" + semantics + ") ===");
+  capture.set({ useCase: semantics });
   const owner = String(await registry.setting(base, "admin.writeGroup") ||
                        "");
   assert.ok(owner, "admin.writeGroup is empty, so there is no group to own " +
@@ -525,6 +530,11 @@ async function signIn(base, cast) {
   log.info("[sign-in] " + cast.user + " signed in to " +
            cast.webapp.identifier + " with a UsernameToken, AppliesTo " +
            cast.webapp.appliesTo + ".");
+  captureToken(cast, out, {
+    hop: capture.hop("bob", "webapp1"), requester: cast.user,
+    target: cast.webapp.identifier,
+    mechanism: "WS-Trust Issue (UsernameToken)",
+    notes: "AppliesTo " + cast.webapp.appliesTo });
   log.debug("Leaving signIn().");
   return out;
 }
@@ -540,8 +550,93 @@ async function exchange(base, cast, tier, element, inner) {
                                   inner),
                         tier.identifier + "'s <" + element + "> for " +
                         next.appliesTo, cast.tokenType);
+  captureToken(cast, out, {
+    hop: capture.hop(chain.stemOf(cast, tier.identifier),
+                     chain.stemOf(cast, next.identifier)),
+    requester: tier.identifier, target: next.identifier,
+    mechanism: "WS-Trust " + element,
+    notes: tier.identifier + " authenticated with its service account's " +
+      "UsernameToken; AppliesTo " + next.appliesTo });
   log.debug("Leaving exchange().");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE CAPTURE (`chain_capture.js`, STS_CHAIN_CAPTURE): what each RSTR
+// carried, written down where it arrives — a JWT decoded, an assertion
+// summarised off its DOM by read() / read11() below. Nothing here runs
+// unless the variable names a directory, and nothing here fails the job.
+// ---------------------------------------------------------------------------
+function samlSummary(got, version) {
+  log.debug("Entering samlSummary(). SAML " + version);
+  const out = {
+    version: version,
+    ID: got.id,
+    IssueInstant: got.issueInstant,
+    Issuer: got.issuer,
+    Subject: { NameID: got.nameId, Format: got.nameIdFormat },
+    Audience: got.audiences,
+    Conditions: { NotBefore: got.notBefore,
+                  NotOnOrAfter: got.notOnOrAfter },
+    AuthnStatement: version === "2.0"
+      ? { AuthnInstant: got.authnInstant,
+          AuthnContextClassRef: got.authnContext }
+      : { AuthenticationInstant: got.authnInstant,
+          AuthenticationMethod: got.authnMethod },
+    Attributes: got.attributes,
+    DelegationRestriction: version === "2.0"
+      ? (got.restricted ? got.delegates.map(function (d) {
+        return { NameID: d.nameId, Format: d.format,
+                 DelegationInstant: d.instant,
+                 ConfirmationMethod: d.confirmationMethod || null };
+      }) : null)
+      : null,
+    signed: !!got.signature
+  };
+  log.debug("Leaving samlSummary().");
+  return out;
+}
+
+function captureToken(cast, out, f) {
+  log.debug("Entering captureToken(). " + f.hop);
+  if (!capture.enabled()) {
+    log.debug("Leaving captureToken(). Not capturing.");
+    return;
+  }
+  const notes = f.notes + (out.expires ? "; RSTR Lifetime Expires " +
+                           out.expires : "");
+  if (cast.tokenType === JWT_TOKEN_TYPE) {
+    chain.captureJwt({ hop: f.hop, requester: f.requester,
+                       target: f.target, mechanism: f.mechanism,
+                       token: out.jwt, notes: notes +
+                         "; carried in a wsse:BinarySecurityToken" });
+    log.debug("Leaving captureToken(). A JWT.");
+    return;
+  }
+  const saml11 = cast.tokenType === SAML11_TOKEN_TYPE;
+  let claims = null;
+  let chainOf = [];
+  let problem = "";
+  try {
+    const got = saml11 ? read11(out.assertion) : read(out.assertion);
+    claims = samlSummary(got, saml11 ? "1.1" : "2.0");
+    chainOf = got.delegates.map(function (d) {
+      return d.nameId;
+    });
+  } catch (e) {
+    log.debug("Caught in captureToken(): " + ((e && e.message) || e));
+    // The job's own assertions say what is wrong with it; the capture
+    // keeps the XML and says it could not summarise it.
+    problem = "; not summarised: " + ((e && e.message) || e);
+  }
+  capture.layer({
+    hop: f.hop, requester: f.requester, target: f.target,
+    mechanism: f.mechanism,
+    kind: saml11 ? "SAML 1.1 assertion" : "SAML 2.0 assertion",
+    format: "XML (saml:Assertion, enveloped ds:Signature)",
+    value: out.assertion, header: null, claims: claims, actChain: chainOf,
+    notes: notes + problem });
+  log.debug("Leaving captureToken().");
 }
 
 // ---------------------------------------------------------------------------
@@ -644,11 +739,17 @@ function read(xml) {
     ? textOf(child(child(authnStatement, NS_SAML, "AuthnContext"), NS_SAML,
                    "AuthnContextClassRef"))
     : "";
+  const nameIdEl = child(subject, NS_SAML, "NameID");
   const out = {
     xml: xml,
     id: String(a.getAttribute("ID") || ""),
+    issueInstant: String(a.getAttribute("IssueInstant") || ""),
     issuer: textOf(child(a, NS_SAML, "Issuer")),
-    nameId: textOf(child(subject, NS_SAML, "NameID")),
+    nameId: textOf(nameIdEl),
+    nameIdFormat: nameIdEl ? String(nameIdEl.getAttribute("Format") || "")
+                           : "",
+    authnInstant: authnStatement
+      ? String(authnStatement.getAttribute("AuthnInstant") || "") : "",
     notBefore: String(conditions.getAttribute("NotBefore") || ""),
     notOnOrAfter: String(conditions.getAttribute("NotOnOrAfter") || ""),
     audiences: audiences,
@@ -851,12 +952,18 @@ function read11(xml) {
         values: children(one, NS_SAML11, "AttributeValue").map(textOf)
       };
     });
+  const nameIdEl = subject ? child(subject, NS_SAML11, "NameIdentifier")
+                           : null;
   const out = {
     xml: xml,
     id: String(a.getAttribute("AssertionID") || ""),
+    issueInstant: String(a.getAttribute("IssueInstant") || ""),
     issuer: String(a.getAttribute("Issuer") || ""),
-    nameId: textOf(subject ? child(subject, NS_SAML11, "NameIdentifier")
-                           : null),
+    nameId: textOf(nameIdEl),
+    nameIdFormat: nameIdEl ? String(nameIdEl.getAttribute("Format") || "")
+                           : "",
+    authnInstant: authn ? String(authn.getAttribute("AuthenticationInstant") ||
+                                 "") : "",
     notBefore: String(conditions.getAttribute("NotBefore") || ""),
     notOnOrAfter: String(conditions.getAttribute("NotOnOrAfter") || ""),
     audiences: audiences,
