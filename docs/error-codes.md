@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4209** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4211** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 89
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 77
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 78
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 145
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 146
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 47
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
@@ -378,6 +378,7 @@ Raised from: persistence/.
 | `STS-STORE-0075` | The sequence numbers of the audit log and the delegation register could not be leased from the shared store at start-up, so this process numbers its rows with its own counter, unique only within this process (#465). | — |
 | `STS-STORE-0076` | A sequence stream spent both of its leased blocks with no new lease from the store, so it numbers from this process's own fallback range until the process restarts (#465). | — |
 | `STS-STORE-0077` | A block of sequence numbers could not be leased from the store; the next half-spent block asks again (#465). | — |
+| `STS-STORE-0078` | A postgres connection string (persistence.databaseUrl, the read or global database, or cell_convert's) was not dialled: its sslmode is disable or allow, or it is not a postgres:// URL, so it would or might connect in the clear. Every connection is TLS (#273). Fatal at persistence.start(). | — |
 
 ## STS-CLUSTER
 
@@ -3136,7 +3137,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0120` | The Workload API was not served over TCP in a product realm, because spiffe.workloadTcpSourceAuthenticated does not declare that the network authenticates source addresses (SPIFFE Workload Endpoint section 3) — the port was not bound, or a realm switched to product with it bound refused the call (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
 | `STS-SPIFFE-0121` | The Workload API was not served over TCP in a product realm: spiffe.workloadTcpSourceAuthenticated is on but spiffe.grpcHost is a wildcard address, and the declaration covers one named network (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
 | `STS-SPIFFE-0122` | A SPIFFE registration entry was refused in a product realm because it selects nothing that identifies a workload — no selector, or only transport: and endpoint: ones — at the console, /admin-api or the SPIRE Server API (#166). | gRPC INVALID_ARGUMENT for the item in BatchCreateEntry and BatchUpdateEntry; a refused console or management API action |
-| `STS-SPIFFE-0123` | A SPIFFE registration entry already in the registry that selects nothing identifying a workload answered no Workload API caller, because its realm is in product mode; said once per entry per process (#166). | the entry is left out of the answer; the caller may get an empty SVID list |
+| `STS-SPIFFE-0123` | A SPIFFE registration entry already in the registry that selects nothing identifying a workload answered no Workload API caller, because its realm is in product mode; said once per entry per process (#166). | the entry is left out of the answer; a caller left with no entry is refused PERMISSION_DENIED (STS-SPIFFE-0146) |
 | `STS-SPIFFE-0124` | The systemd workload attestor is named in spiffe.workloadAttestors and the optional D-Bus client (dbus-next) is not installed; every connection it would attest is refused, naming the package (#170). Logged once per process. | gRPC UNAVAILABLE on every call of the connection |
 | `STS-SPIFFE-0125` | The systemd workload attestor could not name a caller's unit: D-Bus GetUnitByPID or a unit property failed, or the process the pid named changed while systemd was asked (#170). | gRPC UNAVAILABLE on every call of the connection |
 | `STS-SPIFFE-0126` | A docker workload's image signature could not be verified because nothing to verify it with is configured: no cosign public key file, no verified TUF trust root and no pinned trusted_root.json, or a file that could not be read (#170). | gRPC UNAVAILABLE on every call of the connection |
@@ -3159,6 +3160,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0143` | A gRPC handler threw after the call waited for the cluster read barrier, so the exception could not reach grpc-js; a unary call is answered INTERNAL. | INTERNAL for a unary call |
 | `STS-SPIFFE-0144` | A certificate presented to the SPIRE Server or Broker API was signed by an authority this trust domain trusts and is refused: the two-certificate path breaks RFC 5280 (pki.verifyIssuedDirectly — a critical extension nothing here implements, a name constraint, a malformed certificate) or it is not a leaf X509-SVID (cA set, or a keyUsage without digitalSignature or with keyCertSign or cRLSign; X509-SVID section 4.3). #201. | UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller |
 | `STS-SPIFFE-0145` | A request worker failed the SPIFFE Broker API's FetchJWTSVID for an attested reference before answering it (the worker went away, or the operation threw); it is not run again in the front process, because the worker may already have minted (2026-10-07). | gRPC UNAVAILABLE |
+| `STS-SPIFFE-0146` | A Workload API caller is entitled to nothing it asked for: no registration entry matches it (and none is invented), or FetchJWTSVID named a spiffe_id it is not entitled to. Refused at FetchX509SVID, FetchX509Bundles, FetchJWTSVID and FetchJWTBundles, and a stream whose caller lost every entry ends so (SPIFFE Workload API sections 5.2.1, 5.2.2, 6.2.1, 6.2.2; #274). | gRPC PERMISSION_DENIED |
 
 ## STS-TLS
 

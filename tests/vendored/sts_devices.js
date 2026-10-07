@@ -330,7 +330,17 @@ async function test() {
   // cluster modes. Sections 10 and 13 put it in product themselves.
   await ok(root + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "Devices " + STAMP,
-    overrides: { "global.mode": "development" } },
+    // The deprecated RISC sessions-revoked is not in risc.autoEmitTypes'
+    // default since #269: the default plus it, so the compromise section
+    // can check that it still goes out where it is named.
+    overrides: { "global.mode": "development",
+                 "risc.autoEmitTypes": "account-purged,account-disabled," +
+                   "account-enabled,identifier-changed,identifier-recycled," +
+                   "account-credential-change-required," +
+                   "recovery-information-changed,recovery-activated," +
+                   "credential-compromise,opt-out-initiated," +
+                   "opt-out-cancelled,opt-out-effective,opt-in," +
+                   "sessions-revoked" } },
     "created the realm");
   await registry.provision(base, {
     identifier: HOST, name: "Device job host", protocols: ["oauth2"],

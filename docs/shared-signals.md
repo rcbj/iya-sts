@@ -49,8 +49,9 @@ Since #164 every CAEP and RISC event type has an act here that sends it: a
 registered device's compliance changing (`device-compliance-change`), its risk
 level changing (`risk-level-change`, principal `DEVICE`), its keys and Native
 SSO secret changing (`credential-change`), and a person's device compromised or
-removed (RISC `credential-compromise` and the deprecated `sessions-revoked`,
-with the device beside the person in the subject). [Devices](devices.md) lists
+removed (RISC `credential-compromise`, and the deprecated `sessions-revoked`
+where `risc.autoEmitTypes` names it, with the device beside the person in the
+subject). [Devices](devices.md) lists
 each. You can still emit any of them by hand from the console or the
 management API.
 [CAEP events](caep-events.md) covers what triggers each CAEP event.

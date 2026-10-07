@@ -1447,11 +1447,21 @@ alone lets a client use TLS and does not make one.
   which is what `pg_isready` and the entrypoint use, and TLS on a socket that
   never leaves the filesystem buys nothing and would break the healthcheck the
   stack waits on.
-* **The client refuses to make one.** `?sslmode=require` is in the compose
-  default for `STS_DATABASE_URL`, and `persistence_postgres.js` passes `ssl` to
-  the pool only when the URL asked for it — because passing `ssl` regardless
-  would make `sslmode=disable` mean its opposite, a connection string saying
-  one thing while the client does another.
+* **The client refuses to make one, IN EVERY MODE AND WHATEVER THE STRING
+  SAYS (#273, 2026-10-07).** `dialOptions()` dials every connection over TLS:
+  a string with no `sslmode` is `require` (the default
+  `persistence.databaseUrl` has none, and until #273 it connected IN THE CLEAR
+  with a warning, against any database that allowed it), and `prefer` is TLS
+  too. A string whose `sslmode` is `disable` or `allow`, or that is not a
+  `postgres://` URL (a libpq keyword/value string cannot be edited safely, so
+  what `pg` would do with it cannot be told), is REFUSED with
+  `STS-STORE-0078` — not overridden, because passing `ssl` regardless would
+  make `sslmode=disable` mean its opposite, a connection string saying one
+  thing while the client does another. `persistence.start()` is the one fatal
+  open, so the service does not start. The same holds for the read and global
+  databases and for `cell_convert.js`, which dial through the same function.
+  A Unix socket has no TLS: postgres answers the request with "N" and the
+  connection fails.
 
 ### The key pair is generated at container start
 

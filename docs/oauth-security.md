@@ -1118,8 +1118,10 @@ The one page that may be framed is the OpenID Connect Session Management OP
 iframe, off by default (see
 [Session Management](oauth-oidc.md#session-management)), and it narrows the
 clause to the realm's registered redirect origins rather than dropping it.
-There is no device authorization grant, so there is no `user_code` page; the row
-exists so a reader checking the table against the section finds the answer.
+The device authorization grant's `user_code` page, `/portal/device` (RFC 8628,
+off by default behind `oauth2.deviceAuthorization` — see
+[Signing in a device](oauth-oidc.md#signing-in-a-device-rfc-8628)), relaxes
+nothing, so it carries the same framing clauses as every other page.
 
 ### In-browser communication (section 4.17)
 

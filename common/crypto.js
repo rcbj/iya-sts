@@ -2462,7 +2462,7 @@ function decryptElement(xml, privateKeyPem, opts) {
   // rsa-oaep's digest and MGF, each SHA-1 where absent (section 5.5.2).
   //
   // **rsa-oaep-mgf1p NAMES A DIGEST TOO (#193)**, and until 2026-09-24 this
-  // read it as SHA-1 whatever the EncryptedKey said: section 5.5.1 lets its
+  // read it as SHA-1 whatever the EncryptedKey said: section 5.5.2 lets its
   // DigestMethod be any digest while its mask generation function is FIXED
   // at MGF1 with SHA-1. A SHA-256 one (the W3C interop set's WRAP.2) was
   // unwrapped under the wrong digest and reported as a key encrypted to a

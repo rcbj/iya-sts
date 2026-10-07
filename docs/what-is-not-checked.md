@@ -964,10 +964,11 @@ be exercised with no attestor at all.
 Selector matching still **decides** which entries answer a caller
 (`spiffe.attestWorkloads`, on by default). **Off is development only** (#104):
 it hands every caller every entry, so a product realm reads it as on whatever
-is stored and refuses turning it off. A caller that matches no entry gets
-an empty SVID list — what a real agent does for an unregistered workload — **in
-product always**, and in development when `spiffe.autoCreateEntries` is off;
-with it on, development creates an entry for the caller. Product seeds no
+is stored and refuses turning it off. A caller that matches no entry is
+refused `PERMISSION_DENIED` — what the Workload API says and a real agent
+answers an unregistered workload — **in product always**, and in development
+when `spiffe.autoCreateEntries` is off; with it on, development creates an
+entry for the caller. Product seeds no
 registration entries at all. **`spiffe.acceptAssertedSelectors`** (off) makes
 the server believe selectors a caller sends in a header — in development only;
 product mode never believes them (#40).

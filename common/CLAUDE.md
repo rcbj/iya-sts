@@ -730,7 +730,9 @@ carries is written to it; the `ds:KeyInfo` certificate goes on
 consuming SP metadata makes, over a CLOSED list of attributes because it writes
 derived ones), and `samlCertificateProblem()`, which `updateApplication()` asks
 of every add or set of `samlSigningCertificate` and
-`samlSpMetadataSigningCertificate` (RSA X.509 only, `STS-REG-0160`). An explicit
+`samlSpMetadataSigningCertificate` (an X.509 certificate whose key makes an XML
+signature this service verifies — RSA, EC, EdDSA, DSA, ML-DSA or SLH-DSA —
+`STS-REG-0160`). An explicit
 `add` of the observed value confirms it. `saml/CLAUDE.md` argues why the
 certificate is a separate attribute where a return address is a mark, and the
 two `mode.js` predicates it added — `acceptsUnsignedSamlRequests()` and

@@ -5180,12 +5180,16 @@ const SETTINGS = [
     env: 'STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE', type: 'int', dflt: 10000,
     min: 10, max: 1000000, runtime: true,
     description: 'How many redeemed authorization codes a trust realm ' +
-                 'remembers, so that a repeat of the SAME token request is ' +
-                 'answered with the tokens it already got and a different ' +
-                 'one is refused naming what differs. Past it the OLDEST is ' +
-                 'forgotten, which costs only that courtesy: the code itself ' +
-                 'was removed when it was redeemed, so a replay of a ' +
-                 'forgotten one is still refused as an unknown code.' },
+                 'remembers. A repeat of a remembered code is refused in ' +
+                 'every mode, naming when and by which client it was ' +
+                 'redeemed (or the field that differs), and the tokens it ' +
+                 'bought are revoked (RFC 6749 section 10.5); only with ' +
+                 'oauth2.codeReplayIdempotent on is an identical repeat ' +
+                 'answered with the tokens it already got. Past the limit ' +
+                 'the OLDEST is forgotten: the code itself was removed when ' +
+                 'it was redeemed, so a replay of a forgotten one is still ' +
+                 'refused, as an unknown code, but what it bought is no ' +
+                 'longer revoked.' },
 
   { key: 'oauth2.codeReplayIdempotent', group: 'OAuth 2.0 / OIDC',
     label: 'Answer a repeated code redemption with the same tokens',
@@ -13422,7 +13426,7 @@ const SETTINGS = [
           'account-credential-change-required,' +
           'recovery-information-changed,recovery-activated,' +
           'credential-compromise,opt-out-initiated,opt-out-cancelled,' +
-          'opt-out-effective,opt-in,sessions-revoked',
+          'opt-out-effective,opt-in',
     runtime: true,
     // Mirrors ssf/risc.ts's AUTO_ACTS, short and under RISC_PREFIX.
     csvValues: withEventTypeUris(
@@ -13452,13 +13456,14 @@ const SETTINGS = [
                  'opt-in, and opt-out-effective when risc.optOutDelayHours ' +
                  'has passed. From the device register (#164): a person\'s ' +
                  'device marked compromised emits credential-compromise ' +
-                 'for each credential it held, and a device compromised or ' +
-                 'removed emits the deprecated sessions-revoked — with the ' +
-                 'DEVICE beside the person in a complex subject, which is ' +
-                 'what makes "every session of the account" true of every ' +
-                 'session on that device. Each ended session also sends ' +
-                 'CAEP session-revoked, the event RISC 1.0 section 2.11 ' +
-                 'points at; drop sessions-revoked here to send only that.' },
+                 'for each credential it held. Each session a compromised ' +
+                 'or removed device ends sends CAEP session-revoked, the ' +
+                 'event RISC 1.0 section 2.11 points new implementations ' +
+                 'at, so the DEPRECATED sessions-revoked is not in the ' +
+                 'default (#269). Add it for a receiver that still needs ' +
+                 'it: it goes out with the DEVICE beside the person in a ' +
+                 'complex subject, meaning every session of the account ' +
+                 'on that device.' },
 
   { key: 'risc.recycleWindowDays', group: 'RISC',
     label: 'Recycled identifier window (days)',
@@ -15034,9 +15039,10 @@ const SETTINGS = [
                  'registration entry gets one created for it and is issued ' +
                  'an SVID anyway — no attestation, no selectors, nothing ' +
                  'checked — which is the same permissive posture every other ' +
-                 'family here has. Off, an unregistered workload is answered ' +
-                 'with an empty SVID list, which is what a real SPIRE agent ' +
-                 'does and is the ONLY way to exercise a client\'s "I have ' +
+                 'family here has. Off, an unregistered workload is refused ' +
+                 'PERMISSION_DENIED, which is what the Workload API says and ' +
+                 'a real SPIRE agent does, and is the ONLY way to exercise a ' +
+                 'client\'s "I have ' +
                  'no identity" path. Both answers are worth having; neither ' +
                  'is the safe one.' },
 
@@ -15474,7 +15480,11 @@ const SETTINGS = [
     dflt: 'postgres://sts:sts@localhost:5432/sts', runtime: false,
     restartReason: 'the connection pool is opened before the listener binds',
     description: 'The PostgreSQL connection string persistence.mode=postgres ' +
-                 'dials — postgres://user:password@host:5432/database. The ' +
+                 'dials — postgres://user:password@host:5432/database — ' +
+                 'ALWAYS over TLS (#273): a string with no sslmode is ' +
+                 'sslmode=require, and sslmode=disable or allow, or a ' +
+                 'string that is not a postgres:// URL, stops the service ' +
+                 'starting (STS-STORE-0078). The ' +
                  'default is a LOCAL DEVELOPMENT one matching the Postgres ' +
                  'service in this repository\'s docker-compose.yml (user, ' +
                  'password and database all "sts"), so turning persistence ' +
@@ -15621,10 +15631,10 @@ const SETTINGS = [
   // TLS TO THE DATABASE, and the one knob that is about TRUST rather than
   // about encryption.
   //
-  // The connection string carries `sslmode`, which is postgres's own spelling
-  // and is where the ENCRYPTION decision belongs — `?sslmode=require` is in
-  // the compose default and the database refuses a plaintext connection
-  // anyway, because every `host` rule in its pg_hba.conf is `hostssl`.
+  // ENCRYPTION is not a decision at all since #273: every connection is TLS,
+  // and a string whose `sslmode` says otherwise is refused at start. The
+  // compose stack's database refuses a plaintext connection as well, because
+  // every `host` rule in its pg_hba.conf is `hostssl`.
   //
   // What a connection string cannot say is whether to BELIEVE the certificate,
   // because node's `pg` takes that as a TLS option rather than as a URL
@@ -15646,9 +15656,10 @@ const SETTINGS = [
                  'nobody, so there is nothing for a client to verify it ' +
                  'against and turning this on would refuse every connection ' +
                  'with a message about a self-signed certificate. THE ' +
-                 'CONNECTION IS STILL ENCRYPTED either way — `sslmode` in ' +
-                 'persistence.databaseUrl decides that, the database\'s own ' +
-                 'pg_hba.conf requires it, and this decides only whether the ' +
+                 'CONNECTION IS STILL ENCRYPTED either way — this service ' +
+                 'never dials its database in the clear (#273), the ' +
+                 'database\'s own pg_hba.conf requires TLS too, and this ' +
+                 'decides only whether the ' +
                  'server is AUTHENTICATED. Turn it on when you point this at ' +
                  'a real database whose certificate chains to something ' +
                  'NODE_EXTRA_CA_CERTS names.' },

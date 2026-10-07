@@ -806,13 +806,15 @@ reason; `tests/protocol_endpoints.js` fails otherwise.
 
 **AND A CARD IS NOT ALWAYS A PROTOCOL, WHICH IS WHY THE COUNT IN THE OVERVIEW
 AND THE COUNT ON THAT PAGE ARE DIFFERENT NUMBERS.** Two cards carry
-`notAProtocol` — the User portal, which is an APPLICATION, and **Recovery codes
-(2026-09-10), which is a credential mechanism with an endpoint, a verifier and a
-store, and simply has no document**: nobody ever wrote a specification for a
-recovery code. The marker says which of those two situations a reader is looking
-at, and `tests/vendored/sts_metadata.js` asserts that every other card names a
-specification — so the marker is what keeps that rule strict for everything it
-was written for. A card still costs all three things above whether or not it is
+`notAProtocol` — the User portal, which is an APPLICATION, and **Email codes and
+links (#64), a credential mechanism that a guideline says is not an
+authenticator at all** (it names NIST SP 800-63B-4 and RFC 8176 anyway).
+**Recovery codes carried it until #283 (2026-10-07)** on the claim that nobody
+wrote a specification for a recovery code; NIST SP 800-63B-4 section 3.1.2's
+*look-up secrets* are one, and the card now names it.
+`tests/vendored/sts_metadata.js` asserts that every card without the marker
+names a specification — so the marker is what keeps that rule strict for
+everything it was written for. A card still costs all three things above whether or not it is
 a protocol, because the rule the page enforces is *no endpoint group without a
 card*, and paying it here is cheaper than making the rule conditional.
 
@@ -1106,7 +1108,7 @@ the file the row names.
 | ~~Persist anything it MINTS~~ — **reversed 2026-09-06, in product mode on postgres only** | `persistence/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | Deliver a response to an address nobody registered, **in product mode** — an address development merely observed is marked and refused until confirmed | `common/applications.js`, `saml/CLAUDE.md`, `common/oidc_rp.ts` |
 | Start with demonstration data, invent a claim value, or open a test control to anybody, **in product mode** | `common/mode.js`, `common/CLAUDE.md` |
-| Dial its database in the clear — and it does not authenticate that server either | `persistence/CLAUDE.md` |
+| Dial its database in the clear, in any mode — a connection string that would (`sslmode=disable` or `allow`, or not a URL) stops it starting since #273; it does not authenticate that server by default either | `persistence/CLAUDE.md` |
 | Send mail to an address a request supplies, through a relay a caller names, or in the clear (#63) — every recipient is a directory entry, the only address dialled is the operator's configured relay or provider endpoint, a mailed link is built on `global.publicBaseUrl` and never on the request, and SMTP is STARTTLS-required or implicit TLS with the relay verified in both modes | `common/CLAUDE.md` (`mail.ts`) |
 | ~~Coordinate several processes through that store~~ — **reversed 2026-09-06**: the change log is the contract; it shares state and not sockets | `persistence/CLAUDE.md`, `common/CLAUDE.md` |
 | Recall anything it has already ISSUED — it DISOWNS them, which is a different claim | `logout/CLAUDE.md`, `common/CLAUDE.md` |

@@ -799,7 +799,8 @@ const SPECS: Spec[] = [
               'credential-compromise for each credential a person\'s ' +
               'device held when it is marked compromised, and the ' +
               'deprecated sessions-revoked when it is compromised or ' +
-              'removed — both with a complex subject naming the account AND ' +
+              'removed (only where risc.autoEmitTypes names it, which the ' +
+              'default does not) — both with a complex subject naming the account AND ' +
               'the device, which is what makes "every session of the ' +
               'account" true of what was ended; and from the ACCOUNT HOLDER ' +
               'on ' +
@@ -1614,8 +1615,10 @@ const SPECS: Spec[] = [
       'Guidelines: Authentication and Authenticator Management',
     where: 'NIST',
     url: 'https://pages.nist.gov/800-63-4/sp800-63b.html',
-    coverage: 'partial — cited for the emailed code and sign-in link (#64) ' +
-              'and nothing else claimed: section 3.1.3.1 ("Email SHALL NOT ' +
+    coverage: 'partial — cited for two mechanisms and nothing else ' +
+              'claimed. Recovery codes are section 3.1.2\'s look-up ' +
+              'secrets (#283), and meet its verifier requirements. For ' +
+              'the emailed code and sign-in link (#64), section 3.1.3.1 ("Email SHALL NOT ' +
               'be used for out-of-band authentication") is why both are OFF ' +
               'in the built-in authentication policy and never meet a risk ' +
               'step-up, and the warning is on /admin/policies; section ' +
@@ -9696,25 +9699,25 @@ const PROTOCOLS: Protocol[] = [
           'operator clears one, and /admin/totp is where the mechanism is ' +
           'configured.' },
   { name: 'Recovery codes', groups: ['Authentication'],
-    specs: [],
-    // **THE SECOND CARD ON THIS PAGE THAT IMPLEMENTS NO SPECIFICATION**, and
-    // it is a different case from the User portal's beside it. That one is an
-    // APPLICATION rather than a protocol. This one is genuinely a credential
-    // mechanism — it has an endpoint, a verifier, a store and a lifetime —
-    // and there is simply no document to name: nobody ever wrote one for a
-    // recovery code. The marker says which of the two situations a reader is
-    // looking at, and the `what` below says where the decisions came from
-    // instead.
-    notAProtocol: true,
-    what: 'NOT A PROTOCOL — there is no RFC for a recovery code, and this is ' +
-          'the only credential mechanism in this service without a document ' +
-          'behind it. A set of single-use codes is issued AUTOMATICALLY and ' +
-          'ONCE the first time somebody enrols a second factor, and stands ' +
+    specs: ['nist-800-63b'],
+    // **IT CARRIED `notAProtocol` UNTIL #283 (2026-10-07)**, on the claim that
+    // nobody ever wrote a document for a recovery code. NIST SP 800-63B-4
+    // did: section 3.1.2's LOOK-UP SECRETS are exactly this, with verifier
+    // requirements this mechanism meets — an approved RBG, at least six
+    // digits' worth, hashed with a password hashing scheme below 112 bits,
+    // used successfully once, and rate limited. So the card names it, and
+    // the rule that every card names a specification holds here too.
+    what: 'NIST SP 800-63B-4 section 3.1.2\'s LOOK-UP SECRETS. A person ' +
+          'generates a set of single-use codes on /portal/mfa, is shown it ' +
+          'once and keeps it by confirming so; it stands ' +
           'in at /authn/backup-code for whichever of the other two they ' +
           'cannot produce. It is never what a sign-in asks for and never a ' +
-          'first factor. What every identity provider does converges anyway ' +
-          '— a handful of random strings, each accepted once — so the ' +
-          'decisions that are left are this service\'s own and ' +
+          'first factor. Section 3.1.2 asks for an approved random bit ' +
+          'generator, at least six digits\' worth, a salted password hash ' +
+          'below 112 bits, single use and a rate limit (section 3.2.2), ' +
+          'and each is met: node\'s randomInt per character, five attempts ' +
+          'a minute by identity and by address, and the rest below. The ' +
+          'decisions left are this service\'s own and ' +
           'common/backup_codes.ts argues each: fifty bits out of an alphabet ' +
           'with no confusable pair, because this is the one credential here ' +
           'somebody writes on paper; HASHED with scrypt since 2026-09-11 — ' +
@@ -9725,8 +9728,7 @@ const PROTOCOLS: Protocol[] = [
           'is what made that impossible); and a failed spend REFUSES the ' +
           'sign-in, because a single-use code that cannot be marked spent ' +
           'works for ever. /admin/backup-codes configures it and ' +
-          '/admin/users is where an operator clears a set — the only route ' +
-          'to a second one.' },
+          '/admin/users is where an operator clears a set.' },
   { name: 'Email codes and links', groups: ['Authentication'],
     specs: ['rfc8176', 'nist-800-63b'],
     // THE THIRD CARD THAT IS NOT A PROTOCOL (#64): a credential mechanism,

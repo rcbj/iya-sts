@@ -272,11 +272,9 @@ function theProtocolListIsHonest(doc, page) {
                     "One-time passwords (TOTP)",
                     // THE THIRD SECOND FACTOR (2026-09-10), beside the other
                     // two for the same reason and answering the same endpoint
-                    // group. **It is the second card on this page that
-                    // implements no specification** — there is no RFC for a
-                    // recovery code — so it carries `notAProtocol` and the
-                    // assertion below about every card naming a spec is what
-                    // makes that marker load-bearing rather than decorative.
+                    // group. It carried `notAProtocol` until #283: NIST SP
+                    // 800-63B-4 section 3.1.2's look-up secrets are its
+                    // specification, and the card names it.
                     "Recovery codes",
                     // THE EMAILED CODE AND LINK (#64): a third credential
                     // mechanism that is not a protocol, beside the other two.
@@ -317,8 +315,9 @@ function theProtocolListIsHonest(doc, page) {
     //
     // There are two today: the User Portal, which is an application rather
     // than a protocol and has a card only because this page refuses to report
-    // an endpoint group no card claims; and Recovery codes, a credential
-    // mechanism nobody wrote a specification for (see the list above).
+    // an endpoint group no card claims; and Email codes and links (#64),
+    // which names its specifications anyway. Recovery codes left the list in
+    // #283: NIST SP 800-63B-4 section 3.1.2 is its specification.
     assert.ok(Array.isArray(p.specs) && (p.specs.length || p.notAProtocol),
       p.name + " should name the specifications it implements, or declare " +
       "`notAProtocol` to say why it names none.");

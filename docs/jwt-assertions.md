@@ -300,11 +300,17 @@ sign a certificate of its own and present it. A refusal is `invalid_grant` (or
 `STS-PKI-0161`. **A bare key, with no certificate, has no chain and is still
 accepted.** Revocation is checked after the chain (`STS-PKI-0129`).
 
-**`jwks_uri` is recorded and never followed.** Fetching a URL somebody
-registered in order to verify a credential is a server-side request forgery with
-a specification citation attached, and it is the same refusal WS-Federation's
-`wreqptr` gets here. A client that registers only that is told to register
-`jwks` instead, by name, at the moment it authenticates.
+**A registered `jwks_uri` is fetched when a key is needed** (since
+[#120](https://github.com/rcbj/iya-sts/issues/120)). Each endpoint that may need
+a client's keys fetches the set first, and it is cached per realm
+(`/admin/caches`, `oauth2.client-jwks`). An assertion naming a `kid` the cached
+set lacks fetches it again, at most once per `oauth2.clientJwksRefetchS`, which
+is how a rotation is picked up. The fetch goes through the federation outbound
+policy: https only, the server's certificate verified, no redirect, a size cap
+and a timeout, and in product mode an internal address refused. A `jwks_uri` is
+never used beside an inline `jwks`: the registered `jwks` is what is read.
+Only the address the client **registered** is dialled; nothing in a request can
+name one.
 
 ## Every optional component, because "optional" is where implementations differ
 
@@ -433,9 +439,12 @@ changed — the console page, or `POST /admin-api/config/set`.
 * **A certificate that arrives with the signature is checked, not read, and a
   chain is validated at every use.** A key taken from an unchecked `x5c` would
   prove nothing — see [above](#which-key-verifies-it).
-* **`jwks_uri` is recorded and never followed.** Fetching a URL a client
-  registered in order to verify its credential is a server-side request
-  forgery; a client is told to register `jwks` instead.
+* **A registered `jwks_uri` is fetched, never one a request names.** It is
+  dialled under the federation outbound policy (https, verified, no redirect,
+  internal addresses refused in product mode), cached per realm and re-fetched
+  for an unknown `kid` at most once per `oauth2.clientJwksRefetchS`; an inline
+  `jwks`, where registered, is used instead — see
+  [above](#which-key-verifies-it).
 * **Scope is narrowed and never widened; `cnf` is carried and never
   enforced.** The grant has no parameter in which to prove possession of a
   `cnf` key, so demanding one would refuse every conforming client.
