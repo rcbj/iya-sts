@@ -183,7 +183,7 @@ function childMain() {
       .map(function (r) { return r.id.split(':rule:')[1]; });
     note(built.ok && ruleIds.join(',') === 'device-compromised,' +
          'device-required,protocol-not-declared,authn-mechanism,' +
-         'risk-high,risk-medium-key,' +
+         'mfa-mechanism,risk-high,risk-medium-key,' +
          'risk-medium-second-factor,risk-protected-key,' +
          'risk-protected-second-factor,' +
          'native-sso-not-enabled-refused,native-sso-not-enabled-dropped,' +
@@ -220,20 +220,21 @@ function childMain() {
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
          'A1. the built-in issuance policy carries the two device rules ' +
          '(#164), the protocol-declaration rule, the sign-in mechanism ' +
-         'rule (#457), the three risk rules, the console\'s two step-ups ' +
-         'and ' +
+         'rule (#457), the second-factor rule (#475), the three risk ' +
+         'rules, the console\'s two step-ups and ' +
          'its alarm ahead of the role rule, under ordered-deny-overrides',
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
       { decideRisk: 'no', decideDevices: 'no', decideProtocols: 'no',
-        decideAuthnMechanisms: 'no',
+        decideAuthnMechanisms: 'no', decideMfaMechanisms: 'no',
         decideScopes: 'no', decideTransfers: 'no', decideExchanges: 'no',
         decideGnapRights: 'no' },
       { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
          'A2. decideRisk: no (and decideDevices, decideProtocols, ' +
-         'decideAuthnMechanisms (#457), decideScopes and ' +
+         'decideAuthnMechanisms (#457), decideMfaMechanisms (#475), ' +
+         'decideScopes and ' +
          'decideTransfers, decideExchanges and decideGnapRights: no, #164, ' +
          '#304, #98, #186 and #432) builds the ' +
          'roles-only document it was');
@@ -669,8 +670,9 @@ function childMain() {
          // the fourteen scope and detail rules of #304, #305 and #186, the
          // six transfer rules of #98, the protocol-declaration rule, the
          // twenty exchange rules of #186, the fourteen per-right GNAP
-         // rules of #432, and the sign-in mechanism rule of #457.
-         unprotectedPolicy.policy.rules.length === 62,
+         // rules of #432, the sign-in mechanism rule of #457, and the
+         // second-factor rule of #475.
+         unprotectedPolicy.policy.rules.length === 63,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

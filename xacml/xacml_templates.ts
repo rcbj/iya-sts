@@ -498,7 +498,19 @@ const AUTHN_ATTRIBUTE = {
   // The obligation the `authn-mechanism` rule's Deny carries (#457): the PEP
   // reads it as "sign in again with one of the allowed mechanisms", never as
   // a refusal about roles.
-  MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:authn-mechanism'
+  MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:authn-mechanism',
+  // A BAG (#475): the second factors the person's authentication gave —
+  // `common/mfa_mechanisms.ts`'s ids: password, securityKey, totp,
+  // recoveryCode, emailCode, emailLink, wallet. Sent on a browser issuance
+  // to an application that allows only some, and only when the
+  // authentication gave one.
+  MFA_MECHANISM: 'urn:sts:xacml:mfa-mechanism',
+  // A BAG (#475): the second factors the application allows, its
+  // `appMfaMechanism`. Absent where it leaves the realm's.
+  ALLOWED_MFA_MECHANISM: 'urn:sts:xacml:allowed-mfa-mechanism',
+  // The obligation the `mfa-mechanism` rule's Deny carries (#475): the PEP
+  // reads it as "sign in again with one of the allowed second factors".
+  MFA_MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:mfa-mechanism'
 };
 
 // ---------------------------------------------------------------------------
@@ -1076,6 +1088,17 @@ const TEMPLATES: TemplateRow[] = [
               'to one declared for OpenID Connect. An application declared ' +
               'for nothing is never refused by it. Development mode is not ' +
               'refused. No builds the policy without the rule.' },
+      { name: 'decideMfaMechanisms',
+        label: 'Require a second factor the application allows',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, in both modes, a browser sign-in to an ' +
+              'application that lists the second factors it allows ' +
+              '(appMfaMechanism) is denied when the person\'s session gave ' +
+              'a second factor and none of them is listed, with an ' +
+              'obligation the sign-in door reads as "sign in again with one ' +
+              'of these". A session on one factor is not denied by it, and ' +
+              'an application that lists none leaves the realm\'s second ' +
+              'factors. No builds the policy without the rule.' },
       { name: 'decideAuthnMechanisms',
         label: 'Require a sign-in mechanism the application allows',
         dflt: 'yes', type: 'string',
@@ -1117,6 +1140,7 @@ const TEMPLATES: TemplateRow[] = [
       const decideDevices = B.yes(given.decideDevices, true);
       const decideProtocols = B.yes(given.decideProtocols, true);
       const decideMechanisms = B.yes(given.decideAuthnMechanisms, true);
+      const decideMfa = B.yes(given.decideMfaMechanisms, true);
       const decideScopes = B.yes(given.decideScopes, true);
       const decideGnapRights = B.yes(given.decideGnapRights, true);
       const decideTransfers = B.yes(given.decideTransfers, true);
@@ -1587,6 +1611,40 @@ const TEMPLATES: TemplateRow[] = [
             B.designator(model.CATEGORY.ENVIRONMENT,
                          AUTHN_ATTRIBUTE.ALLOWED_MECHANISM, TYPE.STRING)]))]),
         obligations: [{ id: AUTHN_ATTRIBUTE.MECHANISM_OBLIGATION,
+                        on: model.EFFECT.DENY, assignments: [] }],
+        advice: []
+      }] : [];
+      // -------------------------------------------------------------------
+      // THE SECOND-FACTOR RULE (#475), the sign-in mechanism rule's
+      // companion and in the same place for the same reasons. Deny a browser
+      // issuance to an application that lists the second factors it allows
+      // when the person's authentication gave a second factor and none of
+      // them is listed. The PEP sends the given bag only when it holds
+      // something — the list says which second factors, never whether one
+      // is needed (rcbj) — and the rule asks for both bags anyway, so a
+      // request built some other way cannot turn "no second factor" into a
+      // deny. Its obligation is a RE-PROMPT.
+      // -------------------------------------------------------------------
+      const mfaRules: any[] = decideMfa ? [{
+        id: options.idBase + ':rule:mfa-mechanism',
+        effect: model.EFFECT.DENY,
+        description: 'Ask a person to sign in again when their ' +
+                     'authentication gave a second factor and none of the ' +
+                     'ones the application allows (appMfaMechanism). An ' +
+                     'application that lists none leaves the realm\'s.',
+        target: null,
+        condition: and([
+          holdsSome(model.CATEGORY.ENVIRONMENT,
+                    AUTHN_ATTRIBUTE.ALLOWED_MFA_MECHANISM),
+          holdsSome(model.CATEGORY.ENVIRONMENT,
+                    AUTHN_ATTRIBUTE.MFA_MECHANISM),
+          not(B.apply(F1 + 'string-at-least-one-member-of', [
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.MFA_MECHANISM, TYPE.STRING),
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.ALLOWED_MFA_MECHANISM,
+                         TYPE.STRING)]))]),
+        obligations: [{ id: AUTHN_ATTRIBUTE.MFA_MECHANISM_OBLIGATION,
                         on: model.EFFECT.DENY, assignments: [] }],
         advice: []
       }] : [];
@@ -2340,6 +2398,7 @@ const TEMPLATES: TemplateRow[] = [
                 riskRules.length + ' risk rule(s), ' + deviceRules.length +
                 ' device rule(s), ' + protocolRules.length +
                 ' protocol rule(s), ' + mechanismRules.length +
+                ' mechanism rule(s), ' + mfaRules.length +
                 ' mechanism rule(s).');
       return {
         kind: 'Policy',
@@ -2400,6 +2459,12 @@ const TEMPLATES: TemplateRow[] = [
                           'mechanisms it allows is sent to sign in again ' +
                           'unless it used one of them.'
                         : '') +
+                     (decideMfa
+                        ? ' AND ON THE SECOND FACTOR (#475): a browser ' +
+                          'sign-in to an application that lists the second ' +
+                          'factors it allows is sent to sign in again when ' +
+                          'it gave a second factor and none of them.'
+                        : '') +
                      (decideScopes
                         ? ' AND ON EACH REQUESTED SCOPE (#304, #305): the ' +
                           'client\'s declared scopes (#110) — refused where ' +
@@ -2439,7 +2504,7 @@ const TEMPLATES: TemplateRow[] = [
                           'for the one audience asked for.'
                         : ''),
         combiningAlgId: decideRisk || refuseEmail || decideDevices ||
-                        decideProtocols || decideMechanisms ||
+                        decideProtocols || decideMechanisms || decideMfa ||
                         decideScopes || decideTransfers ||
                         decideExchanges || decideGnapRights
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
@@ -2453,6 +2518,7 @@ const TEMPLATES: TemplateRow[] = [
         target: null,
         variables: {},
         rules: deviceRules.concat(protocolRules).concat(mechanismRules)
+          .concat(mfaRules)
           .concat(riskRules)
           .concat(scopeRules)
           .concat(gnapRightRules)

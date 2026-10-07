@@ -902,6 +902,45 @@ deployment there is.
   off is exactly the state that would otherwise put somebody in front of a 403
   halfway through a sign-in.
 
+### `appMfaMechanism` — which second factors, narrowed per application (#475)
+
+`appAuthnMechanism`'s companion (rcbj, 2026-10-07): the second factors an
+application allows, read by `mfaAllowedFor()` and carried on every minted
+step as `mfaAllowed`. rcbj's four rules: **narrow only** (the realm's policy
+is asked first and a held factor is still asked for, as always), **options
+only** (it never makes a second factor needed), **a re-prompt as #457**, and
+**none held, enrol one — after a proof**.
+
+* **`narrowSecondFactor()`** runs where the password screen and the wallet
+  door choose the factor. A factor not allowed gives way to another the
+  person holds (`allowedHeldFactor()`: a key, then an app, then an emailed
+  factor the realm can send); at the wallet door, then to the password. A
+  person who holds NONE is asked for nothing here, and the requirement step
+  enrols an allowed one (`enrolmentOfferedFor()`). A DEMANDED factor
+  (`forceKey`, a step-up on risk) with nothing allowed to answer it is
+  refused, `STS-AUTHN-0307`: a step-up never enrols (#62 P3).
+* **Held, but none allowed: `thenEnrol`.** The step asks for the factor the
+  person holds, and every second-factor finisher — TOTP, recovery code,
+  WebAuthn, emailed, password after wallet, wallet after password — hands
+  over to `enrolAfterProof()` instead of starting a session. Its set-up step
+  is marked `proved`, which is the ONE thing that lets `/authn/mfa-setup`
+  past its "the person must still hold nothing" refusal (`STS-AUTHN-0175`):
+  enrolling for somebody who holds a factor before they have given it is the
+  bypass that refusal exists for. The proof's `amr` rides on as `firstAmr`.
+  Nothing enrollable allowed is `STS-AUTHN-0306`. A remembered browser
+  (#265) never skips a proof.
+* **`narrowStep()`** drops the links a minted step would draw for a factor
+  not allowed (the other mechanism, the recovery code, the emailed factor,
+  the password after a wallet); the wallet link is decided when drawn
+  (`stepAllowsWallet()`). A step that is a proof draws them all: any held
+  factor proves who the person is.
+* **The enforcement is the issuance policy's**, as #457's: the gate sends the
+  second factors the event or session gave (`common/mfa_mechanisms.ts`), and
+  a Deny comes back as `mechanism` with `secondFactor: true`, so
+  `refuseOnMechanism()` refuses with `STS-AUTHN-0305` instead of 0298 and
+  every protocol re-prompts as it does for a mechanism. A gated door is asked
+  at the session's start for an application that restricts either list.
+
 ### `/authn/select-idp`: the chooser, and why it is not the screen with its form hidden
 
 An entry may name SEVERAL relationships — `appFederationRelationship` is

@@ -4812,6 +4812,22 @@ screen for every application whether or not one declares this, so what the
 attribute changes is the DEFAULT ROUTE and nothing about what is then
 accepted — exactly what `appFederationRelationship` changes.
 
+### `appMfaMechanism` — the FOURTH of that group: which second factors (#475)
+
+The second factors an application allows (rcbj, 2026-10-07), `multi`, one
+checkbox per second-factor mechanism of the authentication policy, checked at
+the write (`CHOICES_CHECKED_HERE`). **It only narrows the realm's policy and
+never says a second factor is needed**; none listed leaves the realm's.
+`common/mfa_mechanisms.ts` is its leaf, `authn_mechanisms.ts`'s arrangement:
+the ids (held to `authn_policy.ts`'s MECHANISMS by
+`tests/mfa_mechanism_enforcement.js`), what an EVENT gave — only a local event
+with `acr` `mfa`, named by the credential that answered last, `webauthn` only
+after a first factor because a passkey alone is a first factor — the union
+over a session, and the entry's list. `issuance_gate.js`'s `mfaFactsOf()`
+sends the two bags on #457's four browser kinds, and only when a second factor
+was given: a one-factor session is not the rule's to deny. The sign-in side is
+`authn/CLAUDE.md`; the rule, `xacml/CLAUDE.md`.
+
 ## WHERE THE ONE CRYPTO MODULE IS DESCRIBED TO A READER
 
 `crypto.js` is the one place this service signs, verifies, encrypts and

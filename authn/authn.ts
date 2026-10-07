@@ -121,6 +121,9 @@ import InstanceSlot = require('../common/instance_slot');
 // The sign-in mechanisms an application allows and a session satisfies
 // (#457): a leaf, so requiring it closes no cycle.
 import mechanismLib = require('../common/authn_mechanisms');
+// The second factors an application allows and a session gave (#475): a
+// leaf, for the same reason.
+import mfaLib = require('../common/mfa_mechanisms');
 import stats = require('../common/admin_stats');
 // The federation register, for the buttons at the foot of the sign-in screen.
 // A plain require in the ordinary direction and it passes rule 3e's test both
@@ -4777,26 +4780,32 @@ class Authn {
   // from before, a direct URL. Refused, with the policy's sentence naming the
   // mechanisms, which `refusedSession()` draws the screen again with.
   // ---------------------------------------------------------------------------
+  // A second factor the application does not allow (#475) is refused the
+  // same way, under its own code: `answer.mechanism.secondFactor` says so.
   private refuseOnMechanism(extra, username, via, answer) {
     const { log, audit, errorCodes } = this.deps;
     log.debug("Entering Authn.refuseOnMechanism().");
-    log.info(errorCodes.tag('STS-AUTHN-0298') + 'authn: a session for "' +
+    const secondFactor = answer.mechanism.secondFactor === true;
+    const code = secondFactor ? 'STS-AUTHN-0305' : 'STS-AUTHN-0298';
+    log.info(errorCodes.tag(code) + 'authn: a session for "' +
              username + '" was REFUSED at the ' + (via || 'sign-in') +
              ' door: "' + String(extra.application || '') + '" allows ' +
+             (secondFactor ? 'the second factors ' : '') +
              answer.mechanism.allowed.join(', ') + '.');
     audit.audit({
       action: 'session.refuse', actor: username,
-      errorCode: 'STS-AUTHN-0298',
+      errorCode: code,
       protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
       summary: 'a session for ' + username + ' was refused at the ' +
                (via || 'sign-in') + ' door: the application does not allow ' +
-               'that sign-in mechanism',
+               (secondFactor ? 'that second factor'
+                             : 'that sign-in mechanism'),
       detail: { application: String(extra.application || ''),
                 allowed: answer.mechanism.allowed,
                 used: answer.mechanism.satisfied,
                 policy: answer.policy || '' }
     });
-    extra.refusedWith = 'STS-AUTHN-0298';
+    extra.refusedWith = code;
     extra.refusedWhy = answer.why;
     log.debug("Leaving Authn.refuseOnMechanism().");
     return null;
@@ -5072,9 +5081,12 @@ class Authn {
     // Asked only of an application that allows only some: asking it of every
     // gated sign-in would put the session to the policy a second time, and
     // the policy's other rules (the console's alarm) answer every asking.
+    // The second factors (#475) are the same kind of question, asked here on
+    // the same terms: only of an application that allows only some.
     if (extra.gated === true && mechanismEvent && extra.application &&
-        this.declaredMechanismsFor(String(extra.application))
-          .allowed.length) {
+        (this.declaredMechanismsFor(String(extra.application))
+          .allowed.length ||
+         this.mfaAllowedFor(String(extra.application)).length)) {
       // A DOOR THAT ASKED THE POLICY ITSELF (`gated: true`) asked it before
       // the authentication was complete — the password screen before its
       // second factor — so it could not ask about the MECHANISM, which needs
@@ -6525,6 +6537,39 @@ class Authn {
   // SETTING that decides whether `spnego` will work is settable at runtime. A
   // check made when it was written would be a check about the past.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // THE SECOND FACTORS AN APPLICATION ALLOWS (#475), its `appMfaMechanism` as
+  // written — empty for none, which leaves the realm's authentication policy
+  // as it is. Read where the second-factor step is chosen, on the way to the
+  // screen and back from it, so the same reason as declaredMechanismsFor()'s
+  // holds: a registry that throws costs the narrowing, never the sign-in,
+  // and the issuance policy reads the same registry and decides.
+  // ---------------------------------------------------------------------------
+  private mfaAllowedFor(applicationId): string[] {
+    const { log, applications, errorCodes } = this.deps;
+    log.debug("Entering Authn.mfaAllowedFor(). application=" +
+              (applicationId || '(none)'));
+    const name = String(applicationId || '').trim();
+    if (!name) {
+      log.debug("Leaving Authn.mfaAllowedFor(). No application.");
+      return [];
+    }
+    let allowed: string[] = [];
+    try {
+      const entry = applications.get(name);
+      allowed = mfaLib.allowedOf(entry ? entry.fields : null);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0016') +
+                'authn: the application registry threw while reading ' +
+                'appMfaMechanism for "' + name + '" and was ignored; the ' +
+                'realm\'s second factors apply: ' + ((e && e.message) || e));
+      allowed = [];
+    }
+    log.debug("Leaving Authn.mfaAllowedFor(). " +
+              (allowed.join(', ') || 'the realm\'s'));
+    return allowed;
+  }
+
   private declaredMechanismsFor(applicationId) {
     const { log, federation, applications, config, errorCodes } = this.deps;
     log.debug("Entering Authn.declaredMechanismsFor(). application=" +
@@ -7271,7 +7316,8 @@ class Authn {
       (accountState.isDisabled(username) ? 'STS-AUTHN-0201'
                                          : 'STS-AUTHN-0010');
     const message = (code === 'STS-AUTHN-0010' ||
-                     code === 'STS-AUTHN-0298') && said.refusedWhy
+                     code === 'STS-AUTHN-0298' ||
+                     code === 'STS-AUTHN-0305') && said.refusedWhy
       ? String(said.refusedWhy)
       : 'Authentication failed for ' + username + '.';
     log.info('authn: the session for "' + username + '" was refused at the ' +
@@ -7463,6 +7509,13 @@ class Authn {
     const amr = first.concat((outcome.amr || ['pop']).filter(function (one) {
       return first.indexOf(one) < 0;
     }));
+    // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
+    // screen, offering what the application allows.
+    if (step.thenEnrol) {
+      this.enrolAfterProof(res, step, amr);
+      log.debug("Leaving Authn.finishWithWallet(). To the set-up screen.");
+      return { enrolling: true };
+    }
     const session = this.startSession(res, step.username, amr, 'mfa',
       step.authn.protocol, {
         request: req,
@@ -7613,10 +7666,47 @@ class Authn {
     if (riskFactor && String(configured).indexOf('email-') === 0) {
       configured = '';
     }
+    // -----------------------------------------------------------------------
+    // THE APPLICATION'S SECOND FACTORS (#475), as at the password screen
+    // (`narrowSecondFactor()`), with the password as one more factor the
+    // list may or may not allow. A held factor it does not allow gives way
+    // to another held one, then to the password; only where neither is
+    // allowed is it PROVED and an allowed one enrolled after it.
+    // `narrowedAway` keeps that person off the enrolment below, which is for
+    // somebody who holds nothing: enrolling for them unproved is the bypass.
+    // -----------------------------------------------------------------------
+    const mfaAllowed = this.mfaAllowedFor(String(record.application || ''));
     const passwordSecond = this.deps.authnPolicy.allows('password',
-                                                        'second-factor');
-    if (requirement.required && !configured && !riskFactor) {
-      const offered = this.enrolmentOffered();
+                                                        'second-factor') &&
+      mfaLib.allowsStepFactor(mfaAllowed, 'password');
+    let thenEnrol = false;
+    let narrowedAway = false;
+    if (mfaAllowed.length && configured &&
+        !mfaLib.allowsStepFactor(mfaAllowed, configured)) {
+      const demand = riskFactor === 'security-key' ? 'key'
+        : (riskFactor ? 'any' : '');
+      const held = demand === 'key' ? ''
+        : this.allowedHeldFactor(mfaAllowed, enrolled);
+      if (held) {
+        configured = held;
+      } else if (passwordSecond && demand !== 'key') {
+        configured = '';
+        narrowedAway = true;
+      } else {
+        const narrowed = this.narrowSecondFactor(username, mfaAllowed,
+                                                 enrolled, configured, demand);
+        if (narrowed.refused) {
+          log.debug("Leaving Authn.beginSecondFactorAfterWallet(). No " +
+                    "second factor the application allows.");
+          return { handled: false, refused: narrowed.why,
+                   errorCode: narrowed.refused };
+        }
+        configured = narrowed.factor;
+        thenEnrol = narrowed.thenEnrol;
+      }
+    }
+    if (requirement.required && !configured && !riskFactor && !narrowedAway) {
+      const offered = this.enrolmentOfferedFor(mfaAllowed);
       if (offered.totp || offered.webauthn) {
         const setupId = randomId(24);
         pendingMfa.set(setupId, {
@@ -7624,7 +7714,7 @@ class Authn {
           challenge: crypto.randomBytes(32).toString('base64url'),
           factor: 'enrol', alternate: '', backup: false, passwordless: false,
           requiredBy: requirement.byUser ? 'account' : 'realm',
-          firstAmr: firstAmr,
+          firstAmr: firstAmr, mfaAllowed: mfaAllowed,
           expires: Date.now() + this.mfaStepTtlMs()
         });
         this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, username,
@@ -7668,8 +7758,12 @@ class Authn {
         ? '' : (enrolled.mailFactor ? enrolled.mailFactor.held : ''),
       // The sign-in's assessment (#62 P3), for the finisher's session.
       risk: assessment || undefined,
+      // The application's second factors (#475), as at the password screen.
+      mfaAllowed: mfaAllowed,
+      thenEnrol: thenEnrol,
       expires: Date.now() + this.mfaStepTtlMs()
     });
+    this.narrowStep(pendingMfa.get(mfaId));
     void config;
     log.info('authn: "' + username + '" signed in with a wallet and a second ' +
              'factor is needed (' + (record.forceMfa ? 'the request demands ' +
@@ -7741,7 +7835,7 @@ class Authn {
     const first = this.firstAmrOf(step);
     let out = '';
     if (first.indexOf('pop') < 0 && !step.passwordless &&
-        config.value('oid4vp.signIn')) {
+        config.value('oid4vp.signIn') && this.stepAllowsWallet(step)) {
       out += '<div><a id="wallet-second-factor" href="' + WALLET_PATH +
         '?mfa=' + encodeURIComponent(mfaId) + '">Use your wallet ' +
         'instead</a></div>';
@@ -7913,6 +8007,13 @@ class Authn {
     pendingMfa.delete(String(mfaId));
     const amr = this.firstAmrOf(step).concat(
       this.firstAmrOf(step).indexOf('otp') >= 0 ? [] : ['otp']);
+    if (step.thenEnrol) {
+      // A proof before an enrolment (#475): the set-up screen, no session.
+      this.enrolAfterProof(res, step, amr);
+      log.debug("Leaving Authn.finishEmailSecondFactor(). To the set-up " +
+                "screen.");
+      return false;
+    }
     const said = { request: req, risk: step.risk,
                    application: String(step.authn.application || ''),
                    credential: { kind: 'email-' + kind } };
@@ -9255,6 +9356,35 @@ class Authn {
       : (configuredFactor || riskChoice || (secondFactor ? 'webauthn' : ''));
 
     // ---------------------------------------------------------------------
+    // THE SECOND FACTORS THE APPLICATION ALLOWS (#475) narrow the one asked
+    // for — never the passwordless path, which is a first factor.
+    // `narrowSecondFactor()` argues the four outcomes: the factor as it was,
+    // another the person holds, a held one PROVED and then an allowed one
+    // ENROLLED (`thenEnrol`), or a refusal.
+    // ---------------------------------------------------------------------
+    const mfaAllowed = this.mfaAllowedFor(String(record.application || ''));
+    let thenEnrol = false;
+    if (mfaAllowed.length && factor && !passwordless) {
+      const narrowed = this.narrowSecondFactor(username, mfaAllowed, enrolled,
+        factor, record.forceKey || riskFactor === 'security-key' ? 'key'
+          : (riskFactor ? 'any' : ''));
+      if (narrowed.refused) {
+        if (risk) {
+          this.settleRisk(risk, { decision: riskDecision,
+                                  errorCode: narrowed.refused,
+                                  policy: roleAnswer.policy });
+        }
+        errorCodes.mark(res, narrowed.refused);
+        log.debug("Leaving Authn.finishPasswordSignIn(). No second factor " +
+                  "the application allows.");
+        return this.sendLoginPage(res, this.loginPage(base, record,
+                                                      narrowed.why));
+      }
+      factor = narrowed.factor;
+      thenEnrol = narrowed.thenEnrol;
+    }
+
+    // ---------------------------------------------------------------------
     // A REMEMBERED BROWSER IN PLACE OF THE SECOND FACTOR (#265), and ONLY in
     // place of the person's CONFIGURED one: never one a relying party
     // demanded (`forceMfa`, `forceKey`), never one risk asked for, never the
@@ -9266,7 +9396,7 @@ class Authn {
     // MEDIUM. The session is then ONE factor (`["pwd"]`, acr 1) and says so.
     // ---------------------------------------------------------------------
     let skippedSecondFactor = '';
-    if (factor && factor === configuredFactor && !passwordless &&
+    if (factor && factor === configuredFactor && !passwordless && !thenEnrol &&
         !secondFactor && !record.forceMfa && !record.forceKey &&
         !riskFactor && !requirementForAdministrator(credentials, username)) {
       const answer = this.deps.browserDevices().skipsSecondFactor({
@@ -9319,7 +9449,21 @@ class Authn {
         'asked for your second factor, or to set one up.'));
     }
     if (requirement.required && !factor && !skippedSecondFactor) {
-      const offered = this.enrolmentOffered();
+      // Only the ones the application allows (#475).
+      const offered = this.enrolmentOfferedFor(mfaAllowed);
+      if (!offered.totp && !offered.webauthn && mfaAllowed.length) {
+        log.info(errorCodes.tag('STS-AUTHN-0306') + 'authn: a second ' +
+                 'factor is required of "' + username + '", who holds none, ' +
+                 'and none of the ones "' + String(record.application) +
+                 '" allows (' + mfaAllowed.join(', ') + ') can be set up at ' +
+                 'sign-in; refused.');
+        errorCodes.mark(res, 'STS-AUTHN-0306');
+        log.debug("Leaving Authn.finishPasswordSignIn(). Nothing the " +
+                  "application allows can be enrolled.");
+        return this.sendLoginPage(res, this.loginPage(base, record,
+          'A second factor is required, and none that this application ' +
+          'accepts can be set up here. Ask an administrator.'));
+      }
       if (!offered.totp && !offered.webauthn) {
         log.warn(errorCodes.tag('STS-AUTHN-0172') +
                  'authn: a second factor is ' +
@@ -9348,6 +9492,9 @@ class Authn {
         factor: 'enrol', alternate: '', backup: false, passwordless: false,
         requiredBy: requirement.byUser ? 'account'
           : (requirement.byRealm ? 'realm' : 'administrator'),
+        // What the application allows (#475), which the set-up screen
+        // offers from.
+        mfaAllowed: mfaAllowed,
         // The sign-in's assessment (#246): the finisher decides the session
         // on it, as every other step's does. Until #246 this step carried
         // none, and an enrolment's session was decided with no risk at all.
@@ -9383,7 +9530,7 @@ class Authn {
     // ---------------------------------------------------------------------
     const enrolable = requirement.offered && !factor && !passwordless &&
                       !skippedSecondFactor
-      ? this.enrolmentOffered() : null;
+      ? this.enrolmentOfferedFor(mfaAllowed) : null;
     if (enrolable && (enrolable.totp || enrolable.webauthn)) {
       pending.delete(record.id);
       const offerId = randomId(24);
@@ -9391,7 +9538,7 @@ class Authn {
         authn: record, username: username,
         challenge: crypto.randomBytes(32).toString('base64url'),
         factor: 'enrol', alternate: '', backup: false, passwordless: false,
-        requiredBy: 'administrator', optional: true,
+        requiredBy: 'administrator', optional: true, mfaAllowed: mfaAllowed,
         risk: assessment || undefined, riskDecision: riskDecision,
         expires: Date.now() + this.mfaStepTtlMs()
       });
@@ -9469,8 +9616,14 @@ class Authn {
         // A security key demanded ON RISK, for `keyDemandRefuses()`'s
         // reason: the POST at the other end is an answer, not the question.
         riskKey: riskFactor === 'security-key',
+        // THE APPLICATION'S SECOND FACTORS (#475): what the step may offer,
+        // and whether the factor asked for is only a PROOF, after which an
+        // allowed one is enrolled (`enrolAfterProof()`).
+        mfaAllowed: mfaAllowed,
+        thenEnrol: thenEnrol,
         expires: Date.now() + this.mfaStepTtlMs()
       });
+      this.narrowStep(pendingMfa.get(mfaId));
       pendingMfa.forEach(function (v, k) {
         if (v.expires < Date.now()) pendingMfa.delete(k);
       });
@@ -9666,6 +9819,229 @@ class Authn {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SECOND FACTORS AN APPLICATION ALLOWS, AT THE STEP (#475).
+  //
+  // `enrolmentOfferedFor()` is enrolmentOffered() narrowed to the list: a
+  // security key only where `securityKey` is on it, an authenticator app only
+  // where `totp` is. Nothing else can be enrolled at sign-in.
+  //
+  // `narrowSecondFactor()` decides what the step asks for when the factor
+  // chosen above is not on the list — rcbj's decisions, 2026-10-07:
+  //
+  //   * **Another the person holds** and the list allows, preferring a key,
+  //     then an app, then an emailed factor the realm can send.
+  //   * **None held at all**: nothing is asked here. A second factor
+  //     required of them is enrolled by the requirement step, which offers
+  //     only allowed ones; the security-key box, ticked to enrol a key an
+  //     application does not allow, enrols nothing.
+  //   * **Held, but none allowed: PROVE ONE, THEN ENROL** (`thenEnrol`). The
+  //     step asks for the factor they hold, and its finisher hands over to
+  //     the set-up screen (`enrolAfterProof()`) instead of starting a
+  //     session. Enrolling BEFORE that proof is the bypass the header of
+  //     the set-up screen refuses: anybody who knows the password could
+  //     register their own key and never meet the factor the account has.
+  //   * **Refused** where nothing allowed can be enrolled (STS-AUTHN-0306),
+  //     and where the factor was DEMANDED — a security key by the relying
+  //     party or on risk, or any factor on risk — and the list leaves the
+  //     person nothing that answers it (STS-AUTHN-0307): a step-up never
+  //     enrols (#62 P3), and a demand the application's own list forbids
+  //     cannot be met at all.
+  // ---------------------------------------------------------------------------
+  private enrolmentOfferedFor(allowed: string[]) {
+    const { log } = this.deps;
+    log.debug('Entering Authn.enrolmentOfferedFor().');
+    const out = this.enrolmentOffered();
+    if (!Array.isArray(allowed) || !allowed.length) {
+      log.debug('Leaving Authn.enrolmentOfferedFor(). The realm\'s.');
+      return out;
+    }
+    const narrowed = {
+      totp: out.totp && allowed.indexOf('totp') >= 0,
+      webauthn: out.webauthn && allowed.indexOf('securityKey') >= 0
+    };
+    log.debug('Leaving Authn.enrolmentOfferedFor(). totp=' + narrowed.totp +
+              ', webauthn=' + narrowed.webauthn);
+    return narrowed;
+  }
+
+  private allowedHeldFactor(allowed: string[], enrolled: any): string {
+    const { log, authnPolicy } = this.deps;
+    log.debug('Entering Authn.allowedHeldFactor().');
+    const mail = enrolled && enrolled.mailFactor
+      ? String(enrolled.mailFactor.held || '') : '';
+    let out = '';
+    if (enrolled && enrolled.mfaKeys > 0 &&
+        allowed.indexOf('securityKey') >= 0) {
+      out = 'webauthn';
+    } else if (enrolled && enrolled.totp && allowed.indexOf('totp') >= 0) {
+      out = 'totp';
+    } else if (mail === 'code' && allowed.indexOf('emailCode') >= 0 &&
+               authnPolicy.active('emailCode', 'second-factor')) {
+      out = 'email-code';
+    } else if (mail === 'link' && allowed.indexOf('emailLink') >= 0 &&
+               authnPolicy.active('emailLink', 'second-factor')) {
+      out = 'email-link';
+    }
+    log.debug('Leaving Authn.allowedHeldFactor(). ' + (out || 'none'));
+    return out;
+  }
+
+  private narrowSecondFactor(username: string, allowed: string[],
+                             enrolled: any, factor: string,
+                             demand: string) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Authn.narrowSecondFactor(). ' + factor);
+    const answer = { factor: factor, thenEnrol: false, refused: '', why: '' };
+    if (mfaLib.allowsStepFactor(allowed, factor)) {
+      log.debug('Leaving Authn.narrowSecondFactor(). Allowed as it is.');
+      return answer;
+    }
+    const held = demand === 'key' ? '' : this.allowedHeldFactor(allowed,
+                                                                enrolled);
+    if (held) {
+      answer.factor = held;
+      log.debug('Leaving Authn.narrowSecondFactor(). ' + held + ' instead.');
+      return answer;
+    }
+    if (demand) {
+      log.info(errorCodes.tag('STS-AUTHN-0307') + 'authn: a ' +
+               (demand === 'key' ? 'security key' : 'second factor') +
+               ' was demanded of "' + username + '", and the application ' +
+               'allows only ' + allowed.join(', ') + ', none of which they ' +
+               'hold to answer it; refused.');
+      answer.refused = 'STS-AUTHN-0307';
+      answer.why = 'This sign-in needs a second factor that this ' +
+        'application does not accept, or one you have not set up. Ask an ' +
+        'administrator.';
+      log.debug('Leaving Authn.narrowSecondFactor(). A demand it cannot ' +
+                'meet.');
+      return answer;
+    }
+    if (!enrolled || !enrolled.mfaRequired) {
+      answer.factor = '';
+      log.debug('Leaving Authn.narrowSecondFactor(). They hold none.');
+      return answer;
+    }
+    const offered = this.enrolmentOfferedFor(allowed);
+    if (!offered.totp && !offered.webauthn) {
+      log.info(errorCodes.tag('STS-AUTHN-0306') + 'authn: "' + username +
+               '" holds no second factor the application allows (' +
+               allowed.join(', ') + '), and none of those can be set up at ' +
+               'sign-in; refused.');
+      answer.refused = 'STS-AUTHN-0306';
+      answer.why = 'This application accepts a second factor you have not ' +
+        'set up, and none that it accepts can be set up here. Ask an ' +
+        'administrator.';
+      log.debug('Leaving Authn.narrowSecondFactor(). Nothing to enrol.');
+      return answer;
+    }
+    answer.thenEnrol = true;
+    log.debug('Leaving Authn.narrowSecondFactor(). Prove ' + factor +
+              ', then enrol.');
+    return answer;
+  }
+
+  // The links a minted step offers beside its factor, narrowed to the
+  // application's list (#475) — unless the step is a PROOF before an
+  // enrolment, where any factor the person holds proves who they are.
+  private narrowStep(step: any): void {
+    const { log } = this.deps;
+    log.debug('Entering Authn.narrowStep().');
+    const allowed = step && Array.isArray(step.mfaAllowed)
+      ? step.mfaAllowed : [];
+    if (!step || !allowed.length || step.thenEnrol) {
+      log.debug('Leaving Authn.narrowStep(). Nothing to narrow.');
+      return;
+    }
+    if (step.alternate && !mfaLib.allowsStepFactor(allowed, step.alternate)) {
+      step.alternate = '';
+    }
+    if (step.backup && !mfaLib.allowsStepFactor(allowed, 'backup')) {
+      step.backup = false;
+    }
+    if (step.email && !mfaLib.allowsStepFactor(allowed, step.email)) {
+      step.email = '';
+    }
+    if (step.passwordAlternate &&
+        !mfaLib.allowsStepFactor(allowed, 'password')) {
+      step.passwordAlternate = false;
+    }
+    log.debug('Leaving Authn.narrowStep().');
+  }
+
+  // Whether a step may draw the wallet as its second factor (#475): the
+  // links above are minted; this one is decided when the page is drawn.
+  private stepAllowsWallet(step: any): boolean {
+    const { log } = this.deps;
+    log.debug('Entering Authn.stepAllowsWallet().');
+    const allowed = step && Array.isArray(step.mfaAllowed)
+      ? step.mfaAllowed : [];
+    const out = !!(step && step.thenEnrol) ||
+      mfaLib.allowsStepFactor(allowed, 'wallet');
+    log.debug('Leaving Authn.stepAllowsWallet(). ' + out);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A HELD FACTOR PROVED, AN ALLOWED ONE ENROLLED (#475). Called by every
+  // second-factor finisher, in place of starting the session, for a step
+  // minted `thenEnrol`: the person has just proved the factor they hold,
+  // which is what makes enrolling one for them safe. The set-up step it
+  // mints is marked `proved`, which is what lets the set-up screen enrol
+  // for somebody who holds a factor, and carries the proof's `amr` as its
+  // first factors, so the session finally started says both were given.
+  // It offers only what the application allows.
+  // ---------------------------------------------------------------------------
+  private enrolAfterProof(res: any, step: any, amr: string[]): void {
+    const { log, randomId, crypto, audit, oauthError, errorCodes } =
+      this.deps;
+    log.debug('Entering Authn.enrolAfterProof(). username=' + step.username);
+    const allowed = Array.isArray(step.mfaAllowed) ? step.mfaAllowed : [];
+    const offered = this.enrolmentOfferedFor(allowed);
+    if (!offered.totp && !offered.webauthn) {
+      // The realm switched both off since the step was minted.
+      errorCodes.mark(res, 'STS-AUTHN-0306');
+      log.debug('Leaving Authn.enrolAfterProof(). Nothing to enrol now.');
+      oauthError(res, 400, 'access_denied',
+        'This application accepts a second factor you have not set up, and ' +
+        'none that it accepts can be set up here. Ask an administrator.');
+      return;
+    }
+    const first: string[] = [];
+    (amr || []).map(String).forEach(function (one) {
+      if (first.indexOf(one) < 0) {
+        first.push(one);
+      }
+    });
+    const setupId = randomId(24);
+    pendingMfa.set(setupId, {
+      authn: step.authn, username: step.username,
+      challenge: crypto.randomBytes(32).toString('base64url'),
+      factor: 'enrol', alternate: '', backup: false, passwordless: false,
+      requiredBy: 'application', proved: true, mfaAllowed: allowed,
+      firstAmr: first, risk: step.risk, riskDecision: step.riskDecision,
+      expires: Date.now() + this.mfaStepTtlMs()
+    });
+    audit.audit({
+      action: 'authn.mfa.enrolment.required', outcome: 'success',
+      actor: step.username, target: step.username, channel: 'http',
+      protocol: step.authn && step.authn.protocol,
+      summary: step.username + ' gave a second factor the application ' +
+               'does not allow; asked to set up one it does',
+      detail: { requiredBy: 'application',
+                application: String((step.authn || {}).application || ''),
+                allowed: allowed }
+    });
+    log.info('authn: "' + step.username + '" proved a second factor "' +
+             String((step.authn || {}).application || '') + '" does not ' +
+             'allow; asking them to set up one it does (' +
+             allowed.join(', ') + ').');
+    this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, step.username,
+                                                 offered, ''));
+    log.debug('Leaving Authn.enrolAfterProof().');
+  }
+
   private mfaSetupShell(title, body) {
     const { log, xmlEscape } = this.deps;
     log.debug('Entering Authn.mfaSetupShell().');
@@ -9720,8 +10096,16 @@ class Authn {
         '<button type="submit" id="mfa-setup-' + action + '">' + label +
         '</button></form>';
     };
+    // A step after a proof (#475) is the application's, not the account's.
+    const setupStep = pendingMfa.get(setupId);
+    const proved = !!(setupStep && setupStep.proved);
     const html = this.mfaSetupShell('Set up a second factor',
-      '<h1>Set up a second factor</h1><p class="sub">' + (optional
+      '<h1>Set up a second factor</h1><p class="sub">' + (proved
+        ? 'The application you are signing in to does not accept the ' +
+          'second factor you just gave for <code>' + xmlEscape(username) +
+          '</code>. Set up one it does accept; nothing is signed in until ' +
+          'you have.'
+        : optional
         ? 'You hold an administrator role, and <code>' +
           xmlEscape(username) + '</code> has no second factor yet. ' +
           'Setting one up now is recommended; you can ignore this and ' +
@@ -10761,9 +11145,19 @@ class Authn {
     // "mfa" because it is phishing-resistant would be the fake this profile
     // refuses everywhere else — a relying party that asked for two factors
     // would be told it got them.
+    // `hwk` once: a step after a proof (#475) may already carry it.
     const amr = step.passwordless ? ['hwk'] :
-                this.firstAmrOf(step).concat(['hwk']);
+                this.firstAmrOf(step).filter(function (one) {
+                  return one !== 'hwk';
+                }).concat(['hwk']);
     const acr = step.passwordless ? '1' : 'mfa';
+    // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
+    // screen, offering what the application allows.
+    if (step.thenEnrol && !step.passwordless) {
+      this.enrolAfterProof(res, step, amr);
+      log.debug("Leaving Authn.finishWebauthn(). To the set-up screen.");
+      return;
+    }
     // The single funnel, reached through startSession() as every sign-in at
     // these screens is. It is what puts the person on /admin/users and what
     // seeds their entry in the embedded directory — so a PRIMARY WebAuthn
@@ -10983,6 +11377,13 @@ class Authn {
     // is never a first factor (see common/totp.ts), so `pwd` is always in the
     // list.
     const amr = this.firstAmrOf(step).concat(['otp']);
+    // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
+    // screen, offering what the application allows.
+    if (step.thenEnrol) {
+      this.enrolAfterProof(res, step, amr);
+      log.debug('Leaving Authn.finishTotp(). To the set-up screen.');
+      return;
+    }
     const said = { request: req, risk: step.risk,
                    application: String(step.authn.application || ''),
                    credential: { kind: 'totp' } };
@@ -11221,6 +11622,13 @@ class Authn {
     // never a first factor, so the first factor's `amr` is always in the list.
     // never a first factor, so `pwd` is always in the list.
     const amr = this.firstAmrOf(step).concat(['otp']);
+    // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
+    // screen, offering what the application allows.
+    if (step.thenEnrol) {
+      this.enrolAfterProof(res, step, amr);
+      log.debug('Leaving Authn.finishBackupCode(). To the set-up screen.');
+      return;
+    }
     const said = { request: req, risk: step.risk,
                    application: String(step.authn.application || ''),
                    credential: { kind: 'backup-code' } };
@@ -12074,7 +12482,9 @@ class Authn {
       }
       log.debug('Leaving the second-factor set-up screen. The choice.');
       return this.sendMfaSetupPage(res, this.mfaSetupPage(
-        setupId, step.username, this.enrolmentOffered(), '', !!step.optional));
+        setupId, step.username,
+        this.enrolmentOfferedFor(step.mfaAllowed || []), '',
+        !!step.optional));
     });
 
     app.post(MFA_SETUP_PATH, async (req, res) => {
@@ -12094,12 +12504,17 @@ class Authn {
         log.debug('Leaving the second-factor set-up endpoint. No step.');
         return undefined;
       }
-      const offered = this.enrolmentOffered();
+      // Only what the application allows (#475).
+      const offered = this.enrolmentOfferedFor(step.mfaAllowed || []);
       const action = String(body.action || '');
       // THE PERSON MUST STILL HOLD NOTHING. A factor enrolled in another tab
       // since the step was minted makes this an ordinary sign-in again, and
       // enrolling a second one here would be the bypass the header refuses.
-      if (credentials.mechanismsFor(step.username).mfaRequired) {
+      // EXCEPT A STEP MINTED AFTER A PROOF (#475, `enrolAfterProof()`): the
+      // person has just given the factor they hold, in this sign-in, which
+      // is the very thing the bypass skips.
+      if (!step.proved &&
+          credentials.mechanismsFor(step.username).mfaRequired) {
         pendingMfa.delete(setupId);
         errorCodes.mark(res, 'STS-AUTHN-0175');
         log.debug('Leaving the second-factor set-up endpoint. They hold one ' +
@@ -12274,9 +12689,11 @@ class Authn {
       const said = { request: req, risk: step.risk,
                      application: String(step.authn.application || ''),
                      credential: { kind: 'totp' } };
+      // `otp` once: a step after a proof (#475) may already carry it.
       const started = this.startSession(res, step.username,
-                                        this.firstAmrOf(step).concat(['otp']),
-                                        'mfa', step.authn.protocol, said);
+        this.firstAmrOf(step).filter(function (one) {
+          return one !== 'otp';
+        }).concat(['otp']), 'mfa', step.authn.protocol, said);
       if (this.refusedSession(res, base, step.authn, step.username, started,
                               said)) {
         log.debug('Leaving the second-factor set-up endpoint. Refused.');
@@ -13014,6 +13431,14 @@ class Authn {
       await websecurity.succeededShared('sign-in', req, step.username);
       pendingMfa.delete(mfaId);
       const amr = this.firstAmrOf(step).concat(['pwd']);
+      // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
+      // screen, offering what the application allows.
+      if (step.thenEnrol) {
+        this.enrolAfterProof(res, step, amr);
+        log.debug('Leaving the password-factor endpoint. To the set-up ' +
+                  'screen.');
+        return undefined;
+      }
       // Looked at since 2026-09-22 (#62 P0): the account may have been
       // disabled after the wallet step, and a null here returned the browser
       // to a caller that sent it straight back.

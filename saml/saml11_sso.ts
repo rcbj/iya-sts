@@ -2010,7 +2010,10 @@ class Saml11Sso {
       again.expires = Date.now() + this.requestTtlMs();
       again.mechanismAt = Date.now();
       pendingFlows.set(again.id, again);
-      errorCodes.mark(res, 'STS-SAML-0101');
+      // A second factor the relying party does not allow (#475) is its
+      // own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-SAML-0108' : 'STS-SAML-0101');
       log.info('saml11: "' + rpId + '" allows signing in with ' +
                roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
                'of "' + String((session.user || {}).username) + '" used ' +
@@ -2041,7 +2044,10 @@ class Saml11Sso {
       // A sign-in mechanism still not allowed after the one trip (#457) is
       // its own.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-        : (roleAnswer.mechanism ? 'STS-SAML-0102' : 'STS-SAML-0032'));
+        : (roleAnswer.mechanism
+          ? (roleAnswer.mechanism.secondFactor ? 'STS-SAML-0109'
+                                               : 'STS-SAML-0102')
+          : 'STS-SAML-0032'));
       log.debug("Leaving Saml11Sso.interSiteTransfer().");
       return this.samlError(res, 403, 'Refused by policy', roleAnswer.why,
         '<p>The person is signed in. The XACML issuance policy would not let ' +

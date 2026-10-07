@@ -3519,7 +3519,10 @@ class Saml2Sso {
       again.expires = Date.now() + this.requestTtlMs();
       again.forcedAt = nowSec();
       pendingRequests.set(again.id, again);
-      errorCodes.mark(res, 'STS-SAML-0099');
+      // A second factor the service provider does not allow (#475) is
+      // its own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-SAML-0106' : 'STS-SAML-0099');
       log.info('saml2: "' + spEntityId + '" allows signing in with ' +
                roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
                'of "' + String((session.user || {}).username) + '" used ' +
@@ -3547,7 +3550,10 @@ class Saml2Sso {
       // A realm being removed (#262) is its own code; a sign-in mechanism
       // still not allowed after the one trip (#457) is its own.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-        : (roleAnswer.mechanism ? 'STS-SAML-0100' : 'STS-SAML-0010'));
+        : (roleAnswer.mechanism
+          ? (roleAnswer.mechanism.secondFactor ? 'STS-SAML-0107'
+                                               : 'STS-SAML-0100')
+          : 'STS-SAML-0010'));
       const denied = this.buildResponse({
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
@@ -3755,7 +3761,10 @@ class Saml2Sso {
     if (!roleAnswer.allowed && roleAnswer.mechanism &&
         session.authenticated !== false) {
       const again = this.rawQueryOf(req);
-      errorCodes.mark(res, 'STS-SAML-0099');
+      // A second factor the service provider does not allow (#475) is
+      // its own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-SAML-0106' : 'STS-SAML-0099');
       log.info('saml2: "' + spEntityId + '" allows signing in with ' +
                roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
                'used none of them; sent to sign in again.');

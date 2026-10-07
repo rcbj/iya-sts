@@ -8155,7 +8155,9 @@ class OAuth2Server {
     if (!roleAnswer.allowed && roleAnswer.mechanism &&
         (authInfo || {}).authenticated !== false) {
       if (String(query.prompt || '').split(/\s+/).indexOf('none') >= 0) {
-        errorCodes.mark(res, 'STS-OAUTH-0946');
+        // A second factor the client does not allow (#475) is its own.
+        errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+          ? 'STS-OAUTH-0953' : 'STS-OAUTH-0946');
         log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). The " +
                   "sign-in mechanism, and prompt=none.");
         return self.redirectBack(res, base, redirectUri, query.state,
@@ -8163,7 +8165,9 @@ class OAuth2Server {
           self.usesFragment(types, query.response_mode),
           query.response_mode);
       }
-      errorCodes.mark(res, 'STS-OAUTH-0945');
+      // A second factor the client does not allow (#475) is its own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-OAUTH-0952' : 'STS-OAUTH-0945');
       log.info('oauth2: "' + String(query.client_id || '') + '" allows ' +
                'signing in with ' + roleAnswer.mechanism.allowed.join(', ') +
                ', and the session of "' + String(user.username || '') +

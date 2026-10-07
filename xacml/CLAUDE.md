@@ -1663,6 +1663,29 @@ fires only when the allowed bag holds something.
 * `tests/authn_mechanism_enforcement.js` holds the library, the rule, the
   routing, the door and the OAuth and WS-Federation re-prompts.
 
+### The second factors an application allows (#475, 2026-10-07)
+
+`mfa-mechanism`, a Deny right after `authn-mechanism` and for its reasons,
+**in both modes**: a browser issuance to an application that lists the second
+factors it allows (`appMfaMechanism`) is denied when the person's
+authentication GAVE a second factor and none of them is listed. Two
+ENVIRONMENT bags: `AUTHN_ATTRIBUTE.ALLOWED_MFA_MECHANISM` and `MFA_MECHANISM`
+(from `common/mfa_mechanisms.ts`), and the rule requires BOTH to hold
+something — so a session on one factor is never denied by it (rcbj: the list
+says which second factors, never whether one is needed), whatever built the
+request.
+
+* **The gate supplies both** (`mfaFactsOf()`) on #457's four browser kinds,
+  and only when a second factor was given.
+* **The PEP reads `MFA_MECHANISM_OBLIGATION`** just after the mechanism one,
+  audits `STS-XACML-0171`, and answers `mechanism: { allowed, satisfied,
+  secondFactor: true }`, so every door that re-prompts for #457 re-prompts
+  for this, choosing its own code by `secondFactor`.
+* **`decideMfaMechanisms: no`** builds the policy without it.
+* `tests/mfa_mechanism_enforcement.js` holds the library, the rule, the
+  proof-then-enrolment, the narrowed enrolment and the OAuth and
+  WS-Federation re-prompts.
+
 ## THE FOURTEENTH DEFECT: TWO CONTAINERS CLAIMING A PAGE THAT WAS NEVER WRITTEN
 
 `xacml_store.ts` and `xacml_pep_registry.ts` each carry a `SCHEMA` whose comment
