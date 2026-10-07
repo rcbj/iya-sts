@@ -49,7 +49,7 @@
 // `AcmeStore` is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 const { log } = helpers;
 import realms = require('../common/realms');
@@ -161,7 +161,7 @@ const MAX_ORDERS_PER_ACCOUNT = 1000;
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface AcmeStoreDeps {
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   log: typeof log;
   claims: typeof claims;
   cellLocator: typeof cellLocator;
@@ -178,7 +178,7 @@ class AcmeStore {
   /**
    * Creates the store.
    *
-   * @param deps - node's crypto, the logger and the cluster claims
+   * @param deps - `common/crypto.js`, the logger and the cluster claims
    */
   constructor(private readonly deps: AcmeStoreDeps) {
     deps.log.debug("Entering AcmeStore.constructor().");
@@ -196,7 +196,7 @@ class AcmeStore {
     log.debug("Entering AcmeStore.defaultDeps().");
     log.debug("Leaving AcmeStore.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       log: log,
       claims: claims,
       cellLocator: cellLocator
@@ -220,10 +220,10 @@ class AcmeStore {
   // base64url characters more (28 or 32 in all), inside `ID_PATTERN`'s 8 to
   // 64; nothing in a single-cell service.
   newId(bytes) {
-    const { log, nodeCrypto, cellLocator } = this.deps;
+    const { log, stsCrypto, cellLocator } = this.deps;
     log.debug("Entering AcmeStore.newId().");
     log.debug("Leaving AcmeStore.newId().");
-    return cellLocator.stamp(nodeCrypto.randomBytes(bytes || 15)
+    return cellLocator.stamp(stsCrypto.randomBytes(bytes || 15)
       .toString('base64url'));
   }
 

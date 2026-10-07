@@ -52,6 +52,7 @@ const helpers = require('../common/helpers');
 const config = require('../common/config');
 const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
+const stsCrypto = require('../common/crypto');
 const listenerMap = require('../common/listener_map');
 
 const { log } = helpers;
@@ -130,8 +131,8 @@ async function certificateFor(desired) {
     let notAfter = '';
     let serialHex = '';
     try {
-      const x = new (require('crypto').X509Certificate)(cert);
-      if (!x.checkPrivateKey(require('crypto').createPrivateKey(key))) {
+      const x = stsCrypto.parseCertificate(cert);
+      if (!x.checkPrivateKey(stsCrypto.privateKeyFrom(key))) {
         log.debug("Leaving certificateFor(). The key is not the cert's.");
         return errorCodes.mark({ ok: false,
           why: 'privateKeyFile is not the key of the first certificate in ' +

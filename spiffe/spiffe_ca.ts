@@ -101,7 +101,6 @@
 // installed, into the module-level variable declared where each was.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // For the federated bundle store below — a persisted per-realm map rather than
 // a plain one, so every process in this service sees the same bundles and no
 // realm sees another's.
@@ -168,7 +167,6 @@ const PROCESS_TRUST_DOMAIN =
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface SpiffeCaDeps {
-  crypto: typeof crypto;
   realms: typeof realms;
   jwt: typeof jwt;
   stsCrypto: typeof stsCrypto;
@@ -272,7 +270,6 @@ class SpiffeCa {
     helpers.log.debug("Entering SpiffeCa.defaultDeps().");
     helpers.log.debug("Leaving SpiffeCa.defaultDeps().");
     return {
-      crypto: crypto,
       realms: realms,
       jwt: jwt,
       stsCrypto: stsCrypto,
@@ -1010,9 +1007,9 @@ class SpiffeCa {
    * @returns the JWK
    */
   publicJwkOf(publicPem) {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering SpiffeCa.publicJwkOf().");
-    const jwk = crypto.createPublicKey(publicPem).export({ format: 'jwk' });
+    const jwk = stsCrypto.publicKeyOf(publicPem).export({ format: 'jwk' });
     // `key_ops` and `ext` are Web Crypto members and are not part of a
     // published JWK. Deleted rather than left: a bundle is a document other
     // software parses strictly, and members it does not expect are members it
@@ -1141,7 +1138,7 @@ class SpiffeCa {
    * @returns the anchors
    */
   trustAnchorsIn(realmId) {
-    const { log, pki, crypto } = this.deps;
+    const { log, pki, stsCrypto } = this.deps;
     log.debug("Entering SpiffeCa.trustAnchorsIn().");
     const id = this.realmIdOf(realmId);
     const issuer = pki.describeIssuer(id, SPIFFE_USE_CASE);
@@ -1154,7 +1151,8 @@ class SpiffeCa {
                 notAfter: issuer.root.notAfter,
                 certificatePem: issuer.root.certificatePem,
                 certificateDer: this.pemToDer(issuer.root.certificatePem),
-                publicKeyPem: crypto.createPublicKey(issuer.root.certificatePem)
+                publicKeyPem: stsCrypto.publicKeyOf(
+                  issuer.root.certificatePem)
                   .export({ type: 'spki', format: 'pem' }) }];
     }
     log.debug("Leaving SpiffeCa.trustAnchorsIn().");
@@ -2192,10 +2190,10 @@ class SpiffeCa {
    * @returns its subject, issuer, serial, validity and fingerprint, or null
    */
   certificateFacts(der) {
-    const { log, crypto, dnRfc4514, errorCodes } = this.deps;
+    const { log, stsCrypto, dnRfc4514, errorCodes } = this.deps;
     log.debug('Entering SpiffeCa.certificateFacts().');
     try {
-      const parsed = new crypto.X509Certificate(der);
+      const parsed = stsCrypto.parseCertificate(der);
       log.debug('Leaving SpiffeCa.certificateFacts(). serial=' +
                 parsed.serialNumber);
       return {
@@ -2344,7 +2342,7 @@ class SpiffeCa {
    *   issue
    */
   async mintJwtSvid(id, audiences, options) {
-    const { log, spiffeId, nowSec, b64u, crypto, stsCrypto } = this.deps;
+    const { log, spiffeId, nowSec, b64u, stsCrypto } = this.deps;
     log.debug('Entering SpiffeCa.mintJwtSvid(). id=' + id);
     const opts = options || {};
     await this.ready(this.realmIdOf(opts.realm));
@@ -2387,7 +2385,7 @@ class SpiffeCa {
       aud: list.length === 1 ? list[0] : list,
       exp: expires,
       iat: issuedAt,
-      jti: b64u(crypto.randomBytes(12))
+      jti: b64u(stsCrypto.randomBytes(12))
     };
     // certificate-header: none — the JWT authority has no certificate and no
     // hierarchy to hang from (common/jose_certificate_header.js).
@@ -2566,7 +2564,7 @@ class SpiffeCa {
    * @returns the keys, or null when the trust domain is not known
    */
   jwkSetFor(trustDomain) {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     const self = this;
     log.debug('Entering SpiffeCa.jwkSetFor().');
     // THE AMBIENT REALM'S, because that is the authority a caller reached: a
@@ -2592,7 +2590,7 @@ class SpiffeCa {
     (foreign.document.keys || []).forEach(function (key) {
       if (key.use !== 'jwt-svid') return;
       try {
-        const pem = crypto.createPublicKey({ key: key, format: 'jwk' })
+        const pem = stsCrypto.publicKeyFromJwk(key)
           .export({ type: 'spki', format: 'pem' });
         out.push({ kid: key.kid || '', pem: pem,
                    // The algorithms a key of this type could have signed with.
@@ -3286,7 +3284,7 @@ class SpiffeCa {
    * @returns the state
    */
   state(realmId?) {
-    const { log, config, spiffeId, crypto, errorCodes } = this.deps;
+    const { log, config, spiffeId, stsCrypto, errorCodes } = this.deps;
     log.debug("Entering SpiffeCa.state().");
     const id = this.realmIdOf(realmId);
     const active = this.activeX509Authority(id);
@@ -3333,7 +3331,8 @@ class SpiffeCa {
       // a reader cannot compare with an `openssl x509 -subject`.
       chainSubjects: active ? active.chainPem.map(function (pem) {
         try {
-          return new crypto.X509Certificate(pem).subject.replace(/\n/g, ', ');
+          return stsCrypto.parseCertificate(pem).subject
+            .replace(/\n/g, ', ');
         } catch (e) {
           // A certificate this service built that node cannot read is a defect
           // here rather than bad input, so it is logged — and it is

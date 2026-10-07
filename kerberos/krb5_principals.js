@@ -76,10 +76,10 @@
 
 const kcrypto = require('./krb5_crypto.js');
 const prim = require('./krb5_primitives.js');
-// node's own, for the SHA-256 an on-demand RID is derived from (see
-// autoRidFor()). A builtin, so it adds nothing to the parent project's COPY
-// set.
-const nodeCrypto = require('crypto');
+// `common/crypto.js`, for the SHA-256 an on-demand RID is derived from (see
+// autoRidFor()). `helpers.js` below already requires it at load, so this
+// adds no file to the parent project's COPY set (#453).
+const stsCrypto = require('../common/crypto');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 // The mode. A LEAF (rule 3) that registers nothing and requires only `config`,
@@ -1415,8 +1415,7 @@ function autoRidFor(nameComponents, realm) {
   const span = AUTO_RID_LIMIT - AUTO_RID_BASE;
   // A label in front of the name, so this digest is never the same bytes as
   // any other SHA-256 of a principal name something else computes.
-  const digest = nodeCrypto.createHash('sha256')
-    .update('sts-krb5-auto-rid:' + key, 'utf8').digest();
+  const digest = stsCrypto.digest('sha256', 'sts-krb5-auto-rid:' + key);
   // 48 bits is an exact integer in a double, and 2^48 mod ~2^30 leaves a bias
   // of about one part in a quarter of a million — nothing a SID can show.
   const start = digest.readUIntBE(0, 6) % span;
