@@ -32,8 +32,9 @@
 //   E. the main port's two toggles: no CertificateRequest, and a certificate
 //      required — refused without one and with a stranger's, accepted with
 //      one chaining to the truststore;
-//   F. a realm's own listener: listener.disableTls12, listener.pqcOnly and
-//      its client authentication decide for it alone, and inherit otherwise;
+//   F. a realm's own listener (#99, a definition in its listeners.realm
+//      since #472): its tls.disableTls12, tls.pqcOnly and clientAuth decide
+//      for it alone, and inherit otherwise;
 //   G. the real LDAPS listener: no CertificateRequest by default, one once
 //      ldap.ldapsDisableOptionalClientCertificate is off — re-applied to the
 //      socket ldap.listen() bound;
@@ -43,7 +44,10 @@
 //   J. EVERY SETTING PER LISTENER (#429): one listener's own TLS 1.2 switch,
 //      TLS 1.3 suites and post-quantum toggle decide for it alone, inherit
 //      returns it to the service's, its write rule, its restart-only rows;
-//   K. a listener's own client truststore (its anchors file).
+//   K. a listener's own client truststore (its anchors file);
+//   L. the TLS session cache per listener (#429), and a session ID resumed
+//      only under the server name it was made under (L5c, RFC 6066
+//      section 3).
 // And TLS 1.3 by default (#429): A1 asserts TLS 1.2 refused untouched.
 // ===========================================================================
 
@@ -79,7 +83,13 @@ function childMain() {
   function probe(port, opts) {
     const o = opts || {};
     const args = ['s_client', '-connect', '127.0.0.1:' + port,
-                  '-servername', 'localhost', '-msg', '-ign_eof'];
+                  '-msg', '-ign_eof'];
+    // The server name offered: localhost unless asked, none for ''.
+    if (o.servername === '') {
+      args.push('-noservername');
+    } else {
+      args.push('-servername', o.servername || 'localhost');
+    }
     if (o.version === '1.2') {
       args.push('-tls1_2');
     }
@@ -374,52 +384,61 @@ function childMain() {
          'and not required again', tail(r));
 
     // --- F. a realm's own listener ----------------------------------------
+    // A definition in the realm's listeners.realm (#472): its `tls` block
+    // and `clientAuth` are its policy. The port is never bound here — the
+    // test listens on its own — so any port no process socket uses will do.
     const realmId = 'lt-' + process.pid;
     const created = realms.create({ id: realmId });
     note(created && created.ok !== false, 'precondition: a realm is made',
          JSON.stringify(created && created.errors));
-    w = realms.setOverride(realmId, 'listener.disableTls12', 'on');
-    note(w && w.ok !== false, 'precondition: listener.disableTls12 is set ' +
-         'on the realm', JSON.stringify(w));
-    const realmServer = await listen('realm', realmId);
+    const define = function (tls, clientAuth) {
+      return realms.setOverride(realmId, 'listeners.realm', JSON.stringify([{
+        id: 'lt', port: 18999, publicBaseUrl: 'https://lt.example.test',
+        clientAuth: clientAuth || 'optional', tls: tls || {} }]));
+    };
+    w = define({ disableTls12: 'on' });
+    note(w && w.ok !== false, 'precondition: the realm\'s listener is ' +
+         'defined with tls.disableTls12 on', JSON.stringify(w));
+    const realmServer = await listen('custom', 'lt');
     const realmPort = realmServer.address().port;
     r = await probe(realmPort, { version: '1.2' });
     const r2 = await probe(mainPort, { version: '1.2' });
-    note(!r.accepted && r2.accepted, 'F1. listener.disableTls12 on: the ' +
+    note(!r.accepted && r2.accepted, 'F1. tls.disableTls12 on: the ' +
          'realm\'s listener refuses TLS 1.2 while the main port accepts it',
          tail(r) + ' | ' + tail(r2));
-    realms.setOverride(realmId, 'listener.disableTls12', 'inherit');
+    define({ disableTls12: 'inherit' });
     await settle();
     r = await probe(realmPort, { version: '1.2' });
     note(r.accepted, 'F2. inherit: the realm\'s listener follows the ' +
          'process again (TLS 1.2 accepted), re-applied on the realm change',
          tail(r));
-    realms.setOverride(realmId, 'listener.pqcOnly', 'on');
+    define({ pqcOnly: 'on' });
     await settle();
     r = await probe(realmPort, { version: '1.3',
                                  suites: 'TLS_AES_128_GCM_SHA256' });
-    note(!r.accepted, 'F3. listener.pqcOnly on: the realm\'s listener ' +
+    note(!r.accepted, 'F3. tls.pqcOnly on: the realm\'s listener ' +
          'refuses AES-128-GCM', tail(r));
-    w = realms.setOverride(realmId, 'listener.tls13CipherSuites',
-                           'TLS_AES_128_GCM_SHA256');
-    note(w && w.ok === false, 'F4. a realm suite list with no 256-bit ' +
-         'suite is refused while its listener.pqcOnly is on',
-         JSON.stringify(w));
-    realms.setOverride(realmId, 'listener.pqcOnly', 'inherit');
-    realms.setOverride(realmId, 'listener.requireClientCertificate', 'true');
+    w = define({ pqcOnly: 'on',
+                 tls13CipherSuites: ['TLS_AES_128_GCM_SHA256'] });
+    note(w && w.ok === false &&
+         require(ROOT_DIR + '/common/error_codes').codeOf(w) ===
+           'STS-TLS-0043',
+         'F4. a listener suite list with no 256-bit suite is refused while ' +
+         'its tls.pqcOnly is on (STS-TLS-0043)', JSON.stringify(w));
+    define({}, 'required');
     await settle();
     r = await probe(realmPort, { version: '1.3' });
     const r3 = await probe(mainPort, { version: '1.3' });
-    note(!r.accepted && r3.accepted, 'F5. listener.requireClientCertificate: ' +
-         'the realm\'s listener refuses a client without a certificate; ' +
+    note(!r.accepted && r3.accepted, 'F5. clientAuth required: the ' +
+         'realm\'s listener refuses a client without a certificate; ' +
          'the main port does not', tail(r) + ' | ' + tail(r3));
     r = await probe(realmPort, { version: '1.3', cert: file('client.crt'),
                                  key: file('client.key') });
     note(r.accepted, 'F6. ... and admits one chaining to the truststore',
          tail(r));
-    w = realms.setOverride(realms.DEFAULT_ID, 'listener.disableTls12', 'on');
-    note(w && w.ok === false, 'F7. the default realm may not carry a ' +
-         'listener row', JSON.stringify(w));
+    w = realms.setOverride(realms.DEFAULT_ID, 'listeners.realm', '[]');
+    note(w && w.ok === false, 'F7. the default realm may not carry ' +
+         'listeners.realm', JSON.stringify(w));
 
     // --- G. the real LDAPS listener ---------------------------------------
     const ldap = require(ROOT_DIR + '/ldap/ldap_server');
@@ -572,16 +591,16 @@ function childMain() {
     await settle();
     let a = await lifetime(mainPort, 'l1m');
     let b = await lifetime(dbgPort, 'l1d');
-    note(a === 60 && b === 60, 'L1. default: a session on either listener ' +
-         'may be resumed for tls.sessionTimeoutS, 60 seconds',
+    note(a === 300 && b === 300, 'L1. default: a session on either ' +
+         'listener may be resumed for tls.sessionTimeoutS, 300 seconds',
          a + ' / ' + b);
     w = config.setOverride('listenerMain.sessionTimeoutS', '123');
     await settle();
     a = await lifetime(mainPort, 'l2m');
     b = await lifetime(dbgPort, 'l2d');
-    note(w.ok && a === 123 && b === 60, 'L2. listenerMain.sessionTimeoutS ' +
-         '123: the main port\'s sessions carry 123 at the next handshake, ' +
-         'the debugger\'s still 60', a + ' / ' + b);
+    note(w.ok && a === 123 && b === 300, 'L2. listenerMain.' +
+         'sessionTimeoutS 123: the main port\'s sessions carry 123 at the ' +
+         'next handshake, the debugger\'s still 300', a + ' / ' + b);
     w = config.setOverride('tls.sessionTimeoutS', '77');
     await settle();
     a = await lifetime(mainPort, 'l3m');
@@ -596,10 +615,42 @@ function childMain() {
          String(a));
     config.clearOverride('tls.sessionTimeoutS');
     let res = await resumesById(mainPort, 'l5');
+    note(res.first.accepted && res.again.accepted && res.again.reused,
+         'L5. tls.sessionCacheSize 2048 (the default since 2026-10-07): a ' +
+         'TLS 1.2 session ID is resumed', tail(res.again));
+    // RFC 6066 section 3 (2026-10-07): a session ID made under one server
+    // name is NOT resumed under another or under none — a full handshake
+    // each time — and the session is still resumed under its own name
+    // afterwards. OpenSSL alone resumes both (it parses no name on a hit),
+    // and so did the cache before the name was kept with the session:
+    // tlsfuzzer's test-invalid-server-name-extension-resumption.py found it
+    // on the debugger's listener, and covers the malformed name s_client
+    // cannot send.
+    const sniOut = sessFile('l5c');
+    const madeUnder = await probe(mainPort, { version: '1.2',
+      noTicket: true, sessOut: sniOut });
+    const underOther = await probe(mainPort, { version: '1.2',
+      noTicket: true, sessIn: sniOut, servername: 'other.localhost' });
+    const underNone = await probe(mainPort, { version: '1.2', noTicket: true,
+                                              sessIn: sniOut,
+                                              servername: '' });
+    const underOwn = await probe(mainPort, { version: '1.2', noTicket: true,
+                                             sessIn: sniOut });
+    note(madeUnder.accepted && underOther.accepted && !underOther.reused &&
+         underNone.accepted && !underNone.reused && underOwn.reused,
+         'L5c. a TLS 1.2 session ID made under "localhost" is not resumed ' +
+         'under "other.localhost" or under no server name (RFC 6066 ' +
+         'section 3: a full handshake instead), and is still resumed under ' +
+         '"localhost"', tail(underOther) + ' | ' + tail(underNone) + ' | ' +
+         tail(underOwn));
+    // From here the service-wide cache is OFF, so L6 can show a listener's
+    // own size against one that inherits none.
+    config.setOverride('tls.sessionCacheSize', '0');
+    await settle();
+    res = await resumesById(mainPort, 'l5b');
     note(res.first.accepted && res.again.accepted && !res.again.reused,
-         'L5. tls.sessionCacheSize 0 (the default): a TLS 1.2 session ID is ' +
-         'not resumed — the full handshake again',
-         tail(res.again));
+         'L5b. tls.sessionCacheSize 0: a TLS 1.2 session ID is not resumed ' +
+         '— the full handshake again', tail(res.again));
     w = config.setOverride('listenerMain.sessionCacheSize', '10');
     await settle();
     res = await resumesById(mainPort, 'l6');
@@ -638,6 +689,7 @@ function childMain() {
          tail(res.again));
     config.setOverride('listenerMain.sessionTimeoutS', '-1');
     config.setOverride('listenerMain.sessionCacheSize', '-1');
+    config.clearOverride('tls.sessionCacheSize');
     config.clearOverride('tls.disableTls12');
     await settle();
     const rowOf = function (key) {
@@ -759,14 +811,13 @@ function childMain() {
          String(main.maxConnections));
     config.setOverride('listenerMain.maxConnections', '-1');
     // F left the realm's listener requiring a certificate.
-    realms.clearOverride(realmId, 'listener.requireClientCertificate');
-    w = realms.setOverride(realmId, 'listener.keepAliveTimeoutS', '20');
-    tlsServer.registerHttpListener(realmServer, 'realm', realmId);
+    w = define({ keepAliveTimeoutS: 20 });
+    tlsServer.registerHttpListener(realmServer, 'custom', 'lt');
     x = await ask(realmPort);
     note(w && w.ok !== false && timeoutOf(x) === 20 &&
          realmServer.keepAliveTimeout === 20000, 'M9. a realm\'s own ' +
-         'listener.keepAliveTimeoutS 20 holds its listener', x.keepAlive);
-    realms.setOverride(realmId, 'listener.keepAliveTimeoutS', '-1');
+         'tls.keepAliveTimeoutS 20 holds its listener', x.keepAlive);
+    define({ keepAliveTimeoutS: -1 });
     await settle();
     x = await ask(realmPort);
     note(timeoutOf(x) === 60, 'M10. -1 on the realm: it follows the ' +

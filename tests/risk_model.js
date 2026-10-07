@@ -27,7 +27,9 @@
 // numbers, so this is the test that says the port is a port.
 //
 // Also held: a first sign-in is not scored, and a familiar sign-in scores
-// far below an unfamiliar one.
+// far below an unfamiliar one; and (#502) a level whose lookup found
+// nothing — no ASN, no country — is unseen on both sides rather than a
+// value everybody shares.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -231,6 +233,8 @@ async function run(t) {
   const attempts = ROWS.map(attemptOf);
   let worst = 0;
   let wrong = [];
+  const unexplained = [];
+  const claimedUnknown = [];
   EXPECTED.forEach(function (pair) {
     const i = pair[0];
     const before = attempts.slice(0, i);
@@ -242,6 +246,15 @@ async function run(t) {
       riskModel.historyOf(before, function (a) {
         return a.user;
       }));
+    // THE FACTORS EXPLAIN THE WHOLE SCORE (#499): the two features and the
+    // user term multiply to it.
+    const product = got.factors.ip * got.factors.ua * got.factors.user;
+    if (!(Math.abs(product - got.score) <= 1e-12 * Math.abs(got.score))) {
+      unexplained.push(i + ': ' + product + ' vs ' + got.score);
+    }
+    if (!Array.isArray(got.unknown) || got.unknown.length) {
+      claimedUnknown.push(i + ': ' + JSON.stringify(got.unknown));
+    }
     const error = Math.abs(got.score - pair[1]) / Math.abs(pair[1]);
     worst = Math.max(worst, error);
     if (!(error < 1e-9)) {
@@ -252,6 +265,13 @@ async function run(t) {
           'every one of the notebook\'s ' + EXPECTED.length + ' scores on ' +
           'the synthetic history is reproduced (worst relative error ' +
           worst.toExponential(2) + ')', wrong.slice(0, 5).join('; '));
+  t.check(unexplained.length === 0,
+          'on every one of them the factors — ip, ua and the user term — ' +
+          'multiply to the score (#499)', unexplained.slice(0, 5).join('; '));
+  t.check(claimedUnknown.length === 0,
+          'and every one of them, every level known, records no unknown ' +
+          'level: with the datasets answering, #502 changes nothing',
+          claimedUnknown.slice(0, 5).join('; '));
   const first = riskModel.score(attempts[0], riskModel.historyOf([]),
     riskModel.historyOf(attempts.slice(1), function (a) {
       return a.user;
@@ -280,7 +300,164 @@ async function run(t) {
   t.check(low.score < 1 && high.score > 1 && high.score > low.score * 100,
           'a familiar sign-in scores below 1, one from a new network and a ' +
           'new device above it', low.score + ' vs ' + high.score);
+  sharedNetwork(t);
+  missingLevels(t);
   log.debug("Leaving run().");
+}
+
+// ---------------------------------------------------------------------------
+// ONE SHARED NETWORK (#499): every person behind one address with one
+// browser — a NAT, a VPN, a container bridge — as the WS-Trust chain jobs
+// are on a test stack. The features then say almost nothing (both factors
+// at or near 1), and the model's score is the USER TERM, p(u|A)/p(u|L):
+// Freeman et al.'s Eq. (7), section II-B. A person with the realm's average
+// share of sign-ins has a user term of 1; one with half of it, 2 — in the
+// same context. And a genuinely new address or browser still raises the
+// score above the known one.
+// ---------------------------------------------------------------------------
+function sharedNetwork(t) {
+  log.debug("Entering sharedNetwork().");
+  const ctx = { ip: '192.0.2.10', asn: '64496', country: 'AU', ua: 'ua-s',
+                browser: 'Chrome 140', os: 'Linux', device: 'desktop' };
+  const rowsOf = function (user, n, over) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      out.push(Object.assign({ user: user }, ctx, over || {}));
+    }
+    return out;
+  };
+  const userOf = function (a) {
+    return a.user;
+  };
+  // Four people: `heavy` signs in 25 times, the other three 5 each — 40
+  // sign-ins over 4 people, an average of 10.
+  const population = rowsOf('heavy', 25).concat(rowsOf('p1', 5),
+    rowsOf('p2', 5), rowsOf('p3', 5));
+  const mine = riskModel.historyOf(rowsOf('p1', 5));
+  const pop = riskModel.historyOf(population, userOf);
+  const known = riskModel.score(Object.assign({ user: 'p1' }, ctx), mine,
+                                pop);
+  const f = known.factors;
+  t.check(f.ip <= 1 && f.ua <= 1 && f.ip > 0.9 && f.ua > 0.9 &&
+          Math.abs(f.user - 2) < 1e-12 &&
+          Math.abs(known.score - f.ip * f.ua * f.user) < 1e-12 &&
+          known.terms.users === 4 && known.terms.signIns === 40 &&
+          known.terms.userSignIns === 5,
+          'one shared network: a known, identical context has both feature ' +
+          'factors at or below 1, and the score is the user term — 2 for ' +
+          'a person with half the average share of sign-ins (Eq. (7))',
+          JSON.stringify(known));
+  const average = riskModel.score(Object.assign({ user: 'p1' }, ctx),
+    riskModel.historyOf(rowsOf('p1', 10)),
+    riskModel.historyOf(rowsOf('heavy', 20).concat(rowsOf('p1', 10),
+      rowsOf('p2', 5), rowsOf('p3', 5)), userOf));
+  t.check(Math.abs(average.factors.user - 1) < 1e-12,
+          'a person with the realm\'s average share of sign-ins has a user ' +
+          'term of 1', JSON.stringify(average.factors));
+  const newAddress = riskModel.score(Object.assign({ user: 'p1' }, ctx,
+    { ip: '203.0.113.9', asn: '64511', country: 'NZ' }), mine, pop);
+  const newBrowser = riskModel.score(Object.assign({ user: 'p1' }, ctx,
+    { ua: 'ua-new', browser: 'Opera 1', os: 'Haiku', device: 'tv' }), mine,
+    pop);
+  // A value the person never used at any level is the notebook's edge
+  // case: the person's likelihood is a quarter of the population's, so the
+  // feature's factor is 4 — whatever else the realm has seen.
+  t.check(newAddress.score > known.score * 3 &&
+          newBrowser.score > known.score * 3 &&
+          newAddress.factors.ip === 4 && newBrowser.factors.ua === 4 &&
+          newAddress.factors.user === known.factors.user &&
+          newBrowser.factors.user === known.factors.user,
+          'a genuinely new address, or a new browser, still raises the ' +
+          'score above the known context\'s, by its feature factor (4) — ' +
+          'the user term is the same for both',
+          known.score + ' / ' + newAddress.score + ' / ' + newBrowser.score);
+  log.debug("Leaving sharedNetwork().");
+}
+
+// ---------------------------------------------------------------------------
+// A LEVEL WHOSE LOOKUP FOUND NOTHING (#502). Every address on a container
+// bridge, and every address on a service with no ASN or geolocation dataset,
+// has no network and no country. Counted as a value ('') that everybody
+// shares, a brand-new address read as "a new address on a known network"
+// and its ip factor stayed near 1; counted as unseen on both sides —
+// Freeman et al. section II-C, Eq. (9): p(h_k) is zero for an entity never
+// seen, and an unanswered lookup names none — it is the notebook's edge
+// case, a factor of 4, exactly as a new address on a new mapped network is.
+// The person's own unmapped address still counts at the address level, so
+// their repeated sign-ins from it stay familiar.
+// ---------------------------------------------------------------------------
+function missingLevels(t) {
+  log.debug("Entering missingLevels().");
+  const bridge = { ip: '172.29.0.1', asn: '', country: '', ua: 'ua-s',
+                   browser: 'Chrome 140', os: 'Linux', device: 'desktop' };
+  const rowsOf = function (user, n, over) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      out.push(Object.assign({ user: user }, bridge, over || {}));
+    }
+    return out;
+  };
+  const userOf = function (a) {
+    return a.user;
+  };
+  const population = rowsOf('heavy', 25).concat(rowsOf('p1', 5),
+    rowsOf('p2', 5), rowsOf('p3', 5));
+  const mine = riskModel.historyOf(rowsOf('p1', 5));
+  const pop = riskModel.historyOf(population, userOf);
+  const known = riskModel.score(Object.assign({ user: 'p1' }, bridge), mine,
+                                pop);
+  t.check(known.factors.ip <= 1 && known.factors.ip > 0.9 &&
+          JSON.stringify(known.unknown) === '["asn","country"]',
+          'M1. a person\'s repeated sign-ins from one unmapped address stay ' +
+          'familiar (ip factor at or below 1), and the score records asn and ' +
+          'country as unknown', JSON.stringify(known));
+  const fresh = riskModel.score(Object.assign({ user: 'p1' }, bridge,
+    { ip: '172.29.0.9' }), mine, pop);
+  t.check(fresh.factors.ip === 4 && fresh.score > known.score * 3 &&
+          fresh.factors.user === known.factors.user,
+          'M2. a new address with no ASN and no country raises the score: ' +
+          'its ip factor is the never-used 4, not a shared empty network\'s ' +
+          '~1 (#502)', known.score + ' / ' + fresh.score + ' ' +
+          JSON.stringify(fresh.factors));
+  // A person whose history is MAPPED, signing in from an unmapped address:
+  // the address is new and the lookup answered nothing, so it is new.
+  const mappedMine = riskModel.historyOf(rowsOf('p1', 5,
+    { asn: '64496', country: 'AU' }));
+  const unmappedNow = riskModel.score(Object.assign({ user: 'p1' }, bridge,
+    { ip: '172.29.0.10' }), mappedMine, pop);
+  t.check(unmappedNow.factors.ip === 4,
+          'M3. a person who always signed in from a mapped network, now ' +
+          'from an unmapped address, is new at every level',
+          JSON.stringify(unmappedNow.factors));
+  // THE FIRST LEVEL IS NOT A LOOKUP: a request with no User-Agent at all (a
+  // KDC request) is the same observed value every time, so a person who
+  // always signs in that way is familiar, and only the three lookups below
+  // it are unknown. (The population mostly sends a header, so the person's
+  // headless habit is rarer there than in their own history: below 1.)
+  const headless = { ua: '', browser: '', os: '', device: '' };
+  const kdc = riskModel.score(Object.assign({ user: 'p1' }, bridge,
+    headless), riskModel.historyOf(rowsOf('p1', 5, headless)),
+    riskModel.historyOf(rowsOf('heavy', 25).concat(
+      rowsOf('p1', 5, headless)), userOf));
+  t.check(kdc.factors.ua > 0 && kdc.factors.ua < 1 && kdc.score > 0 &&
+          JSON.stringify(kdc.unknown) ===
+            '["asn","country","browser","os","device"]',
+          'M4. no User-Agent header is an observed value, not a lookup: a ' +
+          'person who always signs in without one is familiar (ua factor ' +
+          'below 1, not a never-used 4), and the browser, OS and device are ' +
+          'what is unknown',
+          JSON.stringify(kdc));
+  const counted = riskModel.historyOf(rowsOf('a', 3).concat(
+    rowsOf('b', 2, { asn: '64496', country: 'AU' })));
+  t.check(counted.distinct('asn') === 1 && counted.distinct('country') === 1 &&
+          counted.distinctWithin('ip', '172.29.0.1', 'asn') === 1 &&
+          riskModel.unseen(counted, riskModel.FEATURES[0], 'ip') === 3,
+          'M5. a missing value is not a known network or country in the ' +
+          'unseen count (M_{h_k}, section II-C): one known ASN, one known ' +
+          'country, plus one',
+          [counted.distinct('asn'), counted.distinct('country'),
+           riskModel.unseen(counted, riskModel.FEATURES[0], 'ip')].join(','));
+  log.debug("Leaving missingLevels().");
 }
 
 module.exports = {

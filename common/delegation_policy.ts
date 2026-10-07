@@ -81,7 +81,8 @@ type TargetKind = 'audience' | 'appliesTo';
 interface DelegationPolicyDeps {
   log: typeof helpers.log;
   config: { value(key: string): any };
-  mode: { authorizesDelegation(): boolean; current(): string };
+  mode: { authorizesDelegation(): boolean; current(): string;
+          issuesToUnregisteredApplications(): boolean };
   applications: Json;
   credentials: Json;
   gate: Json;
@@ -111,6 +112,11 @@ interface DecideQuestion {
   // actor (`mayActNames()`).
   mayActPresent?: boolean;
   mayActNamesActor?: boolean;
+  // Kerberos only (#490): which [MS-SFU] mechanism asked — 'S4U2Self', or
+  // 'S4U2Proxy' with `rbcd` saying whether resource-based delegation
+  // permitted it — so the row is written in Kerberos's words.
+  mechanism?: '' | 'S4U2Self' | 'S4U2Proxy';
+  rbcd?: boolean;
 }
 
 // What `decide()` answers. `refusal` says which rule refused, so each door can
@@ -221,10 +227,19 @@ class DelegationPolicy {
   }
 
   // The application an identifier, client_id or name belongs to, or null.
+  //
+  // A CLIENT'S SUBJECT IS ITS APPLICATION TOO (#471): `urn:sts:client:<id>`,
+  // the form a client is named by as an actor in RFC 9700 mode, resolves to
+  // the application whose client_id is `<id>` — so a party handed over in
+  // either of a client's two spellings has the same facts, and the policy's
+  // actor fact is the application's identifier in both modes. The token
+  // exchange hands the bare client_id today; this keeps any other caller (or
+  // a realm policy's party) from finding nobody behind the namespaced one.
   /**
-   * Finds the application an identifier or client_id belongs to.
+   * Finds the application an identifier, client_id or client subject
+   * (`urn:sts:client:<id>`) belongs to.
    *
-   * @param name - an application identifier or client_id
+   * @param name - an application identifier, client_id or client subject
    * @returns the application view, or null
    */
   applicationFor(name: string): Json {
@@ -235,8 +250,13 @@ class DelegationPolicy {
       log.debug("Leaving DelegationPolicy.applicationFor(). Nothing asked.");
       return null;
     }
+    // The name as written first, so an entry whose identifier happens to
+    // begin with the prefix is still found by it.
+    const clientId = /^urn:sts:client:./.test(wanted)
+      ? wanted.slice('urn:sts:client:'.length) : '';
     const found = applications.get(wanted) ||
-      applications.forClientId(wanted) || null;
+      applications.forClientId(wanted) ||
+      (clientId ? applications.forClientId(clientId) : null) || null;
     log.debug("Leaving DelegationPolicy.applicationFor(). " +
               (found ? found.identifier : 'None.'));
     return found;
@@ -262,6 +282,19 @@ class DelegationPolicy {
         : (applications.forAudience(wanted) ||
            applications.forClientId(wanted));
       found = found || applications.get(wanted) || null;
+    }
+    // IN PRODUCT A TARGET NOBODY REGISTERED IS NO TARGET (#496). An entry a
+    // development sighting filed (no `appRegisteredBy`) resolved here, so a
+    // token exchange to an audience development had merely seen was decided
+    // as a registered target with no relationships. rcbj: in product an
+    // unregistered application gets nothing, so it resolves to nothing and
+    // is the policy's `unregistered-target` (RFC 8693's `invalid_target`).
+    // Development keeps the sighting, and its "would have refused" notes.
+    if (found && !this.deps.mode.issuesToUnregisteredApplications() &&
+        !String(found.registeredBy || '')) {
+      log.debug("DelegationPolicy.resolveTarget(): " + found.identifier +
+                " is not registered; product resolves it to nothing.");
+      found = null;
     }
     log.debug("Leaving DelegationPolicy.resolveTarget(). " +
               (found ? found.identifier : 'Unregistered.'));
@@ -638,7 +671,11 @@ class DelegationPolicy {
         target + ', so there is nothing to read its roles or relationships ' +
         'from.',
       'no-target': 'The request names no target (' + noTarget + '), and ' +
-        'only a self exchange defaults to the subject token\'s own audience.',
+        (question.protocol === 'Kerberos'
+          ? 'a Kerberos request always names the SPN it wants a ticket for.'
+          : 'only a self ' + (question.protocol === 'WS-Trust'
+            ? 'request defaults to the presented token\'s own audience.'
+            : 'exchange defaults to the subject token\'s own audience.')),
       'subject': subject + ' is protected — its entry says it is never ' +
         'delegated, it is in a protected group (delegation.protectedGroups, ' +
         'the console roster), or it is outside the groups ' + actor +
@@ -660,11 +697,19 @@ class DelegationPolicy {
           subject + ': R is not the actor itself, nor on its ' +
           'appAllowedToDelegateTo, nor does R accept it ' +
           '(appAllowedToActOnBehalfOf).'
-        : 'Nothing allows this delegation to ' + target + ': the actor ' +
-          'must be the application the subject token was issued for or ' +
-          'the target, and that application must delegate to the target ' +
-          '(appAllowedToDelegateTo on it, or appAllowedToActOnBehalfOf on ' +
-          'the target).'),
+        : question.protocol === 'Kerberos'
+          ? 'Nothing allows this S4U2Proxy to ' + target + ': the service ' +
+            'the evidence ticket was issued to must delegate to the ' +
+            'requested SPN (appAllowedToDelegateTo on it, classic ' +
+            'constrained delegation), or the target must accept it ' +
+            '(appAllowedToActOnBehalfOf, resource-based).'
+          : 'Nothing allows this delegation to ' + target + ': the actor ' +
+            'must be the application ' + (question.protocol === 'WS-Trust'
+              ? 'the token inside <wst14:ActAs> was issued for'
+              : 'the subject token was issued for') + ' or ' +
+            'the target, and that application must delegate to the ' +
+            'target (appAllowedToDelegateTo on it, or ' +
+            'appAllowedToActOnBehalfOf on the target).'),
       'policy': 'The issuance policy refused this ' + what + '.'
     };
     const out = sentences[decision.refusal] || sentences.policy;
@@ -690,11 +735,47 @@ class DelegationPolicy {
       out = 'nothing was needed: "' + facts.actor.id + '" acts for nobody ' +
             'but itself.';
     } else {
+      // EACH PROTOCOL IN ITS OWN VOCABULARY (#481). RFC 8693's words —
+      // "the subject token was issued for" — were written on every row,
+      // and a WS-Trust row has no subject token: it has the token inside
+      // <wst:OnBehalfOf> or <wst14:ActAs> (the element is the semantics
+      // asked for) and an AppliesTo the target was resolved from. Every
+      // other protocol keeps the sentence it had.
+      //
+      // KERBEROS TOO (#490): a Kerberos row has no token at all. S4U2Self
+      // is a ticket the service asked for TO ITSELF, naming a user in
+      // PA-FOR-USER ([MS-SFU] protocol transition); S4U2Proxy presents an
+      // EVIDENCE TICKET — a ticket for the user, issued to the service
+      // asking — and names the target by its SPN, permitted by classic or
+      // resource-based constrained delegation.
+      const wsTrust = question.protocol === 'WS-Trust';
+      const kerberos = question.protocol === 'Kerberos';
+      const element = question.requested === 'impersonation'
+        ? '<wst:OnBehalfOf>' : '<wst14:ActAs>';
+      const mechanism = question.mechanism === 'S4U2Self'
+        ? 'S4U2Self, protocol transition: the service named the user in ' +
+          'PA-FOR-USER and holds no credential of theirs'
+        : 'S4U2Proxy, ' + (question.rbcd ? 'resource-based'
+                                         : 'classic') +
+          ' constrained delegation';
+      const source = kerberos
+        ? ' (' + mechanism + (facts.source.id
+          ? '; the evidence ticket was issued to "' + facts.source.id + '"'
+          : '') + ')'
+        : !facts.source.id ? ''
+          : wsTrust
+            ? ' (the token inside ' + element + ' was issued for "' +
+              facts.source.id + '")'
+            : ' (the subject token was issued for "' + facts.source.id +
+              '")';
       out = 'the issuance policy allowed ' + decision.semantics + ' by "' +
             facts.actor.id + '" for "' + facts.subject.id + '" to "' +
-            decision.audience + '"' + (facts.source.id
-              ? ' (the subject token was issued for "' + facts.source.id +
-                '")' : '') +
+            decision.audience + '"' +
+            (wsTrust ? ', the application the AppliesTo names' : '') +
+            (kerberos ? (question.mechanism === 'S4U2Self'
+              ? ', the service the ticket is for'
+              : ', the service the requested SPN names') : '') +
+            source +
             (question.mayActNamesActor
               ? '; the subject named this actor in may_act' : '') + '.';
     }

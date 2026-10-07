@@ -211,8 +211,8 @@ interface SsfHttpDeps {
   PORT: unknown;
   loopbackHost(): string;
   hostForUrl(host: string): string;
-  pinnedBaseUrl(): string;
-  baseUrlOf(req: any): string;
+  pinnedBaseUrl(app?: string): string;
+  baseUrlOf(req: any, app?: string): string;
   userAgent: string;
   // `tls/tls_server.js`, required when first asked for. See `pushSet()`.
   loadTlsServer(): {
@@ -423,7 +423,7 @@ class SsfHttp {
   ownBaseUrl(): string {
     const { log, pinnedBaseUrl, realms } = this.deps;
     log.debug("Entering SsfHttp.ownBaseUrl().");
-    const pinned = pinnedBaseUrl();
+    const pinned = pinnedBaseUrl('ssf');
     const out = (pinned || this.loopbackOrigin()) + realms.currentPrefix();
     log.debug("Leaving SsfHttp.ownBaseUrl(). " + out);
     return out;
@@ -456,7 +456,9 @@ class SsfHttp {
                        : configured.replace(/\/+$/, '') +
                          realms.currentPrefix();
     } else {
-      value = req ? baseUrlOf(req) : this.ownBaseUrl();
+      // The transmitter's own base (#472), whichever application's request
+      // raised the event.
+      value = req ? baseUrlOf(req, 'ssf') : this.ownBaseUrl();
     }
     log.debug("Leaving SsfHttp.transmitterIssuer(). " + value);
     return value;

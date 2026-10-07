@@ -237,7 +237,7 @@ own account with a form they abandoned. It is the same shape of lockout
 ### The QR code is an image this server drew, and the typed secret is not a fallback nobody sees
 
 `script-src 'none'` covers every page here except `/portal/keys` (see below,
-2026-09-10), so a QR library running in the browser was never available on this
+2026-09-10) and a few states of others the root `CLAUDE.md`'s table lists, so a QR library running in the browser was never available on this
 one — `common/totp.ts` renders an SVG and it arrives as
 a `data:` URI, which `img-src 'self' data:` already allowed for the two OID4VC
 offer pages.
@@ -297,7 +297,7 @@ even though nothing reaches the directory until `confirm`. A deployment that
 later lets a helpdesk role READ an account without changing it must not have the
 enrolment door on the read side of that line.
 
-## `/portal/keys`: ENROLLING A SECURITY KEY, AND A BACKUP FOR IT (2026-09-10)
+## `/portal/keys`: ENROLLING A PASSKEY, AND A BACKUP FOR IT (2026-09-10; *Passkeys* since #470)
 
 **THIS PAGE COULD NOT ENROL A KEY UNTIL THIS DAY**, and it said so in a
 paragraph of its own:
@@ -353,6 +353,22 @@ trusted", "verified" with no trusted root, "no attestation sent", or "not
 verified" where the policy verified nothing. `authn/CLAUDE.md`, *The
 attestation statement*, has the rest.
 
+### The recovery codes' Copy button is a script, and the box beside it is the fallback (#224, 2026-10-06)
+
+rcbj: "Right now, the user must select and copy the displayed text. The
+resulting formatting is messed up." A fresh set is drawn as a grid, and a
+selection across a CSS grid copies as whatever the browser makes of it. So
+the card says the codes twice: the grid, to read, and a READ-ONLY BOX holding
+them one per line, which a selection copies exactly as drawn. The **Copy all
+codes** button writes that box to the clipboard, which no markup can, so the
+one response that shows a fresh set (`sendCodesPage()`, the POST of
+`generate-codes`) carries `script-src 'self'` for `/portal/copy.js` and nothing
+else; every other state of `/portal/mfa` runs no script. With script blocked
+the button stays hidden and the box is the whole mechanism. The script reads
+only the box beside its button and sends nothing. rcbj asked for the same in
+the admin console and then withdrew it: the console never shows a person's
+codes (`admin-ui/web_users.ts`, the recovery codes block).
+
 ### It is the SEVENTH scripted page in this service and the first in this portal
 
 It arrived 2026-09-10, in a directory whose own file said every page of it was
@@ -390,6 +406,82 @@ states of one page is a policy nobody can reason about.
 blocked it posts a `finish` with no credential, and the handler answers *your
 browser did not run the ceremony* — naming the one step that needs it and saying
 the rest of the portal runs no script at all.
+
+### The passkey page (#470, 2026-10-06)
+
+rcbj asked for the passkey screens to follow the FIDO Alliance's passkey
+management guidelines (passkeycentral.org, *combining all passkey types*).
+What that changed, and why each piece is the way it is:
+
+* **One heading, *Passkeys*, over two groups, in a person's words.** The
+  groups are *passkeys on your devices* and *passkeys on security keys* —
+  never "synced" and "device-bound". `credentials.keyGroup()` decides which:
+  - **the backup eligibility flag first.** A synced passkey reached over
+    hybrid is reported `cross-platform`, and it belongs with the devices.
+  - **then the attachment.** Windows Hello is device-bound and still a
+    device.
+  - **then, for a key that recorded neither, its transports.**
+
+  BE, BS and the transports were checked by `webauthn.js` and dropped until
+  this change. `addKey()` keeps them now, and `noteKeyUsed()` keeps BS
+  current, because BS can change after enrolment.
+* **Each row shows:**
+  - a server-drawn SVG icon. It is markup, not an image, so `img-src` is
+    untouched;
+  - the name, from `keyName()`: the label, else the default;
+  - the provider;
+  - Created and Last used. `lastUsedAt` was recorded and never drawn;
+  - Rename and Remove;
+  - a *Details* `<details>` with the role, algorithm, attestation, AAGUID,
+    backup state and transports. This is a debugging service, so nothing
+    technical was dropped, only folded.
+
+  Rename is a `<details>` holding a form, so it needs no script.
+* **The provider.**
+  - **When a FIDO MDS BLOB is loaded, MDS alone names it** (rcbj, on the
+    ticket): the description for the key's AAGUID.
+  - Otherwise `authn/passkey_providers.ts`, a short hand-written table of
+    credential managers, names it. The community list carries no licence,
+    so it was not copied.
+  - Which source answered is decided once, at enrolment (`keyProviderFor()`,
+    asynchronous), and kept as `provider` and `providerSource`, because a
+    page is drawn synchronously.
+  - A name proves nothing, and nothing that decides reads it.
+* **The two calls to action** are two submit buttons of one form, so the
+  button pressed is the `kind`, with no script.
+  - *Create a passkey* asks for a discoverable credential and HINTS
+    `client-device`, then `hybrid`, with no attachment. That is how the
+    2026-09-26 lesson (Linux Firefox refused a hard `platform`) survives.
+  - *Use a security key* asks for `cross-platform` and hints `security-key`.
+* **The name comes after the ceremony, not before.**
+  - The box before it is gone.
+  - A key defaults to its provider's name, else "Passkey" or "Security key".
+  - The success redirect carries `named=<credentialId>`, and the page opens
+    that key's rename form at the top.
+* **`POST /portal/rename-key`** follows `remove-key`'s A01 rule: the id comes
+  from the body and is looked up among the session's own keys.
+  `credentials.renameKey()` is the one writer, also used by
+  `POST /admin-api/users/rename-key`. An empty name restores the default.
+  It is audited, and sends no CAEP event, because a name is not a
+  credential change.
+* **The Signal API** (WebAuthn Level 3 section 5.1.10) runs in the same
+  shared script, which reads a `wa-signal` element: all accepted credential
+  ids, plus the display name, under the person's USER HANDLE (#474) — 64
+  random bytes on their entry, unique to one entry in one realm. Until
+  #474 the handle was the username, so the same username in two realms
+  was one account to a credential manager and the element was drawn only
+  where no other realm was defined. Now `signalBlock()` draws it for
+  anybody holding a minted handle, and for nobody else: a person whose
+  keys all predate #474 shares the old name handle across realms still.
+  Every ceremony on this page creates the credential under the handle
+  (`data-userid`, from the pending enrolment). The element is never drawn while a
+  ceremony is armed, so the page loads one script tag. Every response of
+  both handlers and of `remove-key` and `rename-key` goes through
+  `sendKeysPage()`, so the script is allowed wherever the element is drawn.
+
+`tests/passkey_management.js` holds the credential layer, and
+`tests/vendored/sts_portal_backup_keys.js` holds the page over HTTP: the two
+buttons, the groups, rename and Last used.
 
 ### It is held to the same two address rules as the sign-in screen (2026-09-12)
 
@@ -1384,6 +1476,11 @@ the Kind column on `/portal/keys`, the note under it, the link card's list of
 keys not offered (named with the model a trusted attestation gave) and
 `beginLink()`'s refusal.
 
+**SUPERSEDED BY #470 (2026-10-06)**: the three-way radio described next became
+two calls to action — *Create a passkey* and *Use a security key* — and its
+lesson is kept by sending *Create a passkey* with NO attachment, only hints
+(see *The passkey page*, above). The paragraph is kept for why.
+
 **AND `/portal/keys` ASKS WHERE THE KEY LIVES (2026-09-26).** The page asked for
 "a security key" and let the browser choose, and with `webauthn.residentKey` at
 `discouraged` Chrome and Edge offered a USB key or a phone and never the
@@ -1419,9 +1516,15 @@ a `link-finish` with no assertion, answered by a sentence.
 registers it self-asserted. Refusals are `STS-DEVICE-0016`–`0028`; the page
 and the JSON doors never take an identity from the request.
 
-**What it still has no test for**: the scripted link step in a real browser
-(the Selenium console job is rcbj's; `tests/device_enrolment.js` drives the
-same `finishLink()` with an assertion built in process).
+**The scripted link step is driven in a real browser** by
+`tests/vendored/sts_portal_device_webauthn.js` (#258): Chrome's virtual
+authenticators, the roaming key refused, the page with its script blocked,
+the armed policy, the link, and a later sign-in recognising the device.
+**In product it can only assert the refusal**: Chrome re-mints the virtual
+authenticator's self-signed attestation certificate at every registration,
+so no anchor makes its key attested, and product links nothing less — so
+the device and its recognition are asserted in development (`memory` mode).
+`tests/device_enrolment.js` still holds `finishLink()` in process.
 
 ## `/portal/ciba`: SIGN-IN REQUESTS (2026-09-23, #131)
 

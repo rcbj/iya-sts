@@ -179,6 +179,7 @@ locals {
       "sts-cert.service" = templatefile("${path.module}/units/sts-cert.service.tftpl", {
         init_image      = local.init_image
         tls_dir         = local.host_tls_dir
+        tls_owner       = local.service_user
         vault_url       = local.vault_uri
         tls_secret      = "tls"
         hostname        = var.public_hostname
@@ -239,6 +240,7 @@ locals {
             owner       = "root"
             content = templatefile("${path.module}/units/sts-disk.sh.tftpl", {
               mount_dir = local.host_upload_dir
+              owner     = local.service_user
             })
           },
           {

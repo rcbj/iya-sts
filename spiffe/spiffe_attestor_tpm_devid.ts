@@ -36,7 +36,6 @@
 // Nothing is claimed: every proof answers a challenge this server chose.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 const { log } = helpers;
 import config = require('../common/config');
@@ -58,7 +57,6 @@ const DEVID_NONCE_LENGTH = 32;
 
 interface TpmDevidDeps {
   log: typeof log;
-  crypto: typeof nodeCrypto;
   config: typeof config;
   errorCodes: typeof errorCodes;
   spiffeId: typeof spiffeId;
@@ -109,7 +107,7 @@ class TpmDevidAttestor {
   static defaultDeps(): TpmDevidDeps {
     helpers.log.debug("Entering TpmDevidAttestor.defaultDeps().");
     helpers.log.debug("Leaving TpmDevidAttestor.defaultDeps().");
-    return { log: log, crypto: nodeCrypto, config: config,
+    return { log: log, config: config,
              errorCodes: errorCodes, spiffeId: spiffeId, rpc: rpc,
              pki: pki, stsCrypto: stsCrypto, tpm: tpm };
   }
@@ -199,7 +197,7 @@ class TpmDevidAttestor {
    */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
-    const { log, crypto, config, spiffeId, rpc, pki, stsCrypto,
+    const { log, config, spiffeId, rpc, pki, stsCrypto,
             tpm } = this.deps;
     const self = this;
     log.debug("Entering TpmDevidAttestor.attest().");
@@ -331,13 +329,12 @@ class TpmDevidAttestor {
         certifyProblem);
     }
     // 4. THE CHALLENGES.
-    const devidNonce = crypto.randomBytes(DEVID_NONCE_LENGTH);
+    const devidNonce = stsCrypto.randomBytes(DEVID_NONCE_LENGTH);
     let credential = null;
     let secret = null;
     try {
       // A nonce the size of the EK's name hash, as SPIRE sizes it.
-      secret = crypto.randomBytes(crypto.createHash(
-        tpm.hashName(ekPub.nameAlg)).digest().length);
+      secret = stsCrypto.randomBytes(stsCrypto.tpmDigestSize(ekPub.nameAlg));
       credential = tpm.makeCredential(tpm.name(akPub), ekPub, secret);
     } catch (e) {
       log.debug("Caught in TpmDevidAttestor.attest(): " +

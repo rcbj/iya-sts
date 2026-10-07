@@ -35,7 +35,7 @@
 // The `oauth2.device-code-sweep` job removes what expired or finished.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 // WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
 // this module mints and read where it is presented. A leaf library.
 import cellLocator = require('../common/cell_locator');
@@ -158,7 +158,7 @@ class DeviceAuthorization {
     let out = '';
     for (let i = 0; i < 8; i++) {
       out += USER_CODE_ALPHABET.charAt(
-        nodeCrypto.randomInt(USER_CODE_ALPHABET.length));
+        stsCrypto.randomInt(0, USER_CODE_ALPHABET.length));
     }
     this.deps.log.debug("Leaving DeviceAuthorization.newUserCode().");
     return out;
@@ -193,7 +193,7 @@ class DeviceAuthorization {
     const record = {
       // Stamped with the minting cell (#98 D10): a device polls the cell
       // nearest IT, which relays to this one.
-      deviceCode: cellLocator.stamp(nodeCrypto.randomBytes(32)
+      deviceCode: cellLocator.stamp(stsCrypto.randomBytes(32)
                                       .toString('base64url')),
       userCode: userCode, clientId: clientId,
       clientName: clientName || clientId, scope: scope,

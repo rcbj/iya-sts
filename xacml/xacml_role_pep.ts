@@ -167,6 +167,18 @@ interface IssuanceQuestion {
   // THE AUTHENTICATION A SESSION STANDS ON (#64): `{ amr, acr, kinds }`,
   // named by `authn.startSession()` and by nothing else.
   authentication?: { amr?: string[]; acr?: string; kinds?: string[] } | null;
+  // THE SIGN-IN MECHANISMS (#457): those the person's authentication
+  // satisfies and those the application allows, sent by the gate on a
+  // browser issuance to an application that allows only some, and null
+  // otherwise. See `common/authn_mechanisms.ts`.
+  authnMechanisms?: string[] | null;
+  allowedAuthnMechanisms?: string[] | null;
+  // THE SECOND FACTORS (#475): those the person's authentication gave and
+  // those the application allows, sent by the gate on a browser issuance to
+  // an application that allows only some, when a second factor was given.
+  // See `common/mfa_mechanisms.ts`.
+  mfaMechanisms?: string[] | null;
+  allowedMfaMechanisms?: string[] | null;
   // WHO MAY ACT FOR WHOM (#186): present, this is the exchange question
   // `issuance_gate.checkExchange()` asks, answered with a verdict
   // (`decideExchange()`).
@@ -273,6 +285,12 @@ interface IssuanceAnswer {
   // The protocol rule that denied (2026-10-01): the declaration and the
   // families this issuance satisfies.
   protocolRefused?: { declared: string[]; families: string[] } | null;
+  // A Deny on the sign-in mechanism (#457): the door re-prompts for one of
+  // `allowed`. Not a refusal about roles.
+  // `secondFactor` (#475): the Deny was the second-factor rule's, and the
+  // lists are second factors. The doors re-prompt the same way for both.
+  mechanism?: { allowed: string[]; satisfied: string[];
+                secondFactor?: boolean } | null;
   // The per-scope verdicts, for a scope question (#304).
   scopes?: ScopeVerdict[];
   // The verdict on a transfer question (#98): `hold` / `relay`, `serve` /
@@ -642,6 +660,8 @@ class XacmlRolePep {
     }
     this.riskAttributes(req, asked.risk, String(subject.name || ''));
     this.authenticationAttributes(req, asked.authentication);
+    this.mechanismAttributes(req, asked);
+    this.mfaAttributes(req, asked);
     this.deviceAttributes(req, asked);
     // THE PROTOCOL DECLARATION, only where the gate named both halves: the
     // declaration on the resource (it is a fact about the application), the
@@ -706,6 +726,50 @@ class XacmlRolePep {
       req.environment(AUTHN.ACR, [String(facts.acr)]);
     }
     log.debug("Leaving XacmlRolePep.authenticationAttributes().");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SIGN-IN MECHANISMS (#457), as environment attributes: the ones the
+  // person's authentication satisfies and the ones the application allows.
+  // Sent only where the gate found an application allowing some — so the
+  // `authn-mechanism` rule, which needs the allowed bag to hold something,
+  // is inapplicable to every other issuance.
+  // -------------------------------------------------------------------------
+  private mechanismAttributes(req: any, asked: IssuanceQuestion): void {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.mechanismAttributes().");
+    if (!Array.isArray(asked.allowedAuthnMechanisms) ||
+        !asked.allowedAuthnMechanisms.length) {
+      log.debug("Leaving XacmlRolePep.mechanismAttributes(). None.");
+      return;
+    }
+    req.environment(AUTHN.ALLOWED_MECHANISM,
+                    asked.allowedAuthnMechanisms.map(String))
+      .environment(AUTHN.MECHANISM,
+                   (asked.authnMechanisms || []).map(String));
+    log.debug("Leaving XacmlRolePep.mechanismAttributes().");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SECOND FACTORS (#475), as environment attributes, on
+  // mechanismAttributes()'s terms: sent only where the gate found an
+  // application allowing some and an authentication that gave one, so the
+  // `mfa-mechanism` rule is inapplicable to every other issuance.
+  // -------------------------------------------------------------------------
+  private mfaAttributes(req: any, asked: IssuanceQuestion): void {
+    const { log } = this.deps;
+    log.debug("Entering XacmlRolePep.mfaAttributes().");
+    if (!Array.isArray(asked.allowedMfaMechanisms) ||
+        !asked.allowedMfaMechanisms.length ||
+        !Array.isArray(asked.mfaMechanisms) ||
+        !asked.mfaMechanisms.length) {
+      log.debug("Leaving XacmlRolePep.mfaAttributes(). None.");
+      return;
+    }
+    req.environment(AUTHN.ALLOWED_MFA_MECHANISM,
+                    asked.allowedMfaMechanisms.map(String))
+      .environment(AUTHN.MFA_MECHANISM, asked.mfaMechanisms.map(String));
+    log.debug("Leaving XacmlRolePep.mfaAttributes().");
   }
 
   // -------------------------------------------------------------------------
@@ -1074,6 +1138,90 @@ class XacmlRolePep {
         families: asked.protocolFamilies || []
       };
       log.debug('Leaving XacmlRolePep.decideNow(). Deny on the protocol.');
+      return refusal;
+    }
+
+    // -----------------------------------------------------------------------
+    // A DENY ABOUT THE SIGN-IN MECHANISM (#457) — the policy's mechanism
+    // obligation says so: the application allows only some mechanisms and
+    // this authentication used none of them. Enforced in both modes and
+    // where the role question was waived, because it is not about roles;
+    // asked before risk, so a session on the wrong mechanism is re-prompted
+    // for the right one first. The answer carries what the door re-prompts
+    // for. Audited as a refusal: what was asked for was not issued.
+    // -----------------------------------------------------------------------
+    const mechanismDeny = answer.decision === model.DECISION.DENY &&
+      (answer.obligations || []).some(function (o) {
+        return o && o.id === AUTHN.MECHANISM_OBLIGATION;
+      });
+    if (mechanismDeny) {
+      const allowedMechanisms = (asked.allowedAuthnMechanisms || [])
+        .map(String);
+      const satisfiedMechanisms = (asked.authnMechanisms || []).map(String);
+      const mechanismWhy = 'The application "' +
+        String(asked.application || '') + '" allows sign-in with ' +
+        allowedMechanisms.join(', ') + ', and this authentication used ' +
+        (satisfiedMechanisms.join(', ') || 'none of the mechanisms an ' +
+         'application can name') + '.';
+      if (!dryRun) {
+        audit.audit({
+          action: 'xacml.issuance.refused', errorCode: 'STS-XACML-0170',
+          actor: subject.name || '', protocol: 'XACML',
+          detail: 'Deny on the sign-in mechanism for ' +
+                  (asked.kind || 'an issuance') + ': ' + mechanismWhy
+        });
+      }
+      log.info(errorCodes.tag('STS-XACML-0170') + 'xacml: ' +
+               (dryRun ? 'a dry run would have REFUSED ' : 'REFUSED ') +
+               (asked.kind || 'an issuance') + ' to "' +
+               (subject.name || 'nobody') + '" on the sign-in mechanism — ' +
+               mechanismWhy);
+      const refusal = this.refused('This application requires signing in ' +
+        'with ' + allowedMechanisms.join(' or ') + '.', answer.decision,
+        held, required, answer);
+      refusal.mechanism = { allowed: allowedMechanisms,
+                            satisfied: satisfiedMechanisms };
+      log.debug('Leaving XacmlRolePep.decideNow(). Deny on the mechanism.');
+      return refusal;
+    }
+
+    // -----------------------------------------------------------------------
+    // A DENY ABOUT THE SECOND FACTOR (#475), on the sign-in mechanism's
+    // terms and just after it: the application allows only some second
+    // factors and this authentication gave another. The answer carries
+    // `mechanism` with `secondFactor` set, so every door that re-prompts for
+    // #457 re-prompts for this too and needs only to say which it was.
+    // -----------------------------------------------------------------------
+    const mfaDeny = answer.decision === model.DECISION.DENY &&
+      (answer.obligations || []).some(function (o) {
+        return o && o.id === AUTHN.MFA_MECHANISM_OBLIGATION;
+      });
+    if (mfaDeny) {
+      const allowedFactors = (asked.allowedMfaMechanisms || []).map(String);
+      const gaveFactors = (asked.mfaMechanisms || []).map(String);
+      const mfaWhy = 'The application "' + String(asked.application || '') +
+        '" allows the second factors ' + allowedFactors.join(', ') +
+        ', and this authentication gave ' + gaveFactors.join(', ') + '.';
+      if (!dryRun) {
+        audit.audit({
+          action: 'xacml.issuance.refused', errorCode: 'STS-XACML-0171',
+          actor: subject.name || '', protocol: 'XACML',
+          detail: 'Deny on the second factor for ' +
+                  (asked.kind || 'an issuance') + ': ' + mfaWhy
+        });
+      }
+      log.info(errorCodes.tag('STS-XACML-0171') + 'xacml: ' +
+               (dryRun ? 'a dry run would have REFUSED ' : 'REFUSED ') +
+               (asked.kind || 'an issuance') + ' to "' +
+               (subject.name || 'nobody') + '" on the second factor — ' +
+               mfaWhy);
+      const refusal = this.refused('This application requires the second ' +
+        'factor ' + allowedFactors.join(' or ') + '.', answer.decision,
+        held, required, answer);
+      refusal.mechanism = { allowed: allowedFactors, satisfied: gaveFactors,
+                            secondFactor: true };
+      log.debug('Leaving XacmlRolePep.decideNow(). Deny on the second ' +
+                'factor.');
       return refusal;
     }
 

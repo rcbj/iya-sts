@@ -81,6 +81,9 @@ function check(what, fn) {
 
 // The program a child runs: either one `build-root` (CAR_ACTION=root), or one
 // console sign-in and one console read, with the answer on stdout as JSON.
+// Since the static console (#446) the sign-in is the console's own — PKCE and
+// a DPoP-bound token from the authorization server — and the read is the
+// operation `/admin/tokens` is drawn from.
 // It is data here, and runs in the child. The build-root is a child's too,
 // because after the first replacement this process's own trust store no
 // longer holds the anchor the listener serves.
@@ -101,11 +104,10 @@ const CHILD = [
   "      process.stdout.write(JSON.stringify(out));",
   "      return;",
   "    }",
-  "    const cookie = await consoleSignIn.signInToTheConsole(",
+  "    const consoleClient = await consoleSignIn.signInToTheConsole(",
   "      process.env.CAR_BASE, process.env.CAR_USER, null,",
   "      { grant: 'read' });",
-  "    const page = await fetch(process.env.CAR_BASE + '/admin/tokens',",
-  "      { redirect: 'manual', headers: cookie ? { cookie: cookie } : {} });",
+  "    const page = await consoleClient.page('/admin/tokens', {});",
   "    out.ok = page.status === 200;",
   "    out.status = page.status;",
   "  } catch (e) {",

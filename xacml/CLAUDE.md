@@ -1118,7 +1118,8 @@ realm's `pep-tls` Issuing CA.
   `combinedAction()` without awaiting.
 
 `xacml-pep/CLAUDE.md` argues the container's half — why the pair is re-read
-from disk rather than read once — and `tests/pep_listener_certificate.js` and
+from disk rather than read once — and `tests/pep_listener_certificate.js` (the
+issuing half), `rust/bins/xacml-pep/src/listener.rs`'s test (the reload) and
 section 1b of `tests/vendored/sts_xacml_remote_pep.js` pin both.
 
 ## What phase five cost outside this directory
@@ -1633,6 +1634,58 @@ application declared for nothing and a session are never refused by it.
 * `tests/protocol_declaration.js` holds the rule, the request and the gate;
   no over-HTTP job asserts a refusal yet.
 
+### The sign-in mechanisms an application allows (#457, 2026-10-06)
+
+`authn-mechanism`, a Deny right after the protocol rule and before risk, **in
+both modes**: a browser issuance to an application that lists the sign-in
+mechanisms it allows (`appAuthnMechanism`) is denied when the person's
+authentication satisfies none of them. Two ENVIRONMENT bags carry it —
+`AUTHN_ATTRIBUTE.ALLOWED_MECHANISM` (the application's list) and `MECHANISM`
+(what the session satisfies, from `common/authn_mechanisms.ts`) — and the rule
+fires only when the allowed bag holds something.
+
+* **The gate supplies both** (`issuance_gate.js`'s `mechanismFactsOf()`), on
+  four BROWSER kinds only — a session started at a sign-in door (which names
+  the event it is about to record, `authenticationEvent`), an authorization
+  response, a SAML assertion and a WS-Federation token on a session — and
+  never for a caller saying `browser: false` (SAML 2.0's attribute query).
+  rcbj: browser authentication only. It makes the policy asked past both
+  shortcuts.
+* **The PEP reads the obligation** (`MECHANISM_OBLIGATION`) after the protocol
+  Deny and before risk, enforced where the role question was waived, and
+  answers `mechanism: { allowed, satisfied }` — which the doors read as a
+  RE-PROMPT, never a refusal about roles (rcbj). `STS-XACML-0170` on the audit
+  row.
+* **A gated sign-in door is asked again at the session's start**, the role
+  question waived, because the door asked before its second factor and could
+  not ask about the whole authentication (`authn/CLAUDE.md`).
+* **`decideAuthnMechanisms: no`** builds the policy without it.
+* `tests/authn_mechanism_enforcement.js` holds the library, the rule, the
+  routing, the door and the OAuth and WS-Federation re-prompts.
+
+### The second factors an application allows (#475, 2026-10-07)
+
+`mfa-mechanism`, a Deny right after `authn-mechanism` and for its reasons,
+**in both modes**: a browser issuance to an application that lists the second
+factors it allows (`appMfaMechanism`) is denied when the person's
+authentication GAVE a second factor and none of them is listed. Two
+ENVIRONMENT bags: `AUTHN_ATTRIBUTE.ALLOWED_MFA_MECHANISM` and `MFA_MECHANISM`
+(from `common/mfa_mechanisms.ts`), and the rule requires BOTH to hold
+something — so a session on one factor is never denied by it (rcbj: the list
+says which second factors, never whether one is needed), whatever built the
+request.
+
+* **The gate supplies both** (`mfaFactsOf()`) on #457's four browser kinds,
+  and only when a second factor was given.
+* **The PEP reads `MFA_MECHANISM_OBLIGATION`** just after the mechanism one,
+  audits `STS-XACML-0171`, and answers `mechanism: { allowed, satisfied,
+  secondFactor: true }`, so every door that re-prompts for #457 re-prompts
+  for this, choosing its own code by `secondFactor`.
+* **`decideMfaMechanisms: no`** builds the policy without it.
+* `tests/mfa_mechanism_enforcement.js` holds the library, the rule, the
+  proof-then-enrolment, the narrowed enrolment and the OAuth and
+  WS-Federation re-prompts.
+
 ## THE FOURTEENTH DEFECT: TWO CONTAINERS CLAIMING A PAGE THAT WAS NEVER WRITTEN
 
 `xacml_store.ts` and `xacml_pep_registry.ts` each carry a `SCHEMA` whose comment
@@ -1989,3 +2042,29 @@ checks the PEP's certificate (the channel forwards the client certificate and
 shims the socket, `common/cell_channel.ts`) and writes the `xacml.pip.query`
 audit row. A query that does not parse, or names nobody the routing index
 knows, is answered where it arrived, as before. Single-cell mode does not look.
+
+## `access-control` has a third conjunct: every role named as required-all (#454, 2026-10-06)
+
+`requiredRoles` is ANY-ONE-OF, as the document has always read it
+(`any-of-any` over `urn:sts:xacml:required-role`). The admin console's own
+operations need two roles of two kinds at once — ADMIN_CONSOLE, which the
+console's client confers on the person's token, and ADMIN_READ, which the
+person holds — and an any-one-of cannot say "both". So the template conjoins
+a third question beside the role and the ownership ones:
+`all-of-any(string-equal, required-all-role, role)` over
+**`urn:sts:xacml:required-all-role`**, which `xacml_access_pep.ts` fills from
+`requiredAllRoles` on the question (`common/access_gate.ts`).
+
+* **An empty bag asks nothing** (`all-of-any` is vacuously true), so every
+  surface that names none — every surface but the console's operations — is
+  decided exactly as before.
+* **A conjunct, not an arm**, for ownership's reason: it narrows and must
+  never be a way round the any-one.
+* **It is in the decision, not in the gate's code** (rcbj's directive that
+  authorization is policy): the gate states the question, and an override of
+  `access-control` in a realm's `ou=policies` that leaves the conjunct out
+  decides without it. The template is built in and called, not seeded, so
+  every realm without an override has it at once.
+
+`tests/access_policy.js` holds the four cases: the conferred role alone,
+ADMIN_READ alone, both, and an empty required-all.

@@ -330,7 +330,16 @@ function check(request) {
   // add a file to it (kerberos/CLAUDE.md).
   const mode = protocol ? require('./mode') : null;
   const protocolMatters = !!mode && !mode.issuesThroughUndeclaredProtocols();
-  if (!enforceRoles && !risk && !deviceMatters && !protocolMatters) {
+  // THE SIGN-IN MECHANISMS (#457) ride along on a BROWSER issuance to an
+  // application that lists the ones it allows, and make the policy asked
+  // past both shortcuts: its `authn-mechanism` rule holds in both modes and
+  // is not about roles.
+  const mechanisms = mechanismFactsOf(asked);
+  // AND THE SECOND FACTORS (#475), the same way and for the same reason:
+  // the `mfa-mechanism` rule holds in both modes and is not about roles.
+  const mfa = mfaFactsOf(asked);
+  if (!enforceRoles && !risk && !deviceMatters && !protocolMatters &&
+      !mechanisms && !mfa) {
     log.debug('Leaving check(). Enforcement is switched off.');
     return allow('roles.enforceIssuance is off, so the decision was not ' +
                  'asked for.');
@@ -348,6 +357,10 @@ function check(request) {
     protocolFamilies: protocol ? protocol.families : [],
     declaredProtocols: protocol ? protocol.declared : [],
     mode: mode ? mode.current() : '',
+    authnMechanisms: mechanisms ? mechanisms.satisfied : null,
+    allowedAuthnMechanisms: mechanisms ? mechanisms.allowed : null,
+    mfaMechanisms: mfa ? mfa.satisfied : null,
+    allowedMfaMechanisms: mfa ? mfa.allowed : null,
     rolesWaived: asked.rolesWaived === true || !enforceRoles ||
                  !asked.application
   });
@@ -374,6 +387,125 @@ function check(request) {
   log.debug('Leaving check(). ' + (result.allowed ? 'Allowed.' : 'REFUSED: ' +
             result.why));
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGN-IN MECHANISM FACTS OF A BROWSER ISSUANCE (#457): the mechanisms
+// the named application allows (`appAuthnMechanism`) and those the person's
+// authentication satisfies, or null when there is nothing to compare — no
+// application, one that allows every mechanism, or an issuance that is not a
+// browser sign-in (rcbj: browser-based authentication only).
+//
+// A BROWSER ISSUANCE is one of four: a session started at a sign-in door,
+// which names the event it is about to record (`authenticationEvent`); and
+// an authorization response, a SAML assertion or a WS-Federation token
+// issued on a browser session (`session`). The token endpoint, WS-Trust,
+// Kerberos and an enrolled certificate are not asked: no browser is there to
+// re-prompt, and neither is a caller that says `browser: false` (SAML 2.0's
+// attribute query, which finds a session by NameID over a back channel).
+// Required LAZILY, for `disabledSubject()`'s reason. Never
+// throws: a registry that cannot be read allows every mechanism, as it
+// declares no protocol in protocolFactsOf().
+// ---------------------------------------------------------------------------
+const BROWSER_KINDS = [ISSUANCE.SESSION, ISSUANCE.AUTHORIZATION_CODE,
+                       ISSUANCE.SAML_ASSERTION, ISSUANCE.WSFED_TOKEN];
+
+/**
+ * The sign-in mechanism facts of a browser issuance (#457).
+ *
+ * @param asked - the issuance request
+ * @returns `{ allowed, satisfied }`, or null when there is nothing to compare
+ */
+function mechanismFactsOf(asked) {
+  log.debug('Entering mechanismFactsOf().');
+  const name = String(asked.application || '').trim();
+  const event = asked.authenticationEvent || null;
+  const session = asked.session || null;
+  if (!name || asked.browser === false ||
+      BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
+      (!event && !session) ||
+      (String(asked.kind) === ISSUANCE.SESSION && !event)) {
+    log.debug('Leaving mechanismFactsOf(). Not a browser sign-in.');
+    return null;
+  }
+  let allowed = [];
+  const mechanisms = require('./authn_mechanisms');
+  try {
+    const entry = require('./applications').get(name);
+    allowed = mechanisms.allowedOf(entry ? entry.fields : null);
+  } catch (e) {
+    log.debug('Caught in mechanismFactsOf(): ' + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-XACML-0169') + 'issuance_gate: the ' +
+              'application registry could not be read for "' + name +
+              '"\'s sign-in mechanisms, so none was required: ' +
+              ((e && e.message) || e));
+    allowed = [];
+  }
+  if (!allowed.length) {
+    log.debug('Leaving mechanismFactsOf(). Every mechanism is allowed.');
+    return null;
+  }
+  const satisfied = event ? mechanisms.ofEvent(event)
+                          : mechanisms.satisfiedBy(session);
+  log.debug('Leaving mechanismFactsOf(). Allowed ' + allowed.join(', ') +
+            '; satisfied ' + (satisfied.join(', ') || 'none') + '.');
+  return { allowed: allowed, satisfied: satisfied };
+}
+
+// ---------------------------------------------------------------------------
+// THE SECOND-FACTOR FACTS OF A BROWSER ISSUANCE (#475): the second factors
+// the named application allows (`appMfaMechanism`) and those the person's
+// authentication gave, or null when there is nothing to compare — for
+// mechanismFactsOf()'s reasons, on the same four browser kinds, and also
+// when the authentication gave no second factor at all: the list says which
+// second factors, never whether one is needed (rcbj), so a session on one
+// factor is not this rule's to deny. Never throws: a registry that cannot
+// be read allows whatever the realm allows.
+// ---------------------------------------------------------------------------
+/**
+ * The second-factor facts of a browser issuance (#475).
+ *
+ * @param asked - the issuance request
+ * @returns `{ allowed, satisfied }`, or null when there is nothing to compare
+ */
+function mfaFactsOf(asked) {
+  log.debug('Entering mfaFactsOf().');
+  const name = String(asked.application || '').trim();
+  const event = asked.authenticationEvent || null;
+  const session = asked.session || null;
+  if (!name || asked.browser === false ||
+      BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
+      (!event && !session) ||
+      (String(asked.kind) === ISSUANCE.SESSION && !event)) {
+    log.debug('Leaving mfaFactsOf(). Not a browser sign-in.');
+    return null;
+  }
+  const factors = require('./mfa_mechanisms');
+  const satisfied = event ? factors.ofEvent(event)
+                          : factors.satisfiedBy(session);
+  if (!satisfied.length) {
+    log.debug('Leaving mfaFactsOf(). No second factor was given.');
+    return null;
+  }
+  let allowed = [];
+  try {
+    const entry = require('./applications').get(name);
+    allowed = factors.allowedOf(entry ? entry.fields : null);
+  } catch (e) {
+    log.debug('Caught in mfaFactsOf(): ' + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-XACML-0172') + 'issuance_gate: the ' +
+              'application registry could not be read for "' + name +
+              '"\'s second factors, so none was required: ' +
+              ((e && e.message) || e));
+    allowed = [];
+  }
+  if (!allowed.length) {
+    log.debug('Leaving mfaFactsOf(). The realm\'s second factors apply.');
+    return null;
+  }
+  log.debug('Leaving mfaFactsOf(). Allowed ' + allowed.join(', ') +
+            '; gave ' + satisfied.join(', ') + '.');
+  return { allowed: allowed, satisfied: satisfied };
 }
 
 // ---------------------------------------------------------------------------

@@ -153,9 +153,12 @@ function settingRow(body, key) {
       rows.push(one);
     });
   });
-  ((body && body.settings) || []).forEach(function (one) {
-    rows.push(one);
-  });
+  // A top-level `settings` is the page's settings BLOCK since #446 (an
+  // object); it is read as rows only when it is a list.
+  (body && Array.isArray(body.settings) ? body.settings : []).forEach(
+    function (one) {
+      rows.push(one);
+    });
   const row = rows.filter(function (one) {
     return one.key === key;
   })[0] || null;

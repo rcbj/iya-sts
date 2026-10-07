@@ -120,7 +120,6 @@
 // service can detect several of them and fix none.
 // ===========================================================================
 
-const crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle, and it registers no route, so its position is not a position at all.
@@ -869,12 +868,16 @@ const REQUIREMENTS = [
           '`aud` of a token signed by somebody else is a string this service ' +
           'cannot check and was never the audience of anyway, the same ' +
           'judgement made about a foreign cnf. And what counts as "this ' +
-          'resource server" is the PATH rather than the whole URL: every ' +
-          'token minted here carries <base>/resource where the base is ' +
-          'whatever URL the minting request arrived on, so a whole-URL ' +
-          'comparison would refuse a token minted at localhost and presented ' +
-          'at 127.0.0.1 — while what the check is FOR, a token narrowed to ' +
-          'somebody else by `resource`, always has a different path.' },
+          'resource server" is the WHOLE URL (RFC 9068 section 4 step 4): ' +
+          'an `aud` is accepted only when it is, entire, the default ' +
+          'resource indicator <base>/resource of an authorization server ' +
+          'this process publishes at the address the request arrived on — ' +
+          'the default one or a named one under /{id}. So a token minted at ' +
+          'localhost and presented at 127.0.0.1 is refused: an address is ' +
+          'part of an identifier, and global.publicBaseUrl is how a ' +
+          'deployment reached under several names gives this service one. ' +
+          'It compared the PATH until RFC 9068 was applied in every mode, ' +
+          'which accepted a token narrowed to somebody else\'s /resource.' },
 
   { id: 'least-privilege-scope', section: '2.3', level: 'SHOULD',
     appliesTo: 'authorization server and client', enforced: 'detected',
@@ -1218,15 +1221,14 @@ const REQUIREMENTS = [
 
   { id: 'framing-device-pages', section: '4.14', level: 'MUST',
     appliesTo: 'authorization server', enforced: 'always',
-    title: 'And the device authorization pages, if there were any',
-    note: 'There are none: this service implements no device authorization ' +
-          'grant, so there is no user_code page to frame. It is a row rather ' +
-          'than an omission because the section names those pages and a ' +
-          'reader checking this table against it should find the answer ' +
-          'rather than a gap. If that grant is ever added, its pages are ' +
-          'covered by the two rows above without anybody doing anything — ' +
+    title: 'And the device authorization pages',
+    note: 'RFC 8628\'s user_code page is /portal/device (#150, off by ' +
+          'default behind oauth2.deviceAuthorization). It relaxes nothing, ' +
+          'so it carries the framing clauses of the two rows above like ' +
+          'every other page, without anybody having done anything for it — ' +
           'which is the point of the policy being a service-wide default ' +
-          'that a relaxation cannot weaken.' },
+          'that a relaxation cannot weaken. Until #276 this row said there ' +
+          'was no such page; the grant had been built in #150.' },
 
   // --- section 4.3 — token leakage through the browser --------------------
   { id: 'no-token-in-query', section: '2.6, 4.3.2', level: 'MUST NOT',

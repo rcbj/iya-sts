@@ -799,9 +799,10 @@ async function run(t) {
             relisted.mdqRefused[0].errorCode === 'STS-SAML-0080',
             'the newest refusal is FIRST',
             JSON.stringify(relisted.mdqRefused.slice(0, 2)));
-    // The page's own view, below the console gate.
-    const drawn = require('../admin-ui/admin').saml2View(
-      kit.fakeReq('GET', '/admin/saml2', {}, '')).inner;
+    // The page as the static console draws it (#446): GET /admin-api/saml2
+    // drawn by its renderer.
+    const drawn = (await require('./tools/console_page.js')
+      .consolePage(__dirname + '/..').draw('/admin/saml2', {})).html;
     t.check(/Metadata Query lookups refused/.test(drawn) &&
             drawn.indexOf(viaModule) >= 0,
             'and the SAML 2.0 page draws it');

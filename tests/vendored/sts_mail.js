@@ -229,7 +229,8 @@ async function test() {
   const pinnedRow = ((settings.json && settings.json.groups) || [])
     .reduce(function (all, g) {
       return all.concat(g.settings || []);
-    }, ((settings.json && settings.json.settings) || []))
+    }, (settings.json && Array.isArray(settings.json.settings) ?
+        settings.json.settings : []))
     .filter(function (row) {
       return row.key === "global.publicBaseUrl";
     })[0];
@@ -240,7 +241,8 @@ async function test() {
   const transportRow = ((settings.json && settings.json.groups) || [])
     .reduce(function (all, g) {
       return all.concat(g.settings || []);
-    }, ((settings.json && settings.json.settings) || []))
+    }, (settings.json && Array.isArray(settings.json.settings) ?
+        settings.json.settings : []))
     .filter(function (row) {
       return row.key === "mail.transport";
     })[0];

@@ -117,8 +117,10 @@
 // refusals below. It reaches for no setting and no store, so this driver still
 // reaches for nothing.
 const errorCodes = require('../common/error_codes');
-// node's own, for the process origin's UUID.
-const nodeCrypto = require('crypto');
+// The process origin's UUID, a jitter and a reservation are drawn from
+// `common/crypto.js` (#453), required where each is drawn rather than here,
+// as `walkDirectory()` already does: requiring this driver loads no setting,
+// so an out-of-process tool (`risk/risk_install.ts`) may load it.
 // A LEAF with no requires: the three-way merge a directory upsert is written
 // through when another node has changed the row (#46 section 3).
 const directoryMerge = require('./directory_merge');
@@ -1479,14 +1481,25 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
 // by this driver's writer pool, its LISTEN client, its read pool and, since
 // #98's conversion tool (`persistence/cell_convert.js`), a process that is
 // not the service and dials the same databases. `create()` argues the two
-// decisions it holds: TLS is wanted when the string's `sslmode` asks for it,
-// and the parameter is then STRIPPED so that `pg`'s own reading of it cannot
-// disagree with the `ssl` option built here. A libpq keyword/value string,
-// which cannot be edited safely, is passed through untouched.
+// decisions it holds: the connection is ALWAYS TLS, and the `sslmode`
+// parameter is STRIPPED so that `pg`'s own reading of it cannot disagree with
+// the `ssl` option built here.
+//
+// **NEVER IN THE CLEAR, IN EVERY MODE (#273, 2026-10-07).** Until then TLS
+// was used only when `sslmode` asked for it, so a string with none — the
+// default `persistence.databaseUrl` among them — connected in the clear with
+// a warning, and only a database that refuses plaintext (the compose
+// stack's) stopped it. Now a string with no `sslmode` is TLS (`require`),
+// `prefer` is TLS too (libpq's `prefer` would fall back to plaintext, which
+// is the thing refused), and `disable` or `allow` is REFUSED. So is a libpq
+// keyword/value string: it cannot be edited safely, so whether `pg` would
+// dial it in the clear cannot be told here — write it as a URL. A Unix
+// socket has no TLS; postgres answers the TLS request on one with "N", and
+// the connection fails, which is the same refusal said by the server.
 //
 // A PURE FUNCTION with no log line, for `poolMax()`'s reason: this module's
-// logger arrives with create(). `notUrl` carries why a string that asked for
-// TLS could not be edited, so the caller can say so on its own logger.
+// logger arrives with create(). `refused` carries why a string cannot be
+// dialled, and each caller throws it, tagged, on its own logger.
 // ---------------------------------------------------------------------------
 /**
  * Returns what `pg` is given to dial a connection string the way this driver
@@ -1494,32 +1507,40 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
  *
  * @param url - the connection string
  * @param verifyTls - whether the server's certificate is verified
- * @returns `{ connectionString, ssl, wantsTls, notUrl }`; `notUrl` is '' or
- * the reason the string could not be edited
+ * @returns `{ connectionString, ssl, refused }`; `refused` is '' or why the
+ * string is not dialled (it would be in the clear, or cannot be told)
  */
 function dialOptions(url, verifyTls) {
   const raw = String(url || '');
-  const wantsTls = /[?&]sslmode=(require|verify-ca|verify-full|prefer)/i
-    .test(raw);
-  let connectionString = raw;
-  let notUrl = '';
-  if (wantsTls) {
-    try {
-      const parsed = new URL(raw);
-      parsed.searchParams.delete('sslmode');
-      connectionString = parsed.toString();
-    } catch (e) {
-      // Not a URL: see the header. Carried on the answer rather than
-      // logged, because there is no logger here.
-      notUrl = String((e && e.message) || e) || 'not a URL';
-      connectionString = raw;
-    }
+  if (/(^|[?&\s])sslmode\s*=\s*(disable|allow)\b/i.test(raw)) {
+    return { connectionString: '', ssl: undefined,
+             refused: 'its sslmode asks for a connection in the clear, ' +
+                      'which this service never opens; use ' +
+                      'sslmode=require, or leave sslmode out' };
   }
+  let parsed = null;
+  try {
+    parsed = new URL(raw);
+  } catch (e) {
+    // Not a URL: see the header. Carried on the answer rather than logged,
+    // because there is no logger here.
+    return { connectionString: '', ssl: undefined,
+             refused: 'it is not a postgres:// URL (' +
+                      (String((e && e.message) || e) || 'not a URL') +
+                      '), so whether it would be dialled in the clear ' +
+                      'cannot be told; write it as a URL' };
+  }
+  if (!/^postgres(ql)?:$/i.test(parsed.protocol)) {
+    return { connectionString: '', ssl: undefined,
+             refused: 'it is not a postgres:// URL (' + parsed.protocol +
+                      '), so whether it would be dialled in the clear ' +
+                      'cannot be told; write it as a URL' };
+  }
+  parsed.searchParams.delete('sslmode');
   return {
-    connectionString: connectionString,
-    ssl: wantsTls ? { rejectUnauthorized: !!verifyTls } : undefined,
-    wantsTls: wantsTls,
-    notUrl: notUrl
+    connectionString: parsed.toString(),
+    ssl: { rejectUnauthorized: !!verifyTls },
+    refused: ''
   };
 }
 
@@ -2013,42 +2034,39 @@ function create(options) {
   // ---------------------------------------------------------------------
   // TLS, AND THE TWO HALVES OF IT THAT LIVE IN DIFFERENT PLACES.
   //
-  // ENCRYPTION is `sslmode` in the connection string, which is postgres's own
-  // spelling and which `pg` parses for itself — `?sslmode=require` is in the
-  // compose default, and the database refuses a plaintext connection anyway
-  // because every `host` rule in its pg_hba.conf is `hostssl`. Nothing here
-  // has to do anything for that to work.
+  // ENCRYPTION is ALWAYS ON (#273): `dialOptions()` dials every string over
+  // TLS and refuses one whose `sslmode` says `disable` or `allow`, or that
+  // it cannot read. The compose stack's database refuses a plaintext
+  // connection as well, because every `host` rule in its pg_hba.conf is
+  // `hostssl`, but it is no longer the only thing that does.
   //
   // TRUST is not expressible in a connection string as far as `pg` is
   // concerned: `rejectUnauthorized` is a TLS option. So it is a setting, and
   // it is applied HERE rather than pushed into the URL, where it would be
   // silently ignored.
   //
-  // THE OPTION IS ONLY SET WHEN sslmode ASKED FOR TLS. Passing `ssl` to `pg`
-  // turns TLS on regardless of the URL, so setting it unconditionally would
-  // make `sslmode=disable` mean its opposite — a connection string saying one
-  // thing and the client doing another, which is the shape of bug this whole
-  // change exists to remove.
+  // `sslmode=disable` is REFUSED rather than overridden: passing `ssl` to
+  // `pg` would turn TLS on whatever the URL said, and a connection string
+  // saying one thing while the client does another is the shape of bug this
+  // whole change exists to remove — so the string is not dialled at all, and
+  // the start fails saying why (persistence.start() is the one fatal open).
   // `dialOptions()`, above create(), is the one reading of it (#98): this
   // driver's pools and an out-of-process tool dial the same way.
   const dial = dialOptions(url, options.verifyTls);
-  const wantsTls = dial.wantsTls;
-  const verify = !!options.verifyTls;
-  if (wantsTls) {
-    log.info('persistence: the database connection is TLS (sslmode in the ' +
-             'connection string), and the server certificate is ' +
-             (verify ? 'VERIFIED against this process\'s trust anchors.'
-                     : 'NOT verified — ' +
-                       'persistence.databaseTlsRejectUnauthorized is off, ' +
-                       'which is the honest setting for the self-signed pair ' +
-                       'the compose stack generates. The connection is ' +
-                       'encrypted either way.'));
-  } else {
-    log.warn('persistence: the database connection string does not ask for ' +
-             'TLS (no sslmode=require). The compose stack\'s database ' +
-             'REFUSES a plaintext connection, so this will fail to connect ' +
-             'there; against another database it will connect in the clear.');
+  if (dial.refused) {
+    throw new Error(errorCodes.tag('STS-STORE-0078') +
+                    'persistence: the database connection string is not ' +
+                    'dialled: ' + dial.refused + ' (#273).');
   }
+  const verify = !!options.verifyTls;
+  log.info('persistence: the database connection is TLS, and the server ' +
+           'certificate is ' +
+           (verify ? 'VERIFIED against this process\'s trust anchors.'
+                   : 'NOT verified — ' +
+                     'persistence.databaseTlsRejectUnauthorized is off, ' +
+                     'which is the honest setting for the self-signed pair ' +
+                     'the compose stack generates. The connection is ' +
+                     'encrypted either way.'));
 
   // ONE DECIDER, AND A FAILED CONNECTION IS WHY.
   //
@@ -2067,13 +2085,6 @@ function create(options) {
   // That place is `dialOptions()` since #98, so a process that is not the
   // service dials the same way.
   const dialled = dial.connectionString;
-  if (dial.notUrl) {
-    // A libpq keyword/value string rather than a URL. `pg` accepts those and
-    // this cannot edit one safely, so it is passed through untouched and
-    // whatever it says about ssl is what happens.
-    log.debug('persistence: the connection string is not a URL, so its ' +
-              'sslmode was left as it is.');
-  }
 
   // ONE PLACE THE CONNECTION IS DESCRIBED, because the pool and the change
   // listener have to dial the same database the same way — and a listener that
@@ -2084,14 +2095,14 @@ function create(options) {
     log.debug("Leaving clientOptions().");
     return {
       connectionString: dialled,
-      ssl: wantsTls ? { rejectUnauthorized: verify } : undefined,
+      ssl: dial.ssl,
       connectionTimeoutMillis: 5000
     };
   }
 
   const pool = new Pool({
     connectionString: dialled,
-    ssl: wantsTls ? { rejectUnauthorized: verify } : undefined,
+    ssl: dial.ssl,
     // Small on purpose. Every query this driver makes is on the flush path,
     // there is one flush at a time by construction (persistence.js serialises
     // them), and a mock does not need a connection per core.
@@ -2132,6 +2143,11 @@ function create(options) {
       return pool;
     }
     const readDial = dialOptions(readUrl, verify);
+    if (readDial.refused) {
+      throw new Error(errorCodes.tag('STS-STORE-0078') +
+                      'persistence: the read database connection string is ' +
+                      'not dialled: ' + readDial.refused + ' (#273).');
+    }
     readOptions = {
       connectionString: readDial.connectionString,
       ssl: readDial.ssl,
@@ -2292,7 +2308,8 @@ function create(options) {
   // (2026-09-18)** — see `adoptOrigin()` below. The random value here is what
   // a process uses when it has no stable name, or when the name is still held
   // by a live process, which is exactly the case the paragraph above guards.
-  let processId = String(process.pid) + '-' + nodeCrypto.randomUUID();
+  let processId = String(process.pid) + '-' +
+    require('../common/crypto').randomUuid();
   // The claim this process holds on a stable origin, or null.
   let originClaim = null;
 
@@ -2658,8 +2675,8 @@ function create(options) {
         await new Promise(function (resolve) {
           // node's generator, as every random value here is (tests/
           // random_values.js); a jitter needs no more, and asks no less.
-          setTimeout(resolve, 10 + nodeCrypto.randomInt(0, 40) *
-                              (attempt + 1));
+          const jitter = require('../common/crypto').randomInt(0, 40);
+          setTimeout(resolve, 10 + jitter * (attempt + 1));
         });
       }
     }
@@ -4118,7 +4135,7 @@ function create(options) {
       const ttlMs = Math.max(1000, Number(o.ttlMs) || 30000);
       const waitMs = Math.max(0, Number(o.waitMs) || 0);
       const pollMs = Math.max(100, Number(o.pollMs) || 2000);
-      const reservation = nodeCrypto.randomUUID();
+      const reservation = require('../common/crypto').randomUuid();
       const started = Date.now();
       const self = this;
       function attempt() {

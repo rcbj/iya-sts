@@ -41,7 +41,7 @@
 // **OFF IN PRODUCT** (`mode.opensTestControls()`): a 404.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
@@ -149,9 +149,8 @@ class CommandMockRp {
   static audSubOf(clientId: string, sub: string): string {
     helpers.log.debug("Entering CommandMockRp.audSubOf().");
     helpers.log.debug("Leaving CommandMockRp.audSubOf().");
-    return 'rp-' + nodeCrypto.createHash('sha256')
-      .update(String(clientId) + '\n' + String(sub)).digest('hex')
-      .slice(0, 16);
+    return 'rp-' + stsCrypto.digest('sha256',
+      String(clientId) + '\n' + String(sub), 'hex').slice(0, 16);
   }
 
   private stateOf(clientId: string, sub: string): string {
@@ -244,7 +243,7 @@ class CommandMockRp {
       // The algorithms named, never taken from the token (RFC 8725 section
       // 3.1): the asymmetric ones a relying party verifies with the keys.
       verified = helpers.verifyOwnCompactJws(token, {
-        algorithms: require('../common/crypto').JWS_ASYMMETRIC_ALGS });
+        algorithms: stsCrypto.JWS_ASYMMETRIC_ALGS });
     } catch (e) {
       log.debug("Caught in CommandMockRp.handle(): " +
                 ((e && e.message) || e));

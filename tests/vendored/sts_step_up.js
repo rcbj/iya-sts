@@ -53,7 +53,7 @@
 //   i. the monitor — `GET <realm>/admin-api/oauth2/monitor`'s `stepup`
 //      section with this client's counters moved, `clientsParam` and
 //      `ownResourceRequirement` following the setting — and the console's
-//      `?format=json` of the same page carrying the same row.
+//      token asking the same page's operation for the same row.
 //
 // ---------------------------------------------------------------------------
 // WHY IT IS THIS REPOSITORY'S OWN (`local: true`).
@@ -70,13 +70,13 @@
 // ---------------------------------------------------------------------------
 // THE CONSOLE HALF, AND WHY IT IS DRIVEN THE WAY IT IS.
 //
-// The console's session lives in the DEFAULT realm's partition wherever it is
-// reached (`common/CLAUDE.md`, the realm split), and a session signed in
-// through the default realm is asked the service roster, which reads every
-// realm (`admin-ui/CLAUDE.md`, 8d) — so the operator signs in to the console
-// at the default realm through `console_signin.js` and reads the realm's page
-// under its prefix with that cookie. No browser: the page is JSON under
-// `?format=json`.
+// A session signed in through the default realm is asked the service
+// roster, which reads every realm (`admin-ui/CLAUDE.md`, 8d) — so the
+// operator signs in to the console at the default realm through
+// `console_signin.js` and asks the realm's page under its prefix. Since the
+// #446 cutover the console is a static page drawn from its `/admin-api`
+// operation's answer, so what is asked is that operation, with the
+// console's own DPoP-bound token — what `?format=json` used to answer.
 //
 // ---------------------------------------------------------------------------
 // WHAT IT LEAVES BEHIND.
@@ -546,9 +546,13 @@ function settingRow(body, key) {
       rows.push(one);
     });
   });
-  ((body && body.settings) || []).forEach(function (one) {
-    rows.push(one);
-  });
+  // A flat `settings` LIST, where an answer carries one. `/admin-api/config`
+  // carries an object of that name since #446 — the page's own settings
+  // block — and its rows are in `groups`, read above.
+  (Array.isArray(body && body.settings) ? body.settings : [])
+    .forEach(function (one) {
+      rows.push(one);
+    });
   const row = rows.filter(function (one) {
     return one.key === key;
   })[0] || null;
@@ -1170,17 +1174,23 @@ async function theMonitor() {
     });
   });
 
+  // THE PAGE IS THE STATIC CONSOLE (#446): its document holds nothing of
+  // this service's state, and the page is drawn from the operation the
+  // console's token asks.
   const anonymous = await send(base + R + "/admin/oauth2/monitor");
-  check("the console page is behind the console's gate", function () {
-    assert.ok(anonymous.status === 302 || anonymous.status === 303,
-              "status " + anonymous.status);
+  check("the console page, asked with no token, carries no counter",
+        function () {
+    assert.strictEqual(anonymous.status, 200, "status " + anonymous.status);
+    assert.ok(anonymous.raw.indexOf(CLIENT) < 0, anonymous.raw.slice(0, 200));
   });
-  const cookie = await consoleSignIn.signInToTheConsole(base, OPERATOR, log,
-                                                        { grant: "read" });
-  const page = await send(base + R + "/admin/oauth2/monitor?format=json", {
-    headers: cookie ? { cookie: cookie } : {} });
-  check("?format=json of the realm's console page carries the same step-up " +
-        "row the API does (rule 7)", function () {
+  const consoleClient = await consoleSignIn.signInToTheConsole(base,
+    OPERATOR, log, { grant: "read" });
+  const asked = await consoleClient.api("GET",
+                                        R + "/admin-api/oauth2/monitor");
+  const page = { status: asked.status, body: asked.json || {},
+                 raw: asked.text };
+  check("the realm's console page's operation, asked with the console's " +
+        "token, carries the same step-up row (rule 7)", function () {
     assert.strictEqual(page.status, 200,
                        page.status + " " + page.raw.slice(0, 300));
     const s = (page.body.sections || []).filter(function (one) {
@@ -1191,7 +1201,7 @@ async function theMonitor() {
     const mine = s.clients.filter(function (one) {
       return one.client_id === CLIENT;
     })[0];
-    assert.ok(mine, "the console's JSON has no row for " + CLIENT);
+    assert.ok(mine, "the console's answer has no row for " + CLIENT);
     assert.deepStrictEqual(mine.counters, c);
   });
   log.debug("Leaving theMonitor().");

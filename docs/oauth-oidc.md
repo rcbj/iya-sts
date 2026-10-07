@@ -199,6 +199,21 @@ and puts the bare permission name in `scope`. **A token for an API is for that
 API alone.** The OpenID Connect scopes are left off it, so a client that wants
 UserInfo asks for a separate token.
 
+**In product mode a resource must name a registered target** (#505), at the
+authorization endpoint, at `POST /oauth2/par` and at the token endpoint for
+every grant but the token exchange (whose targets are RFC 8693's, below). A
+registered target is one of this service's own resource servers — the
+default resource indicator `<base>/resource` (or a named authorization
+server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
+`<base>/admin-api`; the GNAP demonstration resource server — or an
+application registered through the console, `/admin-api`,
+`POST /oauth2/register`, an LDAP add or an OpenID Federation, named by its
+audience, permission base URI, `client_id` or identifier. The embedded
+debugger's api is such an application while the debugger is embedded.
+Anything else is `invalid_target` (RFC 8707 section 2): redirected to the
+client from the authorization endpoint, a 400 from PAR and from the token
+endpoint. Development mode accepts any absolute URI, as before.
+
 **A redeemed code is refused if it is presented again, in every mode**, and
 what it bought is revoked (RFC 6749 sections 4.1.2 and 10.5). The refusal says
 when the code was redeemed and by which client, or names the field that differs.
@@ -1695,7 +1710,7 @@ POST /oauth2/register
 
 GET /.well-known/openid-configuration
   "frontchannel_logout_supported": true
-  "frontchannel_logout_session_required": true
+  "frontchannel_logout_session_supported": true
 
 id_token: { …, "sid": "EO-iqvyoBaXVAwJMzzHQuEcBlw4dcI36" }
 
@@ -1853,7 +1868,6 @@ endpoints on this page:
 
 ### Not implemented
 
-* The device authorization grant: there is no device authorization endpoint.
 * A Self-Issued OP (#129).
 * Enforcing `value`/`values` or `essential` in a claims request, other than
   for `acr`.
@@ -1872,6 +1886,9 @@ on [What is not checked](what-is-not-checked.md).
 | Client authentication | nothing is required: a client may send only a `client_id` | a confidential client must present its credential and it must verify; a public client (`token_endpoint_auth_method=none`) is allowed |
 | RFC 9700 | only where `oauth2.rfc9700` or `oauth2.oauth21` is set | **always**, for every realm — see [OAuth security](oauth-security.md) |
 | Unknown client or authorization server | created the first time it is named | refused; create it ahead of time |
+| A client nobody **registered** — unknown, or recorded only because a development request named it | served | the authorization endpoint answers a 400 page and never redirects (`invalid_client`; no `client_id` at all is `invalid_request`); the token endpoint answers 401 `invalid_client` before anything is recorded (#496). Registered means through the console, `/admin-api`, `POST /oauth2/register` or an OpenID Federation |
+| Token exchange to an audience or resource nobody registered | the issuance policy notes it would refuse, and issues | refused `invalid_target`; an application a development request merely recorded is not a target |
+| A `resource` outside a token exchange that names no registered target | accepted, and becomes the token's `aud` | refused `invalid_target` — redirected from the authorization endpoint, a 400 from PAR and the token endpoint; this service's own resource servers and registered applications are targets (#505) |
 | Redirect URIs | any | only one registered for the client |
 | Password grant | offered; accepts any password but `invalid` | not offered (RFC 9700 section 2.4) |
 | Grants for a public client | all | authorization code and refresh only |
@@ -1917,7 +1934,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.refreshTokenTtlS` | `STS_OAUTH2_REFRESH_TOKEN_TTL_S` | `86400` | yes | A refresh token's absolute lifetime, in both modes (it was thirty days before; `2592000` restores that). |
 | `oauth2.clockSkewS` | `STS_OAUTH2_CLOCK_SKEW_S` | `30` | yes | The allowance on `exp` and `nbf` wherever this service reads back a token it issued, and on every console screen's state. |
 | `oauth2.authorizationCodeTtlS` | `STS_OAUTH2_AUTHORIZATION_CODE_TTL_S` | `300` | yes | How long an authorization code may wait to be redeemed; RFC 9700 mode's transaction memory is measured from it. |
-| `oauth2.redeemedCodeCacheSize` | `STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE` | `10000` | yes | How many redeemed codes are remembered so an identical repeat gets the same tokens and a different one is refused by name. |
+| `oauth2.redeemedCodeCacheSize` | `STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE` | `10000` | yes | How many redeemed codes are remembered, so a repeat is refused naming when and by whom the code was redeemed (or the field that differs) and what it bought is revoked. Only with `oauth2.codeReplayIdempotent` on does an identical repeat get the same tokens. Past the limit the oldest is forgotten, and its replay is refused as an unknown code. |
 | `oauth2.expiredTokenRetentionS` | `STS_OAUTH2_EXPIRED_TOKEN_RETENTION_S` | `86400` | yes | How long an expired token stays in the `/admin/tokens` register before the hourly purge job deletes its record. |
 | `oauth2.accessTokenStatusListTtlS` | `STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_TTL_S` | `60` | yes | The `ttl` (and HTTP `max-age`) of the realm's access-token status list and of the revoked-biscuit list: how long a resource server that checks access tokens on its own may keep them, and so how long a revocation can take to reach it (#432). |
 | `oauth2.accessTokenStatusListLifetimeS` | `STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_LIFETIME_S` | `3600` | yes | How long after it is signed the access-token status list says it is valid (its `exp`). |
@@ -2105,11 +2122,14 @@ be set per [trust realm](trust-realms.md).
 * **An address is part of an issuer.** Tokens, software statements and
   audiences are compared as whole URLs. The earlier path-only match accepted a
   token narrowed to somebody else's `/resource`.
-* **A redeemed code answers an identical repeat.** A reloaded page, a
-  double-submitted form and a retry after a bad `code_verifier` are
-  indistinguishable from a stolen code. Answering with the same tokens, and
-  naming what differs otherwise, tells the client what happened. RFC 9700 mode
-  turns this off.
+* **A redeemed code is refused, and named, when it comes again.** A reloaded
+  page, a double-submitted form and a retry after a bad `code_verifier` are
+  indistinguishable from a stolen code, so in every mode the repeat is
+  refused and what the code bought is revoked (RFC 6749 section 10.5). The
+  refusal says when and by which client the code was redeemed, or which field
+  differs, which tells the client what happened. Answering an identical
+  repeat with the same tokens is `oauth2.codeReplayIdempotent`, off by
+  default and ignored in RFC 9700, OAuth 2.1 and FAPI mode.
 * **Refresh tokens are encrypted to their realm.** Nobody but this service
   needs to read one, and a token from one realm cannot be redeemed in another.
 * **Claims requests are honoured and never echoed.** `value`/`values` could be

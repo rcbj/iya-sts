@@ -857,6 +857,24 @@ under `forceMfa` for the same reason.
 
 ### `appAuthnMechanism` — the generalisation of `appFederationRelationship`
 
+**A LIST OF WHAT IS ALLOWED, AND ENFORCED, SINCE #457 (2026-10-06).** What
+follows was written when it was one value that only routed. Now
+`declaredMechanismsFor()` returns the list as written and the part of it this
+service can offer; one usable mechanism routes as the one value did, several
+draw the screen with only those (`record.allowedMechanisms`, read by
+`loginPage()`: no password form unless `password`/`password-mfa`, no emailed
+first factor and no anonymous button while a list is set, the partners, the
+Kerberos door and the wallet only where allowed). The ENFORCEMENT is the
+issuance policy's (`xacml/CLAUDE.md`): `startSessionHere()` puts the
+authentication it is about to record to the gate, and refuses a mechanism the
+application does not allow with `STS-AUTHN-0298` through
+`refuseOnMechanism()`, which `refusedSession()` draws the screen again for. **A
+door that passed `gated: true` asked the policy before its second factor**, so
+the session's start asks the mechanism question again, roles waived — only for
+an application that restricts, because asking re-runs the policy's other rules
+(the console's alarm). The protocols re-prompt through `beginAuthentication()`
+on the policy's answer; see each protocol's file.
+
 An application entry may now DECLARE how its people authenticate, from the same
 closed vocabulary `fedAuthnMechanism` uses (`federation.MECHANISM_IDS`). One
 table for both, because they answer the same question from two sides, and two
@@ -883,6 +901,45 @@ deployment there is.
   about the past — and `spnego` declared while `krb5.spnegoAuthentication` is
   off is exactly the state that would otherwise put somebody in front of a 403
   halfway through a sign-in.
+
+### `appMfaMechanism` — which second factors, narrowed per application (#475)
+
+`appAuthnMechanism`'s companion (rcbj, 2026-10-07): the second factors an
+application allows, read by `mfaAllowedFor()` and carried on every minted
+step as `mfaAllowed`. rcbj's four rules: **narrow only** (the realm's policy
+is asked first and a held factor is still asked for, as always), **options
+only** (it never makes a second factor needed), **a re-prompt as #457**, and
+**none held, enrol one — after a proof**.
+
+* **`narrowSecondFactor()`** runs where the password screen and the wallet
+  door choose the factor. A factor not allowed gives way to another the
+  person holds (`allowedHeldFactor()`: a key, then an app, then an emailed
+  factor the realm can send); at the wallet door, then to the password. A
+  person who holds NONE is asked for nothing here, and the requirement step
+  enrols an allowed one (`enrolmentOfferedFor()`). A DEMANDED factor
+  (`forceKey`, a step-up on risk) with nothing allowed to answer it is
+  refused, `STS-AUTHN-0307`: a step-up never enrols (#62 P3).
+* **Held, but none allowed: `thenEnrol`.** The step asks for the factor the
+  person holds, and every second-factor finisher — TOTP, recovery code,
+  WebAuthn, emailed, password after wallet, wallet after password — hands
+  over to `enrolAfterProof()` instead of starting a session. Its set-up step
+  is marked `proved`, which is the ONE thing that lets `/authn/mfa-setup`
+  past its "the person must still hold nothing" refusal (`STS-AUTHN-0175`):
+  enrolling for somebody who holds a factor before they have given it is the
+  bypass that refusal exists for. The proof's `amr` rides on as `firstAmr`.
+  Nothing enrollable allowed is `STS-AUTHN-0306`. A remembered browser
+  (#265) never skips a proof.
+* **`narrowStep()`** drops the links a minted step would draw for a factor
+  not allowed (the other mechanism, the recovery code, the emailed factor,
+  the password after a wallet); the wallet link is decided when drawn
+  (`stepAllowsWallet()`). A step that is a proof draws them all: any held
+  factor proves who the person is.
+* **The enforcement is the issuance policy's**, as #457's: the gate sends the
+  second factors the event or session gave (`common/mfa_mechanisms.ts`), and
+  a Deny comes back as `mechanism` with `secondFactor: true`, so
+  `refuseOnMechanism()` refuses with `STS-AUTHN-0305` instead of 0298 and
+  every protocol re-prompts as it does for a mechanism. A gated door is asked
+  at the session's start for an application that restricts either list.
 
 ### `/authn/select-idp`: the chooser, and why it is not the screen with its form hidden
 
@@ -1718,6 +1775,98 @@ Four things are load-bearing:
 `common/oidc_rp.ts`'s flow lifetime reads `authn.pendingTtlS` as well — the two
 were "deliberately the same" as two literals, which is how two numbers come
 apart. `tests/session_clocks.js` pins all of it, mutation-tested against ten.
+
+## `/authn/webauthn` SAYS PASSKEY, AND HAS ITS REAL BUTTON (#470, 2026-10-06)
+
+**The wording.** "Passkey" now covers a credential on the device, in a
+password manager, on a phone or on a security key, in the words of the
+passkey guidelines `portal/CLAUDE.md` (*The passkey page*) follows. The page,
+the sign-in screen's two boxes ("Use a passkey as a second step", "Sign in
+with a passkey instead of a password"), `/authn/mfa-setup` and the refusals
+all say so. The settings and error codes keep their names.
+
+**The real button.** The root CLAUDE.md says every scripted page except the
+OP iframe and the console carries a REAL submit button, and this page — the
+first scripted page — did not. Its `wa-form` held only hidden inputs, so with
+the script blocked nothing happened. The form now carries *My browser did
+not ask — tell me why*. The step posted with no credential is answered,
+under STS-AUTHN-0022, that the browser ran no ceremony, and the step and
+its challenge survive.
+
+**The folded lines.** The RP ID, challenge, options and amr/acr lines are
+for somebody debugging, so they fold into a *Technical details*
+`<details>`. The ways out (the authenticator app, the wallet, a recovery
+code) stay in view.
+
+**The default name.** A key registered here is no longer labelled
+"security key" or "this device" (`labelForKey()` is gone). It takes its
+provider's or its group's name (`credentials.defaultKeyName()`), the
+provider decided the way `/portal/keys` decides it, and BE, BS and the
+transports are kept as there.
+
+## A PASSKEY AND NO USERNAME, AND THE USER HANDLE (#474, 2026-10-06)
+
+**The user handle was the username's bytes**, at every door that created a
+credential and in the Signal API's `userId`. WebAuthn Level 3 section 5.4.3
+says it must carry no personal data and should be 64 random bytes, and it is
+the one thing a discoverable credential identifies the account by. It is now
+`stsWebauthnUserHandle` on the person's entry, minted once
+(`credentials.userHandleOf(name, { mint: true })`), never rewritten, and each
+key row records the handle it was created under (`userHandle`). A ceremony for
+a name with no entry yet (development's first use) uses a fresh handle that
+`addKey()` adopts onto the entry.
+
+**Section 7.2 step 6 is checked at every assertion** — the passkey step after
+a typed username, the device link, and the usernameless sign-in — by
+`credentials.userHandleRefusal()`: a returned handle must be the KEY's. A key
+from before #474 has no handle on its row and was created under the name; it
+still answers where the username is typed (its handle must then be the
+name's bytes), and never where it is not (`STS-AUTHN-0304`, rcbj's decision:
+no migration — the person registers it again).
+
+**The usernameless sign-in** (`webauthn.usernameless`, off by default) is
+`passkeySignIn()`, reached from `POST /authn/login` with `action=passkey`
+before a username is read:
+
+* **The challenge is on the PENDING RECORD**, minted when the screen is drawn
+  (`passkeyChallengeFor()`), because conditional mediation starts the
+  ceremony as the page loads; the POST takes it whatever happens, and the
+  next drawing mints another. Single-use across the cluster through
+  `spendAssertion()`, like every assertion.
+* **Who it is comes from the handle** (`credentials.ownerOfUserHandle()`, an
+  index in `ldap_server.js` that is checked on a hit and rebuilt on a miss
+  after a write), then the credential id among that person's PRIMARY keys,
+  then step 6, then the signature with **user verification required**
+  whatever `webauthn.userVerification` says. The session is `amr
+  ["hwk","user"]`, `acr "mfa"` — the key and the PIN or biometric that
+  unlocked it (rcbj's decision). `authnPolicyRefusal()` asks the
+  authentication policy about it as a `passkey` FIRST factor, as it asks
+  about `["hwk"]`.
+* **Everything else is `startSession()`'s, ungated** — the issuance policy,
+  risk (assessed once the owner is known), the device, the application's
+  mechanisms, a disabled account — which is what the passkey step after a
+  typed username already relies on.
+* **It enrols nothing**, and refuses a linking sign-in, a realm whose
+  authentication policy refuses a passkey first factor and an application
+  whose mechanisms leave out `webauthn` (`STS-AUTHN-0301`).
+* **Refusals before the account is known say one sentence** (`STS-AUTHN-0302`
+  for a handle nobody holds). A credential nobody holds is reported back for
+  `signalUnknownCredential` ONLY with one trust realm and one cell: every
+  realm answers on the same RP ID, and a credential this realm cannot place
+  may be another realm's, or a person homed in another cell — and the
+  signal would hide it from their credential manager for good.
+* **The screen runs `/authn/webauthn.js` while it is offered** — the root
+  CLAUDE.md's scripted-page row. *Sign in with a passkey* is a real submit
+  button, after Sign In so Enter still means Sign In; the script posts the
+  assertion through two hidden inputs (`passkey_credential`, and an
+  `action=passkey` input it enables). `sendLoginPage()` reads whether to
+  relax `script-src` off the markup.
+* **Across cells** the handle never leaves home (`cell_sessions.ts`'s
+  credential pattern covers `webauthn`), so a usernameless sign-in answers
+  only people homed in the cell that drew the screen; anybody else types
+  their username, which restarts them at home.
+
+`tests/passkey_discoverable.js` holds it with a real ceremony.
 
 ## THE WEBAUTHN ADDRESS RULES (2026-09-12)
 

@@ -603,13 +603,18 @@ class SpiffeServer {
       workloadAttestation: this.workloadAttestationState(),
       links: {
         bundle: base + BUNDLE_PATH,
-        console: base + '/admin/spiffe',
-        entries: base + '/admin/spiffe/entries',
-        agents: base + '/admin/spiffe/agents',
-        brokers: base + '/admin/spiffe/brokers',
-        api: base + '/admin-api/spiffe',
-        directory: base + '/admin/ldap/spiffe',
-        metadata: base + '/admin/sts-metadata'
+        console: helpers.rebaseTo(base, 'admin-console') + '/admin/spiffe',
+        entries: helpers.rebaseTo(base, 'admin-console') +
+                 '/admin/spiffe/entries',
+        agents: helpers.rebaseTo(base, 'admin-console') +
+                '/admin/spiffe/agents',
+        brokers: helpers.rebaseTo(base, 'admin-console') +
+                 '/admin/spiffe/brokers',
+        api: helpers.rebaseTo(base, 'management-api') + '/admin-api/spiffe',
+        directory: helpers.rebaseTo(base, 'admin-console') +
+                   '/admin/ldap/spiffe',
+        metadata: helpers.rebaseTo(base, 'admin-console') +
+                  '/admin/sts-metadata'
       }
     };
     log.debug('Leaving SpiffeServer.description().');

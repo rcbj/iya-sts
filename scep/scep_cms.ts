@@ -19,21 +19,27 @@
 // means is `scep.ts`'s, and which RA key opens an envelope is `scep_ra.ts`'s.
 //
 // **IT IS A LIBRARY (rule 3)** — it registers no route and requires only npm
-// packages, node's crypto and `helpers.js` (for its logger), so its place in
-// the require order is not a place and it can join no cycle.
+// packages, `common/crypto.js` (a leaf) and `helpers.js` (for its logger), so
+// its place in the require order is not a place and it can join no cycle.
 // `tests/scep_enrollment.js` drives it directly.
 //
 // ---------------------------------------------------------------------------
-// WHY IT IS HERE AND NOT IN `common/crypto.js`, WHICH SAYS IT IS THE ONE PLACE
-// THIS SERVICE ENCRYPTS AND DECRYPTS.
+// WHAT IS HERE AND WHAT IS IN `common/crypto.js`, WHICH IS THE ONE PLACE THIS
+// SERVICE ENCRYPTS AND DECRYPTS.
 //
 // That rule (3r) exists so a signature algorithm or a cipher has one policy.
-// What this file adds is not a primitive but an ENVELOPE — the CMS structures
-// SCEP alone in this service reads — and the primitives under it are node's
-// own `sign`/`verify`/`publicEncrypt`/`privateDecrypt`/`createDecipheriv`, with
-// every algorithm it accepts named in the tables below so that
-// `admin-ui/crypto_metadata.ts` reads them from here rather than from a
-// paragraph. It is the arrangement `gnap/gnap_httpsig.ts` has for RFC 9421.
+// What this file keeps is not a primitive but an ENVELOPE — the CMS structures
+// SCEP alone in this service reads — with every algorithm it accepts named in
+// the tables below so that `admin-ui/crypto_metadata.ts` reads them from here
+// rather than from a paragraph. The primitives under it were node's own,
+// called from here, until rcbj's rule of 2026-10-05 ("all crypto operations
+// across all protocols and use cases are to be centralized in a common
+// module") moved them (#453): the key transport is `common/crypto.js`'s
+// `cmsKeyTransportDecrypt()` / `cmsKeyTransportEncrypt()`, the content cipher
+// `scepContentDecrypt()` / `scepContentEncrypt()`, the messageDigest check
+// `cmsMessageDigestMatches()`, and the signature `signBytes()` /
+// `signatureValid()` — each with a closed list of its own there, which the
+// tables below sit inside.
 //
 // ---------------------------------------------------------------------------
 // FOUR DECISIONS, EACH A REFUSAL SOMEBODY WILL MEET.
@@ -87,7 +93,7 @@
 // exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import asn1js = require('asn1js');
 import pkijs = require('pkijs');
 
@@ -229,7 +235,7 @@ const MAX_TRANSACTION_ID = 128;
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface ScepCmsDeps {
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   asn1js: typeof asn1js;
   pkijs: typeof pkijs;
   log: typeof log;
@@ -254,7 +260,7 @@ class ScepCms {
   /**
    * Builds the codec.
    *
-   * @param deps - the logger, node's crypto, asn1js and pkijs
+   * @param deps - the logger, `common/crypto.js`, asn1js and pkijs
    */
   constructor(private readonly deps: ScepCmsDeps) {
     deps.log.debug("Entering ScepCms.constructor().");
@@ -272,7 +278,7 @@ class ScepCms {
     log.debug("Entering ScepCms.defaultDeps().");
     log.debug("Leaving ScepCms.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       asn1js: asn1js,
       pkijs: pkijs,
       log: log
@@ -558,7 +564,7 @@ class ScepCms {
    *   or null
    */
   describeCertificate(der) {
-    const { log, nodeCrypto, pkijs } = this.deps;
+    const { log, stsCrypto, pkijs } = this.deps;
     const self = this;
     log.debug("Entering ScepCms.describeCertificate().");
     const node = this.readOne(der);
@@ -579,7 +585,7 @@ class ScepCms {
     }
     let x509 = null;
     try {
-      x509 = new nodeCrypto.X509Certificate(Buffer.from(der));
+      x509 = stsCrypto.parseCertificate(Buffer.from(der));
     } catch (e) {
       log.debug("Caught in ScepCms.describeCertificate(): " +
                 ((e && e.message) || e));
@@ -616,7 +622,7 @@ class ScepCms {
       subjectRaw: this.rawOf(parts[offset + 4]),
       ski: ski,
       keyType: x509.publicKey.asymmetricKeyType,
-      spkiSha256: nodeCrypto.createHash('sha256').update(spki).digest('hex'),
+      spkiSha256: stsCrypto.digest('sha256', spki, 'hex'),
       selfIssued: this.rawOf(parts[offset + 2])
         .equals(this.rawOf(parts[offset + 4]))
     };
@@ -899,7 +905,7 @@ class ScepCms {
    * @returns `ok` and the digest, or a CertRep refusal with a failInfo
    */
   verifySigner(message): Record<string, any> {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering ScepCms.verifySigner().");
     if (!message.signer) {
       log.debug("Leaving ScepCms.verifySigner(). No signer certificate.");
@@ -936,11 +942,8 @@ class ScepCms {
                           'not name id-data, or does not agree with the ' +
                           'encapsulated content.', FAIL_INFO.badMessageCheck);
     }
-    const computed = nodeCrypto.createHash(digest.id)
-      .update(message.content || Buffer.alloc(0)).digest();
-    const claimed = message.messageDigestAttr;
-    if (!claimed || claimed.length !== computed.length ||
-        !nodeCrypto.timingSafeEqual(claimed, computed)) {
+    if (!stsCrypto.cmsMessageDigestMatches(digest.id,
+          message.content || Buffer.alloc(0), message.messageDigestAttr)) {
       log.debug("Leaving ScepCms.verifySigner(). messageDigest.");
       return this.refusal('STS-SCEP-0022',
                           'The messageDigest signed attribute is ' +
@@ -951,9 +954,10 @@ class ScepCms {
     signedBytes[0] = 0x31;
     let verified = false;
     try {
-      verified = nodeCrypto.verify(digest.id, signedBytes,
-                                   message.signer.x509.publicKey,
-                                   message.signature || Buffer.alloc(0));
+      verified = stsCrypto.signatureValid(digest.id, signedBytes,
+                                          message.signer.x509.publicKey,
+                                          message.signature ||
+                                            Buffer.alloc(0));
     } catch (e) {
       log.debug("Caught in ScepCms.verifySigner(): " + ((e && e.message) || e));
       verified = false;
@@ -994,17 +998,15 @@ class ScepCms {
    * @returns `ok`, the key and the transport used
    */
   unwrapKey(algorithmNode, encryptedKey, raPrivateKeyPem, keyBytes) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering ScepCms.unwrapKey().");
     const algParts = this.children(algorithmNode);
     const algorithm = this.oidOf(algParts[0]);
     if (algorithm === OID.rsaEncryption) {
       let key = null;
       try {
-        key = nodeCrypto.privateDecrypt({
-          key: raPrivateKeyPem,
-          padding: nodeCrypto.constants.RSA_PKCS1_PADDING
-        }, encryptedKey);
+        key = stsCrypto.cmsKeyTransportDecrypt('rsaes-pkcs1-v1_5',
+                                               raPrivateKeyPem, encryptedKey);
       } catch (e) {
         // THE IMPLICIT REJECTION — see the header, decision 3. The error is not
         // reported to the client: random bytes of the right length take the
@@ -1024,7 +1026,7 @@ class ScepCms {
         key = null;
       }
       if (!key || key.length !== keyBytes) {
-        key = nodeCrypto.randomBytes(keyBytes);
+        key = stsCrypto.randomBytes(keyBytes);
       }
       log.debug("Leaving ScepCms.unwrapKey(). PKCS#1 v1.5.");
       return { ok: true, key: key, transport: 'rsaEncryption' };
@@ -1045,11 +1047,8 @@ class ScepCms {
       }
       let key = null;
       try {
-        key = nodeCrypto.privateDecrypt({
-          key: raPrivateKeyPem,
-          padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
-          oaepHash: hash
-        }, encryptedKey);
+        key = stsCrypto.cmsKeyTransportDecrypt('rsaes-oaep', raPrivateKeyPem,
+                                               encryptedKey, hash);
       } catch (e) {
         // OAEP has no padding oracle of v1.5's kind, and the same answer is
         // given anyway so that the two transports cannot be told apart.
@@ -1057,7 +1056,7 @@ class ScepCms {
         key = null;
       }
       if (!key || key.length !== keyBytes) {
-        key = nodeCrypto.randomBytes(keyBytes);
+        key = stsCrypto.randomBytes(keyBytes);
       }
       log.debug("Leaving ScepCms.unwrapKey(). OAEP " + hash + ".");
       return { ok: true, key: key, transport: 'rsaesOaep-' + hash };
@@ -1103,7 +1102,7 @@ class ScepCms {
    * @returns what `openEnvelope()` answers
    */
   readEnvelope(bytes, raCertificatePem, raPrivateKeyPem) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     const self = this;
     log.debug("Entering ScepCms.readEnvelope().");
     const outer = this.readOne(bytes);
@@ -1188,9 +1187,8 @@ class ScepCms {
     }
     let plain = null;
     try {
-      const decipher = nodeCrypto.createDecipheriv(cipher.id, unwrapped.key,
-                                                   iv);
-      plain = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+      plain = stsCrypto.scepContentDecrypt(cipher.id, unwrapped.key, iv,
+                                           ciphertext);
     } catch (e) {
       log.debug("Caught in ScepCms.readEnvelope(): " + ((e && e.message) || e));
       plain = null;
@@ -1418,7 +1416,7 @@ class ScepCms {
    * @returns the DER
    */
   envelope(content, recipientCertificatePem, cipherOid) {
-    const { log, nodeCrypto, asn1js } = this.deps;
+    const { log, stsCrypto, asn1js } = this.deps;
     log.debug("Entering ScepCms.envelope().");
     const cipher = CIPHERS[cipherOid] || CIPHERS['2.16.840.1.101.3.4.1.42'];
     const cipherId = CIPHERS[cipherOid] ? cipherOid : '2.16.840.1.101.3.4.1.42';
@@ -1428,14 +1426,12 @@ class ScepCms {
       log.debug("Leaving ScepCms.envelope(). Not an RSA recipient.");
       throw new Error('a reply can be encrypted only to an RSA certificate');
     }
-    const key = nodeCrypto.randomBytes(cipher.keyBytes);
-    const iv = nodeCrypto.randomBytes(16);
-    const c = nodeCrypto.createCipheriv(cipher.id, key, iv);
-    const ciphertext = Buffer.concat([c.update(content), c.final()]);
-    const wrapped = nodeCrypto.publicEncrypt({
-      key: recipient.x509.publicKey,
-      padding: nodeCrypto.constants.RSA_PKCS1_PADDING
-    }, key);
+    const key = stsCrypto.randomBytes(cipher.keyBytes);
+    const iv = stsCrypto.randomBytes(16);
+    const ciphertext = stsCrypto.scepContentEncrypt(cipher.id, key, iv,
+                                                    content);
+    const wrapped = stsCrypto.cmsKeyTransportEncrypt(recipient.x509.publicKey,
+                                                     key);
     const ed = new asn1js.Sequence({ value: [
       new asn1js.Integer({ value: 0 }),
       new asn1js.Set({ value: [new asn1js.Sequence({ value: [
@@ -1504,7 +1500,7 @@ class ScepCms {
    * @returns the DER
    */
   certRep(spec) {
-    const { log, asn1js, nodeCrypto } = this.deps;
+    const { log, asn1js, stsCrypto } = this.deps;
     log.debug("Entering ScepCms.certRep(). status=" + spec.pkiStatus);
     const ra = this.describeCertificate(this.pemToDer(spec.raCertificatePem));
     const digestId = ['sha256', 'sha384', 'sha512'].indexOf(spec.digest) >= 0
@@ -1521,12 +1517,12 @@ class ScepCms {
       this.attribute(OID.contentType, new asn1js.ObjectIdentifier({
         value: OID.data })),
       this.attribute(OID.messageDigest,
-                     this.octetString(nodeCrypto.createHash(digestId)
-        .update(content || Buffer.alloc(0)).digest())),
+                     this.octetString(stsCrypto.digest(digestId,
+                       content || Buffer.alloc(0)))),
       this.attribute(OID.messageType, this.printable('3')),
       this.attribute(OID.pkiStatus, this.printable(spec.pkiStatus)),
       this.attribute(OID.transactionID, this.printable(spec.transactionID)),
-      this.attribute(OID.senderNonce, this.octetString(nodeCrypto.randomBytes(
+      this.attribute(OID.senderNonce, this.octetString(stsCrypto.randomBytes(
         NONCE_BYTES))),
       this.attribute(OID.recipientNonce, this.octetString(spec.recipientNonce))
     ];
@@ -1540,7 +1536,7 @@ class ScepCms {
     const set =
       Buffer.from(new asn1js.Set({ value: attrs.map(this.node.bind(this)) })
       .toBER(false));
-    const signature = nodeCrypto.sign(digestId, set, spec.raPrivateKeyPem);
+    const signature = stsCrypto.signBytes(digestId, set, spec.raPrivateKeyPem);
     const implicit = Buffer.from(set);
     implicit[0] = 0xa0;
     const signerInfo = new asn1js.Sequence({ value: [

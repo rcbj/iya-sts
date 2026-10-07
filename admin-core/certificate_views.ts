@@ -109,7 +109,7 @@ import personAssertions = require('../common/person_assertions');
 import helpers = require('../common/helpers');
 import x509 = require('../common/vendored/x509');
 import pkijs = require('pkijs');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import pqcSupport = require('../common/pqc_support');
 import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
@@ -588,9 +588,14 @@ class CertificateViews {
     }
     log.debug("Leaving CertificateViews.detailsView(). " + model.chain.length +
               " link(s).");
+    // The key's post-quantum classification (#446), which the dialog's icon
+    // is drawn from: a renderer in a browser parses no certificate.
     return Object.assign({ ok: true,
                            realm: this.scopeOfRealm() || realms.DEFAULT_ID,
-                           appearances: entry.appearances.slice() }, model);
+                           appearances: entry.appearances.slice(),
+                           pqc: this.pqcOf(model.certificate &&
+                                           model.certificate.pem) || null },
+                         model);
   }
 
   // ---------------------------------------------------------------------------
@@ -726,8 +731,7 @@ class CertificateViews {
       log.debug("Leaving CertificateViews.pqcOf(). No certificate.");
       return pqcSupport.of({ certificatePem: pem });
     }
-    const key = 'pqc:' + nodeCrypto.createHash('sha256')
-      .update(String(pem)).digest('hex');
+    const key = 'pqc:' + stsCrypto.digest('sha256', String(pem), 'hex');
     if (facts.has(key)) {
       factsCount.hit();
       log.debug("Leaving CertificateViews.pqcOf(). Held.");

@@ -348,6 +348,9 @@ class ProtocolEndpoints {
                           this.route('/krb5/service'), this.route('/spnego'),
                           this.route('/spnego/protected'),
                           this.route('/authn/spnego')],
+      // #493: the claims every ticket from these doors carries.
+      '/admin/kerberos/claims': [this.socket('kdc'),
+                                 this.route('/KdcProxy')],
       '/admin/kerberos/principals': [this.socket('kdc'),
                                      this.route('/KdcProxy'),
                                      this.route('/krb5/principals')],
@@ -355,7 +358,7 @@ class ProtocolEndpoints {
       '/admin/wstrust': ['/sts', '/sts/cert'].map(route),
       '/admin/wsfed': ['/wsfed',
                        '/FederationMetadata/2007-06/FederationMetadata.xml',
-                       '/wsfed/rp'].map(route),
+                       '/wsfed/metadata/:rp', '/wsfed/rp'].map(route),
       '/admin/pki': ['/pki/revocation', '/pki/ca/:scope/:ca',
                      '/pki/crl/:scope/:ca', '/pki/ocsp/:scope/:ca',
                      '/pki/chain/:scope/:certificate'].map(route),
@@ -388,7 +391,9 @@ class ProtocolEndpoints {
         '/.well-known/est/:label/simpleenroll',
         '/.well-known/est/:label/simplereenroll',
         '/.well-known/est/:label/serverkeygen',
-        '/.well-known/est/:label/csrattrs', '/.well-known/est/:label/fullcmc'
+        '/.well-known/est/:label/csrattrs', '/.well-known/est/:label/fullcmc',
+        // draft-ietf-lamps-attestation-freshness section 5.1 (#257).
+        '/.well-known/est/nonce', '/.well-known/est/:label/nonce'
       ].map(route),
       // ===== OpenID Federation endpoints row (#132) =====
       '/admin/oidfed': [

@@ -72,6 +72,21 @@
 // it.
 //
 // ---------------------------------------------------------------------------
+// SINCE THE #446 CUTOVER (2026-10-05) THE CONSOLE IS A STATIC APPLICATION, and
+// this file drives that. Every /admin path answers ONE document; its script
+// signs in IN THE BROWSER (the code flow with PKCE as the public client
+// `sts-admin-console`, a DPoP-bound token held in the page), draws each page
+// from its /admin-api operation, and sends each form there, drawing the
+// answer in place. So: a page is "loaded" when the console has drawn it
+// (`waitForDrawn()`), what a page answered is what its OPERATION answered
+// (`go()`), a press is done when the frame has been redrawn, a realm's page
+// is reached through the realm switcher (a document loaded under a realm's
+// prefix signs in at THAT realm), and the nested-form guard compares the
+// renderer's markup with what Chrome built from it. Several paragraphs below
+// argue the server-rendered console and say what was true then; where a
+// section's claim changed, the section says how.
+//
+// ---------------------------------------------------------------------------
 // HOW IT SEES STATUS CODES AND HEADERS, WHICH SELENIUM DOES NOT EXPOSE.
 //
 // WebDriver has no API for a response's status or its headers, and the obvious
@@ -421,7 +436,12 @@ function since(from) {
 // assertion about "the POST" would silently be about the wrong one.
 function thePostIn(stretch, what) {
   log.debug("Entering thePostIn().");
-  const posts = stretch.filter(function (r) { return r.method === "POST"; });
+  // The console's own token requests are not the form's (#446): a page
+  // that renews its token while answering a form makes a POST to
+  // /oauth2/token that is the runtime's and not the control's.
+  const posts = stretch.filter(function (r) {
+    return r.method === "POST" && !/\/oauth2\/token$/.test(r.url);
+  });
   assert.strictEqual(posts.length, 1,
     "expected exactly one POST while " + what + "; the browser made " +
     posts.length + ": " + JSON.stringify(posts.map(function (r) {
@@ -442,28 +462,215 @@ function thePostIn(stretch, what) {
 // ---------------------------------------------------------------------------
 async function go(driver, url) {
   log.debug("Entering go(). url=" + url);
+  // THE THROWAWAY REALM'S PAGES ARE REACHED THROUGH THE SWITCHER (#446). A
+  // document loaded under `/realm/<id>/admin` signs in at THAT realm's
+  // authorization server, where this run's account — a service
+  // administrator, signed in at the default realm — has no sign-on session.
+  // A service administrator reaches another realm's console the way the
+  // console offers it: from a page they are signed in on, with the realm
+  // switcher, which keeps their token and moves the page under the realm's
+  // prefix. So a realm page is visited that way, as a person would.
+  const inRealm = base + "/realm/" + REALM + "/admin";
+  if (url === inRealm || url.indexOf(inRealm + "/") === 0 ||
+      url.indexOf(inRealm + "?") === 0 || url.indexOf(inRealm + "#") === 0) {
+    const reached = await goThroughTheSwitcher(driver,
+      url.slice((base + "/realm/" + REALM).length));
+    log.debug("Leaving go(). Through the switcher, status=" + reached.status);
+    return reached;
+  }
   // THE MARK IS TAKEN BEFORE THE NAVIGATION, and it is not a tidiness step.
-  // A URL is visited more than once in a run — the gate section reads
-  // /admin/tokens signed out and the page walk reads it signed in — so a
-  // lookup by URL alone can hand back the EARLIER visit. Whether it does is a
-  // race: the BiDi event for the new response arrives either side of
-  // driver.get() resolving, so the bug appears as one page in the walk
-  // reporting the status it had in a previous section, intermittently.
+  // A URL is visited more than once in a run, so a lookup by URL alone can
+  // hand back the EARLIER visit; whether it does is a race between the BiDi
+  // event and driver.get() resolving.
+  // A BARE /admin DRAWS THE REALM CHOOSER once the service has trust realms
+  // (2026-09-14, #32; the static console's shell asks it too), which this
+  // suite nearly always has: the console's own front page is reached past
+  // it, as a person who has chosen the default realm reaches it.
+  if (url === root("/admin")) {
+    url = root("/admin?realm=default");
+  }
   const from = mark();
-  // A FRAGMENT IS NOT PART OF WHAT IS FETCHED (2026-10-01): the response is
-  // for the URL without it, and a URL differing from the page already loaded
-  // only by its fragment is not fetched at all. So the page is loaded bare
-  // and the fragment — an application page's tab — set afterwards.
+  // A FRAGMENT IS NOT PART OF WHAT IS FETCHED (2026-10-01): the page is
+  // loaded bare and the fragment — an application page's tab — set
+  // afterwards.
   const hash = url.indexOf("#");
   const bare = hash < 0 ? url : url.slice(0, hash);
   await driver.get(bare);
   const seen = await waitForResponse(bare, from);
+  // THE SIGN-IN SCREEN, MET AGAIN: see typeTheSignIn(). The console sends
+  // the browser back to this page once it is signed in.
+  const landed = await driver.getCurrentUrl();
+  if (signedInAs && landed.indexOf("/authn/login") >= 0 &&
+      bare.indexOf("/admin") >= 0) {
+    log.info("[sign-in] " + bare + " met the sign-in screen: this browser's " +
+             "one sign-on cookie was taken by an earlier section; signing " +
+             "in again as " + signedInAs + ".");
+    await typeTheSignIn(driver, signedInAs);
+  }
+  // THE CONSOLE IS A STATIC APPLICATION SINCE #446: every /admin path
+  // answers the same document, and the PAGE is drawn by its script from the
+  // page's /admin-api operation — after a sign-in in the browser where the
+  // page holds no token yet. So the navigation is done when the page is
+  // drawn, and what the page answered is what its operation answered.
+  await waitForDrawn(driver);
   if (hash >= 0) {
     await driver.executeScript("location.hash = arguments[0];",
                                url.slice(hash + 1));
   }
-  log.debug("Leaving go(). status=" + (seen ? seen.status : "?"));
-  return seen;
+  const data = pageDataIn(since(from));
+  const answer = { url: seen.url, method: seen.method,
+                   status: data ? data.status : seen.status,
+                   headers: seen.headers, document: seen,
+                   data: data, at: seen.at };
+  log.debug("Leaving go(). status=" + answer.status);
+  return answer;
+}
+
+// A PAGE OF THE THROWAWAY REALM, reached from a signed-in page of the default
+// realm through the shell's realm switcher (see go()). `path` is the
+// console path with its query and fragment, `/admin/users?user=x#tab`.
+async function goThroughTheSwitcher(driver, path) {
+  log.debug("Entering goThroughTheSwitcher(). path=" + path);
+  const hash = path.indexOf("#");
+  const bare = hash < 0 ? path : path.slice(0, hash);
+  // ANY SIGNED-IN CONSOLE PAGE CARRIES THE SWITCHER, in any realm, and it
+  // offers a realm as soon as one is created (the console refetches its
+  // shell after a create). Only a browser on no console page loads one.
+  const offered = await driver.executeScript(`
+    const wanted = arguments[0];
+    const pick = document.querySelector('form.realmpick select[name=realm]');
+    return !!pick && Array.from(pick.options).some(function (o) {
+      return o.value === wanted;
+    });
+  `, REALM).catch(function (e) {
+    log.debug("Caught looking for the switcher: " + ((e && e.message) || e));
+    return false;
+  });
+  if (!offered) {
+    const from0 = mark();
+    await driver.get(root("/admin?realm=default"));
+    await waitForResponse(root("/admin?realm=default"), from0);
+    await waitForDrawn(driver);
+  }
+  await shellOrSayWhy(driver, "before switching to " + REALM + " for " +
+                      path);
+  const leaving = await driver.findElement(By.css(".shell"));
+  const from = mark();
+  const switched = await driver.executeScript(`
+    const f = document.querySelector('form.realmpick');
+    if (!f) { return 'no switcher on ' + location.href; }
+    const pick = f.querySelector('select[name=realm]');
+    pick.value = arguments[0];
+    if (pick.value !== arguments[0]) {
+      return 'the switcher does not offer ' + arguments[0];
+    }
+    f.querySelector('input[name=to]').value = arguments[1];
+    f.querySelector('button').click();
+    return '';
+  `, REALM, bare);
+  assert.strictEqual(switched, "", "switching to " + REALM + ": " + switched);
+  await pageReplaced(driver, leaving, 20000);
+  await waitForDrawn(driver);
+  if (hash >= 0) {
+    await driver.executeScript("location.hash = arguments[0];",
+                               path.slice(hash + 1));
+  }
+  const data = pageDataIn(since(from));
+  // The headers are the console document's, which every page shares: the
+  // last document this browser loaded.
+  let doc = null;
+  for (let i = responses.length - 1; i >= 0 && !doc; i -= 1) {
+    if (responses[i].headers["content-security-policy"] &&
+        /\/admin(\/|\?|$)/.test(new URL(responses[i].url).pathname +
+                                    new URL(responses[i].url).search)) {
+      doc = responses[i];
+    }
+  }
+  const at = await driver.getCurrentUrl();
+  log.debug("Leaving goThroughTheSwitcher(). at " + at);
+  return { url: at, method: "GET", status: data ? data.status : 200,
+           headers: doc ? doc.headers : {}, document: doc, data: data,
+           at: Date.now() };
+}
+
+// THE CONSOLE'S FRAME IS ON THE PAGE, or a failure saying what the browser
+// shows instead: where it is, the title and the text.
+async function shellOrSayWhy(driver, what) {
+  log.debug("Entering shellOrSayWhy().");
+  const there = await driver.findElements(By.css(".shell"));
+  if (!there.length) {
+    const where = await driver.executeScript(
+      "return location.href + ' | ' + document.title + ' | ' + " +
+      "(document.body ? document.body.innerText.slice(0, 600) : '');")
+      .catch(function (e) {
+        log.debug("Caught reading where: " + ((e && e.message) || e));
+        return "?";
+      });
+    await keepAPicture(driver, "no-shell");
+    throw new Error("no console frame " + what + "; the browser is at " +
+                    where);
+  }
+  log.debug("Leaving shellOrSayWhy().");
+}
+
+// THE PAGE IS DRAWN (#446): the console's frame is in place — its head row
+// — and the shell's "Signing in…" placeholder is gone, on a path that is not
+// the callback. A browser sent to the sign-in screen, or anywhere else off
+// /admin, has arrived somewhere a person acts, and that is answered too.
+async function waitForDrawn(driver, timeoutMs) {
+  log.debug("Entering waitForDrawn().");
+  const state = await driver.wait(async function () {
+    const now = await driver.executeScript(`
+      if (document.readyState !== 'complete') { return ''; }
+      const path = location.pathname;
+      if (!/\\/admin(\\/|$)/.test(path)) { return 'elsewhere'; }
+      // A file under /admin (the explorer's script) is not a page.
+      if (document.contentType !== 'text/html') { return 'elsewhere'; }
+      if (/\\/admin\\/callback$/.test(path)) { return ''; }
+      // The shell's own placeholder, by its words: a page may draw a lede.
+      const lede = document.querySelector('p.lede');
+      if (lede && /^Signing in/.test(lede.textContent)) { return ''; }
+      return document.querySelector('.pagehead') ? 'drawn' : '';
+    `).catch(function (e) {
+      // A document torn down under the probe: asked again.
+      log.debug("Caught in waitForDrawn(): " + ((e && e.message) || e));
+      return '';
+    });
+    return now || false;
+  }, timeoutMs || 20000).catch(async function (e) {
+    log.debug("Caught in waitForDrawn(): " + ((e && e.message) || e));
+    // Where it stopped, which is the whole of what a reader needs.
+    const where = await driver.executeScript(
+      "return location.href + ' | ' + document.title + ' | ' + " +
+      "(document.body ? document.body.innerText.slice(0, 900) : '');")
+      .catch(function (e2) {
+        log.debug("Caught reading where: " + ((e2 && e2.message) || e2));
+        return "?";
+      });
+    throw new Error("the console never drew a page; the browser is at " +
+                    where);
+  });
+  log.debug("Leaving waitForDrawn(). " + state);
+  return state;
+}
+
+// THE OPERATION A PAGE WAS DRAWN FROM: the last GET of /admin-api in a
+// stretch that is not one of the runtime's own reads (the shell answer, the
+// operation index, the OpenAPI document, who the reader is).
+function pageDataIn(stretch) {
+  log.debug("Entering pageDataIn().");
+  for (let i = stretch.length - 1; i >= 0; i -= 1) {
+    const one = stretch[i];
+    const path = new URL(one.url).pathname
+      .replace(/^\/realm\/[^/]+/, "");
+    if (one.method === "GET" && /^\/admin-api\//.test(path) &&
+        !/^\/admin-api\/(console|me|openapi\.json)$/.test(path)) {
+      log.debug("Leaving pageDataIn(). " + path);
+      return one;
+    }
+  }
+  log.debug("Leaving pageDataIn(). None.");
+  return null;
 }
 
 // The response the browser received for this URL SINCE `from`. Scanned
@@ -520,7 +727,9 @@ async function waitForMethod(method, from, timeoutMs) {
   while (Date.now() < deadline) {
     const stretch = since(from);
     for (let i = 0; i < stretch.length; i += 1) {
-      if (stretch[i].method === wanted) {
+      // The runtime's token renewal is not the submission (#446).
+      if (stretch[i].method === wanted &&
+          !/\/oauth2\/token$/.test(stretch[i].url)) {
         log.debug("Leaving waitForMethod(). Found.");
         return stretch[i];
       }
@@ -696,6 +905,19 @@ async function pageReplaced(driver, element, ms) {
 // the control in the same state, which is why this trade is available here and
 // would not be on a page with scripts.
 // ---------------------------------------------------------------------------
+// A CLICK THE NOTICE STRIP CANNOT TAKE (#446). The static console's
+// `.flash` strip is sticky at the top of the window, so an element scrolled
+// to the top edge is under it and the strip receives the click
+// (ElementClickInterceptedError). Brought to the middle first, as press()
+// does, where a person scrolling to it would see it.
+async function clickInView(driver, element) {
+  log.debug("Entering clickInView().");
+  await driver.executeScript(
+    "arguments[0].scrollIntoView({ block: 'center' });", element);
+  await element.click();
+  log.debug("Leaving clickInView().");
+}
+
 async function fillAndPress(driver, formIndex, values, options) {
   log.debug("Entering fillAndPress(). form=" + formIndex);
   const opts = options || {};
@@ -771,13 +993,62 @@ async function fillAndPress(driver, formIndex, values, options) {
   // panel it is in, as a person clicking the tab does. It is opened BEFORE
   // anything is typed: Chrome will not type into a field it does not display
   // (`ElementNotInteractableError`, an application's drill-down, b2b64e4b).
-  await driver.executeScript(`
+  // A FORM IN A CLOSED <details> (#446) is reached by opening it, as a
+  // person clicking its summary does — the static console draws an entry's
+  // one-attribute forms folded. Opened here and again on every look below,
+  // because a tab change redraws the page and brings them back closed.
+  const opened = await driver.executeScript(`
     const f = document.forms[arguments[0]];
+    for (let d = f && f.closest('details'); d;
+         d = d.parentElement && d.parentElement.closest('details')) {
+      d.open = true;
+    }
     const panel = f && f.closest('.subpanel, .tabpanel');
     if (panel && panel.id && !f.checkVisibility()) {
       location.hash = panel.id;
+      return true;
     }
+    return false;
   `, formIndex);
+  if (opened) {
+    // A FRAGMENT CHANGE REDRAWS THE PAGE (#446): the console's `popstate`
+    // handler routes again, so the form is found again once the redraw is
+    // done and its tab is the one shown.
+    await driver.wait(async function () {
+      return await driver.executeScript(`
+        const f = document.forms[arguments[0]];
+        for (let d = f && f.closest('details'); d;
+             d = d.parentElement && d.parentElement.closest('details')) {
+          d.open = true;
+        }
+        return !!f && f.checkVisibility() &&
+               !!document.querySelector('.pagehead');
+      `, formIndex).catch(function (e) {
+        log.debug("Caught waiting for the tab: " + ((e && e.message) || e));
+        return false;
+      });
+    }, 15000).catch(async function (e) {
+      log.debug("Caught waiting for the tab: " + ((e && e.message) || e));
+      const why = await driver.executeScript(`
+        const f = document.forms[arguments[0]];
+        if (!f) { return 'no form ' + arguments[0] + ' at ' + location.href; }
+        const chain = [];
+        for (let p = f.closest('.subpanel, .tabpanel, details'); p;
+             p = p.parentElement && p.parentElement.closest(
+               '.subpanel, .tabpanel, details')) {
+          chain.push((p.tagName === 'DETAILS' ? 'details' + (p.open ? '+' :
+            '-') : p.className) + '#' + p.id + ' ' + getComputedStyle(p)
+            .display);
+        }
+        return location.href + ' | action=' + f.getAttribute('action') +
+          ' | ' + chain.join(' < ');
+      `, formIndex).catch(function (e2) {
+        log.debug("Caught describing it: " + ((e2 && e2.message) || e2));
+        return '?';
+      });
+      throw new Error("form " + formIndex + "'s tab was never shown: " + why);
+    });
+  }
   if (typed.firstText && values && values[typed.firstText] !== undefined &&
       !opts.noTyping && typed.firstTextIndex >= 0) {
     // A FIELD IN A CLOSED <details> IS OPENED FIRST, AS A PERSON WOULD
@@ -820,13 +1091,15 @@ async function fillAndPress(driver, formIndex, values, options) {
   // and failed as "the answer did not say the keytab is shown once". A press
   // that answers with a FILE replaces no document, so this wait is bounded
   // and running out of it is not an error.
-  const leaving = await driver.findElement(By.css("html")).catch(
+  // THE FRAME, NOT <html> (#446): the console redraws in place, replacing
+  // what is inside <body>, so the element that goes is its `.shell`.
+  const leaving = await driver.findElement(By.css(".shell")).catch(
     function (e) {
       log.debug("Caught finding the page being left: " +
                 ((e && e.message) || e));
       return null;
     });
-  await button.click();
+  await clickInView(driver, button);
   if (leaving) {
     await pageReplaced(driver, leaving, 20000).catch(function (e) {
       log.debug("Caught waiting for the page to be replaced (a download " +
@@ -907,6 +1180,11 @@ async function settleAfterSubmit(driver, from, method) {
     const state = await driver.executeScript("return document.readyState;");
     return state === "complete";
   }, 15000, "the page never finished loading after a form was submitted");
+  // AND DRAWN (#446): the answer is drawn in place by the console's script.
+  await waitForDrawn(driver).catch(function (e) {
+    log.debug("Caught waiting for the redraw: " + ((e && e.message) || e));
+    return null;
+  });
   // THE SUBMISSION'S OWN RESPONSE, WAITED FOR RATHER THAN SLEPT THROUGH.
   // readyState going `complete` says the DOCUMENT is loaded; it says nothing
   // about when the BiDi `responseCompleted` event for that navigation reaches
@@ -938,7 +1216,7 @@ async function settleAfterSubmit(driver, from, method) {
 // so that a page which draws neither still fails the assertion that wanted one.
 function outcomeOf(url, which) {
   log.debug("Entering outcomeOf().");
-  const found = String(url).match(new RegExp("[?&]" + which + "=([^&]*)"));
+  const found = String(url).match(new RegExp("[?&]" + which + "=([^&#]*)"));
   log.debug("Leaving outcomeOf().");
   return found ? decodeURIComponent(found[1].replace(/\+/g, " ")) : "";
 }
@@ -1007,16 +1285,43 @@ async function signIn(driver, username) {
   await ensurePerson(root("/admin-api"), username);
   await grantTheWriter(username);
   await clearSession(driver);
+  // NOBODY IS SIGNED IN NOW, AND go() MUST NOT SAY OTHERWISE (#446). go()
+  // signs a browser that meets the sign-in screen back in as `signedInAs` —
+  // which here is still the PREVIOUS person, so a switch to a reader signed
+  // the writer straight back in and the reader's form post was answered 200
+  // as the writer. Cleared, go() leaves the screen for this function to
+  // fill in as `username`.
+  signedInAs = "";
+  // THE CONSOLE SIGNS IN IN THE BROWSER SINCE #446: the document is the
+  // static console, whose script sends a browser holding no token to the
+  // authorization endpoint, which sends one with no sign-on session to the
+  // sign-in screen. `?realm=default` passes the realm chooser a bare /admin
+  // draws once the service has trust realms (2026-09-14, #32).
   await go(driver, root("/admin?realm=default"));
-  // `?realm=default`: a bare /admin draws the realm chooser once the service
-  // has trust realms (2026-09-14, #32), which this suite nearly always does.
   const url = await driver.getCurrentUrl();
   if (url.indexOf("/authn/login") < 0) {
-    log.info("The console is OPEN; no sign-in was needed. That should not " +
-             "happen any more: the gate became unconditional on 2026-09-06.");
-    log.debug("Leaving signIn(). No gate.");
+    log.info("The console drew a page with no sign-in: the browser still " +
+             "held a sign-on session, which clearSession() should have " +
+             "emptied.");
+    log.debug("Leaving signIn(). No sign-in screen.");
     return false;
   }
+  signedInAs = username;
+  await typeTheSignIn(driver, username);
+  log.debug("Leaving signIn(). Signed in.");
+  return true;
+}
+
+// WHO THE BROWSER IS SIGNED IN AS, for a sign-in screen met again (go()).
+let signedInAs = "";
+
+// THE SIGN-IN SCREEN, FILLED AND PRESSED, through to a drawn console page.
+// Split out of signIn() for go(): the browser has ONE sign-on cookie for the
+// whole origin (`authn/CLAUDE.md`), so a section that signs somebody else in
+// in this browser leaves the console's next page load at the screen — as it
+// would a person, who signs in again. Nothing is granted here.
+async function typeTheSignIn(driver, username) {
+  log.debug("Entering typeTheSignIn(). username=" + username);
   const field = await driver.findElement(By.css("input[name='username']"));
   await field.clear();
   await field.sendKeys(username);
@@ -1027,22 +1332,42 @@ async function signIn(driver, username) {
       By.xpath("//button[@type='submit'] | //input[@type='submit'] | " +
                "//button"));
   await button.click();
-  await settleAfterSubmit(driver);
-  // An administrator is OFFERED a second factor since #246; this suite
-  // ignores it, as rcbj asked ("just click ignore for the time being").
-  const ignore = await driver.findElements(By.id("mfa-setup-ignore"));
-  if (ignore.length) {
-    await ignore[0].click();
-    await settleAfterSubmit(driver);
-  }
+  // Through the authorization endpoint and the callback to a drawn page. An
+  // administrator is OFFERED a second factor on the way since #246; this
+  // suite ignores it, as rcbj asked ("just click ignore for the time being").
+  let ignored = false;
+  await driver.wait(async function () {
+    const at = await driver.executeScript(`
+      if (document.readyState !== 'complete') { return ''; }
+      if (document.getElementById('mfa-setup-ignore')) { return 'offer'; }
+      const onConsole = /\\/admin(\\/|$)/.test(location.pathname) &&
+        !/\\/admin\\/callback$/.test(location.pathname) &&
+        !/^Signing in/.test((document.querySelector('p.lede') || {})
+          .textContent || '') &&
+        !!document.querySelector('.pagehead');
+      return onConsole ? 'drawn' : '';
+    `).catch(function (e) {
+      log.debug("Caught in typeTheSignIn(): " + ((e && e.message) || e));
+      return '';
+    });
+    if (at === 'offer' && !ignored) {
+      ignored = true;
+      await driver.findElement(By.id("mfa-setup-ignore")).click();
+      return false;
+    }
+    return at === 'drawn';
+  }, 30000, "signing in never reached a drawn console page").catch(
+    function (e) {
+      log.debug("Caught waiting for the console: " + ((e && e.message) || e));
+      return null;
+    });
   const after = await driver.getCurrentUrl();
-  assert.ok(after.indexOf("/authn/login") < 0,
-    "signing in as " + username + " left the browser on the sign-in screen (" +
-    after + "). The mock checks no password, so this is a name that was " +
-    "typed and a button that was pressed; if it did not open the console, " +
-    "the screen itself is broken rather than the credential.");
-  log.debug("Leaving signIn(). Signed in.");
-  return true;
+  assert.ok(after.indexOf("/authn/login") < 0 && after.indexOf("/admin") >= 0,
+    "signing in as " + username + " left the browser at " + after + " " +
+    "rather than on the console. The account's password was typed; if it " +
+    "did not open the console, the screen or the console's sign-in is " +
+    "broken rather than the credential.");
+  log.debug("Leaving typeTheSignIn().");
 }
 
 async function clearSession(driver) {
@@ -1125,124 +1450,98 @@ async function keepAPicture(driver, what) {
 async function theGateBehaves(driver) {
   log.debug("Entering theGateBehaves().");
   log.info("=== The gate in front of /admin ===");
-
+  // WHAT THE GATE IS SINCE THE #446 CUTOVER. The console is a static
+  // application: the document every /admin path answers carries nothing of
+  // this service's, and the data is /admin-api's, behind an access token the
+  // page gets by signing in IN THE BROWSER. So the four behaviours this
+  // section held are re-stated for that shape:
+  //
+  //   1. a browser with no session is answered the document and SENT to the
+  //      sign-in screen — by the page's script now, through an authorization
+  //      request carrying the request waiting behind it;
+  //   2. the document itself holds nothing: no row of any page is in it;
+  //   3. /admin-api refuses a browser with no token, 401 and no redirect;
+  //   4. nothing is posted to /admin: a POST to a console path is answered
+  //      404 — every act is an /admin-api operation, and a page with no token
+  //      sends none. (It was "a POST with no session is refused, never
+  //      redirected"; the cookie it was about is gone with the console's own
+  //      session.)
   await clearSession(driver);
 
   // 1. A browser GET.
   const from = mark();
   await go(driver, root("/admin/tokens"));
   const chain = since(from);
-  const first = chain[0];
+  const first = chain.filter(function (r) {
+    return r.url === root("/admin/tokens");
+  })[0] || chain[0];
   const landed = await driver.getCurrentUrl();
-
-  if (first.status === 200 && landed.indexOf("/authn/login") < 0) {
-    log.warn("The console answered 200 with no session, so the gate is OFF " +
-             "on this service. Since 2026-09-06 there is no setting that " +
-             "does that. The gate assertions cannot be made and are being " +
-             "skipped; everything below still runs.");
-    gateIsOn = false;
-    log.debug("Leaving theGateBehaves(). The gate is off.");
-    return;
-  }
   gateIsOn = true;
-
-  check("a browser GET of a console page is redirected", function () {
-    // 302 OR 303, and the pair is the assertion rather than a looseness. This
-    // read 302 alone until 2026-09-06, when the gate stopped redirecting to the
-    // sign-in screen and started an AUTHORIZATION REQUEST instead (the console
-    // is a relying party now) — and that redirect is a 303. What the sentence
-    // has always been about is that a browser is SENT somewhere it can act;
-    // which of the two redirect codes carries it is the redirecting module's
-    // decision and not this file's, and pinning one of them made this job fail
-    // on a change that was working correctly.
-    assert.ok(first.status === 302 || first.status === 303,
-      "GET /admin/tokens with no session should be REDIRECTED to the sign-in " +
-      "screen; the browser was answered " + first.status + ". A person who " +
-      "follows a link into the console has to be sent somewhere they can act.");
+  check("a browser GET of a console page is answered the console's " +
+        "document", function () {
+    assert.strictEqual(first.status, 200,
+      "GET /admin/tokens should answer the static console's document; the " +
+      "browser was answered " + first.status + ".");
   });
-  check("and the redirect carries the request waiting behind it", function () {
+  check("and the page sends a browser with no session to sign in, carrying " +
+        "the request waiting behind it", function () {
     assert.ok(/\/authn\/login\?authn=/.test(landed),
       "the browser should have landed on the sign-in screen carrying an " +
       "`authn` id — that id is what sends the person back to /admin/tokens " +
       "afterwards instead of to the top of the console. It landed on " +
       landed);
+    assert.ok(chain.some(function (r) {
+      return /\/oauth2\/authorize\?/.test(r.url) &&
+             /client_id=sts-admin-console/.test(r.url) &&
+             /code_challenge=/.test(r.url);
+    }), "and it got there through the console's own authorization request " +
+        "(sts-admin-console, with PKCE): " + JSON.stringify(chain.map(
+          function (r) { return r.method + " " + r.url; })).slice(0, 600));
   });
 
-  // 2. A `?format=json` read.
-  const jsonRead = await go(driver, root("/admin/tokens?format=json"));
-  check("a JSON read is refused 401 rather than redirected", function () {
-    assert.strictEqual(jsonRead.status, 401,
-      "GET /admin/tokens?format=json with no session must be REFUSED 401, " +
-      "not redirected: a program reading this door follows the 302, gets an " +
-      "HTML sign-in screen with a 200 on it, and cannot tell that from an " +
-      "answer. It answered " + jsonRead.status);
+  // 2. The document holds nothing.
+  const doc = await rawSourceOf(driver, root("/admin/tokens"));
+  check("the document a console path answers carries no data", function () {
+    assert.ok(/<script src="\/admin\/console\.js"/.test(doc),
+      "it is not the console's document: " + doc.slice(0, 200));
+    assert.ok(!/<table|<form/i.test(doc),
+      "the document carries a table or a form, which is data or a control " +
+      "drawn before anybody signed in: " + doc.slice(0, 300));
   });
 
-  // 3. /admin-api wants a TOKEN, not this. Read in the browser, because that
-  //    is the client this rule is about — somebody locked out of the console
-  //    reaching for the door beside it.
-  //
-  // **THIS ASSERTION WAS REVERSED ON 2026-09-09 AND THE OLD ONE IS QUOTED
-  // BELOW**, because the sentence it carried is the thing a reader of an older
-  // build will look for: "/admin-api must answer without a session. It is
-  // deliberately not gated — it is what a test drives, and it is the way back
-  // in when nobody holds a role."
-  //
-  // Both halves of that were true and both stopped being so. It is still what
-  // a test drives — this suite mints a token per run and every job presents it
-  // — and it is still the way back in, through `adminApi.authRequired`, which
-  // restores the open API exactly. What changed is the DEFAULT, and a browser
-  // is the one client that cannot follow it: there is no sign-in screen on a
-  // machine surface, so the answer to a person who navigates here is 401 and
-  // not a redirect.
+  // 3. /admin-api wants a TOKEN. Read in the browser, because that is the
+  //    client this rule is about — somebody reaching for the door beside the
+  //    console — and a browser that navigates to a URL carries none.
   const api = await go(driver, root("/admin-api/status"));
   check("/admin-api refuses a browser with no token", function () {
     assert.strictEqual(api.status, 401,
-      "/admin-api requires an OAuth 2.0 access token since 2026-09-09, so a " +
-      "browser that navigates to it with no session and no token must be " +
-      "REFUSED 401 — never redirected to the console's sign-in screen, which " +
-      "would be an HTML page with a 200 on it in front of a machine surface. " +
-      "It answered " + api.status);
+      "/admin-api requires an OAuth 2.0 access token, so a browser that " +
+      "navigates to it with none must be REFUSED 401 — never redirected to " +
+      "a sign-in screen, which would be an HTML page with a 200 on it in " +
+      "front of a machine surface. It answered " + api.status);
   });
 
-  // 4. A POST with no session, made by the browser from a form the console
-  //    drew. Sign in to get the form, empty the jar, then press the button.
-  // **THE FORM IS ON /admin/users/new SINCE 2026-09-06 AND WAS ON
-  // /admin/users BEFORE IT.** The list page's one control used to be a POST
-  // that created somebody with every attribute invented; it is now a GET that
-  // carries the typed name to the page where they are described. What this
-  // assertion needs is any REAL form the console draws whose action is
-  // `create`, submitted by the browser with the cookie jar emptied under it —
-  // and that is what the new page draws.
+  // 4. Nothing is posted to /admin. Asked from a console page, whose policy
+  //    lets it reach its own origin (`connect-src 'self'`).
   await signIn(driver, CONSOLE_USER);
-  await go(driver, root("/admin/users/new"));
-  const createForm = await formIndexPosting(driver, "create");
-  assert.ok(createForm >= 0,
-    "/admin/users/new should draw a form whose action is `create`; the " +
-    "gate's POST assertion needs a real form to submit.");
-  await clearSession(driver);
-  // NAMED, because the first submit on that form is the simplified /
-  // advanced view switch since 9e9647de, which creates nobody.
-  const posted = await fillAndPress(driver, createForm,
-      { username: "gate-probe-" + names.runStamp() },
-      { buttonText: "Create the user" });
-  const postResponse = thePostIn(posted.responses, "posting a form with no " +
-                                                   "session");
-  check("a POST with no session is refused, never redirected", function () {
-    assert.ok(postResponse.status === 401 || postResponse.status === 403,
-      "a POST into the console with no session must be REFUSED (401 or 403) " +
-      "and must never be answered with a redirect: a 303 makes it a GET, and " +
-      "every field the person typed is gone with no way to get it back. It " +
-      "answered " + postResponse.status);
-    assert.ok(postResponse.status < 300 || postResponse.status >= 400,
-      "and specifically not a 3xx. It answered " + postResponse.status);
+  const posted = await driver.executeAsyncScript(`
+    const done = arguments[arguments.length - 1];
+    fetch('/admin/users', { method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'action=create&username=gate-probe' })
+      .then(function (r) { done({ status: r.status }); },
+            function (e) { done({ error: String(e) }); });
+  `);
+  check("a POST to a console path is answered 404: nothing is posted to " +
+        "/admin", function () {
+    assert.strictEqual(posted.status, 404,
+      "POST /admin/users answered " + JSON.stringify(posted) + ". Every " +
+      "act is an /admin-api operation since #446.");
   });
-
-  await signIn(driver, CONSOLE_USER);
-  log.info("[gate] OK — a browser GET is redirected with an `authn` id, a " +
-           "JSON read is refused 401, a real form POST with the cookie jar " +
-           "emptied under it is refused rather than redirected, /admin-api " +
-           "is open, and a session opens the console.");
+  log.info("[gate] OK — a console path answers the document, which sends a " +
+           "browser with no session to sign in with an `authn` id; the " +
+           "document carries no data; /admin-api refuses a browser with no " +
+           "token; and nothing is posted to /admin.");
   log.debug("Leaving theGateBehaves().");
 }
 
@@ -1313,9 +1612,10 @@ async function formIndexPosting(driver, actionValue) {
 const SCRIPTED_PAGES = {
   "/admin/api-explorer":
     "the API explorer: it reads the OpenAPI document and renders a form per " +
-    "operation that calls it, which is not a thing a server can render. It " +
-    "moved here from /admin-api/docs on 2026-09-09, when that API began " +
-    "requiring a token a browser cannot carry."
+    "operation that calls it. Since #446 every console page runs the " +
+    "console's script; this one also names the explorer's own " +
+    "(/admin/api-explorer/explorer.js), which the console loads when it " +
+    "draws the page."
 };
 
 async function everyPageIsDrawn(driver, pages) {
@@ -1346,98 +1646,63 @@ async function everyPageIsDrawn(driver, pages) {
         "and it should have a title; it has " + JSON.stringify(page.title));
     });
     const scripted = SCRIPTED_PAGES[path];
-    // A PROTOCOLS PAGE DRAWS A COPY BUTTON BESIDE EACH ENDPOINT (2026-10-01),
-    // and that is the one other script this console may carry: /admin/copy.js,
-    // which reveals the buttons and copies a value. The page is the page with
-    // the script blocked — the buttons stay hidden — so the test is that the
-    // page names exactly that one resource, is served `script-src 'self'` and
-    // nothing looser, and that the script really ran (every button shown).
-    const copying = !scripted && page.copyButtons > 0;
+    // EVERY PAGE IS THE SAME DOCUMENT SINCE #446, under one policy: the
+    // console's script from this origin and nothing inline, its calls to
+    // this origin and nowhere else, and the two clauses a relaxation can
+    // lose by accident. A page with a script of its own beyond the console's
+    // (SCRIPTED_PAGES) names it in `data-script`, and the console loads it
+    // from this origin under the same policy.
     check(path + " keeps the policy", function () {
-      if (copying) {
-        assert.ok(/script-src\s+'self'/.test(csp),
-          path + " draws " + page.copyButtons + " Copy button(s) and must be " +
-          "served `script-src 'self'` for /admin/copy.js. Its policy is: " +
-          csp);
-        assert.ok(!/unsafe-inline/.test(csp.replace(/style-src[^;]*/, "")),
-          path + " must NOT relax anything to 'unsafe-inline'. Its policy " +
-          "is: " + csp);
-        assert.ok(!/connect-src/.test(csp),
-          path + " needs no `connect-src`: copying calls nothing. Its " +
-          "policy is: " + csp);
-      } else if (scripted) {
-        // THE EXCEPTION IS CHECKED HARDER THAN THE RULE. A page allowed to
-        // relax `script-src` must relax exactly that, to exactly `'self'`, and
-        // must never reach `'unsafe-inline'` — which is the clause that would
-        // make the relaxation matter, and the reason the script is a separate
-        // resource rather than an inline block.
-        assert.ok(/script-src\s+'self'/.test(csp),
-          path + " is the console's one scripted page (" + scripted + ") and " +
-          "must be served `script-src 'self'`, naming a resource rather than " +
-          "allowing an inline block. Its policy is: " + csp);
-        assert.ok(!/unsafe-inline/.test(csp.replace(/style-src[^;]*/, "")),
-          path + " must NOT relax anything to 'unsafe-inline'. That is the " +
-          "clause that would make this exception matter; 'self' is enough " +
-          "for a file. Its policy is: " + csp);
-        assert.ok(/connect-src\s+'self'/.test(csp),
-          path + " needs `connect-src 'self'` to call the API it documents " +
-          "and nothing else. Its policy is: " + csp);
-        assert.ok(/default-src\s+'none'/.test(csp),
-          path + " must keep `default-src 'none'`: everything the two " +
-          "relaxed clauses do not name stays refused. Its policy is: " + csp);
-      } else {
-        assert.ok(/script-src\s+'none'/.test(csp),
-          path + " must be served with `script-src 'none'`. Its policy is: " +
-          csp + ". If this page has deliberately acquired a script, it needs " +
-          "a row in SCRIPTED_PAGES saying why — and the argument has to be " +
-          "made from scratch rather than by pointing at the page next door.");
-      }
-      // THESE TWO ARE ASSERTED FOR EVERY PAGE INCLUDING THE EXCEPTION, and
-      // that is the whole reason the relaxation goes through
-      // `app.contentSecurityPolicy()`: a route that sets the header itself to
-      // relax one clause is a route that can drop these without anything
-      // failing — the page works, the script runs, and the protection is gone.
+      assert.ok(/script-src\s+'self'/.test(csp),
+        path + " must be served `script-src 'self'` for the console's " +
+        "script. Its policy is: " + csp);
+      assert.ok(!/unsafe-inline/.test(csp.replace(/style-src[^;]*/, "")),
+        path + " must NOT relax anything but styles to 'unsafe-inline'. Its " +
+        "policy is: " + csp);
+      assert.ok(/connect-src\s+'self'/.test(csp),
+        path + " needs `connect-src 'self'` to call /admin-api and nothing " +
+        "else. Its policy is: " + csp);
+      assert.ok(/default-src\s+'none'/.test(csp),
+        path + " must keep `default-src 'none'`. Its policy is: " + csp);
+      // THESE TWO ARE THE CLAUSES A ROUTE THAT SETS THE WHOLE HEADER LOSES
+      // BY ACCIDENT, which is why every relaxation goes through
+      // `app.contentSecurityPolicy()`.
       assert.ok(/frame-ancestors\s+'none'/.test(csp),
         path + " must be served with `frame-ancestors 'none'`. That clause " +
-        "has NO fallback from `default-src`, so it is the one a route loses " +
-        "by accident when it sets the whole header to relax something else. " +
-        "Its policy is: " + csp);
+        "has NO fallback from `default-src`. Its policy is: " + csp);
       assert.ok(/base-uri\s+'none'/.test(csp),
         path + " must be served with `base-uri 'none'`. Its policy is: " + csp);
     });
-    check(path + (scripted || copying ? " carries exactly its own script"
-                                      : " has no script on it"), function () {
-      if (copying) {
-        // A realm's page names it under the realm prefix, which app.js adds.
-        assert.ok(page.scriptSrcs.length === 1 &&
-                  /^(\/realm\/[^/]+)?\/admin\/copy\.js$/
-                    .test(page.scriptSrcs[0]),
-          path + " should carry exactly one <script>, /admin/copy.js; the " +
-          "browser built " + JSON.stringify(page.scriptSrcs) + ".");
+    check(path + (scripted ? " carries the console's script and its own"
+                           : " carries the console's script and no other"),
+      function () {
+        const own = page.scriptSrcs.filter(function (src) {
+          return !/^(\/realm\/[^/]+)?\/admin\/console\.js$/.test(src);
+        });
+        assert.ok(page.scriptSrcs.length >= 1 && own.length ===
+                  page.scriptSrcs.length - 1,
+          path + " should carry /admin/console.js once; the browser built " +
+          JSON.stringify(page.scriptSrcs) + ".");
+        if (scripted) {
+          assert.ok(own.length === 1 && /^(\/realm\/[^/]+)?\/admin\//
+                      .test(own[0]),
+            path + " should carry its own script from /admin as well (" +
+            scripted + "); the browser built " +
+            JSON.stringify(page.scriptSrcs) + ".");
+          return;
+        }
+        assert.deepStrictEqual(own, [],
+          path + " carries a script beyond the console's, and it is in no " +
+          "row of SCRIPTED_PAGES: " + JSON.stringify(own));
+      });
+    if (page.copyButtons > 0) {
+      check(path + " shows every Copy button", function () {
         assert.strictEqual(page.copyButtonsShown, page.copyButtons,
-          path + " should show every Copy button once the script has run; " +
-          page.copyButtonsShown + " of " + page.copyButtons + " are shown, " +
-          "so /admin/copy.js did not run.");
-        return;
-      }
-      if (scripted) {
-        // `document.scripts.length` is the browser's own answer, which is why
-        // this walk is worth doing in a browser at all: ONE script, and the
-        // page's own. Two would mean something else got onto the one page in
-        // this console where a script is not blocked outright.
-        assert.strictEqual(page.scripts, 1,
-          path + " should carry exactly one <script> — its own explorer — " +
-          "and the browser built " + page.scripts + ".");
-        return;
-      }
-      assert.strictEqual(page.scripts, 0,
-        path + " has " + page.scripts + " <script> element(s) in the DOM the " +
-        "browser built. The console has no JavaScript on any page but the " +
-        "one named in SCRIPTED_PAGES and the Protocols pages' copy " +
-        "script, which is what makes the family of " +
-        "reflected-content problems moot here rather than merely unlikely — " +
-        "and a page that carries one is relying on the header to save it.");
-    });
+          path + " draws its Copy buttons hidden and the console reveals " +
+          "them; " + page.copyButtonsShown + " of " + page.copyButtons +
+          " are shown.");
+      });
+    }
 
     forms += page.forms.length;
     page.links.forEach(function (href) { links.add(href); });
@@ -1465,11 +1730,9 @@ async function everyPageIsDrawn(driver, pages) {
 
   log.info("[pages] OK — all " + pages.length + " console pages are drawn in " +
            "the shell with a breadcrumb, under `frame-ancestors 'none'` and " +
-           "`base-uri 'none'`, carrying " + forms + " forms between them. " +
-           (pages.length - Object.keys(SCRIPTED_PAGES).length) +
-           " of them are `script-src 'none'` with no script in the DOM; " +
-           Object.keys(SCRIPTED_PAGES).length + " named in SCRIPTED_PAGES " +
-           "carry exactly their own.");
+           "`base-uri 'none'`, carrying " + forms + " forms between them, " +
+           "each running the console's script and no other but the " +
+           Object.keys(SCRIPTED_PAGES).length + " named in SCRIPTED_PAGES.");
   log.debug("Leaving everyPageIsDrawn().");
   return { forms: forms, links: Array.from(links) };
 }
@@ -1490,43 +1753,94 @@ async function everyPageIsDrawn(driver, pages) {
 // them, and an adopted form is exactly the case where the second is smaller
 // than the first.
 // ---------------------------------------------------------------------------
+// SINCE #446 THE BYTES ARE THE RENDERER'S, NOT THE SERVER'S. The document
+// every console path answers holds no form; a page's markup is written by
+// the console's renderer and handed to the parser through `innerHTML`, which
+// adopts a nested form exactly as a document parse does. So the WRITTEN half
+// is that markup — the page's operation answered and drawn by the console's
+// own renderers in node (`console_signin.js`'s `draw()`, the same bundle the
+// browser runs) — and the BUILT half is what Chrome made of it: the forms in
+// the page's card, less the frame's own.
+let nodeConsole = null;
+async function renderedMarkupOf(path) {
+  log.debug("Entering renderedMarkupOf(). path=" + path);
+  if (!nodeConsole) {
+    nodeConsole = await require("./console_signin.js").signInToTheConsole(
+      base, "console-test-node-" + names.runStamp(), log, { grant: "write" });
+  }
+  const drawn = await nodeConsole.draw(path, {});
+  if (drawn.status !== 200) {
+    // An operation that did not answer has no markup to compare; said, and
+    // left out, rather than counted as a page with no forms.
+    log.warn("renderedMarkupOf(): " + path + "'s operation answered " +
+             drawn.status + " to the node-side read; its forms are not " +
+             "compared.");
+    log.debug("Leaving renderedMarkupOf(). No answer.");
+    return null;
+  }
+  log.debug("Leaving renderedMarkupOf().");
+  return drawn.html;
+}
+
 async function noPageNestsAForm(driver, pages) {
   log.debug("Entering noPageNestsAForm().");
   log.info("=== No form inside a form ===");
   const offenders = [];
 
   for (const path of pages) {
-    const page = await open(driver, root(path));
-    const built = page.forms.length;
-    const raw = await rawSourceOf(driver, root(path));
+    await open(driver, root(path));
+    const built = await driver.executeScript(`
+      return document.querySelectorAll('.main .card form').length -
+             document.querySelectorAll('.main .card .pagehead form').length;
+    `);
+    const raw = await renderedMarkupOf(path);
+    if (raw === null) {
+      continue;
+    }
     const written = (raw.match(/<form[\s>]/gi) || []).length;
     const closed = (raw.match(/<\/form>/gi) || []).length;
 
-    if (written !== built) {
-      offenders.push(path + " (" + written + " written, " + built + " built)");
+    // READ AGAIN BEFORE IT COUNTS: the two halves are two reads of a
+    // service other jobs write to, a moment apart, and a row that came or
+    // went between them changes both counts. A nested form disagrees every
+    // time; a moving list does not.
+    let agreed = written === built;
+    if (!agreed) {
+      await open(driver, root(path));
+      const builtAgain = await driver.executeScript(`
+        return document.querySelectorAll('.main .card form').length -
+               document.querySelectorAll('.main .card .pagehead form').length;
+      `);
+      const rawAgain = await renderedMarkupOf(path);
+      const writtenAgain = rawAgain === null ? builtAgain
+        : (rawAgain.match(/<form[\s>]/gi) || []).length;
+      agreed = writtenAgain === builtAgain;
+      if (!agreed) {
+        offenders.push(path + " (" + writtenAgain + " written, " +
+                       builtAgain + " built)");
+      }
     }
     check(path + "'s form tags balance", function () {
       assert.strictEqual(written, closed,
         path + " has " + written + " <form> start tag(s) and " + closed +
-        " end tag(s) in the bytes the server sent. Unbalanced tags are how a " +
-        "form comes to swallow the markup after it.");
+        " end tag(s) in the markup its renderer writes. Unbalanced tags " +
+        "are how a form comes to swallow the markup after it.");
     });
   }
 
   check("no page nests a form", function () {
     assert.deepStrictEqual(offenders, [],
       "THESE PAGES HAVE A <form> INSIDE ANOTHER <form>: " +
-      offenders.join(", ") + ". The count in the bytes the server sent and " +
-      "the count the browser built disagree, and the only thing that makes " +
-      "them disagree is the parser dropping a nested start tag and adopting " +
-      "its children into the outer form — which is how a section's Save came " +
-      "to perform a row's Reset, with nothing failing and the markup " +
-      "carrying a comment explaining why it was correct.");
+      offenders.join(", ") + ". The count in the markup the renderer wrote " +
+      "and the count the browser built disagree, and the only thing that " +
+      "makes them disagree is the parser dropping a nested start tag and " +
+      "adopting its children into the outer form — which is how a " +
+      "section's Save came to perform a row's Reset, with nothing failing.");
   });
 
-  log.info("[markup] OK — the bytes and the parsed DOM agree about every " +
-           "form on all " + pages.length + " pages, and every page's form " +
-           "tags balance.");
+  log.info("[markup] OK — the renderer's markup and the parsed DOM agree " +
+           "about every form on all " + pages.length + " pages, and every " +
+           "page's form tags balance.");
   log.debug("Leaving noPageNestsAForm().");
 }
 
@@ -2056,9 +2370,16 @@ async function theNewUserPageDescribesAPerson(driver) {
       "THE ENTRY HOLDS THE PASSWORD IN THE CLEAR. credentials.js hashes it " +
       "with scrypt precisely so that a directory read is not a credential " +
       "dump, and this page is the newest door onto that function.");
-    assert.ok(/^\$scrypt\$/.test(held),
-      "and it should be a scrypt hash; it starts " +
+    // A CREDENTIAL IS NEVER IN A GET (#446): /admin-api/ldap/directory
+    // says a userPassword is set without returning it, so this job cannot
+    // see the hash's form — the in-process tests hold that it is scrypt.
+    // What it can see is that the password it was shown is nowhere in the
+    // entry the API answers.
+    assert.ok(held === "(set — not returned)" || /^\$scrypt\$/.test(held),
+      "and it should be withheld, or at most a scrypt hash; it starts " +
       JSON.stringify(String(held).slice(0, 12)));
+    assert.ok(JSON.stringify(passwordEntry).indexOf(String(shown)) < 0,
+      "THE GENERATED PASSWORD IS IN THE DIRECTORY ENTRY THE API ANSWERS.");
   });
 
   // ------------------------------------------------------------------
@@ -2077,7 +2398,14 @@ async function theNewUserPageDescribesAPerson(driver) {
       "the create should have shown a /portal/activate link for " +
       toActivate + "; it showed " + JSON.stringify(link));
   });
-  const opened = await go(driver, String(link).trim());
+  // FETCHED, NOT BROWSED (#446): the link is unauthenticated, and the
+  // browser is the console's — a page load off the console drops the
+  // static console's token held in memory, and the way back is a fresh
+  // sign-in this browser is not set up for mid-job. The answer is what the
+  // check is about, and a fetch is a request with no session at all, which
+  // is what the person the link is for will make.
+  const opened = await fetch(new URL(String(link).trim(), root("/")).href,
+                             { redirect: "manual" });
   check("and spending it reaches the setup screen", function () {
     assert.strictEqual(opened.status, 200,
       "THE LINK THIS PAGE HANDED OVER DOES NOT WORK. It answered " +
@@ -2482,13 +2810,15 @@ async function theRealmIsCreatedOnTheForm(driver) {
   // is permission to change what every realm does. A realm's own
   // administrators, since #32, are confined to their realm.
   const inRealm = await open(driver, realm("/admin"));
-  check("the realm's console opens on the default realm's session",
+  // Through the switcher since #446 (see go()): the default realm's token
+  // reads the realm's console, which is the claim.
+  check("the realm's console opens on the default realm's sign-in",
         function () {
     assert.strictEqual(inRealm.status, 200,
-      "/realm/" + REALM + "/admin should open on the session signed in at " +
-      "the root. The two console roles are groups in the DEFAULT realm and " +
-      "the gate accepts that realm's session and no other, so one sign-in " +
-      "reaches every realm's console. It answered " + inRealm.status);
+      "/realm/" + REALM + "/admin should open, through the realm switcher, " +
+      "on the token signed in at the root. The two console roles are groups " +
+      "in the DEFAULT realm, so one sign-in reaches every realm's console. " +
+      "It answered " + inRealm.status);
   });
 
   // THE REMOVE BUTTON IS CHECKED HERE AND NEVER PRESSED, and this is the one
@@ -2654,9 +2984,9 @@ async function theAccountMenuIsTheReaderSOwnCorner(driver) {
   `);
   check("clicking it opens it, with no script anywhere", function () {
     assert.ok(opened.open && opened.panelShown,
-      "a click on the summary should open the panel. It did not, which on a " +
-      "page served `script-src 'none'` means the menu is not a <details> any " +
-      "more — whatever it is, the browser will not open it either.");
+      "a click on the summary should open the panel. It did not, which " +
+      "means the menu is not a <details> any more — and one that opens by " +
+      "the console's script stays shut for a reader whose script failed.");
     assert.strictEqual(opened.overlays, "absolute",
       "the panel should overlay the page rather than push it down: a menu " +
       "that reflows the card under it moves whatever the reader was about to " +
@@ -2740,37 +3070,48 @@ async function theSignOutButtonSignsYouOut(driver) {
   await driver.findElement(By.css("details.usermenu > summary")).click();
   await fillAndPress(driver, form, {}, { buttonText: "Sign out" });
 
+  // THE CONSOLE HOLDS NO SESSION OF ITS OWN SINCE #446: its token is in the
+  // page, and its Sign out sends the browser to the protocol-independent
+  // sign-out, `/logout`, which lists everything this service still holds for
+  // the person and ends it. So the button's claim is that it lands THERE, and
+  // the sign-out is that page's Global logout, pressed as a person would.
+  const offered = await survey(driver);
+  const offeredUrl = await driver.getCurrentUrl();
+  check("Sign out sends the browser to the sign-out page, which offers to " +
+        "end everything", function () {
+    assert.ok(/\/logout$/.test(new URL(offeredUrl).pathname),
+      "pressing Sign out should land on /logout; the browser is at " +
+      offeredUrl);
+    assert.ok(/Global logout/.test(offered.text || ""),
+      "and the page should offer the Global logout. It says: " +
+      String(offered.text || "").slice(0, 300));
+  });
+  const global = await formIndexWithButton(driver, "Global logout");
+  assert.ok(global >= 0, "/logout should draw the Global logout form.");
+  await fillAndPress(driver, global, {}, { buttonText: "Global logout" });
+
   const landed = await survey(driver);
   check("it answers a page saying what ended", function () {
     assert.ok(/signed out/i.test(landed.text || ""),
-      "pressing Sign out should land on a page that SAYS so — a 303 back to " +
-      "the console would be indistinguishable from the button doing nothing " +
-      "until the next click. The page says: " +
-      String(landed.text || "").slice(0, 300));
+      "the Global logout should land on a page that SAYS so. The page " +
+      "says: " + String(landed.text || "").slice(0, 300));
     assert.ok(!signOutFormOn(landed),
-      "and the shell must no longer draw the Sign out button: it is drawn " +
-      "from the gate state, so a button still there is a page claiming a " +
-      "session that has just ended.");
-    // AND THE NAVIGATION COLUMN, which is the same claim about the same gate
-    // state read one control further out (2026-09-10). Every link in that
-    // column is a console page behind the gate, so on this page every one of
-    // them answers a redirect to the sign-in screen — and the realm switcher
-    // in it is a FORM, posting to a console that no longer has a session for
-    // it. The count comes off the survey's own `nav` (`nav a, .nav a, aside
-    // a`), so a column drawn under any of those wrappers is caught.
+      "and no console Sign out button may be drawn on it.");
     assert.ok(before.nav > 0,
       "the console page BEFORE the sign-out should carry a navigation " +
       "column — if it does not, the check below proves nothing. " +
       "/admin/metrics drew " + before.nav + " nav link(s).");
     assert.strictEqual(landed.nav, 0,
-      "and the shell must no longer draw the navigation column: it drew " +
-      landed.nav + " nav link(s) beside a page whose subject is that the " +
-      "session they navigate with has ended. Every one of them goes to the " +
-      "sign-in screen, and the realm switcher among them posts a form.");
+      "and no console navigation column: it drew " + landed.nav + " nav " +
+      "link(s) beside a page whose subject is that the session they " +
+      "navigate with has ended.");
   });
 
   // AND THE SIGN-ON SESSION IS GONE TOO. The browser is sent through the whole
   // flow again — /admin, /oauth2/authorize — and where it STOPS is the claim.
+  // Nobody is signed in now, and go() must not sign anybody back in when it
+  // meets the screen (#446): that screen is what this check is for.
+  signedInAs = "";
   const again = await open(driver, root("/admin/metrics"));
   check("the console is closed again, at the SIGN-IN SCREEN", function () {
     assert.ok(/\/authn\/login/.test(again.url || ""),
@@ -2778,13 +3119,13 @@ async function theSignOutButtonSignsYouOut(driver) {
       "screen. The browser stopped at " + again.url + ". If that is a " +
       "console page, THE SIGN-ON SESSION SURVIVED THE SIGN-OUT and the " +
       "button is signing nobody out: the code flow met it and issued an ID " +
-      "Token with nothing typed, which is exactly what /admin/signout ends " +
-      "both sessions to prevent.");
+      "Token with nothing typed, which is exactly what the Global logout " +
+      "is for.");
   });
 
-  log.info("[signout] OK — the button ended the console session AND the " +
-           "sign-on session behind it, and the console asks for a sign-in " +
-           "again.");
+  log.info("[signout] OK — the button sent the browser to /logout, whose " +
+           "Global logout ended the sign-on session, and the console asks " +
+           "for a sign-in again.");
   log.debug("Leaving theSignOutButtonSignsYouOut().");
 }
 
@@ -2918,8 +3259,10 @@ async function theDirectoryPagesWork(driver) {
   const createUser = await formIndexPosting(driver, "create");
   assert.ok(createUser >= 0, "/admin/users/new should draw a create form.");
   // The Create button by name: the form's first submit is the view switch.
-  await fillAndPress(driver, createUser, { username: person },
-                     { buttonText: "Create the user" });
+  const pressed = await fillAndPress(driver, createUser, { username: person },
+                                     { buttonText: "Create the user" });
+  const afterCreate = await driver.getCurrentUrl();
+  const createdPage = await survey(driver);
 
   const users = await apiJson("/realm/" + REALM +
       "/admin-api/users?q=" + encodeURIComponent(person));
@@ -2932,7 +3275,13 @@ async function theDirectoryPagesWork(driver) {
       "the console's own form created them. /admin-api/users answered " +
       JSON.stringify((users.body.users || []).map(function (u) {
         return u.key;
-      }).slice(0, 10)));
+      }).slice(0, 10)) + ". The press made " + JSON.stringify(
+        pressed.responses.filter(function (r) {
+          return !/^data:/.test(r.url);
+        }).map(function (r) {
+          return r.method + " " + r.url + " -> " + r.status;
+        })) + " and left the browser at " + afterCreate + " showing: " +
+      String(createdPage.text).slice(0, 400));
     assert.strictEqual(found.authenticated, false,
       "and they must be recorded as somebody who has NOT authenticated here. " +
       "An administrator creating an entry is not that person signing in, and " +
@@ -2959,9 +3308,11 @@ async function theDirectoryPagesWork(driver) {
   // By its words: the form draws Generate Secret (a `formaction` button that
   // redraws the page and creates nothing) halfway down, BEFORE the Create
   // button at its foot, so "the first visible submit" is the wrong one here.
-  await fillAndPress(driver, createApp,
+  const appPressed = await fillAndPress(driver, createApp,
       { identifier: identifier, name: "Console UI application" },
       { noTyping: false, buttonText: "Create the application" });
+  const appLanded = await driver.getCurrentUrl();
+  const appPage = await survey(driver);
 
   const apps = await apiJson("/realm/" + REALM +
       "/admin-api/applications?q=" + encodeURIComponent(identifier));
@@ -2972,7 +3323,13 @@ async function theDirectoryPagesWork(driver) {
     })[0];
     assert.ok(found,
       "the application " + identifier + " should be in the realm's registry " +
-      "after the console's own form created it.");
+      "after the console's own form created it. The press made " +
+      JSON.stringify(appPressed.responses.filter(function (r) {
+        return !/^data:/.test(r.url);
+      }).map(function (r) {
+        return r.method + " " + r.url + " -> " + r.status;
+      })) + " and left the browser at " + appLanded + " showing: " +
+      String(appPage.error || appPage.text).slice(0, 500));
     assert.strictEqual(found.name, "Console UI application",
       "and it should carry the NAME the form was given; it carries " +
       JSON.stringify(found.name));
@@ -4441,7 +4798,9 @@ async function theCredentialsSectionIsPressed(driver) {
     log.debug("Leaving onThePage().");
     return u.pathname === "/realm/" + REALM + "/admin/applications" &&
            u.searchParams.get("application") === APP &&
-           u.hash === "#credentials";
+           // The section, or the static console's tab that holds it: an
+           // act returns to the fragment its form was pressed under (#446).
+           (u.hash === "#credentials" || u.hash === "#tab-credentials");
   };
   const formFor = async function (action, purpose) {
     log.debug("Entering formFor(). action=" + action);
@@ -4472,15 +4831,13 @@ async function theCredentialsSectionIsPressed(driver) {
   // The secret is a RECORD on the entry (2026-10-01); compare the secrets
   // themselves, newest first, or an array compared by reference always
   // "changed".
+  // A CREDENTIAL IS NEVER IN A GET (#446): the API answers each secret's id
+  // and expiry (`credentials.clientSecret.secrets`) and its value only to
+  // `reveal-secret`. A Regenerate replaces every secret, so the ids change.
   const secretsOn = function (entry) {
-    return [].concat((entry.fields || {}).oauthClientSecret || [])
-      .map(function (value) {
-        try {
-          return JSON.parse(value).secret;
-        } catch (e) {
-          log.debug("Caught in secretsOn(): " + ((e && e.message) || e));
-          return String(value);
-        }
+    return (((entry.credentials || {}).clientSecret || {}).secrets || [])
+      .map(function (one) {
+        return String(one.id || "");
       }).join(" ");
   };
   const secretBefore = secretsOn(await entryOf(APP));
@@ -4491,6 +4848,15 @@ async function theCredentialsSectionIsPressed(driver) {
   await fillAndPress(driver, regenerate, {});
   const afterRegenerate = await driver.getCurrentUrl();
   const secretAfter = secretsOn(await entryOf(APP));
+  // The value itself, as an operator asks for it, for the address check.
+  const revealed = secretAfter
+    ? await apiPostJson(root("/realm/" + REALM +
+                             "/admin-api/applications/reveal-secret"),
+                        { application: APP,
+                          secret: secretAfter.split(" ")[0] })
+    : null;
+  const secretValue = revealed && revealed.body ? String(revealed.body.value ||
+                                                         "") : "";
   check("Regenerate replaced the secret and came back to the section, with " +
         "no secret in the address", function () {
     assert.strictEqual(outcomeOf(afterRegenerate, "error"), "",
@@ -4498,7 +4864,11 @@ async function theCredentialsSectionIsPressed(driver) {
     assert.ok(onThePage(afterRegenerate), "landed on " + afterRegenerate);
     assert.ok(secretAfter && secretAfter !== secretBefore,
       "the secret on the entry did not change");
-    assert.ok(afterRegenerate.indexOf(secretAfter) < 0,
+    assert.ok(secretValue.length >= 20,
+      "reveal-secret did not hand back the new secret: " +
+      JSON.stringify(revealed && revealed.body).slice(0, 200));
+    assert.ok(afterRegenerate.indexOf(secretValue) < 0 &&
+              afterRegenerate.indexOf(encodeURIComponent(secretValue)) < 0,
       "the new secret is in the URL");
   });
 
@@ -4628,9 +4998,16 @@ async function theFieldGridIsPressed(driver) {
            d = d.parentElement && d.parentElement.closest('details')) {
         d.open = true;
       }
+      // THE NOTICE STRIP IS STICKY at the top of the window (\`.flash\`), so
+      // a button scrolled to the top edge is under it: brought to the
+      // middle, where a person scrolling to it would see it.
+      arguments[0].scrollIntoView({ block: 'center' });
     `, button, values || {});
     const from = mark();
-    const leaving = await driver.findElement(By.css("html"));
+    // THE CONSOLE'S FRAME, NOT THE DOCUMENT (#446): a round trip — the view
+    // switch, +, the trash can — is drawn in place by the static console,
+    // which replaces the frame and never loads a document.
+    const leaving = await driver.findElement(By.css(".shell"));
     await button.click();
     await pageReplaced(driver, leaving, 20000);
     await settleAfterSubmit(driver, from, "POST");
@@ -4795,11 +5172,15 @@ async function theFieldGridIsPressed(driver) {
   });
   await press(GROW, "", {});
   const editGrown = await state();
-  const grownOnEdit = await onThePath("/admin/applications/edit");
+  // A ROUND TRIP IS DRAWN IN PLACE since #446: the address stays the
+  // application's page, where the server-rendered console posted to
+  // /admin/applications/edit and drew the answer there.
+  const grownOnEdit = await onThePath("/admin/applications/edit") ||
+                      await onThePath("/admin/applications");
   check("+ on the application page redraws with an empty box and writes " +
         "nothing", function () {
     assert.ok(grownOnEdit,
-      "+ did not redraw through /admin/applications/edit");
+      "+ left the application's page");
     assert.deepStrictEqual(editGrown.boxes, [URI_B, ""],
       JSON.stringify(editGrown.boxes));
   });
@@ -4909,7 +5290,9 @@ async function thePersonCredentialsSectionIsPressed(driver) {
     log.debug("Leaving onThePage().");
     return u.pathname === "/realm/" + REALM + "/admin/users" &&
            u.searchParams.get("user") === person &&
-           u.hash === "#credentials";
+           // The section, or the static console's tab that holds it: an
+           // act returns to the fragment its form was pressed under (#446).
+           (u.hash === "#credentials" || u.hash === "#tab-credentials");
   };
   const formFor = async function (action, purpose) {
     log.debug("Entering formFor(). action=" + action);
@@ -4966,8 +5349,13 @@ async function thePersonCredentialsSectionIsPressed(driver) {
   check("Issue answered with a PAGE carrying the private key once, the " +
         "certificate, and a way back to THIS person in THIS realm",
         function () {
+    // A SECRET SHOWN ONCE IS DRAWN IN PLACE since #446 — never on an
+    // address, never in the history — so the browser is still where the
+    // form was, this person's page in this realm.
     assert.ok(new URL(issuedAt).pathname ===
-              "/realm/" + REALM + "/admin/pki/person", "landed on " + issuedAt);
+              "/realm/" + REALM + "/admin/users" &&
+              new URL(issuedAt).searchParams.get("user") === person,
+              "the key page moved the browser: it is at " + issuedAt);
     assert.ok(/The private key, once/.test(issuedText) &&
               /BEGIN (RSA |EC )?PRIVATE KEY/.test(issuedText),
       "the key page does not show the private key");
@@ -5833,7 +6221,14 @@ async function theTwoDrawingsAreServerSide(driver) {
       svg.forEach(function (one) { nodes += one.querySelectorAll('*').length; });
       return { count: svg.length, nodes: nodes,
                images: document.querySelectorAll('img, image').length,
-               scripts: document.scripts.length,
+               // The console's own script runs every page since #446; what
+               // is counted is any OTHER — a graph library, say.
+               // A string test, not a regex: this script is a template
+               // literal, which would eat a regex's backslashes.
+               scripts: Array.from(document.scripts).filter(function (one) {
+                 return !(one.getAttribute('src') || '')
+                   .endsWith('/admin/console.js');
+               }).length,
                // The sentence render() puts where the drawing goes when the
                // LAYOUT threw. It is a 200 with everything else on the page
                // intact, which is why it has to be looked for by name.
@@ -5877,21 +6272,36 @@ async function theTwoDrawingsAreServerSide(driver) {
         "and the SVG should have something in it; it has " + drawn.nodes +
         " element(s).");
       assert.strictEqual(drawn.scripts, 0,
-        path + " must carry no script. Every graph library a person would " +
-        "reach for runs in the browser, and the whole point of laying this " +
-        "out on the server is that neither picture is the first scripted " +
-        "page in this console.");
+        path + " must carry no script but the console's own. Every graph " +
+        "library a person would reach for runs in the browser, and the whole " +
+        "point of laying this out on the server is that no picture needs " +
+        "one.");
       assert.strictEqual(drawn.images, 0,
         "and no <img>: the drawing is markup, so `img-src` is not even " +
         "reached. It drew " + drawn.images);
     });
 
     // And ?format=svg hands the document over, which is the answer to the pan
-    // and zoom this deliberately does not have.
-    const raw = await go(driver, realm(path + "?format=svg"));
+    // and zoom this deliberately does not have. Since #446 the page's
+    // download link is answered by the picture's /admin-api operation —
+    // the console saves what it answers — so that is what is asked. Since
+    // #454 a drawing is a CONSOLE operation, under /admin-api/console and
+    // behind `admin:console`, which the run's preloaded token does not
+    // carry: so it is asked as the console asks it, with the node-side
+    // console's DPoP-bound token (`renderedMarkupOf()`'s sign-in).
+    if (!nodeConsole) {
+      nodeConsole = await require("./console_signin.js").signInToTheConsole(
+        base, "console-test-node-" + names.runStamp(), log,
+        { grant: "write" });
+    }
+    const svgAt = realm("/admin-api/console" + path.slice("/admin".length) +
+                        "?format=svg");
+    const svgAnswer = await nodeConsole.api("GET", svgAt);
+    const raw = { status: svgAnswer.status, headers: {
+      "content-type": svgAnswer.headers.get("content-type") || "" } };
     check(path + "?format=svg hands the document over", function () {
       assert.strictEqual(raw.status, 200,
-        path + "?format=svg should answer 200; it answered " + raw.status);
+        svgAt + " should answer 200; it answered " + raw.status);
       assert.ok(/image\/svg\+xml/.test(raw.headers["content-type"] || ""),
         "and it should be served as image/svg+xml, because it is the whole " +
         "document handed to something that DOES zoom — which is what this " +
@@ -6744,10 +7154,19 @@ async function grantOnThePicker(driver, person, role) {
   const link = await driver.findElement(By.css(
       "form#find-personq + .chooser ul.hits a[href=\"" +
       hit.href.replace(/"/g, '\\"') + "\"]"));
-  await link.click();
+  await clickInView(driver, link);
+  // THE ADDRESS CHANGES BEFORE THE PAGE IS DRAWN (#446): the static console
+  // routes on the new address and then redraws in place, so what is waited
+  // for is the grant form itself, not the `person=` in the address.
   await driver.wait(async function () {
-    return (await driver.getCurrentUrl()).indexOf("person=") >= 0;
-  }, 10000);
+    return (await driver.getCurrentUrl()).indexOf("person=") >= 0 &&
+      await driver.executeScript(
+        "return !!document.getElementById('grant-picked');");
+  }, 10000).catch(function (e) {
+    log.debug("Caught waiting for the grant form: " +
+              ((e && e.message) || e));
+    return null;
+  });
   const picker = await driver.executeScript(`
     const person = arguments[0];
     const forms = Array.from(document.forms);
@@ -6937,40 +7356,36 @@ async function theBrowserConsoleIsClean(driver) {
         return message.indexOf("/favicon.ico") < 0;
       })
       // ---------------------------------------------------------------
-      // AND THE 401s THIS RUN PROVOKES ON `/admin-api` ITSELF (2026-09-09).
+      // AND THE 4xx ANSWERS THE CONSOLE ITSELF HANDLES (#446).
       //
-      // `everyLinkResolves()` above NAVIGATES to every link the console
-      // draws, `/admin-api` among them, and that API takes an access token
-      // this browser has none of. The browser records a SEVERE line for each
-      // one — seventy-odd of them, all saying the gate worked.
+      // Since the cutover every console page reaches `/admin-api` — that is
+      // where its data is and where its forms go — and the browser records a
+      // SEVERE line for each 4xx it receives, whoever asked: a refused form
+      // (400, 403), which the console draws as the refusal this run
+      // provoked on purpose; a proof answered `use_dpop_nonce` (401 at the
+      // API, 400 at the token endpoint), which the console retries once with
+      // the server's nonce; and this job's own crawl, which navigates to
+      // `/admin-api` links with no token at all (401). Each is an answer the
+      // console reads, not a load that failed.
       //
-      // **IT IS THIS JOB'S OWN CRAWL AND NOT THE CONSOLE.** No console PAGE
-      // fetches `/admin-api`: they cannot, because `default-src 'none'`
-      // forbids a fetch outright and `script-src 'none'` leaves nothing to
-      // make one with. That is exactly the property this check exists to
-      // defend, and it is the reason the filter can be this narrow — a
-      // console page that somehow DID reach for that API would appear here
-      // as a CSP violation rather than as a status code, and CSP violations
-      // are not filtered.
-      //
-      // Anchored on the status and the path together, so a 401 from
-      // anywhere else, and any other failure on `/admin-api`, still fails.
+      // Anchored on a 4xx from `/admin-api` or `/oauth2/token` together, so a
+      // 5xx anywhere, a 4xx from anywhere else and every CSP violation still
+      // fail.
       // ---------------------------------------------------------------
       .filter(function (message) {
-        return !(/\/admin-api(\/|\s|$)/.test(message) &&
-                 /status of 401/.test(message));
+        return !(/\/(admin-api|oauth2\/token)(\/|\?|\s|$)/.test(message) &&
+                 /status of 4\d\d/.test(message));
       }));
 
   check("the browser console is clean across the whole run", function () {
     assert.deepStrictEqual(severe, [],
       "THE BROWSER LOGGED " + severe.length + " SEVERE MESSAGE(S) WHILE " +
       "WALKING THIS CONSOLE: " + severe.join(" | ") + ". Every page here is " +
-      "served `default-src 'none'` with `script-src 'none'` over it, so a " +
-      "console page may load nothing at all beyond its own images — which " +
-      "means a severe line is the browser saying this console asked for " +
-      "something its own policy refuses. That is either a page that grew an " +
-      "external asset or a policy that no longer matches the page, and " +
-      "neither shows up in a status code.");
+      "served `default-src 'none'` with only the console's script and its " +
+      "calls to this origin allowed, so a severe line is the browser saying " +
+      "this console asked for something its own policy refuses, or that a " +
+      "call failed in a way the console does not answer — and neither shows " +
+      "up in a status code a check reads.");
   });
 
   log.info("[console] OK — " + entries.length + " browser log entr(ies) " +

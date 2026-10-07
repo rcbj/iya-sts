@@ -150,6 +150,7 @@ interface DirectoryHooks {
 
 // The two kinds of context the resolver halves are handed.
 interface IssuanceContext {
+  application?: unknown;
   username?: unknown;
   subject?: unknown;
   client_id?: unknown;
@@ -349,7 +350,10 @@ class GroupClaims {
     log.debug("Entering GroupClaims.appOf().");
     const ctx = context || {};
     log.debug("Leaving GroupClaims.appOf().");
-    return String(ctx.client_id || ctx.audience || '');
+    // `application` first (#483): a caller that resolved the application
+    // names it — WS-Trust, whose audience is an AppliesTo URI that
+    // `applications.settingFor()` (an identifier lookup) cannot reach.
+    return String(ctx.application || ctx.client_id || ctx.audience || '');
   }
 
   /**

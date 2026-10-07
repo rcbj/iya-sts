@@ -344,8 +344,12 @@ key-encryption key changes none of them. That key is never rotated.
 ## The stack ships with a secret store
 
 `docker compose up` brings up **OpenBao** beside the service
-and the database, and the service reads BOTH secrets out of it. Nothing is
-configured for that: it is what the stack does.
+and the database. The key-encryption key is a **Transit key** in it,
+`sts-kek`, which wraps each data encryption key and never leaves the store,
+and the database password is read out of it. Nothing is configured for that:
+it is what the stack does. **There is no key-encryption key file anywhere in
+the stack**, and nothing secret is mounted at `/run/secrets` but the
+service's own OpenBao client credential.
 
 What the bootstrap builds, in three one-shot steps you can watch in the log:
 
@@ -355,13 +359,43 @@ What the bootstrap builds, in three one-shot steps you can watch in the log:
    unsealed with no operator and no key ceremony, and keeps its storage across
    restarts (dev mode would lose the key-encryption key on every start, and a
    service whose KEK changes cannot read back anything it sealed);
-3. the secrets, a certificate authority **inside** the store, a client
-   certificate issued from it for this service, and a policy binding that
-   certificate to **read on two paths and write nothing**.
+3. the Transit key and the database password, a certificate authority
+   **inside** the store, a client certificate issued from it for this
+   service, and a policy binding that certificate to **use the Transit key,
+   read the database password, and write nothing** — it cannot rotate or
+   reconfigure the key either.
 
 The service then authenticates with that certificate rather than a token — the
 store issued the identity, can revoke it, and no bearer credential sits in a
-file waiting to be copied.
+file waiting to be copied. The certificate lasts ninety days and is renewed by
+the seeder when it is within thirty days of expiry. It is mounted at
+`/run/secrets/openbao`, and its key is mode 0600, owned by uid 10001, the
+user the service runs as. The service is not root, so the mode is what keeps
+another user from reading the key.
+
+**The management API's client secret is kept apart from these, where the
+service's identity cannot read it.** It is at `secret/sts-admin`. At each
+`docker compose up` the seeder writes the service a single-use,
+response-wrapped token for that path. The container's start command unwraps
+it as root, reads the secret, revokes the token, and hands the value to the
+service as a file, which the service reads once and deletes. Then it drops to
+uid 10001 before the service starts. If somebody has already unwrapped the
+token, the service does not start, because that means somebody else read the
+secret. So a shell that has the running service's credential can use the
+key-encryption key and read the database password, but it does not have
+`/admin-api`. [Management API → The first token](management-api.md#the-first-token-on-a-stack-you-run)
+covers how an operator reads the secret.
+
+**Nothing on disk holds OpenBao's root token.** The seeder uses it for the run
+that initialises the store and revokes it when that run ends. Later runs use a
+narrow token of their own, kept in the store's volume, which can only renew
+the service's client certificate and make the read-only tokens for
+`secret/sts-admin`. It cannot read the key-encryption key or the database
+password, and it cannot change a policy, a mount or an auth method. The
+initialising run prints the store's **recovery key** once, and nothing keeps a
+copy of it: `bao operator generate-root` needs it to make a root token again.
+Set `STS_BAO_PRINT_CREDENTIALS=false` to print neither the recovery key nor
+the operator token.
 
 **The policy is verified rather than asserted.** The seeder finishes by logging
 in as the service, reading what it reads, and attempting the write it must never
@@ -370,8 +404,9 @@ capability list therefore fails at boot rather than in an audit.
 
 ```
 sts-bao-seed: proved it with the certificate itself: policies [default, sts-read],
-              the two secrets readable, a write to them refused 403, and no other
-              path reachable.
+              the two secrets readable, a write to them refused 403, no other
+              path reachable (secret/sts-admin among them), and the Transit key
+              sts-kek usable but neither rotatable nor reconfigurable.
 ```
 
 **What it does not protect you from, said plainly:** the unseal key travels in
@@ -419,8 +454,8 @@ change, not this service's), and it has no test-read, because that would be a
 console page causing the key to be in memory. Every probe behind it reads metadata only.
 
 **A probe refused with 403 is usually good news** and the page says so: the
-identity is bound to two read paths, so a refusal anywhere else is the policy
-working.
+identity is bound to a handful of paths (two to read, and the Transit key's
+encrypt and decrypt), so a refusal anywhere else is the policy working.
 
 `GET /admin-api/secrets` is the same report as JSON.
 
@@ -442,6 +477,10 @@ STS_DATABASE_PASSWORD_PROVIDER: file
 # no location: empty means "wherever the key-encryption key is"
 STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=require
 ```
+
+The file is yours to mount; this repository's compose stack does not use one.
+The image runs the service as uid 10001, not root, so the file must be
+readable by that user — and, for the mode to mean anything, by no other.
 
 **The location defaults to the key's**, which is the whole point: a deployment
 already mounts one file, or already keeps one secret in AWS, and being made to

@@ -74,7 +74,7 @@
 // `common/protocol_stack.ts` registers after `oauth2`'s.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -408,8 +408,7 @@ class ProviderCommands {
   static digest(token: string): string {
     helpers.log.debug("Entering ProviderCommands.digest().");
     helpers.log.debug("Leaving ProviderCommands.digest().");
-    return nodeCrypto.createHash('sha256').update(String(token))
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(token), 'base64url');
   }
 
   // -------------------------------------------------------------------------
@@ -433,10 +432,9 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.issuer(). From the request.");
       return iss;
     }
-    // The realm's own base first (#99), as helpers.pinnedBaseUrl() reads it.
-    const pinned = String(config.value('listener.publicBaseUrl') ||
-                          config.value('global.publicBaseUrl') || '').trim()
-      .replace(/\/+$/, '');
+    // The authorization server's advertised base (#99, #472), as every URL
+    // of it is built.
+    const pinned = helpers.pinnedBaseUrl('oauth-oidc');
     if (config.value('oauth2.issuer') || pinned) {
       log.debug("Leaving ProviderCommands.issuer(). Pinned.");
       return jwtAccessToken.issuerFor(pinned + realms.currentPrefix());
@@ -604,7 +602,7 @@ class ProviderCommands {
   private mintCallback(fields: Json): string {
     const { log, now } = this.deps;
     log.debug("Entering ProviderCommands.mintCallback().");
-    const token = nodeCrypto.randomBytes(32).toString('base64url');
+    const token = stsCrypto.randomBytes(32).toString('base64url');
     callbacks.set(ProviderCommands.digest(token), Object.assign({
       expiresAt: now() + this.setting('oauth2.commandCallbackTtlS') * 1000
     }, fields));

@@ -66,7 +66,17 @@ const LEFT_TO_THEIR_OWN_CONTROL = [
   // An application's own claim sets (2026-10-01), each one JSON array,
   // written by the Custom claims and Custom SAML attributes sections.
   'oauthClaimsAccessToken', 'oauthClaimsIdToken', 'oauthClaimsUserinfo',
-  'saml2CustomAttributes', 'saml11CustomAttributes'
+  'saml2CustomAttributes', 'saml11CustomAttributes',
+  // And their directory-attribute selections and the credential claims
+  // (#495), drawn as the catalogue's checkboxes.
+  'oauthClaimAttributesAccessToken', 'oauthClaimAttributesIdToken',
+  'oauthClaimAttributesUserinfo', 'saml2ClaimAttributes',
+  'saml11ClaimAttributes', 'vcCredentialClaimAttributes',
+  // And a Kerberos service's own PAC claims (#493).
+  'krb5ClaimsPac',
+  // A secret destination's write credential (#221 P3): write-only, set on
+  // Directory → Secret destinations.
+  'secretDestCredential'
 ];
 
 function run(t) {
@@ -267,11 +277,16 @@ function run(t) {
           '8. fieldExample() is what the rows carry');
 
   // --- 5. The console's simplified view reads `declaration` ---------------
-  const source = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
-                                           'admin.ts'), 'utf8');
-  t.check(/view === 'advanced' \|\| row\.declaration \|\| !!row\.overrides/
-            .test(source),
-          '5. newApplicationFields() draws every declaration in the ' +
+  // The answer of GET /admin-api/applications/new marks each field `inSimple`
+  // since #446, and the page draws a field in the simplified view by that
+  // mark alone; a declaration is one of the three things that set it.
+  const views = fs.readFileSync(path.join(__dirname, '..', 'admin-core',
+                                          'admin_views.ts'), 'utf8');
+  const page = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
+                                         'web_applications.ts'), 'utf8');
+  t.check(/inSimple: !!row\.declaration \|\| !!row\.overrides/.test(views) &&
+          /view === 'advanced' \|\| row\.inSimple/.test(page),
+          '5. the new-application form draws every declaration in the ' +
           'simplified view');
   log.debug("Leaving run().");
 }

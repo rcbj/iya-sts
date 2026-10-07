@@ -92,7 +92,6 @@
 import cellLocator = require('../common/cell_locator');
 // WHICH CELL ANSWERS A WALLET'S POST (#98 D10). A library.
 import cellPlacement = require('../common/cell_placement');
-import crypto = require('crypto');
 // Whether a host is an IP address, which a dNSName cannot be (#230).
 import net = require('net');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
@@ -595,7 +594,7 @@ class VcVerifier {
     blocks.forEach((pem, i) => {
       try {
         out.push({ label: 'trusted issuer certificate ' + (i + 1), pem: pem,
-                   key: new crypto.X509Certificate(pem).publicKey });
+                   key: stsCrypto.parseCertificate(pem).publicKey });
       } catch (e) {
         log.debug("Caught in VcVerifier.trustedIssuerKeys(): " +
                   ((e && e.message) || e));
@@ -651,8 +650,8 @@ class VcVerifier {
         if (one.publicJwk && one.publicJwk.kty !== 'AKP' && one.alg === alg &&
             (!header.kid || kidNamesKey(header.kid, one.publicJwk.kid))) {
           candidates.push({ label: 'this issuer\'s ' + alg + ' key',
-                            key: crypto.createPublicKey(
-                                { key: one.publicJwk, format: 'jwk' }) });
+                            key: stsCrypto.publicKeyFromJwk(
+                                one.publicJwk) });
         }
       });
     }
@@ -1103,10 +1102,9 @@ class VcVerifier {
     const configured = String(config.value('oid4vp.x509DnsName') || '')
       .trim().toLowerCase();
     let pinned = '';
-    // The realm's own base first (#99): its host is the Response URI's.
-    const pinnedBase = String(config.value('listener.publicBaseUrl') ||
-                              config.value('global.publicBaseUrl') || '')
-      .trim();
+    // The verifier's advertised base (#99, #472): its host is the Response
+    // URI's.
+    const pinnedBase = helpers.pinnedBaseUrl('oid4vc');
     if (pinnedBase) {
       try {
         pinned = new URL(pinnedBase).hostname.toLowerCase();
@@ -1293,7 +1291,7 @@ class VcVerifier {
   private requestSigningJwk(): any {
     const { log, STS, publishedKidFor } = this.deps;
     log.debug("Entering VcVerifier.requestSigningJwk().");
-    const jwk: any = crypto.createPublicKey(STS.privateKey)
+    const jwk: any = stsCrypto.publicKeyOf(STS.privateKey)
       .export({ format: 'jwk' });
     log.debug("Leaving VcVerifier.requestSigningJwk().");
     // The `kid` the signed header carries (`keys.kidFormat`), so a wallet
@@ -1765,8 +1763,8 @@ class VcVerifier {
       let secret;
       let kind;
       if (alg === 'ECDH-ES') {
-        const pair = crypto.generateKeyPairSync('ec',
-                                                { namedCurve: 'P-256' });
+        const pair = stsCrypto.generateKeyPairSync('ec',
+                                                   { namedCurve: 'P-256' });
         publicJwk = Object.assign(pair.publicKey.export({ format: 'jwk' }),
                                   { use: 'enc', alg: 'ECDH-ES', kid: kid });
         secret = String(pair.privateKey.export(
@@ -1822,7 +1820,7 @@ class VcVerifier {
       expectedKid: entry.kid
     }, entry.kind === 'jwk'
       ? { privateJwk: JSON.parse(String(secret || '{}')) }
-      : { privateKey: crypto.createPrivateKey(String(secret || '')) }));
+      : { privateKey: stsCrypto.privateKeyFrom(String(secret || '')) }));
     log.debug("Leaving VcVerifier.openResponse(). " + entry.alg + ".");
     return out;
   }
@@ -2059,9 +2057,8 @@ class VcVerifier {
       return null;
     }
     log.debug("Leaving VcVerifier.sdHashOf().");
-    return b64u(crypto.createHash(nodeAlg)
-                      .update(presentedWithoutKb, 'ascii')
-                      .digest());
+    return b64u(stsCrypto.digest(nodeAlg,
+                                 Buffer.from(presentedWithoutKb, 'ascii')));
   }
 
   // A bbs-2023 derived proof (OID4VP format ldp_vc).
@@ -2776,9 +2773,9 @@ class VcVerifier {
         return;
       }
       const digest = nodeAlg ?
-                     b64u(crypto.createHash(nodeAlg)
-                                .update(encoded, 'ascii')
-                                .digest()) : '';
+                     b64u(stsCrypto.digest(nodeAlg,
+                                           Buffer.from(encoded, 'ascii'))) :
+                     '';
       if (signedDigests.indexOf(digest) === -1) {
         unmatched++;
         log.error(errorCodes.tag('STS-VC-0040') +
@@ -3371,7 +3368,7 @@ class VcVerifier {
     let key: any = null;
     if (!own) {
       try {
-        key = new crypto.X509Certificate(verified.issuerCertificatePem)
+        key = stsCrypto.parseCertificate(verified.issuerCertificatePem)
           .publicKey;
       } catch (e) {
         log.debug("Caught in VcVerifier.statusCheck(): " +
@@ -3749,8 +3746,8 @@ class VcVerifier {
       record.signIn.via = record.responseMode;
       if (outcome.ok) {
         responseCode = this.deps.randomId(24);
-        record.signIn.responseCodeHash = crypto.createHash('sha256')
-          .update(responseCode, 'utf8').digest('base64url');
+        record.signIn.responseCodeHash =
+          stsCrypto.digest('sha256', responseCode, 'base64url');
       } else if (idv.ok) {
         log.info(errorCodes.tag(outcome.errorCode) + 'oid4vp: a ' +
                  'self-issued ID Token verified and signs nobody in: ' +
@@ -4380,8 +4377,8 @@ class VcVerifier {
         const outcome = this.recordAnswer(record, answer, 'direct_post');
         if (outcome.ok) {
           responseCode = this.deps.randomId(24);
-          record.signIn.responseCodeHash = crypto.createHash('sha256')
-            .update(responseCode, 'utf8').digest('base64url');
+          record.signIn.responseCodeHash =
+            stsCrypto.digest('sha256', responseCode, 'base64url');
           vpTransactions.set(state, record);  // through the store, as above
         }
       } else {

@@ -47,6 +47,12 @@
 # `sts-lb`. This file adds what the base file has no variable for.
 # ===========================================================================
 services:
+  # A START-UP TOKEN PER NODE (#254): the base file's seeder writes one for
+  # `sts` only, and node B takes its own.
+  openbao-seed:
+    environment:
+      - STS_BAO_STARTUP_NODES=sts,sts2
+
   sts:
     environment:
       - STS_CLUSTER_MODE=${STS_CLUSTER_MODE:-active-active}
@@ -75,6 +81,8 @@ services:
       sts:
         condition: service_healthy
     environment:
+      # Its own start-up token (#254).
+      - STS_BAO_STARTUP_NODE=sts2
       - STS_CLUSTER_MODE=${STS_CLUSTER_MODE:-active-active}
       - STS_CLUSTER_NODE_NAME=node-b
       - STS_PROXY_PROTOCOL=${STS_PROXY_PROTOCOL:-off}

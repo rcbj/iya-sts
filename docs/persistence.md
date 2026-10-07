@@ -149,10 +149,12 @@ docker run -d --name sts-db -p 5432:5432 \
   postgres:18
 ```
 
-That plain container speaks TLS only if you configure it to; the compose stack
-below does it for you and **requires** it. Against a database of your own,
-either bring your own certificate or leave `sslmode` out of the connection
-string and connect in the clear — this service does whichever the string says.
+That plain container speaks TLS only if you configure it to, and this service
+**never connects to its database in the clear**: a connection string with no
+`sslmode` is dialled as `sslmode=require`, and `sslmode=disable` or `allow`, or
+a string that is not a `postgres://` URL, stops the service starting
+(`STS-STORE-0078`). So give that container a certificate (the compose stack
+below does it for you, and requires TLS at the database end too).
 
 Point it somewhere else with `STS_DATABASE_URL`, or by editing
 `persistence.databaseUrl` in your appconfig file — all four of them carry the

@@ -31,11 +31,9 @@
 //   6. THE OTHER DOORS AGREE: the debugger refuses the unclaimed account
 //      (STS-DBG-0033) and a person holding no role; a portal session's
 //      certificate-enrollment authority waits for the claim.
-//   7. THE GATE, OVER A LOOPBACK SOCKET with real relying-party sessions made
-//      from real sign-on sessions: a certificate session as `admin` is refused
-//      `bootstrap_password_required`, a person holding no role is refused
-//      `insufficient_role`, a password session claims the console and is let
-//      in, after which the certificate session is an ordinary member's.
+//   7. (THE CONSOLE'S GATE until the cutover, #446: the console has no gate
+//      of its own now, and the claim at issuance is
+//      `tests/console_claim_at_issuance.js`.)
 //   8. THE UN-SEEDED PRODUCT REALM is closed to everybody and logs
 //      STS-ADMIN-0798; a development realm and a seeded one log nothing.
 //
@@ -61,35 +59,11 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   const ROOT = process.env.CB_ROOT;
   const OUT = process.env.CB_OUT;
-  const http = require('http');
   const fs = require('fs');
   const findings = [];
   function note(ok, what, detail) {
     findings.push({ ok: !!ok, what: what,
                     detail: detail === undefined ? '' : String(detail) });
-  }
-
-  function get(port, urlPath, cookie) {
-    return new Promise(function (resolve) {
-      const req = http.request({ host: '127.0.0.1', port: port, path: urlPath,
-                                 method: 'GET',
-                                 headers: { cookie: cookie,
-                                            accept: 'application/json' } },
-                               function (res) {
-        let text = '';
-        res.on('data', function (c) { text += c; });
-        res.on('end', function () {
-          let body = null;
-          try {
-            body = JSON.parse(text);
-          } catch (e) {
-            body = { raw: text.slice(0, 300), parseError: e.message };
-          }
-          resolve({ status: res.statusCode, body: body });
-        });
-      });
-      req.end();
-    });
   }
 
   // A response object that keeps what `setCookieHeader()` writes.
@@ -111,7 +85,6 @@ function childMain() {
     const realms = require(ROOT + '/common/realms');
     const rbac = require(ROOT + '/admin-ui/admin_rbac');
     const authn = require(ROOT + '/authn/authn');
-    const oidcRp = require(ROOT + '/common/oidc_rp');
     const debuggerAccess = require(ROOT + '/debugger/debugger_access');
     const enrollment = require(ROOT + '/common/cert_enrollment');
     const ldapServer = require(ROOT + '/ldap/ldap_server');
@@ -286,87 +259,14 @@ function childMain() {
     // ---------------------------------------------------------------------
     // 7. THE GATE, OVER A LOOPBACK SOCKET.
     // ---------------------------------------------------------------------
-    const server = http.createServer(app);
-    await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
-    const port = server.address().port;
-    const consoleCookie = oidcRp.cookieFor('admin');
-    // A sign-on session in P made by `via` with `amr`, and the console's own
-    // relying-party session over it, as `oidc_rp.ts`'s callback makes one.
-    const consoleSessionAs = function (username, amr, via, detail) {
-      const signOnRes = fakeRes();
-      const signOn = inRealm(P, function () {
-        return authn.startSession(signOnRes, username, amr, '1', via,
-                                  detail || {});
-      });
-      if (!signOn) {
-        return { cookie: '', why: 'no sign-on session for ' + username };
-      }
-      const rpRes = fakeRes();
-      const rp = inRealm(realms.DEFAULT_ID, function () {
-        return authn.startRelyingPartySession({
-          res: rpRes, username: username,
-          claims: { amr: amr, sid: signOn.id, auth_time: signOn.authTime },
-          amr: amr, via: 'the admin console', parent: signOn.id,
-          surface: 'admin', label: 'the admin console',
-          clientId: 'sts-admin-console', cookie: consoleCookie,
-          parentRealm: P
-        });
-      });
-      return { cookie: rpRes.cookie, session: rp };
-    };
-    const page = '/realm/' + P + '/admin/tokens?format=json';
+    // SECTION 7 TESTED THE CONSOLE'S GATE — a console session as `admin`
+    // refused `bootstrap_password_required` on a certificate or a partner's
+    // assertion, let in and claiming on a password — and the gate is gone
+    // since the cutover (#446): the console is a static client of
+    // `/admin-api`, and the claim is made where its client is issued the
+    // admin scopes. `tests/console_claim_at_issuance.js` holds the same
+    // cases there.
 
-    const byCertificate = consoleSessionAs('admin', ['swk'],
-                                           'X.509 client certificate');
-    note(byCertificate.session &&
-         byCertificate.session.signInAuthority === 'local' &&
-         byCertificate.session.amr.join() === 'swk',
-         '7a. precondition: the console session carries the ID Token\'s amr ' +
-         'and the sign-on session\'s authority',
-         JSON.stringify(byCertificate.session && {
-           amr: byCertificate.session.amr,
-           authority: byCertificate.session.signInAuthority }));
-    let r = await get(port, page, byCertificate.cookie);
-    note(r.status === 403 && r.body.error === 'bootstrap_password_required' &&
-         !rbac.bootstrapState(P).claimedAt,
-         '7b. a certificate sign-in as `admin` is refused ' +
-         'bootstrap_password_required and claims nothing',
-         r.status + ' ' + JSON.stringify(r.body).slice(0, 200));
-    const byPartner = consoleSessionAs('admin', ['federated', 'pwd'],
-      'Federation', { federation: { id: 'cb-partner', peer: 'x',
-                                    subject: 'admin' } });
-    r = await get(port, page, byPartner.cookie);
-    note(byPartner.session &&
-         byPartner.session.signInAuthority === 'federation' &&
-         r.status === 403 && r.body.error === 'bootstrap_password_required',
-         '7c. so is a federation partner asserting `admin`, although its amr ' +
-         'says pwd', r.status + ' ' + JSON.stringify(r.body).slice(0, 200));
-    const byVisitor = consoleSessionAs('visitor', ['pwd'],
-                                       'OAuth 2.0 / OIDC');
-    r = await get(port, page, byVisitor.cookie);
-    note(r.status === 403 && r.body.error === 'insufficient_role' &&
-         (r.body.roles || []).length === 0,
-         '7d. a person holding no role, signed in with a password, is ' +
-         'refused: the window never opens in product',
-         r.status + ' ' + JSON.stringify(r.body).slice(0, 200));
-    const byPassword = consoleSessionAs('admin', ['pwd'], 'OAuth 2.0 / OIDC');
-    r = await get(port, page, byPassword.cookie);
-    note(r.status === 200 && !!rbac.bootstrapState(P).claimedAt,
-         '7e. a PASSWORD sign-in as `admin` through its own realm is let in ' +
-         'and claims the console',
-         r.status + ' ' + JSON.stringify(r.body).slice(0, 200));
-    r = await get(port, page, byCertificate.cookie);
-    note(r.status === 200,
-         '7f. after which `admin` is an ordinary member, however it signs in',
-         r.status + ' ' + JSON.stringify(r.body).slice(0, 200));
-    r = await get(port, page, byVisitor.cookie);
-    note(r.status === 403 && r.body.error === 'insufficient_role',
-         '7g. and the person holding no role is still refused',
-         r.status);
-    note(rbac.rolesOf('admin', P).claimPending === false &&
-         rbac.describe(P).bootstrapPasswordRequired === false,
-         '7h. the claim is no longer pending anywhere it is asked');
-    server.close();
 
     // ---------------------------------------------------------------------
     // 8. THE UN-SEEDED PRODUCT REALM.

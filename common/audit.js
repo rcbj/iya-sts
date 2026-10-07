@@ -99,6 +99,48 @@ const clientAddress = require('./client_address');
 const { AsyncLocalStorage } = require('async_hooks');
 
 // ---------------------------------------------------------------------------
+// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY:
+// this file is in the parent project's in-process Kerberos COPY closure
+// (kerberos/CLAUDE.md), and a top-level require would owe it two more files.
+// `seq_allocator` hands out a number unique across every process of the
+// service; the origin is this process's stable name in the store, or '' with
+// no shared store. Neither throws: a failure is the caller's own counter and
+// an empty origin.
+// ---------------------------------------------------------------------------
+const seqAllocator = {
+  next: function next(name, local) {
+    log.debug("Entering next().");
+    let allocator = null;
+    try {
+      allocator = require('./seq_allocator');
+    } catch (e) {
+      log.debug("Caught in next(): " + ((e && e.message) || e));
+      allocator = null;
+    }
+    log.debug("Leaving next().");
+    return allocator ? allocator.next(name, local) : local();
+  }
+};
+
+/**
+ * This process's stable origin in the store, or '' without a shared store.
+ *
+ * @returns the origin
+ */
+function processOrigin() {
+  log.debug("Entering processOrigin().");
+  let origin = '';
+  try {
+    origin = String(require('../persistence/persistence').originId() || '');
+  } catch (e) {
+    log.debug("Caught in processOrigin(): " + ((e && e.message) || e));
+    origin = '';
+  }
+  log.debug("Leaving processOrigin().");
+  return origin;
+}
+
+// ---------------------------------------------------------------------------
 // The cap, read WHERE IT IS USED rather than captured at require time.
 //
 // `audit.maxEvents` is a runtime setting — /admin/config and POST
@@ -307,6 +349,8 @@ const ACTIONS = [
     label: 'Somebody enrolled a security key on their own account' },
   { action: 'portal.key.removed', category: 'authentication',
     label: 'Somebody removed a security key from their own account' },
+  { action: 'portal.key.renamed', category: 'authentication',
+    label: 'Somebody renamed one of their own passkeys' },
   // A PERSON'S OWN TLS CLIENT CERTIFICATE (2026-09-13), on
   // /portal/signing-key. `issued` is the moment a private key left this
   // service, which is the row somebody investigating a certificate sign-in
@@ -549,6 +593,13 @@ const ACTIONS = [
     label: 'A device was removed' },
   { action: 'device.evict', category: 'directory',
     label: 'A device was removed to make room at its person\'s bound' },
+  // #256: Google's Android attestation status list revoked a chain.
+  { action: 'device.attestation-revoked', category: 'directory',
+    label: 'A device key is no longer attested: Google\'s Android ' +
+           'attestation status list revokes its chain' },
+  { action: 'webauthn.attestation-revoked', category: 'authentication',
+    label: 'A security key\'s attestation is no longer trusted: Google\'s ' +
+           'Android attestation status list revokes its chain' },
   { action: 'device.key-add', category: 'directory',
     label: 'A key was added to a device' },
   { action: 'device.key-remove', category: 'directory',
@@ -595,6 +646,8 @@ const ACTIONS = [
   // every token request would otherwise produce a row saying nothing happened.
   { action: 'application.create', category: 'application',
     label: 'An application was seen for the first time' },
+  { action: 'application.secret-revealed', category: 'application',
+    label: 'A credential of an application was revealed to an administrator' },
   { action: 'application.update', category: 'application',
     label: 'An application recorded something new' },
   // Only ever from the console or the management API: no protocol path deletes
@@ -691,6 +744,8 @@ const ACTIONS = [
     label: 'An operator cleared somebody\'s authenticator app' },
   { action: 'admin.mfa.key.cleared', category: 'admin',
     label: 'An operator removed somebody\'s security key' },
+  { action: 'admin.mfa.key.renamed', category: 'admin',
+    label: 'An operator renamed somebody\'s passkey' },
   // THE PASSWORD AND SECOND-FACTOR CONTROLS ON A PERSON'S PAGE (2026-09-13),
   // each one ACT with who performed it. The sessions a reset's sign-out ends
   // write their own `session.end` rows, so these do not count them again.
@@ -1014,6 +1069,69 @@ const ACTIONS = [
     label: 'An administrator reset a password and handed over the person\'s keytab' },
   { action: 'admin.user.attribute', category: 'admin',
     label: 'An administrator set, added or removed a person\'s attribute' },
+  // #221's three, written by admin-core/admin_actions.ts' service account
+  // action through `audited()` (2026-10-06): `set` reached the audit through
+  // a literal too and was caught; `cleared` and `rotate` are built only in
+  // that call and were as unqueryable.
+  { action: 'admin.service-account.set', category: 'admin',
+    label: 'An administrator made a person a service account, or changed ' +
+           'its owner or destination' },
+  { action: 'admin.service-account.cleared', category: 'admin',
+    label: 'An administrator made a service account an ordinary person ' +
+           'again' },
+  { action: 'admin.service-account.rotate', category: 'admin',
+    label: 'An administrator asked for a service account\'s password to be ' +
+           'rotated' },
+  // And eight more `audited()` wrote with no row, found the same day by
+  // widening tests/audit_vocabulary.js to read that helper's calls.
+  { action: 'admin.app-password.created', category: 'admin',
+    label: 'An administrator made an app password for a person' },
+  { action: 'admin.app-password.revoked', category: 'admin',
+    label: 'An administrator revoked a person\'s app password' },
+  { action: 'admin.ciba.answered', category: 'admin',
+    label: 'An administrator approved or denied a CIBA request (test ' +
+           'control)' },
+  { action: 'admin.device.removed', category: 'admin',
+    label: 'An administrator removed a person\'s device' },
+  { action: 'admin.ida.recorded', category: 'admin',
+    label: 'An administrator recorded an identity verification for a ' +
+           'person' },
+  { action: 'admin.ida.removed', category: 'admin',
+    label: 'An administrator removed a person\'s identity verification' },
+  { action: 'admin.siop.enrolled', category: 'admin',
+    label: 'An administrator enrolled a self-issued (SIOPv2) subject for a ' +
+           'person' },
+  { action: 'admin.siop.removed', category: 'admin',
+    label: 'An administrator removed a person\'s self-issued (SIOPv2) ' +
+           'subject' },
+  // A federation partner's Shared Signals (#153, #373): ssf_transmitters.ts
+  // records these through its own `audited()`, three by name and six as
+  // 'ssf.signals.' + the stream act — none had a row until the widened
+  // tests/audit_vocabulary.js read that helper (2026-10-06).
+  { action: 'ssf.signals.discover', category: 'signals',
+    label: 'A federation partner\'s Shared Signals configuration was ' +
+           'discovered' },
+  { action: 'ssf.signals.stream', category: 'signals',
+    label: 'A stream was created at a federation partner\'s Shared ' +
+           'Signals transmitter' },
+  { action: 'ssf.signals.unblock', category: 'signals',
+    label: 'Sign-ins a federation partner\'s signal had blocked were ' +
+           'allowed again' },
+  { action: 'ssf.signals.read-stream', category: 'signals',
+    label: 'A federation partner\'s stream was read' },
+  { action: 'ssf.signals.update-stream', category: 'signals',
+    label: 'A federation partner\'s stream was updated' },
+  { action: 'ssf.signals.delete-stream', category: 'signals',
+    label: 'A federation partner\'s stream was deleted' },
+  { action: 'ssf.signals.set-status', category: 'signals',
+    label: 'A federation partner\'s stream status was set' },
+  { action: 'ssf.signals.add-subject', category: 'signals',
+    label: 'A subject was added to a federation partner\'s stream' },
+  { action: 'ssf.signals.remove-subject', category: 'signals',
+    label: 'A subject was removed from a federation partner\'s stream' },
+  { action: 'ssf.signals.verify', category: 'signals',
+    label: 'A federation partner\'s stream was asked for a verification ' +
+           'event' },
   { action: 'application.key-issued', category: 'application',
     label: 'A hosted surface\'s client key pair was issued by the CA' },
   { action: 'enrollment.acme.account.create', category: 'protocol',
@@ -1078,6 +1196,15 @@ const ACTIONS = [
     label: 'A pushed authorization request was withdrawn' },
   { action: 'password.set', category: 'authentication',
     label: 'An administrator set a person\'s password' },
+  // A SERVICE ACCOUNT'S ROTATION (#221 P4), written by
+  // `common/service_account_rotation.ts` through `audit.record()` rather
+  // than `audited()`, which is why the widened vocabulary check did not
+  // find them.
+  { action: 'service-account.rotated', category: 'authentication',
+    label: 'A service account\'s password was rotated and pushed to its ' +
+           'destination' },
+  { action: 'service-account.rotation-failed', category: 'authentication',
+    label: 'A service account\'s password did not rotate; nothing changed' },
   { action: 'portal.app-password.created', category: 'authentication',
     label: 'A person made an app password' },
   { action: 'portal.app-password.revoked', category: 'authentication',
@@ -1135,6 +1262,12 @@ const ACTIONS = [
     label: 'An attribute source was removed' },
   { action: 'attribute-sources.refresh', category: 'admin',
     label: 'People were read from an attribute source by hand' },
+  { action: 'secret-destination.push', category: 'admin',
+    label: 'A service account\'s password was pushed to a secret ' +
+           'destination' },
+  { action: 'secret-destination.test-push', category: 'admin',
+    label: 'A canary version was pushed to a secret destination\'s test ' +
+           'secret' },
   { action: 'roles.create', category: 'admin',
     label: 'A role was created' },
   { action: 'roles.delete', category: 'admin',
@@ -1198,10 +1331,12 @@ const OUTCOMES = ['success', 'refused', 'error'];
 // cap — measurably nothing here, and the alternative (a real circular buffer
 // with a head index) is more code to get the ordering wrong in.
 //
-// `seq` is monotonic and NEVER reused, including across a trim. That is what
-// makes the number on a row a stable name for that event: a caller can say "I
-// have read up to 4,102" and mean it, where a row index would silently mean a
-// different event as soon as anything was dropped.
+// `seq` is NEVER reused — not across a trim, a restart, or the processes of
+// one service (#465, `common/seq_allocator.ts`) — and it rises within each
+// process. That is what makes the number on a row a stable name for that
+// event, where a row index would silently mean a different event as soon as
+// anything was dropped. It is NOT one order across processes: a reader
+// resumes by time (`at`), with `seq` as the tie-break.
 // ---------------------------------------------------------------------------
 // PER TRUST REALM. `realms.arr()` is a array that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -1224,11 +1359,11 @@ const events = realms.arr({ persist: 'audit.events', merge: 'own',
 // `realms.obj(factory)` is a plain object per realm, so `nums.seq++` works
 // exactly as the bindings it replaced did.
 // ---------------------------------------------------------------------
-// PERSISTED WITH THE RING, and it has to be the two together. `seq` is
-// promised to be monotonic and never reused, which is what makes the number on
-// a row a stable name — "I have read up to 4,102" has to keep meaning the same
-// event across a restart. A restored ring beside a `seq` that went back to 0
-// would renumber every event written afterwards on top of ones already read.
+// PERSISTED WITH THE RING, and it has to be the two together. `nums.seq` is
+// the counter a SINGLE-WRITER store numbers with (`seq_allocator.ts` hands
+// out leased numbers wherever the store is shared, #465), and a restored ring
+// beside one that went back to 0 would renumber every event written
+// afterwards on top of ones already read.
 const nums = realms.obj(function () {
   return { seq: 0, recorded: 0 };
 }, { persist: 'audit.nums', merge: 'own' });
@@ -1491,10 +1626,18 @@ function record(event) {
   }
   const outcome = OUTCOMES.indexOf(info.outcome) >= 0
     ? info.outcome : (errorCode ? 'refused' : 'success');
-  nums.seq++;
   nums.recorded++;
   const row = {
-    seq: nums.seq,
+    // UNIQUE ACROSS EVERY PROCESS OF THE SERVICE (#465): a number from this
+    // process's block leased from the store, or this realm's own counter
+    // where there is one writer. See common/seq_allocator.ts.
+    seq: seqAllocator.next('audit', function () {
+      nums.seq++;
+      return nums.seq;
+    }),
+    // WHICH PROCESS RECORDED IT (#465) — its stable origin in the store, or
+    // '' with no shared store — the tie-break merged() sorts on.
+    origin: processOrigin(),
     at: now,
     category: category,
     action: action,
@@ -1808,7 +1951,13 @@ function recordHttp(req, res, detail) {
               "recorded.");
     return null;
   }
-  const actor = actorOfRequest(req);
+  // THE MANAGEMENT API'S CALLER IS THE SUBJECT OF ITS TOKEN (#446,
+  // 2026-10-05): `mgmt-api/admin_api.ts`'s gate leaves the subject it
+  // verified on `res.locals.apiCaller`, and that is who made this call —
+  // not whoever's sign-on cookie the request happened to carry, which is
+  // what the resolver reads. Nothing but that gate writes the member.
+  const caller = res.locals && res.locals.apiCaller;
+  const actor = (caller && String(caller.name || '')) || actorOfRequest(req);
   const posted = (action === 'admin.change' || action === 'api.change')
     ? actionOf(req) : '';
   const statusOutcome = outcomeOfStatus(res.statusCode);
@@ -1988,11 +2137,13 @@ function list() {
 // ever sees more than this process's own events. Two consequences worth
 // knowing:
 //
-//   * **`seq` IS ONLY MONOTONIC WITHIN ONE PROCESS.** It always was — it is a
-//     per-realm counter — and with several processes it is per process as
-//     well. The rows carry `origin` so that "I have read up to 4,102" can
-//     still mean something, and the sort below is by TIME rather than by
-//     sequence, because time is the only ordering two processes share.
+//   * **`seq` IS UNIQUE ACROSS PROCESSES, AND RISES WITHIN EACH ONE (#465).**
+//     Each process numbers from blocks it leased from the store
+//     (`common/seq_allocator.ts`), so no two rows share a number — but two
+//     processes hold different blocks, so the numbers are not one order
+//     across them. The rows carry `origin`, and the sort below is by TIME,
+//     because time is the only ordering two processes share; a reader
+//     resumes by `at`, with `seq` as the row's name and the tie-break.
 //   * **THE CAP IS PER PROCESS**, so a two-process deployment holds up to
 //     twice `audit.maxEvents` between them. That is the honest behaviour
 //     rather than a bug: each process bounds its own memory, and trimming

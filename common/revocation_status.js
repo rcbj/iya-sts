@@ -272,12 +272,16 @@ const http = require('http');
 const https = require('https');
 const net = require('net');
 const tls = require('tls');
-const nodeCrypto = require('crypto');
 const { URL } = require('url');
 const asn1js = require('asn1js');
 const pkijs = require('pkijs');
 const config = require('./config');
 const realms = require('./realms');
+// This service's one cryptographic module (#453): the certificate parse, the
+// presented-chain key, the OCSP CertID hashes and the request nonce. A leaf
+// that requires nothing here, and already in the parent project's Kerberos
+// COPY closure through `helpers.js`.
+const stsCrypto = require('./crypto');
 // The one helper for a verified outbound connection (#201), required LAZILY
 // where a list is fetched: this module is in the parent project's Kerberos
 // COPY closure (kerberos/CLAUDE.md), and a load-time require would add
@@ -440,17 +444,17 @@ function x509Of(value) {
     log.debug("Leaving x509Of().");
     return null;
   }
-  if (value instanceof nodeCrypto.X509Certificate) {
+  if (stsCrypto.isParsedCertificate(value)) {
     log.debug("Leaving x509Of().");
     return value;
   }
   try {
     if (Buffer.isBuffer(value)) {
       log.debug("Leaving x509Of().");
-      return new nodeCrypto.X509Certificate(value);
+      return stsCrypto.parseCertificate(value);
     }
     log.debug("Leaving x509Of().");
-    return new nodeCrypto.X509Certificate(String(value));
+    return stsCrypto.parseCertificate(String(value));
   } catch (e) {
     // Not a certificate this OpenSSL can read — a composite post-quantum one,
     // or bytes that are not a certificate at all. Answered as absent: the
@@ -594,7 +598,7 @@ const PRESENTED_CHAIN_FLOOR_MS = 3600 * 1000;
 function leafKey(raw) {
   log.debug("Entering leafKey().");
   log.debug("Leaving leafKey().");
-  return nodeCrypto.createHash('sha256').update(raw).digest('hex');
+  return stsCrypto.digest('sha256', raw, 'hex');
 }
 
 function presentedChainLifetimeMs() {
@@ -907,11 +911,12 @@ const REASON_REMOVE_FROM_CRL = 8;
 const KEY_USAGE_CRL_SIGN = 6;
 // The CertID digests a response may be keyed by. This file ASKS with SHA-1 and
 // matches an answer keyed by any of these, because a responder may re-key.
+// The names are `crypto.js`'s `OCSP_CERT_ID_HASHES` (#453).
 const CERT_ID_HASHES = {
-  '1.3.14.3.2.26': 'sha1',
-  '2.16.840.1.101.3.4.2.1': 'sha256',
-  '2.16.840.1.101.3.4.2.2': 'sha384',
-  '2.16.840.1.101.3.4.2.3': 'sha512'
+  '1.3.14.3.2.26': 'SHA-1',
+  '2.16.840.1.101.3.4.2.1': 'SHA-256',
+  '2.16.840.1.101.3.4.2.2': 'SHA-384',
+  '2.16.840.1.101.3.4.2.3': 'SHA-512'
 };
 const OCSP_RESPONSE_STATUS = { 1: 'malformedRequest', 2: 'internalError',
                                3: 'tryLater', 5: 'sigRequired',
@@ -2701,10 +2706,12 @@ async function listFrom(url, context) {
 //     `pki.revocationClockSkewS`), or, with no nextUpdate, thisUpdate is within
 //     `pki.revocationOcspMaxAgeS`.
 // ---------------------------------------------------------------------------
+// An OCSP CertID hash (RFC 6960 section 4.1.1), or the responder's KeyHash
+// (section 4.2.2.3, the same SHA-1), through `crypto.js` (#453).
 function digestOf(algorithm, bytes) {
   log.debug("Entering digestOf().");
   log.debug("Leaving digestOf().");
-  return nodeCrypto.createHash(algorithm).update(Buffer.from(bytes)).digest();
+  return stsCrypto.ocspCertIdHash(algorithm, Buffer.from(bytes));
 }
 
 function keyBitsOf(parsedCert) {
@@ -2715,7 +2722,7 @@ function keyBitsOf(parsedCert) {
 
 function buildOcspRequest(target) {
   log.debug('Entering buildOcspRequest().');
-  const nonce = nodeCrypto.randomBytes(32);
+  const nonce = stsCrypto.randomBytes(32);
   const nonceValue = Buffer.from(new asn1js.OctetString({
     valueHex: arrayBufferOf(nonce) }).toBER(false));
   const certId = new pkijs.CertID({
@@ -2723,10 +2730,10 @@ function buildOcspRequest(target) {
                                                    algorithmParams:
                                                      new asn1js.Null() }),
     issuerNameHash: new asn1js.OctetString({
-      valueHex: arrayBufferOf(digestOf('sha1',
+      valueHex: arrayBufferOf(digestOf('SHA-1',
                                        nameDerOf(target.parsed.issuer))) }),
     issuerKeyHash: new asn1js.OctetString({
-      valueHex: arrayBufferOf(digestOf('sha1',
+      valueHex: arrayBufferOf(digestOf('SHA-1',
                                        keyBitsOf(target.issuerParsed))) }),
     serialNumber: target.parsed.serialNumber
   });
@@ -2843,7 +2850,7 @@ async function ocspSignerOf(basic, target) {
     const byKey = responderId && responderId.valueBlock
       ? Buffer.from(responderId.valueBlock.valueHexView) : null;
     log.debug("Leaving named().");
-    return !!byKey && byKey.equals(digestOf('sha1', keyBitsOf(parsedCert)));
+    return !!byKey && byKey.equals(digestOf('SHA-1', keyBitsOf(parsedCert)));
   };
   const tried = [];
   if (named(target.issuerParsed)) {
@@ -4629,7 +4636,7 @@ function registeredCertificateOf(value) {
     log.debug("Leaving registeredCertificateOf().");
     return null;
   }
-  if (Buffer.isBuffer(value) || value instanceof nodeCrypto.X509Certificate) {
+  if (Buffer.isBuffer(value) || stsCrypto.isParsedCertificate(value)) {
     log.debug("Leaving registeredCertificateOf().");
     return x509Of(value);
   }

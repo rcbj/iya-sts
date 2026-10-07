@@ -68,7 +68,10 @@
 //      * **Nothing asks for a NameIdentifier format, a binding or an
 //        authentication context**, so `saml11.nameIdFormat` and
 //        `saml11.defaultProfile` are answers rather than defaults a request
-//        overrides. The non-spec `format` and `profile` parameters exist so
+//        overrides — except that since #189 a relying party whose metadata
+//        was consumed registered a profile WITH each assertion consumer
+//        service, and the `shire` it sends picks it (`profileFor()`). The
+//        non-spec `format` and `profile` parameters exist so
 //        that both can be exercised by hand; that is the same device
 //        `/sts?encrypt=1` is, and it is marked as non-spec everywhere it
 //        appears.
@@ -128,8 +131,10 @@
 //    to work at all, and once it exists an `<AttributeQuery>` is the same
 //    assertion builder behind the same envelope. So all four of SAML 1.1's
 //    request types are answered: AssertionArtifact, AssertionIDReference,
-//    AttributeQuery and AuthenticationQuery — the two QUERIES in development
-//    mode only, since product mode refuses both (see above soapEnvelope()).
+//    AttributeQuery and AuthenticationQuery — the two QUERIES to anybody in
+//    development mode, and in product only under #189's release policy: a
+//    registered, authenticated relying party asking about a subject it holds
+//    a live session for (`queryReleasePolicy()`, see answerQuery()).
 //    **The attribute authority is the
 //    half of SAML 1.1 that Shibboleth deployments actually leaned on**, and a
 //    mock that spoke the browser profile without it would be missing the part a
@@ -194,7 +199,6 @@
 // anonymous functions in the exports are methods now.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires only
 // config.js and error_codes.js here, so it cannot join a cycle and it
 // registers no route, so its position is not a position at all.
@@ -754,11 +758,16 @@ class Saml11Sso {
   // IS THE SEGMENT A REGISTERED SAML 1.1 RELYING PARTY (#112)? An entry of
   // the kind, or one DECLARED for the SAML 1.1 family — not any application
   // whose slug happens to match.
+  //
+  // AND, IN PRODUCT, ONE SOMEBODY REGISTERED (#496): `appRegisteredBy`, so
+  // an entry a development sighting filed — kind and all — is not one.
   private isRegisteredRelyingParty(id): boolean {
-    const { applications, log } = this.deps;
+    const { applications, log, mode } = this.deps;
     log.debug("Entering Saml11Sso.isRegisteredRelyingParty().");
     const record: any = id ? applications.get(id) : null;
     const answer = !!record &&
+      (mode.issuesToUnregisteredApplications() ||
+       !!String(record.registeredBy || '')) &&
       ((record.kinds || []).indexOf(RP_KIND) >= 0 ||
        applications.declaredFamiliesOf(record).indexOf('saml11') >= 0);
     log.debug("Leaving Saml11Sso.isRegisteredRelyingParty(). " + answer);
@@ -1432,15 +1441,37 @@ class Saml11Sso {
     log.debug("Entering Saml11Sso.mintArtifact(). providerId=" + providerId);
     const header = Buffer.alloc(2);
     header.writeUInt16BE(0x0001, 0);
-    const sourceId = crypto.createHash('sha1')
-                           .update(String(providerId), 'utf8')
-                           .digest();
-    const handle = samlCells.stampHandle(crypto.randomBytes(20));
+    const sourceId = stsCrypto.samlArtifactSourceId(providerId);
+    const handle = samlCells.stampHandle(stsCrypto.randomBytes(20));
     const artifact = Buffer.concat([header, sourceId,
                                     handle]).toString('base64');
     log.debug("Leaving Saml11Sso.mintArtifact(). " + artifact.length +
               " base64 characters.");
     return artifact;
+  }
+
+  // IS THIS A TYPE 0x0001 ARTIFACT WHOSE SourceID NAMES A PROVIDER OTHER THAN
+  // the responder at `scopedId` (#160)? saml-bindings-1.1 section 4.1.1.6:
+  // the SourceID is how a destination site finds the responder of the source
+  // site that issued the artifact, so a responder answers only for its own
+  // providerID — with `saml11.perApplicationProviderId` on, an artifact
+  // minted for a relying party belongs to `/saml11/responder/{rp}`, not to
+  // the unscoped responder or another party's. A value that is not a 42-byte
+  // type 0x0001 artifact names no SourceID, and is the unknown artifact it
+  // looks like. `saml2_sso.ts`'s `isForeignArtifact()` is the 2.0 form.
+  private isForeignArtifact(artifact, scopedId): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Saml11Sso.isForeignArtifact().");
+    const bytes = Buffer.from(String(artifact || ''), 'base64');
+    if (bytes.length !== 42 || bytes.readUInt16BE(0) !== 0x0001) {
+      log.debug("Leaving Saml11Sso.isForeignArtifact(). Not a type 0x0001 " +
+                "artifact.");
+      return false;
+    }
+    const own = stsCrypto.samlArtifactSourceId(this.providerIdFor(scopedId));
+    const foreign = !own.equals(bytes.subarray(2, 22));
+    log.debug("Leaving Saml11Sso.isForeignArtifact(). " + foreign);
+    return foreign;
   }
 
   private stashArtifact(artifact, detail) {
@@ -1570,10 +1601,11 @@ class Saml11Sso {
   }
 
   // Which profile to use. The request may say — `profile=post|artifact`,
-  // non-spec and marked as such — and otherwise `saml11.defaultProfile`
-  // answers. There is no way for a SAML 1.1 relying party to ask in the
-  // protocol itself, which is decision 1 again: in 2.0 this comes off the
-  // AuthnRequest's ProtocolBinding.
+  // non-spec and marked as such — then the binding registered for the
+  // `shire` (below), and otherwise `saml11.defaultProfile` answers. There
+  // is no way for a SAML 1.1 relying party to ask in the protocol itself,
+  // which is decision 1 again: in 2.0 this comes off the AuthnRequest's
+  // ProtocolBinding.
   private profileFor(params, rpId?) {
     const { config, log } = this.deps;
     log.debug("Entering Saml11Sso.profileFor(). asked=" +
@@ -1583,7 +1615,7 @@ class Saml11Sso {
       log.debug("Leaving Saml11Sso.profileFor(). " + asked + ", from the " +
                                                    "non-spec profile " +
                                                    "parameter.");
-      return { profile: asked, stated: true };
+      return { profile: asked, from: 'parameter' };
     }
     if (asked) {
       log.debug("Leaving Saml11Sso.profileFor(). An unknown profile was " +
@@ -1616,14 +1648,14 @@ class Saml11Sso {
                                                            : 'post';
         log.debug("Leaving Saml11Sso.profileFor(). " + profile + ", the " +
                   "shire's registered binding.");
-        return { profile: profile, stated: true };
+        return { profile: profile, from: 'shire' };
       }
     }
     const dflt = String(config.value('saml11.defaultProfile') || 'post');
     log.debug("Leaving Saml11Sso.profileFor(). " + dflt + ", the configured " +
         "default.");
     return { profile: dflt === 'artifact' ? 'artifact' : 'post',
-            stated: false };
+             from: 'setting' };
   }
 
   private interSiteTransfer(req, res) {
@@ -1730,6 +1762,30 @@ class Saml11Sso {
     if (!mode.acceptsUnregisteredAddresses()) {
       const early = this.relyingPartyFor(carried, scoped,
                                          String(carried.shire || ''));
+      // A RELYING PARTY NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496):
+      // before its addresses are read, on a page, as the shire refusal
+      // below is one. "Registered" is #494's word (`appRegisteredBy`), so an
+      // entry a development sighting filed is refused like none.
+      const earlyEntry: any = early.id ? applications.get(early.id) : null;
+      if (!mode.issuesToUnregisteredApplications() &&
+          (!earlyEntry || !String(earlyEntry.registeredBy || ''))) {
+        log.info('saml11: refused a browser flow in product mode for "' +
+                 (early.id || '(none)') + '": not a registered relying ' +
+                 'party.');
+        errorCodes.mark(res, 'STS-SAML-0105');
+        log.debug("Leaving Saml11Sso.interSiteTransfer(). The relying " +
+                  "party is not registered.");
+        return this.samlError(res, 403, 'That relying party is not ' +
+                                        'registered',
+          (early.id ? 'The relying party is "' + early.id + '" (' +
+                      early.from + '), and no '
+                    : 'Nothing in the request names a relying party, so no ') +
+          'SAML 1.1 relying party is registered under it in this realm. In ' +
+          'product mode this identity provider answers only a relying ' +
+          'party registered ahead of time (the console, /admin-api, RFC ' +
+          '7591 or an LDAP add under ou=applications); one that was only ' +
+          'seen is not registered.');
+      }
       // Which of the entry's addresses count is
       // `applications.returnAddressesOf()`'s to say (2026-09-12): one a
       // development-mode request recorded is withheld here until it is
@@ -1859,10 +1915,13 @@ class Saml11Sso {
                 'party\'s entry — which this mode requires.' },
           { label: 'Browser profile', value: wanted.profile === 'artifact'
               ? 'Browser/Artifact (section 4.1)' : 'Browser/POST (section 4.2)',
-            note: wanted.stated ? 'asked for by the non-spec profile parameter.'
-                                : 'the saml11.defaultProfile setting; ' +
-                                  'nothing ' +
-                                  'in SAML 1.1 lets a relying party ask.' },
+            note: wanted.from === 'parameter'
+              ? 'asked for by the non-spec profile parameter.'
+              : (wanted.from === 'shire'
+                ? 'the binding registered for this shire on the relying ' +
+                  'party\'s entry (samlAcsEndpoint).'
+                : 'the saml11.defaultProfile setting; nothing in SAML 1.1 ' +
+                  'lets a relying party ask.') },
           { label: 'TARGET', value: String(carried.TARGET || '(none)'),
             note: 'the relying party\'s own state, echoed back untouched. ' +
                   'SAML ' +
@@ -1943,6 +2002,41 @@ class Saml11Sso {
       // reads (#62 P3).
       session: session
     });
+    // A SESSION ON A SIGN-IN MECHANISM THE RELYING PARTY DOES NOT ALLOW
+    // (#457) is sent to sign in again, ONCE: the flow is held as the branch
+    // above holds it, and the trip recorded on it (`mechanismAt`), so a
+    // flow back from that trip still unmet is the refusal page below — the
+    // screen offers only the allowed mechanisms and refuses any other, so
+    // that is a person who cancelled or could not.
+    if (!roleAnswer.allowed && roleAnswer.mechanism &&
+        !(held && held.mechanismAt) && session.authenticated !== false) {
+      const again = held || { id: randomId(18), params: carried };
+      again.expires = Date.now() + this.requestTtlMs();
+      again.mechanismAt = Date.now();
+      pendingFlows.set(again.id, again);
+      // A second factor the relying party does not allow (#475) is its
+      // own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-SAML-0108' : 'STS-SAML-0101');
+      log.info('saml11: "' + rpId + '" allows signing in with ' +
+               roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
+               'of "' + String((session.user || {}).username) + '" used ' +
+               'none of them; sent to sign in again.');
+      const whereAgain = beginAuthentication({
+        returnTo: req.path + '?fid=' + encodeURIComponent(again.id),
+        hint: String((session.user || {}).username || ''),
+        protocol: 'SAML 1.1',
+        application: rpId,
+        details: [
+          { label: 'Relying party', value: rpId,
+            note: 'it allows signing in with ' +
+                  roleAnswer.mechanism.allowed.join(', ') + ' only.' }
+        ]
+      });
+      log.debug("Leaving Saml11Sso.interSiteTransfer(). A re-prompt for an " +
+                "allowed sign-in mechanism.");
+      return res.set('Cache-Control', 'no-store').redirect(303, whereAgain);
+    }
     if (!roleAnswer.allowed) {
       log.info('saml11: the issuance policy refused an assertion for "' +
                String((session.user || {}).username) + '" to "' + rpId + '". ' +
@@ -1951,8 +2045,13 @@ class Saml11Sso {
       log.debug("Leaving Saml11Sso.interSiteTransfer(). The issuance policy " +
                 "refused it.");
       // A realm being removed (#262) is its own code.
+      // A sign-in mechanism still not allowed after the one trip (#457) is
+      // its own.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-                                               : 'STS-SAML-0032');
+        : (roleAnswer.mechanism
+          ? (roleAnswer.mechanism.secondFactor ? 'STS-SAML-0109'
+                                               : 'STS-SAML-0102')
+          : 'STS-SAML-0032'));
       log.debug("Leaving Saml11Sso.interSiteTransfer().");
       return this.samlError(res, 403, 'Refused by policy', roleAnswer.why,
         '<p>The person is signed in. The XACML issuance policy would not let ' +
@@ -2315,9 +2414,31 @@ class Saml11Sso {
     const requestId = request.getAttribute('RequestID') || '';
 
     // --- an artifact ---------------------------------------------------------
+    // AN ARTIFACT THAT DOES NOT RESOLVE IS ONE ANSWER, AND IT IS SUCCESS
+    // (#160). saml-bindings-1.1 section 4.1.1.6: a source site that cannot
+    // find or construct the assertions "responds with a <samlp:Response>
+    // message with no assertions", whose status "MUST include a
+    // <samlp:StatusCode> element with the value Success"; an artifact
+    // presented again MUST get "the same message as it would if it were
+    // queried with an unknown artifact"; and an artifact issued to another
+    // destination site MUST get a response with no assertions and Success.
+    // So every reason an assertion is not handed over — never minted here,
+    // expired, already resolved here or on another node, another provider's
+    // SourceID, a caller that is not the relying party or cannot prove it, a
+    // claim store that cannot be asked, an answer that failed after the
+    // spend — is `empty()`: Success, no assertion, NO StatusMessage, the same
+    // whatever the reason. The reason is the operator's: the error code and
+    // the log line or audit row beside it. `saml2_sso.ts`'s
+    // `resolveArtifact()` is the same rule for SAML 2.0.
     const artifactEl = firstByLocal(request, 'AssertionArtifact');
     if (artifactEl) {
       const artifact = (artifactEl.textContent || '').trim();
+      const empty = (code) => {
+        log.debug("Entering empty(). " + code);
+        errorCodes.mark(res, code);
+        log.debug("Leaving empty().");
+        return answer(STATUS_SUCCESS, '', '', requestId, '');
+      };
       // MINTED IN ANOTHER CELL (#98 D10): the whole Request goes to the cell
       // whose tag the AssertionHandle carries, before the caller is
       // authenticated or the artifact is spent.
@@ -2328,6 +2449,17 @@ class Saml11Sso {
                   "minted the artifact.");
         return undefined;
       }
+      // ANOTHER PROVIDER'S ARTIFACT (#160), asked before anything is looked
+      // up or spent — see isForeignArtifact().
+      if (this.isForeignArtifact(artifact, scoped.id)) {
+        log.warn(errorCodes.tag('STS-SAML-0098') + 'saml11: artifact ' +
+                 String(artifact).slice(0, 12) + '… was presented at the ' +
+                 'responder of "' + this.providerIdFor(scoped.id) + '", but ' +
+                 'its SourceID names another provider. Answered empty, and ' +
+                 'the artifact is left for the responder it belongs to.');
+        log.debug("Leaving Saml11Sso.respond(). Another provider's artifact.");
+        return empty('STS-SAML-0098');
+      }
       const held = artifacts.get(artifact);
       if (held) {
         // WHO IS ASKING, before the artifact is spent (#37 follow-up) — see
@@ -2336,16 +2468,15 @@ class Saml11Sso {
                                                        held);
         if (caller.refuse) {
           log.debug("Leaving Saml11Sso.respond(). The caller was refused.");
-          errorCodes.mark(res, caller.errorCode || 'STS-SAML-0077');
-          return answer(STATUS_REQUESTER, caller.why, '', requestId, '');
+          return empty(caller.errorCode || 'STS-SAML-0077');
         }
       }
       if (!held) {
-        // The one refusal here worth making loudly, because it is the same
-        // answer for three different mistakes and a relying party cannot tell
-        // them apart from the status code alone: an artifact that was never
-        // minted here, one that has expired, and — the interesting one — one
-        // that has ALREADY BEEN RESOLVED.
+        // The one refusal here worth logging loudly, because it is the same
+        // empty answer for three different mistakes and a relying party
+        // cannot tell them apart from the response at all: an artifact that
+        // was never minted here, one that has expired, and — the interesting
+        // one — one that has ALREADY BEEN RESOLVED.
         log.warn('saml11: artifact ' + String(artifact).slice(0, 12) +
                  '… does ' +
                  'not resolve. It was never minted here, or it has expired ' +
@@ -2353,13 +2484,7 @@ class Saml11Sso {
                  'once — which destroys it, because saml-bindings-1.1 ' +
                  'section 3.2.3 says an artifact is resolvable exactly once.');
         log.debug("Leaving Saml11Sso.respond(). Unknown artifact.");
-        errorCodes.mark(res, 'STS-SAML-0037');
-        log.debug("Leaving Saml11Sso.respond().");
-        return answer(STATUS_REQUESTER,
-                      'that artifact does not resolve: it was never issued ' +
-                      'here, it has expired, or it has already been resolved ' +
-                      '— an artifact is one-shot (section 3.2.3).',
-                      '', requestId, '');
+        return empty('STS-SAML-0037');
       }
       // ONE-SHOT. Deleted BEFORE the answer is built rather than after it is
       // sent, so that two requests arriving together cannot both find it.
@@ -2381,13 +2506,9 @@ class Saml11Sso {
                      'but has ALREADY BEEN RESOLVED by another node against ' +
                      'the same store. Refused: saml-bindings-1.1 section ' +
                      '3.2.3 allows one resolution.');
-            errorCodes.mark(res, 'STS-SAML-0058');
             log.debug("Leaving Saml11Sso.respond()'s artifact claim answer. " +
                       "Used.");
-            return answer(STATUS_REQUESTER,
-                          'that artifact does not resolve: it has already ' +
-                          'been resolved — an artifact is one-shot (section ' +
-                          '3.2.3).', '', requestId, '');
+            return empty('STS-SAML-0058');
           }
           if (!claimed.ok) {
             log.error(errorCodes.tag('STS-SAML-0059') + 'saml11: whether ' +
@@ -2396,13 +2517,9 @@ class Saml11Sso {
                       'store ' +
                       '(' + (claimed.why || 'no reason given') + '). It is ' +
                       'refused.');
-            errorCodes.mark(res, 'STS-SAML-0059');
             log.debug("Leaving Saml11Sso.respond()'s artifact claim answer. " +
                       "Store.");
-            return answer(STATUS_RESPONDER,
-                          'the identity provider could not confirm that ' +
-                          'artifact is unresolved, so it is not resolved.',
-                          '', requestId, '');
+            return empty('STS-SAML-0059');
           }
           log.debug("Leaving Saml11Sso.respond()'s artifact claim answer. An " +
                     "artifact was resolved and destroyed.");
@@ -2419,9 +2536,7 @@ class Saml11Sso {
                     'request could not be answered after its claim: ' +
                     ((e && e.message) || e));
           if (!res.headersSent) {
-            errorCodes.mark(res, 'STS-SAML-0060');
-            answer(STATUS_RESPONDER, 'the artifact could not be resolved.', '',
-                   requestId, '');
+            empty('STS-SAML-0060');
           }
         });
     }
@@ -2961,14 +3076,17 @@ class Saml11Sso {
        ['providerId', 'Who the assertion is FOR — the audience restriction. ' +
                       'Shibboleth\'s parameter, and the only way a SAML 1.1 ' +
                       'relying party can name itself.'],
-       ['time', 'Read and logged. Shibboleth sends it; nothing here enforces ' +
-                'it, because there is no clock skew setting for this profile ' +
-                'to reject a request under.'],
+       ['time', 'Accepted and ignored. Shibboleth sends it; nothing here ' +
+                'reads it, because there is no clock skew setting for this ' +
+                'profile to reject a request under.'],
        ['profile', '<strong>Non-spec.</strong> <code>post</code> or <code>' +
                    'artifact</code>, choosing between the two browser ' +
                    'profiles. Nothing in SAML 1.1 lets a relying party ' +
-                   'choose, so without it the saml11.defaultProfile setting ' +
-                   'decides.'],
+                   'choose, so without it the binding registered for the ' +
+                   '<code>shire</code> on the relying party\'s entry ' +
+                   '(<code>samlAcsEndpoint</code>, from its consumed ' +
+                   'metadata) decides, and failing that the ' +
+                   'saml11.defaultProfile setting.'],
        ['format', '<strong>Non-spec.</strong> The NameIdentifier Format to ' +
                   'answer with. SAML 1.1 has no NameIDPolicy to ask in, so ' +
                   'without it saml11.nameIdFormat decides.']
@@ -3623,9 +3741,13 @@ class Saml11Sso {
         'Nothing authenticates a caller here for a QUERY.</strong> In ' +
         'development anybody who can reach this port can ask this responder ' +
         'for an assertion about anybody, by name, with no credential and no ' +
-        'attribute release policy; product mode refuses both query types. A ' +
-        'real attribute authority uses mutual TLS and a policy. Every query ' +
-        'is logged saying so.</div><div><strong>An ARTIFACT is different:' +
+        'attribute release policy. Product mode answers a query only for a ' +
+        'REGISTERED relying party (its <code>Resource</code>, or this ' +
+        'path\'s segment) that authenticates as itself — a signed ' +
+        '<code>&lt;samlp:Request&gt;</code> or its registered certificate ' +
+        'at the TLS handshake — about a subject it holds a live session for ' +
+        'from this service, as a real attribute authority does. Every query ' +
+        'is logged.</div><div><strong>An ARTIFACT is different:' +
         '</strong> it is resolved only for the relying party it was issued ' +
         'to, and that party must be authenticated — a signature on the ' +
         '<code>&lt;samlp:Request&gt;</code> or its registered certificate as ' +

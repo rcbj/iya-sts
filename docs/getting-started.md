@@ -138,6 +138,16 @@ so that adding a protocol directory cannot be forgotten, installs with
 `--omit=dev`, and defaults `CONFIG_FILE` to `./env/local.js`. `EXPOSE` documents
 every port above; publishing them is the caller's decision.
 
+**The service runs as `sts`, uid and gid 10001, not as root.** It still binds
+88, 389 and 636 inside the container, because Docker sets
+`net.ipv4.ip_unprivileged_port_start=0` in every container's network
+namespace; a runtime that does not set it needs
+`--sysctl net.ipv4.ip_unprivileged_port_start=0`. The one directory the
+service writes under its tree, `/usr/src/sts/data`, belongs to that user, so
+a volume mounted there must be writable by uid 10001. A file you mount for
+the service to read, such as a key-encryption key file, must be readable by
+uid 10001.
+
 **The image's JavaScript carries no comments.** The build takes them out of
 every `.js` it ships, compiled from TypeScript or not, because Node keeps the
 source text of every module in memory for as long as the process runs, and
@@ -192,6 +202,7 @@ services:
   postgres-init:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     restart: "no"
+    user: "0"        # the image runs as uid 10001; this writes into volumes
     volumes:
       - db-initdb:/out/initdb
       - db-share:/out/share
@@ -239,6 +250,7 @@ services:
   openbao-tls:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     restart: "no"
+    user: "0"        # writes into OpenBao's volume and hands it to its user
     environment:
       STS_BAO_TLS_DIR: /openbao/file/tls
       STS_BAO_TLS_NAMES: openbao,localhost
@@ -271,9 +283,13 @@ services:
 
   # Initialises OpenBao, writes the database password and the Transit
   # key-encryption key, and issues iya-sts its read-only client certificate.
+  # Also keeps the management API secret at secret/sts-admin, writes the
+  # service a single-use start-up token for it, prints an operator token,
+  # and revokes OpenBao's root token when it is done.
   openbao-seed:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     restart: "no"
+    user: "0"        # writes the client key for uid 10001, the token for root
     depends_on:
       openbao:
         condition: service_started
@@ -283,14 +299,27 @@ services:
       STS_BAO_POLICY_FILE: /usr/src/sts/openbao/read-only.hcl
       STS_BAO_CLIENT_CN: sts
       STS_DB_APP_PASSWORD: ${STS_DB_APP_PASSWORD:?set STS_DB_APP_PASSWORD in .env}
+      # Empty: the seeder generates the management API secret once.
+      STS_ADMIN_API_CLIENT_SECRET: ${ADMIN_API_CLIENT_SECRET:-}
+      STS_BAO_STARTUP_NODES: sts
+      STS_BAO_STARTUP_DIR: /openbao/startup
+      STS_BAO_PRINT_CREDENTIALS: "true"
     volumes:
       - bao-file:/openbao/file
       - bao-client:/openbao/client
+      - bao-startup:/openbao/startup
     command: ["node", "openbao/seed.js"]
 
   sts:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     hostname: sts
+    # Starts as root only to take the start-up secret, then drops to
+    # uid 10001 with every capability gone (the command below).
+    user: "0"
+    # Lets uid 10001 bind 88, 389 and 636. Docker sets it already; this
+    # says so.
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0
     depends_on:
       postgres:
         condition: service_healthy
@@ -309,29 +338,33 @@ services:
       STS_KEYS_KEK_PROVIDER: vault-transit
       STS_KEYS_KEK_VAULT: https://openbao:8200
       STS_KEYS_KEK_REF: sts-kek
-      STS_KEYS_VAULT_CLIENT_CERT: /run/secrets/bao/client.crt
-      STS_KEYS_VAULT_CLIENT_KEY: /run/secrets/bao/client.key
-      STS_KEYS_VAULT_CA_CERT: /run/secrets/bao/bao-ca.crt
+      STS_KEYS_VAULT_CLIENT_CERT: /run/secrets/openbao/client.crt
+      STS_KEYS_VAULT_CLIENT_KEY: /run/secrets/openbao/client.key
+      STS_KEYS_VAULT_CA_CERT: /run/secrets/openbao/bao-ca.crt
       PKI_DISTRIBUTION_PORT: "${PKI_PORT:-8082}"
       # The first console password; empty, one is generated and logged once.
       STS_ADMIN_BOOTSTRAP_PASSWORD: ${STS_ADMIN_BOOTSTRAP_PASSWORD:-}
     volumes:
-      - bao-client:/run/secrets/bao:ro
+      - bao-client:/run/secrets/openbao:ro
+      - bao-startup:/run/secrets/openbao-startup
       - sts-data:/usr/src/sts/data
-      - sts-run:/run/sts
+    # Where the start-up secret is handed over: memory, read once and
+    # deleted by the service.
+    tmpfs:
+      - /run/sts-startup:mode=0700,uid=10001,gid=10001
     command:
       - sh
       - -c
       - |
-        # The secret of the seeded `sts-management-api` client, which mints
-        # /admin-api tokens: generated on the first start, kept in a volume.
-        if [ ! -s /run/sts/admin-api-secret ]; then
-          head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24 \
-            > /run/sts/admin-api-secret
-          chmod 600 /run/sts/admin-api-secret
-        fi
-        export ADMIN_API_CLIENT_SECRET="$$(cat /run/sts/admin-api-secret)"
-        exec node server.js
+        # A data volume made before the image ran as uid 10001 is root's.
+        find /usr/src/sts/data ! -user 10001 -exec chown 10001:10001 {} +
+        # Unwrap this node's single-use token, read the management API
+        # secret, revoke the token, and leave the secret in a file on the
+        # tmpfs. Only `export ..._FILE=<path>` lines are printed.
+        STARTUP="$$(node openbao/startup-secrets.js)" || exit 1
+        eval "$$STARTUP"
+        exec setpriv --reuid=10001 --regid=10001 --clear-groups \
+          --inh-caps=-all --bounding-set=-all --no-new-privs node server.js
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('https').get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
       interval: 10s
@@ -345,8 +378,8 @@ volumes:
   db-share:
   bao-file:
   bao-client:
+  bao-startup:
   sts-data:
-  sts-run:
 ```
 
 Beside it, a `.env` file with three secrets of your own. The seal key unseals
@@ -374,17 +407,50 @@ docker compose up -d --wait
   ```
 
   Then open `https://localhost:8081/admin` and accept the certificate.
-* **`/admin-api`.** The seeded `sts-management-api` client's secret is
-  generated on the first start:
+* **`/admin-api`, the first time.** The seeded `sts-management-api`
+  client's secret is generated by the seeder on the first start and kept in
+  OpenBao at `secret/sts-admin`. The service reads it once at each `up`,
+  and its own OpenBao identity cannot read it at all. To read it yourself,
+  take the **operator token** the seeder prints (read-only on that one path,
+  for 24 hours):
 
   ```bash
-  SECRET=$(docker compose exec -T sts cat /run/sts/admin-api-secret)
+  docker compose logs --no-log-prefix openbao-seed \
+    | grep 'OPERATOR TOKEN' | tail -1 | jq -r .msg   # the token ends the line
+  BAO_OPERATOR_TOKEN='<token>'
+
+  SECRET=$(docker compose exec -T -e BAO_TOKEN="$BAO_OPERATOR_TOKEN" openbao \
+    bao kv get -address=https://127.0.0.1:8200 \
+      -ca-cert=/openbao/file/tls/server.crt \
+      -field=adminApiClientSecret secret/sts-admin)
   curl -sk -u "sts-management-api:$SECRET" \
     --data-urlencode grant_type=client_credentials \
     --data-urlencode 'scope=admin:read admin:write' \
     --data-urlencode resource=https://localhost:8081/admin-api \
     https://localhost:8081/oauth2/token
   ```
+
+  **Use that token once**, to create an application of your own with the
+  `ADMIN_READ` and `ADMIN_WRITE` roles and a client secret, and get every
+  later token as that application with the client credentials grant.
+  [Management API → An application of your own](management-api.md#an-application-of-your-own-for-every-token-after-that)
+  has the steps. To choose the management API secret instead of having it
+  generated, put `ADMIN_API_CLIENT_SECRET=...` in `.env` before the first
+  start; it goes to the seeder, not to the service.
+* **The OpenBao recovery key.** On the first start the seeder prints the
+  store's recovery key, once (`docker compose logs openbao-seed | grep
+  'RECOVERY KEY'`), and then revokes the root token. Nothing on disk keeps
+  either one. Keep the recovery key: `bao operator generate-root` needs it
+  to make a root token again.
+* **`docker compose up`, not `restart`.** Every `up` runs the seeder, which
+  gives the service a new single-use start-up token. `docker compose restart
+  sts` does not run the seeder, so the service starts without the pinned
+  management API secret and mints one that nobody can read.
+* **The service runs as uid 10001, not root.** The `sts` container starts as
+  root only to take the start-up secret, then drops to uid 10001 with every
+  capability removed before the service starts. A shell as that user can read
+  the service's own OpenBao client credential (mode 0600), and no other
+  secret on disk or in its environment.
 * **Stopping it.** `docker compose down` keeps everything in the named
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.
@@ -430,7 +496,7 @@ its default `development` mode. There is no setting that opens the console;
 2.0 access token of its own.
 
 A protocol you can drive end to end in a browser with nothing else installed is
-**SAML 2.0**: open `https://localhost:8081/saml2/sp`, pick one of the three bindings, sign
+**SAML 2.0**: open `https://localhost:8081/saml2/sp`, pick a response binding, sign
 in with any username, and the mock service provider verifies the response it gets
 back check by check. `https://localhost:8081/saml2/metadata` is the identity provider
 metadata; `https://localhost:8081/saml2/metadata/anything-you-like` is a document of its

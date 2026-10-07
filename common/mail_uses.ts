@@ -46,7 +46,6 @@
 // it takes says nothing either. What happened is on the audit row.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -386,7 +385,7 @@ class MailUses {
       return { ok: true, verified: true, message: who.address +
                ' is already verified.' };
     }
-    const token = nodeCrypto.randomBytes(32).toString('base64url');
+    const token = stsCrypto.randomBytes(32).toString('base64url');
     const ttl = Number(config.value('mail.verificationTtlMinutes'));
     // BOUND TO THE ADDRESS THE ACCOUNT HAS NOW (#64): the hash is of the
     // token AND `mail`, so a link outlives no change of address by anybody.
@@ -558,7 +557,7 @@ class MailUses {
       log.debug("Leaving MailUses.startAddressChange(). The same address.");
       return this.startVerification(username, via, actor);
     }
-    const token = nodeCrypto.randomBytes(32).toString('base64url');
+    const token = stsCrypto.randomBytes(32).toString('base64url');
     const ttl = Number(config.value('mail.verificationTtlMinutes'));
     dir.writeMailFlag(username, 'stsMailVerifyToken',
                       crypto.hashSecret(this.boundToken(token, who.address)));

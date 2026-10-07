@@ -521,8 +521,9 @@ variable "realm_listeners" {
   description = <<-EOT
     The trust realms that have a front-end listener of their own, each behind
     a network load balancer of its own (realm_listeners.tf, #99): the realm
-    id, the container port the service binds for it (the realm's
-    listener.port; not one of the published ports), the public host name, and
+    id, the container port the service binds for it (the port of the
+    realm's listener in its listeners.realm, #472; not one of the published
+    ports), the public host name, and
     the Route 53 zone to write that name in ("" to write none). The realm's
     own settings are set through /admin-api; the realm_listener_settings
     output prints the calls.

@@ -56,7 +56,8 @@
 // **It is a DIFFERENT credential from the console's, not the same gate
 // widened**, and that distinction is the whole design: the console takes a
 // browser session, this takes a token. `adminApi.authRequired` is the off
-// switch and restores the open API exactly.
+// switch and restores the open API exactly — in development mode only since
+// #446 (2026-10-05); product ignores it turned off, see `tokenRequired()`.
 //
 // **THE THREE REASONS IT WAS OPEN ARE KEPT VERBATIM IN `mgmt-api/CLAUDE.md`**
 // rather than here, because they are now the argument for that off switch and
@@ -347,6 +348,29 @@ const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false,
                       verbose: true });
 addFormats(ajv);
 
+// THE FIELD GRID'S OWN SHAPE (#446), which the two `update-fields` actions
+// read beside a JSON `fields` object (`applicationFieldsFrom()`,
+// `fieldsCoveredBy()`): one box per value, `field.<attribute>.<n>`, or one
+// `field.<attribute>` holding a value per line, and `present` naming every
+// field the form drew so an emptied one is cleared. Declared so the static
+// console can send its form as drawn — a member a closed schema does not
+// name is one the console would have to leave out, and a box left out is a
+// value the reader typed and lost.
+const FIELD_GRID_MEMBERS = {
+  present: { type: ['string', 'array'], items: { type: 'string' },
+             description: 'The fields the console\'s form drew, by ' +
+                          'attribute name, space or comma separated or as a ' +
+                          'list: each one is cleared when the form carries ' +
+                          'no value for it.' }
+};
+const FIELD_GRID_PATTERN = {
+  '^field\\.': { type: ['string', 'array'], items: { type: 'string' },
+                   description: 'The console form\'s boxes: ' +
+                                '`field.<attribute>.<n>` one value each, in ' +
+                                'box order, or `field.<attribute>` with a ' +
+                                'value per line. Merged over `fields`.' }
+};
+
 // ---------------------------------------------------------------------------
 // THE COMPONENTS THE DOCUMENT DEFINES, SO A `$ref` INTO THEM RESOLVES.
 //
@@ -497,6 +521,8 @@ interface AdminApiDeps {
   // The attribute source operations (#94).
   loadAttributeSourcesApi():
     typeof import('../attribute-sources/attribute_sources_api');
+  // The secret push destinations' operations (#221 P3).
+  loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
   loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
@@ -606,6 +632,9 @@ class AdminApi {
       },
       loadAttributeSourcesApi: function () {
         return require('../attribute-sources/attribute_sources_api');
+      },
+      loadSecretDestinationsApi: function () {
+        return require('./secret_destinations_api');
       },
       loadClaimsProvidersApi: function () {
         return require('../oauth-oidc/claims_providers_api');
@@ -1011,6 +1040,17 @@ class AdminApi {
         !Array.isArray(body)) {
       body = Object.assign({}, body, { protocolEndpoints: rows });
     }
+    // WHAT ONLY THE CONSOLE DRAWS, LEFT OUT OF A MANAGEMENT ANSWER (#454):
+    // the members the registration loop names for an operation whose
+    // console twin answers them (`withConsoleRoutes()`).
+    const consoleMembers = res.locals && res.locals.consoleMembers;
+    if (consoleMembers && status === 200 && body && typeof body === 'object' &&
+        !Array.isArray(body)) {
+      body = Object.assign({}, body);
+      consoleMembers.forEach(function (name) {
+        delete body[name];
+      });
+    }
     res.status(status).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(body, null, 2));
     log.debug("Leaving AdminApi.sendJson().");
@@ -1187,6 +1227,20 @@ class AdminApi {
               '`never`: a person who holds a second factor is always asked ' +
               'for it.',
         example: { emailCodeTtlS: 240 }
+      },
+      // #221: the third kind.
+      serviceAccount: {
+        save: 'Writes `cn=default,ou=serviceAccountPolicies` in this ' +
+              'realm\'s directory, REPLACING what is there; a realm with no ' +
+              'entry of its own follows the default realm\'s. Every default ' +
+              'is the more secure one: no second-factor exemption, no ' +
+              'browser sign-in, no rotation, an owner required. Two rules ' +
+              'read other registers: `generatedLength` may not be below the ' +
+              'password policy\'s `minLength`, and `rotationEnabled` is ' +
+              'refused while the realm has no push destination. The seven ' +
+              '`allow*` door fields say which password doors a service ' +
+              'account may use.',
+        example: { rotationEnabled: false, allowBrowserSignIn: false }
       }
     };
     const cap = function (text) {
@@ -1345,8 +1399,9 @@ class AdminApi {
    * Returns the action rows of one claim-set family (custom claims, SAML
    * attributes or UserInfo claims), from the family's parameters.
    *
-   * @param family - `sets`, `noun`, `carrier`, `example`, `reserved` and the
-   *   operationIds in `ids`
+   * @param family - `sets`, `noun`, `carrier`, `example`, `placeholder`
+   *   (one that expands in this family), `reserved` and the operationIds
+   *   in `ids`
    * @returns the action rows
    */
   claimSetActions(family) {
@@ -1385,6 +1440,11 @@ class AdminApi {
             name: { type: 'string' },
             value: { type: 'string',
                      description: 'May carry a ${...} placeholder.' },
+            type: { type: 'string', enum: ['string', 'int64', 'uint64',
+                                           'boolean'],
+                    description: 'The Kerberos PAC set only (#493): the ' +
+                                 'PAC claim type. Defaults to string; ' +
+                                 'ignored by the other sets.' },
             nameFormat: { type: 'string',
                           description: 'The SAML 2.0 set only.' },
             namespace: { type: 'string',
@@ -1428,9 +1488,13 @@ class AdminApi {
             multi: { type: 'boolean',
                      description: 'Every value rather than the first.' },
             type: { type: 'string',
-                    enum: ['string', 'number', 'boolean', 'json'],
-                    description: 'The JSON type of each value, in a JWT or ' +
-                                 'UserInfo set. Ignored by the SAML sets.' },
+                    enum: (family.attributeTypes ||
+                           ['string', 'number', 'boolean', 'json']).slice(),
+                    description: family.attributeTypes
+                      ? 'The PAC claim type each value becomes; a value ' +
+                        'that is not one leaves the claim out of the ticket.'
+                      : 'The JSON type of each value, in a JWT or ' +
+                        'UserInfo set. Ignored by the SAML sets.' },
             nameFormat: { type: 'string',
                           description: 'The SAML 2.0 set only.' },
             namespace: { type: 'string',
@@ -1492,7 +1556,7 @@ class AdminApi {
           required: ['set', 'claims'],
           examples: [{ set: family.example, claims: [
             { name: 'dept', value: 'engineering' },
-            { name: 'on_behalf_of', value: '${username}' }
+            { name: 'on_behalf_of', value: family.placeholder }
           ] }],
           additionalProperties: false
         },
@@ -1512,12 +1576,19 @@ class AdminApi {
                      'removal is expressed — there is no per-attribute ' +
                      'remove, because the console\'s control is a table of ' +
                      'checkboxes and an API that removed differently would ' +
-                     'be a second model of the same state.\n\nThe value a ' +
+                     'be a second model of the same state.\n\n' +
+                     (family.entryOnly
+                       ? 'A selected attribute becomes a STRING PAC claim ' +
+                         'named ad://ext/<attribute>:<hex>, carrying EVERY ' +
+                         'value on that person\'s entry under ou=users; an ' +
+                         'entry without it carries no claim — nothing is ' +
+                         'invented (#498). '
+                       : 'The value a ' +
                      'selected attribute carries is the one on that ' +
                      'person\'s entry under ou=users, or — where the entry ' +
                      'has nothing — invented from their username, ' +
                      'deterministically, so one username is one invented ' +
-                     'person across restarts. Unlike POST ' +
+                     'person across restarts. ') + 'Unlike POST ' +
                      '/admin-api/credential-claims/select this does NOT ' +
                      'sweep the directory: the credential page writes the ' +
                      'attributes it needs onto every entry, and doing it ' +
@@ -2278,12 +2349,48 @@ class AdminApi {
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
-            loadAttributeSourcesApi,
+            loadAttributeSourcesApi, loadSecretDestinationsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.buildRoutes().");
     const closed = this.closedLists();
+    // THE DELEGATION FILTER, declared once: the acts (`/delegation`) and
+    // the picture of them (`/delegation/map`, #446) take the same five
+    // parameters, as the two console pages do.
+    const delegationFilter: any[] = [
+      { name: 'type', in: 'query', required: false,
+        schema: { type: 'string',
+                  enum: closed.delegationTypes },
+        description: 'One mechanism. The reply\'s `types` member ' +
+                     'describes each of them, with the specification it ' +
+                     'comes from and whether this service polices it.' },
+      { name: 'mode', in: 'query', required: false,
+        schema: { type: 'string', enum: closed.delegationModes },
+        description: 'The protocol-independent axis: whether what came ' +
+                     'out carries the chain. ' +
+                     'ANDed with `type`, so a mode ' +
+                     'that does not match the mechanism matches nothing.' },
+      { name: 'outcome', in: 'query', required: false,
+        schema: { type: 'string', enum: closed.delegationOutcomes },
+        description: 'Two rather than the audit log\'s three: a ' +
+                     'delegation is DECIDED rather than ' +
+                     'performed, so there is no third ' +
+                     'answer between issuing the credential and refusing ' +
+                     'to.' },
+      { name: 'protocol', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'The family, spelled as /admin-api/users spells it ' +
+                     '— `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free ' +
+                     'text rather than an enum, for the reason the audit ' +
+                     'log\'s `protocol` is.' },
+      { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Substring of ANY party of the chain (normalised ' +
+                     'name, presented form or application) or of either ' +
+                     'explanation, case-insensitive. One box over six ' +
+                     'fields, because the fact a caller has names one of ' +
+                     'them and not which column it is in.' }
+    ];
     const ROUTES: any[] = [
       { method: 'GET', path: BASE, tag: 'Service',
         operationId: 'getIndex',
@@ -2327,17 +2434,43 @@ class AdminApi {
             // missed, and `admin_api_spec.ts`'s own header argues why that
             // matters more for the document than for either sentence.
             // ------------------------------------------------------------
-            protected: config.value('adminApi.authRequired') === true,
+            // The value IN FORCE (#446): product ignores `false`.
+            protected: self.tokenRequired(),
             // THE EXPLORER IS A CONSOLE PAGE SINCE 2026-09-09 and this field
             // still names it, because a client that read it wants to know
             // where the explorer IS rather than which path space it is in.
             // It moved when this API began requiring a token a browser has
             // no way to carry.
-            docs: base + '/admin/api-explorer',
-            console: base + '/admin',
+            docs: helpers.rebaseTo(base, 'admin-console') +
+                  '/admin/api-explorer',
+            console: helpers.rebaseTo(base, 'admin-console') + '/admin',
             operations: self.operationSummaries()
           });
           log.debug("Leaving the management API index.");
+        } },
+
+      // THE SERVICE METADATA PAGE (#446): what `/admin/sts-metadata` is
+      // drawn from. LAZILY REQUIRED, like the explorer: `sts_metadata.ts` is
+      // built last of all because it reads the router, so a require of it
+      // here at load would run before the routes it lists exist.
+      { method: 'GET', path: BASE + '/sts-metadata', tag: 'Service',
+        operationId: 'getStsMetadata',
+        summary: 'Every protocol, endpoint and specification this serves',
+        description: 'Every protocol family, every endpoint the running ' +
+                     'router registers (read from the router on each ' +
+                     'request, so it cannot claim an endpoint that is not ' +
+                     'there or miss one that is), every specification, and ' +
+                     'the drift between the router and the descriptions — ' +
+                     'with the authorization servers this process has ' +
+                     'served. The same answer as the page\'s ' +
+                     '`?format=json`.',
+        mirrors: 'GET /admin/sts-metadata',
+        responseDescription: 'The metadata.',
+        handler: function (req, res) {
+          log.debug("Entering the management API metadata endpoint.");
+          self.sendJson(res, 200,
+                        require('../sts_metadata').pageJson(baseUrlOf(req)));
+          log.debug("Leaving the management API metadata endpoint.");
         } },
 
       { method: 'GET', path: BASE + '/openapi.json', tag: 'Service',
@@ -2354,8 +2487,12 @@ class AdminApi {
                           description: 'An OpenAPI 3.1.0 document.' },
         handler: function (req, res) {
           log.debug("Entering the OpenAPI document endpoint.");
+          // THE MANAGEMENT OPERATIONS ALONE (#454): the console's own are
+          // described by `GET /admin-api/console/openapi.json`, so what an
+          // integrator reads here is what they can rely on.
           self.sendJson(res, 200,
-                        spec.buildSpec(ROUTES, self.specOptions(req)));
+                        spec.buildSpec(self.routesOfKind('management'),
+                                       self.specOptions(req)));
           log.debug("Leaving the OpenAPI document endpoint.");
         } },
 
@@ -2654,12 +2791,26 @@ class AdminApi {
                      'served here), `sessions` (projections held here and ' +
                      'exports made from here) and `settings`.',
         mirrors: 'GET /admin/cells',
+        // THE PAGE'S DRILL-DOWN TOO (#446): with `people`, the answer also
+        // carries that cell's residents as `people` — what
+        // `GET /admin-api/cells/people` answers — so the page is drawn from
+        // one answer, as the console's own JSON always was.
+        parameters: [
+          { name: 'people', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cell whose residents to list, under its release ' +
+                         'policy.' },
+          { name: 'after', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'With `people`: the last name of the previous ' +
+                         'page.' }
+        ],
         responseDescription: 'The cell map.',
         responseSchema: { type: 'object',
           description: 'As described above.' },
         handler: function (req, res) {
           log.debug("Entering the management API cells endpoint.");
-          cellsAdmin.cellsView().then(function (view) {
+          cellsAdmin.cellsPageView(req.query).then(function (view) {
             self.sendJson(res, 200, view);
             log.debug("Leaving the management API cells endpoint.");
           }, function (e) {
@@ -2819,23 +2970,32 @@ class AdminApi {
         } },
 
       // ---------------------------------------------------------------------
-      // THE LISTENERS (#423). `listenersAdmin.listenersView()`, the function
-      // `/admin/listeners` answers. It changes nothing: the Listeners, TLS
-      // and Realm listener settings are set through config/set (the
-      // process's) and realms/set (a realm's own listener).
+      // THE LISTENERS (#423), AND THE CUSTOM ONES WITH WHICH APPLICATION IS ON
+      // WHICH (#472). `listenersAdmin.listenersView()`, the function
+      // `/admin/listeners` answers, and its two writes. The built-in
+      // listeners' TLS settings are still set through config/set; the custom
+      // listeners and the mapping are set here, because the mapping's write
+      // is the one that may need `confirm` (rcbj's D6).
       // ---------------------------------------------------------------------
       { method: 'GET', path: BASE + '/listeners', tag: 'Service',
         operationId: 'getListeners',
-        summary: 'Every listener, its TLS policy and its client ' +
-                 'authentication',
-        description: 'For the realm the call is in: `realm`, `servedOn` ' +
-                     '(`own` where the realm has a listener of its own, ' +
-                     '`default` where it is served on the default ' +
-                     'listeners), `ownListener` (its `port`, ' +
-                     '`publicBaseUrl`, `state`, `why`, `certificate` and ' +
-                     '`policy`) or `listeners` (each default listener\'s ' +
-                     '`id`, `name`, `setting`, `port`, `tls`, `what` and ' +
-                     '`policy`), the process\'s `process` policy and the ' +
+        summary: 'Every listener, its TLS policy and client authentication, ' +
+                 'and which hosted application is on which',
+        description: 'For the realm the call is in: `realm`; `listeners`, ' +
+                     'the built-in ones (each `id`, `name`, `setting`, ' +
+                     '`port`, `tls`, `what` and `policy`); `custom`, the ' +
+                     'custom listeners this realm sees — the service\'s ' +
+                     '(`listeners.custom`) and its own (`listeners.realm`), ' +
+                     'every realm\'s in the default realm — each with ' +
+                     '`id`, `owner`, `port`, `publicBaseUrl`, `hostnames`, ' +
+                     '`clientAuth`, `certificateSource`, its `state` on this ' +
+                     'node, `certificate` and `policy`; `applications`, each ' +
+                     'hosted application with the `listeners` it is on, the ' +
+                     '`advertised` one its URLs are built on and what ' +
+                     '`decidedBy` (realm, service or default); ' +
+                     '`definitions`, the JSON the two writes take; ' +
+                     '`rescue` (`listeners.adminOnMain`); `problem` and ' +
+                     '`warnings`; the process\'s `process` policy and the ' +
                      'TLS listeners `live` on this node. A `policy` is ' +
                      '`minVersion`, `tls12`, `tls13Suites` (each `name` and ' +
                      '`postQuantum`, in order), `tls12Ciphers`, `pqcOnly`, ' +
@@ -2844,13 +3004,110 @@ class AdminApi {
         mirrors: 'GET /admin/listeners',
         responseDescription: 'The listeners view.',
         responseSchema: { type: 'object',
-          description: '`realm`, `servedOn`, `ownListener`, `listeners`, ' +
+          description: '`realm`, `listeners`, `custom`, `applications`, ' +
+                       '`definitions`, `rescue`, `problem`, `warnings`, ' +
                        '`process` and `live`.' },
         handler: function (req, res) {
           log.debug("Entering the management API listeners endpoint.");
           self.sendJson(res, 200, listenersAdmin.listenersView());
           log.debug("Leaving the management API listeners endpoint.");
         } },
+
+      { method: 'POST', route: BASE + '/listeners/:action', tag: 'Service',
+        mirrors: 'POST /admin/listeners',
+        handler: function (req, res) {
+          log.debug("Entering the management API listeners action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          const result = listenersAdmin.listenersAction(req, body);
+          if (!result || !result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                 'STS-CORE-0154');
+          }
+          self.sendJson(res, result && result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API listeners action " +
+                    "endpoint.");
+        },
+        actions: [
+          { action: 'set-listeners', operationId: 'setListeners',
+            summary: 'Replace the custom listeners this realm defines',
+            description: 'In the default realm, the service\'s listeners ' +
+                         '(`listeners.custom`), which answer every realm; in ' +
+                         'any other, the realm\'s own (`listeners.realm`), ' +
+                         'which answer that realm alone. `value` is a JSON ' +
+                         'array of `{ id, port, publicBaseUrl, hostnames, ' +
+                         'certificateFile, privateKeyFile, clientAuth, tls }` ' +
+                         '— or the array itself — and empty for none. Every ' +
+                         'node binds, rebinds or closes each listener at ' +
+                         'once; a change of `clientAuth` or `tls` is applied ' +
+                         'at the next handshake without a rebind. Refused ' +
+                         'when it would remove a listener a mapping names, ' +
+                         'reuse a port, or split the sign-on session\'s ' +
+                         'applications across host names its cookie cannot ' +
+                         'reach (STS-CORE-0145 to 0155).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                value: { oneOf: [{ type: 'string' }, { type: 'array' }],
+                         description: 'The listeners: a JSON array, as ' +
+                                      'text or as the array.' }
+              },
+              required: ['value'],
+              examples: [{ value: [{ id: 'admin', port: 9443,
+                publicBaseUrl: 'https://admin.example.com:9443',
+                clientAuth: 'required' }] }],
+              additionalProperties: false
+            },
+            responseDescription: 'That it is set.' },
+
+          { action: 'set-applications', operationId: 'setListenerApplications',
+            summary: 'Map hosted applications to listeners',
+            description: 'Replaces `listeners.applications` in the realm the ' +
+                         'call is in — the service\'s mapping in the default ' +
+                         'realm, the realm\'s own entries (read before the ' +
+                         'service\'s) in any other. `value` is a JSON object ' +
+                         'from an application id, or `*`, to `{ listeners, ' +
+                         'advertised }`, and empty for none. A path of an ' +
+                         'application is answered only on the listeners it ' +
+                         'is on (404, STS-TLS-0047, elsewhere), and its URLs ' +
+                         'are built on the advertised one — CHANGING WHERE ' +
+                         'oauth-oidc IS ADVERTISED CHANGES ITS ISSUER. A ' +
+                         'mapping that takes `management-api` off the ' +
+                         'listener this call arrived on is refused ' +
+                         '(STS-CORE-0156) unless `confirm` is true.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                value: { oneOf: [{ type: 'string' }, { type: 'object' }],
+                         description: 'The mapping: a JSON object, as text ' +
+                                      'or as the object.' },
+                // `true` from a script, `true` or `on` from the console's
+                // checkbox (#472).
+                confirm: { oneOf: [{ type: 'boolean' },
+                                   { type: 'string',
+                                     enum: ['true', 'false', 'on'] }],
+                           description: 'Take the management API off the ' +
+                                        'listener this call arrived on.' }
+              },
+              required: ['value'],
+              // Both served on the `admin` listener AND kept on `main`,
+              // advertised there. An example that took either off the
+              // listener its caller is on locks that caller out:
+              // sts_admin_api_operations replays every example and reads the
+              // resource back through the same port, and sts_admin_console's
+              // realm switcher then lands on that realm's console through
+              // `main` (both 404, STS-TLS-0047, on 2026-10-07).
+              examples: [{ value: {
+                'admin-console': { listeners: ['main', 'admin'],
+                                   advertised: 'main' },
+                'management-api': { listeners: ['main', 'admin'],
+                                    advertised: 'main' } } }],
+              additionalProperties: false
+            },
+            responseDescription: 'That it is set.' }
+        ] },
 
       // ---------------------------------------------------------------------
       // THE CACHES (#74). `cachesAdmin.cachesView()` and nothing else — the
@@ -2956,7 +3213,12 @@ class AdminApi {
                      'or a name\'s digest, the door, the network prefix, the ' +
                      'ASN and the code, never an address. A page of the ' +
                      'realm\'s assessed sign-ins in `assessments` ' +
-                     '(`{ total, rows }`, the last 7 days, newest first) and ' +
+                     '(`{ total, rows }`, the last 7 days, newest first; ' +
+                     'each row\'s first signal is the model\'s, with its ' +
+                     '`factors`, the user term\'s `terms`, and `unknown`, ' +
+                     'the levels whose lookup found nothing — `asn`, ' +
+                     '`country`, `browser`, `os`, `device` — which the model ' +
+                     'counts as unseen) and ' +
                      'of its people by current standing in `subjects`, ' +
                      'each with its `assessmentsPaging` / `subjectsPaging`. ' +
                      'Every row naming a person\'s `subject` also carries ' +
@@ -3655,10 +3917,15 @@ class AdminApi {
             schema: { type: 'string',
                       enum: ['compliant', 'not-compliant', 'unknown'] },
             description: 'Only devices in this compliance state.' },
+          // THE THREE LEVELS `common/devices.ts` records (#446 found the
+          // third missing here, when the console's own filter, which offers
+          // all three, began reaching this operation): `bearer` is a
+          // remembered browser holding no key of its own.
           { name: 'attestation', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['attested', 'self-asserted'] },
-            description: 'Only attested, or self-asserted, devices.' },
+                      enum: ['attested', 'self-asserted', 'bearer'] },
+            description: 'Only attested, self-asserted or bearer devices ' +
+                         '(a remembered browser, with no key of its own).' },
           { name: 'keyKind', in: 'query', required: false,
             schema: { type: 'string',
                       enum: ['x509', 'jwk', 'webauthn', 'native-sso'] },
@@ -3886,8 +4153,10 @@ class AdminApi {
                          'revoked for keyCompromise, its risk level raised ' +
                          'to HIGH (CAEP risk-level-change, principal ' +
                          'DEVICE), and for a person\'s device RISC ' +
-                         'credential-compromise and sessions-revoked are ' +
-                         'sent naming the person and the device. `active` ' +
+                         'credential-compromise is sent naming the person ' +
+                         'and the device (and the deprecated ' +
+                         'sessions-revoked, where risc.autoEmitTypes names ' +
+                         'it). `active` ' +
                          'restores it and puts back the risk level the ' +
                          'compromise raised; nothing revoked comes back. ' +
                          'Answers `sessionsEnded` and ' +
@@ -4023,6 +4292,43 @@ class AdminApi {
           log.debug("Leaving the management API devices monitor endpoint.");
         } },
 
+      // #221: Monitoring → Service accounts, the rotation's state per
+      // account. Rule 7.
+      { method: 'GET', path: BASE + '/service-accounts', tag: 'Users',
+        operationId: 'getServiceAccounts',
+        summary: 'Every service account and the state of its rotation',
+        description: 'Every service account in this realm (#221) — a person ' +
+                     'entry carrying `stsServiceAccount` — paged in ' +
+                     '`accounts`, each with `username`, `owner`, ' +
+                     '`destination`, `secretName`, `rotatedAt`, ' +
+                     '`previousPasswordUntil` (the overlap) and `rotation` ' +
+                     '(`rotates`, `nextDueAt`, `failures`, `lastError`, ' +
+                     '`lastAttemptAt`, `alarm`), and the realm\'s ' +
+                     '`policy` (`rotationEnabled`, `intervalDays`, ' +
+                     '`overlapMinutes`, `alarmFailures`, `from`) and ' +
+                     '`totals` (`accounts`, `withDestination`, `rotating`, ' +
+                     '`failing`, `alarms`). No password and no secret ' +
+                     'value is in the reply.',
+        mirrors: 'GET /admin/service-accounts',
+        parameters: ([
+          { name: 'failing', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true'] },
+            description: '`true`: only accounts whose last rotation ' +
+                         'failed.' }
+        ] as any[]).concat(this.pagingParameters()),
+        responseDescription: 'The accounts, the policy and the totals.',
+        responseSchema: { type: 'object',
+          description: '`policy`, `totals`, `filter`, `accounts` and ' +
+                       '`paging`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API service accounts " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.serviceAccountsMonitorJson(req.query));
+          log.debug("Leaving the management API service accounts " +
+                    "endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/device-registration', tag: 'Devices',
         operationId: 'getDeviceRegistration',
         summary: 'How a device is registered and recognised here',
@@ -4039,11 +4345,16 @@ class AdminApi {
         responseDescription: 'The enrolment methods and the settings.',
         responseSchema: { type: 'object',
           description: '`enrolment`, `recognition`, the vocabularies, ' +
-                       '`mdmFeed` and `settings`.' },
-        handler: function (req, res) {
+                       '`mdmFeed`, `settings` and `androidStatus` — Google\'s ' +
+                       'Android attestation status list (#256): `active` ' +
+                       '(its version, \'\' for none), `loadedAt`, `rows`, ' +
+                       '`stale`, `staleAfterHours`, `url`, `required` and ' +
+                       '`job`.' },
+        handler: async function (req, res) {
           log.debug("Entering the management API device registration " +
                     "endpoint.");
-          self.sendJson(res, 200, devicesAdmin.registrationView(req));
+          self.sendJson(res, 200,
+                        await devicesAdmin.registrationViewWithStatus(req));
           log.debug("Leaving the management API device registration " +
                     "endpoint.");
         } },
@@ -4722,6 +5033,49 @@ class AdminApi {
           log.debug("Leaving the management API key list endpoint.");
         } },
 
+      { method: 'GET', path: BASE + '/keys/history/certificate',
+        tag: 'Service',
+        operationId: 'getKeyHistoryCertificate',
+        summary: 'One signing key\'s certificate chain, as PEM',
+        description: 'The certificate a signing key was published with, and ' +
+                     'the chain to the realm\'s root, leaf first — a ' +
+                     'public document, and the half of a retired key worth ' +
+                     'keeping. Named by `unit` and `kid`, as GET ' +
+                     '/admin-api/keys/history lists them (#446: it was ' +
+                     '/admin/keys/history/certificate).',
+        mirrors: 'GET /admin/keys/history',
+        parameters: [
+          { name: 'unit', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The signing unit, `jose:RS256` and the like.' },
+          { name: 'kid', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The key\'s identifier.' }
+        ],
+        responseDescription: 'The chain, as application/pem-certificate-chain.',
+        handler: function (req, res) {
+          log.debug("Entering the management API key certificate endpoint.");
+          const q = req.query || {};
+          const pem = adminViews.signingHistoryCertificate(
+            String(q.unit || ''), String(q.kid || ''));
+          if (!pem) {
+            errorCodes.mark(res, 'STS-KEYS-0068');
+            self.sendJson(res, 404, { ok: false, errors: [
+              'This realm has no certificate recorded for that key.'] });
+            log.debug("Leaving the management API key certificate " +
+                      "endpoint. None held.");
+            return;
+          }
+          res.status(200)
+             .set('Content-Type', 'application/pem-certificate-chain')
+             .set('Cache-Control', 'no-store')
+             .set('Content-Disposition', 'attachment; filename="' +
+                  String(q.kid || 'certificate').replace(/[^A-Za-z0-9._-]/g,
+                                                        '_') + '.pem"')
+             .send(pem);
+          log.debug("Leaving the management API key certificate endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/keys/history', tag: 'Service',
         operationId: 'getKeyHistory',
         summary: 'Every signing key this realm has ever held',
@@ -5005,7 +5359,8 @@ class AdminApi {
       // belong to this API's document rather than to the console's shell. The
       // console requires them.
       // ---------------------------------------------------------------------
-      { method: 'GET', path: BASE + '/api-explorer', tag: 'Service',
+      { method: 'GET', path: BASE + '/console/api-explorer', kind: 'console',
+        tag: 'Service',
         operationId: 'getApiExplorer',
         summary:
           'What the console\'s API explorer reads, and what you may drive',
@@ -5069,9 +5424,42 @@ class AdminApi {
           // have. (Since #50's R1 a require of it registers nothing —
           // `common/protocol_stack.ts` registers its routes at 19a — so only
           // the cycle is left of that argument, and it is enough.)
-          self.sendJson(res, 200,
-                        loadApiExplorer().explorerJson(req));
+          // WHO THE CALLS ARE MADE AS, for the static console's explorer
+          // (#446): the token this request carried, its subject and scopes.
+          const explorer = loadApiExplorer().explorerJson(req);
+          const caller = (res.locals && res.locals.apiCaller) || null;
+          if (caller) {
+            explorer.who = String(caller.name || '');
+            explorer.scope = (caller.scopes || []).join(' ');
+          }
+          self.sendJson(res, 200, explorer);
           log.debug("Leaving the API explorer operation.");
+        } },
+
+      // THE CONSOLE'S FRAME (#446): what the static console draws around
+      // every page — the sidebar, the banners, the foot — for this caller.
+      { method: 'GET', path: BASE + '/console', kind: 'console',
+        tag: 'Service',
+        operationId: 'getConsoleShell',
+        summary: 'What the console draws around every page, for this caller',
+        description: 'The gate as it stands for the caller and the labels ' +
+                     'of the roles it names, the trust realm and the ' +
+                     'realms to choose between, where the realm\'s root ' +
+                     'and the user portal are, the console sections the ' +
+                     'caller may see and every page\'s label, a realm\'s ' +
+                     'removal in progress, what this process runs as, what ' +
+                     'is persisted, and the build. The static console ' +
+                     'fetches it once after sign-in.',
+        mirrors: 'GET /admin',
+        responseDescription: 'The shell answer.',
+        handler: function (req, res) {
+          log.debug("Entering the management API console shell endpoint.");
+          // THE GATE IS THE TOKEN'S: the static console has no session of
+          // its own, so who is signed in, and what they may see, is what
+          // this API decided for the caller (`meJson()`).
+          const gate = self.consoleGateOf(self.meJson(req, res));
+          self.sendJson(res, 200, admin.shellJson(req, gate, gate));
+          log.debug("Leaving the management API console shell endpoint.");
         } },
 
       { method: 'GET', path: BASE + '/status', tag: 'Service',
@@ -5085,8 +5473,120 @@ class AdminApi {
         responseSchema: { $ref: '#/components/schemas/Status' },
         handler: function (req, res) {
           log.debug("Entering the management API status endpoint.");
-          self.sendJson(res, 200, admin.consoleJson());
+          // The dashboard's answer since #446: the totals as before, and
+          // the visible sections, persistence and the base URL beside them —
+          // which since #454 only its console twin,
+          // `GET /admin-api/console/dashboard`, answers: this operation names
+          // them in `consoleMembers` and `sendJson()` takes them off.
+          self.sendJson(res, 200, admin.dashboardJson(req));
           log.debug("Leaving the management API status endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // WHO AM I, AND WHAT MAY I DO HERE (#446, 2026-10-05).
+      //
+      // The console is becoming a static application whose only knowledge of
+      // its reader is the access token it presents. Everything the
+      // server-rendered console learned from `adminViews.gateStateFor(req)` —
+      // who is signed in, which authority they are, what they hold, which
+      // pages `admin_scope.ts` hides from them, whether the roster is still
+      // open — it has to be TOLD, and this is where. It answers what the gate
+      // above DECIDED for this request rather than deciding anything: the
+      // caller, scopes and roles are the ones the gate left on
+      // `res.locals.apiCaller`, so the answer cannot disagree with what the
+      // next call will be allowed.
+      //
+      // It mirrors no console page: it is the console's banner and the
+      // filter on its navigation, which every page draws.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/me', tag: 'Service',
+        operationId: 'getMe',
+        summary: 'Who the caller is here, and what they may do',
+        description: 'What this API\'s gate decided for the access token ' +
+                     'on this request: the token\'s subject (`caller`: a ' +
+                     'person, or a client on `client_credentials`), the ' +
+                     'realm that issued it and whether that makes the ' +
+                     'caller a `service` or a `realm` authority, the ' +
+                     'scopes it carries that its client still declares, ' +
+                     'the roles its subject holds NOW that those scopes ' +
+                     'carry, and so whether it may `read` and `write`. ' +
+                     '`console` reports the roster the answer was read ' +
+                     'from: whether it is still open to anybody, and the ' +
+                     'bootstrap administrator\'s state. `pages` is every ' +
+                     'console page this caller may reach; a realm ' +
+                     'authority is not given the service pages.\n\n' +
+                     'A role granted or revoked since the token was minted ' +
+                     'shows here at once, because the roles are read on ' +
+                     'every call. Where no token is required (development ' +
+                     'mode with `adminApi.authRequired` off) there is no ' +
+                     'caller, and both `read` and `write` are true.',
+        mirrors: 'no console page — what the gate decided for the caller; ' +
+                 'the console draws its banner and its navigation from it',
+        responseDescription: 'The caller, the authority, the roles and the ' +
+                             'pages.',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            tokenRequired: { type: 'boolean',
+              description: 'Whether this API requires an access token ' +
+                           'here: `adminApi.authRequired` as it is in ' +
+                           'force, which product mode reads as true.' },
+            caller: { type: ['object', 'null'],
+              description: 'The token\'s subject; null where no token ' +
+                           'is required.',
+              properties: {
+                kind: { type: 'string', enum: ['person', 'application'] },
+                name: { type: 'string' },
+                clientId: { type: 'string',
+                  description: 'The client the token was issued to.' }
+              } },
+            realm: { type: 'string',
+              description: 'The trust realm whose roster decides: the ' +
+                           'one that issued the token.' },
+            readingRealm: { type: 'string',
+              description: 'The trust realm this request was made in.' },
+            authority: { type: ['string', 'null'],
+              enum: ['service', 'realm', null],
+              description: '`service` for a default-realm token, which ' +
+                           'administers every realm; `realm` for a ' +
+                           'realm\'s own, confined to it.' },
+            scopes: { type: 'array', items: { type: 'string' } },
+            roles: { type: 'array', items: { type: 'string' } },
+            read: { type: 'boolean' },
+            write: { type: 'boolean' },
+            expiresAt: { type: ['integer', 'null'],
+              description: 'When the token stops being accepted, in ' +
+                           'seconds since the epoch.' },
+            mode: { type: 'string', enum: ['development', 'product'] },
+            readGroup: { type: 'string' },
+            writeGroup: { type: 'string' },
+            console: { type: 'object',
+              description: 'The roster the roles were read from.',
+              properties: {
+                available: { type: 'boolean',
+                  description: 'False where no directory is loaded.' },
+                open: { type: 'boolean',
+                  description: 'True while anybody who signs in holds ' +
+                               'both roles: development, before the ' +
+                               'bootstrap administrator has arrived.' },
+                empty: { type: 'boolean' },
+                windowOpens: { type: 'boolean',
+                  description: 'False in product mode, which never ' +
+                               'opens the console to anybody.' },
+                bootstrapPasswordRequired: { type: 'boolean',
+                  description: 'True for the bootstrap administrator ' +
+                               'before it has claimed the console with ' +
+                               'its password, in product mode.' },
+                bootstrap: { type: ['object', 'null'] }
+              } },
+            pages: { type: 'array', items: { type: 'string' },
+              description: 'The console pages this caller may reach.' }
+          }
+        },
+        handler: function (req, res) {
+          log.debug("Entering the management API me endpoint.");
+          self.sendJson(res, 200, self.meJson(req, res));
+          log.debug("Leaving the management API me endpoint.");
         } },
 
       { method: 'GET', path: BASE + '/metrics', tag: 'Metrics',
@@ -5157,7 +5657,16 @@ class AdminApi {
             schema: { type: 'string',
                       enum: ['any', 'totp', 'key', 'none', 'unreadable'] },
             description: 'Only people holding a second factor of this ' +
-                         'kind, as on GET /admin-api/mfa.' }
+                         'kind, as on GET /admin-api/mfa.' },
+          // #221: a service account is a person, tagged `serviceAccount` on
+          // its row; this narrows the list to them, or leaves them out.
+          { name: 'kind', in: 'query', required: false,
+            schema: { type: 'string', enum: ['service', 'person'] },
+            description: '`service`: only service accounts (person entries ' +
+                         'carrying `stsServiceAccount`); `person`: ' +
+                         'everybody else. Each row says which in ' +
+                         '`serviceAccount`, and `serviceAccounts` counts ' +
+                         'them over the whole list.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'sessions',
             description: 'Sign-on session blocks, which default to ' +
@@ -5357,13 +5866,49 @@ class AdminApi {
                      'acme\'s `ou=users` and a person created there ' +
                      'is invisible to every other realm.',
         mirrors: 'GET /admin/users/new',
+        parameters: [
+          { name: 'invent', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'A username: the answer carries `invented`, the ' +
+                         'attribute values this service would invent for ' +
+                         'that person, which the console\'s Fill button ' +
+                         'puts into every box nobody has typed in. **In ' +
+                         'development mode only** — elsewhere `invented` is ' +
+                         'null and `inventRefused` says why. It creates ' +
+                         'nobody.' }
+        ],
         responseDescription: 'The attribute catalogue, the credential ' +
                              'options, the container and the realm.',
         responseSchema: { $ref: '#/components/schemas/NewUserForm' },
         handler: function (req, res) {
           log.debug("Entering the management API new-user endpoint.");
           // STRAIGHT TO THE LAYER, like the new-application resource beside it.
-          self.sendJson(res, 200, adminViews.newUserJson(req));
+          const answer: any = adminViews.newUserJson(req);
+          // FILL (#446): what the server-rendered form's Fill button
+          // answered in its own POST, asked for here because the static
+          // console has no other door to it. Refused as well as undrawn in
+          // product: a control that is only hidden is not a control that
+          // is off.
+          if (req.query.invent !== undefined) {
+            const name = String(req.query.invent || '').trim();
+            if (!answer.offersExampleData) {
+              errorCodes.mark(res, 'STS-ADMIN-0016');
+              answer.invented = null;
+              answer.inventRefused = 'Example data is a development-mode ' +
+                'convenience and this service is running as a product ' +
+                '(global.mode=product), so nothing was filled in. Type what ' +
+                'you know.';
+            } else if (!name) {
+              errorCodes.mark(res, 'STS-ADMIN-0017');
+              answer.invented = null;
+              answer.inventRefused = 'Type a username first. The example ' +
+                'person is seeded FROM the username, so there is nothing ' +
+                'to invent until there is a name to invent it from.';
+            } else {
+              answer.invented = adminViews.inventedFieldValues(name);
+            }
+          }
+          self.sendJson(res, 200, answer);
           log.debug("Leaving the management API new-user endpoint.");
         } },
 
@@ -5393,17 +5938,24 @@ class AdminApi {
           return self.runClaimed(res, request.action === 'create'
             ? { username: String(request.username || request.user || '') }
             : null, function (held) {
-            // `via: 'api'` and whatever actor the caller named, for the audit
-            // rows the two second-factor clears write — the same honesty
-            // `rbacAction`'s caller keeps: this API authenticates a CLIENT
-            // rather than a person, so an empty actor is the true answer rather
-            // than an inconvenient one.
+            // `via: 'api'` and the subject of the token the gate verified,
+            // for the audit rows this action writes (#446). It was an empty
+            // actor while this API authenticated only clients; with no token
+            // (development's open API) it still is.
             const result = adminActions.usersAction(request,
-                                             { via: 'api', actor: '',
+                                             { via: 'api',
+                                               actor: self.callerNameOf(res),
                                                // The address a password reset
                                                // link is built on (2026-09-13).
                                                base: baseUrlOf(req) });
             held.settle(!!result.ok);
+            // A CREATE'S ACTIVATION LINK, ABSOLUTE as well (#446): it is
+            // pasted into a message, and the address it is built on —
+            // `global.publicBaseUrl` where one is pinned — is the server's
+            // to know, not a browser's.
+            if (result.ok && /^\//.test(String(result.activationUrl || ''))) {
+              result.activationLink = baseUrlOf(req) + result.activationUrl;
+            }
             if (!result.ok) {
               errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0030');
             }
@@ -5619,6 +6171,32 @@ class AdminApi {
                                                 'value has nothing to ' +
                                                 'mistype against and may ' +
                                                 'omit it.' },
+                // A SERVICE ACCOUNT FROM THE START (#221): checked before the
+                // person is created, so a refused one leaves nobody behind.
+                serviceAccount: { type: 'boolean',
+                                  description: 'Create the person as a ' +
+                                    'SERVICE ACCOUNT (#221): a person entry ' +
+                                    'carrying `stsServiceAccount`, governed ' +
+                                    'by the realm\'s service-account ' +
+                                    'policy. `owner`, and `destination` with ' +
+                                    '`secretName`, are read with it, and ' +
+                                    'checked BEFORE the person is created — ' +
+                                    'a refusal creates nobody.' },
+                owner: { type: 'string',
+                         description: 'With `serviceAccount`: the person or ' +
+                                      'group answerable for it — a DN, a ' +
+                                      'username or a group\'s cn. Required ' +
+                                      'while the policy\'s `requireOwner` is ' +
+                                      'on (the default).' },
+                destination: { type: 'string',
+                               description: 'With `serviceAccount`: the DN ' +
+                                            'of the push destination (an ' +
+                                            'application entry) its rotated ' +
+                                            'password is written to.' },
+                secretName: { type: 'string',
+                              description: 'With `destination`: the ' +
+                                           'secret\'s name or path there, ' +
+                                           'which must already exist.' },
                 deliver: { type: 'string', enum: ['show', 'mail'],
                            description: 'With `credential: activation`, `mail` (#63) sends ' +
                                         'the link to the ' +
@@ -5651,6 +6229,10 @@ class AdminApi {
                                          'refused 400. Ignored in ' +
                                          'single-cell mode.' }
               },
+              // THE NEW-USER FORM'S BOXES (#446): the static console sends
+              // /admin/users/new's field grid here as it is, and
+              // `userFieldsFrom()` merges them over `attributes`.
+              patternProperties: FIELD_GRID_PATTERN,
               required: ['username'],
               examples: [{ username: 'rcbj' },
                          { username: 'dana', invent: false,
@@ -6069,9 +6651,11 @@ class AdminApi {
                             description: 'Accepted for `user`.' },
                 fields: { type: 'object',
                           description: 'Attribute name to a string or an ' +
-                                       'array of strings; empty clears it.' }
+                                       'array of strings; empty clears it.' },
+                present: FIELD_GRID_MEMBERS.present
               },
-              required: ['user', 'fields'],
+              patternProperties: FIELD_GRID_PATTERN,
+              required: ['user'],
               examples: [{ user: 'alice',
                            fields: { title: 'Principal Engineer',
                                      mobile: ['+46 70 000 00 00'] } }],
@@ -6277,10 +6861,14 @@ class AdminApi {
                          'doors — an LDAP bind, a WS-Trust UsernameToken, ' +
                          'SCIM, SSF and EST Basic — answered as a wrong ' +
                          'password; an app password (`create-app-password`) ' +
-                         'is what they use there (#101). **What it does not ' +
-                         'reach** is a sign-in that is neither that screen ' +
-                         'nor one of those doors: federation, SPNEGO or a ' +
-                         'Kerberos AS-REQ, a TLS client certificate. ' +
+                         'is what they use there (#101). In product the KDC ' +
+                         'refuses their password alone too ' +
+                         '(KDC_ERR_POLICY, #173); a ticket takes an ' +
+                         'authenticator code through FAST and OTP, or a ' +
+                         'certificate through PKINIT (#179). **What it does ' +
+                         'not reach** is a sign-in that is neither that ' +
+                         'screen nor one of those doors: federation, a TLS ' +
+                         'client certificate. ' +
                          'The authentication policy\'s `requireSecondFactor: ' +
                          'always` ' +
                          'is the same requirement for ' +
@@ -6326,6 +6914,106 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The requirement as it now stands.' },
+
+          // A SERVICE ACCOUNT (#221, 2026-10-06), drawn on the person's
+          // /admin/users page and the new user screen. Rule 7.
+          { action: 'set-service-account',
+            operationId: 'setUserServiceAccount',
+            summary: 'Make somebody a service account, or a person again',
+            description: 'A service account is a PERSON entry carrying ' +
+                         '`stsServiceAccount` (#221): everything a person ' +
+                         'is — a password, app passwords, Kerberos keys, ' +
+                         'groups, roles, Shared Signals under their ' +
+                         '`iss_sub` — and governed by the realm\'s ' +
+                         'service-account policy (`GET /admin-api/policies`, ' +
+                         'kind `serviceAccount`): whether the second factor ' +
+                         'is exempt, whether a browser sign-in is allowed ' +
+                         '(not by default), which password doors open, and ' +
+                         'whether its password rotates and is pushed to a ' +
+                         'secrets manager.\n\n`serviceAccount` true (the ' +
+                         'default) sets or changes it: `owner`, a person or ' +
+                         'group in this realm, is required while the ' +
+                         'policy\'s `requireOwner` is on; `destination`, a ' +
+                         'push destination\'s DN, and `secretName` go ' +
+                         'together. `serviceAccount` false makes them an ' +
+                         'ordinary person again and clears the owner, the ' +
+                         'destination and the rotation state.\n\nWhere the ' +
+                         'policy refuses a service account every browser ' +
+                         'sign-in, becoming one ENDS the person\'s ' +
+                         'sessions (`signedOut`). SCIM does not carry the ' +
+                         'flag; an LDAP modify by a holder of Admin Write ' +
+                         'may, under the same rules.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                serviceAccount: { type: 'boolean',
+                                  description: 'true makes or keeps them a ' +
+                                               'service account (the ' +
+                                               'default); false makes them ' +
+                                               'a person again.' },
+                owner: { type: 'string',
+                         description: 'The person or group answerable for ' +
+                                      'the account: a DN, a username or a ' +
+                                      'group\'s cn.' },
+                destination: { type: 'string',
+                               description: 'The DN of the push destination ' +
+                                            '(an application entry).' },
+                secretName: { type: 'string',
+                              description: 'The secret\'s name or path at ' +
+                                           'the destination; it must ' +
+                                           'already exist there.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'svc-backup', serviceAccount: true,
+                           owner: 'cn=operations,ou=groups,dc=example,' +
+                                  'dc=com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The account as it now stands (`account`), ' +
+                                 'and the sessions ended (`signedOut`).' },
+
+          { action: 'rotate-password',
+            operationId: 'rotateServiceAccountPassword',
+            summary: 'Rotate a service account\'s password now',
+            description: 'QUEUES a rotation of the service account\'s ' +
+                         'password on the scheduler\'s leader (the job ' +
+                         '`service-accounts.rotate-now`, #221): a password ' +
+                         'drawn by the password policy\'s generator at the ' +
+                         'service-account policy\'s length is PUSHED to the ' +
+                         'account\'s destination first and committed here ' +
+                         'only once the push succeeded; the previous ' +
+                         'password is accepted for the policy\'s overlap. ' +
+                         'A failed push changes nothing. The answer is the ' +
+                         'run\'s id — `GET /admin-api/scheduler` shows its ' +
+                         'outcome — and never a password: the destination is ' +
+                         'where it is read.\n\nRefused for an entry that is ' +
+                         'not a service account, or one that names no ' +
+                         'destination. A rotating account\'s password ' +
+                         'cannot be set by hand (`set-password`, ' +
+                         '`reset-password`): this is the way.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The service account, as /admin-api/users names ' +
+                          'it.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'svc-backup' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run (`runId`, ' +
+                                 '`alreadyQueued`).' },
 
           // WHO MAY ACT FOR A PERSON (#108, 2026-09-23) — the person's half
           // of the delegation policy (`common/delegation_policy.ts`), drawn
@@ -6921,7 +7609,47 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription:
-              'Whether the key was removed, or why it was not.' }
+              'Whether the key was removed, or why it was not.' },
+
+          // #470 (rcbj's decision D): the console's Rename on a person's
+          // Passkeys table, and the same writer the person's own
+          // `/portal/rename-key` calls.
+          { action: 'rename-key', operationId: 'renameUserPasskey',
+            summary: 'Rename one of somebody\'s passkeys',
+            description: 'Goes through the same `renameKey()` the person\'s ' +
+                         'own portal calls (`POST /portal/rename-key`): a ' +
+                         'name is at most 60 characters with no control ' +
+                         'characters, and an EMPTY name restores the default ' +
+                         '— the provider FIDO MDS names for the key\'s ' +
+                         'AAGUID where a BLOB is loaded, else the ' +
+                         'credential manager\'s, else "Passkey" or ' +
+                         '"Security key". The credential id is the base64url ' +
+                         'one on this person\'s `factors.keys`. Audited; no ' +
+                         'Shared Signals event, because a name says nothing ' +
+                         'about what the key proves.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                credentialId: { type: 'string',
+                                description:
+                                  'base64url, as WebAuthn produced it.' },
+                label: { type: 'string', maxLength: 200,
+                         description: 'The new name; empty restores the ' +
+                                      'default.' }
+              },
+              required: ['user', 'credentialId'],
+              examples: [{ user: 'alice', credentialId: 'q1w2e3r4',
+                           label: 'Work laptop' }],
+              additionalProperties: false
+            },
+            responseDescription:
+              'The name the passkey now has, or why it was not renamed.' }
         ] },
 
       // ---------------------------------------------------------------------
@@ -7345,7 +8073,19 @@ class AdminApi {
             schema: { type: 'string' },
             description: 'One group\'s DN. Returns the drill-down.' },
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
-            description: 'Substring of the DN or the name, case-insensitive.' }
+            description: 'Substring of the DN or the name, case-insensitive.' },
+          // #459: the application page's search for
+          // `appDelegationSubjectGroup`, which leaves out the groups its
+          // list already holds — before the paging, so a page of five is
+          // five.
+          { name: 'exclude', in: 'query', required: false,
+            schema: { type: 'array', items: { type: 'string' } },
+            style: 'form', explode: true,
+            description: 'A group DN to leave out of the match, compared as ' +
+                         'LDAP compares a DN (case and the spaces after a ' +
+                         'comma do not matter); repeat it for several. ' +
+                         'Applied before the paging, so a page still holds ' +
+                         '`per` rows. Ignored when `group` is given.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'members',
             description: 'The membership values of the group named by ' +
@@ -8053,11 +8793,11 @@ class AdminApi {
           log.debug("Entering the management API admin roles action endpoint.");
           const body = parseBody(req);
           // `via: 'api'` and an empty actor, for the audit row. The console
-          // passes its signed-in user here; this API authenticates a CLIENT
-          // rather than a person and has no session to read, so an empty actor
-          // is the honest answer rather than an inconvenient one.
+          // passes its signed-in user here; this API passes the subject of
+          // the token its gate verified (#446), and nobody where no token was
+          // required.
           const result = adminActions.rbacAction(self.withAction(req, body),
-                                          { via: 'api', actor: '' });
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0034');
           }
@@ -8233,11 +8973,10 @@ class AdminApi {
                     "endpoint.");
           const body = parseBody(req);
           // `via: 'api'` and whatever actor the caller named, for the audit row
-          // — the same honesty `rbacAction`'s caller keeps: this API
-          // authenticates a CLIENT rather than a person, so an empty actor is
-          // the true answer rather than an inconvenient one.
+          // — `rbacAction`'s caller's rule: the subject of the token the
+          // gate verified (#446), and nobody where no token was required.
           const result = adminActions.mfaAction(self.withAction(req, body),
-                                         { via: 'api', actor: '' });
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0035');
           }
@@ -8334,6 +9073,59 @@ class AdminApi {
             },
             responseDescription: 'Whether a factor was turned off.' }
         ] },
+
+      // ONE CREDENTIAL'S LINEAGE (#446): the console page had no
+      // operation, having no form; see
+      // `AdminViews.credentialLineageModel()`.
+      { method: 'GET', path: BASE + '/tokens/credential', tag: 'Tokens',
+        operationId: 'getCredentialLineage',
+        summary: 'One credential and every generation behind it',
+        description: 'The credential a protocol identifier names (a ' +
+                     '`jti`, an `AssertionID`) and how it came to exist: ' +
+                     'one generation per exchange behind it, newest ' +
+                     'first, down to the issuance the line rests on — ' +
+                     'each with the act that produced it, the party that ' +
+                     'holds it (`holder`) and, at the origin, the grant or ' +
+                     'flow (`originLabel`). `walls` are the lines that ' +
+                     'stop at a credential this service cannot name; ' +
+                     '`truncated` says the walk stopped at ' +
+                     '`maxGenerations`. The graph and, as for ' +
+                     '`/delegation/map`, `looks`, the drawing (`svg`) and ' +
+                     'its size come with it.\n\nWith no `id` the answer ' +
+                     'names nothing (`counts: null`).\n\nWith ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/tokens/credential',
+        parameters: [
+          { name: 'id', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The credential\'s identifier, as the tokens ' +
+                         'table shows it.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The credential, its generations, the graph, ' +
+                             'every node\'s look and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API credential lineage " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.credentialLineageModel(req.query,
+                                                           { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API credential lineage " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.credentialLineageModel(req.query));
+          log.debug("Leaving the management API credential lineage " +
+                    "endpoint.");
+        } },
 
       { method: 'GET', path: BASE + '/tokens', tag: 'Tokens',
         operationId: 'getIssued',
@@ -9078,12 +9870,18 @@ class AdminApi {
             summary: 'Change one setting',
             description: 'A RUNTIME OVERRIDE — the top of config.js\'s five ' +
                          'layers. Whether it outlives the process is ' +
-                         '`persistence.appconfig`: in the default memory ' +
-                         'mode it is gone on restart, and with a store on it ' +
-                         'is written down and re-applied at the next start ' +
+                         '`persistence.appconfig`: with a persistent store ' +
+                         '(`persistence.mode` `ldif` or `postgres`) it is ' +
+                         'written down and re-applied at the next start ' +
                          'through this same function, which is why it adds ' +
-                         'no sixth layer. See `GET ' +
-                         '/admin-api/persistence`.\n\nNOTHING HERE WRITES TO ' +
+                         'no sixth layer, and only with ' +
+                         '`persistence.mode=memory` is it gone on restart. ' +
+                         'A write made while a non-default realm is ambient ' +
+                         'lands on that realm and is written down with the ' +
+                         'realm row, so `persistence.realms` decides it ' +
+                         'there. The reply\'s `message` says which. See ' +
+                         '`GET /admin-api/persistence`.\n\nNOTHING HERE ' +
+                         'WRITES TO ' +
                          'THE APPCONFIG FILE in either mode, and that is ' +
                          'deliberate rather than unfinished: a service that ' +
                          'edited a file checked into a repository would ' +
@@ -9272,11 +10070,14 @@ class AdminApi {
           { action: 'set', operationId: 'setTokenLifetimes',
             summary: 'Set one or more of the six',
             description: 'A RUNTIME OVERRIDE, like every other change made ' +
-                         'through this API: gone on restart in the default ' +
-                         'memory mode, and written down and re-applied at ' +
+                         'through this API: written down and re-applied at ' +
                          'the next start when `persistence.appconfig` has a ' +
-                         'store under it. Nothing writes to the appconfig ' +
-                         'file in either case.\n\nName any of the six; the ' +
+                         'store under it (`persistence.realms` for a write ' +
+                         'made inside a realm), and gone on restart only ' +
+                         'with `persistence.mode=memory`; the reply\'s ' +
+                         '`message` says which. Nothing writes to the ' +
+                         'appconfig file in either case.\n\nName any ' +
+                         'of the six; the ' +
                          'console form posts them all at once and a caller ' +
                          'may post one. ALL-OR-NOTHING: every value is ' +
                          'checked before any is written, so a body with one ' +
@@ -9450,11 +10251,14 @@ class AdminApi {
           { action: 'set', operationId: 'setSamlAssertions',
             summary: 'Set one or more of the SAML assertion settings',
             description: 'A RUNTIME OVERRIDE, like every other change made ' +
-                         'through this API: gone on restart in the default ' +
-                         'memory mode, and written down and re-applied at ' +
+                         'through this API: written down and re-applied at ' +
                          'the next start when `persistence.appconfig` has a ' +
-                         'store under it. Nothing writes to the appconfig ' +
-                         'file in either case.\n\nName any of them; the ' +
+                         'store under it (`persistence.realms` for a write ' +
+                         'made inside a realm), and gone on restart only ' +
+                         'with `persistence.mode=memory`; the reply\'s ' +
+                         '`message` says which. Nothing writes to the ' +
+                         'appconfig file in either case.\n\nName any ' +
+                         'of them; the ' +
                          'console forms post several at once and a caller ' +
                          'may post one. ALL-OR-NOTHING: every value is ' +
                          'checked before any is written, so a body with one ' +
@@ -9784,6 +10588,78 @@ class AdminApi {
                     "endpoint.");
         },
         actions: this.claimSetActions(SAML_CLAIM_FAMILY) },
+
+      // -----------------------------------------------------------------------
+      // THE KERBEROS PAC HALF OF THE SAME STORE (#493): the sixth set, the
+      // claims a ticket's PAC_CLIENT_CLAIMS_INFO carries, on its own page
+      // under Protocols → Kerberos. Same action function, same audit row,
+      // same CAEP announcement, and since #498 the same ticked catalogue.
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/kerberos/claims', tag: 'Kerberos',
+        operationId: 'getKerberosPacClaims',
+        summary: 'The claims a Kerberos ticket\'s PAC carries',
+        description: 'The `kerberos-pac` claim set — the claims this ' +
+                     'realm\'s KDC writes into PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11) ' +
+                     'while `krb5.pacClaims` is on — with each row\'s claim ' +
+                     'id, the four PAC claim types and the claims one ' +
+                     'person\'s next TGT would carry, built by the function ' +
+                     'the KDC calls.\n\nA TGT carries this set, with the ' +
+                     'person\'s realm-wide roles under it as a string claim. ' +
+                     'A service ticket carries what its TGT carried, with ' +
+                     'the rows of the application whose ' +
+                     'krb5ServicePrincipalName names the service added and ' +
+                     'winning by name (that application\'s Configuration ' +
+                     'tab, `krb5ClaimsPac`). A claim id is ' +
+                     '`ad://ext/<name>:<hex>`, the hex derived from the name ' +
+                     '(`idFormat`). Nothing already issued changes.\n\n' +
+                     'The set\'s TICKED CATALOGUE (#498) is the other ' +
+                     'pages\' `attributeCatalogue` (each row with the ' +
+                     '`pacClaimId` it becomes) and `sets[].attributes`: a ' +
+                     'ticked attribute is a string claim of every value on ' +
+                     'the person\'s entry, under the rows and the roles ' +
+                     'claim, which win by claim id. `preview.byLdap` is ' +
+                     'what each attribute would carry for the person.',
+        mirrors: 'GET /admin/kerberos/claims',
+        parameters: [
+          { name: 'user', in: 'query', required: false,
+            schema: { type: 'string', default: 'alice' },
+            description: 'Whose claims to preview: `preview.claims` is what ' +
+                         'their next TGT would carry.' }
+        ],
+        responseDescription: 'The PAC set, its claim ids, the setting and ' +
+                             'the preview.',
+        responseSchema: { $ref: '#/components/schemas/KerberosPacClaims' },
+        handler: function (req, res) {
+          log.debug("Entering the management API Kerberos PAC claims " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.kerberosClaimsJson(
+                          adminViews.claimsPreviewUser(req.query)));
+          log.debug("Leaving the management API Kerberos PAC claims " +
+                    "endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/kerberos/claims/:action',
+        tag: 'Kerberos',
+        mirrors: 'POST /admin/kerberos/claims',
+        handler: function (req, res) {
+          log.debug("Entering the management API Kerberos PAC claims action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          // The `attributes` action's list (#498), in both spellings, as the
+          // other claim-set doors take it.
+          const names = self.namesOf(req, body, 'attribute', 'attributes');
+          const result = adminActions.claimsAction(self.withAction(req, body),
+                                                   names,
+                                            stats.KERBEROS_CLAIM_SET_IDS);
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0131');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API Kerberos PAC claims action " +
+                    "endpoint.");
+        },
+        actions: this.claimSetActions(KERBEROS_CLAIM_FAMILY) },
 
       { method: 'GET', path: BASE + '/credential-claims',
         tag: 'Credential claims',
@@ -10206,7 +11082,8 @@ class AdminApi {
           log.debug("Entering the management API federation action endpoint.");
           const body = parseBody(req);
           adminActions.federationAction(self.withAction(req, body),
-            { via: 'api', actor: 'admin-api', base: baseUrlOf(req) })
+            { via: 'api', actor: self.callerNameOf(res) || 'admin-api',
+              base: baseUrlOf(req) })
             .then(function (result) {
               if (!result.ok) {
                 errorCodes.mark(res, errorCodes.codeOf(result) ||
@@ -10595,11 +11472,12 @@ class AdminApi {
         operationId: 'getSaml2ServiceProviders',
         summary: 'Every SAML 2.0 service provider, and the endpoints each is ' +
                  'configured from',
-        description: 'A full SAML 2.0 identity provider: HTTP Redirect and ' +
-                     'HTTP POST for the AuthnRequest, and HTTP POST, HTTP ' +
-                     'Redirect or HTTP Artifact for the Response, with a ' +
+        description: 'A full SAML 2.0 identity provider: HTTP Redirect, ' +
+                     'HTTP POST and HTTP POST SimpleSign for the ' +
+                     'AuthnRequest, and HTTP POST, HTTP Redirect, HTTP POST ' +
+                     'SimpleSign or HTTP Artifact for the Response, with a ' +
                      'SOAP artifact resolution service behind the ' +
-                     'third.\n\n**Every service provider gets its own ' +
+                     'last.\n\n**Every service provider gets its own ' +
                      'identity provider metadata** — a distinct entityID and ' +
                      'its own endpoints — and **in development a document is ' +
                      'minted for any entityID asked for**, so nothing has to ' +
@@ -11405,6 +12283,22 @@ class AdminApi {
                          'openid scope is also a relying party — so these ' +
                          'are not disjoint sets and the counts in the ' +
                          'reply\'s `kinds` member do not sum to the total.' },
+          // #459: the application page's search for its two delegation
+          // lists, which may not offer the application itself or what the
+          // list already holds — left out BEFORE the paging, so a page of
+          // five is five, which a filter in the browser could not promise.
+          { name: 'exclude', in: 'query', required: false,
+            schema: { type: 'array', items: { type: 'string' } },
+            style: 'form', explode: true,
+            description: 'An identifier to leave out of the match, exactly ' +
+                         'as spelled; repeat it for several ' +
+                         '(`exclude=a&exclude=b`). Applied before the ' +
+                         'paging, so a page still holds `per` rows. The ' +
+                         'console\'s application search for ' +
+                         '`appAllowedToDelegateTo` and ' +
+                         '`appAllowedToActOnBehalfOf` sends the application ' +
+                         'itself and the values its list already holds. ' +
+                         'Ignored when `application` is given.' },
           { name: 'attributesPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of the attribute list, on the ' +
@@ -11502,7 +12396,24 @@ class AdminApi {
           // field arrives as whichever value came last and every other one is
           // silently gone. Ignored by every action but `create`, which is where
           // the vocabulary is validated.
-          const protocols = self.namesOf(req, body, 'protocol', 'protocols');
+          //
+          // A COMBINED CHOICE (`vc`) stands for the families it names, which
+          // is how the console's checkbox column posts it (#446: the static
+          // console sends that form here, where the console's own handler
+          // expanded it).
+          const protocols = applications.familiesOfChoices(
+            self.namesOf(req, body, 'protocol', 'protocols'));
+          // AN RFC 9728 DOCUMENT THE CREATE FORM LOADED (#446): the third
+          // tab's document, as the reader left it, into the attribute the
+          // create writes — what `/admin/applications/new`'s handler did
+          // before calling this action.
+          if (String(req.params.action || body.action || '') === 'create' &&
+              body.metadata) {
+            const stored = resourceMetadata.documentFromForm(body);
+            if (stored) {
+              body['field.oauthResourceMetadata'] = stored;
+            }
+          }
           const result = adminActions.applicationsAction(self.withAction(req,
               body),
                                                          protocols, {
@@ -11586,7 +12497,7 @@ class AdminApi {
                                      'not happened. Prefer `protocols`.' },
                 protocols: {
                   type: 'array',
-                  items: { type: 'string', enum: applications.PROTOCOL_IDS },
+                  items: { type: 'string', enum: applications.CHOICE_IDS },
                   description: 'THE PROTOCOL FAMILIES THIS APPLICATION IS ' +
                                'DECLARED FOR, as ids from the closed ' +
                                'vocabulary GET /admin-api/applications/new ' +
@@ -11610,7 +12521,10 @@ class AdminApi {
                                'instead, which is how the console\'s ' +
                                'checkbox column posts it, and a single ' +
                                'string may carry several separated by ' +
-                               'spaces or commas.' },
+                               'spaces or commas.\n\nA COMBINED CHOICE ' +
+                               'the console draws as one checkbox stands for ' +
+                               'its families: `vc` declares `oid4vci` and ' +
+                               '`oid4vp`.' },
                 fields: {
                   type: 'object', additionalProperties: true,
                   description: 'THE ATTRIBUTES THE ENTRY IS CREATED WITH, ' +
@@ -11653,6 +12567,10 @@ class AdminApi {
                                'at all is a record.\n\n' +
                                this.familyScopeNote() }
               },
+              // THE NEW-APPLICATION FORM'S BOXES (#446): the static console
+              // sends /admin/applications/new's field grid here as it is,
+              // and `applicationFieldsFrom()` merges them over `fields`.
+              patternProperties: FIELD_GRID_PATTERN,
               required: ['identifier'],
               examples: [{ identifier: 'urn:example:crm', name: 'CRM',
                            protocols: ['wsfed', 'saml11'],
@@ -11811,8 +12729,16 @@ class AdminApi {
               properties: {
                 application: { type: 'string' },
                 fields: { type: 'object' },
-                protocols: { type: 'array', items: { type: 'string' } }
+                protocols: { type: 'array', items: { type: 'string' } },
+                protocolsPresent: { type: ['string', 'boolean'],
+                                    description: 'Set by the console\'s ' +
+                                      'form, which draws the families as ' +
+                                      'checkboxes: `protocols` is then the ' +
+                                      'whole list, and none ticked means ' +
+                                      'none.' },
+                present: FIELD_GRID_MEMBERS.present
               },
+              patternProperties: FIELD_GRID_PATTERN,
               required: ['application'],
               examples: [{ application: 'my-web-app',
                            fields: { oauthRedirectUri: [
@@ -12037,6 +12963,40 @@ class AdminApi {
             responseDescription: 'How many secrets are `left`, and the ' +
                                  'application as it now stands.' },
 
+          // A credential's value on demand (#446): the application page's
+          // folds, which no GET may carry.
+          { action: 'reveal-secret',
+            operationId: 'revealApplicationSecret',
+            summary: 'Hand back one credential of an application: a client ' +
+                     'secret by its id, the registration access token, or ' +
+                     'a sealed key by its attribute',
+            description: 'The one way to read a credential this registry ' +
+                         'holds: `GET /admin-api/applications` answers each ' +
+                         'secret\'s id and expiry and never its value. ' +
+                         '`secret` is a client secret\'s id (the ids are in ' +
+                         'the application\'s `credentials.clientSecret' +
+                         '.secrets`), `registration-access-token`, or the ' +
+                         'attribute of a sealed credential the application ' +
+                         'holds: `oauthAssertionPrivateKey` or ' +
+                         '`oauthSamlAssertionPrivateKey` (the RFC 7523 and ' +
+                         'RFC 7522 signing keys `/admin-api/pki/issue` put ' +
+                         'there), `gnapSymmetricKey`, `gnapMacaroonKey`. It ' +
+                         'needs `admin:write` and writes an audit row naming ' +
+                         'what was revealed — never the value. Nothing is ' +
+                         'changed.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' },
+                            secret: { type: 'string' } },
+              required: ['application', 'secret'],
+              examples: [{ application: 'my-web-app',
+                           secret: 'cs-0123456789ab' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The `value`, with the `application` and ' +
+                                 '`secret` it belongs to.' },
+
           // /admin/applications/new's *Generate Secret* button (2026-09-18).
           { action: 'generate-secret',
             operationId: 'generateClientSecret',
@@ -12146,7 +13106,9 @@ class AdminApi {
                      'SAML attributes',
             description: 'Adds a row to one of the application\'s own claim ' +
                          'sets — `access_token`, `id_token`, `userinfo`, ' +
-                         '`saml2` or `saml11` — or replaces its row of the ' +
+                         '`saml2`, `saml11` or `kerberos-pac` (#493: added ' +
+                         'to a service ticket for one of its SPNs) — or ' +
+                         'replaces its row of the ' +
                          'same name. At issuance the application\'s rows are ' +
                          'ADDED to the realm\'s set and win by name. A row is ' +
                          'a typed value (`value`, with `${placeholders}`) or a ' +
@@ -12165,13 +13127,19 @@ class AdminApi {
                 application: { type: 'string' },
                 set: { type: 'string',
                        enum: ['access_token', 'id_token', 'userinfo', 'saml2',
-                              'saml11'] },
+                              'saml11', 'kerberos-pac'] },
                 name: { type: 'string' },
                 value: { type: 'string' },
                 attribute: { type: 'string' },
                 multi: { type: 'boolean' },
                 type: { type: 'string',
-                        enum: ['string', 'number', 'boolean', 'json'] },
+                        enum: ['string', 'number', 'boolean', 'json',
+                               'int64', 'uint64'],
+                        description: 'The JSON type of an attribute row in ' +
+                                     'the three JSON sets; in `kerberos-pac` ' +
+                                     '(#493) every row\'s PAC claim type, ' +
+                                     'of string, int64, uint64 and ' +
+                                     'boolean.' },
                 nameFormat: { type: 'string' },
                 namespace: { type: 'string' }
               },
@@ -12201,7 +13169,7 @@ class AdminApi {
                 application: { type: 'string' },
                 set: { type: 'string',
                        enum: ['access_token', 'id_token', 'userinfo', 'saml2',
-                              'saml11'] },
+                              'saml11', 'kerberos-pac'] },
                 name: { type: 'string' }
               },
               required: ['application', 'set', 'name'],
@@ -12211,6 +13179,65 @@ class AdminApi {
             },
             responseDescription: 'The application\'s rows for that set ' +
                                  'after the change, in `claims`.' },
+
+          // AN APPLICATION'S OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495): the
+          // catalogue sections of its OAuth / OpenID Connect, SAML and
+          // Verifiable Credentials sub-tabs.
+          { action: 'set-claim-attributes',
+            operationId: 'setApplicationClaimAttributes',
+            summary: 'Set an application\'s own directory-attribute ' +
+                     'selection for a claim set or its credentials',
+            description: 'Writes the application\'s own selection of ' +
+                         'catalogue attributes for one set — `access_token`, ' +
+                         '`id_token`, `userinfo`, `saml2`, `saml11`, or ' +
+                         '`credential` (its OpenID4VCI credentials). HELD, ' +
+                         'IT REPLACES THE REALM\'S SELECTION for that set: ' +
+                         'the realm\'s ticked attributes are not issued to ' +
+                         'this application, and an empty `attributes` ' +
+                         'issues none. The catalogue is the one `GET ' +
+                         '/admin-api/claims` lists. Refused ' +
+                         '(`STS-REG-0215`) for an attribute the catalogue ' +
+                         'does not hold, or a set whose protocol the ' +
+                         'application is not declared for.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                set: { type: 'string',
+                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
+                              'saml11', 'credential'] },
+                attributes: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['application', 'set', 'attributes'],
+              examples: [{ application: 'my-web-app', set: 'id_token',
+                           attributes: ['mail', 'givenName', 'sn'] },
+                         { application: 'my-wallet', set: 'credential',
+                           attributes: ['givenName', 'sn'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The selection now held, in `attributes`.' },
+          { action: 'inherit-claim-attributes',
+            operationId: 'inheritApplicationClaimAttributes',
+            summary: 'Return an application to the realm\'s ' +
+                     'directory-attribute selection for a set',
+            description: 'Takes the application\'s own selection for one ' +
+                         'set off its entry, so the realm\'s selection is ' +
+                         'in force for it again.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                set: { type: 'string',
+                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
+                              'saml11', 'credential'] }
+              },
+              required: ['application', 'set'],
+              examples: [{ application: 'my-web-app', set: 'id_token' }],
+              additionalProperties: false
+            },
+            responseDescription: '`inherited: true`.' },
 
           // THE ACCESS TYPES TAB (#432 phase 4): one entry of the access-type
           // catalogue RFC 9396 and GNAP share.
@@ -12584,8 +13611,8 @@ class AdminApi {
                          '3.3), or is not https, is refused; development ' +
                          'mode reports both in `warnings` and answers. A ' +
                          'malformed document is refused in both ' +
-                         'modes.\n\nThe console\'s upload posts ' +
-                         'the document as a multipart `file`; a JSON ' +
+                         'modes.\n\nThe console sends an uploaded ' +
+                         'document as `file` (its name and text); a JSON ' +
                          'caller sends `document` instead.',
             requestBodyRequired: true,
             requestBody: {
@@ -12599,7 +13626,14 @@ class AdminApi {
                        description: 'Where the document is published, ' +
                                     'usually `https://<host>' +
                                     resourceMetadata.WELL_KNOWN +
-                                    '[/<path>]`.' }
+                                    '[/<path>]`.' },
+                file: { type: 'object',
+                        properties: { name: { type: 'string' },
+                                      text: { type: 'string' } },
+                        required: ['text'], additionalProperties: false,
+                        description: 'An uploaded document: its file name ' +
+                                     'and its text, which is how the ' +
+                                     'console sends the file it was given.' }
               },
               examples: [{ document: {
                 resource: 'https://api.example.com',
@@ -13233,12 +14267,25 @@ class AdminApi {
                             'A new PolicySetId or PolicyId. Any URI.' },
                 description: { type: 'string',
                           description: 'The document\'s own <Description>.' },
+                version: { type: 'string',
+                          description: 'The document\'s Version: ' +
+                                       'dot-separated numbers, "1" or ' +
+                                       '"1.0". Empty leaves it as it is.' },
                 combiningAlgId: { type: 'string',
                           description: 'One of the rule-combining algorithms ' +
                                        'this editor offers; anything else is ' +
                                        'refused rather than ' +
                                        'written. THE SINGLE ' +
-                                       'MOST CONSEQUENTIAL LINE IN A POLICY.' }
+                                       'MOST CONSEQUENTIAL LINE IN A POLICY.' },
+                maxDelegationDepth: { type: 'string',
+                          description: 'The document\'s ' +
+                                       '<MaxDelegationDepth>: a ' +
+                                       'non-negative integer, or empty for ' +
+                                       'none.' },
+                xpathVersion: { type: 'string',
+                          description: 'The document\'s ' +
+                                       '<XPathVersion> in its defaults, ' +
+                                       'a URI; empty removes it.' }
               },
               required: ['policy'],
               examples: [{
@@ -13328,7 +14375,18 @@ class AdminApi {
                 mustBePresent: { type: 'boolean',
                           description: 'Whether an absent attribute is an ' +
                                        'empty bag (false) or makes the whole ' +
-                                       'expression Indeterminate (true).' }
+                                       'expression Indeterminate (true).' },
+                referenceKind: { type: 'string',
+                          enum: ['designator', 'selector'],
+                          description: 'Whether the Match names its ' +
+                                       'attribute by an AttributeDesignator ' +
+                                       '(the default) or reads it with an ' +
+                                       'AttributeSelector\'s XPath `path`.' },
+                contextSelectorId: { type: 'string',
+                          description: 'A selector\'s ContextSelectorId.' },
+                issuer: { type: 'string',
+                          description: 'A designator\'s Issuer; empty ' +
+                                       'clears it.' }
               },
               required: ['policy', 'path'],
               examples: [{
@@ -15838,6 +16896,13 @@ class AdminApi {
                          'identifier, the profile, the key handle or a ' +
                          'declared issuer. `issuedPaging.total` is then the ' +
                          'count that matched, and `issuedSearch` echoes it.' },
+          { name: 'rows', in: 'query', required: false,
+            schema: { type: 'string', enum: ['all', 'shown'] },
+            description: '`shown` reads each key pair\'s certificate — its ' +
+                         '`pqc` member — for the rows of the requested ' +
+                         'pages only, which is what the console draws; the ' +
+                         'other rows carry no `pqc`. `all`, the default, ' +
+                         'reads every row\'s.' },
           { name: 'personsq', in: 'query', required: false,
             schema: { type: 'string', maxLength: 200 },
             description: 'Narrows the People table before it is paged: a ' +
@@ -15868,7 +16933,12 @@ class AdminApi {
                              'beside them.',
         handler: function (req, res) {
           log.debug("Entering the management API PKI endpoint.");
-          self.sendJson(res, 200, pkiAdmin.pkiView(req));
+          // `rows=shown` IS THE CONSOLE'S OWN CALL (#352, #446): each key
+          // pair's certificate is read for the rows the page's two tables
+          // draw and no others.
+          self.sendJson(res, 200, pkiAdmin.pkiView(req, undefined,
+            String(req.query.rows || '') === 'shown'
+              ? { shownOnly: true } : undefined));
           log.debug("Leaving the management API PKI endpoint.");
         } },
 
@@ -15976,7 +17046,14 @@ class AdminApi {
             if (!result.ok) {
               errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0055');
             }
-            self.sendJson(res, result.ok ? 200 : 400, result);
+            // A PANE ACTION'S NEXT DRAFT, as the workbench draws it (#446):
+            // the console draws the pane again from `workbench`, refused or
+            // not. `authoring.view()` carries no private key.
+            const answered = result && result.draft
+              ? Object.assign({}, result,
+                              { workbench: pkiAdmin.workbenchOf(result.draft) })
+              : result;
+            self.sendJson(res, result.ok ? 200 : 400, answered);
             log.debug("Leaving the management API PKI action endpoint.");
           }).catch(function (e) {
             errorCodes.mark(res, 'STS-API-0021');
@@ -16657,12 +17734,12 @@ class AdminApi {
             description: 'The same export `/admin/keys` uses ' +
                          '(`common/vendored/key_material.js`), so a `.p12` ' +
                          'from here imports identically into keytool, ' +
-                         'OpenSSL, Windows and macOS.\n\n**THE CONSOLE DOES ' +
-                         'NOT COME THROUGH HERE**: `POST /admin/pki/export` ' +
-                         'answers with the FILE, because that is what a ' +
-                         'browser asked for. This arm answers JSON with the ' +
-                         'bytes base64’d, which is what a machine asked for. ' +
-                         'One function underneath either way.\n\n**IT HANDS ' +
+                         'OpenSSL, Windows and macOS.\n\nThe answer is ' +
+                         'JSON with the bytes base64’d and named, and the ' +
+                         'console\'s Download button comes through here ' +
+                         'too since #446: it saves each named file as the ' +
+                         'attachment the server-rendered console sent.' +
+                         '\n\n**IT HANDS ' +
                          'OVER A PRIVATE KEY**, so like ' +
                          'every other such door here it needs ' +
                          '`admin:write` rather than `admin:read`.',
@@ -17917,12 +18994,15 @@ class AdminApi {
                      'and the session that came out of it. They are three ' +
                      'facts at three layers, and a Kerberos AS-REQ ' +
                      'authenticates somebody and starts no session at ' +
-                     'all.\n\nWALK IT BY `seq`, not by page. That number ' +
-                     'is monotonic and never reused, including across a ' +
-                     'drop, so "everything after 4102" is exact; a gap ' +
-                     'between ' +
-                     'the last one you saw and `oldestSeq` is precisely how ' +
-                     'many events you missed while the cap discarded them.',
+                     'all.\n\nRESUME BY `at`, not by page. Every event ' +
+                     'has a `seq` that is unique across every process of ' +
+                     'the service and never reused, including across a ' +
+                     'drop and a restart, and that rises within each ' +
+                     'process (#465). It is NOT one order across ' +
+                     'processes — request workers and cluster nodes each ' +
+                     'number from blocks of their own — so read what is ' +
+                     'new by `at`, with `seq` (and `origin`) as the ' +
+                     'tie-break and as the event\'s name.',
         mirrors: 'GET /admin/audit',
         parameters: [
           { name: 'category', in: 'query', required: false,
@@ -18186,57 +19266,408 @@ class AdminApi {
                      'register with the issued one at ' +
                      '/admin/delegation/user?user=…&format=json, and the ' +
                      'tokens alone are in GET ' +
-                     '/admin-api/users.\n\nWALK IT BY `seq`: ' +
-                     'monotonic and never reused, including across a drop.',
+                     '/admin-api/users.\n\nRESUME BY `at`: an act\'s ' +
+                     '`seq` is unique across every process and never ' +
+                     'reused, and rises within each process, but it is ' +
+                     'not one order across processes (#465).',
         mirrors: 'GET /admin/delegation',
-        parameters: [
-          { name: 'type', in: 'query', required: false,
-            schema: { type: 'string',
-                      enum: closed.delegationTypes },
-            description: 'One mechanism. The reply\'s `types` member ' +
-                         'describes each of them, with the specification it ' +
-                         'comes from and whether this service polices it.' },
-          { name: 'mode', in: 'query', required: false,
-            schema: { type: 'string', enum: closed.delegationModes },
-            description: 'The protocol-independent axis: whether what came ' +
-                         'out carries the chain. ' +
-                         'ANDed with `type`, so a mode ' +
-                         'that does not match the mechanism matches nothing.' },
-          { name: 'outcome', in: 'query', required: false,
-            schema: { type: 'string', enum: closed.delegationOutcomes },
-            description: 'Two rather than the audit log\'s three: a ' +
-                         'delegation is DECIDED rather than ' +
-                         'performed, so there is no third ' +
-                         'answer between issuing the credential and refusing ' +
-                         'to.' },
-          { name: 'protocol', in: 'query', required: false,
-            schema: { type: 'string' },
-            description: 'The family, spelled as /admin-api/users spells it ' +
-                         '— `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free ' +
-                         'text rather than an enum, for the reason the audit ' +
-                         'log\'s `protocol` is.' },
-          { name: 'q', in: 'query', required: false, schema: { type: 'string' },
-            description: 'Substring of ANY party of the chain (normalised ' +
-                         'name, presented form or application) or of either ' +
-                         'explanation, case-insensitive. One box over six ' +
-                         'fields, because the fact a caller has names one of ' +
-                         'them and not which column it is in.' }
-        ].concat(this.pagingParameters()),
+        parameters: delegationFilter.concat(this.pagingParameters()),
         responseDescription: 'The matching acts, the distinct chains among ' +
                              'them, the configured Kerberos policy, and the ' +
                              'vocabulary the filters take.',
         responseSchema: { $ref: '#/components/schemas/DelegationList' },
         handler: function (req, res) {
           log.debug("Entering the management API delegation endpoint.");
-          self.sendJson(res, 200, adminViews.delegationView(req.query).json);
+          // The page's model since #446: the acts as before, and beside
+          // them what /admin/delegation draws (`allowed`,
+          // `delegationPolicy`, its other lists and the two choosers).
+          self.sendJson(res, 200, adminViews.delegationPageModel(req.query));
           log.debug("Leaving the management API delegation endpoint.");
+        } },
+
+      // THE PICTURE OF THOSE ACTS (#446, 2026-10-05). The console page had no
+      // operation — it has no form — and a console that is a static client
+      // of this API needs what only this process knows about it: what each
+      // box IS, where it GOES, and the drawing's markup. See
+      // `AdminViews.delegationMapModel()`.
+      { method: 'GET', path: BASE + '/console/delegation/map',
+        kind: 'console', tag: 'Delegation',
+        operationId: 'getDelegationMap',
+        summary: 'The delegation picture: the graph, each box, the drawing',
+        description: 'The same acts as `GET /admin-api/delegation`, with ' +
+                     'the time taken out and the parties shared: a party ' +
+                     'that is the intermediary of six chains is ONE node ' +
+                     'with six edges. Drawn from everything that MATCHED ' +
+                     'the filter, not from one page of it.\n\n`nodes` and ' +
+                     '`edges` are the graph. `looks` says what each node ' +
+                     'IS, by node id: its label, its shape, the identifier ' +
+                     'a protocol would present for it, and the console ' +
+                     'page it links to — which the directory and the ' +
+                     'application registry decide. `svg` is the drawing, ' +
+                     'laid out on the server, with its links in it; ' +
+                     '`drawing` is its size, and says so if the layout ' +
+                     'failed. `summary` carries the counts by mechanism, ' +
+                     'kind and outcome that the filter\'s choices show.' +
+                     '\n\nWith `format=svg` the answer is the SVG document ' +
+                     'alone, with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/map',
+        parameters: delegationFilter.concat([
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ]),
+        responseDescription: 'The graph, every node\'s look, the counts ' +
+                             'and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation map endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationMapModel(req.query,
+                                                       { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation map endpoint. " +
+                      "Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.delegationMapModel(req.query));
+          log.debug("Leaving the management API delegation map endpoint.");
+        } },
+
+      // THE FEDERATION PICTURE (#446): the console page had no operation,
+      // having no form; see `AdminViews.federationMapModel()`.
+      { method: 'GET', path: BASE + '/console/federation/map',
+        kind: 'console', tag: 'Federation',
+        operationId: 'getFederationMap',
+        summary: 'This realm\'s federation relationships, drawn',
+        description: 'Every federation relationship of the trust realm, ' +
+                     'filtered by `role`, `protocol` and text, as a graph ' +
+                     '— the partners, this service and the applications ' +
+                     'behind each relationship — with the relationships ' +
+                     'and their sign-ins, the drawing (`svg`, laid out on ' +
+                     'the server, with its links), its size, the filter\'s ' +
+                     'vocabulary and the key.\n\nWith `format=svg` the ' +
+                     'answer is the SVG document alone, with no links in ' +
+                     'it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/federation/map',
+        parameters: [
+          { name: 'role', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only relationships in this role.' },
+          { name: 'protocol', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only relationships in this protocol.' },
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Text anywhere in a relationship.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The relationships, the graph and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API federation map endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.federationMapModel(req.query,
+                                                       { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API federation map endpoint. " +
+                      "Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.federationMapModel(req.query));
+          log.debug("Leaving the management API federation map endpoint.");
+        } },
+
+      // ONE GROUP OF APPLICATIONS, DRAWN (#446): the console page had no
+      // operation, having no form; see `AdminViews.delegationClusterModel()`.
+      { method: 'GET', path: BASE + '/console/delegation/cluster',
+        kind: 'console', tag: 'Delegation',
+        operationId: 'getDelegationCluster',
+        summary: 'One group of applications joined by permissions, drawn',
+        description: 'The group an application is in — the applications ' +
+                     'reachable from it by following delegated ' +
+                     'permissions either way — as `GET ' +
+                     '/admin-api/permissions/groups?application=` answers ' +
+                     'it, with the group whole (`cluster`), its grants and ' +
+                     'permissions paged (`groupGrantsPage`, ' +
+                     '`groupPermissionsPage`), the graph and, as for ' +
+                     '`/delegation/map`, `looks`, the drawing (`svg`) and ' +
+                     'its size. With no application, or one the register ' +
+                     'does not hold, the groups are paged instead ' +
+                     '(`groupPage`).\n\nWith `format=svg` the answer is ' +
+                     'the SVG document alone, with no links in it, as ' +
+                     '`image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/cluster',
+        parameters: ([] as any[]).concat([
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The application\'s identifier, exactly.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ], self.pagingParameters()),
+        responseDescription: 'The group, its pages, the chooser\'s data ' +
+                             'and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation cluster " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationClusterModel(req.query,
+                                                           { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation cluster " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.delegationClusterModel(req.query));
+          log.debug("Leaving the management API delegation cluster " +
+                    "endpoint.");
+        } },
+
+      // THE ALLOWED MAPPINGS, DRAWN (#446): the console page had no
+      // operation, having no form; see `AdminViews.delegationAllowedModel()`.
+      { method: 'GET', path: BASE + '/console/delegation/allowed',
+        kind: 'console', tag: 'Delegation',
+        operationId: 'getDelegationAllowed',
+        summary: 'The configured delegated permissions, drawn, and groups',
+        description: 'Every delegated permission somebody configured — a ' +
+                     'client granted a permission a resource exposes — as ' +
+                     'a graph with, as for `/delegation/map`, `looks`, the ' +
+                     'drawing (`svg`) and its size. `groups` are the sets ' +
+                     'of applications the grants join, paged on ' +
+                     '`groupsPage` as `GET /admin-api/permissions/groups` ' +
+                     'summarises them; `shownGroups` are those groups in ' +
+                     'full and `clusters` all of them, which is what the ' +
+                     'page\'s chooser searches.\n\nWith `format=svg` the ' +
+                     'answer is the SVG document alone, with no links in ' +
+                     'it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/allowed',
+        parameters: ([] as any[]).concat(self.pagingParameters(), [
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ]),
+        responseDescription: 'The graph, the groups, the register and the ' +
+                             'drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API allowed delegation " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationAllowedModel(req.query,
+                                                           { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API allowed delegation " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.delegationAllowedModel(req.query));
+          log.debug("Leaving the management API allowed delegation " +
+                    "endpoint.");
+        } },
+
+      // PROTOCOLS → DELEGATION (#446): what the page draws, as the page
+      // answers it; see `AdminViews.delegationSettingsModel()`. The register
+      // alone is `GET /admin-api/permissions`.
+      { method: 'GET', path: BASE + '/console/delegation-settings',
+        kind: 'console', tag: 'Delegation',
+        operationId: 'getDelegationSettings',
+        summary: 'The configured permissions register, as its page shows it',
+        description: 'The delegated permissions register searched and ' +
+                     'paged as the page shows it — `permq` and `grantq` ' +
+                     'search the permissions and the grants, ' +
+                     '`permissionsPage` and `grantsPage` page them ' +
+                     '(`listState`) — with every application in the ' +
+                     'registry for the two selects (`allApplications`) and ' +
+                     'the page\'s settings block. `allowed` is the register ' +
+                     'with its filter and paging, as the page answered it ' +
+                     'before.',
+        mirrors: 'GET /admin/delegation-settings',
+        parameters: [
+          { name: 'permq', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Part of a permission\'s resource.' },
+          { name: 'grantq', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Part of a grant\'s client or resource.' }
+        ].concat(this.pagingParameters()),
+        responseDescription: 'The register, its list state, the ' +
+                             'applications and the settings block.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation settings " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.delegationSettingsModel(req.query));
+          log.debug("Leaving the management API delegation settings " +
+                    "endpoint.");
+        } },
+
+      // EVERYTHING DONE IN ONE PERSON'S NAME (#446): the console page had
+      // no operation, having no form; see
+      // `AdminViews.delegationUserModel()`.
+      { method: 'GET', path: BASE + '/delegation/user', tag: 'Delegation',
+        operationId: 'getDelegationUser',
+        summary: 'Everything issued and delegated in one person\'s name',
+        description: 'The identity register and the delegation register ' +
+                     'UNIONED for one person: every credential issued ' +
+                     'naming them with the grant or flow that produced it ' +
+                     '(`credentials`, `flows`), their sign-ins, every act ' +
+                     'naming them in any role (`acts`), the graph and, as ' +
+                     'for `/delegation/map`, `looks`, the drawing (`svg`) ' +
+                     'and its size. `users` is everybody either register ' +
+                     'holds, which is what the page\'s chooser searches.' +
+                     '\n\nA name neither register holds is answered with ' +
+                     '`user: null`, not an error.\n\nWith `format=svg` the ' +
+                     'answer is the SVG document alone, with no links in ' +
+                     'it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/user',
+        parameters: [
+          { name: 'user', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The person, under any spelling this service has ' +
+                         'seen them under.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The person, their credentials, flows and ' +
+                             'acts, the graph, every node\'s look and the ' +
+                             'drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation user endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationUserModel(req.query,
+                                                        { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation user " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.delegationUserModel(req.query));
+          log.debug("Leaving the management API delegation user endpoint.");
+        } },
+
+      // ONE APPLICATION'S DELEGATIONS (#446): the console page had no
+      // operation, having no form; see
+      // `AdminViews.delegationApplicationModel()`.
+      { method: 'GET', path: BASE + '/delegation/application',
+        tag: 'Delegation',
+        operationId: 'getDelegationApplication',
+        summary: 'Everything delegated through one application or to it',
+        description: 'Every act an application took part in, in EITHER ' +
+                     'role — the intermediary acting for somebody and the ' +
+                     'target a credential is for — with the role it played ' +
+                     'in each (`rolesBySeq`), the graph of those acts and, ' +
+                     'as for `/delegation/map`, `looks`, the drawing ' +
+                     '(`svg`) and its size. `applications` is every ' +
+                     'application some act named, which is what the page\'s ' +
+                     'chooser searches.\n\nAn application no act names is ' +
+                     'answered with `application: null`, not an error: the ' +
+                     'store is capped and drops the oldest.\n\nWith ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/application',
+        parameters: [
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The application, as a protocol presented it or ' +
+                         'normalised.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The application, its acts, the graph, every ' +
+                             'node\'s look and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation application " +
+                    "endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationApplicationModel(req.query,
+              { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation application " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200,
+                        adminViews.delegationApplicationModel(req.query));
+          log.debug("Leaving the management API delegation application " +
+                    "endpoint.");
+        } },
+
+      // ONE RELATIONSHIP, DRAWN ALONE (#446): the console page had no
+      // operation, having no form; see `AdminViews.delegationChainModel()`.
+      { method: 'GET', path: BASE + '/console/delegation/chain',
+        kind: 'console', tag: 'Delegation',
+        operationId: 'getDelegationChain',
+        summary: 'One delegation relationship: its acts, graph and drawing',
+        description: 'One chain — (mechanism, initial identity, ' +
+                     'intermediary, target) — named by its `chain` key, as ' +
+                     '`GET /admin-api/delegation` lists them in `chains`. ' +
+                     'The answer is the chain, every act on it (not ' +
+                     'paged), the graph of those acts and, as for ' +
+                     '`/delegation/map`, `looks`, the drawing (`svg`, laid ' +
+                     'out on the server, with its links) and its size.' +
+                     '\n\n**A KEY NO ACT IS HELD UNDER IS NOT AN ERROR**: ' +
+                     'the store is capped and drops the oldest, so the ' +
+                     'answer is `found: false` with `maxRecords`.\n\nWith ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        mirrors: 'GET /admin/delegation/chain',
+        parameters: [
+          { name: 'chain', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The chain\'s key, `chainKey` on a chain of ' +
+                         '`GET /admin-api/delegation`.' },
+          { name: 'format', in: 'query', required: false,
+            schema: { type: 'string', enum: ['json', 'svg'] },
+            description: '`svg` answers the drawing alone, as a document ' +
+                         'with no links in it. `json`, the default, ' +
+                         'answers everything.' }
+        ],
+        responseDescription: 'The chain, its acts, the graph, every node\'s ' +
+                             'look and the drawing.',
+        handler: function (req, res) {
+          log.debug("Entering the management API delegation chain endpoint.");
+          if (String((req.query || {}).format || '') === 'svg') {
+            const bare = adminViews.delegationChainModel(req.query,
+                                                         { links: false });
+            res.status(200).set('Cache-Control', 'no-store')
+               .type('image/svg+xml').send(bare.svg);
+            log.debug("Leaving the management API delegation chain " +
+                      "endpoint. Answered SVG.");
+            return;
+          }
+          self.sendJson(res, 200, adminViews.delegationChainModel(req.query));
+          log.debug("Leaving the management API delegation chain endpoint.");
         } },
 
       // THE WS-TRUST AND TOKEN-EXCHANGE DELEGATION POLICY (#108, 2026-09-23)
       // — the configured half of those two families, as the Kerberos one is
       // `policy` on the acts above. READ ONLY here, like the console section
       // it mirrors: the attributes are EDITED through POST
-      // /admin-api/applications/update and the two person flags through POST
+      // /admin-api/applications/set for the single-valued ones
+      // (appNotDelegated, appDefaultDelegationSemantics), /add and /remove
+      // for the rest, or /update-fields — there is no `applications/update`
+      // (#286) — and the two person flags through POST
       // /admin-api/users/set-not-delegated and /set-may-act, which is where
       // every application and person attribute is edited (rule 7 by
       // construction). Paged, three lists on three parameters.
@@ -18576,7 +20007,7 @@ class AdminApi {
                          'granted it, and the check is in ' +
                          '`applications.updateApplication()` so that this ' +
                          'operation, the console form and the generic `POST ' +
-                         '/admin-api/applications/update` cannot disagree ' +
+                         '/admin-api/applications/add` cannot disagree ' +
                          'about it.\n\nA second permission of the SAME NAME ' +
                          'is refused rather than merged — a permission has ' +
                          'one description, and two rows with one name would ' +
@@ -18799,7 +20230,7 @@ class AdminApi {
                           description: 'The role register, both relations.' },
         handler: function (req, res) {
           log.debug("Entering the management API roles endpoint.");
-          self.sendJson(res, 200, adminViews.rolesView());
+          self.sendJson(res, 200, adminViews.rolesView(req.query));
           log.debug("Leaving the management API roles endpoint.");
         } },
 
@@ -19182,7 +20613,64 @@ class AdminApi {
                            permission: 'https://payroll.example/read' }],
               additionalProperties: false
             },
-            responseDescription: 'What the role no longer authorizes.' }
+            responseDescription: 'What the role no longer authorizes.' },
+
+          { action: 'add-conferring-client',
+            operationId: 'addRoleConferringClient',
+            summary: 'Let a client confer a role on everybody signing in ' +
+                     'through it',
+            description: 'Adds one value to the role\'s `roleConferredBy` ' +
+                         '(#454): every PERSON who signs in through that ' +
+                         'client holds the role on the access token the ' +
+                         'client is issued, beside the roles they hold ' +
+                         'themselves, and on no other token. It is how the ' +
+                         'console\'s client, `sts-admin-console`, gives ' +
+                         'everybody who signs in to the console ' +
+                         'ADMIN_CONSOLE. ' +
+                         'The client must be registered in this realm. A ' +
+                         'role only applications may hold, and the two ' +
+                         'console roles, cannot be conferred.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', description: 'The role.' },
+                client: { type: 'string',
+                          description: 'The client_id of the application ' +
+                                       'that confers it.' }
+              },
+              required: ['role', 'client'],
+              examples: [{ role: 'ADMIN_CONSOLE',
+                           client: 'sts-admin-console' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Which client now confers the role.' },
+
+          { action: 'remove-conferring-client',
+            operationId: 'removeRoleConferringClient',
+            summary: 'Stop a client conferring a role',
+            description: 'Removes one value from the role\'s ' +
+                         '`roleConferredBy` (#454). The client\'s tokens ' +
+                         'stop carrying the role at once at `/admin-api`, ' +
+                         'whose ' +
+                         'gate asks on every call, and at the next issuance ' +
+                         'everywhere else. Taking `sts-admin-console` off ' +
+                         'ADMIN_CONSOLE leaves the console unable to draw ' +
+                         'itself until it is put back.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', description: 'The role.' },
+                client: { type: 'string',
+                          description: 'The client_id to take off.' }
+              },
+              required: ['role', 'client'],
+              examples: [{ role: 'ADMIN_CONSOLE',
+                           client: 'sts-admin-console' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Which client no longer confers the role.' }
         ] },
 
       // -----------------------------------------------------------------------
@@ -19853,7 +21341,11 @@ class AdminApi {
                             'Registration entries and their paging.' },
         handler: function (req, res) {
           log.debug("Entering the management API SPIFFE entries endpoint.");
-          self.sendJson(res, 200, adminViews.spiffeEntriesJson(req).json);
+          // `entry` names one, as the parameter above has always said.
+          const entry = String(req.query.entry || '').trim();
+          self.sendJson(res, 200,
+                        entry ? adminViews.spiffeEntryJson(entry)
+                              : adminViews.spiffeEntriesJson(req).json);
           log.debug("Leaving the management API SPIFFE entries endpoint.");
         } },
 
@@ -20160,7 +21652,11 @@ class AdminApi {
                           description: 'Attested agents and their paging.' },
         handler: function (req, res) {
           log.debug("Entering the management API SPIFFE agents endpoint.");
-          self.sendJson(res, 200, adminViews.spiffeAgentsJson(req).json);
+          // `agent` names one, as the parameter above has always said.
+          const agent = String(req.query.agent || '').trim();
+          self.sendJson(res, 200,
+                        agent ? adminViews.spiffeAgentJson(agent)
+                              : adminViews.spiffeAgentsJson(req).json);
           log.debug("Leaving the management API SPIFFE agents endpoint.");
         } },
 
@@ -20266,6 +21762,9 @@ class AdminApi {
       // THE ATTRIBUTE SOURCES (#94): the register and its six acts, the
       // console's own (`attribute-sources/attribute_sources_api.ts`).
       ...loadAttributeSourcesApi().ROUTES,
+      // THE SECRET PUSH DESTINATIONS (#221 P3): the register and its four
+      // acts, the console's own (`mgmt-api/secret_destinations_api.ts`).
+      ...loadSecretDestinationsApi().ROUTES,
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,
@@ -20274,7 +21773,250 @@ class AdminApi {
       ...loadSsfTransmittersApi().ROUTES
     ];
     log.debug("Leaving AdminApi.buildRoutes().");
-    return ROUTES;
+    return this.withConsoleRoutes(ROUTES);
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE CONSOLE'S OWN OPERATIONS (#454).
+  //
+  // Since #446 the console is a static application whose one data source is
+  // this API, and to draw itself it added operations that exist only for it:
+  // its frame, its drawings and its form helpers. They answer in the shape a
+  // renderer wants — an SVG laid out on the server, a select's options, the
+  // sidebar — and that shape changes whenever a page does, so they are not
+  // part of the contract an external client relies on. Every row of the
+  // table is therefore one of two KINDS:
+  //
+  //   * `management`, the default: a realm's resources and the controls on
+  //     them, at `/admin-api/...`, described by `/admin-api/openapi.json`,
+  //     listed by the index and drawn by the API explorer, and asked for
+  //     with ADMIN_READ or ADMIN_WRITE as always;
+  //   * `console`: under `/admin-api/console`, described by
+  //     `/admin-api/console/openapi.json` alone, and reached with
+  //     `admin:console` — the permission of the ADMIN_CONSOLE role the
+  //     console's client confers on everybody signing in through it — and,
+  //     wherever it shows realm data, ADMIN_READ (or ADMIN_WRITE, for a form
+  //     helper) as well.
+  //
+  // **THIS IS A BOUNDARY FOR CLEANLINESS, NOT FOR SECURITY.** Nothing here
+  // shows an administrator anything they could not already reach; what moves
+  // is which answers are the API's contract. And rule 7 is untouched: a
+  // console CONTROL keeps its management operation, because a console
+  // operation is a read or a form helper that writes nothing
+  // (`tests/admin_api_kinds.js` holds that).
+  //
+  // Eight rows are written as console rows where they are declared. The
+  // rest is here, because each is DERIVED from a management row: four
+  // answers whose console twin is the whole answer and whose management
+  // operation leaves the drawing or the form's layout out (`consoleMembers`,
+  // which `sendJson()` takes off), the form helpers of two action routes,
+  // and the three rows that exist only for the console — its dashboard, the
+  // operation list its forms resolve through, and its own document.
+  // ---------------------------------------------------------------------------
+  /**
+   * Adds the console's derived operations to the route table and marks every
+   * other row a management operation.
+   *
+   * @param routes - the table as declared
+   * @returns the table with the console's twins, form helpers and own rows
+   */
+  withConsoleRoutes(routes: any[]): any[] {
+    const { log, spec } = this.deps;
+    const self = this;
+    log.debug("Entering AdminApi.withConsoleRoutes().");
+    const byId = function (id) {
+      log.debug("Entering byId().");
+      log.debug("Leaving byId().");
+      return routes.filter(function (entry) {
+        return entry.operationId === id;
+      })[0];
+    };
+    // What a drawing adds to a delegation answer: the box looks, the SVG,
+    // its size and label, and the page's chooser, key and facts.
+    const DRAWING = ['drawing', 'looks', 'label', 'svg', 'chooser',
+                     'mapKey', 'facts'];
+    const TWINS = [
+      { of: 'getStatus', path: '/console/dashboard',
+        operationId: 'getConsoleDashboard',
+        summary: 'What the console\'s front page draws',
+        description: 'The totals `GET /admin-api/status` answers, with the ' +
+                     'base URL, what is persisted and the console sections ' +
+                     'the caller may see, which is what `/admin` draws.',
+        members: ['base', 'persistence', 'sections'] },
+      { of: 'getNewApplicationForm', path: '/console/applications/new',
+        operationId: 'getConsoleNewApplicationForm',
+        summary: 'Everything the new application form is drawn from',
+        description: 'The vocabulary `GET /admin-api/applications/new` ' +
+                     'answers, with how the form lays it out: its field ' +
+                     'groups, the combined protocol choices, the long text ' +
+                     'fields, the persistence note and the RFC 9728 ' +
+                     'import tab.',
+        members: ['fieldGroups', 'familyChoices', 'longTextAttributes',
+                  'persistence', 'resourceMetadataImport'] },
+      { of: 'getDelegationUser', path: '/console/delegation/user',
+        operationId: 'getConsoleDelegationUser',
+        summary: 'One person\'s delegations, drawn',
+        description: 'What `GET /admin-api/delegation/user` answers, with ' +
+                     'every node\'s look, the drawing (`svg`) and its size, ' +
+                     'and the page\'s chooser, key and facts. With ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        members: DRAWING, drawing: true },
+      { of: 'getDelegationApplication', path: '/console/delegation/application',
+        operationId: 'getConsoleDelegationApplication',
+        summary: 'One application\'s delegations, drawn',
+        description: 'What `GET /admin-api/delegation/application` answers, ' +
+                     'with every node\'s look, the drawing (`svg`) and its ' +
+                     'size, and the page\'s chooser, key and facts. With ' +
+                     '`format=svg` the answer is the SVG document alone, ' +
+                     'with no links in it, as `image/svg+xml`.',
+        members: DRAWING, drawing: true }
+    ];
+    const out = routes.slice(0);
+    TWINS.forEach(function (twin) {
+      const entry = byId(twin.of);
+      const copy = Object.assign({}, entry, {
+        kind: 'console', path: BASE + twin.path,
+        operationId: twin.operationId, summary: twin.summary,
+        description: twin.description });
+      // THE MANAGEMENT OPERATION LEAVES THE CONSOLE'S MEMBERS OUT, and a
+      // drawing's `format=svg` with them: its parameter is the twin's.
+      entry.consoleMembers = twin.members.slice(0);
+      entry.consoleTwin = BASE + twin.path;
+      if (twin.drawing) {
+        entry.parameters = (entry.parameters || []).filter(function (one) {
+          return one.name !== 'format';
+        });
+        entry.description = String(entry.description || '')
+          .split('\n\nWith `format=svg`')[0] + '\n\nThe drawing is the ' +
+          'console\'s: `GET ' + BASE + twin.path + '`.';
+      }
+      out.push(copy);
+    });
+    // THE FORM HELPERS (#454): a key pair or a profile into the certificate
+    // form, a secret into the new application form. Each writes nothing; the
+    // act they lead to — `pki/issue-certificate`, `applications/create` —
+    // stays a management operation. Same handler, a route of their own.
+    const HELPERS = [
+      { route: '/pki/:action',
+        actions: ['apply-profile', 'generate-keys', 'generate-alt-keys',
+                  'use-key'] },
+      { route: '/applications/:action', actions: ['generate-secret'] }
+    ];
+    HELPERS.forEach(function (helper) {
+      const entry = routes.filter(function (one) {
+        return one.route === BASE + helper.route;
+      })[0];
+      const moved = entry.actions.filter(function (one) {
+        return helper.actions.indexOf(one.action) >= 0;
+      }).map(function (one) {
+        return Object.assign({}, one, { writesNothing: true });
+      });
+      entry.actions = entry.actions.filter(function (one) {
+        return helper.actions.indexOf(one.action) < 0;
+      });
+      entry.consoleActions = helper.actions.slice(0);
+      out.push(Object.assign({}, entry, {
+        kind: 'console', route: BASE + '/console' + helper.route,
+        actions: moved, consoleActions: undefined }));
+    });
+    out.push(
+      { method: 'GET', path: BASE + '/console/operations', kind: 'console',
+        tag: 'Service', operationId: 'getConsoleOperations',
+        summary: 'Every operation of both kinds, for the console\'s forms',
+        description: 'Every operation this API registers, management and ' +
+                     'console alike, with the console control it mirrors ' +
+                     'and its kind: the table the static console resolves ' +
+                     'a form to the operation it posts to through. The ' +
+                     'index, `GET /admin-api`, lists the management ' +
+                     'operations alone.',
+        mirrors: 'GET /admin',
+        responseDescription: 'Every operation.',
+        handler: function (req, res) {
+          log.debug("Entering the console operations endpoint.");
+          self.sendJson(res, 200,
+                        { operations: self.operationSummaries('all') });
+          log.debug("Leaving the console operations endpoint.");
+        } },
+      { method: 'GET', path: BASE + '/console/openapi.json', kind: 'console',
+        tag: 'Service', operationId: 'getConsoleOpenApi',
+        summary: 'The OpenAPI 3.1 document for the console\'s operations',
+        description: 'The operations under `/admin-api/console`, built from ' +
+                     'the same table as `GET /admin-api/openapi.json`, ' +
+                     'which describes the management operations alone. ' +
+                     'For maintainers and tests: these answers follow the ' +
+                     'console\'s pages and are not a contract.',
+        mirrors: 'GET /admin/sts-metadata',
+        responseDescription: 'The document.',
+        responseSchema: { type: 'object',
+                          description: 'An OpenAPI 3.1.0 document.' },
+        handler: function (req, res) {
+          log.debug("Entering the console OpenAPI document endpoint.");
+          self.sendJson(res, 200,
+                        spec.buildSpec(self.routesOfKind('console'),
+                                       Object.assign(self.specOptions(req),
+                                                     { console: true })));
+          log.debug("Leaving the console OpenAPI document endpoint.");
+        } });
+    // RULE 7 FOR A PAGE WHOSE OWN OPERATION MOVED (#454). A page with no
+    // form still needs a management GET; for a drawing, that is the
+    // operation its data comes from, and the row says so — `drawnOn` is
+    // published in the index, where the parity check reads it
+    // (`tests/vendored/admin_api.js`), beside `mirrors`.
+    const DRAWN_ON = {
+      getDelegation: ['/admin/delegation/map', '/admin/delegation/chain'],
+      getPermissions: ['/admin/delegation/allowed',
+                       '/admin/delegation-settings'],
+      getPermissionGroups: ['/admin/delegation/cluster'],
+      getFederationRelationships: ['/admin/federation/map'],
+      getOpenApi: ['/admin/api-explorer']
+    };
+    Object.keys(DRAWN_ON).forEach(function (id) {
+      byId(id).drawnOn = DRAWN_ON[id].slice(0);
+    });
+    out.forEach(function (entry) {
+      if (!entry.kind) {
+        entry.kind = 'management';
+      }
+    });
+    log.debug("Leaving AdminApi.withConsoleRoutes(). " + out.length +
+              " row(s).");
+    return out;
+  }
+
+  /**
+   * Returns the route table's rows of one kind.
+   *
+   * @param kind - `management` or `console`
+   * @returns the rows
+   */
+  routesOfKind(kind: string): any[] {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.routesOfKind(). " + kind);
+    const rows = (ROUTES || []).filter(function (entry) {
+      return (entry.kind || 'management') === kind;
+    });
+    log.debug("Leaving AdminApi.routesOfKind(). " + rows.length + " row(s).");
+    return rows;
+  }
+
+  // Whether a request is for one of the console's operations: its path,
+  // under the API's base, is `/console` or below it. The prefix IS the kind —
+  // `tests/admin_api_kinds.js` holds that no row of one kind sits under the
+  // other's — so the gate can ask it of a request it has not routed yet.
+  /**
+   * Tells whether a request is for one of the console's operations.
+   *
+   * @param req - the request
+   * @returns true under `/admin-api/console`
+   */
+  isConsoleOperation(req): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.isConsoleOperation().");
+    const path = String(req.path || '').replace(/\/+$/, '');
+    const answer = path === '/console' || path.indexOf('/console/') === 0;
+    log.debug("Leaving AdminApi.isConsoleOperation(). " + answer);
+    return answer;
   }
 
   // Every operation, flattened, for the index. The same walk buildSpec() does,
@@ -20286,22 +22028,37 @@ class AdminApi {
    *
    * @returns the operations
    */
-  operationSummaries() {
+  operationSummaries(kind?: string) {
     const { log } = this.deps;
-    log.debug("Entering AdminApi.operationSummaries().");
+    log.debug("Entering AdminApi.operationSummaries(). " +
+              (kind || 'management'));
     const out = [];
-    ROUTES.forEach(function (entry) {
+    // THE MANAGEMENT OPERATIONS unless `all` is asked for (#454): the index
+    // and the banner count what an integrator may rely on; the console's
+    // form table (`GET /admin-api/console/operations`) wants both kinds.
+    const wanted = kind || 'management';
+    ROUTES.filter(function (entry) {
+      return wanted === 'all' || (entry.kind || 'management') === wanted;
+    }).forEach(function (entry) {
+      const rowKind = entry.kind || 'management';
       if (!entry.actions) {
-        out.push({ method: entry.method, path: entry.path,
-                   operationId: entry.operationId, summary: entry.summary,
-                   mirrors: entry.mirrors || '' });
+        const row: any = { method: entry.method, path: entry.path,
+                           operationId: entry.operationId,
+                           summary: entry.summary,
+                           mirrors: entry.mirrors || '', kind: rowKind };
+        // The pages whose console operation draws this one's data (#454).
+        if (entry.drawnOn) {
+          row.drawnOn = entry.drawnOn.slice(0);
+        }
+        out.push(row);
         return;
       }
       entry.actions.forEach(function (action) {
         out.push({ method: entry.method,
                    path: entry.route.replace(':action', action.action),
                    operationId: action.operationId, summary: action.summary,
-                   mirrors: action.mirrors || entry.mirrors || '' });
+                   mirrors: action.mirrors || entry.mirrors || '',
+                   kind: rowKind });
       });
     });
     log.debug("Leaving AdminApi.operationSummaries(). " + out.length +
@@ -20507,6 +22264,30 @@ class AdminApi {
     });
   }
 
+  // WHETHER A TARGET NAMES THIS API (#505): the audiences a token here may
+  // carry, as `audienceAccepted()` and a realm's own `realmAudienceAccepted()`
+  // read them, asked of one string. `common/registered_targets.ts` asks it,
+  // so that an RFC 8707 resource naming the management API is one of this
+  // service's own resource servers in product — read from the check a token
+  // meets here, not from a second copy of it.
+  /**
+   * Says whether a target (an RFC 8707 resource, a GNAP location) names this
+   * API: an audience a token here is accepted with.
+   *
+   * @param target - the target
+   * @param req - the request it arrived on
+   * @returns whether it does
+   */
+  namesThisApi(target, req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.namesThisApi().");
+    const claims = { aud: String(target == null ? '' : target) };
+    const named = !!claims.aud && (this.audienceAccepted(claims, req) ||
+                                   this.realmAudienceAccepted(claims, req));
+    log.debug("Leaving AdminApi.namesThisApi(). " + named);
+    return named;
+  }
+
   // ---------------------------------------------------------------------------
   // RFC 9068 SECTION 4 STEP 3 — WHO ISSUED IT (2026-09-13).
   //
@@ -20640,7 +22421,11 @@ class AdminApi {
   consoleOperationOf(req) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.consoleOperationOf().");
-    const path = BASE + String(req.path || '');
+    // A CONSOLE OPERATION (#454) mirrors the page it draws as its
+    // management twin does: `/admin-api/console/delegation/map` is
+    // `/admin/delegation/map`, and the frame is `/admin`.
+    const path = BASE + String(req.path || '')
+      .replace(/^\/console(?=\/|$)/, '');
     let action = '';
     let resource = path;
     ROUTES.forEach(function (entry) {
@@ -20742,6 +22527,273 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
+  // IS AN ACCESS TOKEN REQUIRED ON THIS REQUEST? ONE READING, FOR THE GATE AND
+  // FOR EVERYTHING THAT REPORTS IT (#446, 2026-10-05).
+  //
+  // `adminApi.authRequired` is development-only when it is off: the row
+  // carries the `onlyWhile` marker on `mode.opensManagementApi()`, so the
+  // value IN FORCE in a product realm is `true` whatever is stored. The gate,
+  // the index's `protected`, the OpenAPI document's security section and the
+  // startup banner all ask this, because a report reading the stored value
+  // would say "open" about an API that is refusing.
+  //
+  // The mode is the AMBIENT realm's, as everywhere: a product realm of a
+  // development process requires the token under its own prefix.
+  // ---------------------------------------------------------------------------
+  /**
+   * Tells whether this API requires an access token here: the value of
+   * `adminApi.authRequired` in force, which product mode reads as true.
+   *
+   * @returns true when a token is required
+   */
+  tokenRequired(): boolean {
+    const { log, mode } = this.deps;
+    log.debug("Entering AdminApi.tokenRequired().");
+    const required = mode.valueInForce('adminApi.authRequired') === true;
+    log.debug("Leaving AdminApi.tokenRequired(). " + required);
+    return required;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A TOKEN DIES WITH THE SIGN-ON SESSION IT WAS ISSUED ON (#446, 2026-10-05).
+  //
+  // The server-rendered console held a relying-party session that named the
+  // sign-on session it came from and ended with it (`common/oidc_rp.ts`), so
+  // signing out, or a session running out, closed the console at once. A
+  // console that is a client of this API holds a TOKEN instead, and a token
+  // is good until it expires unless somebody asks — so this gate asks.
+  //
+  // No token carries a session identifier (`common/admin_stats.js`,
+  // `signJwt()`'s third argument): the token registry was told which session
+  // an issuance ran on, and is asked by `jti`. The session is then asked of
+  // `authn/`, through `oauth2.sessionIsLive()`, the one answer to "is this
+  // session live" a token-bearing door uses. Both in the realm that issued
+  // the token, which is where the code flow ran.
+  //
+  // TWO THINGS IT DELIBERATELY DOES NOT REFUSE. A token issued on NO session
+  // — `client_credentials`, and the API explorer's — has nothing to end. And
+  // a token the registry no longer holds (it is capped, and drops the oldest)
+  // answers no session and is honoured until it expires: refusing what the
+  // registry forgot would turn a cache's eviction into a sign-out.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the sign-on session a token was issued on when that session has
+   * ended.
+   *
+   * @param claims - the token's verified claims
+   * @param tokenRealm - the id of the realm that issued the token
+   * @returns the session's id, or '' when the token was issued on no session,
+   *   the registry does not hold it, or its session is live
+   */
+  endedSessionOf(claims, tokenRealm): string {
+    const { log, realms, stats } = this.deps;
+    log.debug("Entering AdminApi.endedSessionOf().");
+    const jti = String((claims && claims.jti) || '');
+    if (!jti) {
+      log.debug("Leaving AdminApi.endedSessionOf(). No jti.");
+      return '';
+    }
+    const ended = realms.run(realms.get(tokenRealm), function () {
+      const sid = String(stats.sessionIdOfJti(jti) || '');
+      return sid && !oauth2.sessionIsLive(sid) ? sid : '';
+    });
+    log.debug("Leaving AdminApi.endedSessionOf(). " +
+              (ended ? 'Ended.' : 'Live, or none.'));
+    return ended;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHO IS CALLING, FOR AN AUDIT ROW (#446, 2026-10-05).
+  //
+  // The gate leaves the verified token's subject on `res.locals.apiCaller`.
+  // With `adminApi.authRequired` off — development only — there is no token
+  // and so nobody to name, and this answers ''. It never reads the request:
+  // an actor a caller could nominate is not an audit trail.
+  // ---------------------------------------------------------------------------
+  /**
+   * Names the subject of the access token this request was let in on, for an
+   * audit row: a person's name, or the client's id.
+   *
+   * @param res - the response, whose locals the gate wrote
+   * @returns the name, or '' where no token was required
+   */
+  callerNameOf(res): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.callerNameOf().");
+    const caller = res && res.locals && res.locals.apiCaller;
+    const name = caller ? String(caller.name || '') : '';
+    log.debug("Leaving AdminApi.callerNameOf(). " + (name || '(nobody)'));
+    return name;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE CONSOLE'S GATE, AS THE TOKEN DECIDED IT (#446).
+  //
+  // The console's frame says who is signed in and with which roles, and
+  // draws the sidebar for that reader (`AdminConsole.shellJson()`). The
+  // server-rendered console read it off its own session; the static one has
+  // none — the token is the session — so the gate it is drawn from is
+  // `meJson()`'s answer in the shape `gateStateFor()` gives: a token is a
+  // session, its subject the username, and `ADMIN_READ` / `ADMIN_WRITE` the
+  // console's `read` and `write`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Describes the caller as the console's gate does, for the frame.
+   *
+   * @param me - `meJson()`'s answer
+   * @returns the gate state
+   */
+  consoleGateOf(me) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.consoleGateOf().");
+    const roles = (me.roles || []).map(function (role) {
+      return role === 'ADMIN_READ' ? 'read'
+        : (role === 'ADMIN_WRITE' ? 'write' : String(role).toLowerCase());
+    });
+    const held = me.console || {};
+    const enforced = !!me.tokenRequired;
+    log.debug("Leaving AdminApi.consoleGateOf().");
+    return {
+      enforced: enforced, available: !!held.available,
+      session: !!me.caller,
+      username: me.caller ? String(me.caller.name || '') : '',
+      authority: me.authority || null, identityRealm: me.realm || null,
+      readGroup: me.readGroup, writeGroup: me.writeGroup,
+      read: !!me.read, write: !!me.write, roles: roles,
+      open: enforced && !!held.open,
+      closed: enforced && !!held.empty && !held.open && !roles.length,
+      windowOpens: held.windowOpens !== false, empty: !!held.empty,
+      bootstrapPasswordRequired: enforced && !!held.bootstrapPasswordRequired,
+      bootstrap: held.bootstrap || null
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // `GET /admin-api/me`'S ANSWER (#446, 2026-10-05) — see the operation.
+  //
+  // THE ROLES ARE THE GATE'S, NOT A SECOND READING. `read` is "the gate would
+  // let a GET through" and `write` "anything else": ADMIN_READ and ADMIN_WRITE
+  // among the roles the gate handed the access policy, which are held ∩
+  // carried (#303). Asking the roster again here could answer differently
+  // from the gate that has just let this very request in.
+  //
+  // The roster IS asked for what only it knows and the gate does not decide
+  // on: whether the console is still open to anybody, and the bootstrap
+  // administrator's state — what the server-rendered console's banner said
+  // from `gateStateFor()`. Asked for a person only, in the token's realm; a
+  // roster that cannot be read reports itself unavailable rather than
+  // failing the call.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `GET /admin-api/me`'s answer from what the gate decided for this
+   * request.
+   *
+   * @param req - the request
+   * @param res - the response, whose locals the gate wrote
+   * @returns the caller, the authority, the scopes and roles, `read` and
+   *   `write`, the roster's state and the console pages the caller may reach
+   */
+  meJson(req, res) {
+    const { log, config, realms, mode, adminScope } = this.deps;
+    log.debug("Entering AdminApi.meJson().");
+    const caller = (res && res.locals && res.locals.apiCaller) || null;
+    const required = this.tokenRequired();
+    const realmId = caller ? String(caller.realm) : realms.currentId();
+    const authority = !caller ? null
+      : (realmId === realms.DEFAULT_ID ? 'service' : 'realm');
+    const roles = caller ? (caller.roles || []).slice(0) : [];
+    let roster = null;
+    if (caller && caller.kind === 'person') {
+      try {
+        roster = rbac.rolesOf(caller.name, realmId);
+      } catch (e) {
+        // A roster that cannot be read is reported as unavailable: this is a
+        // description of the caller, and the gate has already decided.
+        log.debug("Caught in AdminApi.meJson(): " + ((e && e.message) || e));
+        roster = null;
+      }
+    }
+    const scopeState = { authority: authority || undefined,
+                         identityRealm: realmId };
+    const json = {
+      tokenRequired: required,
+      caller: caller ? { kind: caller.kind, name: caller.name,
+                         clientId: caller.clientId } : null,
+      realm: realmId,
+      readingRealm: realms.currentId(),
+      authority: authority,
+      scopes: caller ? (caller.scopes || []).slice(0) : [],
+      roles: roles,
+      read: !required || roles.indexOf('ADMIN_READ') >= 0,
+      write: !required || roles.indexOf('ADMIN_WRITE') >= 0,
+      expiresAt: caller ? caller.expiresAt : null,
+      mode: mode.current(),
+      readGroup: config.value('admin.readGroup'),
+      writeGroup: config.value('admin.writeGroup'),
+      console: {
+        available: rbac.available(),
+        open: !!(roster && roster.open),
+        empty: !!(roster && roster.empty),
+        windowOpens: !roster || roster.windowOpens !== false,
+        bootstrapPasswordRequired: !!(roster && roster.claimPending),
+        bootstrap: (roster && roster.bootstrap) || null
+      },
+      pages: admin.consoleJson().pages.filter(function (path) {
+        return adminScope.pageVisible(scopeState, path);
+      })
+    };
+    log.debug("Leaving AdminApi.meJson(). " +
+              (caller ? caller.kind + ' ' + caller.name : 'no caller') +
+              ", read=" + json.read + ", write=" + json.write + ".");
+    return json;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ACTOR IS THE GATE'S ANSWER, NEVER THE CALLER'S (#446, 2026-10-05).
+  //
+  // Eighteen places in `admin-core/admin_actions.ts` read `body.actor` for
+  // the audit row an action writes — the console puts its signed-in user
+  // there — and until #446 this API gave them nothing: an operation's schema
+  // refuses a member it does not define, so those rows named nobody (and the
+  // few operations whose schema is open took whatever a caller sent). The
+  // route wrapper calls this after the body has passed its schema: where the
+  // gate verified a token, a JSON body's `actor` member is SET to that
+  // token's subject, replacing anything there. Every handler reads its own
+  // body with `parseBody(req)`, which parses `req.body` each time, so the
+  // one place that reaches all of them is the text they parse.
+  //
+  // A body that is not JSON, and one the handler owns (a streamed upload),
+  // is left alone: the HTTP row still names the caller. So is every request
+  // with no token, which only development's open API has.
+  // ---------------------------------------------------------------------------
+  /**
+   * Replaces a JSON request body's `actor` member with the subject of the
+   * verified access token, so an action's audit row names who called.
+   *
+   * @param req - the request, whose body text is rewritten
+   * @param res - the response, whose locals the gate wrote
+   */
+  nameActor(req, res): void {
+    const { log, parseBody } = this.deps;
+    log.debug("Entering AdminApi.nameActor().");
+    const name = this.callerNameOf(res);
+    if (!name || req.__adminApiHandlerOwnsBody ||
+        typeof req.body !== 'string' ||
+        !/json/i.test(String(req.headers['content-type'] || ''))) {
+      log.debug("Leaving AdminApi.nameActor(). Nothing to name.");
+      return;
+    }
+    const body = parseBody(req);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      log.debug("Leaving AdminApi.nameActor(). Not an object.");
+      return;
+    }
+    body.actor = name;
+    req.body = JSON.stringify(body);
+    log.debug("Leaving AdminApi.nameActor(). Named.");
+  }
+
+  // ---------------------------------------------------------------------------
   // WHAT THE OPENAPI DOCUMENT IS BUILT FROM, IN ONE PLACE.
   //
   // `admin_api_spec.ts` is a pure function over the route table and takes every
@@ -20768,16 +22820,15 @@ class AdminApi {
    * @returns `{ baseUrl, version, authRequired }`
    */
   specOptions(req) {
-    const { log, baseUrlOf, config } = this.deps;
+    const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminApi.specOptions().");
     const options = {
       baseUrl: baseUrlOf(req),
       version: VERSION,
-      // The one that was missing. `=== true` rather than a truthy test because
-      // this becomes a claim in a published document: an unset value is the
-      // setting's default, which config.js already resolves, and anything else
-      // here would be this file inventing a policy.
-      authRequired: config.value('adminApi.authRequired') === true
+      // The one that was missing. A boolean rather than a truthy test because
+      // this becomes a claim in a published document, and the value IN FORCE
+      // rather than the stored one (#446): product ignores `false`.
+      authRequired: this.tokenRequired()
     };
     log.debug("Leaving AdminApi.specOptions(). authRequired=" +
               options.authRequired);
@@ -20791,38 +22842,47 @@ class AdminApi {
   /**
    * Registers the access-token gate on the base path, ahead of every operation.
    *
-   * With `adminApi.authRequired` on it refuses a missing or unverifiable token
-   * with 401 and a token for another audience, issuer or without the needed
-   * permission with 403; the permission is decided by the XACML access policy.
+   * With `adminApi.authRequired` in force — always, in product mode — it
+   * refuses a missing or unverifiable token with 401 and a token for another
+   * audience, issuer or without the needed permission with 403; the permission
+   * is decided by the XACML access policy.
    *
    * @param app - the express app
    */
   registerGate(app: RouteApp): void {
-    const { log, config, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
-            mtls, dpop, senderConstraints, accessGate, mode, adminViews,
-            parseBody, adminScope, rolePermissions } = this.deps;
+    const { log, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
+            mtls, dpop, senderConstraints, accessGate,
+            rolePermissions } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.registerGate().");
     app.use(BASE, function (req, res, next) {
-      if (config.value('adminApi.authRequired')) {
+      if (self.tokenRequired()) {
         // THE ONE OPERATION THAT IS NOT AN ADMINISTRATOR'S (#164 phase 3):
         // the MDM feed takes `device:compliance` and its role, and nothing
         // else here takes that scope — see DevicesAdmin.mdmFeed().
         const mdmFeed = self.isDeviceComplianceFeed(req);
+        // THE CONSOLE'S OWN OPERATIONS (#454) take `admin:console`, the
+        // permission of the ADMIN_CONSOLE role the console's client confers
+        // on everybody who signs in through it — see withConsoleRoutes().
+        const consoleOp = self.isConsoleOperation(req);
         const scopesWanted = mdmFeed ? 'device:compliance'
-          : (req.method === 'GET' ? 'admin:read' : 'admin:write');
+          : (consoleOp ? 'admin:console'
+            : (req.method === 'GET' ? 'admin:read' : 'admin:write'));
         const presentation = self.presentedTokenOf(req);
         const presented = presentation.token;
         if (!presented) {
+          // The scope to ask for: the feed's or the console's own (#454)
+          // where the operation is one of theirs, both admin scopes
+          // otherwise.
+          const hint = mdmFeed || consoleOp ? scopesWanted
+                                            : 'admin:read admin:write';
           res.set('WWW-Authenticate',
-                  'Bearer realm="' + BASE +
-                  '", scope="' + (mdmFeed ? scopesWanted
-                                          : 'admin:read admin:write') + '"');
+                  'Bearer realm="' + BASE + '", scope="' + hint + '"');
           errorCodes.mark(res, 'STS-API-0001');
           return self.sendJson(res, 401, { error: 'unauthorized', errors: [
             'This API requires an OAuth 2.0 access token. Ask ' +
             '/oauth2/token for one with `grant_type=client_credentials`, ' +
-            '`scope=' + (mdmFeed ? scopesWanted : 'admin:read admin:write') +
+            '`scope=' + hint +
             '` and `resource=' +
             self.wantedAudience(req) +
             '`, then send it as `Authorization: Bearer`. ' +
@@ -20926,6 +22986,20 @@ class AdminApi {
           return self.sendJson(res, 401, { error: 'invalid_token', errors: [
             'That access token has been revoked, or the account it was ' +
             'issued to is disabled.'] });
+        }
+        // AND A TOKEN WHOSE SIGN-ON SESSION HAS ENDED (#446, 2026-10-05) —
+        // see `endedSessionOf()`. `invalid_token`, as for a revoked one: to
+        // the caller it is the same fact, a credential that stopped being
+        // one, and the code says which.
+        const endedSession = self.endedSessionOf(claims, tokenRealm);
+        if (endedSession) {
+          errorCodes.mark(res, 'STS-API-0126');
+          res.set('WWW-Authenticate',
+                  'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+          return self.sendJson(res, 401, { error: 'invalid_token', errors: [
+            'That access token was issued on a sign-on session that has ' +
+            'since ended, by a sign-out or by running out. Sign in again ' +
+            'to be issued another.'] });
         }
         // RFC 9068 SECTION 4, STEPS 1 AND 3, in its order: the TYPE before the
         // issuer, and both before the audience. Every token this service signs
@@ -21039,8 +23113,22 @@ class AdminApi {
         // #34's two settings, asked of this surface as of every other. The
         // answer is one function, so an operator who turns them on cannot find
         // that one door out of nine kept its own opinion.
+        // #446: a token issued to the admin console as a PUBLIC client is
+        // honoured only DPoP-bound — `senderConstraints` argues it. The
+        // client's entry is read in the realm that issued the token, and
+        // only for a client that rule names.
+        const issuedTo = String(claims.client_id || '');
+        const clientBound =
+          senderConstraints.DPOP_BOUND_PUBLIC_CLIENTS.indexOf(issuedTo) >= 0 &&
+          realms.run(realms.get(tokenRealm), function () {
+            // The registry's client view, whose shape is its own.
+            const entry: any = applications.clientConfigOf(issuedTo) || {};
+            return senderConstraints.dpopBoundPublicClient(
+              issuedTo, entry.token_endpoint_auth_method);
+          });
         const required = senderConstraints.accessTokenRefusal({
           where: 'the management API',
+          clientBound: clientBound,
           boundJkt: boundJkt,
           proofOk: proofOk,
           boundThumbprint: mtls.boundThumbprintOf(claims),
@@ -21134,7 +23222,42 @@ class AdminApi {
           // administrator's console session.
           res.locals.realmTokenOf = tokenRealm;
         }
+        // A CONSOLE OPERATION ASKED WITH A TOKEN THAT IS NOT THE CONSOLE'S
+        // (#454): said in so many words, because the policy's refusal would
+        // only say a role was missing, and the caller holding Admin Read
+        // would not see why that is not enough.
+        if (consoleOp && carried.indexOf('admin:console') < 0) {
+          errorCodes.mark(res, 'STS-API-0127');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            'This is one of the admin console\'s own operations, under ' +
+            BASE + '/console: they draw the console and are not part of ' +
+            'the management API a client relies on (' + BASE +
+            '/openapi.json describes that). They take admin:console, which ' +
+            'is issued only to the console\'s client, sts-admin-console, ' +
+            'and this token does not carry it. A console client entry ' +
+            'seeded before #454 declares no admin:console: add it to the ' +
+            'entry\'s oauthAllowedScope and oauthGlobalConsent (POST ' +
+            BASE + '/applications/add) and sign in again.'] });
+        }
         const held = effective.roles;
+        // WHAT THE OPERATION REQUIRES, IN TWO PARTS (#454). `requiredRoles`
+        // is any-one-of, as the access-control document has always read it;
+        // `requiredAllRoles` is every-one-of, a conjunct beside it, which is
+        // what lets one decision mix a role the person holds with one the
+        // console's client confers. A console operation needs ADMIN_CONSOLE
+        // and — unless it is the frame or the operation list, which show no
+        // realm data and are what a person with no console role still needs
+        // to be told so — ADMIN_READ for a read or ADMIN_WRITE for a form
+        // helper. `/me` is either kind's: who-am-I is the console's first
+        // question and an integrator's.
+        const path = String(req.path || '').replace(/\/+$/, '');
+        const frameOnly = path === '/console' || path === '/console/operations';
+        const requiredRoles = mdmFeed ? ['DEVICE_COMPLIANCE']
+          : (consoleOp ? ['ADMIN_CONSOLE']
+            : (path === '/me' ? ['ADMIN_READ', 'ADMIN_CONSOLE']
+              : (req.method === 'GET' ? ['ADMIN_READ'] : ['ADMIN_WRITE'])));
+        const requiredAllRoles = consoleOp && !frameOnly
+          ? [req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE'] : [];
         const policy = accessGate.check({
           resource: accessGate.RESOURCE.MANAGEMENT_API,
           action: req.method === 'GET' ? accessGate.ACTION.READ
@@ -21146,8 +23269,8 @@ class AdminApi {
           // encoding "a read needs ADMIN_READ and a write needs ADMIN_WRITE" in
           // XACML. Nothing in this file decides the outcome; it decides the
           // question.
-          requiredRoles: [mdmFeed ? 'DEVICE_COMPLIANCE'
-            : (req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE')],
+          requiredRoles: requiredRoles,
+          requiredAllRoles: requiredAllRoles,
           subject: { name: who, authenticated: true, roles: held,
                      sessionId: null },
           context: { method: req.method, path: req.originalUrl || req.url }
@@ -21164,133 +23287,68 @@ class AdminApi {
             'role(s) ' + (held.length ? held.join(', ') : '(none)') + '. ' +
             (mdmFeed ? 'The device compliance feed needs device:compliance ' +
                        '(DEVICE_COMPLIANCE), and only that'
-              : 'A ' + (req.method === 'GET'
-                ? 'read needs admin:read (ADMIN_READ)'
-                : 'write needs admin:write (ADMIN_WRITE)')) +
+              : (consoleOp
+                ? 'A console operation needs admin:console (ADMIN_CONSOLE)' +
+                  (requiredAllRoles.length ? ' and ' +
+                    (req.method === 'GET' ? 'admin:read (ADMIN_READ)'
+                                          : 'admin:write (ADMIN_WRITE)') : '')
+                : 'A ' + (req.method === 'GET'
+                  ? 'read needs admin:read (ADMIN_READ)'
+                  : 'write needs admin:write (ADMIN_WRITE)'))) +
             '. The document is on /admin/xacml and xacml.enforceAccess turns ' +
             'the layer off.'] });
         }
         // WHO CALLED, for an operation that records its caller (#164: the
         // MDM feed's reports name the feed's client).
         res.locals.apiClientId = String(claims.client_id || '');
+        // AND THE SUBJECT, WHICH IS THE AUDIT ACTOR (#446, 2026-10-05). Until
+        // then every row this API wrote named nobody — "this API
+        // authenticates a CLIENT rather than a person" — which was true while
+        // the only tokens it saw were `client_credentials` ones. The console
+        // is becoming a client of this API that presents the signed-in
+        // PERSON's token, so the subject the gate has just verified, and
+        // decided the roles of, is who did it: a person's name, or the
+        // client's id on `client_credentials`. Read by `callerNameOf()`, by
+        // the route wrapper (which hands it to every action as `actor`) and
+        // by `common/audit.js`'s HTTP row.
+        res.locals.apiCaller = {
+          kind: effective.subject.kind === 'application' ? 'application'
+                                                         : 'person',
+          name: String(effective.subject.name || ''),
+          clientId: String(claims.client_id || ''),
+          realm: tokenRealm,
+          // What the decision above was made on, for `GET /admin-api/me`:
+          // the scopes the token carries that its client still declares,
+          // the roles its subject holds now that those scopes carry, and
+          // when the token stops being accepted.
+          scopes: scopes.slice(0),
+          roles: held.slice(0),
+          expiresAt: claims.exp ? Number(claims.exp) : null
+        };
+        // ON THE REQUEST TOO (#446): the views a page is drawn from ask
+        // `adminViews.gateStateFor(req)` who is looking — a realm
+        // administrator's view leaves out what belongs to the service — and
+        // that read the console's own session. The static console has none;
+        // its token is the session, so the caller this gate verified is
+        // who they are asked about.
+        req.adminApiCaller = res.locals.apiCaller;
         return next();
       }
-      if (!mode.gatesManagementApi()) {
-        return next();
-      }
-      const gate = adminViews.gateStateFor(req);
-      // A REALM ADMINISTRATOR'S SESSION (2026-09-14, #32) holds nothing outside
-      // its realm — `gateStateFor()` has already said so — and in its realm is
-      // refused the service-wide operations, exactly as at the console's gate.
-      if (gate.authority === 'realm') {
-        const operation = self.consoleOperationOf(req);
-        const body = req.method === 'GET' || req.method === 'HEAD'
-          ? null : Object.assign({}, parseBody(req));
-        if (body && operation.action) {
-          body.action = operation.action;
-        }
-        const scoped = gate.outsideRealm
-          ? { detail: 'This session administers the "' + gate.identityRealm +
-                      '" realm and this request is for another.' }
-          : adminScope.refusalFor(gate, operation.path, body, req.query);
-        if (scoped) {
-          errorCodes.mark(res, 'STS-API-0112');
-          return self.sendJson(res, 403, { error: 'forbidden',
-                                           errors: [scoped.detail] });
-        }
-      }
-      // THE SAME TWO ROLES THE CONSOLE USES, and the same asymmetry: a GET
-      // needs Admin Read and anything else needs Admin Write. Asking `admin.js`
-      // rather than re-deriving it is what stops this becoming a second answer
-      // to who may administer this service — the mistake `logout.ts` exists to
-      // prevent one layer down.
-      const needed = req.method === 'GET' ? gate.read : gate.write;
-      if (needed) {
-        // -------------------------------------------------------------------
-        // AND THEN THE POLICY (2026-09-06), which is the layer ABOVE the roles
-        // and not a replacement for them.
-        //
-        // The two console roles decide who may administer this service and stay
-        // exactly where they are — `adminViews.gateStateFor()` is still the one
-        // answer to that, which is what stops this becoming a second one. What
-        // the gate adds is that a deployment can narrow this surface by POLICY,
-        // with the subject taken from the SESSION that got the caller through
-        // the check above and never from anything on the request.
-        //
-        // **IT RUNS ONLY WHERE THIS SURFACE IS GATED AT ALL**, which is the
-        // same `mode.gatesManagementApi()` branch above — reached only with
-        // `adminApi.authRequired` off, since the token branch answers first. In
-        // development that branch leaves this API open by design — there is no
-        // credential, so no session, so no subject — and asking a policy whose
-        // built-in document refuses an
-        // unauthenticated subject would close the door the tests drive and the
-        // door somebody locked out of the console gets back in through. A
-        // policy layer must not be the thing that removes the recovery path.
-        //
-        // On an unedited product deployment it permits: the built-in document
-        // asks for a role only where somebody has required one, and the caller
-        // has already been shown to hold Admin Read or Admin Write.
-        const policy = accessGate.check({
-          resource: accessGate.RESOURCE.MANAGEMENT_API,
-          action: req.method === 'GET' ? accessGate.ACTION.READ
-                                       : accessGate.ACTION.WRITE,
-          subject: { name: gate.username,
-                     authenticated: !!(gate.session &&
-                                       gate.session.authenticated !== false),
-                     roles: gate.roles || [],
-                     sessionId: gate.session ? gate.session.id : null },
-          context: { method: req.method, path: req.originalUrl || req.url }
-        });
-        if (!policy.allowed) {
-          log.info('admin-api: the access policy refused ' + req.method + ' ' +
-                   (req.originalUrl || req.url) + ' for ' +
-                   (gate.username || '(nobody)') + '. ' + policy.why);
-          errorCodes.mark(res, 'STS-API-0006');
-          return self.sendJson(res, 403, {
-            error: 'forbidden',
-            errors: ['The access policy refused this request. ' + policy.why +
-                     ' This is a POLICY decision rather than a missing role: ' +
-                     (gate.username || 'the caller') + ' holds ' +
-                     ((gate.roles && gate.roles.length)
-                       ? gate.roles.join(', ') : 'no role') +
-                     ' and passed the role check. The document is on ' +
-                     '/admin/xacml and xacml.enforceAccess turns the layer ' +
-                     'off.']
-          });
-        }
-        return next();
-      }
-      log.info('admin-api: product mode refused ' + req.method + ' ' +
-               (req.originalUrl || req.url) + ' — ' +
-               (gate.username ? gate.username + ' holds ' +
-                  (gate.roles.length ? gate.roles.join(', ') : 'no role')
-                : 'nobody is signed in') + '.');
-      const wantsHtml = /html/i.test(String(req.headers.accept || ''));
-      if (wantsHtml) {
-        errorCodes.mark(res, gate.username ? 'STS-API-0008' : 'STS-API-0007');
-        return res.status(403).type('html').send(
-          '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
-          '<title>Forbidden</title></head><body><h1>403 Forbidden</h1>' +
-          '<p>This service is in <strong>product mode</strong>, where the ' +
-          'management API requires the same sign-in and roles the console ' +
-          'does. <a href="/admin">Sign in</a>.</p></body></html>');
-      }
-      errorCodes.mark(res, gate.username ? 'STS-API-0008' : 'STS-API-0007');
-      return self.sendJson(res, gate.username ? 403 : 401, {
-        error: 'forbidden',
-        errors: ['This service is in product mode, where ' + BASE +
-                 ' requires ' +
-                 'the same sign-in and the same two roles /admin does — ' +
-                 (req.method === 'GET' ? gate.readGroup : gate.writeGroup) +
-                 ' for a ' + req.method + '. ' +
-                 (gate.username
-                   ? 'You are signed in as ' + gate.username + ' and hold ' +
-                     (gate.roles.length ? gate.roles.join(', ') : 'no role') +
-                     '.'
-                   : 'Nobody is signed in on this request.') +
-                 ' In development mode this API is open, which is what the ' +
-                 'tests drive and the way back in when nobody holds a role.']
-      });
+      // ---------------------------------------------------------------------
+      // THE SETTING IS OFF, WHICH ONLY DEVELOPMENT MODE CAN BE (#446,
+      // 2026-10-05): `tokenRequired()` reads it as the mode lets it be, and
+      // product reads `false` as `true`. So this line is the open API of
+      // development — what a test drives, and the way back in when nobody
+      // can mint a token — and nothing else reaches it.
+      //
+      // UNTIL #446 PRODUCT FELL BACK, HERE, TO THE CONSOLE'S SESSION AND ITS
+      // TWO ROLES (#411; STS-API-0006, 0007 and 0008, all retired). The
+      // console is becoming a static application that calls this API with
+      // the signed-in person's own token, so there is no console session to
+      // fall back to, and a setting that opened this gate would open the
+      // console with it. `common/mode.js`'s `opensManagementApi()` argues it.
+      // ---------------------------------------------------------------------
+      return next();
     });
     log.debug("Leaving AdminApi.registerGate().");
   }
@@ -21336,6 +23394,23 @@ class AdminApi {
         self.sendJson(res, 400, { ok: false, errors: [asked.sentence] });
         return true;
       };
+      // A MANAGEMENT ANSWER WITH A CONSOLE TWIN (#454) leaves the console's
+      // members out, and refuses the twin's drawing rather than answering
+      // it: `format=svg` is the console's.
+      const consoleOnly = function (req, res) {
+        if (!entry.consoleMembers) {
+          return false;
+        }
+        res.locals.consoleMembers = entry.consoleMembers;
+        if (String((req.query || {}).format || '') !== 'svg') {
+          return false;
+        }
+        errorCodes.mark(res, 'STS-API-0129');
+        self.sendJson(res, 400, { ok: false, errors: [
+          'The drawing is the admin console\'s: ask ' + entry.consoleTwin +
+          '?format=svg. This operation answers the data alone.'] });
+        return true;
+      };
       if (entry.method === 'GET') {
         // A GET that `mirrors` exactly one Protocols page answers that page's
         // endpoints as well, which is rule 7 for the section `respond()` draws
@@ -21348,7 +23423,7 @@ class AdminApi {
                      mirrored[1] : null;
         if (!page) {
           app.get(path, function (req, res) {
-            if (queryRefused(req, res)) {
+            if (queryRefused(req, res) || consoleOnly(req, res)) {
               return undefined;
             }
             return entry.handler(req, res);
@@ -21356,7 +23431,7 @@ class AdminApi {
           return;
         }
         app.get(path, function (req, res) {
-          if (queryRefused(req, res)) {
+          if (queryRefused(req, res) || consoleOnly(req, res)) {
             return undefined;
           }
           res.locals.protocolEndpoints = protocolEndpoints.forPage(req, page);
@@ -21366,6 +23441,40 @@ class AdminApi {
       }
       app.post(path, function (req, res) {
         if (queryRefused(req, res)) {
+          return undefined;
+        }
+        // A FORM HELPER ASKED AT ITS OLD ADDRESS (#454): the action is the
+        // console's now, under `/admin-api/console`. Refused rather than
+        // answered, or the one handler behind both routes would carry it out
+        // and the move would be a second door.
+        const asked = String((req.params && req.params.action) || '');
+        if ((entry.consoleActions || []).indexOf(asked) >= 0) {
+          errorCodes.mark(res, 'STS-API-0128');
+          self.sendJson(res, 404, { ok: false, errors: [
+            '"' + asked + '" is a form helper of the admin console, at ' +
+            path.replace(BASE, BASE + '/console').replace(':action', asked) +
+            '. It writes nothing; the act it leads to is an operation ' +
+            'here.'] });
+          return undefined;
+        }
+        // AN UNKNOWN ACTION WHERE THE HELPERS LEFT (#454): the handler's
+        // refusal names every action it carries out, helpers included, and
+        // that sentence is what tests/vendored/admin_api.js reads for the
+        // parity — so on the management address it would name four actions
+        // the document no longer declares there. The sentence is built here
+        // from what this address still declares, in the handler's shape.
+        if (entry.consoleActions && asked && !(entry.actions || []).some(
+            function (one) {
+              return one.action === asked;
+            })) {
+          const known = entry.actions.map(function (one) {
+            return one.action;
+          });
+          errorCodes.mark(res, 'STS-API-0130');
+          self.sendJson(res, 400, { ok: false, errors: [
+            'Unknown action "' + asked + '". The ' +
+            helpers.numberWord(known.length) + ' are: ' +
+            known.join(', ') + '.'] });
           return undefined;
         }
         // The route this request matched, so the wrapper can find its schema
@@ -21380,6 +23489,10 @@ class AdminApi {
           self.sendJson(res, 400, { ok: false, errors: checked.errors });
           return undefined;
         }
+        // AFTER the schema, so a caller's own `actor` is judged by the
+        // operation's schema as it always was — refused, wherever the schema
+        // is closed — and what the actions read is the gate's answer (#446).
+        self.nameActor(req, res);
         return entry.handler(req, res);
       });
     });
@@ -21443,6 +23556,11 @@ const DEVICE_COMPLIANCE_PATH = '/device-compliance';
 import accessGate = require('../common/access_gate');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 import mode = require('../common/mode');
+// THE AUTHORIZATION SERVER, for the one question the gate asks it (#446):
+// whether the sign-on session a token was issued on is still live. Built at
+// 9 and this module at 19, so this is a cache hit that moves nothing; since
+// #50's R1 a require of a converted module registers no route either.
+import oauth2 = require('../oauth-oidc/oauth2');
 import InstanceSlot = require('../common/instance_slot');
 
 // ---------------------------------------------------------------------------
@@ -21481,6 +23599,7 @@ const JWT_CLAIM_FAMILY = {
   noun: 'claim',
   carrier: 'token',
   example: 'id_token',
+  placeholder: '${username}',
   reserved: true,
   ids: { add: 'addClaim', addAttribute: 'addAttributeClaim',
          remove: 'removeClaim', clear: 'clearClaims',
@@ -21506,6 +23625,7 @@ const USERINFO_CLAIM_FAMILY = {
   noun: 'claim',
   carrier: 'UserInfo response',
   example: 'userinfo',
+  placeholder: '${username}',
   reserved: true,
   ids: { add: 'addUserInfoClaim',
          addAttribute: 'addUserInfoAttributeClaim',
@@ -21521,6 +23641,9 @@ const SAML_CLAIM_FAMILY = {
   noun: 'attribute',
   carrier: 'assertion',
   example: 'saml11',
+  // A SAML attribute's context is `{ subject, audience }` (saml/CLAUDE.md),
+  // so `${username}` would reach the assertion as written (#287).
+  placeholder: '${subject}',
   reserved: false,
   ids: { add: 'addSamlAttribute',
          addAttribute: 'addSamlDirectoryAttributeClaim',
@@ -21529,6 +23652,29 @@ const SAML_CLAIM_FAMILY = {
          attributes: 'setSamlDirectoryAttributes',
          all: 'selectAllSamlDirectoryAttributes',
          none: 'clearSamlDirectoryAttributes' }
+};
+
+// The sixth family (#493): the Kerberos PAC set. `attributeTypes` is the
+// four PAC claim types an attribute row may name, and `entryOnly` says a
+// ticked attribute is read off the entry alone (#498, which gave the set the
+// three `attributes*` operations #493 left out).
+const KERBEROS_CLAIM_FAMILY = {
+  sets: stats.KERBEROS_CLAIM_SET_IDS,
+  noun: 'claim',
+  carrier: 'ticket',
+  example: 'kerberos-pac',
+  placeholder: '${username}',
+  reserved: false,
+  entryOnly: true,
+  attributeTypes: ['string', 'int64', 'uint64', 'boolean'],
+  ids: { add: 'addKerberosPacClaim',
+         addAttribute: 'addKerberosPacAttributeClaim',
+         remove: 'removeKerberosPacClaim',
+         clear: 'clearKerberosPacClaims',
+         replace: 'replaceKerberosPacClaims',
+         attributes: 'setKerberosPacClaimAttributes',
+         all: 'selectAllKerberosPacClaimAttributes',
+         none: 'clearKerberosPacClaimAttributes' }
 };
 
 // Filled by `AdminApi.wire()` (#50, R2), in this order, with the request
@@ -21567,7 +23713,7 @@ function startupBanner(operations: number): string {
          '/openapi.json and an explorer that calls it is on the console, ' +
          'at /admin/api-explorer (it was ' + BASE + '/docs until ' +
          '2026-09-09). ' +
-         (config.value('adminApi.authRequired')
+         (mode.valueInForce('adminApi.authRequired') === true
            ? 'It REQUIRES an OAuth 2.0 access token (adminApi.authRequired): ' +
              'audience ' +
              (config.sourceOf('adminApi.audience') === 'default'
@@ -21583,10 +23729,10 @@ function startupBanner(operations: number): string {
              'role, and it is only still that if the secret was pinned ' +
              'before the start — a secret minted per start is readable only ' +
              'through the API it unlocks.'
-           : 'It is NOT protected (adminApi.authRequired is off) — and the ' +
-             'console is gated unconditionally, so this is the surface to ' +
-             'reach for when nobody holds a console role: POST ' + BASE +
-             '/rbac/grant.');
+           : 'It is NOT protected (adminApi.authRequired is off, which ' +
+             'only development mode honours) — and the console is gated ' +
+             'unconditionally, so this is the surface to reach for when ' +
+             'nobody holds a console role: POST ' + BASE + '/rbac/grant.');
   log.debug("Leaving startupBanner().");
   return text;
 }
@@ -21665,5 +23811,15 @@ export = {
   /**
    * Forwards to `AdminApi.operationSummaries()` on the installed instance.
    */
-  operationSummaries: slot.forward('operationSummaries')
+  operationSummaries: slot.forward('operationSummaries'),
+  /**
+   * Forwards to `AdminApi.namesThisApi()` on the installed instance: whether
+   * a target names this API (#505, `common/registered_targets.ts`).
+   */
+  namesThisApi: slot.forward('namesThisApi'),
+  /**
+   * Forwards to `AdminApi.checkRequestBody()` on the installed instance: a
+   * test asks it what a body sent to an operation would be refused for.
+   */
+  checkRequestBody: slot.forward('checkRequestBody')
 };

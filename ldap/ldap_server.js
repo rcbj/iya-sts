@@ -134,9 +134,11 @@
 // where this service KNOWS whose it is, it does. See didPlan().
 // ---------------------------------------------------------------------------
 
-// For one thing only: the short, stable uid a DID-named entry is placed at.
-// See didPlan().
-const crypto = require('crypto');
+// The one place this service hashes and draws random values (#453): the
+// short, stable uid a DID-named entry is placed at (didPlan()), an entry's
+// UUID, v5 or v4. A leaf `common/helpers.js` has already loaded, and it
+// registers no route.
+const stsCrypto = require('../common/crypto');
 const ldap = require('ldapjs');
 const app = require('../common/app');
 // Rule 2 of the barrier for an operation (#351): its result is sent once its
@@ -369,6 +371,12 @@ const passwordPolicy = require('../common/password_policy');
 // the password policy's reason exactly: a LEAF whose store this directory is,
 // so the require moves no route and closes no cycle.
 const authnPolicy = require('../common/authn_policy');
+// THE SERVICE-ACCOUNT POLICY REGISTER AND THE SERVICE ACCOUNTS (#221,
+// 2026-10-06), `ou=serviceAccountPolicies` and the flag on a person, for the
+// two policies' reason exactly: LEAVES whose store this directory is, so the
+// requires move no route and close no cycle.
+const serviceAccountPolicy = require('../common/service_account_policy');
+const serviceAccounts = require('../common/service_accounts');
 const mode = require('../common/mode');
 // The attributes no outside source may write (#94), asked at the federated
 // write. A leaf.
@@ -891,6 +899,15 @@ function authnPoliciesDn() {
   log.debug("Entering authnPoliciesDn().");
   log.debug("Leaving authnPoliciesDn().");
   return 'ou=authnPolicies,' + baseDn();
+}
+
+// ou=serviceAccountPolicies is the SERVICE-ACCOUNT POLICY register (#221), a
+// third container beside the other two for their reason: rcbj asked for each
+// policy to stay separate. `common/service_account_policy.ts` owns the schema.
+function serviceAccountPoliciesDn() {
+  log.debug("Entering serviceAccountPoliciesDn().");
+  log.debug("Leaving serviceAccountPoliciesDn().");
+  return 'ou=serviceAccountPolicies,' + baseDn();
 }
 
 // The fourth and fifth, and they are `spiffe_registry.js`'s store the way
@@ -2340,6 +2357,12 @@ const OWN_NAMES = [
   // `common/credentials.ts` argues all of it.
   'stsWebauthnCredential', 'stsActivationToken', 'stsActivationExpires',
   'stsTotpCredential',
+  // THE WEBAUTHN USER HANDLE (#474): 64 random bytes, base64url, one per
+  // person, that every passkey they register is created under and that a
+  // discoverable credential hands back to say whose it is. Not a secret —
+  // an authenticator stores it in the clear — and not the username, which
+  // it was until #474. `common/credentials.ts` argues it.
+  'stsWebauthnUserHandle',
 
   // THE BOOTSTRAP ADMINISTRATOR'S FLAGS (2026-09-13) — see readPersonFlags().
   // `pwdReset` is draft-behera-ldap-password-policy's name, spelt as that draft
@@ -2674,6 +2697,14 @@ authnPolicy.SCHEMA.attributes.concat(authnPolicy.SCHEMA.personAttributes)
   .forEach(function (row) {
     learnName(row.name, 'the authentication policy schema');
   });
+// #221: the service-account policy's attributes, and the ones a service
+// account carries on its person entry.
+serviceAccountPolicy.SCHEMA.attributes.forEach(function (row) {
+  learnName(row.name, 'the service-account policy schema');
+});
+serviceAccounts.SCHEMA.personAttributes.forEach(function (row) {
+  learnName(row.name, 'the service-account schema');
+});
 xacmlStore.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML policy schema');
 });
@@ -2946,8 +2977,8 @@ function clusteredNode() {
 // variant bits set. Node has a v4 generator and no v5 one.
 function nameBasedUuid(name) {
   log.debug("Entering nameBasedUuid().");
-  const hash = crypto.createHash('sha1').update(ENTRY_UUID_NAMESPACE)
-    .update(String(name), 'utf8').digest();
+  const hash = stsCrypto.sha1Digest('uuid-v5', Buffer.concat([
+    ENTRY_UUID_NAMESPACE, Buffer.from(String(name), 'utf8')]));
   const bytes = Buffer.from(hash.subarray(0, 16));
   bytes[6] = (bytes[6] & 0x0f) | 0x50;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
@@ -3280,7 +3311,7 @@ function putEntry(dn, attributes, options) {
     (stored.origin === 'seed' || (stored.origin === 'authentication' &&
                                   clusteredNode())
       ? backfilledEntryUuid(realms.currentId(), normalizeDn(dn))
-      : crypto.randomUUID())];
+      : stsCrypto.randomUuid())];
   // And its aliases, the same way: the entry's, never the caller's.
   delete stored.attributes[ENTRY_UUID_ALIAS];
   if (entryUuidAliasesOf(previous).length) {
@@ -3606,6 +3637,19 @@ function seed() {
       'cn=default, and the built-in defaults apply where neither exists. ' +
       'common/authn_policy.ts holds the schema; GET /admin/policies ' +
       'publishes it.'
+  }, { origin: 'seed' });
+  // And the service-account policy's (#221), for the same reason.
+  putEntry(serviceAccountPoliciesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'serviceAccountPolicies',
+    description: 'SERVICE-ACCOUNT POLICY profiles: what a service account ' +
+      '(a person entry carrying stsServiceAccount) may do in this realm — ' +
+      'the second factor, the browser, the password doors — and how its ' +
+      'password rotates. The profile is cn=default; while it is absent a ' +
+      'realm other than the default one follows the DEFAULT REALM\'s, and ' +
+      'the built-in defaults apply where neither exists. ' +
+      'common/service_account_policy.ts holds the schema; GET ' +
+      '/admin/policies publishes it.'
   }, { origin: 'seed' });
   putEntry(pepsDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -5117,8 +5161,8 @@ function namePlan(name) {
 function didUid(did) {
   log.debug("Entering didUid().");
   log.debug("Leaving didUid().");
-  return 'did-' + crypto.createHash('sha256').update(String(did), 'utf8')
-    .digest('hex').slice(0, 12);
+  return 'did-' + stsCrypto.digest('sha256', String(did), 'hex')
+    .slice(0, 12);
 }
 
 function didPlan(info) {
@@ -5271,8 +5315,8 @@ function didPlan(info) {
 function spiffeUid(id) {
   log.debug("Entering spiffeUid().");
   log.debug("Leaving spiffeUid().");
-  return 'spiffe-' + crypto.createHash('sha256').update(String(id), 'utf8')
-    .digest('hex').slice(0, 12);
+  return 'spiffe-' + stsCrypto.digest('sha256', String(id), 'hex')
+    .slice(0, 12);
 }
 
 function spiffePlan(info) {
@@ -7998,8 +8042,19 @@ stats.setUserObserver(observeIdentity);
 // not a function` thrown at require time, which would take the whole service
 // down over one section of one page. A directory whose entries nobody renders
 // is still a working directory.
+//
+// THE READER HANDS OVER NO CREDENTIAL (#446, rcbj 2026-10-05). What it
+// answers is the person page's directory entry and `GET /admin-api/users?
+// user=`'s `ldap`, and until then that carried the entry as stored: the
+// password hash, the TOTP seed, the recovery codes, the assertion private
+// keys. `withoutSecrets()` masks them as it does for the `/admin/ldap/*`
+// answers; nothing that reads the slot needs a value.
 if (typeof admin.setDirectoryReader === 'function') {
-  admin.setDirectoryReader(objectFor);
+  admin.setDirectoryReader(function readEntry(name) {
+    log.debug("Entering readEntry().");
+    log.debug("Leaving readEntry().");
+    return withoutSecrets(objectFor(name));
+  });
 } else {
   log.warn('ldap: the admin console offers no setDirectoryReader(), so a ' +
            'user page will not show that user\'s directory entry. The ' +
@@ -8244,6 +8299,31 @@ if (typeof authnPolicy.setDirectory === 'function') {
   log.warn('ldap: common/authn_policy.ts offers no setDirectory(), so ' +
            'ou=authnPolicies is unreachable and the built-in authentication ' +
            'policy cannot be edited.');
+}
+
+// THE SERVICE-ACCOUNT POLICY REGISTER'S CONTAINER, AND THE SERVICE ACCOUNTS
+// THEMSELVES (#221), guarded the same way.
+if (typeof serviceAccountPolicy.setDirectory === 'function') {
+  serviceAccountPolicy.setDirectory({
+    allServiceAccountPolicies: allServiceAccountPolicies,
+    writeServiceAccountPolicy: writeServiceAccountPolicy,
+    deleteServiceAccountPolicy: deleteServiceAccountPolicy
+  });
+} else {
+  log.warn('ldap: common/service_account_policy.ts offers no setDirectory(), ' +
+           'so ou=serviceAccountPolicies is unreachable and the built-in ' +
+           'service-account policy cannot be edited.');
+}
+if (typeof serviceAccounts.setDirectory === 'function') {
+  serviceAccounts.setDirectory({
+    readServiceAccount: readServiceAccount,
+    writeServiceAccount: writeServiceAccount,
+    serviceAccountNames: serviceAccountNames,
+    resolveOwner: resolveServiceAccountOwner
+  });
+} else {
+  log.warn('ldap: common/service_accounts.ts offers no setDirectory(), so no ' +
+           'person can be made a service account in this process.');
 }
 
 if (typeof xacmlStore.setDirectory === 'function') {
@@ -8916,7 +8996,13 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
           ? 'only an administrator may modify an entry other than your own'
           : 'only an administrator may ' + operation + ' an entry'), dn);
   }
-  const allowed = selfWritableAttributes();
+  // A SERVICE ACCOUNT'S ATTRIBUTES ARE NEVER SELF-WRITABLE (#221), whatever
+  // `ldap.selfWritableAttributes` says: rcbj's design has the flag set by an
+  // administrator, and a person who could clear it on their own entry could
+  // walk out from under the policy that governs them.
+  const allowed = selfWritableAttributes().filter(function (type) {
+    return SERVICE_ACCOUNT_ATTRIBUTES.indexOf(type) < 0;
+  });
   const refused = (changedTypes || []).filter(function (type, index, all) {
     return allowed.indexOf(type) < 0 && all.indexOf(type) === index;
   });
@@ -8989,11 +9075,17 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
 // ---------------------------------------------------------------------------
 const SECRET_ATTRIBUTES = [
   'userpassword', 'pwdhistory',
+  // A service account's previous password (#221): a verifier like
+  // userPassword during the rotation's overlap.
+  'stspreviouspassword',
   'oauthclientsecret', 'appregistrationaccesstoken', 'fedclientsecret',
   'oauthassertionprivatekey', 'oauthsamlassertionprivatekey',
   // An application DID's private keys (2026-10-01), sealed like the two
   // above and withheld from every directory read like them.
   'didprivatekeys',
+  // A secret destination's write credential (#221 P3), sealed like the
+  // three above and withheld from every directory read.
+  'secretdestcredential',
   'stsassertionprivatekey', 'stssamlassertionprivatekey',
   'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
   // A person's app passwords (#101): scrypt hashes, a verifier like
@@ -9046,6 +9138,43 @@ function isSecretAttribute(name) {
   log.debug("Entering isSecretAttribute().");
   log.debug("Leaving isSecretAttribute().");
   return SECRET_ATTRIBUTES.indexOf(String(name || '').toLowerCase()) !== -1;
+}
+
+// AN ENTRY'S ROW WITH ITS CREDENTIALS MASKED (#446, rcbj 2026-10-05). The
+// console's directory pages are drawn from the answers of
+// `GET /admin-api/ldap/*`, and no GET carries a credential: every attribute
+// SECRET_ATTRIBUTES names is replaced, in `attributes` and `fields` and in an
+// `entry`'s attributes, by one sentence per value. What can be used is
+// revealed on its owner's page (`reveal-secret`), audited.
+function withoutSecrets(row) {
+  log.debug("Entering withoutSecrets().");
+  const mask = '(set — not returned)';
+  const masked = function (bag) {
+    const copy = Object.assign({}, bag);
+    Object.keys(copy).forEach(function (name) {
+      if (isSecretAttribute(name)) {
+        const value = copy[name];
+        copy[name] = Array.isArray(value)
+          ? value.map(function () { return mask; })
+          : (value === undefined || value === null || value === ''
+            ? value : mask);
+      }
+    });
+    return copy;
+  };
+  const out = Object.assign({}, row);
+  if (row && row.attributes) {
+    out.attributes = masked(row.attributes);
+  }
+  if (row && row.fields) {
+    out.fields = masked(row.fields);
+  }
+  if (row && row.entry && row.entry.attributes) {
+    out.entry = Object.assign({}, row.entry,
+                              { attributes: masked(row.entry.attributes) });
+  }
+  log.debug("Leaving withoutSecrets().");
+  return out;
 }
 
 // Whether THIS reader of the socket is refused sight of an attribute. One
@@ -9394,6 +9523,10 @@ function operationalWriteRefusal(req, operation, dn, types) {
 const CREDENTIAL_ATTRIBUTE_DOORS = {
   stswebauthncredential: '/portal/keys, the sign-in ' +
     'screen, or /admin/users (remove)',
+  // The handle every passkey is created under (#474): rewritten by hand it
+  // would sign the person in as nobody, or as somebody else.
+  stswebauthnuserhandle: 'the first passkey registered at /portal/keys or ' +
+    'the sign-in screen, which mints it',
   ststotpcredential: '/portal/mfa, or /admin/users (clear)',
   stsbackupcodes: '/portal/mfa, or /admin/users (clear)',
   stsapppassword: '/portal/app-passwords, or /admin/users',
@@ -9646,6 +9779,76 @@ function replaceWebauthnValues(key, values) {
   log.debug('Leaving replaceWebauthnValues(). ' +
             ((values || []).length) + ' key(s) left.');
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// THE WEBAUTHN USER HANDLE (#474), on the same entry: single-valued, minted
+// once by `common/credentials.ts` and never rewritten by it, and the only
+// value a usernameless sign-in finds a person by.
+//
+// FOUND THROUGH AN INDEX THAT IS CHECKED RATHER THAN KEPT. A hit is read
+// back from the entry it names, so an entry that changed since is a miss,
+// never a wrong answer; a miss rebuilds the index only when the directory has
+// been written since it was built, so an unknown handle presented twice costs
+// one walk. A walk is over the holders of the attribute (`eachHolderOfAny()`),
+// which in #349's window is the store's answer rather than a resident scan.
+// ---------------------------------------------------------------------------
+const userHandleIndexes = realms.keyed(function () {
+  return { index: null, version: -1 };
+});
+
+function readWebauthnUserHandle(key) {
+  log.debug('Entering readWebauthnUserHandle(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  const value = stored
+    ? String((stored.attributes.stswebauthnuserhandle || [])[0] || '') : '';
+  log.debug('Leaving readWebauthnUserHandle(). ' + (value ? 'Held.' : 'None.'));
+  return value;
+}
+
+function writeWebauthnUserHandle(key, value) {
+  log.debug('Entering writeWebauthnUserHandle(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored || !isPersonEntry(stored)) {
+    log.debug('Leaving writeWebauthnUserHandle(). No person entry.');
+    return false;
+  }
+  stored.attributes.stswebauthnuserhandle = [String(value)];
+  touchDirectory(stored.dn);
+  log.debug('Leaving writeWebauthnUserHandle(). Written to ' + stored.dn +
+            '.');
+  return true;
+}
+
+// The username of the PERSON whose entry holds `handle`, or ''.
+function webauthnUserHandleOwner(handle) {
+  log.debug('Entering webauthnUserHandleOwner().');
+  const wanted = String(handle || '');
+  const cache = userHandleIndexes();
+  const ownerAt = function (key) {
+    const stored = key ? getEntry(key) : null;
+    return stored && isPersonEntry(stored) &&
+      String((stored.attributes.stswebauthnuserhandle || [])[0] || '') ===
+        wanted
+      ? String((stored.attributes.uid || [])[0] || usernameOfEntry(stored))
+      : '';
+  };
+  let owner = wanted && cache.index ? ownerAt(cache.index.get(wanted)) : '';
+  if (!owner && wanted && cache.version !== directoryVersion) {
+    const index = new Map();
+    eachHolderOfAny(['stswebauthnuserhandle'], function (stored) {
+      const value = String((stored.attributes.stswebauthnuserhandle ||
+                            [])[0] || '');
+      if (value && isPersonEntry(stored) && !index.has(value)) {
+        index.set(value, stored.dn);
+      }
+    });
+    cache.index = index;
+    cache.version = directoryVersion;
+    owner = ownerAt(index.get(wanted));
+  }
+  log.debug('Leaving webauthnUserHandleOwner(). ' + (owner || 'nobody'));
+  return owner;
 }
 
 // ---------------------------------------------------------------------------
@@ -10675,6 +10878,10 @@ if (typeof credentials.setDirectory === 'function') {
     readWebauthn: readWebauthnValues,
     writeWebauthn: writeWebauthnValue,
     replaceWebauthn: replaceWebauthnValues,
+    // The WebAuthn user handle (#474), checked where it is used.
+    readWebauthnUserHandle: readWebauthnUserHandle,
+    writeWebauthnUserHandle: writeWebauthnUserHandle,
+    webauthnUserHandleOwner: webauthnUserHandleOwner,
     readActivation: readActivation,
     writeActivation: writeActivation,
     // The authenticator app (2026-09-10). Checked WHERE THEY ARE USED rather
@@ -14576,6 +14783,47 @@ function publishConnectionsSoon() {
   log.debug("Leaving publishConnectionsSoon().");
 }
 
+// ---------------------------------------------------------------------------
+// AN LDAP ADD OF AN APPLICATION IS A REGISTRATION (#504, 2026-10-06).
+//
+// Since #496 product serves no application without `appRegisteredBy`, and an
+// `ldapadd` under `ou=applications` by an identity allowed to write there is
+// an administrator putting the application there on purpose — the same act
+// as /admin/applications/new arriving by another door. So the add stamps it,
+// `ldap:<the bound DN>` (`ldap` alone for an unbound add, which only
+// development allows), beside the console's `administrator`, RFC 7591's
+// `rfc7591` and the seeding's `startup`.
+//
+// THREE LIMITS, EACH A RULE OF THE TICKET:
+//   * ONLY AN ADD. A modify of an entry `seen()` filed changes its
+//     configuration and does not register it: registering is creating on
+//     purpose, and an entry this service only saw was not created by anyone.
+//   * AN AUTHOR'S VALUE IS KEPT. An add that carries `appRegisteredBy` (an
+//     LDIF restored from another deployment, say) already says who.
+//   * ONLY A DIRECT CHILD of `ou=applications`, which is where an application
+//     entry lives; the container itself is not one.
+// A sighting never reaches here: `seen()` writes through the registry's
+// store, not through this handler, so it still never stamps.
+// ---------------------------------------------------------------------------
+function stampLdapRegistration(req, dn, attributes) {
+  log.debug('Entering stampLdapRegistration(). ' + dn);
+  if (normalizeDn(parentDn(dn)) !== normalizeDn(applicationsDn())) {
+    log.debug('Leaving stampLdapRegistration(). Not an application.');
+    return;
+  }
+  const given = Object.keys(attributes).filter(function (name) {
+    return name.toLowerCase() === 'appregisteredby' &&
+           valuesOf(attributes[name]).length > 0;
+  });
+  if (given.length) {
+    log.debug('Leaving stampLdapRegistration(). The author said who.');
+    return;
+  }
+  const bound = boundDnOf(req);
+  attributes.appRegisteredBy = [bound ? 'ldap:' + bound : 'ldap'];
+  log.debug('Leaving stampLdapRegistration(). ' + attributes.appRegisteredBy);
+}
+
 // --- add -------------------------------------------------------------------
 function ldapAddNow(req, res, next) {
   log.debug('Entering the LDAP add handler.');
@@ -14715,6 +14963,19 @@ function ldapAddNow(req, res, next) {
   // putEntry(), for the NUL refusal's reason.
   const addedPassword = {};
   if (normalizeDn(parentDn(dn)) === normalizeDn(usersDn())) {
+    // A SERVICE ACCOUNT ADDED WHOLE (#221) meets the rules a modify does.
+    const lowered = {};
+    Object.keys(attributes).forEach(function (key) {
+      lowered[key.toLowerCase()] = attributes[key];
+    });
+    const accountRefusal = serviceAccountWriteRefusal(lowered,
+                                                      Object.keys(lowered));
+    if (accountRefusal) {
+      log.debug('Leaving the LDAP add handler. The service account was ' +
+                'refused.');
+      return next(ldapRefusal(req, '', 'an add of ' + dn +
+        ' was refused by the service-account rules', accountRefusal, dn));
+    }
     const policyRefusal = passwordWriteRefusal(dn, attributes, {},
       Object.keys(attributes).map(function (key) { return key.toLowerCase(); }),
       addedPassword);
@@ -14725,7 +14986,16 @@ function ldapAddNow(req, res, next) {
         policyRefusal, dn));
     }
   }
+  stampLdapRegistration(req, dn, attributes);
   const addedEntry = putEntry(dn, attributes, { origin: 'ldap add' });
+  // An application added over the socket WITH credentials (#221): each is
+  // announced as created, as the registry announces its own.
+  if (isUnder(addedEntry.dn, applicationsDn()) &&
+      normalizeDn(addedEntry.dn) !== normalizeDn(applicationsDn())) {
+    applications.noteDirectoryWrite(null, attributeSnapshot(addedEntry),
+                                    { actor: boundDnOf(req),
+                                      via: 'an LDAP add' });
+  }
   if (addedPassword.password) {
     credentials.passwordWritten(addedPassword.name, addedPassword.password);
     notePasswordWritten(req, addedEntry.dn, addedPassword.name, 'create');
@@ -14878,6 +15148,14 @@ server.del('', function (req, res, next) {
     noteMembershipChange(stored.dn, deletedAttributes, {});
   } else if (!deletedPerson && isRoleEntry(stored)) {
     noteRoleChange(stored.dn, deletedAttributes, {});
+  } else if (!deletedPerson && isUnder(stored.dn, applicationsDn()) &&
+             normalizeDn(stored.dn) !== normalizeDn(applicationsDn())) {
+    noteApplicationRemoved(stored, 'an LDAP delete');
+  } else if (!deletedPerson && isUnder(stored.dn, spiffeEntriesDn()) &&
+             normalizeDn(stored.dn) !== normalizeDn(spiffeEntriesDn())) {
+    // #221: a registration entry deleted here, not through the registry,
+    // is reported as the registry reports its own (P5's gap).
+    spiffeRegistry.noteEntryRemovedOutside(stored, boundDnOf(req));
   }
   // Note what is NOT done here: the DN is left in any group that lists it as a
   // member. See the header — referential integrity is a directory feature and
@@ -15040,6 +15318,19 @@ function ldapModifyNow(req, res, next) {
       return next(ldapRefusal(req, '', 'a modify of ' + dn +
         ' was refused by the password rules', policyRefusal, dn));
     }
+    // AND A SERVICE ACCOUNT'S ATTRIBUTES (#221), against the entry as it will
+    // be, with its auxiliary class kept beside the flag.
+    const accountRefusal = serviceAccountWriteRefusal(working,
+      req.changes.map(function (change) {
+        return String(change.modification.type || '').toLowerCase();
+      }));
+    if (accountRefusal) {
+      log.debug('Leaving the LDAP modify handler. The service account was ' +
+                'refused.');
+      return next(ldapRefusal(req, '', 'a modify of ' + dn +
+        ' was refused by the service-account rules', accountRefusal, dn));
+    }
+    keepServiceAccountClass(working);
   }
   // A ROW WITH NO createTimestamp (one imported, or written by hand into a
   // store) used to be given `undefined` here, and the next reader of the
@@ -15089,6 +15380,17 @@ function ldapModifyNow(req, res, next) {
     // still a password changed (#237).
     notePasswordWritten(req, stored.dn, usernameOfEntry(stored),
                         passwordBefore === undefined ? 'create' : 'update');
+  }
+  // AN APPLICATION'S CREDENTIALS WRITTEN OVER THE SOCKET (#221, the gap P5
+  // left): a client secret, its keys or a certificate an administrator's
+  // `ldapmodify` changed are announced as the registry announces its own —
+  // the same comparison, in `applications.noteDirectoryWrite()`.
+  if (isUnder(stored.dn, applicationsDn()) &&
+      normalizeDn(stored.dn) !== normalizeDn(applicationsDn())) {
+    applications.noteDirectoryWrite(beforeModify,
+                                    attributeSnapshot(stored),
+                                    { actor: boundDnOf(req),
+                                      via: 'an LDAP modify' });
   }
   // `pwdReset` SET BY A WRITE OF THE SOCKET (#237). An administrator's
   // `ldapmodify` of it forces the person to change their password at the
@@ -15983,152 +16285,17 @@ function perOf(req, paging) {
 function ldapServiceView(req) {
   log.debug('Entering ldapServiceView().');
   const info = description(req);
-  const rows = [
-    ['URL', info.url],
-    ['LDAPS URL', info.tls.ldaps
-      ? info.tls.url
-      : 'not offered — ' + (info.tls.error || 'no reason was recorded')],
-    ['Base DN', info.baseDn],
-    ['People', info.usersDn],
-    ['Groups', info.groupsDn],
-    // Only where there is more than one, so the ordinary single-realm page is
-    // exactly the page it was — a row that always said the same thing as the
-    // one above it would be noise on every deployment that has no realms.
-    ...(info.namingContexts.length > 1
-      ? [['Naming contexts', info.namingContexts.join(', ')],
-         ['What a search answers about', info.searchScope]]
-      : []),
-    ['Protocol version', 'LDAPv3'],
-    ['Transport', 'plain TCP on ' + info.port + ', and LDAPS — TLS from the ' +
-      'first byte — on ' + (info.tls.port || LDAPS_PORT) + '. There is no ' +
-      'StartTLS: it is an extended operation and this library implements ' +
-      'none.'],
-    ['Entries right now', String(info.limits.currentEntries)],
-    // The one row on this page that answers "and will any of this still be
-    // here tomorrow". See description()'s `persistence` member.
-    ['Persistence', info.persistence.mode === 'memory'
-      ? 'NONE — this directory is in memory and goes when the process does, ' +
-        'which is what this service did until 2026-08-27. Set ' +
-        'persistence.mode to ldif (a file per realm, no database) or ' +
-        'postgres (a shared store) to change that.'
-      : info.persistence.mode + ' — ' +
-        (info.persistence.mode === 'ldif'
-          ? 'an RFC 2849 LDIF file per realm in ' + info.persistence.dataDir
-          : 'PostgreSQL at ' +
-            (info.persistence.database ? info.persistence.database.host + ':' +
-             info.persistence.database.port + '/' +
-             info.persistence.database.database : 'a connection string')) +
-        '. ' + info.persistence.entriesTracked + ' entry/entries written; ' +
-        (info.persistence.lastError
-          ? 'THE LAST WRITE FAILED (' + info.persistence.lastError + ') — ' +
-            'the directory is unaffected and is still answering from memory, ' +
-            'and the next change will try again'
-          : 'last write ' + (info.persistence.lastWriteAt || 'not yet')) +
-        '. Sessions, tokens, codes, artifacts and tickets are NEVER ' +
-        'persisted in any mode.'],
-    ['Listener', info.listening
-      ? 'up on TCP ' + info.port
-      : 'DOWN — ' + (info.listenError || 'it never bound') +
-        '. This page is HTTP and answers either way; the directory does not.'],
-    ['LDAPS listener', info.tls.listening
-      ? 'up on TCP ' + info.tls.port
-      : 'DOWN — ' + (info.tls.error || 'it never bound') +
-        '. The two sockets are independent, so this says nothing about the ' +
-        'one above.'],
-    ['An entry per authenticated user', info.autoCreateUsers ? 'on' : 'off']
-  ].map(function (pair) {
-    // The VALUE is clipped and the LABEL is not: a label here is four words
-    // and a value is a sentence or a DN. admin.clipped() leaves anything
-    // under its limit exactly as it was, so the short rows are untouched and
-    // the two long ones stop pushing the table past the card.
-    return '<tr><td>' + xmlEscape(pair[0]) + '</td><td>' +
-      admin.clipped(pair[1], 150) + '</td></tr>';
-  }).join('');
-
-  // The two sockets as TILES, which is the console's own way of saying
-  // "here are the numbers, and here is the one that is wrong". A listener
-  // that failed to bind is the single most useful fact on this page and it
-  // was previously the eleventh row of a fourteen-row table.
-  const tiles = '<div class="tiles">' +
-    admin.tile(info.limits.currentEntries, 'Entries in this realm') +
-    admin.tile(info.limits.currentEntriesEverywhere, 'Entries in the process') +
-    admin.tile(info.listening ? 'up' : 'down', 'TCP ' + info.port) +
-    admin.tile(info.tls.listening ? 'up' : 'down',
-               'LDAPS ' + (info.tls.port || LDAPS_PORT)) +
-    '</div>';
-
-  const inner = '<p class="sub">LDAPv3 over TCP ' + LDAP_PORT + ', and over ' +
-    'TLS on ' + LDAPS_PORT + ', RFC 4511. A browser cannot speak it &mdash; ' +
-    'the debugger&rsquo;s api opens the socket. What the sockets are SET to ' +
-    'is <a href="/admin/ldap">LDAP / LDAPS</a>; this page is what actually ' +
-    'happened when this process tried to bind them.</p>' +
-    tiles +
-    '<table><tr><th>Thing</th><th>Value</th></tr>' + rows + '</table>' +
-    '<h2>It authenticates nobody</h2>' +
-    admin.note(xmlEscape(info.bindPolicy) + '.') +
-    '<h2>Where an identity&rsquo;s entry goes</h2>' +
-    admin.note(xmlEscape(info.autoCreateRule)) +
-    '<h2>And how they authenticated</h2>' +
-    admin.note(xmlEscape(info.authenticationFacts)) +
-    '<h2>LDAPS, and what it does not change</h2>' +
-    admin.note('Port ' + (info.tls.port || LDAPS_PORT) + ' is the same ' +
-    'directory over TLS &mdash; the same entries, the same handlers, the ' +
-    'same every-bind-succeeds. What TLS adds is that the password is not on ' +
-    'the wire in the clear; it does not make it <em>checked</em>. The ' +
-    'certificate is <strong>the one the HTTPS listeners serve</strong>: ' +
-    '<code>' + xmlEscape(info.tls.certificate.subject) + '</code>, SHA-256 ' +
-    '<code>' + xmlEscape(info.tls.certificate.fingerprint256) + '</code>, ' +
-    xmlEscape(tlsServer.certificateProvenance()) + '. Fetch it from <a ' +
-    'href="/tls/server-certificate">/tls/server-certificate</a> and put it ' +
-    'in your truststore &mdash; <code>LDAPTLS_REQCERT=never</code> is the ' +
-    'habit this endpoint exists to avoid, and it would also hide the one ' +
-    'thing worth checking here.') +
-    admin.note(xmlEscape(info.tls.clientCertificates) + ' There is no ' +
-    'StartTLS: it is an extended operation (RFC 4511 &sect;4.14) and ldapjs ' +
-    'implements none, and this service does not patch that submodule. LDAPS ' +
-    'is the one of the two no RFC defines &mdash; RFC 4513 standardised ' +
-    'StartTLS and left <code>ldaps://</code> as the de-facto scheme every ' +
-    'client speaks anyway.') +
-    '<h2>It has no schema</h2>' +
-    admin.note(xmlEscape(info.schema)) +
-    '<h2>What it does still enforce</h2>' +
-    info.enforcedRules.map(function (rule) {
-      return admin.bullet(xmlEscape(rule));
-    }).join('') +
-    admin.note('And one thing it does <em>not</em>: deleting a user leaves ' +
-    'its DN in every group that lists it as a <code>member</code>. ' +
-    'Referential integrity is a directory feature, not a protocol rule.') +
-    '<h2>The containers</h2>' +
-    admin.note('The tree has three containers. <code>ou=users</code> holds ' +
-    'people, one per identity that has authenticated here through any ' +
-    'protocol. <code>ou=groups</code> holds groups, which grant nothing. ' +
-    '<code>ou=applications</code> holds the OTHER side of those ' +
-    'authentications &mdash; every OAuth client, relying party, service ' +
-    'provider and Kerberos service this service has been asked about &mdash; ' +
-    'and it is different from the other two in one way worth knowing: ' +
-    '<strong>it is a registry rather than a record</strong>. The RFC 7591 ' +
-    'client registrations live there and nothing caches them, so an ' +
-    '<code>ldapmodify</code> of an application entry changes what the ' +
-    'protocol endpoints do. ' +
-    '<a href="/admin/ldap/applications">What is in it, and the schema it ' +
-    'uses</a>.') +
-    '<p class="sub"><a href="/admin/ldap/service?format=json">This page as ' +
-    'JSON</a> &middot; <a href="/admin/ldap/applications">the application ' +
-    'registry</a> &middot; <a href="/admin/ldap/directory">every entry in ' +
-    'the directory</a> &middot; <a href="/admin/ldap">the settings behind ' +
-    'these sockets</a> &middot; <a href="/admin/sts-metadata">everything ' +
-    'this service speaks</a></p>';
+  // What the page draws beside the description (#446): the two ports it
+  // names and where the listener's certificate came from.
+  const payload = {
+    ...info,
+    ldapPort: LDAP_PORT, ldapsPort: LDAPS_PORT,
+    certificateProvenance: tlsServer.certificateProvenance()
+  };
   log.debug('Leaving ldapServiceView().');
-  return { title: 'The directory service', inner: inner, json: info };
+  return { title: 'The directory service', json: payload };
 }
 
-app.get('/admin/ldap/service', function (req, res) {
-  log.debug('Entering GET /admin/ldap/service.');
-  const view = ldapServiceView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/service',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/service.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/directory — every entry, paged.
@@ -16294,107 +16461,37 @@ function ldapDirectoryView(req) {
   });
   const origins = Array.from(originCounts.keys());
   origins.sort();
-  const originOptions = ['<option value=""' +
-                         (wantedOrigin ? '' : ' selected') +
-                         '>any origin</option>']
-    .concat(origins.map(function (origin) {
-      const n = originCounts.get(origin);
-      return '<option value="' + xmlEscape(origin) + '"' +
-             (origin === wantedOrigin ? ' selected' : '') + '>' +
-             xmlEscape(origin) + ' (' + n + ')</option>';
-    })).join('');
 
-  const filterParams = { q: wantedText || '', origin: wantedOrigin || '',
-                         per: perOf(req, paging) };
-  const nav = admin.pageNavPair('/admin/ldap/directory', filterParams, paging);
-
-  const rows = paged.shown.map(function (entry) {
-    const attrs = Object.keys(entry.attributes).sort().map(function (name) {
-      return '<div><code>' + xmlEscape(name) + '</code>: ' +
-        admin.clippedValues(entry.attributes[name]) + '</div>';
-    }).join('');
-    return '<tr><td class="dn">' + admin.clipped(entry.dn, 60) +
-      '</td><td class="from">' + xmlEscape(entry.origin) +
-      '</td><td class="attrs">' + attrs + '</td></tr>';
-  }).join('');
-
-  const inner = '<p class="sub">' + listed.length + ' entry/entries under ' +
-    '<code>' + xmlEscape(baseDn()) + '</code>. This page is not LDAP &mdash; ' +
-    'it is this service showing its own store, which is how you can tell an ' +
-    'empty directory from a search filter that matched nothing.</p>' +
-    '<div class="tiles">' +
-    admin.tile(listed.length, 'Entries in this realm') +
-    admin.tile(filtered.length, 'Matching the filter') +
-    admin.tile(origins.length, 'Origins') +
-    '</div>' +
-    '<form method="get" action="/admin/ldap/directory"><div class="formrow">' +
-    '<label for="q">Anywhere in the entry</label>' +
-    '<input type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
-    '" size="30" placeholder="a DN, an attribute name, or a value">' +
-    '<label for="origin">Came from</label>' +
-    '<select id="origin" name="origin">' + originOptions + '</select>' +
-    '<label for="per">Show</label>' +
-    '<select id="per" name="per">' +
-    admin.perPageOptions(paging.perPage) + '</select>' +
-    '<button type="submit">Filter</button>' +
-    ((wantedText || wantedOrigin)
-      ? ' <a href="/admin/ldap/directory">clear</a>' : '') +
-    '</div></form>' +
-    admin.note('The box matches the DN, any attribute NAME and any attribute ' +
-    'VALUE, case-insensitively. Values are searched because the reader who ' +
-    'needs this most often has a thumbprint or a secret in hand and no idea ' +
-    'which entry carries it, which a search over DNs alone cannot answer.') +
-    nav.head +
-    '<table><tr><th class="dn">DN</th><th class="from">Came from</th>' +
-    '<th>Attributes</th></tr>' +
-    (rows || '<tr><td colspan="3">No entry matches. ' +
-             ((wantedText || wantedOrigin)
-               ? 'The filter above may be hiding some.'
-               : 'This realm&rsquo;s directory is empty.') + '</td></tr>') +
-    '</table>' +
-    nav.foot +
-    admin.note('<strong>A value too long for its column is shortened, and ' +
-    'the whole of it is one hover away.</strong> Hovering a shortened value ' +
-    'opens a box holding it in full; one click inside that box selects all ' +
-    'of it, so it can be copied. Nothing is lost by the shortening &mdash; ' +
-    '<code>?format=json</code> below is the whole store with nothing cut, ' +
-    'and the full value is in this page&rsquo;s markup either way.') +
-    '<p class="sub"><a href="/admin/ldap/directory?format=json">This page as ' +
-    'JSON</a> &middot; <a href="/admin/ldap/service">what this directory ' +
-    'is</a> &middot; <a href="/admin/users">the people in it</a> &middot; ' +
-    '<a href="/admin/groups">the groups in it</a></p>';
-
+  // WHAT THE PAGE IS DRAWN FROM (#446), and what `GET /admin-api/ldap/
+  // directory` answers: every entry on the page with its credentials masked
+  // — this answer handed them out whole until then — the origins with their
+  // counts, and the paging control's own object.
+  const counted = {};
+  origins.forEach(function (origin) {
+    counted[origin] = originCounts.get(origin);
+  });
+  const payload = {
+    baseDn: baseDn(),
+    count: listed.length,
+    matched: filtered.length,
+    shown: paged.shown.length,
+    filter: { q: wantedText || null, origin: wantedOrigin || null },
+    origins: origins,
+    originCounts: counted,
+    page: paging.page, pages: paging.pages, perPage: paging.perPage,
+    firstRow: paging.firstRow, lastRow: paging.lastRow,
+    paging: adminViews.pagingJson(paging),
+    entries: paged.shown.map(withoutSecrets)
+  };
   log.debug('Leaving ldapDirectoryView(). ' + paged.shown.length +
             ' row(s) of ' +
             filtered.length + ' matched.');
   return {
     title: 'Every entry in the directory',
-    inner: inner,
-    json: {
-      baseDn: baseDn(),
-      // `count` is every entry in this realm and `matched` is what the filter
-      // left. The first name is kept because it is what this endpoint has
-      // always answered with and a caller reads it; the second is the console's
-      // own word for the same idea on every other list.
-      count: listed.length,
-      matched: filtered.length,
-      shown: paged.shown.length,
-      filter: { q: wantedText || null, origin: wantedOrigin || null },
-      origins: origins,
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      entries: paged.shown
-    }
+    json: payload
   };
 }
 
-app.get('/admin/ldap/directory', function (req, res) {
-  log.debug('Entering GET /admin/ldap/directory.');
-  const view = ldapDirectoryView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/directory',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/directory.');
-});
 
 // ---------------------------------------------------------------------------
 // Starting the listener.
@@ -16637,6 +16734,7 @@ function deleteApplicationEntry(identifier) {
   entries.delete(normalizeDn(stored.dn));
   touchDirectory();
   auditDirectory('entry.delete', stored.dn, stored.attributes, false);
+  noteApplicationRemoved(stored, 'the application registry');
   log.debug('Leaving deleteApplicationEntry(). ' + entries.size + ' ' +
       'entry/entries left.');
   return true;
@@ -17195,6 +17293,263 @@ function deleteAuthnPolicy(name) {
   log.debug('Leaving deleteAuthnPolicy(). ' + entries.size +
             ' entry/entries left.');
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// ou=serviceAccountPolicies AS A STORE (#221). ou=authnPolicies' three
+// functions again, for the same reasons.
+// ---------------------------------------------------------------------------
+function serviceAccountPolicyDn(name) {
+  log.debug("Entering serviceAccountPolicyDn().");
+  log.debug("Leaving serviceAccountPolicyDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' +
+         serviceAccountPoliciesDn();
+}
+
+function allServiceAccountPolicies() {
+  log.debug('Entering allServiceAccountPolicies().');
+  const rows = entriesUnder(serviceAccountPoliciesDn()).map(function (stored) {
+    const object = entryObject(stored);
+    object.name = (stored.attributes.cn || [])[0] ||
+                  stored.dn.split(',')[0].replace(/^cn=/i, '');
+    return object;
+  });
+  log.debug('Leaving allServiceAccountPolicies(). ' + rows.length +
+            ' profile(s).');
+  return rows;
+}
+
+function writeServiceAccountPolicy(name, attributes) {
+  log.debug('Entering writeServiceAccountPolicy(). name=' + name);
+  const dn = serviceAccountPolicyDn(name);
+  const existing = getEntry(dn);
+  if (!existing && cappedEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writeServiceAccountPolicy(). The directory is full.');
+    return false;
+  }
+  if (!getEntry(serviceAccountPoliciesDn())) {
+    putEntry(serviceAccountPoliciesDn(), {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: 'serviceAccountPolicies'
+    }, { origin: 'service-account policy' });
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin
+                              : 'service-account policy' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writeServiceAccountPolicy(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deleteServiceAccountPolicy(name) {
+  log.debug('Entering deleteServiceAccountPolicy(). name=' + name);
+  const stored = getEntry(serviceAccountPolicyDn(name));
+  if (!stored) {
+    log.debug('Leaving deleteServiceAccountPolicy(). It was not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
+  log.debug('Leaving deleteServiceAccountPolicy(). ' + entries.size +
+            ' entry/entries left.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// A SERVICE ACCOUNT ON ITS PERSON ENTRY (#221): the four hooks
+// `common/service_accounts.ts` is given. ONE READER AND ONE WRITER, narrowed
+// to that module's attribute list, for writePersonFlag()'s reason — neither
+// may become a general attribute writer. The writer keeps the auxiliary
+// class `stsServiceAccount` with the flag: on while it is TRUE, gone with it.
+// ---------------------------------------------------------------------------
+const SERVICE_ACCOUNT_ATTRIBUTES = serviceAccounts.ATTRIBUTES.map(
+  function (name) {
+    return name.toLowerCase();
+  });
+
+function readServiceAccount(key) {
+  log.debug('Entering readServiceAccount().');
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored) {
+    log.debug('Leaving readServiceAccount(). No entry.');
+    return { found: false, person: false, dn: '', username: '', values: {} };
+  }
+  const values = {};
+  serviceAccounts.ATTRIBUTES.forEach(function (name) {
+    const held = stored.attributes[name.toLowerCase()] || [];
+    if (held.length) {
+      values[name] = String(held[0]);
+    }
+  });
+  const person = isPersonEntry(stored);
+  log.debug('Leaving readServiceAccount().');
+  return { found: true, person: person, dn: stored.dn,
+           username: person ? usernameOfEntry(stored) : '', values: values };
+}
+
+function writeServiceAccount(key, changes) {
+  log.debug('Entering writeServiceAccount().');
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored || !isPersonEntry(stored)) {
+    log.warn(errorCodes.tag('STS-LDAP-0078') + 'ldap: "' + key + '" is no ' +
+             'person in this realm, so its service-account attributes were ' +
+             'not written.');
+    log.debug('Leaving writeServiceAccount(). No person.');
+    return false;
+  }
+  Object.keys(changes || {}).forEach(function (name) {
+    const lower = name.toLowerCase();
+    if (SERVICE_ACCOUNT_ATTRIBUTES.indexOf(lower) < 0) {
+      return;
+    }
+    const value = changes[name];
+    if (value === null || value === undefined || value === '') {
+      delete stored.attributes[lower];
+    } else {
+      stored.attributes[lower] = [String(value)];
+    }
+  });
+  keepServiceAccountClass(stored.attributes);
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  touchDirectory(stored.dn);
+  log.debug('Leaving writeServiceAccount().');
+  return true;
+}
+
+// The auxiliary class follows the flag, wherever the flag was written — the
+// hook above and an administrator's LDAP modify alike.
+function keepServiceAccountClass(attributes) {
+  log.debug('Entering keepServiceAccountClass().');
+  const classes = (attributes.objectclass || []).filter(function (one) {
+    return String(one).toLowerCase() !==
+           serviceAccounts.OBJECT_CLASS.toLowerCase();
+  });
+  if (serviceAccounts.isServiceAccount(attributes)) {
+    classes.push(serviceAccounts.OBJECT_CLASS);
+  }
+  if (classes.length) {
+    attributes.objectclass = classes;
+  }
+  log.debug('Leaving keepServiceAccountClass().');
+}
+
+// Every service account in the ambient realm, by username. Only the holders
+// of the flag are visited (#349's walk), and only those pay isPersonEntry().
+function serviceAccountNames() {
+  log.debug('Entering serviceAccountNames().');
+  const out = [];
+  eachHolderOfAny(['stsserviceaccount'], function (entry) {
+    if (serviceAccounts.isServiceAccount(entry.attributes) &&
+        isPersonEntry(entry)) {
+      out.push(usernameOfEntry(entry));
+    }
+  });
+  log.debug('Leaving serviceAccountNames(). ' + out.length);
+  return out;
+}
+
+// An OWNER (rcbj: "a person or a group"): a DN, a username or a `urn:uuid:`
+// subject finds a person; a DN or a group's cn finds a group.
+function resolveServiceAccountOwner(value) {
+  log.debug('Entering resolveServiceAccountOwner().');
+  const text = String(value || '').trim();
+  let stored = text ? locateEntry(text).stored : null;
+  if (!stored && text && !DN_SHAPED.test(text)) {
+    stored = getEntry('cn=' + escapeDnValue(text) + ',' + groupsDn());
+  }
+  if (!stored) {
+    log.debug('Leaving resolveServiceAccountOwner(). Nobody.');
+    return { kind: '', dn: '', name: '' };
+  }
+  if (isPersonEntry(stored)) {
+    log.debug('Leaving resolveServiceAccountOwner(). A person.');
+    return { kind: 'person', dn: stored.dn, name: usernameOfEntry(stored) };
+  }
+  if (isUnder(stored.dn, groupsDn()) &&
+      normalizeDn(stored.dn) !== normalizeDn(groupsDn())) {
+    log.debug('Leaving resolveServiceAccountOwner(). A group.');
+    return { kind: 'group', dn: stored.dn,
+             name: String((stored.attributes.cn || [''])[0]) };
+  }
+  log.debug('Leaving resolveServiceAccountOwner(). Neither.');
+  return { kind: '', dn: stored.dn, name: '' };
+}
+
+// AN LDAP MODIFY OF A SERVICE ACCOUNT'S ATTRIBUTES (#221). Who may write them
+// at all is `directoryWriteRefusal()`'s — Admin Write in product, and never
+// the person themselves (NEVER_SELF_WRITABLE). This is what the attributes
+// must say afterwards, the same rules `service_accounts.set()` applies:
+//
+//   * the rotation's state and the previous password are MAINTAINED by this
+//     service, refused in product as pwdHistory is;
+//   * a service account names an owner while the realm's policy requires one;
+//   * the owner is a person or a group, and the destination and the secret's
+//     name come together.
+//
+// Answers null or the ldapjs error, recorded by the caller.
+const SERVICE_ACCOUNT_MAINTAINED = ['stspasswordrotatedat',
+  'stspreviouspassword', 'stspreviouspasswordexpires',
+  'stsrotationfailures', 'stsrotationlasterror', 'stsrotationlastattempt'];
+
+function serviceAccountWriteRefusal(working, touched) {
+  log.debug('Entering serviceAccountWriteRefusal().');
+  const changed = (touched || []).filter(function (type) {
+    return SERVICE_ACCOUNT_ATTRIBUTES.indexOf(type) >= 0;
+  });
+  if (!changed.length) {
+    log.debug('Leaving serviceAccountWriteRefusal(). Not one of them.');
+    return null;
+  }
+  const maintained = changed.filter(function (type) {
+    return SERVICE_ACCOUNT_MAINTAINED.indexOf(type) >= 0;
+  });
+  if (maintained.length && mode.verifiesCredentials()) {
+    log.debug('Leaving serviceAccountWriteRefusal(). Maintained.');
+    return coded('STS-SVCACCT-0030', new ldap.ConstraintViolationError(
+      maintained.join(', ') + ' are maintained by this service\'s password ' +
+      'rotation and cannot be written'));
+  }
+  if (!serviceAccounts.isServiceAccount(working)) {
+    log.debug('Leaving serviceAccountWriteRefusal(). Not a service account.');
+    return null;
+  }
+  const first = function (name) {
+    log.debug('Entering first().');
+    log.debug('Leaving first().');
+    return String((working[name] || [''])[0] || '').trim();
+  };
+  const owner = first('stsserviceaccountowner');
+  if (!owner && serviceAccountPolicy.requiresOwner()) {
+    log.debug('Leaving serviceAccountWriteRefusal(). No owner.');
+    return coded('STS-SVCACCT-0023', new ldap.ConstraintViolationError(
+      'this realm\'s service-account policy requires stsServiceAccountOwner ' +
+      '(a person or a group)'));
+  }
+  if (owner) {
+    const resolved = resolveServiceAccountOwner(owner);
+    if (resolved.kind !== 'person' && resolved.kind !== 'group') {
+      log.debug('Leaving serviceAccountWriteRefusal(). The owner is nobody.');
+      return coded('STS-SVCACCT-0024', new ldap.ConstraintViolationError(
+        'stsServiceAccountOwner must name a person or a group in this realm'));
+    }
+  }
+  if (!!first('stssecretdestination') !== !!first('stssecretname')) {
+    log.debug('Leaving serviceAccountWriteRefusal(). Half a destination.');
+    return coded('STS-SVCACCT-0026', new ldap.ConstraintViolationError(
+      'stsSecretDestination and stsSecretName go together'));
+  }
+  log.debug('Leaving serviceAccountWriteRefusal(). Allowed.');
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -18613,9 +18968,15 @@ function noteMembershipChange(groupDn, before, after, options) {
 // it told nobody. The people affected are the `roleMemberUser` values that
 // moved and every member of a `roleMemberGroup` group that moved — or, for a
 // role created, deleted or renamed (`everyMember`), all of them. A
-// description edited moves nobody. `roleMemberApplication` is an
-// application's own role, and an application has no CAEP subject here yet
-// (#221). The kind is `roles`; RISC has no reading of it.
+// description edited moves nobody. The kind is `roles`; RISC has no reading
+// of it.
+//
+// `roleMemberApplication` is an APPLICATION's own role (#221 P5): the roles
+// claim of every live token the application holds of its OWN (a
+// client_credentials grant) moved, and that is told as a CAEP
+// token-claims-change about the application — `noteApplicationRoleChange()`,
+// through `ssf/account_signals.ts`'s claims fan-out, which lists only the
+// applications that hold such a token.
 // ---------------------------------------------------------------------------
 function isRoleEntry(stored) {
   log.debug('Entering isRoleEntry().');
@@ -18715,8 +19076,83 @@ function noteRoleChange(dn, before, after, options) {
       username: usernameOfEntry(stored), realm: realmFor(stored.dn).id,
       role: role });
   });
+  noteApplicationRoleChange(moved('rolememberapplication'), role);
   log.debug('Leaving noteRoleChange(). ' + people.size + ' person(s) ' +
             'affected.');
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S OWN ROLE MOVED (#221 P5): CAEP token-claims-change about
+// each application in `names` that holds a live token of its own, naming the
+// roles claim as such a token would now carry it — read through the same
+// claim builder the issuance used (`admin_stats.claimValuesFor()`, which
+// builds an application's own token for no person) — or `null` where the
+// claim is gone. LAZILY required, and never into the write.
+// ---------------------------------------------------------------------------
+function noteApplicationRoleChange(names, role) {
+  log.debug('Entering noteApplicationRoleChange(). ' + (names || []).length);
+  if (!names || !names.length) {
+    log.debug('Leaving noteApplicationRoleChange(). No application moved.');
+    return;
+  }
+  const wanted = new Set(names.map(function (one) {
+    return String(one).trim().toLowerCase();
+  }));
+  try {
+    const claimName = String(config.value('roles.claimName') || 'roles');
+    require('../ssf/account_signals').claimsFanOut({
+      protocol: 'Directory', initiatingEntity: 'admin',
+      reasonAdmin: 'The role "' + role + '" changed which applications ' +
+                   'hold it',
+      match: function (token) {
+        return !!token.application && token.claimSet === 'access_token' &&
+               wanted.has(String(token.application).toLowerCase());
+      },
+      claimsFor: function (bearer) {
+        const now = stats.claimValuesFor('access_token', bearer.record,
+                                         [claimName]);
+        const out = {};
+        out[claimName] = now[claimName] === undefined ? null
+                                                      : now[claimName];
+        return out;
+      } });
+  } catch (e) {
+    log.debug('Caught in noteApplicationRoleChange(): ' +
+              ((e && e.message) || e));
+    log.warn(errorCodes.tag('STS-SSF-0140') + 'ldap: a token-claims-change ' +
+             'for the applications holding "' + role + '" could not be ' +
+             'started: ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving noteApplicationRoleChange().');
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION ENTRY DELETED IS RISC account-purged ABOUT IT (#221 P5).
+// Both doors that delete one reach here — `deleteApplicationEntry()`, which
+// the registry's delete (the console, `/admin-api`) uses, and the LDAP
+// delete handler — so neither can forget it. The identifier is read off the
+// entry as it was. LAZILY required, and never into the delete.
+// ---------------------------------------------------------------------------
+function noteApplicationRemoved(stored, via) {
+  log.debug('Entering noteApplicationRemoved(). ' + via);
+  const a = (stored && stored.attributes) || {};
+  const identifier = String((a.appidentifier || [])[0] || '');
+  if (!identifier) {
+    log.debug('Leaving noteApplicationRemoved(). No identifier.');
+    return;
+  }
+  try {
+    require('../ssf/account_signals').applicationPurged({
+      application: identifier, dn: String(stored.dn), via: via,
+      realm: realmFor(stored.dn).id });
+  } catch (e) {
+    log.debug('Caught in noteApplicationRemoved(): ' +
+              ((e && e.message) || e));
+    log.warn(errorCodes.tag('STS-SSF-0140') + 'ldap: the account-purged ' +
+             'about the application "' + identifier + '" could not be ' +
+             'started: ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving noteApplicationRemoved().');
 }
 
 // The lock value on an attribute snapshot, or ''.
@@ -19973,124 +20409,18 @@ function ldapSpiffeView(req) {
     // 2026-09-01. The paging members above say which page, and `entries` and
     // `agents` at the top are still the totals — a caller reading those is
     // unaffected.
-    registrationEntries: pagedEntries.shown,
-    attestedAgents: pagedAgents.shown
+    // Each entry with its selectors as text, the column the page draws.
+    registrationEntries: pagedEntries.shown.map(function (row) {
+      return Object.assign(withoutSecrets(row), {
+        selectorTexts: row.selectors.map(spiffeRegistry.selectorText) });
+    }),
+    attestedAgents: pagedAgents.shown.map(withoutSecrets)
   };
-
-  const classRows = spiffeRegistry.SCHEMA.objectClasses.map(function (one) {
-    return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented ' +
-                                                  'here)</strong>') +
-      '</td><td>' + xmlEscape(one.what) + '</td></tr>';
-  }).join('');
-  const attrRows = spiffeRegistry.SCHEMA.attributes.map(function (row) {
-    return '<tr><td><code>' + xmlEscape(row.name) + '</code></td><td>' +
-      xmlEscape(row.kind) + '</td><td>' +
-      (row.editable ? 'yes' : 'no') + '</td><td>' + xmlEscape(row.from) +
-      '</td><td>' + xmlEscape(row.what) + '</td></tr>';
-  }).join('');
-  const entryRows = pagedEntries.shown.map(function (row) {
-    return '<tr><td>' + admin.clipped(row.spiffeId, 52) +
-      '<div class="sub">' + admin.clipped(row.dn, 52) + '</div></td><td>' +
-      admin.clipped(row.selectors.map(spiffeRegistry.selectorText).join(', ') ||
-                    '(none — matches every workload)', 60) +
-      '</td><td>' + xmlEscape(row.origin) + '</td><td class="num">' +
-      row.svidsIssued + '</td></tr>';
-  }).join('');
-  const agentRows = pagedAgents.shown.map(function (row) {
-    return '<tr><td>' + admin.clipped(row.id, 52) +
-      '<div class="sub">' + admin.clipped(row.dn, 52) + '</div></td><td>' +
-      xmlEscape(row.attestationType) + '</td><td>' +
-      (row.banned ? '<span class="state-revoked">banned</span>'
-                  : '<span class="state-valid">active</span>') +
-      '</td><td class="num">' + row.attestations + '</td></tr>';
-  }).join('');
-
-  const inner = '<p class="sub">Registration entries live under <code>' +
-    xmlEscape(spiffeEntriesDn()) + '</code> and attested agents under ' +
-    '<code>' + xmlEscape(spiffeAgentsDn()) + '</code>. ' +
-    '<a href="/spiffe">What SPIFFE is here</a> &middot; ' +
-    '<a href="/admin/spiffe">the console page for it</a>.</p>' +
-    '<div class="tiles">' +
-    admin.tile(entries_.length, 'Registration entries') +
-    admin.tile(spiffeRegistry.maxEntries(), 'Maximum entries') +
-    admin.tile(agents.length, 'Attested agents') +
-    admin.tile(spiffeRegistry.maxAgents(), 'Maximum agents') +
-    '</div>' +
-    admin.note(xmlEscape(payload.sourceOfTruth)) +
-    '<form method="get" action="/admin/ldap/spiffe"><div class="formrow">' +
-    '<input type="hidden" name="entryq" value="' + xmlEscape(carried.entryq) +
-    '"><input ' +
-    'type="hidden" name="agentq" ' +
-    'value="' + xmlEscape(carried.agentq) + '"><label ' +
-    'for="per">Rows per table</label><select id="per" name="per">' +
-    admin.perPageOptions(pagedEntries.paging.perPage) + '</select>' +
-    '<button class="secondary" type="submit">Apply</button>' +
-    '</div></form>' +
-    admin.note('Both tables below are paged separately and they share this ' +
-    'size. Changing it starts each of them at its first page.') +
-    '<h2>Registration entries</h2>' +
-    '<form method="get" action="/admin/ldap/spiffe"><div class="formrow">' +
-    '<input type="hidden" name="agentq" value="' + xmlEscape(carried.agentq) +
-    '"><input ' +
-    'type="hidden" name="per" value="' + xmlEscape(carried.per) + '">' +
-    '<label for="entryq">SPIFFE ID or DN</label>' +
-    '<input type="text" id="entryq" name="entryq" size="30" value="' +
-    xmlEscape(carried.entryq) + '" placeholder="spiffe://…, or part of a DN">' +
-    '<button type="submit">Search</button>' +
-    (carried.entryq ? ' <a href="/admin/ldap/spiffe">clear</a>' : '') +
-    '</div></form>' +
-    entriesNav.head +
-    '<table><tr><th>SPIFFE ID / DN</th><th>Selectors</th><th>Origin</th>' +
-    '<th class="num">SVIDs</th></tr>' +
-    (entryRows || '<tr><td colspan="4">None.</td></tr>') + '</table>' +
-    entriesNav.foot +
-    '<h2>Attested agents</h2>' +
-    '<form method="get" action="/admin/ldap/spiffe"><div class="formrow">' +
-    '<input type="hidden" name="entryq" value="' + xmlEscape(carried.entryq) +
-    '"><input ' +
-    'type="hidden" name="per" value="' + xmlEscape(carried.per) + '">' +
-    '<label for="agentq">Agent or DN</label>' +
-    '<input type="text" id="agentq" name="agentq" size="30" value="' +
-    xmlEscape(carried.agentq) + '" placeholder="an agent SPIFFE ID, or part ' +
-    'of a DN"><button type="submit">Search</button>' +
-    (carried.agentq ? ' <a href="/admin/ldap/spiffe">clear</a>' : '') +
-    '</div></form>' +
-    agentsNav.head +
-    '<table><tr><th>Agent / DN</th><th>Attestor</th><th>State</th>' +
-    '<th class="num">Attestations</th></tr>' +
-    (agentRows ||
-     '<tr><td colspan="4">None. Nothing has attested here.</td></tr>') +
-    '</table>' +
-    agentsNav.foot +
-    '<h2>Object classes</h2><table><tr><th>Class</th><th>Where from</th>' +
-    '<th>What</th></tr>' + classRows + '</table>' +
-    '<h2>Attributes</h2>' +
-    admin.note('Declared is what an entry may DO and is editable from the ' +
-    'console; derived is what HAPPENED and is not. <code>ldapmodify</code> ' +
-    'reaches everything either way &mdash; refusing it in the console is the ' +
-    'difference between offering an operation and merely not preventing it.') +
-    '<table><tr><th>Attribute</th><th>Values</th><th>Editable</th>' +
-    '<th>Written by</th><th>What</th></tr>' + attrRows + '</table>' +
-    '<p class="sub"><a href="/admin/ldap/spiffe?format=json">This page as ' +
-    'JSON</a> &middot; <a href="/admin/spiffe/entries">the entries as the ' +
-    'console edits them</a> &middot; <a href="/admin/ldap/directory">every ' +
-    'entry in the directory</a> &middot; <a href="/admin/ldap/service">what ' +
-    'this directory is</a></p>';
-
   log.debug('Leaving ldapSpiffeView(). ' + pagedEntries.shown.length +
             ' entry row(s), ' + pagedAgents.shown.length + ' agent row(s).');
-  return { title: 'SPIFFE entries in the directory', inner: inner,
-           json: payload };
+  return { title: 'SPIFFE entries in the directory', json: payload };
 }
 
-app.get('/admin/ldap/spiffe', function (req, res) {
-  log.debug('Entering GET /admin/ldap/spiffe.');
-  const view = ldapSpiffeView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/spiffe',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/spiffe.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/applications — the registry, and the schema that defines it.
@@ -20160,132 +20490,15 @@ function ldapApplicationsView(req) {
       'accept by exact match.',
     kinds: applications.KINDS,
     schema: applications.SCHEMA,
-    applications: paged.shown
+    applications: paged.shown.map(withoutSecrets),
+    // The paging control's own object (#446).
+    paging: adminViews.pagingJson(paging)
   };
-
-  const appRows = paged.shown.map(function (row) {
-    // EVERY attribute, which now includes the operational ones and entryDN. A
-    // search would withhold those unless they were asked for by name (RFC 4511
-    // section 4.5.1.8); this is the service showing its own store, so it shows
-    // them, and the column heading below says so.
-    const attrs = Object.keys(row.attributes).sort().map(function (name) {
-      return '<div><code>' + xmlEscape(name) + '</code>: ' +
-        admin.clippedValues(row.attributes[name]) + '</div>';
-    }).join('');
-    // The DN on every row. This is the page headed "the registry as the
-    // directory sees it", and the directory sees an entry by its DN — a row
-    // that named only the identifier left the one address an ldapsearch needs
-    // to be reconstructed by the reader from a naming rule published nowhere.
-    return '<tr><td>' + admin.clipped(row.identifier, 40) +
-      (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) +
-        (row.identifier === row.dnLabel ? '' :
-          ' &mdash; the identifier is too long for a readable RDN, so the cn ' +
-          'is a digest of it and <code>appIdentifier</code> is the identity') +
-        '</div>' : '') +
-      '</td><td>' + xmlEscape(row.name) + '</td><td>' +
-      xmlEscape(row.kinds.join(', ') || '(unstated)') + '<div class="sub">' +
-      xmlEscape(row.protocols.join(', ')) + '</div></td><td>' +
-      (row.registered ? '<span class="state-valid">yes</span>'
-                      : '<span class="state-none">no</span>') +
-      '</td><td class="counts">' + row.authentications + ' auth<br>' +
-      row.sessions + ' session(s)<br>' + row.users +
-      ' user(s)</td><td class="attrs">' + attrs + '</td></tr>';
-  }).join('');
-  const classRows = applications.SCHEMA.objectClasses.map(function (one) {
-    return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented ' +
-                                                  'here)</strong>') +
-      '</td><td>' + xmlEscape(one.what) + '</td></tr>';
-  }).join('');
-  const attrRows = applications.SCHEMA.attributes.map(function (row) {
-    return '<tr><td><code>' + xmlEscape(row.name) + '</code>' +
-      (row.sensitive ? ' <strong>(credential)</strong>' : '') +
-      '</td><td>' + xmlEscape(row.kind) + '</td><td>' + xmlEscape(row.from) +
-      '</td><td>' + xmlEscape(row.what) + '</td></tr>';
-  }).join('');
-  const kindRows = applications.KINDS.map(function (one) {
-    return '<tr><td><code>' + xmlEscape(one.kind) + '</code></td><td>' +
-      xmlEscape(one.label) + '</td><td>' + xmlEscape(one.what) + '</td></tr>';
-  }).join('');
-
-  const inner = '<p class="sub">' + all.length + ' of a maximum ' +
-    maxApplications() + ' under <code>' + xmlEscape(applicationsDn()) +
-    '</code>: every OAuth client, OpenID Connect relying party, SAML service ' +
-    'provider, WS-Federation application, WS-Trust relying party, OpenID4VP ' +
-    'verifier and Kerberos service this instance has been asked about. One ' +
-    'entry per unique identifier, so an application that speaks two ' +
-    'protocols under one name is one row with two kinds rather than two ' +
-    'rows.</p><div class="tiles">' +
-    admin.tile(all.length, 'Application entries') +
-    admin.tile(filtered.length, 'Matching the filter') +
-    admin.tile(maxApplications(), 'Maximum held') +
-    '</div>' +
-    admin.note('<strong>These entries are the registry, not a copy of ' +
-    'one.</strong> An <code>ldapmodify</code> here changes what the protocol ' +
-    'endpoints do: add a value to <code>oauthRedirectUri</code> and RFC 9700 ' +
-    'mode accepts that redirect URI by exact match on the next authorization ' +
-    'request. Nothing caches them. To EDIT one, ' +
-    '<a href="/admin/applications">Applications</a> is the page with the ' +
-    'controls on it; this one is the dump.') +
-    '<form method="get" action="/admin/ldap/applications"><div ' +
-    'class="formrow"><label for="q">Anywhere in the entry</label><input ' +
-    'type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
-    '" size="30" placeholder="an identifier, a name, a DN or any value">' +
-    '<label for="per">Show</label>' +
-    '<select id="per" name="per">' +
-    admin.perPageOptions(paging.perPage) + '</select>' +
-    '<button type="submit">Filter</button>' +
-    (wantedText ? ' <a href="/admin/ldap/applications">clear</a>' : '') +
-    '</div></form>' +
-    nav.head +
-    '<table><tr><th>Identifier</th><th>Name</th><th>Kind</th>' +
-    '<th>Registered</th><th>Seen</th><th>Every attribute</th></tr>' +
-    (appRows || '<tr><td colspan="6">' +
-      (wantedText
-        ? 'No application matches. The filter above may be hiding some.'
-        : 'Nothing yet. An entry appears the first time a client_id, ' +
-          'wtrealm, AppliesTo, entityID or service principal name is ' +
-          'accepted.') +
-      '</td></tr>') +
-    '</table>' +
-    nav.foot +
-    '<h2>What an application can be</h2>' +
-    '<table><tr><th>Kind</th><th>Label</th><th>What it means</th></tr>' +
-    kindRows + '</table>' +
-    '<h2>The object classes</h2>' +
-    admin.note('node-ldapjs has no schema subsystem &mdash; it is protocol ' +
-    'machinery, and it is a submodule this repository does not modify ' +
-    '&mdash; and this directory is schemaless on purpose. So this is a ' +
-    'VOCABULARY rather than a constraint: nothing rejects an entry for ' +
-    'disobeying it. Where a registered class fits, it is used.') +
-    '<table><tr><th>Class</th><th>Where from</th><th>What it brings</th></tr>' +
-    classRows + '</table>' +
-    '<h2>The attributes</h2>' +
-    admin.note('<code>multi</code> accumulates a repeat, <code>single</code> ' +
-    'is assigned &mdash; which is what stops a counter growing a value per ' +
-    'sign-in. Two attributes hold CREDENTIALS in the clear, for the reason ' +
-    '<code>/krb5/principals</code> prints the Kerberos passwords; they are ' +
-    'never written to the audit log.') +
-    '<table><tr><th>Attribute</th><th>Values</th><th>Set by</th>' +
-    '<th>What it is</th></tr>' + attrRows + '</table>' +
-    '<p class="sub"><a href="/admin/ldap/applications?format=json">This page ' +
-    'as JSON</a> &middot; <a href="/admin/applications">the same registry ' +
-    'with the controls on it</a> &middot; ' +
-    '<a href="/admin/ldap/directory">every entry in the directory</a> ' +
-    '&middot; <a href="/admin/ldap/service">what this directory is</a></p>';
-
   log.debug('Leaving ldapApplicationsView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
-  return { title: 'Application entries', inner: inner, json: payload };
+  return { title: 'Application entries', json: payload };
 }
 
-app.get('/admin/ldap/applications', function (req, res) {
-  log.debug('Entering GET /admin/ldap/applications.');
-  const view = ldapApplicationsView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/applications',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/applications.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/federations — the register as the directory sees it.
@@ -20339,158 +20552,41 @@ function ldapFederationsView(req) {
     protocols: federation.PROTOCOLS,
     schema: federation.SCHEMA,
     relationships: paged.shown.map(function (row) {
-      // The record MINUS the credential, and the entry beside it. The whole
-      // entry's attributes are shown below in the table, secret included — this
-      // is the page that says what the directory holds, and hiding a value here
-      // while an ldapsearch shows it would be a page that lies about its own
-      // subject. What is redacted is the JSON, which is what a script reads.
+      // The record MINUS the credential, and the entry's attributes beside
+      // it with every credential masked too (#446, rcbj 2026-10-05): the
+      // page is drawn from this answer, and no GET carries a credential. A
+      // directory search withholds them as well (SECRET_ATTRIBUTES).
       const out = {};
       Object.keys(row).forEach(function (name) {
         if (name === 'entry') return;
         if (name === 'fedClientSecret') {
-          out[name] = row[name] ? '(set — see the entry below)' : '';
+          out[name] = row[name] ? '(set — not returned)' : '';
           return;
         }
         out[name] = row[name];
       });
       out.ready = federation.readinessOf(row).ready;
       out.missing = federation.readinessOf(row).missing;
+      // What the table draws for it (#446).
+      out.entryAttributes = withoutSecrets(row.entry).attributes || {};
+      out.roleShort = (federation.roleRow(row.fedRole) || {}).short ||
+                      row.fedRole;
+      out.protocolLabel = (federation.protocolRow(row.fedProtocol) ||
+                           {}).label || row.fedProtocol;
+      out.enabled = federation.isEnabled(row);
       return out;
-    })
-  };
-
-  const relRows = paged.shown.map(function (row) {
-    const attrs = Object.keys(row.entry.attributes).sort().map(function (name) {
-      return '<div><code>' + xmlEscape(name) + '</code>: ' +
-        admin.clippedValues(row.entry.attributes[name]) + '</div>';
-    }).join('');
-    const readiness = federation.readinessOf(row);
-    return '<tr><td>' + admin.clipped(row.fedId, 40) +
-      '<div class="sub">' + admin.clipped(row.dn, 40) + '</div></td>' +
-      '<td>' +
-      xmlEscape((federation.roleRow(row.fedRole) || {}).short || row.fedRole) +
-      '<div class="sub">' +
-      xmlEscape((federation.protocolRow(row.fedProtocol) ||
-                 {}).label || row.fedProtocol) +
-      '</div></td>' +
-      '<td>' + (federation.isEnabled(row)
-        ? (readiness.ready
-            ? '<span class="state-valid">enabled and ready</span>'
-            : '<span class="state-expired">ENABLED, not configured</span>' +
-              '<div class="sub">' +
-              xmlEscape(readiness.missing.join(', ')) + '</div>')
-        : '<span class="state-none">disabled</span>') + '</td>' +
-      '<td>' + xmlEscape(row.fedAuthentications || '0') + ' sign-in(s)<br>' +
-      xmlEscape(row.fedUsers || '0') + ' person/people</td>' +
-      '<td class="attrs">' + attrs + '</td></tr>';
-  }).join('');
-  const classRows = federation.SCHEMA.objectClasses.map(function (one) {
-    return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented ' +
-                                                  'here)</strong>') +
-      '</td><td>' + xmlEscape(one.what) + '</td></tr>';
-  }).join('');
-  const attrRows = federation.SCHEMA.attributes.map(function (row) {
-    return '<tr><td><code>' + xmlEscape(row.name) + '</code>' +
-      (row.sensitive ? ' <strong>(credential)</strong>' : '') +
-      '</td><td>' + xmlEscape(row.kind) + '</td><td>' + xmlEscape(row.role) +
-      '</td><td>' + xmlEscape(row.what) + '</td></tr>';
-  }).join('');
-
-  const inner = '<p class="sub">' + all.length + ' of a maximum ' +
-    maxFederations() + ' under <code>' + xmlEscape(federationsDn()) +
-    '</code>: the foreign identity providers this service consumes ' +
-    'assertions from, and the foreign service providers it asserts to. One ' +
-    'relationship is one DIRECTION, so a partner in both is two ' +
-    'entries.</p><div class="tiles">' +
-    admin.tile(all.length, 'Relationships') +
-    admin.tile(all.filter(function (r) {
+    }),
+    // The paging control's own object, and the relationships enabled (#446).
+    paging: adminViews.pagingJson(paging),
+    enabledCount: all.filter(function (r) {
       return federation.isEnabled(r);
-    }).length,
-               'Enabled') +
-    admin.tile(maxFederations(), 'Maximum held') +
-    '</div>' +
-    admin.warn('<strong>An ldapmodify here is a security change, which is ' +
-    'not true of any other container in this directory.</strong> ' +
-    '<code>fedSigningCertificate</code> decides whose assertions this ' +
-    'service will believe; <code>fedEnabled</code> turns a partner on. ' +
-    'Everywhere else here an edit changes what this service hands out, and ' +
-    'every bind to this directory succeeds &mdash; so this container is ' +
-    'exactly as protected as the rest of it, which is to say not at all. ' +
-    'That is the honest state of a mock, and it is why federation is the one ' +
-    'feature here that refuses by default.') +
-    '<form method="get" action="/admin/ldap/federations"><div ' +
-    'class="formrow"><label for="q">Relationship</label><input type="text" ' +
-    'id="q" name="q" value="' + xmlEscape(wantedText) +
-    '" size="30" placeholder="an id, a DN, a protocol or a direction">' +
-    '<label for="per">Show</label>' +
-    '<select id="per" name="per">' +
-    admin.perPageOptions(paging.perPage) + '</select>' +
-    '<button type="submit">Filter</button>' +
-    (wantedText ? ' <a href="/admin/ldap/federations">clear</a>' : '') +
-    '</div></form>' +
-    nav.head +
-    '<table><tr><th>Relationship</th><th>Direction</th><th>State</th>' +
-    '<th>Seen</th><th>Every attribute</th></tr>' +
-    (relRows || '<tr><td colspan="5">' +
-      (wantedText
-        ? 'No relationship matches. The filter above may be hiding some.'
-        : 'Nothing yet, and nothing will appear by itself: unlike every ' +
-          'other container here, this one is CONFIGURED. Add a relationship ' +
-          'on <a href="/admin/federation">/admin/federation</a> or through ' +
-          '<code>POST /admin-api/federation/create</code>.') +
-      '</td></tr>') +
-    '</table>' +
-    nav.foot +
-    '<h2>The two directions</h2>' +
-    '<table><tr><th>Role</th><th>What it means</th></tr>' +
-    federation.ROLES.map(function (one) {
-      return '<tr><td>' + xmlEscape(one.short) + '</td><td>' +
-        xmlEscape(one.what) +
-        '</td></tr>';
-    }).join('') + '</table>' +
-    '<h2>The five protocols</h2>' +
-    '<table><tr><th>Protocol</th><th>What happens</th><th>Needs</th></tr>' +
-    federation.PROTOCOLS.map(function (one) {
-      return '<tr><td>' + xmlEscape(one.label) + '</td><td>' +
-        xmlEscape(one.what) +
-        '</td><td><code>' + xmlEscape(one.needs.join(
-            ', ')) + '</code></td></tr>';
-    }).join('') + '</table>' +
-    '<h2>The object classes</h2>' +
-    '<table><tr><th>Class</th><th>Where from</th><th>What it brings</th></tr>' +
-    classRows + '</table>' +
-    '<h2>The attributes</h2>' +
-    admin.note('<code>multi</code> accumulates a repeat, <code>single</code> ' +
-    'is assigned. The <code>role</code> column says which direction an ' +
-    'attribute is for; one belonging to the other direction is refused by ' +
-    'the console and by the management API, and an <code>ldapmodify</code> ' +
-    'can still write it, where it will be ignored. ' +
-    '<code>fedClientSecret</code> is THIS SERVICE\'S OWN CREDENTIAL AT THE ' +
-    'PARTNER &mdash; a real secret at a real foreign service, which is a ' +
-    'stronger statement than anything else in this directory &mdash; and it ' +
-    'is here in the clear for the reason <code>/krb5/principals</code> ' +
-    'prints the Kerberos passwords. It is never written to the audit log and ' +
-    'never shown in the console.') +
-    '<table><tr><th>Attribute</th><th>Values</th><th>Direction</th>' +
-    '<th>What it is</th></tr>' + attrRows + '</table>' +
-    '<p class="sub"><a href="/admin/ldap/federations?format=json">This page ' +
-    'as JSON</a> &middot; <a href="/admin/federation">configure them in the ' +
-    'console</a> &middot; <a href="/federation">what federation is here</a> ' +
-    '&middot; <a href="/admin/ldap/service">what this directory is</a></p>';
-
+    }).length
+  };
   log.debug('Leaving ldapFederationsView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
-  return { title: 'Federation entries', inner: inner, json: payload };
+  return { title: 'Federation entries', json: payload };
 }
 
-app.get('/admin/ldap/federations', function (req, res) {
-  log.debug('Entering GET /admin/ldap/federations.');
-  const view = ldapFederationsView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/federations',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/federations.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/devices — THE DEVICE REGISTER AS THE DIRECTORY HOLDS IT
@@ -20559,86 +20655,15 @@ function ldapDevicesView(req) {
       'them, so an ldapmodify of stsDeviceCompliance is the device\'s ' +
       'compliance on the next read. stsDeviceSecretHash is withheld.',
     schema: devices.SCHEMA,
-    entries: shown
+    entries: shown,
+    // The paging control's own object (#446).
+    paging: adminViews.pagingJson(paging)
   };
-  const rows = shown.map(function (entry) {
-    const a = entry.attributes;
-    const attrs = Object.keys(a).map(function (name) {
-      return '<div><code>' + xmlEscape(name) + '</code>: ' +
-        admin.clippedValues(a[name]) + '</div>';
-    }).join('');
-    const id = String((a.cn || [])[0] || '');
-    return '<tr><td><a href="/admin/devices?device=' +
-      encodeURIComponent(id) + '">' + admin.clipped(id, 40) + '</a>' +
-      '<div class="sub">' + admin.clipped(entry.dn, 40) + '</div></td>' +
-      '<td>' + xmlEscape(String((a.stsDeviceOwnerKind || ['person'])[0])) +
-      '<div class="sub">' + admin.clipped(String((a.owner || [''])[0]), 40) +
-      '</div></td><td class="attrs">' + attrs + '</td></tr>';
-  }).join('');
-  const classRows = devices.SCHEMA.objectClasses.map(function (one) {
-    return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented ' +
-                                                  'here)</strong>') +
-      '</td><td>' + xmlEscape(one.what) + '</td></tr>';
-  }).join('');
-  const attrRows = devices.SCHEMA.attributes.map(function (row) {
-    return '<tr><td><code>' + xmlEscape(row.name) + '</code>' +
-      (row.sensitive ? ' <strong>(withheld)</strong>' : '') + '</td><td>' +
-      xmlEscape(row.kind) + '</td><td>' + xmlEscape(row.what) + '</td></tr>';
-  }).join('');
-  const inner = '<p class="sub">' + all.length + ' under <code>' +
-    xmlEscape(devicesDn()) + '</code>: every device this realm knows, each ' +
-    'owned by one person or one application. The same register ' +
-    '<a href="/admin/devices">Devices</a> lists and edits.</p>' +
-    '<div class="tiles">' + admin.tile(all.length, 'Device entries') +
-    '</div>' +
-    admin.note('These entries ARE the register: nothing caches them, so an ' +
-    '<code>ldapmodify</code> here is what the next read sees. One value is ' +
-    'withheld on this page as from every LDAP read: ' +
-    '<code>stsDeviceSecretHash</code>, the verifier of a Native SSO ' +
-    'device_secret. A key\'s JSON is public material and is shown whole.') +
-    '<form method="get" action="/admin/ldap/devices"><div class="formrow">' +
-    '<label for="q">Device</label><input type="text" id="q" name="q" ' +
-    'value="' + xmlEscape(wantedText) + '" size="30" placeholder="an id, a ' +
-    'DN, an owner or any value">' +
-    '<label for="per">Show</label><select id="per" name="per">' +
-    admin.perPageOptions(paging.perPage) + '</select>' +
-    '<button type="submit">Filter</button>' +
-    (wantedText ? ' <a href="/admin/ldap/devices">clear</a>' : '') +
-    '</div></form>' + nav.head +
-    '<table><tr><th>Device</th><th>Owner</th><th>Every attribute</th></tr>' +
-    (rows || '<tr><td colspan="3">' + (wantedText
-      ? 'No device matches. The filter above may be hiding some.'
-      : 'None yet. A Native SSO sign-in makes one, and an administrator ' +
-        'can register one on <a href="/admin/devices">Devices</a>.') +
-      '</td></tr>') + '</table>' + nav.foot +
-    '<h2>The object classes</h2>' +
-    '<table><tr><th>Class</th><th>Where from</th><th>What it brings</th></tr>' +
-    classRows + '</table>' +
-    '<h2>The attributes</h2>' +
-    admin.note('<code>multi</code> holds several values; <code>single</code> ' +
-    'one. Several hold ONE JSON VALUE each: a key, the last compliance and ' +
-    'status change, and the enrolment. <code>common/devices.ts</code> ' +
-    'argues the layout.') +
-    '<table><tr><th>Attribute</th><th>Values</th><th>What it is</th></tr>' +
-    attrRows + '</table>' +
-    '<p class="sub"><a href="/admin/ldap/devices?format=json">This page as ' +
-    'JSON</a> &middot; <a href="/admin/devices">the register in the ' +
-    'console</a> &middot; <a href="/admin/ldap/directory">every entry in ' +
-    'the directory</a> &middot; <a href="/admin/ldap/service">what this ' +
-    'directory is</a></p>';
   log.debug('Leaving ldapDevicesView(). ' + shown.length + ' row(s) of ' +
             filtered.length + ' matched.');
-  return { title: 'Device entries', inner: inner, json: payload };
+  return { title: 'Device entries', json: payload };
 }
 
-app.get('/admin/ldap/devices', function (req, res) {
-  log.debug('Entering GET /admin/ldap/devices.');
-  const view = ldapDevicesView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/devices',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/devices.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/roles — the role register as the directory sees it.
@@ -20717,126 +20742,19 @@ function ldapRolesView(req) {
       'ou=applications, which is a different container.',
     builtIn: roles.BUILT_IN_NAMES,
     schema: roles.SCHEMA,
-    roles: paged.shown
+    roles: paged.shown,
+    // The paging control's own object, and the built-in roles (#446).
+    paging: adminViews.pagingJson(paging),
+    builtInCatalogue: roles.builtInCatalogue().map(function (one) {
+      return { name: one.name,
+               what: one.what || /** @type {any} */ (one).description || '' };
+    })
   };
-
-  const roleRows = paged.shown.map(function (row) {
-    const attrs = Object.keys(row.attributes).sort().map(function (name) {
-      return '<div><code>' + xmlEscape(name) + '</code>: ' +
-        admin.clippedValues(row.attributes[name]) + '</div>';
-    }).join('');
-    const held = function (name) {
-      log.debug("Entering held().");
-      const value = row.attributes[name];
-      if (!value) {
-        log.debug("Leaving held().");
-        return 0;
-      }
-      log.debug("Leaving held().");
-      return Array.isArray(value) ? value.length : 1;
-    };
-    return '<tr><td>' + admin.clipped(row.name, 40) +
-      (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) + '</div>' :
-       '') +
-      '</td><td class="counts">' + held('roleMemberUser') + ' user(s)<br>' +
-      held('roleMemberGroup') + ' group(s)<br>' +
-      held('roleMemberApplication') + ' application(s)</td>' +
-      '<td class="attrs">' + attrs + '</td></tr>';
-  }).join('');
-  const classRows = roles.SCHEMA.objectClasses.map(function (one) {
-    return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.what) + '</td></tr>';
-  }).join('');
-  const attrRows = roles.SCHEMA.attributes.map(function (row) {
-    return '<tr><td><code>' + xmlEscape(row.name) + '</code></td><td>' +
-      xmlEscape(row.what) + '</td></tr>';
-  }).join('');
-  const builtInRows = roles.builtInCatalogue().map(function (one) {
-    return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.what || /** @type {any} */ (one).description || '') +
-      '</td></tr>';
-  }).join('');
-
-  const inner = '<p class="sub">' + all.length + ' of a maximum ' +
-    maxRoles() + ' under <code>' + xmlEscape(rolesDn()) +
-    '</code>: one entry per role, and everything on it is MEMBERSHIP — who ' +
-    'holds it. A person, a group and an application are all first-class ' +
-    'members, which is what lets a client_credentials grant with no person ' +
-    'in it be decided at all.</p><div class="tiles">' +
-    admin.tile(all.length, 'Role entries') +
-    admin.tile(roles.BUILT_IN_NAMES.length, 'Built in, in no container') +
-    admin.tile(maxRoles(), 'Maximum held') +
-    '</div>' +
-    admin.note('<strong>Half the feature is not in this container.</strong> ' +
-    'A role has two relations and they live apart on purpose: MEMBERSHIP is ' +
-    'here, and the REQUIREMENT — which roles an application demands before ' +
-    'anything is issued for it — is <code>appRequiredRole</code> on the ' +
-    'application\'s own entry under <code>ou=applications</code>. So nothing ' +
-    'in this container refuses anybody by itself, and a reader looking here ' +
-    'for the reason somebody was turned away is one container across from ' +
-    'it. <a href="/admin/roles">Roles</a> is the page with both halves and ' +
-    'the controls on it; <a href="/admin/ldap/applications">Application ' +
-    'entries</a> is where the other half is stored.') +
-    '<form method="get" action="/admin/ldap/roles"><div class="formrow">' +
-    '<label for="q">Anywhere in the entry</label>' +
-    '<input type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
-    '" size="30" placeholder="a role name, a DN, or a member">' +
-    '<label for="per">Show</label>' +
-    '<select id="per" name="per">' +
-    admin.perPageOptions(paging.perPage) + '</select>' +
-    '<button type="submit">Filter</button>' +
-    (wantedText ? ' <a href="/admin/ldap/roles">clear</a>' : '') +
-    '</div></form>' +
-    nav.head +
-    '<table><tr><th>Role</th><th>Who holds it</th>' +
-    '<th>Every attribute</th></tr>' +
-    (roleRows || '<tr><td colspan="3">' +
-      (wantedText
-        ? 'No role matches. The filter above may be hiding some.'
-        : 'Nothing yet, which is the ORDINARY state rather than an empty ' +
-          'one: an application that names no required role requires ' +
-          'EVERYBODY, everybody holds EVERYBODY, and nothing is refused. ' +
-          'A role is made on the Roles page or through POST ' +
-          '/admin-api/roles/create-role.') +
-      '</td></tr>') +
-    '</table>' +
-    nav.foot +
-    '<h2>The six that are in no container</h2>' +
-    admin.note('These are COMPUTED from the context of the decision being ' +
-    'made rather than stored, so they have no entry here, no members to ' +
-    'list, and cannot be created, edited or deleted. They are the reason an ' +
-    'empty container above is not the feature being switched off: ' +
-    '<code>EVERYBODY</code> is what an application requires when its entry ' +
-    'names nothing, and everybody holds it.') +
-    '<table><tr><th>Role</th><th>Who holds it</th></tr>' +
-    builtInRows + '</table>' +
-    '<h2>The object classes</h2>' +
-    admin.note('node-ldapjs has no schema subsystem and this directory is ' +
-    'schemaless on purpose, so this is a VOCABULARY rather than a ' +
-    'constraint: nothing rejects an entry for disobeying it.') +
-    '<table><tr><th>Class</th><th>What it brings</th></tr>' +
-    classRows + '</table>' +
-    '<h2>The attributes</h2>' +
-    '<table><tr><th>Attribute</th><th>What it is</th></tr>' + attrRows +
-    '</table>' +
-    '<p class="sub"><a href="/admin/ldap/roles?format=json">This page as ' +
-    'JSON</a> &middot; <a href="/admin/roles">the same register with the ' +
-    'controls on it</a> &middot; <a href="/admin/ldap/directory">every entry ' +
-    'in the directory</a> &middot; <a href="/admin/ldap/service">what this ' +
-    'directory is</a></p>';
-
   log.debug('Leaving ldapRolesView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
-  return { title: 'Role entries', inner: inner, json: payload };
+  return { title: 'Role entries', json: payload };
 }
 
-app.get('/admin/ldap/roles', function (req, res) {
-  log.debug('Entering GET /admin/ldap/roles.');
-  const view = ldapRolesView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/roles',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/roles.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/policies — the XACML policy repository as the directory
@@ -20914,111 +20832,18 @@ function ldapPoliciesView(req) {
       'write through /admin/xacml — so a document that stops typechecking ' +
       'answers Indeterminate rather than being refused.',
     schema: xacmlStore.SCHEMA,
-    policies: paged.shown
-  };
-
-  const policyRows = paged.shown.map(function (row) {
-    const attrs = Object.keys(row.attributes).sort().map(function (name) {
-      return '<div><code>' + xmlEscape(name) + '</code>: ' +
-        admin.clippedValues(row.attributes[name]) + '</div>';
-    }).join('');
-    // 'FALSE' AND 'TRUE', not 'false' and 'true'. RFC 4517's Boolean syntax
-    // is upper case and `xacml_store.js` writes it that way, so this reads it
-    // the way that module reads it — `at('xacmlEnabled') !== 'FALSE'` — rather
-    // than inventing a third spelling. The lower-case comparison this replaced
-    // drew every DISABLED policy as enabled, which is the direction that
-    // matters: a page that overstates what is switched on.
-    const enabled = first(row, 'xacmlEnabled') !== 'FALSE';
-    const isRoot = first(row, 'xacmlIsRoot') === 'TRUE';
-    return '<tr><td>' + admin.clipped(row.name, 40) +
-      (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) + '</div>' :
-       '') +
-      '</td><td>' + xmlEscape(first(row, 'xacmlKind') || '(unstated)') +
-      '<div class="sub">' + admin.clipped(first(row, 'xacmlPolicyId'), 40) +
-      '</div></td><td>' +
-      (enabled ? '<span class="state-valid">enabled</span>'
-               : '<span class="state-none">disabled</span>') +
-      (isRoot ? '<div class="sub">the root</div>' : '') +
-      '</td><td class="attrs">' + attrs + '</td></tr>';
-  }).join('');
-  const classRows = xacmlStore.SCHEMA.objectClasses.map(function (one) {
-    return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.what) + '</td></tr>';
-  }).join('');
-  const attrRows = xacmlStore.SCHEMA.attributes.map(function (row) {
-    return '<tr><td><code>' + xmlEscape(row.name) + '</code></td><td>' +
-      xmlEscape(row.what) + '</td></tr>';
-  }).join('');
-
-  const inner = '<p class="sub">' + all.length + ' of a maximum ' +
-    maxPolicies() + ' under <code>' + xmlEscape(policiesDn()) +
-    '</code>: one entry per policy or policy set, holding the XACML document ' +
-    'itself. Exactly one of them is the ROOT — a PDP evaluates one document ' +
-    'and reaches the rest through PolicyIdReference.</p>' +
-    '<div class="tiles">' +
-    admin.tile(all.length, 'Policy entries') +
-    admin.tile(all.filter(function (row) {
+    policies: paged.shown.map(withoutSecrets),
+    // The paging control's own object, and how many are enabled (#446).
+    paging: adminViews.pagingJson(paging),
+    enabledCount: all.filter(function (row) {
       return first(row, 'xacmlEnabled') !== 'FALSE';
-    }).length, 'Enabled') +
-    admin.tile(maxPolicies(), 'Maximum held') +
-    '</div>' +
-    admin.warn('<strong>A write here skips the typechecker, which is not ' +
-    'true of any other door into this repository.</strong> Every write ' +
-    'through <a href="/admin/xacml">XACML</a> and ' +
-    '<code>/admin-api/xacml</code> parses the document and statically ' +
-    'typechecks it, so a policy that does not typecheck is refused at WRITE ' +
-    'time instead of going Indeterminate on every request. An ' +
-    '<code>ldapmodify</code> of <code>xacmlPolicyDocument</code> reaches the ' +
-    'entry directly and skips that, and nothing caches these entries — so ' +
-    'the next request is decided against whatever was written.') +
-    '<form method="get" action="/admin/ldap/policies"><div class="formrow">' +
-    '<label for="q">Anywhere in the entry</label>' +
-    '<input type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
-    '" size="30" placeholder="a name, a DN, a PolicyId or anything in the ' +
-    'document"><label for="per">Show</label><select id="per" name="per">' +
-    admin.perPageOptions(paging.perPage) + '</select>' +
-    '<button type="submit">Filter</button>' +
-    (wantedText ? ' <a href="/admin/ldap/policies">clear</a>' : '') +
-    '</div></form>' +
-    nav.head +
-    '<table><tr><th>Policy</th><th>Kind</th><th>State</th>' +
-    '<th>Every attribute</th></tr>' +
-    (policyRows || '<tr><td colspan="4">' +
-      (wantedText
-        ? 'No policy matches. The filter above may be hiding some.'
-        : 'Nothing yet. A repository with no policies in it answers ' +
-          'NotApplicable to every request, which a PEP turns into a refusal ' +
-          'or an allow according to its bias.') +
-      '</td></tr>') +
-    '</table>' +
-    nav.foot +
-    '<h2>The object classes</h2>' +
-    admin.note('node-ldapjs has no schema subsystem and this directory is ' +
-    'schemaless on purpose, so this is a VOCABULARY rather than a ' +
-    'constraint: nothing rejects an entry for disobeying it.') +
-    '<table><tr><th>Class</th><th>What it brings</th></tr>' +
-    classRows + '</table>' +
-    '<h2>The attributes</h2>' +
-    '<table><tr><th>Attribute</th><th>What it is</th></tr>' + attrRows +
-    '</table>' +
-    '<p class="sub"><a href="/admin/ldap/policies?format=json">This page as ' +
-    'JSON</a> &middot; <a href="/admin/xacml">the same repository with the ' +
-    'controls on it</a> &middot; <a href="/admin/ldap/peps">the PEPs that ' +
-    'pull it</a> &middot; <a href="/admin/ldap/directory">every entry in the ' +
-    'directory</a></p>';
-
+    }).length
+  };
   log.debug('Leaving ldapPoliciesView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
-  return { title: 'Policy entries', inner: inner, json: payload };
+  return { title: 'Policy entries', json: payload };
 }
 
-app.get('/admin/ldap/policies', function (req, res) {
-  log.debug('Entering GET /admin/ldap/policies.');
-  const view = ldapPoliciesView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/policies',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/policies.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/peps — the registered remote Policy Enforcement Points.
@@ -21095,112 +20920,18 @@ function ldapPepsView(req) {
       'PEP does not clear, and xacmlPepNotifyUrl, which is one of the three ' +
       'addresses this service dials.',
     schema: xacmlPepRegistry.SCHEMA,
-    peps: paged.shown
-  };
-
-  const pepRows = paged.shown.map(function (row) {
-    const attrs = Object.keys(row.attributes).sort().map(function (name) {
-      return '<div><code>' + xmlEscape(name) + '</code>: ' +
-        admin.clippedValues(row.attributes[name]) + '</div>';
-    }).join('');
-    // 'FALSE', for the reason the policies page above states.
-    const enabled = first(row, 'xacmlPepEnabled') !== 'FALSE';
-    return '<tr><td>' + admin.clipped(row.name, 40) +
-      (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) + '</div>' :
-       '') +
-      '</td><td>' + admin.clipped(first(row, 'xacmlPepCertificateSubject') ||
-        '(no client certificate)', 40) +
-      '<div class="sub">' +
-      admin.clipped(first(row, 'xacmlPepThumbprint'), 24) +
-      '</div></td><td>' +
-      (enabled ? '<span class="state-valid">enabled</span>'
-               : '<span class="state-none">disabled by an administrator</span>') +
-      '<div class="sub">' + xmlEscape(first(row, 'xacmlPepLastSeen') ||
-        'never seen') + '</div></td>' +
-      '<td class="counts">' +
-      xmlEscape(first(row, 'xacmlPepDecisions') || '0') +
-      ' decision(s)<br>' + xmlEscape(first(row, 'xacmlPepAllowed') || '0') +
-      ' allowed<br>' + xmlEscape(first(row, 'xacmlPepRefused') || '0') +
-      ' refused</td>' +
-      '<td class="attrs">' + attrs + '</td></tr>';
-  }).join('');
-  const classRows = xacmlPepRegistry.SCHEMA.objectClasses.map(function (one) {
-    return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.what) + '</td></tr>';
-  }).join('');
-  const attrRows = xacmlPepRegistry.SCHEMA.attributes.map(function (row) {
-    return '<tr><td><code>' + xmlEscape(row.name) + '</code></td><td>' +
-      xmlEscape(row.what) + '</td></tr>';
-  }).join('');
-
-  const inner = '<p class="sub">' + all.length + ' of a maximum ' +
-    maxPeps() + ' under <code>' + xmlEscape(pepsDn()) +
-    '</code>: the remote Policy Enforcement Points that have registered with ' +
-    'this PDP. Each holds its own copy of the engine, pulls the policy ' +
-    'repository, and decides in its own process.</p>' +
-    '<div class="tiles">' +
-    admin.tile(all.length, 'Registered PEPs') +
-    admin.tile(all.filter(function (row) {
+    peps: paged.shown.map(withoutSecrets),
+    // The paging control's own object, and how many are enabled (#446).
+    paging: adminViews.pagingJson(paging),
+    enabledCount: all.filter(function (row) {
       return first(row, 'xacmlPepEnabled') !== 'FALSE';
-    }).length, 'Enabled') +
-    admin.tile(maxPeps(), 'Maximum held') +
-    '</div>' +
-    admin.note('<strong>An empty container is not a feature that is ' +
-    'off.</strong> A remote PEP pulls <code>GET /xacml/pep/policies</code> ' +
-    'and converges whether or not it ever registers; registering is what ' +
-    'buys it the change nudge and a row here. And an identity in this ' +
-    'container was taken from the CLIENT CERTIFICATE the PEP presented, ' +
-    'never from the body it sent — so a PEP cannot name itself anything it ' +
-    'cannot prove. <a href="/admin/xacml/peps">XACML PEPs</a> is the page ' +
-    'with the controls on it.') +
-    '<form method="get" action="/admin/ldap/peps"><div class="formrow">' +
-    '<label for="q">Anywhere in the entry</label>' +
-    '<input type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
-    '" size="30" placeholder="a name, a DN, a certificate subject or a URL">' +
-    '<label for="per">Show</label>' +
-    '<select id="per" name="per">' +
-    admin.perPageOptions(paging.perPage) + '</select>' +
-    '<button type="submit">Filter</button>' +
-    (wantedText ? ' <a href="/admin/ldap/peps">clear</a>' : '') +
-    '</div></form>' +
-    nav.head +
-    '<table><tr><th>PEP</th><th>What it proved</th><th>State</th>' +
-    '<th>What it has decided</th><th>Every attribute</th></tr>' +
-    (pepRows || '<tr><td colspan="5">' +
-      (wantedText
-        ? 'No PEP matches. The filter above may be hiding some.'
-        : 'Nothing has registered. Policy distribution is unaffected: a PEP ' +
-          'that pulls GET /xacml/pep/policies without registering converges ' +
-          'on the same repository and appears nowhere.') +
-      '</td></tr>') +
-    '</table>' +
-    nav.foot +
-    '<h2>The object classes</h2>' +
-    admin.note('node-ldapjs has no schema subsystem and this directory is ' +
-    'schemaless on purpose, so this is a VOCABULARY rather than a ' +
-    'constraint: nothing rejects an entry for disobeying it.') +
-    '<table><tr><th>Class</th><th>What it brings</th></tr>' +
-    classRows + '</table>' +
-    '<h2>The attributes</h2>' +
-    '<table><tr><th>Attribute</th><th>What it is</th></tr>' + attrRows +
-    '</table><p class="sub"><a href="/admin/ldap/peps?format=json">This page ' +
-    'as JSON</a> &middot; <a href="/admin/xacml/peps">the same registry with ' +
-    'the controls on it</a> &middot; <a href="/admin/ldap/policies">what ' +
-    'they pull</a> &middot; <a href="/admin/ldap/directory">every entry in ' +
-    'the directory</a></p>';
-
+    }).length
+  };
   log.debug('Leaving ldapPepsView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
-  return { title: 'PEP entries', inner: inner, json: payload };
+  return { title: 'PEP entries', json: payload };
 }
 
-app.get('/admin/ldap/peps', function (req, res) {
-  log.debug('Entering GET /admin/ldap/peps.');
-  const view = ldapPepsView(req);
-  admin.respond(req, res, view.json, view.title, '/admin/ldap/peps',
-                view.inner);
-  log.debug('Leaving GET /admin/ldap/peps.');
-});
 
 // ---------------------------------------------------------------------------
 // THE NINTH SLOT ON admin.js, FILLED HERE.

@@ -164,8 +164,13 @@ async function run(t) {
   const disagreed = guardedOps.filter(function (row) {
     const feed = row.method.toUpperCase() === 'POST' &&
                  row.path === '/admin-api/device-compliance';
+    // AND THE CONSOLE'S OWN OPERATIONS (#454), everything under
+    // `/admin-api/console`, which take `admin:console`.
+    const consoleOp = /^\/admin-api\/console(\/|$)/.test(row.path);
     const wanted = feed ? 'device:compliance'
-      : (row.method.toUpperCase() === 'GET' ? 'admin:read' : 'admin:write');
+      : (consoleOp ? 'admin:console'
+        : (row.method.toUpperCase() === 'GET' ? 'admin:read'
+                                              : 'admin:write'));
     const security = row.operation.security;
     if (!Array.isArray(security) || !security.length) { return true; }
     const named = (security[0] || {}).oauth2 || [];
@@ -258,9 +263,16 @@ async function run(t) {
           }),
           'and makes its one exception, the MDM feed at ' +
           '/admin-api/device-compliance, which the document describes');
+  t.check(/consoleOp \? 'admin:console'/.test(apiSource) &&
+          /path === '\/console' \|\| path\.indexOf\('\/console\/'\) === 0/
+            .test(apiSource),
+          'and asks admin:console of everything under /admin-api/console ' +
+          '(#454), which is what the document says of those operations');
 
-  // EVERY CALL SITE. Three today; the point is that a fourth cannot assemble
-  // its own idea of what the API requires.
+  // EVERY CALL SITE. Two today — the console's own copy of the document at
+  // `/admin/api-explorer/openapi.json` went with the server-rendered console
+  // (#446) — and the point is that a third cannot assemble its own idea of
+  // what the API requires.
   //
   // **A CALL IS ONE THAT PASSES THE ROUTE TABLE**, and that qualification is
   // not fussiness: both files talk ABOUT `buildSpec()` in their comments, and
@@ -274,9 +286,12 @@ async function run(t) {
     let at = source.indexOf('buildSpec(');
     while (at >= 0) {
       const snippet = source.slice(at, at + 160);
-      if (/^buildSpec\(\s*(adminApi\.)?ROUTES\b/.test(snippet)) {
+      // The table whole, or one KIND of it (#454): the management
+      // document, the console's, and the explorer's management filter.
+      if (/^buildSpec\(\s*((adminApi\.)?ROUTES\b|self\.routesOfKind\()/
+          .test(snippet)) {
         // The whole snippet is what is TESTED — a call may wrap onto the
-        // next line, and one of the three does — while the first line of it
+        // next line, and both do — while the first line of it
         // is what a failure PRINTS.
         callSites.push({ file: pair[0], call: snippet.split('\n')[0],
                          source: snippet });
@@ -284,7 +299,7 @@ async function run(t) {
       at = source.indexOf('buildSpec(', at + 1);
     }
   });
-  t.check(callSites.length >= 3,
+  t.check(callSites.length >= 2,
           'every buildSpec() call site was found',
           callSites.length + ' call(s)');
   const handRolled = callSites.filter(function (site) {

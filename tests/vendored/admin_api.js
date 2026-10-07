@@ -104,56 +104,41 @@ const CONDITIONAL = {
 // A browser sign-on session for the CONSOLE, which this file needs in three
 // places and could not have needed before 2026-08-24.
 //
-// The API takes an OAuth 2.0 access token since 2026-09-09 — it was unprotected
-// before that, and mgmt-api/CLAUDE.md keeps the three reasons it was, because
-// they are the argument for `adminApi.authRequired`, the off switch. This test
-// being able to drive it is the first of the three; the token this job
-// presents is attached by `tools/attach-admin-token.js`, which the runner
-// preloads. The CONSOLE next door takes a DIFFERENT credential: its gate is
-// unconditional (`mode.gatesConsole()`), so every /admin page needs a console
-// session and a console role, and a caller that asks for `?format=json` is
-// refused 401 `login_required` rather than redirected, because a redirect to
-// an HTML sign-in screen is not an answer a program can read. That refusal is
-// what failed theReadsAgreeWithTheConsole() below.
+// The API takes an OAuth 2.0 access token since 2026-09-09 — it was
+// unprotected before that, and mgmt-api/CLAUDE.md keeps the three reasons it
+// was, because they are the argument for `adminApi.authRequired`, the off
+// switch. The token this job presents is attached by
+// `tools/attach-admin-token.js`, which the runner preloads. The CONSOLE
+// presents a DIFFERENT one since the #446 cutover: its own, issued to the
+// person who signed in, with the scopes their console roles grant. So a
+// console read here is made with that token — one list read through two
+// doors is the point of theReadsAgreeWithTheConsole() — and a 403 on it
+// means the person holds no role.
 //
-// The comparison is the point of that check — one list read through two doors —
-// so the answer is to walk through the door rather than to stop reading the
-// console, the way a browser does.
-//
-// The role comes from the console's open window (admin-ui/admin_rbac.ts):
-// while the bootstrap administrator has not yet signed in to the console — or,
-// where none was seeded, while neither role group has a member — and
-// `admin.openWhenEmpty` is on (the default), whoever signs in holds both. Once
-// the roster is enforced this user may hold nothing — so the caller checks the
-// read it makes rather than assuming, and says which of the two states it met.
-//
-// If no redirect comes back the helper answers `null` and the reads below go
-// out with no session; it is reported rather than silently treated as a pass.
-// ---------------------------------------------------------------------------
-// **THE WALK ITSELF IS IN `console_signin.js` SINCE 2026-09-06**, because the
-// console became a relying party of this service's own authorization server on
-// that date and the three-fetch sign-in this function used to hold became a
-// five-hop flow with two cookies — which `sts_metadata.js` also needs. Two
-// copies of it would agree on the day they were written and diverge the first
-// time the flow gained a hop. That file argues every hop; this one keeps the
-// two things that are THIS job's: which user, and what a missing role means.
+// **THE WALK ITSELF IS IN `console_signin.js` SINCE 2026-09-06**, and since
+// the #446 cutover it is the static console's: PKCE as the public client
+// `sts-admin-console` and a DPoP-bound token. The console's pages are drawn
+// in the browser from `/admin-api` operations, so a console read here is the
+// operation the page is drawn from — what `?format=json` used to answer —
+// asked with the CONSOLE's token rather than the run's. That file argues
+// every hop; this one keeps the two things that are THIS job's: which user,
+// and what a missing role means.
 async function signInToTheConsole() {
   log.debug("Entering signInToTheConsole().");
-  const cookie = await consoleSignIn.signInToTheConsole(base, CONSOLE_USER,
-                                                        log,
-                                                        { grant: "write" });
-  log.debug("Leaving signInToTheConsole(). " +
-            (cookie ? "Holding a session." : "The gate is off."));
-  return cookie;
+  const consoleClient = await consoleSignIn.signInToTheConsole(base,
+    CONSOLE_USER, log, { grant: "write" });
+  log.debug("Leaving signInToTheConsole().");
+  return consoleClient;
 }
 
-// One console read, carrying the session when there is one.
-async function consoleJson(path, session) {
+// One console read: the page's operation, as the console asks it, answered
+// in `common.httpJson()`'s shape so the checks below read as they did.
+async function consoleJson(path, consoleClient) {
   log.debug("Entering consoleJson(). path=" + path);
-  const r = await common.httpJson(base + path,
-      session ? { headers: { Cookie: session } } : undefined);
+  const r = await consoleClient.get(path);
   log.debug("Leaving consoleJson(). status=" + r.status);
-  return r;
+  return { ok: r.status === 200, status: r.status, body: r.body,
+           raw: JSON.stringify(r.json) };
 }
 
 async function get(path) {
@@ -365,12 +350,10 @@ async function theIndexAgreesWithTheDocument(doc) {
 // agree right up until they stop, and nothing goes red when they do: a wrong
 // version still renders and still answers 200.
 //
-// The console page is read through the session, for the reason
-// theReadsAgreeWithTheConsole() gives: `?format=json` at a gated page is a 401
-// rather than a redirect, because a sign-in screen is not an answer a program
-// can read.
+// The console page is read as the console reads it since the #446 cutover:
+// its operation, with the console's own token.
 // ---------------------------------------------------------------------------
-async function everySurfaceReportsTheSameBuild(index, session) {
+async function everySurfaceReportsTheSameBuild(index, consoleClient) {
   log.debug("Entering everySurfaceReportsTheSameBuild().");
   log.info("=== The version ===");
 
@@ -393,7 +376,8 @@ async function everySurfaceReportsTheSameBuild(index, session) {
   // THE SERVICE METADATA PAGE, which is the one page whose subject is what
   // this service IS — so it names the build in its lead paragraph and in its
   // JSON, and that JSON must be the same string this API just gave.
-  const read = await consoleJson("/admin/sts-metadata?format=json", session);
+  const read = await consoleJson("/admin/sts-metadata?format=json",
+                               consoleClient);
   assert.ok(read.ok,
     "the service metadata page's JSON view should answer 200, and it " +
     "answered " + read.status + ": " + String(read.raw).slice(0, 300) +
@@ -438,6 +422,14 @@ function everyConsolePageIsMirrored(status, index) {
   const mirrored = new Set(index.operations.map(function (o) {
     return o.mirrors.replace(/^(GET|POST)\s+/, "");
   }));
+  // A PAGE DRAWN BY ONE OF THE CONSOLE'S OWN OPERATIONS (#454) is mirrored by
+  // the management operation its data comes from, which names it in
+  // `drawnOn` — read off the index, as the rest of this is.
+  index.operations.forEach(function (o) {
+    (o.drawnOn || []).forEach(function (page) {
+      mirrored.add(page);
+    });
+  });
   assert.ok(Array.isArray(status.pages) && status.pages.length > 5,
     "the status reply should carry the console's own page list; got " +
     JSON.stringify(status.pages));
@@ -631,7 +623,7 @@ async function theSchemasMatchTheReplies(doc) {
 // ---------------------------------------------------------------------------
 // The reads answer, are paged, and agree with the console.
 // ---------------------------------------------------------------------------
-async function theReadsAgreeWithTheConsole(session) {
+async function theReadsAgreeWithTheConsole(consoleClient) {
   log.debug("Entering theReadsAgreeWithTheConsole().");
   log.info("=== The API and the console see one service ===");
   const apiTokens = await get("/tokens?per=5");
@@ -640,14 +632,13 @@ async function theReadsAgreeWithTheConsole(session) {
     "empty list here means this comparison would be 0 against 0 — which " +
     "passes and proves nothing.");
   const consoleTokens = await consoleJson("/admin/tokens?per=5&format=json",
-                                          session);
+                                          consoleClient);
   assert.ok(consoleTokens.ok,
     "the console's JSON view should answer 200, and it answered " +
     consoleTokens.status + ": " + String(consoleTokens.raw).slice(0, 300) +
     ". A 401 or a 403 here is the console's own gate " +
     "rather than a broken read — see signInToTheConsole(); a 403 means the " +
-    "session is real and the role is not, which happens once some other job " +
-    "has granted a role and turned the empty roster into an enforced one.");
+    "token is real and the role is not.");
   assert.strictEqual(apiTokens.held, consoleTokens.body.held,
     "the API and the console must report the same number of held artifacts " +
     "— they are one list read through two doors. API " + apiTokens.held +
@@ -695,7 +686,7 @@ async function theReadsAgreeWithTheConsole(session) {
 // ---------------------------------------------------------------------------
 // The revocation is the real one.
 // ---------------------------------------------------------------------------
-async function revokingHereReachesIntrospection(session) {
+async function revokingHereReachesIntrospection(consoleClient) {
   log.debug("Entering revokingHereReachesIntrospection().");
   log.info("=== A revocation through the API reaches RFC 7662 ===");
   // THE PERSON AND THE CLIENT ARE REAL (2026-09-12). The person is the console
@@ -719,20 +710,33 @@ async function revokingHereReachesIntrospection(session) {
   // the authorization endpoint anyway.
   const clientSecret = "admin-api-test-client-secret";
   const redirectUri = "https://admin-api-test.example.test/cb";
+  // THE SECRET IS SET APART FROM THE REST (#446): the registry answers a
+  // client secret as set-and-not-returned, so the helper's read-back of what
+  // it provisioned cannot see it. It is written by the same operation the
+  // console's Credentials tab is, and the token request below is what proves
+  // it took.
   await registry.provision(base, {
     identifier: CONSOLE_USER, name: "Management API test client",
     protocols: ["oauth2", "oidc"],
-    fields: { oauthClientId: [CONSOLE_USER], oauthClientSecret: clientSecret,
+    fields: { oauthClientId: [CONSOLE_USER],
               oauthTokenEndpointAuthMethod: "client_secret_post",
               oauthRedirectUri: [redirectUri],
               oauthGrantType: ["authorization_code", "refresh_token"],
               oauthResponseType: ["code"] },
     why: "the client whose token this job revokes through the API"
   });
+  const secretSet = await common.httpJson(api + "/applications/set", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ application: CONSOLE_USER,
+                           attribute: "oauthClientSecret",
+                           value: clientSecret }) });
+  assert.ok(secretSet.ok, "setting the test client's secret through POST " +
+    "/admin-api/applications/set answered " + secretSet.status + " " +
+    String(secretSet.raw).slice(0, 200));
   const granted = await registry.authorizationCode(base, {
     clientId: CONSOLE_USER, redirectUri: redirectUri, username: CONSOLE_USER,
     password: consoleSignIn.consolePasswordFor(CONSOLE_USER),
-    cookie: session || undefined, scope: "openid" });
+    cookie: consoleClient.cookie, scope: "openid" });
   const minted = await common.httpJson(base + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -1046,73 +1050,59 @@ async function theBulkRevocationsWorkAndAreUndone() {
 // ---------------------------------------------------------------------------
 // The explorer, and the one clause it costs.
 // ---------------------------------------------------------------------------
-async function theExplorerIsServedUnderAScopedPolicy(session) {
+async function theExplorerIsServedUnderAScopedPolicy(consoleClient) {
   log.debug("Entering theExplorerIsServedUnderAScopedPolicy().");
   log.info("=== The explorer and its Content-Security-Policy ===");
   // ---------------------------------------------------------------------
-  // THE EXPLORER IS A CONSOLE PAGE SINCE 2026-09-09, and this section reads
-  // it there. It was `GET /admin-api/docs`, fetched here with no credential
-  // at all, which is what that API was — until it began requiring an access
-  // token, at which point the one page in this service written to be opened
-  // in a browser became the one page a browser could not open.
-  //
-  // **THE SESSION IS NOW LOAD-BEARING FOR THE FIRST FETCH AS WELL.** Without
-  // one this is a 303 towards the sign-in screen, `fetch` follows it, and the
-  // policy read back is that screen's — which is the same failure the
-  // console check at the bottom of this function already carries a paragraph
-  // about, now applying twice.
+  // THE EXPLORER IS A CONSOLE PAGE SINCE 2026-09-09, and since the #446
+  // cutover the console is a static page: `/admin/api-explorer` answers the
+  // console's document — under the console's policy, `script-src 'self'` —
+  // and the page is drawn in the browser from `GET /admin-api/api-explorer`,
+  // naming its own script for the console to load. So the policy is read
+  // off the document, and the page off its operation, drawn.
   // ---------------------------------------------------------------------
-  const explorerUrl = base + "/admin/api-explorer";
-  const withSession = session ? { headers: { Cookie: session } } : undefined;
-  const page = await fetch(explorerUrl, withSession);
-  assert.ok(page.ok, "GET /admin/api-explorer should answer 200 to a session " +
-            "that holds a role; got " + page.status);
+  const page = await fetch(base + "/admin/api-explorer");
+  assert.ok(page.ok, "GET /admin/api-explorer should answer the console's " +
+            "document; got " + page.status);
   assert.ok(/text\/html/.test(page.headers.get("content-type") || ""),
     "and be served as HTML, or a browser shows the source.");
   const policy = page.headers.get("content-security-policy") || "";
   assert.ok(/script-src 'self'/.test(policy),
-    "the explorer needs script-src 'self'; its policy is: " + policy);
-  assert.ok(!/unsafe-inline/.test(policy.replace(/style-src[^;]*/, "")),
-    "and it must NOT relax anything else to 'unsafe-inline'. The script is " +
-    "a separate resource precisely so that 'self' suffices — " +
-    "'unsafe-inline' is the clause that would make this relaxation matter. " +
-    "The policy is: " + policy);
+    "the console needs script-src 'self'; its policy is: " + policy);
+  assert.ok(!/unsafe-inline|unsafe-eval/.test(
+    policy.replace(/style-src[^;]*/, "")),
+    "and it must NOT relax scripts to 'unsafe-inline' or 'unsafe-eval'. The " +
+    "console's script and the explorer's are separate resources precisely " +
+    "so that 'self' suffices. The policy is: " + policy);
   assert.ok(/connect-src 'self'/.test(policy),
     "and connect-src 'self', which is what lets the page call the API it " +
     "documents and nothing else.");
   assert.ok(/default-src 'none'/.test(policy),
     "everything else stays as the service sets it.");
-  const html = await page.text();
-  assert.ok(html.indexOf("<script") >= 0 &&
-            html.indexOf("/admin/api-explorer/explorer.js") >= 0,
-    "the page should load its script from its own URL rather than inline.");
+  assert.ok(/frame-ancestors/.test(policy),
+    "and frame-ancestors is never dropped (RFC 9700 section 4.14).");
+  const drawn = await consoleClient.get("/admin/api-explorer");
+  const html = drawn.text;
+  assert.ok(drawn.status === 200 &&
+            html.indexOf('data-script="/admin/api-explorer/explorer.js"') >= 0,
+    "the page should name its script, from its own URL, for the console to " +
+    "load rather than carrying it inline; it answered " + drawn.status);
   // THE BANNER IT USED TO CARRY IS GONE AND ITS ABSENCE IS ASSERTED. It read
-  // "Nothing here is protected", which was true of this API for as long as
-  // the page hung off it and is now false twice over: the API takes a token
-  // and this page takes a session. A page still claiming it would be the
-  // most misleading sentence in the service, on the one page an operator
-  // reads before pressing things.
+  // "Nothing here is protected", which is false twice over: the API takes a
+  // token and this page is the console's.
   assert.ok(!/nothing here is protected/i.test(html),
-    "the explorer must not still say it is unprotected: it is a console " +
-    "page behind a session and two roles, calling an API that requires an " +
-    "access token.");
-  // AND IT SAYS WHAT THE READER MAY ACTUALLY DO, which is what replaced the
-  // banner: the scopes the token it was handed carries.
+    "the explorer must not still say it is unprotected.");
+  // AND IT SAYS WHAT THE READER MAY ACTUALLY DO: the scopes the console's
+  // token carries.
   assert.ok(/admin:read/.test(html),
     "the page should say which scopes its calls will carry, so that a " +
-    "reader knows before pressing Try it whether a write would be refused. " +
-    "It is the token the console minted for THEM, with their own roles' " +
-    "scopes and no others.");
-  // THE DOCUMENT COMES FROM THE CONSOLE'S OWN PATH rather than from
-  // /admin-api/openapi.json, and that is not cosmetic: the API path needs a
-  // token, and a page whose first act is a fetch that 401s would fail to
-  // render rather than rendering and saying so.
-  assert.ok(html.indexOf("/admin/api-explorer/openapi.json") >= 0,
-    "the page should read its document from the console's own path, which " +
-    "arrives on the session it was drawn with.");
+    "reader knows before pressing Try it whether a write would be refused.");
+  // THE DOCUMENT IS THE API'S OWN since the #446 cutover, read with the
+  // console's token like every other call the page makes.
+  assert.ok(html.indexOf("/admin-api/openapi.json") >= 0,
+    "the page should read the API's own OpenAPI document.");
 
-  const script = await fetch(base + "/admin/api-explorer/explorer.js",
-                             withSession);
+  const script = await fetch(base + "/admin/api-explorer/explorer.js");
   assert.ok(script.ok, "the script should be served; got " + script.status);
   const source = await script.text();
   assert.ok(source.length > 2000,
@@ -1130,32 +1120,9 @@ async function theExplorerIsServedUnderAScopedPolicy(session) {
     "response bodies, which are not always this service's own. (The word " +
     "itself appears in a comment there saying exactly that, which is why " +
     "this looks for the assignment rather than the name.)");
-
-  // The relaxation must be scoped. The console next door is the page that
-  // would be most costly to have quietly loosened, since it renders values a
-  // caller supplied.
-  // WITH the session, and that is not a detail: without one this GET is a 303
-  // towards the sign-in screen, fetch follows it, and the policy read back is
-  // that screen's rather than the console's. It happens to be the same policy
-  // today, so the check would have gone on passing while measuring a
-  // different page — which is the shape of a check that is silenced rather
-  // than broken.
-  const consolePage = await fetch(base + "/admin",
-      session ? { headers: { Cookie: session } } : undefined);
-  assert.strictEqual(consolePage.status, 200,
-    "the console's own page should answer 200 to a session that holds a " +
-    "role, so that the policy below is the console's; got " +
-    consolePage.status + ".");
-  const consolePolicy =
-    consolePage.headers.get("content-security-policy") || "";
-  assert.ok(/script-src 'none'/.test(consolePolicy),
-    "the /admin console must still be script-src 'none'. The explorer's " +
-    "relaxation is scoped to its own two routes, and a middleware change " +
-    "that widened it would show up here first. The console's policy is: " +
-    consolePolicy);
-  log.info("[explorer] OK — script-src 'self' on the two docs routes, " +
-           "script-src 'none' next door, and no require/process/innerHTML " +
-           "in " + source.length + " bytes of browser script.");
+  log.info("[explorer] OK — script-src 'self' with nothing inline, the " +
+           "page's own script named, and no require/process/innerHTML in " +
+           source.length + " bytes of browser script.");
   log.debug("Leaving theExplorerIsServedUnderAScopedPolicy().");
 }
 
@@ -1662,26 +1629,26 @@ async function test() {
   log.debug("Entering test().");
   log.info("Running the management API checks against " + api);
   // Before anything reads the console: the API's access token is attached by
-  // the runner's preload, and the console needs a session of its own.
-  const session = await signInToTheConsole();
+  // the runner's preload, and the console signs in for a token of its own.
+  const consoleClient = await signInToTheConsole();
   const doc = await theDocumentIsServedAndWellFormed();
   const index = await theIndexAgreesWithTheDocument(doc);
-  await everySurfaceReportsTheSameBuild(index, session);
+  await everySurfaceReportsTheSameBuild(index, consoleClient);
   const status = await get("/status");
   everyConsolePageIsMirrored(status, index);
   await everyConsoleActionIsMirrored(index);
   // First of the three that need artifacts to exist, because it is the one
   // that mints them: a schema checked against an empty list, and a comparison
   // of 0 against 0, both pass and prove nothing.
-  await revokingHereReachesIntrospection(session);
+  await revokingHereReachesIntrospection(consoleClient);
   await theSchemasMatchTheReplies(doc);
-  await theReadsAgreeWithTheConsole(session);
+  await theReadsAgreeWithTheConsole(consoleClient);
   await customClaimsCanBeChangedAndPutBack();
   await credentialClaimsCanBeChangedAndPutBack();
   await theVerifierRequestCanBeChangedAndPutBack();
   await configurationCanBeChangedAndPutBack(doc);
   await theBulkRevocationsWorkAndAreUndone();
-  await theExplorerIsServedUnderAScopedPolicy(session);
+  await theExplorerIsServedUnderAScopedPolicy(consoleClient);
   await successfulHealthchecksAreNotInTheAuditLog();
   await theCryptoReportAgreesWithTheServiceItDescribes();
   log.info("Test completed successfully.");

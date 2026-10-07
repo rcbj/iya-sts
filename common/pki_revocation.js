@@ -58,12 +58,11 @@
 // second thing to seal, purge with the realm, and share with a request worker.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `config`, `pki`,
-// `realms`, `error_codes` and the two vendored PKI modules plus pkijs and
-// asn1js; none of them requires it back.
+// `crypto`, `realms`, `error_codes` and the two vendored PKI modules plus
+// pkijs and asn1js; none of them requires it back.
 // ===========================================================================
 
 const bunyan = require('bunyan');
-const nodeCrypto = require('crypto');
 const asn1js = require('asn1js');
 const pkijs = require('pkijs');
 const config = require('./config');
@@ -74,6 +73,10 @@ const log = bunyan.createLogger({
 });
 
 const pki = require('./pki');
+// THE ONE CRYPTOGRAPHIC MODULE (#453): the key identifiers, the OCSP CertID
+// hashes, the Web Crypto engine pkijs signs with and the key it signs under.
+// A leaf that requires nothing here; `pki.js` above requires it already.
+const stsCrypto = require('./crypto');
 // For DEFAULT_ID only. `pki.js` requires it already and it requires nothing
 // here, so this is a cache hit and closes no cycle.
 const realms = require('./realms');
@@ -906,15 +909,12 @@ function derFromPem(pem) {
 // pkijs wants a Web Crypto engine. node 18+ has one on the global, which is
 // what `common/vendored/key_material.js` already relies on — this is the same
 // initialisation, said again here because requiring that module for its side
-// effect would be a dependency nobody could see.
+// effect would be a dependency nobody could see. `crypto.js` hands the engine
+// over since #453, as the one place this service touches node's crypto.
 (function initEngine() {
   log.debug("Entering initEngine().");
   try {
-    if (typeof crypto !== 'undefined' && crypto.subtle) {
-      // `any`: pkijs's declared engine interface lags its own class.
-      pkijs.setEngine('webcrypto', /** @type {any} */ (
-        new pkijs.CryptoEngine({ name: 'webcrypto', crypto: crypto })));
-    }
+    stsCrypto.installPkijsWebCrypto(pkijs);
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0062') + 'pki_revocation: the Web ' +
                                                'Crypto engine could not be ' +
@@ -961,7 +961,7 @@ async function importSigningKey(tier) {
         ? { name: 'Ed25519' }
         : { name: params.name, hash: params.hash });
   log.debug("Leaving importSigningKey().");
-  return crypto.subtle.importKey('pkcs8', pkcs8, algorithm, false, ['sign']);
+  return stsCrypto.importPkcs8SigningKey(pkcs8, algorithm);
 }
 
 // How long a CRL claims to be fresh. Short by default and settable, because
@@ -1203,9 +1203,9 @@ async function buildCrl(scopeId, caId) {
   // what an SKI conventionally is.
   const keyIdentifier = akid
     ? Buffer.from(akid.parsedValue.valueBlock.valueHexView)
-    : nodeCrypto.createHash('sha1').update(Buffer.from(
+    : stsCrypto.sha1Digest('key-identifier', Buffer.from(
       issuerCert.subjectPublicKeyInfo.subjectPublicKey.valueBlock
-        .valueHexView)).digest();
+        .valueHexView));
   extensions.push(new pkijs.Extension({
     extnID: '2.5.29.35', critical: false,
     extnValue: new asn1js.Sequence({
@@ -1532,8 +1532,8 @@ async function certIdMatches(certId, issuerCert) {
   const nameDer = issuerCert.subject.toSchema().toBER(false);
   const keyDer = issuerCert.subjectPublicKeyInfo.subjectPublicKey.valueBlock
     .valueHexView;
-  const nameHash = Buffer.from(await crypto.subtle.digest(hash, nameDer));
-  const keyHash = Buffer.from(await crypto.subtle.digest(hash, keyDer));
+  const nameHash = stsCrypto.ocspCertIdHash(hash, nameDer);
+  const keyHash = stsCrypto.ocspCertIdHash(hash, keyDer);
   const gotName = Buffer.from(certId.issuerNameHash.valueBlock.valueHexView);
   const gotKey = Buffer.from(certId.issuerKeyHash.valueBlock.valueHexView);
   log.debug("Leaving certIdMatches().");
@@ -1573,6 +1573,63 @@ function nonceSize(extension) {
   }
   log.debug("Leaving nonceSize(). Not wrapped in an OCTET STRING.");
   return bytes.byteLength;
+}
+
+// ---------------------------------------------------------------------------
+// **A SERIAL THIS NODE HAS NO RECORD OF IS ASKED OF THE STORE BEFORE IT IS
+// CALLED `unknown` (#162, 2026-10-05).**
+//
+// The process branch is ONE authority for the cluster (rcbj's decision on
+// #162): its row is shared, every node signs its own listener certificate
+// under the one TLS Issuing CA with a key it made itself, and the merge keeps
+// every serial (`pki_merge.js` — a slot is first writer wins and the serial it
+// displaced goes to `issuedKeyPairs`). So the register is right. What was not
+// is WHEN a node reads it: the row another node wrote reaches this one on the
+// change log, `persistence.pollInterval` later, and the listener certificate
+// names the SERVICE's address, so a balancer may hand the question to a node
+// that has not caught up. Seconds after a cluster started, that node answered
+// `unknown` about the other node's listener — correct for what it held, and
+// wrong for the authority (`sts_pki_distribution_points`, cluster mode).
+//
+// No node's own address is ever the answer (rcbj, #162: nothing published
+// names a node). Every node answers for every node's certificate, from the
+// row the store holds: where this node would say `unknown` for want of a
+// record, it lands its own writes of the row and takes the store's, ONCE per
+// request, and answers again. `pki.refreshScope()` does nothing where the row
+// is not merged — development, a single process, nothing to catch up with.
+//
+// **COALESCED PER SCOPE.** The responder is anonymous, and every serial
+// nobody issued takes this path, so concurrent questions share the read in
+// flight: at most one read of one row per scope at a time, whatever arrives.
+// ---------------------------------------------------------------------------
+const storeReadsInFlight = new Map();
+
+function catchUpWithTheStore(scopeId) {
+  log.debug("Entering catchUpWithTheStore(). scope=" + scopeId);
+  const id = String(scopeId);
+  if (typeof pki.refreshScope !== 'function') {
+    log.debug("Leaving catchUpWithTheStore(). No refresh in this pki.");
+    return Promise.resolve(null);
+  }
+  if (storeReadsInFlight.has(id)) {
+    log.debug("Leaving catchUpWithTheStore(). Sharing the read in flight.");
+    return storeReadsInFlight.get(id);
+  }
+  const reading = Promise.resolve().then(function () {
+    return pki.refreshScope(id);
+  }).then(function (answer) {
+    storeReadsInFlight.delete(id);
+    return answer;
+  }, function (e) {
+    // The store could not be read. What this node holds is still an answer
+    // RFC 6960 allows (`unknown`), so it is given rather than an error.
+    log.debug("Caught in catchUpWithTheStore(): " + ((e && e.message) || e));
+    storeReadsInFlight.delete(id);
+    return null;
+  });
+  storeReadsInFlight.set(id, reading);
+  log.debug("Leaving catchUpWithTheStore(). Reading the row.");
+  return reading;
 }
 
 /**
@@ -1638,6 +1695,8 @@ async function answerOcsp(scopeId, caId, requestDer) {
   const now = wholeSeconds(Date.now());
   const responses = [];
   const reported = [];
+  // Whether this request has already asked the store (#162, above).
+  let caughtUp = false;
   for (let i = 0; i < wanted.length; i++) {
     const certId = wanted[i].reqCert;
     const single = new pkijs.SingleResponse();
@@ -1657,6 +1716,13 @@ async function answerOcsp(scopeId, caId, requestDer) {
                       why: 'another issuer' });
       responses.push(single);
       continue;
+    }
+    // NO RECORD HERE YET: ask the store once before saying `unknown` — it may
+    // be another node's listener, written a moment ago (#162, above).
+    if (!caughtUp && !isRevoked(scopeId, caId, serial) &&
+        !issuedHere(scopeId, caId, serial)) {
+      caughtUp = true;
+      await catchUpWithTheStore(scopeId);
     }
     const revoked = isRevoked(scopeId, caId, serial);
     if (revoked) {
@@ -1724,9 +1790,11 @@ async function answerOcsp(scopeId, caId, requestDer) {
   // not unique across a rebuild — every reissued authority here keeps its
   // subject — and a key hash is.
   basic.tbsResponseData.responderID = new asn1js.OctetString({
-    valueHex: nodeCrypto.createHash('sha1').update(Buffer.from(
+    // RFC 6960 section 4.2.2.3's KeyHash is exactly RFC 5280's first
+    // key-identifier method: the SHA-1 of the subjectPublicKey BIT STRING.
+    valueHex: stsCrypto.sha1Digest('key-identifier', Buffer.from(
       issuerCert.subjectPublicKeyInfo.subjectPublicKey.valueBlock
-        .valueHexView)).digest()
+        .valueHexView))
   });
   basic.tbsResponseData.producedAt = now;
   basic.tbsResponseData.responses = responses;

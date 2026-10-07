@@ -67,19 +67,26 @@
 // ---------------------------------------------------------------------------
 // WHAT IS NOT DONE, AND WHY.
 //
-//   * **Google's attestation revocation list** (android.googleapis.com/
-//     attestation/status) is not consulted: it is a URL somebody else
-//     serves, and this service dials such a URL only as a scheduler job
-//     with the operator's say-so (root CLAUDE.md, the dialling row). A
-//     compromised Android batch key is what the list reports; until a job
-//     imports it, an operator removes such devices by hand.
-//   * **Freshness of a TPM statement**: draft-ietf-lamps-csr-attestation
-//     section 6.2 leaves it to the CA ("may choose to ignore attestations
-//     that are stale"), and EST and SCEP give the attester no nonce without
-//     draft-ietf-lamps-attestation-freshness. What a key attestation states —
-//     that the key was made in, and cannot leave, a TPM — does not go stale,
-//     and the request's own signature proves possession NOW; so the
-//     statement's `extraData` is recorded and not required to be anything.
+//   * ~~Google's attestation revocation list is not consulted~~ — it is
+//     since #256 (2026-10-06): every certificate of a chain that reaches
+//     Google's roots is looked up in the list `attestation_revocation.ts`
+//     reads, and a revoked or suspended one leaves the key self-asserted.
+//   * ~~Freshness of a TPM statement is recorded, not required~~ — it is
+//     required since #257 (2026-10-06). draft-ietf-lamps-csr-attestation
+//     section 6.2 lets the CA "ignore attestations that are stale, or whose
+//     freshness cannot be determined", and draft-ietf-lamps-attestation-
+//     freshness gives EST a /nonce. Without one, a captured statement could
+//     be replayed in a new request for the same key. This file verifies the
+//     statement and returns its `extraData`; `cert_enrollment.ts` spends it
+//     as a nonce issued at EST /nonce to the same client and cookie, and
+//     product refuses a statement that is not one
+//     (`mode.requiresFreshKeyAttestation()`, STS-DEVICE-0050). SCEP has no
+//     nonce operation in any specification, so a statement over SCEP is
+//     never fresh.
+//   * **The TPM statement's syntax** is revision 20's appendix A.2.3 of the
+//     CSR-attestation draft, the only one ever published (re-checked on
+//     #257: revision 21 removed it and nothing replaced it); `crypto.js`'s
+//     codec lists the seven places the draft disagrees with itself.
 //   * **Post-quantum**: every format here is fixed by its vendor — Android's
 //     and Apple's chains are RSA and ECDSA, a TPM 2.0 AK signs RSA or ECDSA —
 //     so none of them can be post-quantum, and the summary records the
@@ -93,7 +100,6 @@
 // and authenticator-data readers are `authn/webauthn.js`'s, the one copy.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -142,6 +148,9 @@ interface DeviceAttestationDeps {
   errorCodes: typeof errorCodes;
   webauthnCodec: typeof webauthnCodec;
   now: () => number;
+  // Google's Android attestation status list (#256), reached lazily: it
+  // reaches the risk datasets, which are built later in the root.
+  revocation: () => Json;
 }
 
 /**
@@ -185,7 +194,10 @@ class DeviceAttestation {
     helpers.log.debug("Leaving DeviceAttestation.defaultDeps().");
     return { log: helpers.log, config: config, stsCrypto: stsCrypto,
              pki: pki, errorCodes: errorCodes, webauthnCodec: webauthnCodec,
-             now: Date.now };
+             now: Date.now,
+             revocation: function (): Json {
+               return require('./attestation_revocation');
+             } };
   }
 
   // A refusal with its code and the sentence.
@@ -422,14 +434,33 @@ class DeviceAttestation {
         config.value('devices.androidAttestationTrustAnchors')));
     const said = 'Android Key Attestation, version ' +
       description.attestationVersion + ', security level ' + level;
+    if (!chain.ok) {
+      log.debug("Leaving DeviceAttestation.android(). Unanchored.");
+      return { ok: true, attestation: this.record('self-asserted',
+        'android-key-attestation', said + ', which verified and does NOT ' +
+        'chain to a trusted root: ' + chain.why + '.') };
+    }
+    // GOOGLE'S STATUS LIST (#256): every certificate of the chain asked
+    // about. A revoked or suspended one, or an unchecked chain where the
+    // realm requires a check in product, leaves the key self-asserted; the
+    // chain's serials and the answer are kept for the recheck.
+    const revocation = this.deps.revocation();
+    const verdict = await revocation.consult(ders);
+    const untrusted = revocation.untrusts(verdict);
+    if (untrusted) {
+      log.info(this.deps.errorCodes.tag(verdict.status === 'unchecked'
+                 ? 'STS-DEVICE-0048' : 'STS-DEVICE-0047') +
+               'devices: an Android Key Attestation chained to ' +
+               chain.anchor + ' and is NOT attested: ' +
+               revocation.describe(verdict) + '.');
+    }
     log.debug("Leaving DeviceAttestation.android(). " +
-              (chain.ok ? 'Anchored.' : 'Unanchored.'));
-    return { ok: true, attestation: chain.ok
-      ? this.record('attested', 'android-key-attestation', said +
-                    ', chained to ' + chain.anchor + '.')
-      : this.record('self-asserted', 'android-key-attestation', said +
-                    ', which verified and does NOT chain to a trusted ' +
-                    'root: ' + chain.why + '.') };
+              (untrusted ? 'Revoked or unchecked.' : 'Anchored.'));
+    return { ok: true, attestation: Object.assign(
+      this.record(untrusted ? 'self-asserted' : 'attested',
+        'android-key-attestation', said + ', chained to ' + chain.anchor +
+        '; ' + revocation.describe(verdict) + '.'),
+      { chainSerials: verdict.chainSerials, revocation: verdict }) };
   }
 
   // =========================================================================
@@ -510,10 +541,9 @@ class DeviceAttestation {
       return falsified('the authenticator data carries no attested credential');
     }
     // Steps 2-4: the nonce in the credential certificate.
-    const clientDataHash = nodeCrypto.createHash('sha256')
-      .update(String(s.nonce || ''), 'utf8').digest();
-    const nonce = nodeCrypto.createHash('sha256')
-      .update(Buffer.concat([authDataRaw, clientDataHash])).digest();
+    const clientDataHash = stsCrypto.digest('sha256', String(s.nonce || ''));
+    const nonce = stsCrypto.digest('sha256',
+      Buffer.concat([authDataRaw, clientDataHash]));
     const facts = pki.attestationCertificateFacts(x5c[0]);
     const ext = facts ? facts.extensions[OID_APPLE_NONCE] : null;
     const certified = ext ? stsCrypto.appleAttestationNonce(ext.value) : null;
@@ -527,16 +557,14 @@ class DeviceAttestation {
     const point = certJwk.kty === 'EC' && certJwk.crv === 'P-256'
       ? Buffer.concat([Buffer.from([4]), Buffer.from(certJwk.x, 'base64url'),
                        Buffer.from(certJwk.y, 'base64url')]) : null;
-    if (!point || !nodeCrypto.createHash('sha256').update(point).digest()
-          .equals(keyId)) {
+    if (!point || !stsCrypto.digest('sha256', point).equals(keyId)) {
       log.debug("Leaving DeviceAttestation.appAttest(). Key id.");
       return falsified('the key id is not the SHA-256 of the certified ' +
                        'P-256 key');
     }
     // Step 6: the app.
     const appId = appIds.filter(function (one: string): boolean {
-      return nodeCrypto.createHash('sha256').update(one, 'utf8').digest()
-        .equals(authData.rpIdHash);
+      return stsCrypto.digest('sha256', one).equals(authData.rpIdHash);
     })[0];
     if (!appId) {
       log.debug("Leaving DeviceAttestation.appAttest(). App.");
@@ -588,8 +616,10 @@ class DeviceAttestation {
   // =========================================================================
   // TPM KEY ATTESTATION IN A CERTIFICATE REQUEST. `spec` is { bundle (the
   // id-aa-attestation value's DER, or null for none), publicKeyPem }.
-  // Resolves { ok, attestation } — `none` and self-asserted when there is
-  // no bundle or no statement this service verifies — or a refusal.
+  // Resolves { ok, attestation, extraData } — `none` and self-asserted when
+  // there is no bundle or no statement this service verifies — or a
+  // refusal. Whether `extraData` is a nonce this realm issued is the
+  // caller's question (#257): only it knows who asked for one.
   // =========================================================================
   /**
    * Verifies a TPM key attestation carried in a certificate request's
@@ -597,8 +627,10 @@ class DeviceAttestation {
    *
    * @param spec - `bundle` (the attribute value's DER, or null for none) and
    *   `publicKeyPem` (the request's key)
-   * @returns `{ ok, attestation }` — `self-asserted` when there is no bundle
-   *   or no statement this service verifies — or a refusal
+   * @returns `{ ok, attestation, extraData }` — `self-asserted` when there is
+   *   no bundle or no statement this service verifies, and `extraData` (the
+   *   TPMS_ATTEST's, a Buffer) only for a TPM statement that verified — or a
+   *   refusal
    */
   async csrAttestation(spec: Json): Promise<Json> {
     const { log, stsCrypto } = this.deps;
@@ -672,7 +704,7 @@ class DeviceAttestation {
     }
     let requestJwk: Json = null;
     try {
-      requestJwk = nodeCrypto.createPublicKey(String(publicKeyPem || ''))
+      requestJwk = stsCrypto.publicKeyOf(String(publicKeyPem || ''))
         .export({ format: 'jwk' });
     } catch (e) {
       log.debug("Caught in DeviceAttestation.tpmCertify(): " +
@@ -736,7 +768,7 @@ class DeviceAttestation {
         continue;
       }
       if (await stsCrypto.verifyRawSignature(scheme,
-            nodeCrypto.createPublicKey(facts.pem), stmt.tpmSAttest,
+            stsCrypto.publicKeyOf(facts.pem), stmt.tpmSAttest,
             signature.signature)) {
         ak = der;
         break;
@@ -759,7 +791,10 @@ class DeviceAttestation {
       String(attest.firmwareVersion);
     log.debug("Leaving DeviceAttestation.tpmCertify(). " +
               (chain.ok ? 'Anchored.' : 'Unanchored.'));
-    return { ok: true, attestation: chain.ok
+    // `extraData` goes back to the caller, which alone knows the client and
+    // the cookie a nonce was issued to, and asks whether it is one (#257).
+    return { ok: true, extraData: Buffer.from(attest.extraData),
+             attestation: chain.ok
       ? this.record('attested', 'tcg-tpm2-key', said + ', its AK chained ' +
                     'to ' + chain.anchor + '.')
       : this.record('self-asserted', 'tcg-tpm2-key', said + ', which ' +

@@ -73,7 +73,11 @@ const ROOT = path.join(__dirname, '..');
 // whose files are not this one's (2026-09-16).
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs', '.git',
                    '.claude', 'vendored', 'coverage'];
-const SKIP_FILES = ['common/crypto.js'];
+// The two console bundles (#446) are esbuild's output of the `web_` modules
+// this scan already reads, with their comments — the exemptions among them
+// — taken out.
+const SKIP_FILES = ['common/crypto.js', 'admin-ui/console.bundle.js',
+                    'admin-ui/console.js'];
 
 const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
 

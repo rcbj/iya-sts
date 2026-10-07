@@ -100,9 +100,11 @@ const workerThreads = require('worker_threads');
 // The channel's other half (#364): a message a thread posts has its Buffers
 // turned back into Buffers here, as the thread does for what it receives.
 const WorkerChannel = require('./worker_channel');
-const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
+// The one place this service hashes and draws random values (#453). A leaf
+// over `config`, so this require cannot close a cycle.
+const stsCrypto = require('./crypto');
 // A LEAF (rule 3) — it registers no route, so requiring it here cannot move one
 // and cannot join a cycle. It is the shared-key registry this file arbitrates;
 // see keystore.js's block above storedFor().
@@ -110,6 +112,9 @@ const keystore = require('./keystore');
 // A LEAF with no requires: the failure codes on the log lines and the 502s and
 // 503s below. See common/error_codes.js.
 const errorCodes = require('./error_codes');
+// Which listener a request arrived on (#472), for LISTENER_HEADER. A LEAF: it
+// requires the settings, the realms and the catalogue of applications.
+const listenerMap = require('./listener_map');
 // Who a request came from, a LEAF (config, net, bunyan). See the
 // `x-forwarded-for` line in proxy() below.
 const clientAddress = require('./client_address');
@@ -734,6 +739,14 @@ const POOL_TICKET_HEADER = 'x-sts-pool-ticket';
  * verified; stripped from what a client sends.
  */
 const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
+
+// WHICH LISTENER THE REQUEST ARRIVED ON (#472), told to the worker so that its
+// own copy of `app.js`'s `enterListener()` asks the same question the front
+// process did, and so that `helpers.baseUrlOf()` knows where it was asked.
+// Stripped from what the client sent first, as the certificate is: a client
+// that could set it could claim to have come in on a listener that answers
+// an application this one does not.
+const LISTENER_HEADER = 'x-sts-listener';
 
 // ---------------------------------------------------------------------------
 // AND THE ONE THAT TELLS A HOSTED-SURFACE WORKER WHERE ITS BACK CHANNEL GOES
@@ -2624,7 +2637,13 @@ function fork(pool, slot) {
     // Connect back channel in `common/oidc_rp.ts`, which names the worker that
     // should redeem a code and has to know whether that can be itself — see
     // PROTOCOL_WORKER_HEADER.
-    env: Object.assign({}, process.env, {
+    //
+    // AND THE SECRETS THIS PROCESS WAS DELIVERED AS FILES (#254), which it
+    // holds at config.js's environment layer and never in `process.env`: the
+    // thread's copy is the one place they become variables, inside this
+    // process, where no `/proc/<pid>/environ` shows them.
+    env: Object.assign({}, process.env,
+                       require('./delivered_secrets').workerEnvironment(), {
       STS_REQUEST_WORKER: '1',
       STS_REQUEST_WORKER_POOL: which,
       STS_REQUEST_WORKER_SLOT: typeof slot === 'number'
@@ -3543,8 +3562,8 @@ function credentialKeyOf(req) {
     return '';
   }
   log.debug("Leaving credentialKeyOf().");
-  return 'c:' + nodeCrypto.createHash('sha256').update(String(said))
-    .digest('base64url').slice(0, 22);
+  return 'c:' + stsCrypto.digest('sha256', String(said), 'base64url')
+    .slice(0, 22);
 }
 
 /**
@@ -4117,7 +4136,7 @@ function start() {
   // and the refusal is an ERROR (STS-KEYS-0038) that every product start logged
   // for a key nobody needed — the operator's KEK is already in place.
   if (!keystore.hasEphemeralKek() && !keystore.persists()) {
-    const generated = nodeCrypto.randomBytes(32).toString('hex');
+    const generated = stsCrypto.randomBytes(32).toString('hex');
     if (keystore.useEphemeralKek(generated)) {
       log.info('request_pool: a per-run key-encryption key was generated, so ' +
                'every worker seals and opens the same minted rows. Nothing ' +
@@ -4987,6 +5006,8 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // ---------------------------------------------------------------------
   delete headers[PEER_CERT_HEADER];
   delete headers[PEER_AUTHORIZED_HEADER];
+  delete headers[LISTENER_HEADER];
+  headers[LISTENER_HEADER] = listenerMap.listenerOf(req);
   // THE CLIENT'S JA4 FINGERPRINT (#62 P0), for the same reason as the
   // certificate: a client that could set it could claim any TLS stack.
   const helloModule = clientHelloModule();

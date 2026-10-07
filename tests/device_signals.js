@@ -100,6 +100,12 @@ function childMain() {
      'risc.autoEmit'].forEach(function (key) {
       config.setOverride(key, 'true');
     });
+    // The deprecated RISC sessions-revoked left risc.autoEmitTypes' default
+    // in #269 (CAEP session-revoked carries the news); E and F test that it
+    // still goes out, with the device in the subject, where it is NAMED.
+    config.setOverride('risc.autoEmitTypes',
+                       config.value('risc.autoEmitTypes') +
+                       ',sessions-revoked');
     if (!pki.hasRoot()) {
       await pki.start({});
     }

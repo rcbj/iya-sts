@@ -30,8 +30,9 @@
 //     "ticketarmor") — `common/crypto.js`, section 9. The TGT is the one the
 //     client HOST got with its own keytab (a service principal created at
 //     /admin/kerberos/principals), which is what makes the armor authenticate
-//     the KDC to the client. Anonymous PKINIT (section 5.4.1.1's second and
-//     third ways) is not implemented, and neither is PKINIT at all (#179).
+//     the KDC to the client. An ANONYMOUS PKINIT TGT (RFC 8062,
+//     `krb5_pkinit.ts`, #179) is such a TGT too, for a client with no host
+//     keytab, and armors exactly as a host's does.
 //   * Section 5.4.2 — the request: the armored KrbFastReq's req-body and padata
 //     REPLACE the outer ones, the req-checksum binds the two, and a critical
 //     FAST option this KDC does not implement (hide-client-names is the one
@@ -93,7 +94,6 @@
 // and behaves exactly as before.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import config = require('../common/config');
 import cryptoLib = require('../common/crypto');
@@ -877,8 +877,8 @@ class Krb5Fast {
       const stamp = Buffer.alloc(4);
       stamp.writeUInt32BE(Math.floor(Date.now() / 1000) >>> 0, 0);
       nonce = new Uint8Array(Buffer.concat([
-        stamp, nodeCrypto.randomBytes(Math.max(32,
-                                               fast.armorKey.key.length))]));
+        stamp, cryptoLib.randomBytes(Math.max(32,
+                                              fast.armorKey.key.length))]));
       out.push({ type: codec.PA.OTP_CHALLENGE, value: codec.encOtpChallenge({
         nonce: nonce,
         service: fast.realm,
@@ -1182,8 +1182,7 @@ class Krb5Fast {
       const derived = await kcrypto.etypeById(etype).stringToKey(
         req.pin, prim.utf8(client.salt || ''), null);
       pinOk = held.length === derived.length &&
-              nodeCrypto.timingSafeEqual(Buffer.from(held),
-                                         Buffer.from(derived));
+              cryptoLib.bytesEqualConstantTime(held, derived);
     } catch (e) {
       log.debug('Caught in Krb5Fast.checkOtpRequest(): ' +
                 ((e && e.message) || e));
@@ -1458,8 +1457,9 @@ class Krb5Fast {
         ? 'KDC_ERR_POLICY (12), after the password verified'
         : null,
       otpIndicator: OTP_INDICATOR,
-      notImplemented: ['anonymous PKINIT armor', 'PKINIT (#179)',
-                       'FAST in the TGS exchange', 'hide-client-names',
+      // PKINIT and anonymous PKINIT armor are krb5_pkinit.ts's (#179); FAST
+      // in the TGS exchange and hide-client-names came with #204.
+      notImplemented: ['RFC 6113 authentication sets',
                        'hashed OTP values (must-encrypt-nonce)']
     };
   }

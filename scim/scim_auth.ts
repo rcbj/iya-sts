@@ -199,7 +199,6 @@
 // when this module loads. `ScimAuth` is exported for the root.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // One signer, one verifier and one constant-time comparison for the whole
 // service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
@@ -612,7 +611,6 @@ interface ChallengeStore {
 
 interface ScimAuthDeps {
   log: typeof helpers.log;
-  crypto: typeof crypto;
   stsCrypto: typeof stsCrypto;
   credentials: typeof credentials;
   mode: typeof mode;
@@ -707,7 +705,6 @@ class ScimAuth {
     helpers.log.debug("Leaving ScimAuth.defaultDeps().");
     return {
       log: helpers.log,
-      crypto: crypto,
       stsCrypto: stsCrypto,
       credentials: credentials,
       mode: mode,
@@ -1176,11 +1173,11 @@ class ScimAuth {
   // the first it understands. MD5 is last, and offered only where
   // `scim.digestMd5` turns it on (off by default, development only, #182).
   private digestChallenge(req, opts?) {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering ScimAuth.digestChallenge().");
     const stale = !!(opts && opts.stale);
     const nonce = this.issueDigestNonce();
-    const opaque = crypto.randomBytes(8).toString('hex');
+    const opaque = stsCrypto.randomBytes(8).toString('hex');
     const out = this.digestAlgorithms().map((row) => {
       return 'Digest realm="' + this.realm() + '", qop="auth", algorithm=' +
         row.token +
@@ -1474,8 +1471,8 @@ class ScimAuth {
     // it verifies against the hashed `userPassword` on the person's entry.
     const early = req[ScimAuth.BASIC_VERDICT];
     const checked = (early && early.username === username &&
-                     early.digest === crypto.createHash('sha256')
-                       .update(password).digest('hex'))
+                     early.digest === stsCrypto.digest('sha256', password,
+                                                       'hex'))
       ? early.checked
       : credentials.verify(username, password, { via: 'SCIM HTTP Basic',
                                                  door: 'scim' });
@@ -1552,14 +1549,14 @@ class ScimAuth {
   ];
 
   private filterDigestAlgorithms(): DigestAlgorithm[] {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering ScimAuth.filterDigestAlgorithms().");
     const out = ScimAuth.DIGEST_CANDIDATES.filter(function (row) {
       // Checked against the openssl this process actually has rather than
       // assumed. `sha512-256` is missing from some builds and `md5` from a
       // FIPS one, and a challenge naming an algorithm this process cannot
       // compute would be an instruction a client follows into a 500.
-      const available = crypto.getHashes().indexOf(row.hash) >= 0;
+      const available = stsCrypto.digestSupported(row.hash);
       if (!available) {
         log.warn('scim: this node build cannot compute ' + row.hash +
                  ', so HTTP Digest will not offer ' + row.token +
@@ -1658,7 +1655,7 @@ class ScimAuth {
   }
 
   private issueDigestNonce() {
-    const { log, crypto, digestNonces } = this.deps;
+    const { log, stsCrypto, digestNonces } = this.deps;
     log.debug("Entering ScimAuth.issueDigestNonce().");
     const now = Date.now();
     const ttl = this.digestNonceSeconds() * 1000;
@@ -1676,7 +1673,7 @@ class ScimAuth {
       // is the least recently issued.
       this.forgetDigestNonce(digestNonces.keys().next().value);
     }
-    const nonce = crypto.randomBytes(18).toString('base64');
+    const nonce = stsCrypto.randomBytes(18).toString('base64');
     // `{ at }` only — the counts are not in the row (see the declaration).
     digestNonces.set(nonce, { at: now });
     log.debug("Leaving ScimAuth.issueDigestNonce(). " + digestNonces.size +
@@ -1714,7 +1711,7 @@ class ScimAuth {
   }
 
   private digestHash(algorithmToken, text?) {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering ScimAuth.digestHash().");
     const base = String(algorithmToken || 'MD5').replace(/-sess$/i, '')
                                                 .toUpperCase();
@@ -1726,7 +1723,7 @@ class ScimAuth {
       return null;
     }
     log.debug("Leaving ScimAuth.digestHash().");
-    return crypto.createHash(row.hash).update(text, 'utf8').digest('hex');
+    return stsCrypto.httpDigestHash(row.hash, text);
   }
 
   private attemptDigest(req, ctx?) {
@@ -2001,7 +1998,7 @@ class ScimAuth {
   }
 
   private issueHobaChallenge() {
-    const { log, crypto, hobaChallenges } = this.deps;
+    const { log, stsCrypto, hobaChallenges } = this.deps;
     log.debug("Entering ScimAuth.issueHobaChallenge().");
     const now = Date.now();
     const ttl = this.hobaMaxAgeSeconds() * 1000;
@@ -2013,7 +2010,7 @@ class ScimAuth {
     while (hobaChallenges.size >= this.maxHobaChallenges()) {
       hobaChallenges.delete(hobaChallenges.keys().next().value);
     }
-    const challenge = crypto.randomBytes(16).toString('base64url');
+    const challenge = stsCrypto.randomBytes(16).toString('base64url');
     hobaChallenges.set(challenge, now);
     log.debug("Leaving ScimAuth.issueHobaChallenge(). " + hobaChallenges.size +
               " " +
@@ -2162,7 +2159,8 @@ class ScimAuth {
   }
 
   private attemptHoba(req, ctx?) {
-    const { log, crypto, errorCodes, hobaChallenges, hobaSeen } = this.deps;
+    const { log, stsCrypto, errorCodes, hobaChallenges, hobaSeen } =
+      this.deps;
     log.debug("Entering ScimAuth.attemptHoba().");
     if (this.authorizationScheme(req) !== 'hoba') {
       log.debug("Leaving ScimAuth.attemptHoba(). Not a HOBA credential.");
@@ -2260,7 +2258,7 @@ class ScimAuth {
 
     let key = null;
     try {
-      key = crypto.createPublicKey({
+      key = stsCrypto.publicKeyOf({
         key: Buffer.from(registered.der, 'base64'), format: 'der', type: 'spki'
       });
     } catch (e) {
@@ -2287,8 +2285,8 @@ class ScimAuth {
                               kid, challenge]);
     let verified = false;
     try {
-      verified = crypto.verify('sha256', Buffer.from(tbs, 'utf8'), key,
-                               signature);
+      verified = stsCrypto.signatureValid('sha256', Buffer.from(tbs, 'utf8'),
+                                          key, signature);
     } catch (e) {
       // A malformed signature makes verify() throw rather than return false.
       // Treated as a refusal, because from the caller's side the two are one
@@ -2552,7 +2550,7 @@ class ScimAuth {
    *   with
    */
   registerHobaKey(req) {
-    const { log, crypto, stsCrypto, mode, parseBody, authn, directory,
+    const { log, stsCrypto, mode, parseBody, authn, directory,
             errorCodes } = this.deps;
     log.debug("Entering ScimAuth.registerHobaKey().");
     if (!this.schemeOn('scim.authHoba')) {
@@ -2574,7 +2572,7 @@ class ScimAuth {
     }
     let key = null;
     try {
-      key = crypto.createPublicKey(pem);
+      key = stsCrypto.publicKeyOf(pem);
     } catch (e) {
       // Not a key. The message from openssl is passed through, because it is
       // usually specific enough to fix the request in one go.
@@ -2959,8 +2957,7 @@ class ScimAuth {
       .then((checked) => {
         Object.defineProperty(req, ScimAuth.BASIC_VERDICT, {
           value: { username: pair.username,
-                   digest: crypto.createHash('sha256').update(pair.password)
-                     .digest('hex'),
+                   digest: stsCrypto.digest('sha256', pair.password, 'hex'),
                    checked: checked },
           enumerable: false });
         return null;
@@ -3270,7 +3267,7 @@ class ScimAuth {
   // somebody has turned `requireAuthenticated` into a requirement for this
   // surface.
   private sessionFor(decision) {
-    const { log, crypto, authn, errorCodes } = this.deps;
+    const { log, stsCrypto, authn, errorCodes } = this.deps;
     log.debug("Entering ScimAuth.sessionFor().");
     if (!decision || decision.anonymous || !decision.principal) {
       log.debug("Leaving ScimAuth.sessionFor(). Nobody authenticated.");
@@ -3289,10 +3286,9 @@ class ScimAuth {
       //
       // It is still hashed, because the principal can be a DN or an email and a
       // session id is printed on `/admin/sessions` and in audit rows.
-      const key = crypto.createHash('sha256')
-        .update('scim ' + String(decision.scheme || '') + ' ' +
-                String(decision.principal || ''))
-        .digest('hex').slice(0, 24);
+      const key = stsCrypto.digest('sha256',
+        'scim ' + String(decision.scheme || '') + ' ' +
+        String(decision.principal || ''), 'hex').slice(0, 24);
       const session = authn.startSession(
         { set: () => {}, req: null }, decision.principal,
         ['pwd'], '1', 'SCIM',
@@ -3402,7 +3398,7 @@ class ScimAuth {
     // therefore no honest value to give it. A throw there takes the whole
     // service down over an optional member.
     if (base) {
-      out.documentationUri = base + '/scim';
+      out.documentationUri = helpers.rebaseTo(base, 'scim') + '/scim';
     }
     log.debug("Leaving ScimAuth.schemeDocument().");
     return out;

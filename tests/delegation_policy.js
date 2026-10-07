@@ -624,9 +624,13 @@ function wsTrust(t) {
           /InvalidRequest/.test(r.body), 'L9. both elements in one ' +
           'request: wst:InvalidRequest, in development too (STS-WSTRUST-0025)',
           r.errorCode + ' ' + r.body.slice(0, 400));
+  // #496: product refuses an RST with no AppliesTo before the delegation
+  // policy is asked — wst:InvalidRequest, STS-WSTRUST-0031 — so the
+  // policy's own no-target refusal (STS-WSTRUST-0024) is not reached.
   r = ask('product', 'dp-mid', actAs(as('dp-alice', 'dp-front')), '');
-  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0024',
-          'L10. no AppliesTo, the requester not S (STS-WSTRUST-0024)',
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0031' &&
+          /InvalidRequest/.test(r.body),
+          'L10. no AppliesTo: refused before the policy (STS-WSTRUST-0031)',
           r.errorCode + ' ' + r.body.slice(0, 400));
   r = ask('development', 'dp-front', onBehalfOf(as('dp-alice', 'dp-front')),
           'dp-back');
@@ -648,9 +652,13 @@ function wsTrust(t) {
     .exec(r.body) || [])[1] || '';
   const claims = jwt ? JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url')
     .toString('utf8')) : {};
-  t.check(r.status === 200 && claims.act && claims.act.sub === 'dp-front' &&
-          !claims.act.act && claims.may_act &&
-          claims.may_act.sub === 'dp-front',
+  // The requester as this service's OAuth tokens name a client actor
+  // (#476): its client subject in the mode — product implies RFC 9700
+  // mode, so `urn:sts:client:` — with the token's own `iss` (#471).
+  t.check(r.status === 200 && claims.act &&
+          claims.act.sub === 'urn:sts:client:dp-front' &&
+          claims.act.iss === claims.iss && !claims.act.act &&
+          claims.may_act && claims.may_act.sub === 'dp-front',
           'L13. an ActAs JWT carries `act` naming the requester, and the ' +
           'subject\'s may_act', r.status + ' ' + JSON.stringify(claims));
   // The register is protocol-independent: the same acts are Monitoring →

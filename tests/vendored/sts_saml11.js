@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
 'use strict';
 //
 // File: tests/sts_saml11.js
@@ -440,7 +443,12 @@ async function setSetting(key, value) {
   if (!(key in changedSettings)) {
     const before = await request('GET', '/admin-api/config');
     const all = JSON.parse(before.body);
-    const row = (all.settings || []).filter(function (s) { return s.key === key; })[0];
+    // The rows are the groups' `settings`; a top-level `settings` is the
+    // page's settings BLOCK since #446 (an object), not a list of rows.
+    const row = (all.groups || []).reduce(function (rows, g) {
+      return rows.concat(g.settings || []);
+    }, Array.isArray(all.settings) ? all.settings : [])
+      .filter(function (s) { return s.key === key; })[0];
     changedSettings[key] = { value: row ? row.value : undefined,
                              wasOverride: !!row && row.source === 'override' };
   }
@@ -833,7 +841,22 @@ async function main() {
   const requestId = '_req' + Date.now();
   const resolveBody = samlRequest('<samlp:AssertionArtifact>' + artifact +
                                   '</samlp:AssertionArtifact>', requestId);
+  // A RESPONDER ANSWERS ONLY FOR ITS OWN SourceID (rcbj/iya-sts#160,
+  // saml-bindings-1.1 section 4.1.1.6). This artifact's SourceID is the SHA-1
+  // of the relying party's SCOPED providerID (checked above), so it belongs to
+  // /saml11/responder/{rp}. The unscoped responder answers it with the empty
+  // response — Success, no assertion, no StatusMessage — and leaves it
+  // UNSPENT, which the scoped resolution below then shows.
+  const artSlug = scopedEntityId.slice(unscopedEntityId.length + 1);
+  const scopedResponder = '/saml11/responder/' + encodeURIComponent(artSlug);
   res = await request('POST', '/saml11/responder', resolveBody, XML);
+  doc = parse(res.body);
+  check('the UNSCOPED responder answers a relying party\'s artifact with the ' +
+        'empty response', res.status === 200 &&
+        statusOf(doc) === 'samlp:Success' && !byLocal(doc, 'Assertion') &&
+        !byLocal(doc, 'StatusMessage'),
+        res.status + ' ' + statusOf(doc));
+  res = await request('POST', scopedResponder, resolveBody, XML);
   check('the responder answers 200', res.status === 200, 'status ' + res.status);
   check('the answer is a SOAP envelope', /soap:Envelope/i.test(res.body));
   doc = parse(res.body);
@@ -858,16 +881,19 @@ async function main() {
   check('the artifact-borne assertion\'s signature verifies', sig.ok,
         sig.present ? sig.why : 'unsigned');
 
-  // Trap 4.
-  res = await request('POST', '/saml11/responder', resolveBody, XML);
+  // Trap 4. Resolvable exactly once (section 3.2.3) — and since #160 an
+  // artifact this responder does not hand over, a spent one included, is the
+  // empty response: Success with no assertion and no StatusMessage, rather
+  // than a Requester refusal that tells a caller which artifacts existed.
+  res = await request('POST', scopedResponder, resolveBody, XML);
   doc = parse(res.body);
-  check('resolving the same artifact a second time is REFUSED',
-        statusOf(doc) === 'samlp:Requester', statusOf(doc));
-  check('the refusal explains the one-shot rule rather than saying "not found"',
-        /one-shot/i.test(textOf(doc, 'StatusMessage')), textOf(doc, 'StatusMessage'));
-  check('the refusal still names the SOAP request',
+  check('resolving the same artifact a second time hands over NOTHING',
+        statusOf(doc) === 'samlp:Success' && !byLocal(doc, 'Assertion'),
+        statusOf(doc));
+  check('the empty response carries no StatusMessage',
+        !byLocal(doc, 'StatusMessage'), textOf(doc, 'StatusMessage'));
+  check('the empty response still names the SOAP request',
         byLocal(doc, 'Response').getAttribute('InResponseTo') === requestId);
-  check('no assertion comes back with the refusal', !byLocal(doc, 'Assertion'));
 
   // -------------------------------------------------------------------------
   heading('the SAML responder: the other three request types');
@@ -1112,8 +1138,11 @@ async function main() {
     cookie = '';
     res = await request('GET', '/saml11/sso?' + form({
       TARGET: 'https://guessed.example.com/app/page', shire: acs, profile: 'post' }));
+    // 403 since #496: a relying party nobody registered — and none named
+    // is none registered — is refused before its address is read.
     check('a flow naming no relying party is REFUSED in product mode',
-          res.status === 400 && !samlResponseIn(res.body),
+          res.status === 403 && /not registered/.test(res.body) &&
+          !samlResponseIn(res.body),
           'status ' + res.status + ' ' + res.body.slice(0, 160));
   } else {
     cookie = '';
@@ -1252,11 +1281,11 @@ async function main() {
   cookie = '';
   res = await resume('/saml11/sso?' + form({ providerId: unregistered, shire: acs,
                                              TARGET: target, profile: 'post' }), USER_UNREGISTERED);
-  // Product mode answers only at a registered return address, and an
-  // application nobody registered has none, so it is refused there.
+  // Product mode answers only a registered relying party (#496: a 403 page
+  // before its return address is read), so it is refused there.
   check(PRODUCT ? 'autocreateApplications=false: an unregistered relying party is REFUSED'
                 : 'autocreateApplications=false still ANSWERS the flow',
-        PRODUCT ? (res.status === 400 && !samlResponseIn(res.body))
+        PRODUCT ? (res.status === 403 && !samlResponseIn(res.body))
                 : !!samlResponseIn(res.body),
         'status ' + res.status);
   res = await request('GET', '/admin-api/saml11?rp=' + encodeURIComponent(unregistered));

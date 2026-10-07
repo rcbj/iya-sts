@@ -182,7 +182,8 @@ function childMain() {
     const ruleIds = (built.policy && built.policy.rules || [])
       .map(function (r) { return r.id.split(':rule:')[1]; });
     note(built.ok && ruleIds.join(',') === 'device-compromised,' +
-         'device-required,protocol-not-declared,risk-high,risk-medium-key,' +
+         'device-required,protocol-not-declared,authn-mechanism,' +
+         'mfa-mechanism,risk-high,risk-medium-key,' +
          'risk-medium-second-factor,risk-protected-key,' +
          'risk-protected-second-factor,' +
          'native-sso-not-enabled-refused,native-sso-not-enabled-dropped,' +
@@ -218,17 +219,21 @@ function childMain() {
          'risk-protected-alarm,holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
          'A1. the built-in issuance policy carries the two device rules ' +
-         '(#164), the protocol-declaration rule, the three risk rules, the console\'s two step-ups and ' +
+         '(#164), the protocol-declaration rule, the sign-in mechanism ' +
+         'rule (#457), the second-factor rule (#475), the three risk ' +
+         'rules, the console\'s two step-ups and ' +
          'its alarm ahead of the role rule, under ordered-deny-overrides',
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
       { decideRisk: 'no', decideDevices: 'no', decideProtocols: 'no',
+        decideAuthnMechanisms: 'no', decideMfaMechanisms: 'no',
         decideScopes: 'no', decideTransfers: 'no', decideExchanges: 'no',
         decideGnapRights: 'no' },
       { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
          'A2. decideRisk: no (and decideDevices, decideProtocols, ' +
+         'decideAuthnMechanisms (#457), decideMfaMechanisms (#475), ' +
          'decideScopes and ' +
          'decideTransfers, decideExchanges and decideGnapRights: no, #164, ' +
          '#304, #98, #186 and #432) builds the ' +
@@ -346,6 +351,126 @@ function childMain() {
          'E1. in development a risk Deny is observed and the roles decide',
          JSON.stringify(observed.risk));
     config.setOverride('risk.enforceInDevelopment', true);
+
+    // --- M. WS-Trust and the KDC decide at the door (#499) -----------------
+    // The sign-in being made is assessed before anything is issued and the
+    // decision is made on THAT assessment, recorded — not on the standing
+    // an earlier sign-in left. So a person held at MEDIUM is assessed again
+    // on every attempt, and is let through the moment they score lower.
+    // The MEDIUM line is moved to make the earlier sign-ins MEDIUM, and back
+    // to its default (3) for the one that recovers. Before any list names
+    // the loopback these requests come from (F below adds them).
+    config.setOverride('risk.minimumHistory', 1);
+    const assessedFor = async function (name, door) {
+      const v = await riskEngine.view('default',
+        { subject: helpers.subjectForName(name), days: 1 });
+      return v.assessments.rows.filter(function (a) {
+        return String(a.door).indexOf(door) === 0;
+      });
+    };
+    const WST = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
+    const soap = function (user) {
+      const body = '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-' +
+        'envelope" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/' +
+        'oasis-200401-wss-wssecurity-secext-1.0.xsd"><s:Header>' +
+        '<wsse:Security><wsse:UsernameToken><wsse:Username>' + user +
+        '</wsse:Username><wsse:Password>any</wsse:Password>' +
+        '</wsse:UsernameToken></wsse:Security></s:Header><s:Body>' +
+        '<wst:RequestSecurityToken xmlns:wst="' + WST + '">' +
+        '<wst:RequestType>' + WST + '/Issue</wst:RequestType>' +
+        '</wst:RequestSecurityToken></s:Body></s:Envelope>';
+      return new Promise(function (resolve) {
+        const req = http.request({ host: '127.0.0.1', port: port,
+          path: '/sts', method: 'POST',
+          headers: { 'content-type': 'application/soap+xml; charset=utf-8',
+                     'content-length': Buffer.byteLength(body),
+                     'user-agent': CHROME } }, function (res) {
+          let text = '';
+          res.on('data', function (c) { text += c; });
+          res.on('end', function () {
+            resolve({ status: res.statusCode, text: text });
+          });
+        });
+        req.end(body);
+      });
+    };
+    ldap.createUser('rd-kim', { invent: false });
+    const kimFirst = await soap('rd-kim');
+    config.setOverride('risk.mediumScorePercent', 1);
+    const kimHeld = await soap('rd-kim');
+    const kimHeldAgain = await soap('rd-kim');
+    const kimHeldRows = await assessedFor('rd-kim', 'WS-Trust');
+    config.clearOverride('risk.mediumScorePercent');
+    const kimBack = await soap('rd-kim');
+    const kimRows = await assessedFor('rd-kim', 'WS-Trust');
+    note(kimFirst.status === 200 && kimHeld.status === 403 &&
+         kimHeldAgain.status === 403 && kimHeldRows.length === 3 &&
+         kimHeldRows[0].level === 'MEDIUM' &&
+         /step-up/.test(String(kimHeldRows[0].decision)),
+         'M1. WS-Trust assesses every Issue at the door and decides on it: ' +
+         'a MEDIUM sign-in is refused, and the next attempt is ASSESSED ' +
+         'AGAIN (three assessments, the last MEDIUM with its step-up ' +
+         'decision recorded) rather than refused on the standing',
+         JSON.stringify({ statuses: [kimFirst.status, kimHeld.status,
+                                     kimHeldAgain.status],
+                          rows: kimHeldRows.map(function (a) {
+                            return [a.level, a.decision];
+                          }) }));
+    note(kimBack.status === 200 && kimRows.length === 4 &&
+         kimRows[0].level === 'LOW' &&
+         riskEngine.standingOf('default', 'rd-kim').level === 'LOW',
+         'M2. a person held at MEDIUM recovers at the door the moment their ' +
+         'score allows: at the default line the next Issue scores LOW and is ' +
+         'issued, and their standing is LOW',
+         JSON.stringify({ status: kimBack.status, rows: kimRows.map(
+           function (a) {
+             return [a.level, a.score, a.decision];
+           }) }));
+
+    const kdc = require(ROOT + '/kerberos/krb5_kdc.js');
+    const principals = require(ROOT + '/kerberos/krb5_principals.js');
+    const wire = require(ROOT + '/tests/vendored/krb5_wire.js');
+    const inproc = { label: 'in-process', send: function (bytes) {
+      return kdc.handleMessage(bytes);
+    } };
+    const KPW = String(config.value('krb5.userPassword'));
+    const kinit = async function (name) {
+      const r = await wire.asExchange(inproc, principals.REALM, name,
+                                      { password: KPW });
+      const e = (r.second && r.second.error) || (r.first && r.first.error);
+      return { tgt: !!r.tgt, code: e ? e.code : null,
+               eText: e ? String(e.eText || '') : '' };
+    };
+    ldap.createUser('rd-kurt', { invent: false });
+    const kurtFirst = await kinit('rd-kurt');
+    config.setOverride('risk.mediumScorePercent', 1);
+    // FROM AN ADDRESS KURT NEVER USED. Since #502 a KDC sign-in from his
+    // usual address is so familiar — no User-Agent and that address, both
+    // his and both rare in the realm — that it scores under the lowest line
+    // the setting can hold (0.01, measured at 0.007): the lookups an absent
+    // header and an unmapped address fail are no longer values everybody
+    // shares. A new address (×4, unmapped) is what puts it over.
+    const kurtHeld = await require(ROOT + '/common/audit').withSource(
+      { address: '198.51.100.77' }, function () {
+        return kinit('rd-kurt');
+      });
+    config.clearOverride('risk.mediumScorePercent');
+    const kurtBack = await kinit('rd-kurt');
+    const kurtRows = await assessedFor('rd-kurt', 'Kerberos');
+    note(kurtFirst.tgt && !kurtHeld.tgt && kurtHeld.code === 12 &&
+         /stronger authentication/.test(kurtHeld.eText) && kurtBack.tgt &&
+         kurtRows.length === 3 && kurtRows[1].level === 'MEDIUM' &&
+         kurtRows[0].level === 'LOW',
+         'M3. the KDC assesses an AS-REQ at the door once the pre-' +
+         'authentication verified: a MEDIUM sign-in gets no ticket ' +
+         '(KDC_ERR_POLICY, a stronger authentication), and the next, LOW, ' +
+         'gets one — each recorded',
+         JSON.stringify({ first: kurtFirst, held: kurtHeld, back: kurtBack,
+                          rows: kurtRows.map(function (a) {
+                            return [a.level, a.score, a.decision,
+                                    a.signals[0].factors];
+                          }) }));
+    config.clearOverride('risk.minimumHistory');
 
     // --- F. the sign-in screen ----------------------------------------------
     await riskTerms.accept({ provider: 'tor-project', acceptedBy: 'a test',
@@ -483,6 +608,15 @@ function childMain() {
     config.setOverride('risk.enforceInDevelopment', true);
     const audit = require(ROOT + '/common/audit');
     const CONSOLE = 'sts-admin-console';
+    // THE CONSOLE'S SIGN-IN STARTS IN THE BROWSER since the cutover (#446):
+    // the shell is asked for first (it registers the callback), then the
+    // authorize endpoint as the public client with PKCE.
+    const consoleAuthorize = '/oauth2/authorize?' + new URLSearchParams({
+      client_id: CONSOLE, response_type: 'code',
+      redirect_uri: 'http://127.0.0.1:' + port + '/admin/callback',
+      scope: 'openid admin:read admin:write', state: 's',
+      code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+      code_challenge_method: 'S256' }).toString();
     const onConsole = function (name, satisfied) {
       return gate.check({
         application: CONSOLE, kind: gate.ISSUANCE.SESSION,
@@ -535,9 +669,10 @@ function childMain() {
          // The three risk rules, the role rule, #164's two device rules,
          // the fourteen scope and detail rules of #304, #305 and #186, the
          // six transfer rules of #98, the protocol-declaration rule, the
-         // twenty exchange rules of #186, and the fourteen per-right GNAP
-         // rules of #432.
-         unprotectedPolicy.policy.rules.length === 61,
+         // twenty exchange rules of #186, the fourteen per-right GNAP
+         // rules of #432, the sign-in mechanism rule of #457, and the
+         // second-factor rule of #475.
+         unprotectedPolicy.policy.rules.length === 63,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 
@@ -557,7 +692,8 @@ function childMain() {
       const u = new URL(String(location || ''), 'http://127.0.0.1');
       return u.pathname + u.search;
     };
-    let ivyAt = await ivy.go('GET', '/admin');
+    await ivy.go('GET', '/admin');
+    let ivyAt = await ivy.go('GET', consoleAuthorize);
     for (let i = 0; i < 4 && ivyAt.status >= 300 && ivyAt.status < 400 &&
          !/\/authn\/login\?/.test(String(ivyAt.headers.location || ''));
          i++) {
@@ -607,7 +743,8 @@ function childMain() {
       return row.action === 'xacml.issuance.alarm' && row.actor === 'rd-jay';
     }).length;
     const jay = browser(port, CHROME);
-    let jayAt = await jay.go('GET', '/admin');
+    await jay.go('GET', '/admin');
+    let jayAt = await jay.go('GET', consoleAuthorize);
     for (let i = 0; i < 4 && jayAt.status >= 300 && jayAt.status < 400 &&
          !/\/authn\/login\?/.test(String(jayAt.headers.location || ''));
          i++) {

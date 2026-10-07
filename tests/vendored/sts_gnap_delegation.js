@@ -179,22 +179,33 @@ async function test() {
                    appAllowedToDelegateTo: [B],
                    oauthAuthorizationDetailsType: [JSON.stringify({
                      type: TYPE, locations: [RS.b, RS.c] })] });
-  await register(PLAIN, "gnap-client", { gnapSkipInteraction: "TRUE" });
+  // Each trusted client also finishes an ordinary grant (below), so its
+  // finish URI is registered: product uses only a registered one.
+  await register(PLAIN, "gnap-client", { gnapSkipInteraction: "TRUE",
+                                         gnapFinishUri: [h.FINISH] });
   await register(IMP, "gnap-client",
                  { gnapSkipInteraction: "TRUE",
+                   gnapFinishUri: [h.FINISH],
                    appDelegationSemantics: ["impersonation"],
                    appAllowedToDelegateTo: [A, B, C] });
 
-  // An ID Token this realm issued about the owner, from an ordinary grant.
-  const relying = new gnap.Client({ key: gnap.newKey("ES256") });
-  const signedIn = await h.redirectGrant(relying, OWNER, {
-    subject: { assertion_formats: ["id_token"] } });
-  const assertion = ((signedIn.released.subject || {}).assertions || [])
-    .filter(function (one) { return one.format === "id_token"; })[0];
-  check("an ID Token about the owner, from an ordinary grant", function () {
-    assert.ok(assertion && assertion.value,
-              JSON.stringify(signedIn.released));
-  });
+  // An ID Token this realm issued about the owner TO EACH TRUSTED CLIENT,
+  // from an ordinary grant of its own: RFC 9635 section 11.13 refuses an
+  // assertion a client presents that was issued to another (#497,
+  // STS-GNAP-0073), so each client presents the one it holds.
+  const assertions = {};
+  for (const who of [PLAIN, IMP]) {
+    const signedIn = await h.redirectGrant(keys[who], OWNER, {
+      subject: { assertion_formats: ["id_token"] } });
+    assertions[who] = ((signedIn.released.subject || {}).assertions || [])
+      .filter(function (one) { return one.format === "id_token"; })[0];
+    check("an ID Token about the owner issued to " + who + ", from an " +
+          "ordinary grant", function () {
+      assert.ok(assertions[who] && assertions[who].value,
+                JSON.stringify(signedIn.released));
+      assert.strictEqual(claimsOf(assertions[who].value).aud, who);
+    });
+  }
   const impersonate = function (who, access) {
     log.debug("Entering impersonate().");
     log.debug("Leaving impersonate().");
@@ -202,7 +213,7 @@ async function test() {
       client: { key: keys[who].keyObject() },
       access_token: { access: access },
       user: { assertions: [{ format: "id_token",
-                             value: assertion.value }] } } });
+                             value: assertions[who].value }] } } });
   };
 
   // =========================================================================

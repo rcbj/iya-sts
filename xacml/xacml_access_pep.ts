@@ -106,6 +106,7 @@ interface AccessQuestion {
   owner?: any;
   subject?: any;
   requiredRoles?: unknown[];
+  requiredAllRoles?: unknown[];
 }
 
 // What a decision answers.
@@ -361,6 +362,11 @@ class XacmlAccessPep {
                model.TYPE.BOOLEAN)
       .target(asked.resource)
       .resource(ATTRIBUTE.REQUIRED_ROLE, required)
+      // EVERY ONE OF THESE (#454), where the caller names any: the
+      // template's conjunct asks that the subject hold them all.
+      .resource(ATTRIBUTE.REQUIRED_ALL_ROLE,
+                (Array.isArray(asked.requiredAllRoles)
+                  ? asked.requiredAllRoles : []).map(String))
       .resource(ATTRIBUTE.OWNER, [asked.owner || ''])
       .requestedAction(asked.action);
     req.category(model.CATEGORY.ENVIRONMENT);

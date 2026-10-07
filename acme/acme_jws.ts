@@ -46,7 +46,6 @@
 // exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import net = require('net');
 import asn1js = require('asn1js');
 import pkijs = require('pkijs');
@@ -156,7 +155,6 @@ const MAX_MEMBER = 1048576;
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface AcmeJwsDeps {
-  nodeCrypto: typeof nodeCrypto;
   net: typeof net;
   asn1js: typeof asn1js;
   pkijs: typeof pkijs;
@@ -181,7 +179,7 @@ class AcmeJws {
   /**
    * Creates the reader.
    *
-   * @param deps - node's crypto and net, asn1js, pkijs, the logger,
+   * @param deps - net, asn1js, pkijs, the logger,
    * `common/crypto.js`, the cluster secrets and validation
    */
   constructor(private readonly deps: AcmeJwsDeps) {
@@ -200,7 +198,6 @@ class AcmeJws {
     log.debug("Entering AcmeJws.defaultDeps().");
     log.debug("Leaving AcmeJws.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
       net: net,
       asn1js: asn1js,
       pkijs: pkijs,
@@ -545,7 +542,7 @@ class AcmeJws {
    * public members, or a refusal
    */
   checkAccountKey(jwk, alg) {
-    const { log, nodeCrypto, stsCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     const self = this;
     log.debug("Entering AcmeJws.checkAccountKey(). alg=" + alg);
     if (!jwk || typeof jwk !== 'object') {
@@ -593,7 +590,7 @@ class AcmeJws {
     }
     let key = null;
     try {
-      key = nodeCrypto.createPublicKey({ key: publicJwk, format: 'jwk' });
+      key = stsCrypto.publicKeyFromJwk(publicJwk);
     } catch (e) {
       log.debug("Caught in AcmeJws.checkAccountKey(): " +
                 ((e && e.message) || e));
@@ -804,11 +801,11 @@ class AcmeJws {
    * @returns the nonce
    */
   mintNonce(realmId, lifetimeS) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering AcmeJws.mintNonce().");
     const expiresS = Math.floor(Date.now() / 1000) +
                      Math.max(1, Number(lifetimeS) || 300);
-    const random = nodeCrypto.randomBytes(16);
+    const random = stsCrypto.randomBytes(16);
     const head = Buffer.alloc(5);
     head.writeUInt8(NONCE_VERSION, 0);
     head.writeUInt32BE(expiresS >>> 0, 1);
@@ -831,7 +828,7 @@ class AcmeJws {
    * `malformed`, `forged` or `expired`
    */
   checkNonce(nonce, realmId) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering AcmeJws.checkNonce().");
     const bytes = this.decodeB64url(nonce, false);
     if (!bytes || bytes.length !== 37 || bytes.readUInt8(0) !== NONCE_VERSION) {
@@ -842,7 +839,7 @@ class AcmeJws {
     const random = bytes.subarray(5, 21);
     const presented = bytes.subarray(21, 37);
     const expected = this.nonceMac(realmId, expiresS, random);
-    if (!nodeCrypto.timingSafeEqual(presented, expected)) {
+    if (!stsCrypto.bytesEqualConstantTime(presented, expected)) {
       log.debug("Leaving AcmeJws.checkNonce(). Not one this service issued " +
                 "here.");
       return { ok: false, reason: 'forged' };
@@ -1160,13 +1157,12 @@ class AcmeJws {
    * @returns the DER, or null when the key does not load
    */
   spkiOfJwk(jwk) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering AcmeJws.spkiOfJwk().");
     try {
-      const der = nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' })
-        .export({ type: 'spki', format: 'der' });
+      const der = stsCrypto.spkiDerOf(stsCrypto.publicKeyFromJwk(jwk));
       log.debug("Leaving AcmeJws.spkiOfJwk().");
-      return Buffer.from(der);
+      return der;
     } catch (e) {
       log.debug("Caught in AcmeJws.spkiOfJwk(): " + ((e && e.message) || e));
       log.debug("Leaving AcmeJws.spkiOfJwk(). Unusable.");

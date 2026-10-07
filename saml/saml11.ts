@@ -85,6 +85,8 @@ import InstanceSlot = require('../common/instance_slot');
 // saml.issuer — the same setting the 2.0 assertions carry, because it names
 // the same signer.
 import config = require('../common/config');
+// #480: the names this service signs under, in one place (a library).
+import IssuerNames = require('../common/issuer_names');
 // The error-code registry, a leaf; the signing failure below is tagged with its
 // code.
 import errorCodes = require('../common/error_codes');
@@ -363,7 +365,8 @@ class Saml11Assertions {
    * @param opts - `subject`, `audience`, `lifetimeMin` (60 by default),
    * `authnMethod`, `authnInstant`, `attributes`, `issuer`, `nameIdFormat`,
    * `nameIdValue`, `nameQualifier`, `confirmationMethod`, `subjectLocality`,
-   * `doNotCache`, `authenticationStatement` and `sign`
+   * `doNotCache`, `authenticationStatement`, `sign` and `application` (the
+   * entry whose claim settings govern, #487)
    * @returns the assertion's XML
    */
   buildSaml11Assertion(opts) {
@@ -452,9 +455,15 @@ class Saml11Assertions {
     // would break the sign-in somewhere that looks nothing like this page. An
     // attribute configured with no namespace gets the identity claims
     // namespace, which is where a relying party is already looking.
+    // `application` (#487, #483's member): the entry whose settings govern,
+    // where the caller resolved it — WS-Trust's AppliesTo application.
     const custom = stats.samlAttributes('saml11',
-                                        { subject: opts.subject,
-                                          audience: opts.audience });
+                                        Object.assign({ subject: opts.subject,
+                                                        audience:
+                                                          opts.audience },
+                                          opts.application
+                                            ? { application: opts.application }
+                                            : {}));
     // FILTERED against the caller's own claims by name, for the reason saml2.ts
     // states beside the same line: an assertion is a list of elements, so a
     // duplicate name is not an overwrite but two <Attribute> elements with one
@@ -491,7 +500,7 @@ class Saml11Assertions {
       '<saml:Assertion xmlns:saml="' + SAML11_NS + '"' +
         ' MajorVersion="1" MinorVersion="1"' +
         ' AssertionID="' + id + '"' +
-        ' Issuer="' + xmlEscape(opts.issuer || config.value('saml.issuer')) +
+        ' Issuer="' + xmlEscape(opts.issuer || IssuerNames.samlIssuer()) +
         '" ' +
         'IssueInstant="' + now + '">' +
         '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +

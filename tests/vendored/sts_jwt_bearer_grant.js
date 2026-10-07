@@ -231,6 +231,18 @@ async function ok(url, body, what) {
   return r.body;
 }
 
+// A SEALED KEY OF AN APPLICATION, collected the one way there is since
+// #446: `POST /admin-api/applications/reveal-secret` naming its attribute.
+// The answers that list the application carry it masked, as every GET does.
+async function revealed(application, attribute) {
+  log.debug("Entering revealed().");
+  const answer = await ok(realmApi + "/applications/reveal-secret",
+                          { application: application, secret: attribute },
+                          "revealed " + application + "'s " + attribute);
+  log.debug("Leaving revealed().");
+  return answer.value;
+}
+
 // A form POST to the token endpoint. The grant takes form encoding, which is
 // what RFC 6749 section 4 says and what every OAuth client sends.
 async function tokenRequest(fields) {
@@ -341,13 +353,13 @@ async function test() {
   const view = await get(realmApi + "/applications?application=" +
                          encodeURIComponent(CLIENT));
   const fields = ((view.body.application || view.body).fields) || {};
-  const privateKeyPem = fields.oauthAssertionPrivateKey;
+  const privateKeyPem = await revealed(CLIENT, "oauthAssertionPrivateKey");
   const kid = fields.oauthAssertionKid;
 
-  // WHAT THIS ASSERTS AND WHAT IT CANNOT. The key comes back as a PEM here in
-  // every mode, and that is the design: this endpoint reads through
-  // `common/applications.js`, which OPENS the value, and the caller is holding
-  // an `admin:read` token. What the ENTRY holds is sealed under the
+  // WHAT THIS ASSERTS AND WHAT IT CANNOT. The key comes back as a PEM in
+  // every mode, and that is the design: `reveal-secret` reads through
+  // `common/applications.js`, which OPENS the value, and the caller holds an
+  // `admin:write` token (#446: no GET carries it). What the ENTRY holds is sealed under the
   // key-encryption key wherever that key outlives the process — and no request
   // can see the entry, so that half is asserted in process by `tests/pki.js`.
   // Neither implies the other.
@@ -869,13 +881,26 @@ async function test() {
           assert.ok(JSON.stringify(apiView.body).indexOf("PRIVATE KEY") < 0);
         });
 
+  // THE PAGE IS THE STATIC CONSOLE'S SHELL SINCE #446, AND THE DATA IS
+  // BEHIND /admin-api: the document every `/admin/*` path answers carries
+  // nothing of this service's, and the page draws itself from
+  // GET /admin-api/pki, which refuses a caller with no token. `Authorization: none` keeps the suite's
+  // preloaded token off this one request.
   const page = await fetch(realmBase + "/admin/pki", { redirect: "manual" });
-  check("the console page is BEHIND THE GATE — it is reached through the " +
+  const pageText = await page.text();
+  const tokenless = await fetch(realmBase + "/admin-api/pki", {
+    redirect: "manual", headers: { authorization: "none" } });
+  check("the console page is the console's shell, and its data is BEHIND " +
+        "/admin-api's token, which the console gets through the " +
         "authorization code flow like every other page of that console",
         function () {
-          assert.ok(page.status === 303 || page.status === 302,
-            "/admin/pki answered " + page.status + " to a caller with no " +
-            "console session");
+          assert.ok(page.status === 200 && /<html/i.test(pageText) &&
+                    !/PRIVATE KEY|"persons"|"connections"/.test(pageText),
+            "/admin/pki answered " + page.status + " with " +
+            pageText.slice(0, 120));
+          assert.strictEqual(tokenless.status, 401,
+            "GET /admin-api/pki answered " + tokenless.status +
+            " to a caller with no token");
         });
 
   // -------------------------------------------------------------------------
@@ -1076,8 +1101,7 @@ async function test() {
                               "issued it a signing key pair");
   const onceView = await get(realmApi + "/applications?application=" +
                              encodeURIComponent(ONCE));
-  const onceKey = (((onceView.body.application || onceView.body).fields) ||
-                   {}).oauthAssertionPrivateKey;
+  const onceKey = await revealed(ONCE, "oauthAssertionPrivateKey");
   assert.ok(onceKey, "the issued private key is not on " + ONCE + "'s entry");
   // The same party is trusted to assert as a GRANT, so one document can be
   // presented as either and the only thing that can refuse the second use is

@@ -438,7 +438,11 @@ async function tgsExchange(transport, tgt, sname, realm, opts) {
   const options = opts || {};
   const profile = kcrypto.etypeById(tgt.etype);
   const nonce = randomNonce();
-  const kdcOptions = [msgs.KDC_OPTION.FORWARDABLE, msgs.KDC_OPTION.RENEWABLE];
+  // `opts.notForwardable` leaves the FORWARDABLE option out (#492: an
+  // S4U2Proxy that did not ask for a forwardable ticket gets none).
+  const kdcOptions = options.notForwardable
+    ? [msgs.KDC_OPTION.RENEWABLE]
+    : [msgs.KDC_OPTION.FORWARDABLE, msgs.KDC_OPTION.RENEWABLE];
   if (options.renew) {
     kdcOptions.push(msgs.KDC_OPTION.RENEW);
   }

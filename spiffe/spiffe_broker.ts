@@ -90,6 +90,8 @@ import workload = require('./spiffe_workload');
 import ca = require('./spiffe_ca');
 import spiffeId = require('./spiffe_id');
 import peer = require('./spiffe_peer');
+import realms = require('../common/realms');
+import audit = require('../common/audit');
 
 /**
  * The type URL of a WorkloadPIDReference.
@@ -102,6 +104,11 @@ const PID_REFERENCE =
 const K8S_REFERENCE =
   'type.googleapis.com/spiffe.broker.KubernetesObjectReference';
 const ERROR_INFO = 'type.googleapis.com/google.rpc.ErrorInfo';
+// The request pool's operation for FetchJWTSVID's second half — see
+// `dispatchFetchJwt()`. The `spiffe.<surface>.<method>` shape
+// `spiffe_grpc.ts`'s `methodKind()` gives the forty-two, so `spiffe` in
+// `workers.dispatch` names it with them.
+const FETCH_JWT_OPERATION = 'spiffe.broker.FetchJWTSVID';
 // A Kubernetes UID: a UUID string.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -132,6 +139,13 @@ interface BrokerDeps {
   peer: typeof peer;
   // The workload attestation table (`spiffe_server.ts` builds it).
   attestation(): any;
+  // The ambient realm and audit source, carried to and entered in a worker.
+  realms: typeof realms;
+  audit: typeof audit;
+  // The two halves of the request pool, required LAZILY — `spiffe_grpc.ts`'s
+  // arrangement: a process without them answers in place.
+  loadRequestPool(): any;
+  loadRequestWorker(): any;
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +349,13 @@ class SpiffeBroker {
     helpers.log.debug("Leaving SpiffeBroker.defaultDeps().");
     return { log: log, errorCodes: errorCodes, rpc: rpc, workload: workload,
              ca: ca, spiffeId: spiffeId, peer: peer,
-             attestation: attestation };
+             attestation: attestation, realms: realms, audit: audit,
+             loadRequestPool: function () {
+               return require('../common/request_pool');
+             },
+             loadRequestWorker: function () {
+               return require('../common/request_worker');
+             } };
   }
 
   // A status error carrying section 4.8's google.rpc.ErrorInfo. `call` is
@@ -635,6 +655,73 @@ class SpiffeBroker {
     };
   }
 
+  // THE REGISTRY A WORKER JUST WROTE (2026-10-07). A registration entry made
+  // through /admin-api is stored by the request WORKER that answered it, and
+  // this API answers in the FRONT process, which learns of it through the
+  // change log. With no barrier on this socket a reference made just after the
+  // entry was refused WORKLOAD_NOT_ENTITLED (STS-SPIFFE-0138) from the old
+  // copy — `sts_spiffe_broker`'s pod entry in single-node, twice on
+  // 2026-10-07. So the front process waits for what the workers have answered
+  // to commit and pulls it: the two steps `krb5_kdc.js`'s
+  // `catchUpWithWorkers()` takes for port 88, bounded, and only where request
+  // workers exist and `workers.readYourWrite` is on. Lazy and guarded, as
+  // there: a process with no pool answers as it was.
+  //
+  // **ONLY FOR SubscribeToX509SVID NOW (2026-10-07, rcbj: the front process's
+  // event loop is to be kept as free as possible).** FetchJWTSVID's
+  // entitlement and minting run in a request worker behind the pool's own
+  // barrier (`dispatchFetchJwt()`), so it needs none here. A STREAM stays in
+  // the front process by design (`spiffe_grpc.ts`, `serverStream()`), and its
+  // first message is entitlement-dependent: a stream whose first answer comes
+  // from the old copy ends PERMISSION_DENIED and a broker does not retry it,
+  // so that one still waits. The two BUNDLE streams do not — their first
+  // message depends on no entry, and a bundle that changed is re-sent at the
+  // next rotation anyway.
+  /**
+   * Waits, bounded, for the request workers' answered writes to commit and
+   * pulls them into this process.
+   *
+   * @returns nothing
+   */
+  async catchUpWithWorkers(): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeBroker.catchUpWithWorkers().");
+    let pool = null;
+    let persistence = null;
+    try {
+      pool = require('../common/request_pool');
+      persistence = require('../persistence/persistence');
+    } catch (e) {
+      log.debug("Caught in SpiffeBroker.catchUpWithWorkers(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving SpiffeBroker.catchUpWithWorkers(). No pool here.");
+      return;
+    }
+    if (!pool || typeof pool.readYourWrite !== 'function' ||
+        !pool.readYourWrite() || !(pool.size() > 0)) {
+      log.debug("Leaving SpiffeBroker.catchUpWithWorkers(). No workers.");
+      return;
+    }
+    let timer = null;
+    const bound = new Promise(function (resolve) {
+      timer = setTimeout(resolve, 3000);
+    });
+    const caught = Promise.resolve()
+      .then(function () { return pool.awaitCommitConfirmations(null); })
+      .then(function () { return persistence.syncNow(); });
+    try {
+      await Promise.race([caught, bound]);
+    } catch (e) {
+      // Answered from what this process holds, as every other caller of the
+      // barrier is when the store cannot be read.
+      log.debug("Caught in SpiffeBroker.catchUpWithWorkers(): " +
+                ((e && e.message) || e));
+    } finally {
+      clearTimeout(timer);
+    }
+    log.debug("Leaving SpiffeBroker.catchUpWithWorkers().");
+  }
+
   // Steps 1–3 for one call, with the caller the entitlement is asked for.
   // The allow list is asked of the TYPE URL before the reference's value is
   // read, as SPIRE's `authorizeReferenceType()` is: a broker allowed neither
@@ -772,6 +859,238 @@ class SpiffeBroker {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // FetchJWTSVID's SECOND HALF IS ANSWERED IN A REQUEST WORKER (2026-10-07,
+  // rcbj's decision).
+  //
+  // The Broker API stayed out of `spiffe_grpc.ts`'s `DISPATCHED_SURFACES`
+  // because a REFERENCE is attested by the process that holds the pidfds and
+  // the attestors' connections to the kubelet, docker and systemd — this one.
+  // That is true of steps 1 to 3 and of nothing after them: once
+  // `referenced()` has attested the workload, what is left is the same
+  // entitlement and minting the Workload API's dispatched FetchJWTSVID does,
+  // over a caller that is already plain data — `{ brokered, brokerId,
+  // selectors }`. So the call is cut there. The front process keeps the
+  // socket, the broker's authentication, the attestation, the facts it holds
+  // open until the call ends, the release, and the ErrorInfo a refusal
+  // carries; a worker gets the attested caller, the audiences, the SPIFFE ID
+  // asked for, the realm and the client's address, and answers the SVIDs.
+  //
+  // **IT IS WHAT CLOSES THE RACE `catchUpWithWorkers()` WAS WRITTEN FOR**,
+  // without the front process waiting: an entry written through /admin-api
+  // by a worker is read by a worker, and `runOperation()` puts the read
+  // behind the pool's barrier (every answered write committed, the worker at
+  // the generation they made) exactly as it does an HTTP request.
+  //
+  // A REFUSAL CROSSES AS DATA. WORKLOAD_NOT_ENTITLED is built HERE
+  // (`notEntitled()`), because its ErrorInfo goes on gRPC metadata that a
+  // worker could not send, and it marks STS-SPIFFE-0138 on this call; any
+  // other failure crosses as `spiffe_grpc.ts`'s `performMethod()` sends one —
+  // the numeric status and the message — and is rebuilt by
+  // `errorFromResult()`, so a status keeps its code and anything else is the
+  // defect UNKNOWN reports. (The two calls the worker makes mark nothing on
+  // a call, so there is no condition to carry.)
+  //
+  // NOT DISPATCHED — no pool, `spiffe` not in `workers.dispatch`, no worker
+  // ready — is answered here, as before. A WORKER THAT FAILS is not retried
+  // here (LDAP's rule): it may already have minted and recorded an SVID, so
+  // the broker is told UNAVAILABLE (STS-SPIFFE-0145) and may call again.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds what a request worker is sent for FetchJWTSVID's second half.
+   *
+   * @param ref - what `referenced()` answered
+   * @param audiences - the audiences asked for
+   * @param wanted - the SPIFFE ID asked for, or ''
+   * @returns the operation's arguments
+   */
+  fetchJwtRequest(ref: any, audiences: string[], wanted: string): any {
+    const { log, realms, audit } = this.deps;
+    log.debug("Entering SpiffeBroker.fetchJwtRequest().");
+    log.debug("Leaving SpiffeBroker.fetchJwtRequest().");
+    return {
+      // THE ATTESTED CALLER, the one thing a worker could not work out: it
+      // has no pidfd and no kubelet. Plain already — strings and selectors.
+      caller: ref.caller,
+      audiences: audiences,
+      spiffeId: wanted,
+      // What the refusal names, so a worker's log line and the front's agree.
+      describe: ref.resolved.describe,
+      // The realm whose Broker endpoint the call arrived on (`spiffe_server.ts`
+      // enters it around the handler table) — `methodRequest()`'s argument:
+      // without it a worker would answer in the DEFAULT realm's trust domain.
+      realm: realms.currentId(),
+      // The broker's address, for the audit row `issueJwtSvids()` writes.
+      address: String(audit.currentAddress() || '')
+    };
+  }
+
+  /**
+   * Sends FetchJWTSVID's entitlement and minting to a request worker, once the
+   * reference is attested here.
+   *
+   * @param call - the gRPC call
+   * @param ref - what `referenced()` answered
+   * @param audiences - the audiences asked for
+   * @param wanted - the SPIFFE ID asked for, or ''
+   * @returns `{ dispatched: false }` to answer here, or `{ dispatched: true,
+   *   reply }`
+   * @throws a status error for a refusal, or UNAVAILABLE when the worker
+   *   failed
+   */
+  async dispatchFetchJwt(call: any, ref: any, audiences: string[],
+                         wanted: string): Promise<any> {
+    const { log, rpc, errorCodes, loadRequestPool } = this.deps;
+    log.debug("Entering SpiffeBroker.dispatchFetchJwt().");
+    let pool = null;
+    try {
+      pool = loadRequestPool();
+    } catch (e) {
+      log.debug("Caught in SpiffeBroker.dispatchFetchJwt(): " +
+                ((e && e.message) || e));
+      pool = null;
+    }
+    if (!pool || typeof pool.runOperation !== 'function') {
+      log.debug("Leaving SpiffeBroker.dispatchFetchJwt(). No pool here.");
+      return { dispatched: false };
+    }
+    let answer = null;
+    try {
+      answer = await pool.runOperation(FETCH_JWT_OPERATION,
+        this.fetchJwtRequest(ref, audiences, wanted));
+    } catch (e) {
+      log.debug("Caught in SpiffeBroker.dispatchFetchJwt(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SPIFFE-0145') + 'spiffe: a request ' +
+                'worker failed the Broker API\'s FetchJWTSVID for the ' +
+                'referenced ' + ref.resolved.describe + ': ' +
+                ((e && e.message) || e) + '. The broker is told UNAVAILABLE ' +
+                'rather than having it run here, because the worker may ' +
+                'already have minted.');
+      errorCodes.mark(call, 'STS-SPIFFE-0145');
+      log.debug("Leaving SpiffeBroker.dispatchFetchJwt(). The worker failed.");
+      // error-code: none — marked on the call two lines above
+      throw rpc.statusError(rpc.status.UNAVAILABLE,
+                            'the service could not complete this call; try ' +
+                            'again');
+    }
+    if (!answer || !answer.dispatched) {
+      log.debug("Leaving SpiffeBroker.dispatchFetchJwt(). Not dispatched.");
+      return { dispatched: false };
+    }
+    const result = answer.result || {};
+    if (result.ok) {
+      log.debug("Leaving SpiffeBroker.dispatchFetchJwt(). Answered.");
+      return { dispatched: true, reply: result.reply || { svids: [] } };
+    }
+    if (result.notEntitled) {
+      log.debug("Leaving SpiffeBroker.dispatchFetchJwt(). Not entitled.");
+      throw this.notEntitled(call, ref.resolved);
+    }
+    log.debug("Leaving SpiffeBroker.dispatchFetchJwt(). Refused.");
+    // error-code: none — a rebuild of the worker's refusal; the wrapper's
+    // failureCodeOf() records it as it would one thrown here
+    throw rpc.errorFromResult(result);
+  }
+
+  // The worker's half: the SAME three steps the handler takes in place,
+  // inside the realm and the audit source the call arrived with.
+  /**
+   * Runs FetchJWTSVID's entitlement and minting for an attested caller, in
+   * the realm the call arrived in: what a request worker runs.
+   *
+   * @param args - what `fetchJwtRequest()` built
+   * @returns `{ ok: true, reply }`, `{ ok: false, notEntitled: true }`, or
+   *   `{ ok: false, code, message, stack, errorCode }` for a refusal
+   */
+  async issueForReference(args: any): Promise<any> {
+    const { log, realms, audit, workload, ca } = this.deps;
+    const self = this;
+    log.debug("Entering SpiffeBroker.issueForReference().");
+    const a = args || {};
+    const realm = realms.get(String(a.realm || '')) || realms.DEFAULT_REALM;
+    const audiences = (Array.isArray(a.audiences) ? a.audiences : [])
+      .map(String);
+    const wanted = String(a.spiffeId || '');
+    try {
+      const out = await realms.run(realm, function () {
+        return audit.withSource({ address: String(a.address || '') },
+                                async function () {
+          await ca.ready();
+          let entries = workload.entitledEntries(a.caller || null);
+          if (wanted) {
+            entries = entries.filter(function (entry) {
+              return entry.spiffeId === wanted;
+            });
+          }
+          if (!entries.length) {
+            return { ok: false, notEntitled: true };
+          }
+          const svids = await workload.issueJwtSvids(entries, audiences,
+                                                     a.caller || null);
+          return { ok: true, reply: { svids: self.uniqueHints(svids) } };
+        });
+      });
+      log.debug("Leaving SpiffeBroker.issueForReference(). " +
+                (out.ok ? 'Answered' : 'Not entitled') + ' for the ' +
+                'referenced ' + String(a.describe || 'workload') + '.');
+      return out;
+    } catch (err) {
+      log.debug("Caught in SpiffeBroker.issueForReference(): " +
+                ((err && err.message) || err));
+      log.debug("Leaving SpiffeBroker.issueForReference(). Refused.");
+      return { ok: false,
+               code: (err && typeof err.code === 'number') ? err.code : null,
+               message: (err && err.message) || '',
+               stack: (err && err.stack) || '' };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE WORKER TABLE, FILLED ONLY IN A WORKER — `spiffe_grpc.ts`'s
+  // `registerWorkerMethod()` argues why, and the test it cost. Called at the
+  // foot of this file, which a worker loads through `spiffe_server.ts`;
+  // idempotent, because `register()` throws on a second registration.
+  // ---------------------------------------------------------------------------
+  /**
+   * Registers FetchJWTSVID's second half in a request worker's operation
+   * table; only in a process that is a worker, and idempotent.
+   *
+   * @returns true when it registered
+   */
+  static registerWorkerOperation(): boolean {
+    helpers.log.debug("Entering SpiffeBroker.registerWorkerOperation().");
+    if (!process.env.STS_REQUEST_WORKER) {
+      helpers.log.debug("Leaving SpiffeBroker.registerWorkerOperation(). " +
+                        "Not a request worker.");
+      return false;
+    }
+    // No attestation table: a worker attests nothing.
+    const instance = new SpiffeBroker(SpiffeBroker.defaultDeps(function () {
+      return null;
+    }));
+    let worker = null;
+    try {
+      worker = instance.deps.loadRequestWorker();
+    } catch (e) {
+      helpers.log.debug("Caught in SpiffeBroker.registerWorkerOperation(): " +
+                        ((e && e.message) || e));
+      worker = null;
+    }
+    if (!worker || typeof worker.register !== 'function' ||
+        (worker.OPERATIONS && worker.OPERATIONS.has(FETCH_JWT_OPERATION))) {
+      helpers.log.debug("Leaving SpiffeBroker.registerWorkerOperation(). " +
+                        "Nothing to do.");
+      return false;
+    }
+    worker.register(FETCH_JWT_OPERATION, function (args) {
+      return instance.issueForReference(args);
+    });
+    helpers.log.debug("Leaving SpiffeBroker.registerWorkerOperation(). " +
+                      "Registered.");
+    return true;
+  }
+
   // The four handlers, wrapped by `spiffe_grpc.ts` for the `broker` surface.
   /**
    * Returns the four Broker API handlers, for `spiffe_grpc.ts` to wrap on the
@@ -787,6 +1106,9 @@ class SpiffeBroker {
       async function (call, push, end) {
         await ca.ready();
         const ref = await self.referenced(call);
+        // The first message is the entitlement, and a stream refused from
+        // the old copy is not retried — see catchUpWithWorkers().
+        await self.catchUpWithWorkers();
         const observed = { shortest: 0 };
         const build = async function () {
           log.debug("Entering build().");
@@ -856,6 +1178,14 @@ class SpiffeBroker {
         }
         const ref = await self.referenced(call);
         try {
+          // THE ENTITLEMENT AND THE MINTING, IN A REQUEST WORKER WHERE THERE
+          // IS ONE — see dispatchFetchJwt(). The attestation above stays
+          // here, and so does the release below.
+          const answer = await self.dispatchFetchJwt(call, ref, audiences,
+                                                     parsed ? parsed.id : '');
+          if (answer.dispatched) {
+            return answer.reply;
+          }
           let entries = workload.entitledEntries(ref.caller);
           if (parsed) {
             entries = entries.filter(function (entry) {
@@ -898,8 +1228,13 @@ class SpiffeBroker {
  * Endpoint drafts.
  * @namespace
  */
+// In a request worker, the table FetchJWTSVID's second half is answered
+// from — see registerWorkerOperation().
+SpiffeBroker.registerWorkerOperation();
+
 export = {
   SpiffeBroker: SpiffeBroker,
+  FETCH_JWT_OPERATION: FETCH_JWT_OPERATION,
   ProtoWire: ProtoWire,
   PID_REFERENCE: PID_REFERENCE,
   K8S_REFERENCE: K8S_REFERENCE

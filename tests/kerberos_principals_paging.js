@@ -66,60 +66,21 @@ function names(rows, key) {
   }).join(',');
 }
 
-function pageHandler() {
-  log.debug("Entering pageHandler().");
-  const layer = (app._router.stack || []).filter(function (one) {
-    return one.route && one.route.path === '/admin/kerberos/principals' &&
-           one.route.methods.get;
-  })[0];
-  log.debug("Leaving pageHandler(). " + (layer ? "Found." : "Not found."));
-  return layer ? layer.route.stack[0].handle : null;
-}
+// THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): its `/admin-api`
+// operation's answer, drawn by its renderer (`tests/tools/console_page.js`),
+// where it was the console route's handler until the cutover.
+const drawer = require('./tools/console_page.js')
+  .consolePage(__dirname + '/..');
 
-function drawPage(query) {
+async function drawPage(query) {
   log.debug("Entering drawPage().");
-  let body = '';
-  const res = {
-    set: function () {
-      return this;
-    },
-    status: function () {
-      return this;
-    },
-    type: function () {
-      return this;
-    },
-    send: function (text) {
-      body = String(text);
-      return this;
-    },
-    get: function () {
-      return undefined;
-    },
-    getHeader: function () {
-      return undefined;
-    },
-    setHeader: function () {
-      return undefined;
-    },
-    locals: {}
-  };
-  const req = { query: query, headers: {}, method: 'GET', cookies: {},
-                url: '/admin/kerberos/principals',
-                originalUrl: '/admin/kerberos/principals',
-                path: '/admin/kerberos/principals',
-                get: function () {
-                  return '';
-                } };
-  pageHandler()(req, res, function (e) {
-    log.debug("The Kerberos principals handler called next(): " +
-              ((e && e.message) || e));
-  });
-  log.debug("Leaving drawPage(). " + body.length + " character(s).");
-  return body;
+  const drawn = await drawer.draw('/admin/kerberos/principals', query);
+  log.debug("Leaving drawPage(). " + drawn.html.length +
+            " character(s).");
+  return drawn.html;
 }
 
-function runBody(t) {
+async function runBody(t) {
   log.debug("Entering runBody().");
   // -------------------------------------------------------------------------
   t.log.info('=== 1. each list moves on its own parameter ===');
@@ -156,9 +117,10 @@ function runBody(t) {
 
   // -------------------------------------------------------------------------
   t.log.info('=== 3. the page follows its own links ===');
-  t.check(typeof pageHandler() === 'function',
-          'GET /admin/kerberos/principals is registered');
-  const first = drawPage({ per: '3' });
+  t.check(require('../admin-ui/web_pages').PAGES.some(function (one) {
+    return one.path === '/admin/kerberos/principals';
+  }), '/admin/kerberos/principals is a console page');
+  const first = await drawPage({ per: '3' });
   const links = first.match(
     /href="\/admin\/kerberos\/principals\?[^"#]*#list-[a-zA-Z]+"/g) || [];
   t.check(links.length > 0 && links.every(function (href) {
@@ -169,7 +131,7 @@ function runBody(t) {
   t.check(first.indexOf('HTTP/kpp-service-0') >= 0 &&
           first.indexOf('HTTP/kpp-service-3') < 0,
           'page 1 draws the first services and not the fourth');
-  const second = drawPage({ per: '3', servicesPage: '2' });
+  const second = await drawPage({ per: '3', servicesPage: '2' });
   t.check(second.indexOf('HTTP/kpp-service-3') >= 0 &&
           second.indexOf('HTTP/kpp-service-0') < 0,
           'following the services link draws rows 4–6 instead of page 1 again');
@@ -187,7 +149,7 @@ function runBody(t) {
   log.debug("Leaving runBody().");
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   const listPeople = krb5PersonKeys.listPeople;
   const listPeopleKeys = krb5PersonKeys.listPeopleKeys;
@@ -207,7 +169,7 @@ function run(t) {
     return SERVICES.slice();
   };
   try {
-    runBody(t);
+    await runBody(t);
   } finally {
     krb5PersonKeys.listPeople = listPeople;
     krb5PersonKeys.listPeopleKeys = listPeopleKeys;

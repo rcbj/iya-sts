@@ -267,6 +267,14 @@ class ProtocolStack {
     // factors. A library over the directory slot, like the password policy.
     this.build('common/authn_policy', require('./authn_policy'),
                'AuthnPolicy');
+    // #221: the service-account policy (the third kind on Directory →
+    // Policies) and the service accounts it governs — person entries with a
+    // flag. Two libraries over the directory slot, like the policies above;
+    // `credentials` below asks both.
+    this.build('common/service_account_policy',
+               require('./service_account_policy'), 'ServiceAccountPolicy');
+    this.build('common/service_accounts', require('./service_accounts'),
+               'ServiceAccounts');
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
                'WebauthnPolicy');
     // #105: a registration's attestation statement, verified. A library
@@ -480,6 +488,10 @@ class ProtocolStack {
     this.build('oauth-oidc/step_up', require('../oauth-oidc/step_up'),
                'StepUp');
     this.build('oauth-oidc/dpop', require('../oauth-oidc/dpop'), 'Dpop');
+    // FAPI 2.0 HTTP Signatures at the resource servers (#178): a library
+    // `dpop.ts` asks lazily and `oauth2.ts` registers the key prefetch of.
+    this.build('oauth-oidc/http_signatures',
+               require('../oauth-oidc/http_signatures'), 'HttpSignatures');
     this.build('oauth-oidc/software_statement',
                require('../oauth-oidc/software_statement'),
                'SoftwareStatement');
@@ -1147,6 +1159,12 @@ class ProtocolStack {
     // reaches lazily. Built here, with the risk modules it belongs beside.
     this.build('common/breached_passwords',
                require('./breached_passwords'), 'BreachedPasswords');
+    // GOOGLE'S ANDROID ATTESTATION STATUS LIST, CONSULTED (#256): a library
+    // the two Android verifiers reach lazily, whose list is the risk dataset
+    // above; it registers its download and recheck jobs when built, and no
+    // route. Here, beside the datasets it reads.
+    this.build('common/attestation_revocation',
+               require('./attestation_revocation'), 'AttestationRevocation');
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');
@@ -1175,11 +1193,11 @@ class ProtocolStack {
     this.register(app, require('../admin-ui/mode_admin'),
                   'admin-ui/mode_admin');
     // 18k-iii. LISTENERS (#423, 2026-10-02). `/admin/listeners` — every
-    // socket, the TLS policy and client authentication each is held to, a
-    // realm's own listener, and the Listeners, TLS and Realm listener
+    // socket, the TLS policy and client authentication each is held to, the
+    // custom listeners (#472), and the Listeners, TLS and Custom listeners
     // settings. 18a's placement and 18a's reason: the console's shell and
     // libraries already loaded, `tls/tls_server` (20) and
-    // `tls/realm_listeners` reached lazily when the page is drawn, and
+    // `tls/listeners` reached lazily when the page is drawn, and
     // `mgmt-api/admin_api` requires it. Its paths are in NEVER_DISPATCHED.
     require('../admin-ui/listeners_admin');
     this.build('admin-ui/listeners_admin',
@@ -1275,6 +1293,15 @@ class ProtocolStack {
                'AttributeSourcesAdmin');
     this.register(app, require('../attribute-sources/attribute_sources_admin'),
                   'attribute-sources/attribute_sources_admin');
+    // 18r-ii. THE SECRET PUSH DESTINATIONS (#221 P3): Directory → Secret
+    // destinations. A library and no route — the realm's application entries
+    // declared for `secret-destination` are the register, and the page is
+    // the static console's (`admin-ui/web_secret_destinations.ts`) — built
+    // here, beside the other Directory register, after `applications` and
+    // `secrets` (libraries loaded long before), and before
+    // `mgmt-api/admin_api`, which spreads `secret_destinations_api`'s routes.
+    this.build('common/secret_destinations',
+               require('./secret_destinations'), 'SecretDestinations');
     // THE NODE SNAPSHOTS (#332, 2026-09-28), a library the two pages below
     // hand their views to: built here, before them, so the instance they
     // reach is the root's. It registers its scheduler job when the first
@@ -1331,6 +1358,9 @@ class ProtocolStack {
     this.build('attribute-sources/attribute_sources_api',
                require('../attribute-sources/attribute_sources_api'),
                'AttributeSourcesApi');
+    this.build('mgmt-api/secret_destinations_api',
+               require('../mgmt-api/secret_destinations_api'),
+               'SecretDestinationsApi');
     this.build('oauth-oidc/provider_commands_api',
                require('../oauth-oidc/provider_commands_api'),
                'ProviderCommandsApi');
@@ -1607,6 +1637,13 @@ class ProtocolStack {
     // keystore, the scheduler, the audit log — it reaches lazily.
     this.build('common/data_key_rotation', require('./data_key_rotation'),
                'DataKeyRotation');
+    // 23b-ii-b. SERVICE-ACCOUNT PASSWORD ROTATION (#221 P4): a library that
+    // registers its three scheduler jobs when built and no route, beside the
+    // two rotations above. After `ssf/ssf`, whose credential-change it sends,
+    // and `ldap/ldap_server`, whose entries it rotates — both lazily, so the
+    // order is for a reader; the push destinations it reaches lazily too.
+    this.build('common/service_account_rotation',
+               require('./service_account_rotation'), 'ServiceAccountRotation');
     // 23b-iii. THE KRBTGT KEY'S ROTATION (#169, 2026-09-23): a library that
     // registers its two scheduler jobs when built and no route. After
     // `ldap/ldap_server` (21), whose directory slot the register it drives
@@ -1699,9 +1736,9 @@ class ProtocolStack {
     require('../gnap/gnap');
     this.build('gnap/gnap_store', require('../gnap/gnap_store'), 'GnapStore');
     this.build('gnap/gnap_keys', require('../gnap/gnap_keys'), 'GnapKeys');
-    this.build('gnap/gnap_sf', require('../gnap/gnap_sf'), 'GnapSf');
-    this.build('gnap/gnap_httpsig', require('../gnap/gnap_httpsig'),
-               'GnapHttpsig');
+    // RFC 9421 and RFC 8941 were `gnap_httpsig` and `gnap_sf` here until #178:
+    // they are `common/crypto.js` section 14 and `common/structured_fields.ts`
+    // now, neither of which has an instance to build.
     this.build('gnap/gnap_proof', require('../gnap/gnap_proof'), 'GnapProof');
     this.build('gnap/gnap_schemas', require('../gnap/gnap_schemas'),
                'GnapSchemas');

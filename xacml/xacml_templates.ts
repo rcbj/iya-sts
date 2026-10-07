@@ -230,7 +230,13 @@ const ISSUANCE_ATTRIBUTE = {
   OWNER: 'urn:sts:xacml:resource-owner',
   // On the RESOURCE: the roles the application demands. `appRequiredRole` on
   // its entry, or EVERYBODY where it names none.
-  REQUIRED_ROLE: 'urn:sts:xacml:required-role'
+  REQUIRED_ROLE: 'urn:sts:xacml:required-role',
+  // On the RESOURCE: roles the subject must hold EVERY one of (#454), beside
+  // REQUIRED_ROLE's any-one. The access-control document's conjunct reads
+  // it; an empty bag asks nothing. The management API's console operations
+  // name ADMIN_CONSOLE in REQUIRED_ROLE and, where a page shows realm data,
+  // ADMIN_READ here — the two kinds of role mixed in one decision.
+  REQUIRED_ALL_ROLE: 'urn:sts:xacml:required-all-role'
 };
 
 // ---------------------------------------------------------------------------
@@ -479,7 +485,32 @@ const AUTHN_ATTRIBUTE = {
   // The obligation a Deny about the AUTHENTICATION carries, so the PEP can
   // tell it from a Deny about roles — which is set aside when the role
   // question is waived — and refuse on it anyway.
-  OBLIGATION: 'urn:sts:xacml:obligation:authentication'
+  OBLIGATION: 'urn:sts:xacml:obligation:authentication',
+  // A BAG (#457): the sign-in mechanisms the person's authentication
+  // satisfies — `federation.MECHANISM_IDS`: password, password-mfa,
+  // webauthn, federation, spnego, wallet — worked out from the session's
+  // events by `common/authn_mechanisms.ts`. Sent on a browser issuance to an
+  // application that allows only some.
+  MECHANISM: 'urn:sts:xacml:authn-mechanism',
+  // A BAG (#457): the mechanisms the application allows, its
+  // `appAuthnMechanism`. Absent where it allows every one.
+  ALLOWED_MECHANISM: 'urn:sts:xacml:allowed-authn-mechanism',
+  // The obligation the `authn-mechanism` rule's Deny carries (#457): the PEP
+  // reads it as "sign in again with one of the allowed mechanisms", never as
+  // a refusal about roles.
+  MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:authn-mechanism',
+  // A BAG (#475): the second factors the person's authentication gave —
+  // `common/mfa_mechanisms.ts`'s ids: password, securityKey, totp,
+  // recoveryCode, emailCode, emailLink, wallet. Sent on a browser issuance
+  // to an application that allows only some, and only when the
+  // authentication gave one.
+  MFA_MECHANISM: 'urn:sts:xacml:mfa-mechanism',
+  // A BAG (#475): the second factors the application allows, its
+  // `appMfaMechanism`. Absent where it leaves the realm's.
+  ALLOWED_MFA_MECHANISM: 'urn:sts:xacml:allowed-mfa-mechanism',
+  // The obligation the `mfa-mechanism` rule's Deny carries (#475): the PEP
+  // reads it as "sign in again with one of the allowed second factors".
+  MFA_MECHANISM_OBLIGATION: 'urn:sts:xacml:obligation:mfa-mechanism'
 };
 
 // ---------------------------------------------------------------------------
@@ -1057,6 +1088,27 @@ const TEMPLATES: TemplateRow[] = [
               'to one declared for OpenID Connect. An application declared ' +
               'for nothing is never refused by it. Development mode is not ' +
               'refused. No builds the policy without the rule.' },
+      { name: 'decideMfaMechanisms',
+        label: 'Require a second factor the application allows',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, in both modes, a browser sign-in to an ' +
+              'application that lists the second factors it allows ' +
+              '(appMfaMechanism) is denied when the person\'s session gave ' +
+              'a second factor and none of them is listed, with an ' +
+              'obligation the sign-in door reads as "sign in again with one ' +
+              'of these". A session on one factor is not denied by it, and ' +
+              'an application that lists none leaves the realm\'s second ' +
+              'factors. No builds the policy without the rule.' },
+      { name: 'decideAuthnMechanisms',
+        label: 'Require a sign-in mechanism the application allows',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, in both modes, a browser sign-in to an ' +
+              'application that lists the mechanisms it allows ' +
+              '(appAuthnMechanism) is denied unless the person\'s session ' +
+              'satisfies one of them, with an obligation the sign-in door ' +
+              'reads as "sign in again with one of these". An application ' +
+              'that lists none allows every one. No builds the policy ' +
+              'without the rule.' },
       { name: 'deviceExempt',
         label: 'Applications the compliant-device rule never refuses',
         dflt: 'sts-admin-console, sts-user-portal', type: 'string',
@@ -1087,6 +1139,8 @@ const TEMPLATES: TemplateRow[] = [
       const refuseEmail = B.yes(given.refuseEmailFactor, false);
       const decideDevices = B.yes(given.decideDevices, true);
       const decideProtocols = B.yes(given.decideProtocols, true);
+      const decideMechanisms = B.yes(given.decideAuthnMechanisms, true);
+      const decideMfa = B.yes(given.decideMfaMechanisms, true);
       const decideScopes = B.yes(given.decideScopes, true);
       const decideGnapRights = B.yes(given.decideGnapRights, true);
       const decideTransfers = B.yes(given.decideTransfers, true);
@@ -1526,6 +1580,71 @@ const TEMPLATES: TemplateRow[] = [
                          PROTOCOL_ATTRIBUTE.FAMILY, TYPE.STRING),
             B.designator(R, PROTOCOL_ATTRIBUTE.DECLARED, TYPE.STRING)]))]),
         obligations: [{ id: PROTOCOL_ATTRIBUTE.OBLIGATION,
+                        on: model.EFFECT.DENY, assignments: [] }],
+        advice: []
+      }] : [];
+      // -------------------------------------------------------------------
+      // THE SIGN-IN MECHANISM RULE (#457). Deny a browser issuance to an
+      // application that lists the mechanisms it allows when the person's
+      // authentication satisfies none of them — in both modes, and only
+      // when the allowed bag holds something, which the PEP sends only for
+      // such an application. Its obligation is a RE-PROMPT, not a refusal:
+      // the door sends the person to sign in again with one of the allowed
+      // mechanisms. After the protocol rule, whose refusal is final, and
+      // before risk, so a session on the wrong mechanism is re-prompted for
+      // the right one before it is assessed for a factor.
+      // -------------------------------------------------------------------
+      const mechanismRules: any[] = decideMechanisms ? [{
+        id: options.idBase + ':rule:authn-mechanism',
+        effect: model.EFFECT.DENY,
+        description: 'Ask a person to sign in again when their ' +
+                     'authentication used none of the mechanisms the ' +
+                     'application allows (appAuthnMechanism). An ' +
+                     'application that lists none allows every one.',
+        target: null,
+        condition: and([
+          holdsSome(model.CATEGORY.ENVIRONMENT,
+                    AUTHN_ATTRIBUTE.ALLOWED_MECHANISM),
+          not(B.apply(F1 + 'string-at-least-one-member-of', [
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.MECHANISM, TYPE.STRING),
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.ALLOWED_MECHANISM, TYPE.STRING)]))]),
+        obligations: [{ id: AUTHN_ATTRIBUTE.MECHANISM_OBLIGATION,
+                        on: model.EFFECT.DENY, assignments: [] }],
+        advice: []
+      }] : [];
+      // -------------------------------------------------------------------
+      // THE SECOND-FACTOR RULE (#475), the sign-in mechanism rule's
+      // companion and in the same place for the same reasons. Deny a browser
+      // issuance to an application that lists the second factors it allows
+      // when the person's authentication gave a second factor and none of
+      // them is listed. The PEP sends the given bag only when it holds
+      // something — the list says which second factors, never whether one
+      // is needed (rcbj) — and the rule asks for both bags anyway, so a
+      // request built some other way cannot turn "no second factor" into a
+      // deny. Its obligation is a RE-PROMPT.
+      // -------------------------------------------------------------------
+      const mfaRules: any[] = decideMfa ? [{
+        id: options.idBase + ':rule:mfa-mechanism',
+        effect: model.EFFECT.DENY,
+        description: 'Ask a person to sign in again when their ' +
+                     'authentication gave a second factor and none of the ' +
+                     'ones the application allows (appMfaMechanism). An ' +
+                     'application that lists none leaves the realm\'s.',
+        target: null,
+        condition: and([
+          holdsSome(model.CATEGORY.ENVIRONMENT,
+                    AUTHN_ATTRIBUTE.ALLOWED_MFA_MECHANISM),
+          holdsSome(model.CATEGORY.ENVIRONMENT,
+                    AUTHN_ATTRIBUTE.MFA_MECHANISM),
+          not(B.apply(F1 + 'string-at-least-one-member-of', [
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.MFA_MECHANISM, TYPE.STRING),
+            B.designator(model.CATEGORY.ENVIRONMENT,
+                         AUTHN_ATTRIBUTE.ALLOWED_MFA_MECHANISM,
+                         TYPE.STRING)]))]),
+        obligations: [{ id: AUTHN_ATTRIBUTE.MFA_MECHANISM_OBLIGATION,
                         on: model.EFFECT.DENY, assignments: [] }],
         advice: []
       }] : [];
@@ -2278,7 +2397,9 @@ const TEMPLATES: TemplateRow[] = [
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s), ' +
                 riskRules.length + ' risk rule(s), ' + deviceRules.length +
                 ' device rule(s), ' + protocolRules.length +
-                ' protocol rule(s).');
+                ' protocol rule(s), ' + mechanismRules.length +
+                ' mechanism rule(s), ' + mfaRules.length +
+                ' mechanism rule(s).');
       return {
         kind: 'Policy',
         id: options.idBase,
@@ -2332,6 +2453,18 @@ const TEMPLATES: TemplateRow[] = [
                           'application is not declared for is refused, ' +
                           'unless it is declared for none.'
                         : '') +
+                     (decideMechanisms
+                        ? ' AND ON THE SIGN-IN MECHANISM (#457): a browser ' +
+                          'sign-in to an application that lists the ' +
+                          'mechanisms it allows is sent to sign in again ' +
+                          'unless it used one of them.'
+                        : '') +
+                     (decideMfa
+                        ? ' AND ON THE SECOND FACTOR (#475): a browser ' +
+                          'sign-in to an application that lists the second ' +
+                          'factors it allows is sent to sign in again when ' +
+                          'it gave a second factor and none of them.'
+                        : '') +
                      (decideScopes
                         ? ' AND ON EACH REQUESTED SCOPE (#304, #305): the ' +
                           'client\'s declared scopes (#110) — refused where ' +
@@ -2371,7 +2504,8 @@ const TEMPLATES: TemplateRow[] = [
                           'for the one audience asked for.'
                         : ''),
         combiningAlgId: decideRisk || refuseEmail || decideDevices ||
-                        decideProtocols || decideScopes || decideTransfers ||
+                        decideProtocols || decideMechanisms || decideMfa ||
+                        decideScopes || decideTransfers ||
                         decideExchanges || decideGnapRights
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
@@ -2383,7 +2517,9 @@ const TEMPLATES: TemplateRow[] = [
         // explain.
         target: null,
         variables: {},
-        rules: deviceRules.concat(protocolRules).concat(riskRules)
+        rules: deviceRules.concat(protocolRules).concat(mechanismRules)
+          .concat(mfaRules)
+          .concat(riskRules)
           .concat(scopeRules)
           .concat(gnapRightRules)
           .concat(transferRules)
@@ -2901,9 +3037,11 @@ const TEMPLATES: TemplateRow[] = [
     blurb: 'The policy the embedded PEP asks before a subject reaches the ' +
            'admin console, the management API, the User Portal, SCIM or the ' +
            'SPIRE Server API.',
-    what: 'Produces ONE Permit rule whose condition conjoins two questions: ' +
-          'does the subject satisfy the resource\'s ROLE requirement ' +
-          '(holding one it names, or it naming none), AND does it satisfy ' +
+    what: 'Produces ONE Permit rule whose condition conjoins three ' +
+          'questions: does the subject satisfy the resource\'s ROLE ' +
+          'requirement (holding one it names, or it naming none), does it ' +
+          'hold EVERY role the resource names as required-all (#454; none ' +
+          'named asks nothing), AND does it satisfy ' +
           'the resource\'s OWNERSHIP requirement (the resource naming no ' +
           'owner, or the subject being that owner). Both must hold, so ' +
           'ownership is a constraint rather than a way round the roles. The ' +
@@ -3062,6 +3200,19 @@ const TEMPLATES: TemplateRow[] = [
         ]));
       }
       conjuncts.push(satisfiesRole);
+      // EVERY ROLE THE RESOURCE NAMES AS REQUIRED-ALL (#454), a third
+      // question beside the two above: `all-of-any` holds when each required
+      // role is among the subject's, and vacuously for an empty bag, so a
+      // surface that names none is decided exactly as before. A conjunct
+      // rather than an arm of `satisfiesRole` for the reason ownership is
+      // one — it narrows, and must never be a way round the any-one.
+      conjuncts.push(B.apply(F1 + 'all-of-any', [
+        { kind: 'function', functionId: F1 + 'string-equal' },
+        B.designator(model.CATEGORY.RESOURCE,
+                     ISSUANCE_ATTRIBUTE.REQUIRED_ALL_ROLE, TYPE.STRING),
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, ISSUANCE_ATTRIBUTE.ROLE,
+                     TYPE.STRING)
+      ]));
       conjuncts.push(satisfiesOwnership);
 
       const condition = conjuncts.length === 1
@@ -3081,7 +3232,9 @@ const TEMPLATES: TemplateRow[] = [
                      'resource\'s ROLE requirement — holding a role it ' +
                      'requires' +
                      (permitEmpty ? ', or the resource requiring none' : '') +
-                     ' — AND satisfies its OWNERSHIP requirement: the ' +
+                     ' — AND holds EVERY role it names as required-all, ' +
+                     'where it names any, AND satisfies its OWNERSHIP ' +
+                     'requirement: the ' +
                      'resource names no owner' +
                      (permitOwner ? ', or the subject IS that owner, which ' +
                                     'is how a person reaches their own ' +

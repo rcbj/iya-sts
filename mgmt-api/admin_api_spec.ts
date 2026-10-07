@@ -228,10 +228,14 @@ const CLAIM_ENTRY = {
     multi: { type: 'boolean',
              description: 'An attribute claim: every value (a JSON array; ' +
                           'several AttributeValues) rather than the first.' },
-    type: { type: 'string', enum: ['string', 'number', 'boolean', 'json'],
+    type: { type: 'string',
+            enum: ['string', 'number', 'boolean', 'json', 'int64', 'uint64'],
             description: 'An attribute claim in a JWT or UserInfo set: the ' +
-                         'JSON type each value becomes. A value that is not ' +
-                         'one is left out. Ignored by the SAML sets.' }
+                         'JSON type each value becomes (string, number, ' +
+                         'boolean, json). A value that is not one is left ' +
+                         'out. Ignored by the SAML sets. In the Kerberos PAC ' +
+                         'set (#493) EVERY row has one, of string, int64, ' +
+                         'uint64 and boolean — the PAC claim type.' }
   },
   required: ['name'],
   additionalProperties: false
@@ -442,6 +446,11 @@ class AdminApiSpec {
         String(path || '') === '/admin-api/device-compliance') {
       return 'device:compliance';
     }
+    // THE CONSOLE'S OWN OPERATIONS (#454), as the gate's `consoleOp` reads
+    // them: everything under `/admin-api/console` takes `admin:console`.
+    if (/^\/admin-api\/console(\/|$)/.test(String(path || ''))) {
+      return 'admin:console';
+    }
     return String(method).toUpperCase() === 'GET' ? 'admin:read' :
            'admin:write';
   }
@@ -475,6 +484,10 @@ class AdminApiSpec {
               'admin:read': 'Read anything this API exposes (every GET).',
               'admin:write': 'Change anything this API can change ' +
                              '(every other method).',
+              'admin:console': 'The admin console\'s own operations, under ' +
+                               '/admin-api/console (#454). Issued only to ' +
+                               'the console\'s client, sts-admin-console, ' +
+                               'through the ADMIN_CONSOLE role it confers.',
               'device:compliance': 'Report device compliance through POST ' +
                                    '/admin-api/device-compliance, and ' +
                                    'nothing else — the scope an MDM or ' +
@@ -700,12 +713,18 @@ class AdminApiSpec {
       components.securitySchemes = this.securitySchemesFor(opts.baseUrl);
     }
     log.debug("Leaving AdminApiSpec.buildSpec().");
+    // THE CONSOLE'S DOCUMENT (#454), `GET /admin-api/console/openapi.json`:
+    // the same builder over the console's rows, under its own title and with
+    // a first paragraph saying what those operations are.
+    const consoleDocument = opts.console === true;
     return {
       openapi: '3.1.0',
       info: {
-        title: 'IYA STS management API',
+        title: consoleDocument ? 'IYA STS admin console operations'
+                               : 'IYA STS management API',
         version: opts.version || '0.0.0',
-        description: this.describe(authRequired),
+        description: (consoleDocument ? CONSOLE_PARAGRAPH + '\n\n' : '') +
+                     this.describe(authRequired),
         license: { name: 'MIT' }
       },
       servers: [{ url: opts.baseUrl || '/', description: 'This service.' }],
@@ -728,7 +747,9 @@ class AdminApiSpec {
       // wrongly said while the gate was on.
       // ---------------------------------------------------------------------
       security: authRequired
-        ? [{ oauth2: ['admin:read', 'admin:write'] }, { bearerAuth: [] }]
+        ? [{ oauth2: consoleDocument
+            ? ['admin:console', 'admin:read', 'admin:write']
+            : ['admin:read', 'admin:write'] }, { bearerAuth: [] }]
         : [],
       paths: paths,
       components: components
@@ -896,6 +917,68 @@ const SETTINGS_BLOCK = openObject(
       description: 'The operation that writes them, named rather than left ' +
                    'to be inferred: one store, one action, however many ' +
                    'pages draw the door.'
+    },
+    // WHAT THE BLOCK'S PROSE STATES ABOUT THE PROCESS (#446): a console
+    // drawn in a browser has no process to ask.
+    context: openObject(
+      'What a console drawing these settings says about the process that ' +
+      'answered: which files the `appconfig` and `defaults` sources name, ' +
+      'and whether a value set here survives a restart.',
+      {
+        configFile: {
+          type: ['string', 'null'],
+          description: 'The appconfig file this process was started with ' +
+                       '(CONFIG_FILE), or null when none was named. GET ' +
+                       '/config\'s member of the same name.'
+        },
+        defaultsFile: {
+          type: 'string',
+          description: 'The default appconfig file every other is a layer ' +
+                       'over.'
+        },
+        persistsAppconfig: {
+          type: 'boolean',
+          description: 'Whether a runtime override is written to the ' +
+                       'persistent store and applied again at the next ' +
+                       'start.'
+        },
+        persistsRealms: {
+          type: 'boolean',
+          description: 'Whether a realm\'s own overrides are written down ' +
+                       'with its row in the realm registry ' +
+                       '(`persistence.realms`) and applied again at the ' +
+                       'next start.'
+        },
+        persistenceMode: {
+          type: 'string',
+          description: 'The `persistence.mode` in force.'
+        },
+        inRealm: {
+          type: 'boolean',
+          description: 'Whether a non-default realm is ambient. A value set ' +
+                       'then lands on that realm, so `persistsRealms` says ' +
+                       'whether it survives a restart, and ' +
+                       '`persistsAppconfig` otherwise.'
+        },
+        realmId: {
+          type: 'string',
+          description: 'The ambient realm\'s id (`default` for the ' +
+                       'default realm).'
+        }
+      }),
+    sharedWith: {
+      type: 'object',
+      description: 'By group name: the other console pages that draw the ' +
+                   'same group, each with its path and its label. A group ' +
+                   'drawn on this page alone has no member. One setting ' +
+                   'shown in two places is still one setting.',
+      additionalProperties: {
+        type: 'array',
+        items: openObject('Another page this group is drawn on.', {
+          path: { type: 'string' },
+          label: { type: 'string' }
+        })
+      }
     }
   });
 
@@ -1196,7 +1279,9 @@ const SCHEMAS = {
       },
       operations: {
         type: 'array',
-        description: 'Every operation, with the console page it mirrors.',
+        description: 'Every management operation, with the console page it ' +
+                     'mirrors. The console\'s own operations are listed by ' +
+                     'GET /admin-api/console/operations (#454).',
         items: openObject('One operation.', {
           method: { type: 'string' },
           path: { type: 'string' },
@@ -1205,6 +1290,19 @@ const SCHEMAS = {
           mirrors: {
             type: 'string',
             description: 'The /admin control this operation is the API form of.'
+          },
+          kind: {
+            type: 'string', enum: ['management', 'console'],
+            description: 'Which of the two kinds the operation is (#454): ' +
+                         'the management API, or one of the admin ' +
+                         'console\'s own operations under ' +
+                         '/admin-api/console.'
+          },
+          drawnOn: {
+            type: 'array', items: { type: 'string' },
+            description: 'The console pages drawn from this operation\'s ' +
+                         'data by one of the console\'s own operations ' +
+                         '(#454); present only where there are any.'
           }
         })
       }
@@ -1799,7 +1897,13 @@ const SCHEMAS = {
                      'through, read off the data rather than written down — ' +
                      'which is what the `protocol` filter takes.'
       },
-      users: { type: 'array', items: openObject('One identity.', {}) }
+      users: { type: 'array', items: openObject('One identity.', {
+        dn: { type: 'string',
+              description: 'The DN of the person\'s entry in this realm\'s ' +
+                           'directory, or empty for an identity with none ' +
+                           '(#461) — the form `appMayAct` and `stsMayAct` ' +
+                           'name a person in.' }
+      }) }
     }, PAGING_PROPERTIES)),
 
   UserDetail: openObject(
@@ -2214,7 +2318,7 @@ const SCHEMAS = {
           '(`administrator`, `rfc7591`, `startup`, or empty for an ' +
           'application that merely turned up), `firstSeen`, `lastSeen`, ' +
           '`authentications`, ' +
-          '`sessions`, `users`, `descriptions`, `origin`, `createdAt` and ' +
+          '`sessions`, `users`, `description` (one string), `origin`, `createdAt` and ' +
           '`modifiedAt` (the ENTRY\'s own, which an ldapmodify moves and ' +
           'firstSeen/lastSeen do not), `operational` (which of the ' +
           'attributes a SEARCH would have withheld unless asked for by name, ' +
@@ -3365,6 +3469,58 @@ const SCHEMAS = {
       },
     }, CLAIM_SET_PROPS)),
 
+  KerberosPacClaims: openObject(
+    'The `kerberos-pac` claim set (#493): the claims a Kerberos ticket\'s ' +
+    'PAC carries in PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11) while ' +
+    '`krb5.pacClaims` is on.',
+    {
+      enabled: { type: 'boolean',
+                 description: 'Whether this realm\'s KDC writes the buffer ' +
+                              '(`krb5.pacClaims`). Off, no ticket carries ' +
+                              'claims, whatever the set holds.' },
+      setting: { type: 'string' },
+      types: { type: 'array', items: { type: 'string' },
+               description: 'The four PAC claim types a row may name.' },
+      placeholders: { description: 'The ${...} substitutions a value may ' +
+                                   'use.' },
+      idFormat: { type: 'string',
+                  description: 'How a row\'s name becomes its claim id.' },
+      precedence: { type: 'string' },
+      sets: { type: 'array',
+              items: openObject('The one set.', {
+                id: { type: 'string' },
+                label: { type: 'string' },
+                claims: { type: 'array',
+                          description: 'Its rows, each with `claimId`.',
+                          items: { type: 'object' } },
+                attributes: { type: 'array', items: { type: 'string' },
+                              description: 'The ticked catalogue ' +
+                                           'attributes (#498).' }
+              }) },
+      attributeCatalogue: { type: 'array', items: { type: 'object' },
+                            description: 'The one directory-attribute ' +
+                                         'catalogue, as the other claim ' +
+                                         'pages answer it, each row with ' +
+                                         'the `pacClaimId` it becomes ' +
+                                         '(#498).' },
+      attributeChoices: { type: 'array', items: { type: 'object' } },
+      preview: openObject('What one person\'s next TGT would carry.', {
+        user: { type: 'string' },
+        claims: { type: 'array', items: { type: 'object' },
+                  description: 'Each `name`, `id`, `type`, `values` and ' +
+                               '`from` (roles, value, attribute or ' +
+                               'catalogue).' },
+        entryFound: { type: 'boolean',
+                      description: 'Whether the person has a directory ' +
+                                   'entry.' },
+        byLdap: { type: 'object',
+                  description: 'Per lower-cased catalogue attribute the ' +
+                               'entry holds: its `claimId`, `values` and ' +
+                               '`value` as a ticked attribute would carry ' +
+                               'them (#498).' }
+      })
+    }),
+
   UserInfoClaimSets: openObject(
     'The `userinfo` claim set — what every UserInfo response carries — and ' +
     'the OpenID Connect Core section 5.5 vocabulary a CLIENT may add to it. ' +
@@ -3836,7 +3992,9 @@ const SCHEMAS = {
       applications: { type: 'integer', description: 'How many applications ' +
                                                     'are listed.' },
       paging: openObject('`page`, `pages`, `perPage`, `firstRow`, `lastRow`, ' +
-                         '`total`.', {}),
+                         '`total`; and `param`, the query parameter that ' +
+                         'moves this list, with `noun`, what its rows are ' +
+                         'counted in.', {}),
       rows: { type: 'array', items: openObject('One application and its ' +
                                                'counters.', {}) }
     }),
@@ -5135,10 +5293,17 @@ const SCHEMAS = {
     {
       seq: {
         type: 'integer',
-        description: 'Monotonic and NEVER REUSED, including across a drop. ' +
-                     'The stable name for an act and the thing to walk this ' +
-                     'list by.'
+        description: 'Unique across every process of the service and ' +
+                     'NEVER REUSED, including across a drop and a restart; ' +
+                     'rising within each process, not one order across ' +
+                     'them (#465). The stable name for an act; resume ' +
+                     'reading by `at`.'
       },
+      origin: { type: 'string',
+                description: 'The process that recorded the act, by its ' +
+                             'stable origin in the store; empty without a ' +
+                             'shared store. The tie-break, with `seq`, for ' +
+                             'two acts in one millisecond.' },
       at: { type: 'integer', description: 'Milliseconds since the epoch.' },
       protocol: { type: 'string',
                   description: 'The family, spelled as /admin-api/users ' +
@@ -5480,11 +5645,17 @@ const SCHEMAS = {
     {
       seq: {
         type: 'integer',
-        description: 'Monotonic and NEVER REUSED, including across a drop. ' +
-                     'This is the stable name for an event and the thing to ' +
-                     'walk the log by: a row number would silently mean a ' +
-                     'different event as soon as the cap discarded anything.'
+        description: 'Unique across every process of the service and ' +
+                     'NEVER REUSED, including across a drop and a restart; ' +
+                     'rising within each process, not one order across ' +
+                     'them (#465). The stable name for an event — a row ' +
+                     'number would silently mean a different event as soon ' +
+                     'as the cap discarded anything. Resume reading by `at`.'
       },
+      origin: { type: 'string',
+                description: 'The process that recorded the event, by its ' +
+                             'stable origin in the store; empty without a ' +
+                             'shared store.' },
       at: { type: 'integer',
             description: 'When it happened, in milliseconds since the epoch.' },
       category: { type: 'string',
@@ -5613,12 +5784,15 @@ const SCHEMAS = {
       shown: { type: 'integer', description: 'How many are in `events`.' },
       oldestSeq: {
         type: 'integer',
-        description: 'The lowest sequence number still held. A gap between ' +
-                     'the last one a caller saw and this is exactly how many ' +
-                     'events it missed.'
+        description: 'The sequence number of the oldest event held. ' +
+                     'Sequence numbers are unique across every process of ' +
+                     'the service and never reused, and rise within each ' +
+                     'process; they are not one order across processes, so ' +
+                     'a reader resumes by `at` (#465).'
       },
       newestSeq: { type: 'integer',
-                   description: 'The highest sequence number recorded.' },
+                   description: 'The sequence number of the newest event ' +
+                                'held.' },
       byCategory: openObject('How many held events are in each category.', {}),
       byOutcome: openObject('How many held events had each outcome.', {}),
       byAction: openObject('How many held events had each action. Only ' +
@@ -5651,6 +5825,17 @@ const SCHEMAS = {
                 items: { $ref: '#/components/schemas/AuditEvent' } }
     }, PAGING_PROPERTIES))
 };
+
+// THE CONSOLE'S DOCUMENT'S FIRST PARAGRAPH (#454).
+const CONSOLE_PARAGRAPH =
+  '**These are the admin console\'s own operations, not the management ' +
+  'API.** They exist to draw the static console at /admin — its frame, ' +
+  'its drawings and its form helpers — and answer in the shape its pages ' +
+  'want, which changes when a page does. They take `admin:console`, ' +
+  'issued only to the console\'s client through the ADMIN_CONSOLE role ' +
+  'it confers, and a page that shows realm data takes ADMIN_READ too. ' +
+  'Every control the console has is a management operation, described by ' +
+  '/admin-api/openapi.json.';
 
 const DESCRIPTION_OPENING =
   'The management API of IYA STS: everything the /admin console ' +

@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "xacml-pep"
+version = "0.1.0"
+description = "The remote XACML policy enforcement point: pulls policy, decides locally."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sts-core.workspace = true
+sts-xacml.workspace = true
+axum.workspace = true
+chrono.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+openssl.workspace = true
+reqwest.workspace = true
+roxmltree.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-openssl.workspace = true
+tracing.workspace = true
+indexmap.workspace = true
+regex.workspace = true
+
+[lints]
+workspace = true

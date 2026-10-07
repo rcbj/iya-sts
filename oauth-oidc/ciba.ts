@@ -59,7 +59,6 @@
 // once, to mint a push's tokens at the moment of approval.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 // WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
 // this module mints and read where it is presented. A leaf library.
 import cellLocator = require('../common/cell_locator');
@@ -450,7 +449,7 @@ class Ciba {
     const record = {
       // Stamped with the minting cell (#98 D10): the client polls the cell
       // nearest it, which relays here.
-      id: cellLocator.stamp(nodeCrypto.randomBytes(32).toString('base64url')),
+      id: cellLocator.stamp(stsCrypto.randomBytes(32).toString('base64url')),
       state: 'pending',
       clientId: String(spec.clientId),
       clientName: String(spec.clientName || spec.clientId),

@@ -6,8 +6,8 @@
 // File: saml2_sso.ts
 //
 // ===========================================================================
-// SAML 2.0 — the Web Browser SSO profile, all three bindings, and Single
-// Logout.
+// SAML 2.0 — the Web Browser SSO profile, on all four bindings (Redirect,
+// POST, POST-SimpleSign and Artifact), and Single Logout.
 //
 // **THIS FILE REVERSES A DOCUMENTED NON-GOAL.** Until 2026-08-24 the sentence
 // "there is no SAML 2.0 Web SSO profile" appeared in README.md, in the root
@@ -124,19 +124,21 @@
 //    3.4.4.1, which is what a redirect response is really verified by — an XML
 //    signature is there too and is not what that binding's verifier reads.
 //
-// 6. **THE ARTIFACT IS ONE-SHOT AND SAYS SO.** Section 3.6.4.1 requires that an
-//    artifact be resolvable exactly once, and no lifetime setting can express
-//    that — so resolving one DESTROYS it, and a second ArtifactResolve for the
-//    same artifact is refused with a status naming the reason rather than
-//    answering with the message again. It is the single easiest thing to get
-//    wrong in this profile and the hardest to notice, because the happy path
-//    passes either way.
+// 6. **THE ARTIFACT IS ONE-SHOT.** Section 3.6.4.1 requires that an artifact
+//    be resolvable exactly once, and no lifetime setting can express that — so
+//    resolving one DESTROYS it, and a second ArtifactResolve for the same
+//    artifact gets the EMPTY response saml-core-2.0-os section 3.5.3 requires
+//    (Success, no message) rather than the message again. It is the single
+//    easiest thing to get wrong in this profile and the hardest to notice,
+//    because the happy path passes either way. Until #160 that second answer
+//    was a Requester status naming the reason, which section 3.5.3 does not
+//    allow; the reason is the log line's and the error code's now.
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `Saml2Sso` takes every module this file used to require (node's
-// `zlib` and `crypto`, the XML parser, the realm and application registries,
+// `zlib`, the XML parser, the realm and application registries,
 // helpers, the SAML 2.0 builders, the SP-metadata reader, the session
 // functions of `authn.js`, the issuance gate, `mode`, this directory's four
 // libraries and the two cluster libraries) through its constructor, typed as
@@ -156,7 +158,8 @@ import zlib = require('zlib');
 // config.js and error_codes.js here, so it cannot join a cycle and it
 // registers no route, so its position is not a position at all.
 import realms = require('../common/realms');
-import crypto = require('crypto');
+// The other listeners SAML 2.0 is on, for its metadata (#472). A LEAF.
+import listenerMap = require('../common/listener_map');
 import xmldom = require('@xmldom/xmldom');
 // Every signature and every cipher in this service is in one module since
 // 2026-08-27. This file signs four documents and verifies two, and xml-crypto
@@ -475,7 +478,6 @@ const CLAIM_SKEW_MS = 60 * 1000;
 interface Saml2SsoDeps {
   zlib: typeof zlib;
   realms: typeof realms;
-  crypto: typeof crypto;
   xmldom: typeof xmldom;
   stsCrypto: typeof stsCrypto;
   app: typeof app;
@@ -532,7 +534,6 @@ class Saml2Sso {
     return {
       zlib: zlib,
       realms: realms,
-      crypto: crypto,
       xmldom: xmldom,
       stsCrypto: stsCrypto,
       app: app,
@@ -636,19 +637,21 @@ class Saml2Sso {
       const base = baseUrlOf(req);
       const where = self.endpointsFor(base, '');
       self.sendPage(res, 200, 'SAML 2.0 — Web Browser SSO',
-             '<h1>SAML 2.0 — Web Browser SSO, all three bindings</h1>' +
+             '<h1>SAML 2.0 — Web Browser SSO, all four bindings</h1>' +
              '<p class="sub">Identity provider <code>' +
                xmlEscape(self.idpEntityIdFor('')) +
              '</code> ' +
              'at <code>' + xmlEscape(base) + '</code></p><p>A full SAML 2.0 ' +
-             'identity provider: HTTP Redirect and HTTP POST for the ' +
-             'request, and HTTP POST, HTTP Redirect or HTTP Artifact for the ' +
-             'response, with a SOAP artifact resolution service behind the ' +
-             'third. It accepts ANY entityID — a service provider does not ' +
+             'identity provider: HTTP Redirect, HTTP POST and HTTP POST ' +
+             'SimpleSign for the request, and HTTP POST, HTTP Redirect, HTTP ' +
+             'POST SimpleSign or HTTP Artifact for the response, with a SOAP ' +
+             'artifact resolution service behind the last. In development ' +
+             'mode it accepts ANY entityID — a service provider does not ' +
              'have to be provisioned here before it can be pointed at this ' +
              'service, and the first valid AuthnRequest from an entityID ' +
-             'creates its application entry in the embedded ' +
-             'directory.</p><h2>The ' +
+             'creates its application entry in the embedded directory. In ' +
+             'product mode only a REGISTERED service provider is served ' +
+             '(#496).</p><h2>The ' +
              'endpoints</h2><table><thead><tr><th>Endpoint</th><th>What it ' +
              'is</th></tr></thead><tbody><tr><td><a href="' + SSO_PATH + '">' +
                SSO_PATH + '</a></td><td>Single ' +
@@ -912,7 +915,7 @@ class Saml2Sso {
    * @returns the segment
    */
   slugOf(identifier) {
-    const { crypto } = this.deps;
+    const { stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.slugOf().");
     const text = String(identifier == null ? '' : identifier);
@@ -921,8 +924,7 @@ class Saml2Sso {
       return text;
     }
     log.debug("Leaving Saml2Sso.slugOf().");
-    return 'app-' + crypto.createHash('sha256').update(text, 'utf8')
-      .digest('hex').slice(0, 12);
+    return 'app-' + stsCrypto.digest('sha256', text, 'hex').slice(0, 12);
   }
 
   // The entityID a path segment names, and whether this service had heard of
@@ -970,12 +972,19 @@ class Saml2Sso {
   // (`appAllowedProtocol`) — not merely any application whose slug matches,
   // because an OAuth client's name is not a service provider this identity
   // provider has agreed to publish itself to.
+  //
+  // AND, IN PRODUCT, ONE SOMEBODY REGISTERED (#496): `appRegisteredBy` on
+  // the entry, #494's word. A development sighting writes the
+  // `saml2-service-provider` kind onto an entry, so the kind alone let an
+  // entry development had merely seen through every per-SP path in product.
   private isRegisteredServiceProvider(entityId): boolean {
-    const { applications } = this.deps;
+    const { applications, mode } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.isRegisteredServiceProvider().");
     const record: any = entityId ? applications.get(entityId) : null;
     const answer = !!record &&
+      (mode.issuesToUnregisteredApplications() ||
+       !!String(record.registeredBy || '')) &&
       ((record.kinds || []).indexOf('saml2-service-provider') >= 0 ||
        applications.declaredFamiliesOf(record).indexOf('saml2') >= 0);
     log.debug("Leaving Saml2Sso.isRegisteredServiceProvider(). " + answer);
@@ -1682,13 +1691,14 @@ class Saml2Sso {
   }
 
   // --- signing ---------------------------------------------------------------
-  // The enveloped XML signature this service puts on a Response, an
-  // ArtifactResponse and its own metadata. The DIFFERENCE between the three is
-  // the reference and where the signature goes, and both are schema-mandated
-  // rather than a matter of taste: a protocol message puts ds:Signature after
-  // Issuer, and a metadata EntityDescriptor puts it FIRST. Getting either wrong
-  // produces a document that verifies and that a strict parser rejects, which
-  // is the worst of both.
+  // The enveloped XML signature this service puts on a Response, a logout
+  // message and its own metadata — never on an ArtifactResponse, which is
+  // deliberately unsigned (see `resolveArtifact()`). The DIFFERENCE between
+  // them is the reference and where the signature goes, and both are
+  // schema-mandated rather than a matter of taste: a protocol message puts
+  // ds:Signature after Issuer, and a metadata EntityDescriptor puts it FIRST.
+  // Getting either wrong produces a document that verifies and that a strict
+  // parser rejects, which is the worst of both.
   private signDocument(xml, rootLocalName, id, placement) {
     const { documentSettings, stsCrypto } = this.deps;
     const { STS, log } = this.deps.helpers;
@@ -2115,7 +2125,7 @@ class Saml2Sso {
   // answering it with a stable username would be a lie a service provider
   // cannot detect.
   private nameIdValueFor(format, session) {
-    const { crypto, personAttributes } = this.deps;
+    const { stsCrypto, personAttributes } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.nameIdValueFor(). format=" + format);
     const username = (session.user && session.user.username) || '';
@@ -2124,10 +2134,8 @@ class Saml2Sso {
       // session get the SAME transient id, which is what a service provider
       // correlating two logins in one session expects, and a new one after
       // signing out.
-      const handle = crypto.createHash('sha256')
-        .update(String(session.id || '') + '|' + username, 'utf8')
-                           .digest('hex')
-                           .slice(0, 32);
+      const handle = stsCrypto.digest('sha256',
+        String(session.id || '') + '|' + username, 'hex').slice(0, 32);
       log.debug("Leaving Saml2Sso.nameIdValueFor(). A transient identifier.");
       return '_' + handle;
     }
@@ -2503,21 +2511,41 @@ class Saml2Sso {
   //
   // The whole 44 bytes are base64, which is what travels in `SAMLart`.
   private mintArtifact(idpEntityId, endpointIndex) {
-    const { crypto } = this.deps;
+    const { stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.mintArtifact(). idp=" + idpEntityId);
     const header = Buffer.alloc(4);
     header.writeUInt16BE(0x0004, 0);
     header.writeUInt16BE(endpointIndex || 0, 2);
-    const sourceId = crypto.createHash('sha1')
-                           .update(String(idpEntityId), 'utf8')
-                           .digest();
-    const handle = samlCells.stampHandle(crypto.randomBytes(20));
+    const sourceId = stsCrypto.samlArtifactSourceId(idpEntityId);
+    const handle = samlCells.stampHandle(stsCrypto.randomBytes(20));
     const artifact = Buffer.concat([header, sourceId,
                                     handle]).toString('base64');
     log.debug("Leaving Saml2Sso.mintArtifact(). " + artifact.length +
               " base64 characters.");
     return artifact;
+  }
+
+  // IS THIS A TYPE 0x0004 ARTIFACT WHOSE SourceID NAMES AN ENTITY OTHER THAN
+  // the resolver at `scopedEntityId` (#160)? A value that is not a 44-byte
+  // type 0x0004 artifact names no SourceID at all, and `mintArtifact()` never
+  // stored one, so it is not answered here — it is the unknown artifact it
+  // looks like, and `resolveArtifact()` says so as it always did.
+  private isForeignArtifact(artifact, scopedEntityId): boolean {
+    const { stsCrypto } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.isForeignArtifact().");
+    const bytes = Buffer.from(String(artifact || ''), 'base64');
+    if (bytes.length !== 44 || bytes.readUInt16BE(0) !== 0x0004) {
+      log.debug("Leaving Saml2Sso.isForeignArtifact(). Not a type 0x0004 " +
+                "artifact.");
+      return false;
+    }
+    const own = stsCrypto.samlArtifactSourceId(
+      this.idpEntityIdFor(scopedEntityId));
+    const foreign = !own.equals(bytes.subarray(4, 24));
+    log.debug("Leaving Saml2Sso.isForeignArtifact(). " + foreign);
+    return foreign;
   }
 
   private stashArtifact(artifact, detail) {
@@ -2543,7 +2571,7 @@ class Saml2Sso {
 
   // Deliver a built message to a service provider, on whichever binding was
   // asked for. One function for the sign-in response and the logout response
-  // alike, because the three bindings are a property of SAML and not of the
+  // alike, because the four bindings are a property of SAML and not of the
   // message.
   private deliver(res, opts) {
     const { config } = this.deps;
@@ -2565,7 +2593,7 @@ class Saml2Sso {
                opts.field +
                ' for ' + (opts.spEntityId || '(unnamed)') + '; it is ' +
                    'resolvable once, at ' +
-               ARS_PATH + '.');
+               this.endpointsFor('', opts.spEntityId).ars + '.');
       // 303, not 302: this may follow the POST that carried the AuthnRequest,
       // and a 307 would repeat that body at the service provider. The same
       // reasoning authn.js's returnToCaller() writes down at length.
@@ -2833,6 +2861,43 @@ class Saml2Sso {
     // request only where one is required. Refused on a PAGE, for the reason an
     // unregistered address is: the AssertionConsumerServiceURL a Response
     // would go to is part of what the signature was meant to protect.
+    // --- A SERVICE PROVIDER NOBODY REGISTERED GETS NOTHING, IN PRODUCT -------
+    // (#496). rcbj: in product an unregistered application gets nothing but
+    // a 404 or its protocol's own "unknown application" error, and nothing
+    // is learnt from it. Asked on the request's first arrival, BEFORE the
+    // signature check — which writes a `saml2.request.signature` audit row,
+    // and on a refusal filed a sighting on any entry the Issuer named — and
+    // answered on a PAGE: no Response may go to an AssertionConsumerService
+    // nobody registered. "Registered" is #494's word (`appRegisteredBy`), so
+    // an entry a development sighting filed is refused like none. ONE thing
+    // is still asked first: a Metadata Query lookup for an entityID with no
+    // entry, which `queueMdqLookup()` makes in product only with a realm
+    // trust anchor and turns into a registration only when the answer
+    // verifies (#112) — the operator's MDQ is consulted, nothing is taken
+    // from the request, and the request itself is refused either way.
+    if (!held && !mode.issuesToUnregisteredApplications()) {
+      const named = String(request.issuer || scoped.entityId || '');
+      const entry: any = named ? applications.get(named) : null;
+      if (!entry || !String(entry.registeredBy || '')) {
+        if (named && !entry) {
+          this.deps.spMetadata.queueMdqLookup(named);
+        }
+        errorCodes.mark(res, 'STS-SAML-0103');
+        log.debug("Leaving Saml2Sso.singleSignOnChecked(). The service " +
+                  "provider is not registered.");
+        return this.samlError(res, 403, 'That service provider is not ' +
+                              'registered',
+          (named ? 'The AuthnRequest\'s Issuer is "' + named + '", and no '
+                 : 'The AuthnRequest names no Issuer, so no ') +
+          'SAML 2.0 service provider is registered under it in this realm. ' +
+          'In product mode this identity provider answers only a service ' +
+          'provider registered ahead of time (the console, /admin-api, ' +
+          'RFC 7591, an LDAP add under ou=applications or verified ' +
+          'metadata); one that was only seen is not registered, ' +
+          'and no Response is sent anywhere.');
+      }
+    }
+
     let verification = held ? held.verification : null;
     if (!verification) {
       const claimed = request.issuer || scoped.entityId;
@@ -3424,14 +3489,63 @@ class Saml2Sso {
       // reads (#62 P3).
       session: session
     });
+    // -----------------------------------------------------------------------
+    // A SESSION ON A SIGN-IN MECHANISM THE SERVICE PROVIDER DOES NOT ALLOW
+    // (#457) is sent to sign in again — the screen offers only the allowed
+    // ones, and a sign-in with any other is refused there — ONCE, on the
+    // one-trip rule above: the request is held and the trip recorded on it,
+    // as the ForceAuthn branch does. Back from that trip still unmet, or with
+    // IsPassive, it is the RequestDenied Response below, with the policy's
+    // sentence naming the mechanisms. The hold is that branch's, repeated
+    // rather than shared: that branch is reached before the policy is asked.
+    // -----------------------------------------------------------------------
+    if (!roleAnswer.allowed && roleAnswer.mechanism && !returned &&
+        !request.isPassive && session.authenticated !== false) {
+      const again = held || {
+        id: randomId(18), samlRequest: String(encoded),
+        relayState: String(relayState || ''),
+        arrivedBy: arrivedBy, signature: String(params.Signature || ''),
+        sigAlg: String(params.SigAlg || ''),
+        verification: verification
+      };
+      again.expires = Date.now() + this.requestTtlMs();
+      again.forcedAt = nowSec();
+      pendingRequests.set(again.id, again);
+      // A second factor the service provider does not allow (#475) is
+      // its own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-SAML-0106' : 'STS-SAML-0099');
+      log.info('saml2: "' + spEntityId + '" allows signing in with ' +
+               roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
+               'of "' + String((session.user || {}).username) + '" used ' +
+               'none of them; sent to sign in again.');
+      const whereAgain = beginAuthentication({
+        returnTo: req.path + '?rid=' + encodeURIComponent(again.id),
+        hint: String((session.user || {}).username || ''),
+        application: spEntityId,
+        protocol: 'SAML 2.0',
+        details: [
+          { label: 'Service provider', value: spEntityId,
+            note: 'it allows signing in with ' +
+                  roleAnswer.mechanism.allowed.join(', ') + ' only.' }
+        ]
+      });
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). A re-prompt for " +
+                "an allowed sign-in mechanism.");
+      return res.set('Cache-Control', 'no-store').redirect(303, whereAgain);
+    }
     if (!roleAnswer.allowed) {
       log.info('saml2: the issuance policy refused an assertion for "' +
                String((session.user || {}).username) + '" to "' + spEntityId +
                '". ' + roleAnswer.why);
       pendingRequests.delete(String(params.rid || ''));
-      // A realm being removed (#262) is its own code.
+      // A realm being removed (#262) is its own code; a sign-in mechanism
+      // still not allowed after the one trip (#457) is its own.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-                                               : 'STS-SAML-0010');
+        : (roleAnswer.mechanism
+          ? (roleAnswer.mechanism.secondFactor ? 'STS-SAML-0107'
+                                               : 'STS-SAML-0100')
+          : 'STS-SAML-0010'));
       const denied = this.buildResponse({
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
@@ -3632,6 +3746,35 @@ class Saml2Sso {
       claims: null,
       session: session
     });
+    // A SESSION ON A SIGN-IN MECHANISM THE SERVICE PROVIDER DOES NOT ALLOW
+    // (#457): sent to sign in again, back to this same link, which is asked
+    // again with the new session. The screen offers only the allowed
+    // mechanisms and refuses a sign-in with any other, so it cannot loop.
+    if (!roleAnswer.allowed && roleAnswer.mechanism &&
+        session.authenticated !== false) {
+      const again = this.rawQueryOf(req);
+      // A second factor the service provider does not allow (#475) is
+      // its own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-SAML-0106' : 'STS-SAML-0099');
+      log.info('saml2: "' + spEntityId + '" allows signing in with ' +
+               roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
+               'used none of them; sent to sign in again.');
+      const whereAgain = beginAuthentication({
+        returnTo: req.path + (again ? '?' + again : ''),
+        hint: String((session.user || {}).username || ''),
+        application: spEntityId,
+        protocol: 'SAML 2.0',
+        details: [
+          { label: 'Service provider', value: spEntityId,
+            note: 'it allows signing in with ' +
+                  roleAnswer.mechanism.allowed.join(', ') + ' only.' }
+        ]
+      });
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). A re-prompt for an " +
+                "allowed sign-in mechanism.");
+      return res.set('Cache-Control', 'no-store').redirect(303, whereAgain);
+    }
     if (!roleAnswer.allowed) {
       // A realm being removed (#262) is its own code.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
@@ -3844,7 +3987,11 @@ class Saml2Sso {
                  name: String((session.user || {}).username || ''),
                  authenticated: session.authenticated !== false },
       claims: null,
-      session: session
+      session: session,
+      // A BACK-CHANNEL QUERY, NOT A BROWSER SIGN-IN (#457): the sign-in
+      // mechanism rule is browser authentication only (rcbj), and nobody is
+      // here to sign in again.
+      browser: false
     });
     if (!roleAnswer.allowed) {
       log.debug("Leaving Saml2Sso.answerAttributeQuery(). The issuance " +
@@ -4145,6 +4292,25 @@ class Saml2Sso {
     }
     const raw = typeof req.body === 'string' ? req.body : '';
     logArtifact('SAML 2.0 ArtifactResolve', 'as received over SOAP', raw);
+    // AN ARTIFACT THAT DOES NOT RESOLVE IS ONE ANSWER, AND IT IS SUCCESS
+    // (#160). saml-core-2.0-os section 3.5.3: a responder that recognises the
+    // artifact as valid answers with the message; "otherwise, it responds with
+    // an <ArtifactResponse> element with no embedded message. In both cases,
+    // the <Status> element MUST include a <StatusCode> element with the code
+    // value ...:status:Success" — and a repeat of a resolved artifact, and a
+    // requester that "cannot authenticate itself as the original intended
+    // recipient", MUST get that same empty response. So every reason an
+    // artifact is not handed over — never minted here, expired, already
+    // resolved here or on another node, another entity's SourceID, a caller
+    // that is not the intended recipient or cannot prove it, a claim store
+    // that cannot be asked, an answer that failed after the spend — is
+    // `empty()`: Success, no message, NO StatusMessage, byte for byte the
+    // same whatever the reason, so the answer is no oracle for whether an
+    // artifact exists or whom it was for. The reason is the operator's: an
+    // error code on the response and the log line or audit row beside it.
+    // Requester is kept for a request that is not an artifact resolution at
+    // all (not XML, no ArtifactResolve, no Artifact) — section 3.5.3 is about
+    // an artifact, and those carry none.
     const answer = function (status, message, payload, inResponseTo) {
       log.debug("Entering answer().");
       const envelope = self.soapEnvelope(self.buildArtifactResponse(
@@ -4191,6 +4357,12 @@ class Saml2Sso {
                     'else.', '', '');
     }
     const inResponseTo = resolve.getAttribute('ID') || '';
+    const empty = function (code) {
+      log.debug("Entering empty(). " + code);
+      errorCodes.mark(res, code);
+      log.debug("Leaving empty().");
+      return answer(STATUS_SUCCESS, '', '', inResponseTo);
+    };
     const spEntityId = textByLocal(resolve, 'Issuer');
     const artifact = textByLocal(resolve, 'Artifact');
     if (!artifact) {
@@ -4213,6 +4385,27 @@ class Saml2Sso {
                 "that minted it.");
       return undefined;
     }
+    // ANOTHER ENTITY'S ARTIFACT (#160): this resolver answers only for an
+    // artifact whose SourceID is the SHA-1 of ITS OWN entityID. With
+    // `saml2.perApplicationEntityId` on, every service provider's artifacts
+    // are minted under `urn:sts:idp:app-…` and belong to `/saml2/ars/{sp}`;
+    // until this check the unscoped `/saml2/ars` resolved them too, under an
+    // envelope naming `urn:sts:idp` around a Response naming the other —
+    // answering for someone else, and spending the artifact so that the
+    // right resolver, asked next, had nothing. Section 3.6.4 has the SourceID
+    // name the issuer so that a requester can find that issuer's resolver;
+    // the answer here is the empty ArtifactResponse with Success of
+    // saml-core-2.0-os section 3.5.3, and the artifact is LEFT ALONE.
+    if (this.isForeignArtifact(artifact, scoped.entityId)) {
+      log.warn(errorCodes.tag('STS-SAML-0098') + 'saml2: artifact ' +
+               String(artifact).slice(0, 12) + '… was presented at the ' +
+               'resolver of "' + this.idpEntityIdFor(scoped.entityId) +
+               '", but its SourceID names another entity. Answered empty, ' +
+               'and the artifact is left for the resolver it belongs to.');
+      log.debug("Leaving Saml2Sso.resolveArtifact(). Another entity's " +
+                "artifact.");
+      return empty('STS-SAML-0098');
+    }
     const held = artifacts.get(artifact);
     if (held) {
       // WHO IS ASKING, BEFORE ANYTHING IS SPENT (#37 follow-up): a caller that
@@ -4224,29 +4417,22 @@ class Saml2Sso {
       if (caller.refuse) {
         log.debug("Leaving Saml2Sso.resolveArtifact(). The caller was " +
                   "refused: " + caller.errorCode);
-        errorCodes.mark(res, caller.errorCode || 'STS-SAML-0077');
-        return answer(STATUS_REQUESTER, caller.why, '', inResponseTo);
+        return empty(caller.errorCode || 'STS-SAML-0077');
       }
     }
     if (!held) {
-      // The one refusal in this file that is worth making loudly, because it is
-      // the same answer for three different mistakes and a service provider
-      // cannot tell them apart from the status code alone: an artifact that was
-      // never minted here, one that has expired, and — the interesting one —
-      // one that has ALREADY BEEN RESOLVED. Decision 6.
+      // The one refusal in this file that is worth logging loudly, because it
+      // is the same empty answer for three different mistakes and a service
+      // provider cannot tell them apart from the response at all: an
+      // artifact that was never minted here, one that has expired, and — the
+      // interesting one — one that has ALREADY BEEN RESOLVED. Decision 6.
       log.warn('saml2: artifact ' + String(artifact).slice(0, 12) + '… does ' +
                'not resolve. It was never minted here, or it has expired ' +
                '(saml2.artifactTtlS), or it has already been resolved once — ' +
                'which destroys it, because section 3.6.4.1 says an artifact ' +
                'is resolvable exactly once.');
       log.debug("Leaving Saml2Sso.resolveArtifact(). Unknown artifact.");
-      errorCodes.mark(res, 'STS-SAML-0018');
-      log.debug("Leaving Saml2Sso.resolveArtifact().");
-      return answer(STATUS_REQUESTER,
-                    'that artifact does not resolve: it was never issued ' +
-                    'here, it has expired, or it has already been resolved — ' +
-                    'an artifact is one-shot (section 3.6.4.1).',
-                    '', inResponseTo);
+      return empty('STS-SAML-0018');
     }
     // ONE-SHOT. Deleted BEFORE the answer is built rather than after it is
     // sent, so that two ArtifactResolve calls arriving together cannot both
@@ -4256,11 +4442,9 @@ class Saml2Sso {
     return this.spendArtifact(artifact, held).then(function (spent) {
       log.debug("Entering Saml2Sso.resolveArtifact()'s claim answer.");
       if (!spent.ok) {
-        errorCodes.mark(res, spent.errorCode);
         log.debug("Leaving Saml2Sso.resolveArtifact()'s claim answer. " +
                   "Refused.");
-        return answer(spent.reason === 'used' ? STATUS_REQUESTER :
-                      STATUS_RESPONDER, spent.message, '', inResponseTo);
+        return empty(spent.errorCode);
       }
       log.debug("Leaving Saml2Sso.resolveArtifact()'s claim answer. Spent.");
       return self.answerResolved(held, spEntityId, artifact, inResponseTo,
@@ -4273,9 +4457,7 @@ class Saml2Sso {
                 'ArtifactResolve could not be answered after its claim: ' +
                 ((e && e.message) || e));
       if (!res.headersSent) {
-        errorCodes.mark(res, 'STS-SAML-0060');
-        answer(STATUS_RESPONDER, 'the artifact could not be resolved.', '',
-               inResponseTo);
+        empty('STS-SAML-0060');
       }
     });
   }
@@ -4386,10 +4568,7 @@ class Saml2Sso {
                    'resolution.');
           log.debug("Leaving Saml2Sso.spendArtifact()'s answer. Used " +
                     "elsewhere.");
-          return { ok: false, reason: 'used', errorCode: 'STS-SAML-0057',
-                   message: 'that artifact does not resolve: it has already ' +
-                            'been resolved — an artifact is one-shot ' +
-                            '(section 3.6.4.1).' };
+          return { ok: false, reason: 'used', errorCode: 'STS-SAML-0057' };
         }
         log.error(errorCodes.tag('STS-SAML-0059') + 'saml2: whether artifact ' +
                   String(artifact).slice(0, 12) + '… was already resolved ' +
@@ -4397,9 +4576,7 @@ class Saml2Sso {
                   (claimed.why || 'no reason given') + '). It is refused.');
         log.debug("Leaving Saml2Sso.spendArtifact()'s answer. Store " +
                   "unavailable.");
-        return { ok: false, reason: 'store', errorCode: 'STS-SAML-0059',
-                 message: 'the identity provider could not confirm that ' +
-                          'artifact is unresolved, so it is not resolved.' };
+        return { ok: false, reason: 'store', errorCode: 'STS-SAML-0059' };
       });
   }
 
@@ -4626,7 +4803,7 @@ class Saml2Sso {
   }
 
   private singleLogout(req, res) {
-    const { errorCodes, validation } = this.deps;
+    const { applications, errorCodes, mode, validation } = this.deps;
     const { endSession } = this.deps.authn;
     const { STS, baseUrlOf, firstByLocal, log, logArtifact, textByLocal,
             xmlEscape } = this.deps.helpers;
@@ -4729,6 +4906,28 @@ class Saml2Sso {
     }
     const requestId = root.getAttribute('ID') || '';
     const spEntityId = textByLocal(root, 'Issuer') || scoped.entityId;
+    // A SERVICE PROVIDER NOBODY REGISTERED ENDS NOTHING, IN PRODUCT (#496):
+    // asked before the signature check (its audit row, its metadata lookup)
+    // and before any session is looked at. With signed requests not
+    // required, an unsigned LogoutRequest from an Issuer nobody registered
+    // ended the browser's session. A page, for the reason the signature
+    // refusal below is one: there is no registered SingleLogoutService to
+    // send a LogoutResponse to.
+    const sloEntry: any = spEntityId ? applications.get(spEntityId) : null;
+    if (!mode.issuesToUnregisteredApplications() &&
+        (!sloEntry || !String(sloEntry.registeredBy || ''))) {
+      errorCodes.mark(res, 'STS-SAML-0104');
+      log.debug("Leaving Saml2Sso.singleLogout(). The service provider is " +
+                "not registered.");
+      return this.samlError(res, 403, 'That service provider is not ' +
+                            'registered',
+        (spEntityId ? 'The LogoutRequest\'s Issuer is "' + spEntityId +
+                      '", and no '
+                    : 'The LogoutRequest names no Issuer, so no ') +
+        'SAML 2.0 service provider is registered under it in this realm. ' +
+        'In product mode only a registered service provider may end a ' +
+        'session here; nothing was ended.');
+    }
     // THE SIGNATURE (#37), before anything is decrypted or ended: a
     // LogoutRequest whose signature fails, or an unsigned one where signed
     // requests are required, ends NO session. saml-profiles-2.0-os section
@@ -5164,6 +5363,32 @@ class Saml2Sso {
              xmlEscape(location) + '"' +
         (extra || '') + '/>';
     };
+    // THE OTHER LISTENERS SAML 2.0 IS ON (#472, rcbj's D4: "advertise
+    // services on multiple listeners"). An endpoint element is a list in the
+    // metadata schema, so the same binding may be offered at a second
+    // Location; the advertised listener's comes first, which is the one a
+    // service provider picking the first of a binding takes. Single sign-on
+    // and single logout only: the artifact resolution service is indexed,
+    // and one is what a service provider resolves at.
+    const elsewhere = listenerMap.alternatives('saml2')
+      .filter(function (one: any): boolean {
+        return !!one.base;
+      }).map(function (one: any): string {
+        return one.base + realms.currentPrefix();
+      });
+    const alsoAt = function (element, location): string {
+      log.debug("Entering alsoAt(). " + element);
+      const at = String(location || '');
+      const out = elsewhere.map(function (to: string): string {
+        const moved = at.indexOf(base) === 0 ? to + at.slice(base.length)
+                                             : at;
+        return service(element, BINDING_REDIRECT, moved) +
+               service(element, BINDING_POST, moved) +
+               service(element, BINDING_SIMPLESIGN, moved);
+      }).join('');
+      log.debug("Leaving alsoAt().");
+      return out;
+    };
     const xml =
       '<?xml version="1.0" encoding="UTF-8"?>' +
       '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ID="' + id + '"' +
@@ -5174,7 +5399,7 @@ class Saml2Sso {
         // prepended ds:Signature and before the role, as the schema orders.
         '<md:Extensions><cm:CryptoMetadataLocation xmlns:cm="' +
           'urn:iya:sts:crypto-metadata:1">' +
-          xmlEscape(base + '/crypto/metadata.xml') +
+          xmlEscape(helpers.rebaseTo(base, 'pki') + '/crypto/metadata.xml') +
           '</cm:CryptoMetadataLocation></md:Extensions>' +
         '<md:IDPSSODescriptor' +
           // WantAuthnRequestsSigned FOLLOWS WHAT IS ENFORCED (#37). It was the
@@ -5216,12 +5441,14 @@ class Saml2Sso {
           service('SingleLogoutService', BINDING_REDIRECT, where.slo) +
           service('SingleLogoutService', BINDING_POST, where.slo) +
           service('SingleLogoutService', BINDING_SIMPLESIGN, where.slo) +
+          alsoAt('SingleLogoutService', where.slo) +
           NAMEID_FORMATS.map(function (format) {
             return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
           }).join('') +
           service('SingleSignOnService', BINDING_REDIRECT, where.sso) +
           service('SingleSignOnService', BINDING_POST, where.sso) +
           service('SingleSignOnService', BINDING_SIMPLESIGN, where.sso) +
+          alsoAt('SingleSignOnService', where.sso) +
           // NO HTTP-Artifact SingleSignOnService (#191). A SingleSignOnService
           // names a binding an AuthnRequest may ARRIVE on, and HTTP-Artifact
           // as a request binding means an artifact this service would resolve
@@ -5347,8 +5574,9 @@ class Saml2Sso {
           'the assertion.') +
       '</p><h2>Try it</h2><ul><li><a ' +
       'href="' + SP_PATH + '">' + SP_PATH + '</a> — a mock service ' +
-      'provider here that sends a complete AuthnRequest over each of the ' +
-      'three bindings and then verifies the response check by ' +
+      'provider here that sends a complete AuthnRequest asking for the ' +
+      'response on HTTP POST, HTTP Redirect and HTTP Artifact, and then ' +
+      'verifies the response check by ' +
       'check.</li><li><a href="' + xmlEscape(where.metadata) + '">' +
         xmlEscape(where.metadata) +
       '</a> ' +

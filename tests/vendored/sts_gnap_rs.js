@@ -454,6 +454,18 @@ async function statusBitBecomes(ref, jwks, want) {
   return bit;
 }
 
+// THE MACAROON ROOT KEY, read the one way there is since #446: GET
+// /admin-api/applications masks every credential, so the key a registration
+// wrote onto a resource server's entry is read with reveal-secret.
+async function macaroonRootOf(h, identifier) {
+  log.debug("Entering macaroonRootOf(). " + identifier);
+  const r = await h.apiPost(h.realmApi + "/applications/reveal-secret",
+                            { application: identifier,
+                              secret: "gnapMacaroonKey" });
+  log.debug("Leaving macaroonRootOf(). status=" + r.status);
+  return r;
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving RFC 9767 at " + h.realmBase);
@@ -549,16 +561,13 @@ async function test() {
     h.refused(r, "invalid_request", "a string where a boolean belongs");
   });
 
-  const entry = await h.apiGet(h.realmApi + "/applications?application=" +
-                               encodeURIComponent(RS_ID));
+  const entry = await macaroonRootOf(h, RS_ID);
   let macaroonRoot;
   check("registration wrote the macaroon root key onto the resource server's " +
         "own entry", function () {
-    const values = entry.body.attributes.gnapMacaroonKey ||
-                   entry.body.attributes.gnapmacaroonkey;
-    assert.ok(values && values[0],
-              JSON.stringify(Object.keys(entry.body.attributes)));
-    macaroonRoot = Buffer.from(values[0], "base64url");
+    assert.strictEqual(entry.status, 200, entry.raw.slice(0, 300));
+    assert.ok(entry.body && entry.body.value, entry.raw.slice(0, 300));
+    macaroonRoot = Buffer.from(String(entry.body.value), "base64url");
     assert.strictEqual(macaroonRoot.length, 32);
   });
 
@@ -606,6 +615,9 @@ async function test() {
             "cnf.jkt is the client's RFC 7638 thumbprint computed " +
             "here", function () {
               const v = verifyJws(token.value, jwks);
+              // #157: the header is the type (RFC 8725 section 3.11); the
+              // payload's typ is this service's private marker.
+              assert.strictEqual(v.header.typ, "gnap-at+jwt");
               assert.strictEqual(v.claims.typ, "GNAP");
               assert.strictEqual(v.claims.aud, RS_ID);
               assert.deepStrictEqual(v.claims.cnf, { jkt: clientJkt });
@@ -617,6 +629,7 @@ async function test() {
         const opened = openJwe(token.value, rsJwe.privateKey);
         assert.strictEqual(opened.header.cty, "JWT");
         const v = verifyJws(opened.plaintext, jwks);
+        assert.strictEqual(v.header.typ, "gnap-at+jwt");
         assert.strictEqual(v.claims.aud, RS_ID);
         assert.deepStrictEqual(v.claims.cnf, { jkt: clientJkt });
       });
@@ -1038,11 +1051,9 @@ async function test() {
         "macaroon root key)", function () {
     assert.strictEqual(r.status, 200, r.text);
   });
-  const rs2Entry = await h.apiGet(h.realmApi + "/applications?application=" +
-                                  encodeURIComponent(RS2_ID));
-  const rs2Values = rs2Entry.body.attributes.gnapMacaroonKey ||
-                    rs2Entry.body.attributes.gnapmacaroonkey;
-  const rs2MacaroonRoot = Buffer.from(rs2Values[0], "base64url");
+  const rs2Entry = await macaroonRootOf(h, RS2_ID);
+  const rs2MacaroonRoot = Buffer.from(String(rs2Entry.body.value),
+                                      "base64url");
   const both = { type: "https://rs.gnap.test/photos", actions: ["read"],
                  locations: [RS_URI, RS2_URI] };
   const toRs2 = { type: "https://rs.gnap.test/photos", actions: ["read"],

@@ -63,7 +63,6 @@
 // WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
 // this module mints and read where it is presented. A leaf library.
 import cellLocator = require('../common/cell_locator');
-import crypto = require('crypto');
 import qrcode = require('qrcode');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
@@ -406,8 +405,7 @@ class VcOffers {
     const { log } = this.deps;
     log.debug("Entering VcOffers.deferredTokenKey().");
     log.debug("Leaving VcOffers.deferredTokenKey().");
-    return crypto.createHash('sha256').update(String(token || ''), 'utf8')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(token || ''), 'base64url');
   }
 
   // How long a deferred issuance "takes". Short enough for a test to wait for
@@ -461,7 +459,7 @@ class VcOffers {
   // — and this service hands its outputs to anybody who loads an offer page.
   // The Transaction Code is the only thing binding a pre-authorized code to the
   // person standing at the issuer's screen, so a predictable one is no binding.
-  // `crypto.randomInt()` is uniform over the range, which a modulo of random
+  // `stsCrypto.randomInt()` is uniform over the range, which a modulo of random
   // bytes is not. BOTH MODES: a guessable code is a defect a mock should not
   // teach anybody to expect.
   //
@@ -488,7 +486,7 @@ class VcOffers {
     const length = this.txCodeLength();
     const low = Math.pow(10, length - 1);
     log.debug("Leaving VcOffers.newTxCode().");
-    return String(crypto.randomInt(low, low * 10));
+    return String(stsCrypto.randomInt(low, low * 10));
   }
 
   // ---------------------------------------------------------------------------

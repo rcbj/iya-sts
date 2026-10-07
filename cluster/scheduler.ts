@@ -83,9 +83,10 @@
 // answers it as JSON.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import os = require('os');
 import helpers = require('../common/helpers');
+// The one place this service hashes and draws random values (#453).
+import stsCrypto = require('../common/crypto');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
@@ -101,6 +102,7 @@ import usedAssertions = require('../common/used_assertions');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('../common/worker_channel');
+import WebKit = require('../admin-ui/web_kit');
 
 type Json = any;
 
@@ -838,7 +840,8 @@ class Scheduler {
     return text;
   }
 
-  // "4 min 12 s", "2 h 5 min", "90 d" — two units at most.
+  // "4 min 12 s", "2 h 5 min", "90 d" — two units at most. The kit's since
+  // #446, so the Scheduler page drawn in a browser says it the same way.
   /**
    * Formats a duration in at most two units, such as "4 min 12 s".
    *
@@ -847,21 +850,8 @@ class Scheduler {
    */
   static span(ms: number): string {
     helpers.log.debug("Entering Scheduler.span().");
-    const s = Math.max(0, Math.round(ms / 1000));
-    const units: Array<[number, string]> = [[86400, 'd'], [3600, 'h'],
-                                             [60, 'min'], [1, 's']];
-    const parts: string[] = [];
-    let left = s;
-    units.forEach(function (unit: [number, string]): void {
-      if (parts.length < 2 && (left >= unit[0] ||
-                               (unit[0] === 1 && !parts.length))) {
-        const n = Math.floor(left / unit[0]);
-        left -= n * unit[0];
-        parts.push(n + ' ' + unit[1]);
-      }
-    });
     helpers.log.debug("Leaving Scheduler.span().");
-    return parts.join(' ');
+    return WebKit.span(ms);
   }
 
   // -------------------------------------------------------------------------
@@ -1064,9 +1054,9 @@ class Scheduler {
   private runIdFor(job: JobSpec, realmId: string, slot: number): string {
     const { log } = this.deps;
     log.debug("Entering Scheduler.runIdFor().");
-    const digest = nodeCrypto.createHash('sha256')
-      .update(job.id + '\n' + realmId + '\n' + String(slot))
-      .digest('base64url').slice(0, 22);
+    const digest = stsCrypto.digest('sha256',
+      job.id + '\n' + realmId + '\n' + String(slot), 'base64url')
+      .slice(0, 22);
     log.debug("Leaving Scheduler.runIdFor().");
     return 's-' + digest;
   }
@@ -1871,7 +1861,7 @@ class Scheduler {
                run: this.runView(existing) };
     }
     const row = this.writeRow(realmId, {
-      runId: 'm-' + nodeCrypto.randomBytes(12).toString('base64url'),
+      runId: 'm-' + stsCrypto.randomBytes(12).toString('base64url'),
       kind: 'run', jobId: job.id, realm: realmId, slot: null,
       dueAt: this.nowMs(), trigger: 'manual', params: params,
       requestedBy: String(o.requestedBy || ''),
@@ -1914,7 +1904,7 @@ class Scheduler {
     }
     const leader = this.storeOf(realms.DEFAULT_ID).get(LEADER_KEY) || null;
     const row = this.writeRow(realms.DEFAULT_ID, {
-      runId: COMMAND_PREFIX + nodeCrypto.randomBytes(9).toString('base64url'),
+      runId: COMMAND_PREFIX + stsCrypto.randomBytes(9).toString('base64url'),
       kind: 'command', command: 'step-down', state: 'queued',
       requestedBy: String(o.requestedBy || ''),
       requestedVia: String(o.via || ''), queuedAt: this.nowMs(),

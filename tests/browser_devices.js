@@ -135,6 +135,8 @@ function childMain() {
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
+    // Where the console is reached, for its callback (#446).
+    const consoleBase = 'http://127.0.0.1:' + port;
 
     config.setOverride('oauth2.consentRequired', false);
     // Three steps either side, so four sign-ins can each spend a later step
@@ -320,8 +322,20 @@ function childMain() {
          third.answer.status + ' ' + String(landed.headers.location || ''));
     note(devices.byId(d1.id).browser.gen === 3,
          'F2. and the token was issued again (generation 3)');
-    const console1 = await passwordStep(withCookie(CHROME, gen3Cookie),
-                                        '/admin', 'bd-alice', false);
+    // THE CONSOLE SIGNS IN IN THE BROWSER since the cutover (#446): its
+    // sign-in starts at the authorize endpoint as the public client, with
+    // PKCE, at the callback the shell registers — asked for first, as a
+    // browser opening the console does.
+    const consoleBrowser = withCookie(CHROME, gen3Cookie);
+    await consoleBrowser.go('GET', '/admin');
+    const consoleAuthorize = '/oauth2/authorize?' + new URLSearchParams({
+      client_id: 'sts-admin-console', response_type: 'code',
+      redirect_uri: consoleBase + '/admin/callback',
+      scope: 'openid admin:read admin:write', state: 's',
+      code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+      code_challenge_method: 'S256' }).toString();
+    const console1 = await passwordStep(consoleBrowser, consoleAuthorize,
+                                        'bd-alice', false);
     note(console1.answer.status === 200 &&
          /one-time code/i.test(console1.answer.text),
          'F3. the admin console always asks, remembered browser or not',

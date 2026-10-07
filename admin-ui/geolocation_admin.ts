@@ -51,6 +51,8 @@ import InstanceSlot = require('../common/instance_slot');
 import riskDatasets = require('../risk/risk_datasets');
 import riskEngine = require('../risk/risk_engine');
 import geoMap = require('./geo_map');
+// The page's renderer (#446): a `web_` module, loadable in a browser.
+import GeolocationPage = require('./web_geolocation');
 
 type Req = any;
 type Res = any;
@@ -68,10 +70,12 @@ const PAGE = '/admin/geolocation';
  */
 const WINDOWS: Record<string, number> = {
   'live': 0, '24h': 86400000, '7d': 7 * 86400000, '30d': 30 * 86400000 };
-const WINDOW_LABELS: Record<string, string> = {
-  'live': 'Live sessions', '24h': 'Last 24 hours', '7d': 'Last 7 days',
-  '30d': 'Last 30 days' };
-const DEFAULT_WINDOW = 'live';
+// The renderer's (#446), read back: the page names them and this
+// module answers queries in them.
+const WINDOW_LABELS = GeolocationPage.WINDOW_LABELS;
+// The renderer's (#446), read back: the page names them and this
+// module answers queries in them.
+const DEFAULT_WINDOW = GeolocationPage.DEFAULT_WINDOW;
 
 // Where each continent's total is written on the world map: inside it, on
 // land, and clear of the others. Antarctica is below the world view's edge
@@ -152,32 +156,6 @@ class GeolocationAdmin {
     const raw = query ? query[name] : undefined;
     helpers.log.debug("Leaving GeolocationAdmin.param().");
     return String((Array.isArray(raw) ? raw[0] : raw) || '').trim();
-  }
-
-  // The page's own address for a window and a place, the default window
-  // left out. Root-relative: `app.js` puts it in the realm.
-  /**
-   * Answers the page's own root-relative address for a window and a place, the
-   * default window left out.
-   *
-   * @param window - the window's name
-   * @param continent - a continent's slug
-   * @param country - a country's ISO code
-   * @returns the address
-   */
-  static hrefOf(window: string, continent?: string, country?: string): string {
-    helpers.log.debug("Entering GeolocationAdmin.hrefOf().");
-    const parts: string[] = [];
-    if (window && window !== DEFAULT_WINDOW) {
-      parts.push('window=' + encodeURIComponent(window));
-    }
-    if (country) {
-      parts.push('country=' + encodeURIComponent(country));
-    } else if (continent) {
-      parts.push('continent=' + encodeURIComponent(continent));
-    }
-    helpers.log.debug("Leaving GeolocationAdmin.hrefOf().");
-    return PAGE + (parts.length ? '?' + parts.join('&') : '');
   }
 
   // What the query asks for, or why it cannot be answered. A country names
@@ -336,7 +314,7 @@ class GeolocationAdmin {
       return d.provider;
     });
     log.debug("Leaving GeolocationAdmin.geoView().");
-    return {
+    const view: Json = {
       ok: true,
       realm: realm,
       window: scope.window,
@@ -367,32 +345,14 @@ class GeolocationAdmin {
       }),
       outlines: geo.countries().source
     };
-  }
-
-  // "12", or "fewer than 3" for a suppressed count, or "—" for none.
-  private countText(n: number | null, suppressed: boolean): string {
-    const { log, config } = this.deps;
-    log.debug("Entering GeolocationAdmin.countText().");
-    log.debug("Leaving GeolocationAdmin.countText().");
-    if (n !== null) {
-      return String(n);
-    }
-    return suppressed ? 'fewer than ' +
-      Math.max(1, Number(config.value('risk.geoMinimumCount')) || 1) : '—';
-  }
-
-  // A time in UTC to the minute, or '' for none.
-  /**
-   * Says a time in UTC to the minute.
-   *
-   * @param ms - the time in milliseconds
-   * @returns the time as text, or '' for none
-   */
-  static stamp(ms: number): string {
-    helpers.log.debug("Entering GeolocationAdmin.stamp().");
-    helpers.log.debug("Leaving GeolocationAdmin.stamp().");
-    return ms ? new Date(ms).toISOString().slice(0, 16).replace('T', ' ') +
-      ' UTC' : '';
+    // THE MAP, LAID OUT HERE (#446): the outlines, the projection and the
+    // labels' places are this process's, and a page drawn from this answer
+    // has none of them. So the picture is part of the answer — markup and
+    // its legend, as `/admin-api/delegation/map` answers its drawing — with
+    // the colour a place with no data is painted.
+    view.drawing = this.drawing(view);
+    view.noDataColour = geo.NO_DATA;
+    return view;
   }
 
   // The picture, from the view: which countries are filled how dark, what
@@ -421,7 +381,8 @@ class GeolocationAdmin {
       }
       areas[c.iso] = {
         bucket: bucket,
-        title: c.name + ': ' + self.countText(c.people, c.suppressed) +
+        title: c.name + ': ' +
+          GeolocationPage.countText(c.people, c.suppressed, v.minimumCount) +
           ' ' + (c.people === 1 ? 'person' : 'people') +
           (c.signIns !== null ? ', ' + c.signIns + ' sign-in(s)' : '') };
     });
@@ -431,8 +392,8 @@ class GeolocationAdmin {
         return '';
       }
       return v.level === 'world'
-        ? GeolocationAdmin.hrefOf(v.window, geo.slugOf(c.continent))
-        : GeolocationAdmin.hrefOf(v.window, '', iso);
+        ? GeolocationPage.hrefOf(v.window, geo.slugOf(c.continent))
+        : GeolocationPage.hrefOf(v.window, '', iso);
     };
     let labels: Json[] = [];
     if (v.level === 'world') {
@@ -442,7 +403,7 @@ class GeolocationAdmin {
         const p = CONTINENT_LABELS[c.continent];
         return { lon: p[0], lat: p[1],
                  text: c.name + (c.people !== null ? ' · ' + c.people : ''),
-                 href: GeolocationAdmin.hrefOf(v.window, c.continent) };
+                 href: GeolocationPage.hrefOf(v.window, c.continent) };
       });
     } else if (v.level === 'continent') {
       labels = v.countries.filter(function (c: Json): boolean {
@@ -450,7 +411,7 @@ class GeolocationAdmin {
       }).map(function (c: Json): Json {
         const p = byIso.get(c.iso).label;
         return { lon: p[0], lat: p[1], text: c.name + ' · ' + c.people,
-                 href: GeolocationAdmin.hrefOf(v.window, '', c.iso) };
+                 href: GeolocationPage.hrefOf(v.window, '', c.iso) };
       });
     }
     const cities = v.cities.filter(function (c: Json): boolean {
@@ -477,179 +438,16 @@ class GeolocationAdmin {
     };
   }
 
-  // One table: a place per row, linked to its own view when it has one.
-  private table(id: string, head: string, rows: Json[],
-                hrefOf: (row: Json) => string, extra?: string): string {
-    const { log, admin } = this.deps;
-    const self = this;
-    log.debug("Entering GeolocationAdmin.table(). " + id);
-    const esc = admin.esc.bind(admin);
-    const body = rows.map(function (r: Json): string {
-      const href = hrefOf(r);
-      const name = esc(r.label);
-      return '<tr><td>' + (href ? '<a href="' + esc(href) + '">' + name +
-                           '</a>' : name) + '</td><td class="num">' +
-        esc(self.countText(r.people, r.suppressed)) + '</td><td class="num">' +
-        esc(r.signIns === null ? '' : String(r.signIns)) + '</td><td>' +
-        esc(r.people === null ? '' : GeolocationAdmin.stamp(r.lastAt)) +
-        '</td></tr>';
-    }).join('');
-    log.debug("Leaving GeolocationAdmin.table().");
-    return '<table class="grid" id="' + id + '"><thead><tr><th>' + esc(head) +
-      '</th><th>People</th><th>Sign-ins</th><th>Last seen</th></tr></thead>' +
-      '<tbody>' + (body || '<tr><td colspan="4">Nobody here in this ' +
-                   'window.</td></tr>') + (extra || '') + '</tbody></table>';
-  }
-
-  // The page's HTML.
-  /**
-   * Draws the page's HTML from the view.
-   *
-   * @param v - `geoView()`'s answer
-   * @returns the page body
-   */
+  // DRAWN BY `web_geolocation.ts` (#446): this page is converted for the
+  // static console, and its renderer is a module a browser can load. Until the
+  // cutover this process still draws it, handing the renderer the view passed
+  // THROUGH JSON, so it is held to what the API's caller receives.
   html(v: Json): string {
-    const { log, admin, geo } = this.deps;
-    const self = this;
-    log.debug("Entering GeolocationAdmin.html(). level=" + v.level);
-    const esc = admin.esc.bind(admin);
-    const place = function (continent?: string, country?: string): string {
-      return GeolocationAdmin.hrefOf(v.window, continent, country);
-    };
-    const windows = v.windows.map(function (w: string): string {
-      const label = esc(WINDOW_LABELS[w]);
-      return w === v.window ? '<strong>' + label + '</strong>'
-        : '<a id="geo-window-' + w + '" href="' +
-          esc(GeolocationAdmin.hrefOf(w, v.continent && v.continent.continent,
-                                      v.country && v.country.iso)) + '">' +
-          label + '</a>';
-    }).join(' &middot; ');
-    // The zoom trail: World › continent › country, every level above this
-    // one a link. The console's own trail above the heading has one level
-    // below the page, so the continent step is here.
-    const crumbs: string[] = [v.level === 'world' ? '<strong>World</strong>'
-      : '<a id="geo-zoom-world" href="' + esc(place()) + '">World</a>'];
-    if (v.continent) {
-      crumbs.push(v.level === 'continent'
-        ? '<strong>' + esc(v.continent.name) + '</strong>'
-        : '<a id="geo-zoom-continent" href="' +
-          esc(place(v.continent.continent)) + '">' + esc(v.continent.name) +
-          '</a>');
-    }
-    if (v.country) {
-      crumbs.push('<strong>' + esc(v.country.name) + '</strong>');
-    }
-    const who = v.window === 'live'
-      ? 'people signed in now, in ' + v.liveSessions + ' live session(s) ' +
-        'with a risk assessment, each where its latest assessment placed it'
-      : 'people who signed in over the ' +
-        esc(WINDOW_LABELS[v.window].toLowerCase()) + ', wherever they were';
-    const drawn = this.drawing(v);
-    const legend = drawn.legend.map(function (s: Json): string {
-      return '<span class="geo-swatch" style="display:inline-block;' +
-        'width:14px;height:14px;border-radius:3px;vertical-align:middle;' +
-        'margin:0 4px 0 12px;background:' + s.colour + '"></span>' +
-        (s.from === s.to ? s.from : s.from + '–' + s.to);
-    }).join('') + '<span style="display:inline-block;width:14px;height:14px;' +
-      'border-radius:3px;vertical-align:middle;margin:0 4px 0 12px;' +
-      'background:' + geo.NO_DATA + '"></span>none';
-    const where = v.country ? ' in ' + esc(v.country.name)
-      : (v.continent ? ' in ' + esc(v.continent.name) : '');
-    const total = v.total.people !== null
-      ? '<strong id="geo-total">' + v.total.people + '</strong> ' +
-        (v.total.people === 1 ? 'person' : 'people')
-      : '<strong id="geo-total">' + esc(this.countText(null,
-                                                      v.total.suppressed)) +
-        '</strong> people';
-    const noPlace = v.datasets.every(function (d: Json): boolean {
-      return d.state === 'empty';
-    });
-    let tables = '';
-    if (v.level === 'world') {
-      tables += '<h3>By continent</h3>' + this.table('geo-continents',
-        'Continent', v.continents.map(function (c: Json): Json {
-          return Object.assign({ label: c.name }, c);
-        }), function (r: Json): string {
-          return place(r.continent);
-        });
-    }
-    if (v.level !== 'country') {
-      const unknown = v.unknown.people !== null || v.unknown.suppressed
-        ? '<tr><td><em>Location unknown</em></td><td class="num">' +
-          esc(this.countText(v.unknown.people, v.unknown.suppressed)) +
-          '</td><td class="num">' + esc(v.unknown.signIns === null ? ''
-            : String(v.unknown.signIns)) + '</td><td></td></tr>' : '';
-      tables += '<h3>By country</h3>' + this.table('geo-countries',
-        'Country', v.countries.map(function (c: Json): Json {
-          return Object.assign({ label: c.name }, c);
-        }), function (r: Json): string {
-          return r.onMap ? place('', r.iso) : '';
-        }, v.level === 'world' ? unknown : '');
-    } else {
-      const other = v.hidden.cities
-        ? '<tr id="geo-hidden"><td><em>' + v.hidden.cities +
-          ' other cit' + (v.hidden.cities === 1 ? 'y' : 'ies') + ', each ' +
-          'with fewer than ' + v.minimumCount + ' people</em></td>' +
-          '<td></td><td class="num">' + v.hidden.signIns + '</td><td></td>' +
-          '</tr>' : '';
-      const only = v.countryOnly && (v.countryOnly.people !== null ||
-                                     v.countryOnly.suppressed)
-        ? '<tr><td><em>City unknown</em></td><td class="num">' +
-          esc(this.countText(v.countryOnly.people,
-                             v.countryOnly.suppressed)) + '</td>' +
-          '<td class="num">' + esc(v.countryOnly.signIns === null ? ''
-            : String(v.countryOnly.signIns)) + '</td><td></td></tr>' : '';
-      tables += '<h3>By city</h3>' + this.table('geo-cities', 'City',
-        v.cities.map(function (c: Json): Json {
-          return Object.assign({ label: c.city + (c.subdivision
-            ? ', ' + c.subdivision : '') }, c);
-        }), function (): string {
-          return '';
-        }, other + only);
-    }
-    const states = v.datasets.map(function (d: Json): string {
-      return esc(d.title) + ': ' + esc(d.state) +
-        (d.version ? ' (' + esc(d.version) + ')' : '');
-    }).join('; ');
-    const credits = v.attributions.map(function (a: Json): string {
-      return '<p class="attribution"><small>' + (a.url
-        ? '<a href="' + esc(a.url) + '" rel="noopener">' + esc(a.text) +
-          '</a>' : esc(a.text)) + (a.licence ? ', licensed under ' +
-        (a.licenceUrl ? '<a href="' + esc(a.licenceUrl) + '" ' +
-         'rel="noopener">' + esc(a.licence) + '</a>' : esc(a.licence)) : '') +
-        '.</small></p>';
-    }).join('');
+    const { log } = this.deps;
+    log.debug("Entering GeolocationAdmin.html().");
+    const drawn = GeolocationPage.render(JSON.parse(JSON.stringify(v)));
     log.debug("Leaving GeolocationAdmin.html().");
-    return '<div class="card"><h2>Where people signed in from</h2>' +
-      '<p>' + windows + '</p>' +
-      '<p class="geo-zoom">' + crumbs.join(' &rsaquo; ') + '</p>' +
-      (noPlace ? '<p class="warn" id="geo-no-dataset">No geolocation ' +
-        'dataset is active, so a sign-in assessed now has no place and is ' +
-        'counted under <em>Location unknown</em>. Load one on ' +
-        '<a href="/admin/risk">Monitoring → Risk</a>.</p>' : '') +
-      '<p>' + total + where + ' &mdash; ' + who + '. Select a ' +
-      (v.level === 'world' ? 'country or continent to see its continent'
-        : (v.level === 'continent' ? 'country to see its cities'
-          : 'neighbouring country to move to it')) + '.</p>' +
-      drawn.picture.svg +
-      (v.level === 'country'
-        ? '<p><small>A circle\'s area is proportional to the people counted ' +
-          'in its city.</small></p>'
-        : '<p><small>People' + legend + '</small></p>') +
-      '<p><small>People are counted once at each level, so a country\'s ' +
-      'number is not its cities\' total. A place with fewer than ' +
-      v.minimumCount + ' people (<code>risk.geoMinimumCount</code>, on ' +
-      '<a href="/admin/risk">Monitoring → Risk</a>) is shaded but not ' +
-      'numbered, and such a city is not drawn. A city and its coordinates ' +
-      'are often tens of kilometres from where the person is: they are the ' +
-      'dataset\'s answer for the address.</small></p>' + tables +
-      '<p><small>Counted ' + (v.database ? 'in the database, across every ' +
-        'node' : 'in this process\'s memory: the risk history is kept in ' +
-        'the database only where the key-encryption key can seal it') +
-      '. Datasets: ' + states + '.</small></p>' + credits +
-      '<p class="attribution"><small>Country outlines: <a href="' +
-      esc(v.outlines.url) + '" rel="noopener">Made with Natural Earth</a> ' +
-      '(public domain).</small></p></div>';
+    return drawn;
   }
 
   /**
@@ -661,37 +459,6 @@ class GeolocationAdmin {
     const { log, admin, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering GeolocationAdmin.registerRoutes().");
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      self.geoView(req.query).then(function (view: Json): void {
-        if (!view.ok) {
-          errorCodes.mark(res, 'STS-RISK-0042');
-          res.status(400).type('text/html').set('Cache-Control', 'no-store')
-             .send(admin.page('Bad request', PAGE, '<div class="card">' +
-               '<h2>Bad request</h2><p>' + admin.esc(view.errors.join(' ')) +
-               '</p><p><a href="' + PAGE + '">The world map</a></p></div>',
-               null, null, req));
-          log.debug('Leaving GET ' + PAGE + '. Refused.');
-          return;
-        }
-        const up = view.level === 'world' ? undefined
-          : admin.upTo(PAGE, view.country ? view.country.name
-                                          : view.continent.name,
-                       view.window === DEFAULT_WINDOW ? {}
-                         : { window: view.window });
-        admin.respond(req, res, view, 'Geolocation', PAGE,
-                      admin.messagesOf(req) + self.html(view), up);
-        log.debug('Leaving GET ' + PAGE + '.');
-      }).catch(function (e: Json): void {
-        log.warn(errorCodes.tag('STS-RISK-0041') + 'geolocation: the page ' +
-                 'could not be drawn: ' + ((e && e.stack) || e));
-        errorCodes.mark(res, 'STS-RISK-0041');
-        res.status(500).type('text/plain')
-           .send('The geolocation page could not be drawn: ' +
-                 ((e && e.message) || e));
-        log.debug('Leaving GET ' + PAGE + '. Failed.');
-      });
-    });
     log.debug("Leaving GeolocationAdmin.registerRoutes().");
   }
 }
@@ -726,7 +493,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
   WINDOWS: WINDOWS,
-  hrefOf: GeolocationAdmin.hrefOf,
+  hrefOf: GeolocationPage.hrefOf,
   geoView: slot.forward('geoView'),
   drawing: slot.forward('drawing'),
   html: slot.forward('html')

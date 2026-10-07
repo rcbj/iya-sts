@@ -170,6 +170,77 @@ relationship's own key (`federation/CLAUDE.md`, #168). WS-Trust's `/sts/cert`
 serves the pinned certificate while it signs. `common/CLAUDE.md` has the
 model.
 
+## The issuer a relying party sees is ITS OWN (#494, 2026-10-06)
+
+rcbj, on #494: "the entityID a relying party sees is per application, keyed
+by its `wtrealm` registration … One name per application across all three
+protocols." So `issueSignInResponse()` passes `IssuerNames.samlIssuer(realm)`
+to both assertion builders, and that function decides it for SAML 2.0 SSO,
+WS-Trust and WS-Federation alike (`../common/issuer_names.ts`):
+
+* **The application is the entry filed under the `wtrealm` itself**,
+  `applications.get(wtrealm)`, the entry every other step of this path
+  reads — the return addresses, the lifetime override, the role gate. An
+  application known by another name that merely lists the `wtrealm` on
+  `wsfedRealm` is not looked up: product would refuse its `wreply` anyway,
+  since `returnAddressesOf()` reads the `wtrealm`'s own entry. Decided here
+  rather than asked, and the one place this could differ from WS-Trust,
+  whose `forAppliesTo()` does look across names.
+* **Only a REGISTERED one** (`appRegisteredBy`) gets a name of its own.
+  `seen()` files every `wtrealm` the first time a token goes to it; counting
+  that entry would give the second token for an unregistered address a
+  different Issuer from the first. Unregistered: the shared entityID.
+* **Its metadata is `/wsfed/metadata/{rp}`**, `federationMetadata(base,
+  application)` with `wsfedEntityId(application)` — the shared document with
+  the application's entityID. The segment is the identifier or
+  `saml2_sso.slugOf()`'s slug, reached lazily (that module is built after
+  this one). **A 404 in BOTH modes for anything unregistered**
+  (`STS-WSFED-0019`), where `/saml2/metadata/{sp}` answers for anything in
+  development: an unregistered `wtrealm` is issued under the shared name, so
+  a per-application document for it would publish a name no assertion
+  carries. The shared `/FederationMetadata/2007-06/FederationMetadata.xml`
+  stays.
+* **The mock relying party checks against the name for its own realm**, so
+  it makes the check a relying party configured from its own metadata
+  makes.
+
+## A relying party nobody registered gets nothing, in product (#496, 2026-10-06)
+
+rcbj, on #496: in product an application that is not registered gets nothing
+but a 404 or its protocol's own "unknown application" error. Section 13 has
+no error response (the `wsfedError()` paragraph above), so a `wsignin1.0`
+whose `wtrealm` is not a registered relying party is **a 404 page,
+`STS-WSFED-0021`**, behind `mode.issuesToUnregisteredApplications()` (the
+`unregistered-applications` row on `/admin/mode`, shared with WS-Trust):
+
+* **"Registered" is the #494 word above**: `appRegisteredBy` on the entry
+  filed under the `wtrealm` itself, `IssuerNames.registeredApplication()`.
+  An entry a development sighting filed is refused like no entry.
+* **First thing after `wtrealm` is known to be present**, in `signIn()`:
+  before the `wreply` is resolved, before the person is sent to the sign-in
+  screen and before `issueSignInResponse()`'s `seen()`. Product's `wreply`
+  rule already refused most of these (an unregistered realm has no
+  confirmed `wsfedReplyUrl`), with a message about the wrong thing and only
+  after the realm had been looked at; this says what is wrong.
+* **The mock relying party at `/wsfed/rp` names its own URL as `wtrealm`**,
+  which nobody registers, so in product it is refused here — as it already
+  was by the `wreply` rule.
+* **Development is unchanged**: any `wtrealm`, the shared entityID, and
+  `seen()` files it.
+* **An entry an LDAP add made is not registered either**: the add writes no
+  `appRegisteredBy` (the registry writes it, for the console, `/admin-api`,
+  RFC 7591, an OpenID Federation and the seeds), so #494's definition reads
+  it as one that turned up. Whether an LDAP add should count is open on
+  #496; until it is decided, register through the console or `/admin-api`.
+
+`tests/unregistered_applications.js` (U7) holds it in both modes.
+* **No name, no document and no token** (`STS-WSFED-0020`, 503): product
+  with `saml2.entityId` emptied and neither setting set.
+
+`tests/issuer_names.js` (I7–I9) and `tests/vendored/wstrust_chain_kit.js`
+(`samlIssuerFor()`, which asks this route for every tier) hold it;
+`sts_metadata_anonymous.js` section 5 holds the 404.
+
 ## What no test covers yet
 
 `tests/saml_family_hardcoded.js` pins the 2026-09-12 changes above, and

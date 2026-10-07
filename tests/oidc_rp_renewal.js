@@ -32,9 +32,10 @@
 //      endpoint will not produce on demand.
 //   5. THE RENEWAL ITSELF writes onto the same record, and what it keeps.
 //   6. THE REGISTRATION ORDER, as source: middleware applies only to routes
-//      added after it (rule 1), and a renewal registered below the console's
-//      gate would run after the gate had already sent the browser away —
-//      which no request can tell from a renewal that is not registered at all.
+//      added after it (rule 1), and a renewal registered below the portal's
+//      first route would run after that route had answered — which no request
+//      can tell from a renewal that is not registered at all. (The console
+//      renewed on the server too until the cutover, #446.)
 //
 // In process, with no port: `authn.js` is called directly with a stub `res`,
 // for `tests/cross_surface_sso.js`'s reason.
@@ -409,21 +410,11 @@ function firstIndex(source, patterns) {
 
 function checkRegistration(t) {
   log.debug("Entering checkRegistration().");
-  t.log.info('both surfaces register the renewal above everything that reads ' +
+  t.log.info('the portal registers the renewal above everything that reads ' +
              'the session');
-  const admin = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
-                                          'admin.ts'), 'utf8');
-  const renewAdmin = admin.indexOf("app.use('/admin', " +
-                                   "oidcRp.renewal('admin'))");
-  // Indented since #50: the console registers its routes from a method.
-  const firstAdmin = firstIndex(admin, [/^\s*app\.use\('\/admin', function/m,
-                                        /^\s*app\.(get|post|all)\('\/admin/m]);
-  t.check(renewAdmin >= 0, 'the console registers oidcRp.renewal(\'admin\')');
-  t.check(renewAdmin >= 0 && firstAdmin > renewAdmin,
-          'ABOVE the console gate and every /admin route (rule 1)',
-          'renewal at ' + renewAdmin + ', first /admin handler at ' +
-          firstAdmin);
-
+  // THE CONSOLE RENEWS NOTHING ON THE SERVER since the cutover (#446): it
+  // is a static application holding its own tokens in the browser, and its
+  // refresh is `web_runtime.ts`'s. The portal is the one surface left.
   const portal = fs.readFileSync(path.join(__dirname, '..', 'portal',
                                            'portal.ts'), 'utf8');
   const renewPortal = portal.indexOf("app.use(BASE, oidcRp.renewal('portal'))");

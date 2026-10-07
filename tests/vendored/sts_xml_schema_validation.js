@@ -786,6 +786,7 @@ async function makeWorld(mode) {
     spEnc: "https://spenc-" + tag + "-" + STAMP + ".example.com/saml",
     rp11: "https://rp11-" + tag + "-" + STAMP + ".example.com/shibboleth",
     wsRp: "https://wsrp-" + tag + "-" + STAMP + ".example.com/",
+    wsSrc: "https://wssrc-" + tag + "-" + STAMP + ".example.com/",
     requester: "xsd-req-" + tag + "-" + STAMP
   };
   w.acs = w.sp.replace(/\/saml$/, "/acs");
@@ -812,13 +813,18 @@ async function makeWorld(mode) {
   await createApplication(realm, w.rp11, ["saml11"], {
     samlEntityId: [w.rp11], samlAssertionConsumerService: [w.acs11],
     samlSigningCertificate: signing });
-  // #186: the delegated assertion was issued for the AppliesTo, so S and R
-  // are both the relying party — which accepts the requester as an actor
-  // and lists itself, so that S delegates to R.
+  // #186: the delegated assertion is issued for a second WS-Trust relying
+  // party, S, which delegates to the AppliesTo, R; R accepts the requester
+  // as an actor. S and R are two applications because since #459 no
+  // application may list itself, so a delegation with S equal to R cannot
+  // be configured.
   await createApplication(realm, w.wsRp, ["wsfed", "wstrust"], {
     wsfedRealm: [w.wsRp], wsfedReplyUrl: [w.wsReply],
     wstrustAppliesTo: [w.wsRp],
-    appAllowedToActOnBehalfOf: [w.requester, w.wsRp] });
+    appAllowedToActOnBehalfOf: [w.requester] });
+  await createApplication(realm, w.wsSrc, ["wstrust"], {
+    wstrustAppliesTo: [w.wsSrc],
+    appAllowedToDelegateTo: [w.wsRp] });
   await createApplication(realm, w.requester, ["wstrust"], {
     appDelegationSemantics: ["delegation", "impersonation"],
     appAllowedToDelegateTo: [w.wsRp] });
@@ -945,15 +951,19 @@ async function saml2(w) {
   // THE ARTIFACT, and the ArtifactResponse the service provider fetches.
   const art = await ssoRound(w, cookies, w.sp, w.acs, BINDING.artifact);
   for (const m of await capturedOne("the artifact", art, "SAMLart")) {
+    // The service provider's own resolver: with saml2.perApplicationEntityId
+    // on, the artifact's SourceID names w.sp's entity, and the unscoped
+    // /saml2/ars answers only for its own (#160).
+    const ars = w.rb + "/saml2/ars/" + encodeURIComponent(w.sp);
     const resolveId = samlId();
     const resolve = signEnveloped(
       "<samlp:ArtifactResolve xmlns:samlp=\"" + NS.samlp + "\" " +
       "xmlns:saml=\"" + NS.saml + "\" ID=\"" + resolveId + "\" " +
       "Version=\"2.0\" IssueInstant=\"" + new Date().toISOString() + "\" " +
-      "Destination=\"" + w.rb + "/saml2/ars\"><saml:Issuer>" + w.sp +
+      "Destination=\"" + ars + "\"><saml:Issuer>" + w.sp +
       "</saml:Issuer><samlp:Artifact>" + m.artifact + "</samlp:Artifact>" +
       "</samlp:ArtifactResolve>", "ArtifactResolve", "ID", "Issuer");
-    const r = await hop(null, w.rb + "/saml2/ars", {
+    const r = await hop(null, ars, {
       method: "POST",
       body: "<soap:Envelope xmlns:soap=\"" + NS.soap11 + "\"><soap:Body>" +
             resolve + "</soap:Body></soap:Envelope>",
@@ -966,7 +976,7 @@ async function saml2(w) {
       }
     });
     await validate(w.mode + " SAML 2.0 ArtifactResponse over SOAP (HTTP " +
-                   r.status + ")", r.body, "/saml2/ars");
+                   r.status + ")", r.body, "/saml2/ars/{sp}");
   }
 
   // IDENTITY-PROVIDER-INITIATED SSO (#189): the unsolicited Response.
@@ -1254,7 +1264,14 @@ async function wsTrust(w) {
       throw new Error("HTTP " + enc.status + " " + enc.body.slice(0, 400));
     }
   });
-  // 1.4's ActAs and 1.3's OnBehalfOf, from the application trusted to.
+  // 1.4's ActAs and 1.3's OnBehalfOf, from the application trusted to, of
+  // an assertion the person was issued for S (makeWorld()).
+  const forSource = await sts(w, "1.3 Issue for the delegating relying " +
+    "party", { trustNs: NS.wst13, soap: "1.2", op: "Issue",
+               username: w.person, password: PASSWORD,
+               appliesTo: w.wsSrc });
+  issued = (/<saml:Assertion[\s\S]*<\/saml:Assertion>/
+    .exec(forSource.body) || [])[0] || issued;
   await sts(w, "1.4 ActAs", {
     trustNs: NS.wst13, soap: "1.2", op: "Issue", username: w.requester,
     password: PASSWORD, appliesTo: w.wsRp,
@@ -1273,13 +1290,15 @@ async function wsTrust(w) {
       password: PASSWORD, appliesTo: w.wsRp,
       inner: "<wst:OnBehalfOf>" + issued + "</wst:OnBehalfOf>" });
   }
-  // The faults.
+  // The faults. Each names the registered relying party, because product
+  // refuses an Issue naming none before the password is read (#496), and
+  // the fault these are about is the authentication one.
   await sts(w, "fault: a wrong password over SOAP 1.1", {
     trustNs: NS.wst13, soap: "1.1", op: "Issue", username: w.person,
-    password: "invalid" });
+    password: "invalid", appliesTo: w.wsRp });
   await sts(w, "fault: a wrong password over SOAP 1.2", {
     trustNs: NS.wst13, soap: "1.2", op: "Issue", username: w.person,
-    password: "invalid" });
+    password: "invalid", appliesTo: w.wsRp });
   for (const soap of ["1.1", "1.2"]) {
     const r = await hop(null, w.rb + "/sts", {
       method: "POST", body: "<a><b></a>",

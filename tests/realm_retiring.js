@@ -335,12 +335,19 @@ function stackChild() {
          'D3. GET /admin-api/realms (the same realmsJson the console ' +
          'answers ?format=json with) carries `retiring` on the stuck realm ' +
          'and null on the others', JSON.stringify(rowD && rowD.retiring));
-    const listPage = admin.realmsView(fakeReq());
-    const detailPage = admin.realmsView(fakeReq({ realm: 'rtg-d' }));
+    // THE PAGES AS THE STATIC CONSOLE DRAWS THEM (#446): GET
+    // /admin-api/realms drawn by its renderer, the list and the realm's own
+    // drill-down.
+    const drawer = require(ROOT + '/tests/tools/console_page.js')
+      .consolePage(ROOT);
+    const listDrawn = await drawer.draw('/admin/realms', {});
+    const detailDrawn = await drawer.draw('/admin/realms', { realm: 'rtg-d' });
+    const listPage = { inner: listDrawn.html };
+    const detailPage = { inner: detailDrawn.html };
     note(/removal interrupted/.test(listPage.inner) &&
          /Finish removing rtg-d/.test(listPage.inner) &&
          /Finish removing rtg-d/.test(detailPage.inner) &&
-         detailPage.json.retiring && detailPage.json.retiring.interrupted,
+         rowD.retiring && rowD.retiring.interrupted,
          'D4. /admin/realms marks the row and offers the action that ' +
          'finishes the removal, on the list and on the realm\'s own page',
          (listPage.inner.match(/removal interrupted[^<]*/) || [''])[0]);

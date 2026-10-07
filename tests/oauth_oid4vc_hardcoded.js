@@ -455,8 +455,15 @@ function childMain() {
          '6i. PRODUCT: and a JWT signed by a key that is not this realm\'s',
          r.status + ' ' + r.text.slice(0, 160));
 
+    // THE OFFER NAMES A PERSON THE DIRECTORY HOLDS. Since #158 the
+    // pre-authorized code grant resolves the offered person when it is
+    // redeemed and refuses one with no entry (STS-OAUTH-0938) — and product
+    // mode creates none, so the default oid4vci.offerUsername would be
+    // refused before any of 6j-6l could be asked.
+    config.setOverride('oid4vci.offerUsername', 'hc-alice');
     built = offers.buildCredentialOffer(fakeReq, ['IdentityCredential'],
                                         'cross-device');
+    config.clearOverride('oid4vci.offerUsername');
     const minted = await request(port, 'POST', '/oauth2/token', {
       form: Object.assign({
         grant_type: 'urn:ietf:params:oauth:grant-type:pre-authorized_code',
@@ -465,6 +472,23 @@ function childMain() {
     const realToken = minted.json && minted.json.access_token;
     note(!!realToken, '6j. PRODUCT: this realm issues a token for the offer',
          minted.status + ' ' + minted.text.slice(0, 160));
+    // OpenID4VCI section 6.1's ANONYMOUS wallet: the same grant with no
+    // client_id. Product mode's client-authentication gate read the missing
+    // client as an unknown one and refused it invalid_client (401) until
+    // 2026-10-05; the code and its Transaction Code are the credential.
+    config.setOverride('oid4vci.offerUsername', 'hc-alice');
+    const anonOffer = offers.buildCredentialOffer(fakeReq,
+                                                  ['IdentityCredential'],
+                                                  'cross-device');
+    config.clearOverride('oid4vci.offerUsername');
+    const anon = await request(port, 'POST', '/oauth2/token', {
+      form: { grant_type: 'urn:ietf:params:oauth:grant-type:pre-authorized_code',
+              'pre-authorized_code': anonOffer.preAuthorizedCode,
+              tx_code: anonOffer.txCode } });
+    note(anon.status === 200 && anon.json && !!anon.json.access_token,
+         '6j-ii. PRODUCT: an anonymous wallet redeems a pre-authorized code ' +
+         'with no client_id',
+         anon.status + ' ' + anon.text.slice(0, 160));
     r = await issuerCall('/oid4vci/credential', realToken, IDENTITY);
     note(r.status === 400 && r.json && r.json.error !== 'invalid_token',
          '6k. PRODUCT: a token this realm issued reaches the request (refused ' +

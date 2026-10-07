@@ -203,6 +203,8 @@ function browser(name) {
       });
       log.debug("Leaving go().");
       return { status: r.status, location: r.headers.get("location") || "",
+               csp: r.headers.get("content-security-policy") || "",
+               type: r.headers.get("content-type") || "",
                text: await r.text() };
     }
   };
@@ -518,6 +520,40 @@ async function generateThenConfirm(state) {
     assert.ok(/only time they will ever be shown/i.test(shown.text),
       "the page does not say the codes cannot be shown again.");
   });
+  // #224: the Copy button, and the plain-text box it copies and a hand
+  // selection copies as drawn.
+  check("the codes are ALSO in a read-only box, one per line, so a " +
+        "selection copies them as drawn (#224)", function () {
+    const box = (shown.text.match(
+      /<textarea id="recovery-codes-text" readonly[^>]*>([^<]*)<\/textarea>/) ||
+      [])[1];
+    assert.ok(box !== undefined, "there is no plain-text box of codes.");
+    assert.deepStrictEqual(box.split("\n"), codes,
+      "the box does not hold the codes one per line, in order.");
+  });
+  check("a Copy all codes button names the box, hidden until its script " +
+        "runs, and the page loads that one script", function () {
+    assert.ok(/<button type="button" class="copybtn[^"]*" hidden data-copy-target="recovery-codes-text">Copy all codes<\/button>/
+      .test(shown.text), "there is no Copy button for the box.");
+    assert.ok(/<script src="\/portal\/copy\.js"><\/script>/
+      .test(shown.text), "the page does not load /portal/copy.js.");
+  });
+  check("the page showing them allows script-src 'self' and keeps " +
+        "frame-ancestors; the page without a fresh set runs no script",
+        function () {
+    assert.ok(/script-src 'self'/.test(shown.csp), shown.csp);
+    assert.ok(/frame-ancestors/.test(shown.csp), shown.csp);
+    assert.ok(!/script-src 'self'/.test(page.csp), page.csp);
+  });
+  const script = await b.go("GET", "/portal/copy.js");
+  check("/portal/copy.js is served as JavaScript and copies the box",
+        function () {
+    assert.strictEqual(script.status, 200, "it answered " + script.status);
+    assert.ok(/javascript/.test(script.type), script.type);
+    assert.ok(/data-copy-target/.test(script.text) &&
+              /clipboard/.test(script.text), "it is not the copy script.");
+  });
+
   check("there is a CONFIRM button and a way to throw them away", function () {
     assert.ok(/I have saved these codes/.test(shown.text),
       "there is no confirm control.");

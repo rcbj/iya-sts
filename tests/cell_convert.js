@@ -577,11 +577,19 @@ async function statements(t) {
   const postgres = require('../persistence/persistence_postgres');
   const dial = postgres.dialOptions(
     'postgres://sts_app:pw@db:5432/sts?sslmode=require', false);
-  t.check(dial.wantsTls && !/sslmode/.test(dial.connectionString) &&
+  t.check(!dial.refused && !/sslmode/.test(dial.connectionString) &&
           dial.ssl && dial.ssl.rejectUnauthorized === false,
           'dialOptions() strips sslmode and configures TLS itself');
-  t.check(!postgres.dialOptions('postgres://db/sts', true).ssl,
-          'and a string asking for no TLS gets none');
+  const bare = postgres.dialOptions('postgres://db/sts', true);
+  t.check(!bare.refused && bare.ssl && bare.ssl.rejectUnauthorized === true,
+          'a string with no sslmode is TLS too (#273)');
+  t.check(!!postgres.dialOptions('postgres://db/sts?sslmode=disable', false)
+            .refused &&
+          !!postgres.dialOptions('postgres://db/sts?sslmode=allow', false)
+            .refused &&
+          !!postgres.dialOptions('host=db dbname=sts', false).refused,
+          'and sslmode=disable, sslmode=allow and a keyword/value string ' +
+          'are refused, never dialled in the clear (STS-STORE-0078)');
   const seen = [];
   const pgPath = require.resolve('pg');
   const previous = require.cache[pgPath];

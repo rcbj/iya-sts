@@ -100,11 +100,12 @@
 // default instance at load, as loading it always did.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle, and it registers no route, so its position is not a position at all.
 import realms = require('../common/realms');
+// The listeners `oauth-oidc` is on, for RFC 8705's aliases (#472). A LEAF.
+import listenerMap = require('../common/listener_map');
 import forge = require('node-forge');
 import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
@@ -121,6 +122,9 @@ import app = require('../common/app');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('./dpop');
+// FAPI 2.0 HTTP Signatures at the resource servers (#178): only its key
+// prefetch is registered here; `dpop.ts` asks the rest.
+import httpSignatures = require('./http_signatures');
 // WHICH `kid` A JWK SET NAMES EACH SIGNING KEY UNDER (2026-09-13). A LEAF over
 // `config`, `crypto` and `error_codes`; `sendJwks()` is the one reader here.
 import joseKid = require('../common/jose_kid');
@@ -401,6 +405,13 @@ import capabilities = require('../cluster/cluster_capabilities');
 import sessionManagement = require('./session_management');
 // A leaf: a client's registered `jwks_uri`, fetched and cached (#120).
 import clientJwks = require('./client_jwks');
+// A library: what "registered" means for an application (#494, #496). It
+// reaches the registry lazily, so this require closes no cycle.
+import IssuerNames = require('../common/issuer_names');
+// A library: what an RFC 8707 resource may name in product (#505). It reaches
+// the registry, the access-token profile and the management API lazily, at
+// request time, so this require closes no cycle.
+import RegisteredTargets = require('../common/registered_targets');
 
 // A loose JSON-shaped object: the tokens, records, requests and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -417,7 +428,6 @@ type Res = any;
 // method takes what it reads with one destructuring line and its body reads
 // as it did.
 interface OAuth2ServerDeps {
-  crypto: typeof crypto;
   realms: typeof realms;
   forge: typeof forge;
   jwt: typeof jwt;
@@ -452,6 +462,7 @@ interface OAuth2ServerDeps {
   LEGACY_SUBJECT_PREFIX: typeof helpers.LEGACY_SUBJECT_PREFIX;
   requestObjectKeysFor: typeof helpers.requestObjectKeysFor;
   dpop: typeof dpop;
+  httpSignatures: typeof httpSignatures;
   joseKid: typeof joseKid;
   mtls: typeof mtls;
   clientAuth: typeof clientAuth;
@@ -862,6 +873,12 @@ const EXCHANGE_TOKEN_TYPES = {
   'urn:ietf:params:oauth:token-type:saml1': 'saml1'
 };
 const DEVICE_SECRET_TYPE = 'urn:openid:params:token-type:device-secret';
+// The `client_id` an access token carries when a wallet redeemed an OID4VCI
+// pre-authorized code without naming a client (section 6.1's anonymous
+// access), because RFC 9068 section 2.2 requires the claim (#158). A URN in
+// this service's namespace, so it can never be a client_id this service
+// assigned, and not `urn:sts:client:<id>`, which is a client's SUBJECT.
+const ANONYMOUS_WALLET_CLIENT_ID = 'urn:sts:oid4vci:anonymous-wallet';
 const ID_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:id_token';
 
 // A cap, for the reason every other cap in this file has one: the parsed object
@@ -1621,7 +1638,6 @@ class OAuth2Server {
     helpers.log.debug("Entering OAuth2Server.defaultDeps().");
     helpers.log.debug("Leaving OAuth2Server.defaultDeps().");
     return {
-      crypto: crypto,
       realms: realms,
       forge: forge,
       jwt: jwt,
@@ -1654,6 +1670,7 @@ class OAuth2Server {
       LEGACY_SUBJECT_PREFIX: helpers.LEGACY_SUBJECT_PREFIX,
       requestObjectKeysFor: helpers.requestObjectKeysFor,
       dpop: dpop,
+      httpSignatures: httpSignatures,
       joseKid: joseKid,
       mtls: mtls,
       clientAuth: clientAuth,
@@ -1839,6 +1856,47 @@ class OAuth2Server {
     return jwtAccessToken.issuerFor(base);
   }
 
+  // ---------------------------------------------------------------------------
+  // THE mTLS ALIASES ON ANOTHER LISTENER (#472, rcbj's D4). An application
+  // may be on several listeners and is advertised on one; RFC 8705 section 5
+  // is the one place this authorization server's metadata can name another.
+  // Where `oauth-oidc` is also on a custom listener that asks for a client
+  // certificate (`clientAuth` optional or required) and is not the one it is
+  // advertised on, an endpoint's alias is the same path on THAT listener's
+  // base. Null where there is no such listener, and the aliases stay the
+  // endpoints themselves, as section 5 permits.
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers the function that turns an endpoint into its mTLS alias on a
+   * second listener, or null where there is none.
+   *
+   * @param req - the request the metadata is built for
+   * @returns `(url) => alias`, or null
+   */
+  mtlsAliasOf(req: Req): ((url: string) => string) | null {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering OAuth2Server.mtlsAliasOf().");
+    if (listenerMap.isTrivial()) {
+      log.debug("Leaving OAuth2Server.mtlsAliasOf(). No custom listener.");
+      return null;
+    }
+    const other = listenerMap.alternatives('oauth-oidc')
+      .filter(function (one: Json): boolean {
+        return !!one.base && one.clientAuth !== 'none';
+      })[0];
+    if (!other) {
+      log.debug("Leaving OAuth2Server.mtlsAliasOf(). None asks.");
+      return null;
+    }
+    const own = baseUrlOf(req, 'oauth-oidc');
+    const there = other.base + realms.currentPrefix();
+    log.debug("Leaving OAuth2Server.mtlsAliasOf(). " + other.id);
+    return function (url: string): string {
+      const text = String(url || '');
+      return text.indexOf(own) === 0 ? there + text.slice(own.length) : text;
+    };
+  }
+
   // `raw` is set by capabilitiesFor() below and means "build the document this
   // service would publish, without applying a profile" — the DEFAULTS a profile
   // is merged onto. Without it, asking for the capabilities would apply the
@@ -1909,7 +1967,8 @@ class OAuth2Server {
       // policy — at the realm's own base, since keys are the realm's and not
       // a named authorization server's. A member no specification defines,
       // which RFC 8414 section 2 lets a client ignore.
-      crypto_metadata_uri: base + '/crypto/metadata.json',
+      crypto_metadata_uri: helpers.rebaseTo(base, 'pki') +
+                           '/crypto/metadata.json',
       registration_endpoint: at + '/oauth2/register',
       // `address` and `phone` were listed here and are gone: OIDC Core section
       // 5.4 makes each of these scopes a request for a NAMED set of claims, and
@@ -2051,7 +2110,7 @@ class OAuth2Server {
       // it did.
       token_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
-      service_documentation: base + '/docs',
+      service_documentation: helpers.rebaseTo(base, 'home') + '/docs',
       // One locale, because there is one: the login screen is the only UI this
       // server renders and it is written in English. A request's ui_locales
       // is accepted and answered in English, which section 3.1.2.1 permits
@@ -2059,8 +2118,8 @@ class OAuth2Server {
       // are not supported"). The list used to name four, which a client is
       // entitled to read as "ask for fr-CA and you will get it".
       ui_locales_supported: ['en-US'],
-      op_policy_uri: base + '/policy',
-      op_tos_uri: base + '/tos',
+      op_policy_uri: helpers.rebaseTo(base, 'home') + '/policy',
+      op_tos_uri: helpers.rebaseTo(base, 'home') + '/tos',
       revocation_endpoint: at + '/oauth2/revoke',
       // THE METHODS THE REVOCATION ENDPOINT CAN VERIFY, which since #102
       // (2026-09-22) is introspection's list for introspection's reason: the
@@ -2193,12 +2252,20 @@ class OAuth2Server {
     // mTLS alias — this service has no second listener for them, and
     // publishing the same URLs is what the section permits. The OpenID
     // Provider Configuration adds UserInfo's.
-    if (mtls.available()) {
+    //
+    // AND WHERE IT IS ON A SECOND LISTENER THAT ASKS FOR ONE (#472, rcbj's
+    // D4: "advertise services on multiple listeners"), the aliases are THAT
+    // listener's addresses — the one place a specification gives the other
+    // listeners of an application a name in its metadata. The canonical
+    // endpoints stay on the advertised listener.
+    const aliasOf = self.mtlsAliasOf(req);
+    if (mtls.available() || aliasOf) {
       const aliases: Json = {};
       ['token_endpoint', 'revocation_endpoint', 'introspection_endpoint',
        'pushed_authorization_request_endpoint'].forEach(function (name) {
         if ((metadata as Json)[name]) {
-          aliases[name] = (metadata as Json)[name];
+          aliases[name] = aliasOf ? aliasOf((metadata as Json)[name])
+                                  : (metadata as Json)[name];
         }
       });
       (metadata as Json).mtls_endpoint_aliases = aliases;
@@ -3171,9 +3238,11 @@ class OAuth2Server {
       reapply();
     }
     if (metadata.mtls_endpoint_aliases && metadata.userinfo_endpoint) {
+      const aliasOf = self.mtlsAliasOf(req);
       metadata.mtls_endpoint_aliases = Object.assign({},
         metadata.mtls_endpoint_aliases,
-        { userinfo_endpoint: metadata.userinfo_endpoint });
+        { userinfo_endpoint: aliasOf ? aliasOf(metadata.userinfo_endpoint)
+                                     : metadata.userinfo_endpoint });
     }
     // OPENID CONNECT FOR IDENTITY ASSURANCE 1.0, section 7 (#127): which
     // frameworks, evidence and claims `verified_claims` may carry. Read per
@@ -3367,7 +3436,7 @@ class OAuth2Server {
             .filter(function (one: any): boolean {
               return one.role !== 'current';
             }).map(function (one: any): Json {
-              const jwk: any = crypto.createPublicKey(one.certPem)
+              const jwk: any = stsCrypto.publicKeyOf(one.certPem)
                 .export({ format: 'jwk' });
               return { kty: 'RSA', use: 'sig', kid: one.kid, n: jwk.n,
                        e: jwk.e,
@@ -3924,7 +3993,10 @@ class OAuth2Server {
     const payload: Json = {
       iss: self.issuerOf(base), sub: opts.sub || user.sub,
       aud: opts.audience || jwtAccessToken.defaultAudienceFor(base),
-      client_id: opts.client_id, typ: 'Bearer',
+      // `token_client_id` where a grant has no client to name and RFC 9068
+      // still requires one — the anonymous wallet of OID4VCI's pre-authorized
+      // code (#158, ANONYMOUS_WALLET_CLIENT_ID).
+      client_id: opts.token_client_id || opts.client_id, typ: 'Bearer',
       // Stamped with the minting cell (#98 D10): a resource that checks the
       // token, or a UserInfo request, reaches the cell that holds its
       // session through this.
@@ -5297,8 +5369,16 @@ class OAuth2Server {
       // issued, and this one no longer carries the value that became its
       // audience. It is therefore not identical to what was requested, which is
       // the case that section makes the member REQUIRED rather than optional —
-      // it is always sent here, so nothing changes about when.
-      scope: issuing.scope || ''
+      // it is sent whenever the token carries a scope.
+      //
+      // AND LEFT OUT WHEN IT CARRIES NONE (#156). Section 3.3 defines the
+      // value as one or more space-delimited tokens, so `"scope": ""` is not
+      // a value at all — and it was what came back whenever the audience plan
+      // above took every scope off, an exchange for another resource server
+      // carrying `openid profile` being the case found. No scope is said by
+      // no member, as the access token says it by no `scope` claim
+      // (accessToken()).
+      ...(issuing.scope ? { scope: String(issuing.scope) } : {})
     };
     if (opts.authorization_details) body.authorization_details =
         opts.authorization_details;
@@ -5413,7 +5493,23 @@ class OAuth2Server {
                   'of the token response stands.');
       }
     }
-    if (hasScope(opts.scope, 'openid')) {
+    // AN EXCHANGE'S ID TOKEN FOLLOWS THE TOKEN IT ISSUED (#156). Every other
+    // grant here is an OpenID Connect request when it asks for `openid`, and
+    // its ID Token stands even when the audience plan left `openid` off an
+    // access token for another resource server (RFC 9068 section 2.2.3) —
+    // the client asked to learn who signed in. An RFC 8693 exchange asks
+    // for one token, described by `issued_token_type`, and its scope is
+    // usually inherited from the subject_token rather than asked for; an ID
+    // Token beside an access token whose `scope` names no `openid` is a
+    // credential the response does not account for. So an exchange gets one
+    // only when the token it issued carries `openid`.
+    const exchangeWithoutOpenid = !!opts.idTokenFollowsIssuedScope &&
+      !hasScope(issuing.scope, 'openid');
+    if (exchangeWithoutOpenid) {
+      log.debug("tokenSet(): the exchanged token's scope carries no " +
+                "openid, so no ID Token.");
+    }
+    if (hasScope(opts.scope, 'openid') && !exchangeWithoutOpenid) {
       // From `opts` and not from `issuing`: an ID Token carries no scope claim
       // and its audience is the CLIENT, so neither of the two things above
       // applies to it. Passing the derived audience here would readdress it to
@@ -5848,8 +5944,7 @@ class OAuth2Server {
                  'must carry a DPoP proof (OpenID Connect Key Binding ' +
                  'section 2).' };
     }
-    const expected = crypto.createHash('sha256').update(code)
-      .digest('base64url');
+    const expected = stsCrypto.digest('sha256', code, 'base64url');
     if (String((proof.claims || {}).c_s256 || '') !== expected) {
       log.debug("Leaving OAuth2Server.boundKeyProofRefusal(). c_s256.");
       return { code: 'STS-OAUTH-0703', error: 'invalid_dpop_proof',
@@ -5991,6 +6086,231 @@ class OAuth2Server {
     }
     helpers.log.debug("Leaving OAuth2Server.consumedInput().");
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ORIGINAL CLIENT AT THE BOTTOM OF AN `act` CHAIN (#443).
+  //
+  // RFC 8693 section 4.1 nests prior actors beneath the current one, and the
+  // exchange always kept a subject_token's own `act` beneath the new actor —
+  // but the FIRST exchange of a token had no prior `act` to keep, so the
+  // client the person signed in to (the one that obtained the first
+  // subject_token, by the authorization code flow or any other grant) was
+  // in no token of the chain. rcbj's example: issued to rcbj0004, exchanged
+  // by rcbj0005 and then rcbj0006, the last token should read
+  // `act: {sub: rcbj0006, act: {sub: rcbj0005, act: {sub: rcbj0004}}}`.
+  //
+  // THE RULE IS THE TOKEN-CHAINING PROFILE'S ("Token and Identity Chaining
+  // Between Protected Resources in a Single ICAM Ecosystem Using OAuth Token
+  // Exchange", MITRE PR 21-1421, the profile #443 cites as the ENA profile):
+  // the issued `act` names the exchanging party; "if an act claim is present
+  // in the access token to be exchanged, the AS MUST copy it into the new
+  // access token as a nested claim within the new access token's outer act
+  // claim. If an act claim is not present ..., the AS MUST add a nested act
+  // claim containing a sub claim with the identity of the client that
+  // presented the access token to be exchanged to PR1 (found in the access
+  // token's client_id claim)". So this is asked only when there is no prior
+  // `act`: a token that has one already carries its chain's beginning.
+  //
+  // WHO the original client is: the subject_token's `client_id` — the claim
+  // the profile names, and the one every token this realm issues carries —
+  // else `azp`, OpenID Connect's name for the same party on an ID Token. Only
+  // off a subject_token THIS REALM SIGNED AND VERIFIED: a `client_id` on a
+  // token from somewhere else (development's unverified read) names a client
+  // of another server, and an assertion's (#114) is filled in from the
+  // exchanging client, not read off anything a client was issued.
+  //
+  // ITS FORM is the one a client's own subject takes in the mode (RFC 9700
+  // section 4.13, `client-subject-separated`): `urn:sts:client:<id>` in RFC
+  // 9700 mode — implied by product — and the bare client_id otherwise, so the
+  // original client reads as the actors above it read when they act by their
+  // client_credentials tokens.
+  //
+  // NOTHING IS ADDED WHEN THE ORIGINAL CLIENT IS THE ACTOR. A client
+  // exchanging the token it was itself issued already begins the chain;
+  // nesting it beneath itself would record a hop between a party and itself
+  // that never happened.
+  //
+  // The entry is INFORMATIONAL, as every nested `act` is (section 4.1: "only
+  // the top-level claims and the party identified as the current actor ...
+  // are to be considered"): may_act, the delegation policy and the register
+  // all read the current actor, which stays outermost.
+  //
+  // AND IT CARRIES `iss` (#471): this authorization server's issuer, the
+  // token's own `iss`. PR 21-1422 section 3.1.1.1, the multi-ICAM companion
+  // of the profile above, says it in as many words for the token exchange —
+  // the nested entry holds "a sub claim with the identity of the client ...
+  // and an iss claim identifying the AS" — and the actor's entry the same
+  // pair, as PR 21-1421 section 2.4.1 has it. `actChainEntry()` below is
+  // where every entry this exchange writes is made.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the nested `act` entry naming the client a chain began with, or
+   * null where there is none to add.
+   *
+   * @param subject - the subject_token's claims
+   * @param ownVerified - whether this realm signed and verified it (and it
+   *   is not an assertion)
+   * @param actorName - the current actor's client_id or name, as the
+   *   delegation policy is asked about it
+   * @param namespaced - whether a client's subject is `urn:sts:client:<id>`
+   *   (RFC 9700 mode)
+   * @param issuer - this authorization server's issuer, the issued token's
+   *   `iss` (#471)
+   * @returns `{ sub, iss }`, or null
+   */
+  static originalClientAct(subject: Json, ownVerified: boolean,
+                           actorName: string, namespaced: boolean,
+                           issuer: string): Json {
+    helpers.log.debug("Entering OAuth2Server.originalClientAct().");
+    if (!ownVerified || !subject ||
+        (subject.act && typeof subject.act === 'object')) {
+      helpers.log.debug("Leaving OAuth2Server.originalClientAct(). Not " +
+                        "this realm's own, or the chain is already there.");
+      return null;
+    }
+    const clientId = String(subject.client_id || subject.azp || '').trim();
+    if (!clientId) {
+      helpers.log.debug("Leaving OAuth2Server.originalClientAct(). The " +
+                        "subject_token names no client.");
+      return null;
+    }
+    if (clientId === String(actorName || '')) {
+      helpers.log.debug("Leaving OAuth2Server.originalClientAct(). The " +
+                        "original client is the actor.");
+      return null;
+    }
+    helpers.log.debug("Leaving OAuth2Server.originalClientAct(). " +
+                      clientId);
+    return OAuth2Server.actChainEntry(
+      OAuth2Server.clientActorSubject(clientId, namespaced), issuer);
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE SUBJECT FORM FOR A CLIENT NAMED AS AN ACTOR (#471).
+  //
+  // A client's own subject is `urn:sts:client:<id>` in RFC 9700 mode (section
+  // 4.13, `client-subject-separated`; product implies the mode) and the bare
+  // client_id otherwise — the `sub` its client_credentials token carries. An
+  // actor named by such an actor_token, and the original client (#443), took
+  // that form; but a DELEGATION THE ISSUANCE POLICY CHOSE WITHOUT AN
+  // actor_token named its actor — the exchanging client — by the bare
+  // client_id in every mode, so in product one token could read
+  // `act: {sub: "apigw", act: {sub: "urn:sts:client:webapp"}}`: two
+  // spellings of one kind of party, the second unable to collide with a
+  // person's name and the first able to. rcbj (#471): one form. This is it,
+  // and every place this exchange names a client as an actor asks it — the
+  // `act` entry, the original client, the register's intermediary and the
+  // `may_act` comparison (which accepts both spellings, so a claim written
+  // either way still names the client).
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the subject a client is named by as an actor: its own subject in
+   * the mode.
+   *
+   * @param clientId - the client_id
+   * @param namespaced - whether RFC 9700 mode is on (`bcp.enabled()`)
+   * @returns `urn:sts:client:<id>`, or the bare client_id
+   */
+  static clientActorSubject(clientId: string, namespaced: boolean): string {
+    helpers.log.debug("Entering OAuth2Server.clientActorSubject().");
+    const id = String(clientId || '');
+    helpers.log.debug("Leaving OAuth2Server.clientActorSubject().");
+    return namespaced ? 'urn:sts:client:' + id : id;
+  }
+
+  // ---------------------------------------------------------------------------
+  // `iss` IN EVERY `act` ENTRY (#471).
+  //
+  // The token-chaining profile #443 implemented (MITRE PR 21-1421, section
+  // 2.4.1; PR 21-1422 section 3.1.1.1 the same for several ICAMs) has the AS
+  // populate `act` with "a sub claim identifying PR1 and an iss claim
+  // identifying the AS", and the nested original client with the same pair;
+  // its examples (PR 21-1422 section 3.3) put an `iss` at every level. RFC
+  // 8693 section 4.1 allows it — `act` may carry other claims "to identify
+  // the actor", and a `sub` is only unique within its issuer. #443 left it
+  // out because it changes every delegated token; rcbj asked for it.
+  //
+  // SO EVERY ENTRY THIS EXCHANGE WRITES carries this authorization server's
+  // issuer, the same value as the issued token's own `iss`: the current
+  // actor and the original client. That is the profile's rule, followed
+  // where it is literal: the AS that issues the token is the one vouching
+  // for the party it names. An actor named by a foreign assertion (#114) or
+  // by development's unverified token gets this issuer too — the profile has
+  // no other case, and the entry records who wrote it into this token, not
+  // where the actor_token came from (its own `iss` is still compared by
+  // `may_act`, section 4.4).
+  //
+  // ENTRIES COPIED FROM THE subject_token's `act` keep the `iss` they carry,
+  // as the profile's copy rule says ("copy it into the new access token as a
+  // nested claim"). One with NONE is given THIS issuer only where the
+  // subject_token is one THIS REALM signed and verified, because only then
+  // does this service vouch for what it holds: it wrote that chain itself,
+  // under this realm's key (rcbj's rule in #471). A chain off an assertion
+  // or an unverified token is copied exactly as it came, since naming an
+  // issuer for it would be this service vouching for somebody else's claim.
+  // `iss` is informational in a nested entry as everything there is;
+  // nothing here reads it back.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns one `act` entry naming `sub`, written by `issuer`.
+   *
+   * @param sub - the party's subject
+   * @param issuer - the issuer of the token the entry goes into
+   * @returns `{ sub, iss }` (without `iss` when there is none to name)
+   */
+  static actChainEntry(sub: string, issuer: string): Json {
+    helpers.log.debug("Entering OAuth2Server.actChainEntry().");
+    const entry: Json = { sub: sub };
+    if (issuer) {
+      entry.iss = String(issuer);
+    }
+    helpers.log.debug("Leaving OAuth2Server.actChainEntry().");
+    return entry;
+  }
+
+  /**
+   * Returns a subject_token's `act` chain to nest beneath a new actor: a
+   * copy in which an entry with no `iss` is given `issuer`, or the chain
+   * exactly as it came where `issuer` is empty (#471).
+   *
+   * @param chain - the subject_token's `act`
+   * @param issuer - this issuer, where this realm signed and verified the
+   *   subject_token, or '' to fill none
+   * @returns the chain, or null for none
+   */
+  static priorActChain(chain: Json, issuer: string): Json {
+    helpers.log.debug("Entering OAuth2Server.priorActChain().");
+    if (!chain || typeof chain !== 'object') {
+      helpers.log.debug("Leaving OAuth2Server.priorActChain(). None.");
+      return null;
+    }
+    if (!issuer) {
+      helpers.log.debug("Leaving OAuth2Server.priorActChain(). As it came.");
+      return chain;
+    }
+    // A recursion over the nesting, which RFC 8693 bounds by nothing: a
+    // chain deeper than any exchange here could build is copied as it came
+    // below that depth rather than walked for ever.
+    const copy = function (level: Json, depth: number): Json {
+      helpers.log.debug("Entering copy(). depth=" + depth);
+      if (!level || typeof level !== 'object' || Array.isArray(level) ||
+          depth > 64) {
+        helpers.log.debug("Leaving copy(). Not an entry to fill.");
+        return level;
+      }
+      const out: Json = Object.assign({}, level);
+      if (typeof out.iss !== 'string' || !out.iss) {
+        out.iss = issuer;
+      }
+      if (level.act && typeof level.act === 'object') {
+        out.act = copy(level.act, depth + 1);
+      }
+      helpers.log.debug("Leaving copy().");
+      return out;
+    };
+    helpers.log.debug("Leaving OAuth2Server.priorActChain(). Filled.");
+    return copy(chain, 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -7730,6 +8050,18 @@ class OAuth2Server {
     // tokenSet() asks again, as the backstop. See
     // `common/role_permissions.ts`.
     if (rolePermissions.asksForGated(scope)) {
+      // THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#446), made here when the
+      // console's own client asks, because a console that is a static client
+      // of /admin-api has no callback of its own to make it from. Asked
+      // BEFORE the narrowing, which reads the roster the claim changes. A
+      // no-op for every other client and every other person; see
+      // `role_permissions.ts`'s `noteConsoleSignIn()`.
+      rolePermissions.noteConsoleSignIn(person, {
+        clientId: query.client_id,
+        amr: amr,
+        signInAuthority: self.deps.authn.latestAuthorityOf(
+          sessionId ? self.deps.authn.sessionById(String(sessionId)) : null)
+      });
       const narrowed = rolePermissions.narrowScope(scope, person,
         { clientId: query.client_id, grant: 'authorization_code' });
       if (narrowed.emptied) {
@@ -7807,6 +8139,45 @@ class OAuth2Server {
       // (#62 P3).
       session: authInfo || null
     });
+    // -----------------------------------------------------------------------
+    // A SESSION ON A SIGN-IN MECHANISM THE CLIENT DOES NOT ALLOW (#457) IS A
+    // SIGN-IN, NOT AN ERROR — the risk step-up's road below: the person is
+    // here, in a browser, so they are sent to sign in again, and the screen
+    // offers only the mechanisms the application allows. A sign-in with any
+    // other is refused at the screen, so the request comes round with a
+    // session that satisfies one. `prompt=none` forbids the screen, so it is
+    // `login_required` (OIDC Core section 3.1.2.6) instead.
+    // -----------------------------------------------------------------------
+    if (!roleAnswer.allowed && roleAnswer.mechanism &&
+        (authInfo || {}).authenticated !== false) {
+      if (String(query.prompt || '').split(/\s+/).indexOf('none') >= 0) {
+        // A second factor the client does not allow (#475) is its own.
+        errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+          ? 'STS-OAUTH-0953' : 'STS-OAUTH-0946');
+        log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). The " +
+                  "sign-in mechanism, and prompt=none.");
+        return self.redirectBack(res, base, redirectUri, query.state,
+          { error: 'login_required', error_description: roleAnswer.why },
+          self.usesFragment(types, query.response_mode),
+          query.response_mode);
+      }
+      // A second factor the client does not allow (#475) is its own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-OAUTH-0952' : 'STS-OAUTH-0945');
+      log.info('oauth2: "' + String(query.client_id || '') + '" allows ' +
+               'signing in with ' + roleAnswer.mechanism.allowed.join(', ') +
+               ', and the session of "' + String(user.username || '') +
+               '" used none of them; sent to sign in again.');
+      log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). A " +
+                "re-prompt for an allowed sign-in mechanism.");
+      return res.redirect(302, this.deps.authn.beginAuthentication({
+        returnTo: self.asPathOf(req) + '/oauth2/authorize?' +
+                  self.authorizationReturnQuery(req, query),
+        hint: String(user.username || ''),
+        protocol: 'OAuth 2.0 / OIDC',
+        application: String(query.client_id || '')
+      }));
+    }
     // -----------------------------------------------------------------------
     // A STEP-UP ON RISK IS A SIGN-IN, NOT AN ERROR (#62 P3). The policy
     // denied on the risk of the session this response would rest on and
@@ -8193,8 +8564,11 @@ class OAuth2Server {
       // read through section 4.2.2 — and the code beside it in a hybrid
       // response is unaffected: `authzCodes` above holds the scope as
       // AUTHORIZED, so redeeming it derives the same audience again at the
-      // token endpoint.
-      out.scope = audiencePlan.scope;
+      // token endpoint. Left out when the token carries none, as tokenSet()
+      // leaves it out (#156): an empty string is not a scope (section 3.3).
+      if (audiencePlan.scope) {
+        out.scope = audiencePlan.scope;
+      }
     }
     if (types.indexOf('id_token') >= 0) {
       out.id_token = await self.idToken(base, {
@@ -8349,6 +8723,13 @@ class OAuth2Server {
   // and a button, and this one deliberately has neither — an interstitial that
   // submitted itself would be an automatic redirect with an extra page in front
   // of it.
+  //
+  // WHICH IS WHY THE TIMED CONTINUE IS AN OPERATOR'S CHOICE AND OFF (#317).
+  // rcbj asked for one after using the page from the idptools.com debugger;
+  // `oauth2.errorPageAutoRedirectS` above 0 adds a meta refresh to the link's
+  // own target — markup, so `script-src 'none'` still holds — and a sentence
+  // saying when. Its description carries the RFC 9700 warning. The form_post
+  // variant never gets one: a POST cannot be made by markup alone.
   // ---------------------------------------------------------------------------
   /**
    * Sends the page shown instead of a redirect a person must decide on: the
@@ -8359,11 +8740,18 @@ class OAuth2Server {
    *   `state`, `target` and `form`
    */
   sendRedirectInterstitial(res: Res, info: Json): Json {
-    const { log, xmlEscape } = this.deps;
+    const { log, xmlEscape, config } = this.deps;
     log.debug("Entering OAuth2Server.sendRedirectInterstitial(). error=" +
               info.error);
+    const after = info.form ? 0 :
+      Math.max(0, Number(config.value('oauth2.errorPageAutoRedirectS')) || 0);
     const html = '<!doctype html><html lang="en"><head><meta ' +
-      'charset="utf-8"><title>This request could not be completed</title>' +
+      'charset="utf-8">' +
+      (after > 0
+        ? '<meta http-equiv="refresh" content="' + after + ';url=' +
+          xmlEscape(info.target) + '">'
+        : '') +
+      '<title>This request could not be completed</title>' +
       '<style>body{font-family:system-ui,sans-serif;margin:2rem;' +
       'max-width:46rem;color:#222}code{font-family:ui-monospace,Menlo,' +
       'monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;' +
@@ -8397,6 +8785,10 @@ class OAuth2Server {
           xmlEscape(info.redirectUri) + '</button></form>'
         : '<p><a href="' + xmlEscape(info.target) + '">Continue to ' +
           xmlEscape(info.redirectUri) + '</a></p>') +
+      (after > 0
+        ? '<p class="sub">You will be sent there automatically in ' + after +
+          ' second' + (after === 1 ? '' : 's') + '.</p>'
+        : '') +
       '<p class="sub">Nothing has been ' +
       'sent anywhere yet. Following that link delivers the error above to ' +
       'the application, which is what would have happened automatically if ' +
@@ -8937,6 +9329,46 @@ class OAuth2Server {
     }];
   }
 
+  // THE PRODUCT QUESTION FOR A CLIENT A REQUEST NAMES (#496): null where it
+  // may be served — development, or a REGISTERED application — and the
+  // refusal otherwise: `invalid_request` for a request naming no client,
+  // `invalid_client` for one nobody registered. The authorization endpoint
+  // and the token endpoint ask it; each answers in its own way.
+  private unregisteredClientRefusal(clientId: Json): Json {
+    const { log, mode } = this.deps;
+    log.debug("Entering OAuth2Server.unregisteredClientRefusal().");
+    if (mode.issuesToUnregisteredApplications()) {
+      log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). " +
+                "Development.");
+      return null;
+    }
+    const id = String(clientId == null ? '' : clientId).trim();
+    if (!id) {
+      log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). No " +
+                "client_id.");
+      return { code: 'STS-OAUTH-0948', error: 'invalid_request',
+               description: 'The request names no client_id. In product ' +
+                 'mode this authorization server serves only a client ' +
+                 'registered ahead of time (the console, /admin-api, RFC ' +
+                 '7591, an LDAP add under ou=applications or an OpenID ' +
+                 'Federation).' };
+    }
+    if (IssuerNames.registeredApplication(id)) {
+      log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). " +
+                "Registered.");
+      return null;
+    }
+    log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). Not " +
+              "registered.");
+    return { code: 'STS-OAUTH-0947', error: 'invalid_client',
+             description: 'The client "' + id + '" is not registered in ' +
+               'this realm. In product mode this authorization server ' +
+               'serves only a client registered ahead of time (the ' +
+               'console, /admin-api, RFC 7591, an LDAP add under ' +
+               'ou=applications or an OpenID Federation); ' +
+               'one that was only seen is not registered.' };
+  }
+
   // ---------------------------------------------------------------------------
   // THE REQUEST-LEVEL CHECKS OF AN AUTHORIZATION REQUEST, AS ONE FUNCTION
   // (2026-09-13).
@@ -9008,6 +9440,30 @@ class OAuth2Server {
       return refuse('STS-OAUTH-0159', 'invalid_request', asked.detail);
     }
     const q = asked.value;
+
+    // --- AN APPLICATION NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496) ---
+    //
+    // rcbj, 2026-10-06: in product an application that is not registered
+    // gets nothing but its protocol's own "unknown application" error.
+    // Until #496 the authorization endpoint had no client check at all: an
+    // unknown client_id was refused only by the redirect URI rule (a 400,
+    // `STS-OAUTH-0121`), and ACCEPTED where an operator had set the
+    // service-wide `oauth2.redirectUris`. "Registered" is #494's word,
+    // `appRegisteredBy` on the entry (`IssuerNames.registeredApplication()`),
+    // so an entry a development sighting filed — redirect URIs observed and
+    // all — is refused like none. Answered HERE, as a 400 on this server and
+    // never redirected: RFC 6749 section 4.1.2.1 says a missing or invalid
+    // client identifier MUST NOT be redirected, and nothing about this
+    // client's addresses has been decided. A federation client registered
+    // automatically (OpenID Federation 12.1) was registered above, before
+    // this ran. Development is unchanged.
+    const unknownClient = self.unregisteredClientRefusal(q.client_id);
+    if (unknownClient) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). The " +
+                "client is not registered.");
+      return refuse(unknownClient.code, unknownClient.error,
+                    unknownClient.description);
+    }
 
     // --- OAUTH 2.1: THE CLIENT FIRST, AND A DEFAULT redirect_uri -------------
     //
@@ -9542,6 +9998,29 @@ class OAuth2Server {
         ? refuse(fapiCheck.errorCode, fapiCheck.error, fapiCheck.description)
         : redirectable(fapiCheck.errorCode, fapiCheck.error,
                        fapiCheck.description);
+    }
+    // RFC 8707 IN PRODUCT: A RESOURCE NAMES A REGISTERED TARGET (#505). An
+    // authorization request's or a pushed request's `resource` becomes the
+    // `aud` of every access token the grant yields, and until #505 product
+    // accepted any absolute URI there — #496's audit's remaining OAuth gap.
+    // `common/registered_targets.ts` is the one definition: this service's
+    // own resource servers, or an application registered ahead of time.
+    // RFC 8707 section 2's `invalid_target`, redirected — the client and its
+    // redirect_uri were vetted above — and asked here, ABOVE the session
+    // check, so nobody is sent to sign in for a request that was going to be
+    // refused. A malformed resource is left for the shape check after
+    // sign-in (STS-OAUTH-0154), which answers it as it always did. The token
+    // exchange's own targets are `resolveTarget()`'s. Development is
+    // unchanged.
+    const askedResources = self.parseResourceIndicators(q.resource);
+    const unregisteredResources = askedResources.error ? []
+      : RegisteredTargets.unregistered(askedResources.resources, req);
+    if (unregisteredResources.length) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A resource " +
+                "names no registered target.");
+      return redirectable('STS-OAUTH-0950', 'invalid_target',
+        'RFC 8707 section 2: the resource ' +
+        RegisteredTargets.describe(unregisteredResources));
     }
     log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). Vetted.");
     return { ok: true, q: q, types: types, registeredClient: registeredClient,
@@ -12342,7 +12821,7 @@ class OAuth2Server {
   }
 
   private async tokenGrant(req: Req, res: Res): Promise<Json> {
-    const { crypto, stsCrypto, log, logArtifact, STS, b64u, jsonFromB64u,
+    const { stsCrypto, log, logArtifact, STS, b64u, jsonFromB64u,
             parseBody, bodyValues, userFor, dpop, mtls, assertionGrant,
             samlAssertionGrant, mode, authorizationServers, stats, VCI_SCOPE,
             deferredAccessTokens, preAuthorizedCodes, checkTxCode,
@@ -12452,6 +12931,31 @@ class OAuth2Server {
                   ((e && e.message) || e));
       }
       registeredClient = applications.clientConfigOf(client.client_id);
+    }
+
+    // AN APPLICATION NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496): the
+    // client this request names, before anything about it is counted or
+    // recorded — the `seen()` below wrote an unregistered entry's grant type
+    // and scope onto it, and the failed-secret counter would count it. An
+    // unknown client was already refused by the client authentication
+    // below (`STS-OAUTH-0193`), and one a development sighting filed only
+    // because a sighting writes no credential (`STS-OAUTH-0553`); this says
+    // what is wrong in both cases, and holds for an entry that carries a
+    // credential nobody registered through the registry. A grant with no
+    // client (the clientless assertion and pre-authorized code grants) names
+    // none and is not asked. `invalid_client`, RFC 6749 section 5.2's code
+    // for an unknown client.
+    const unknownClient = client.client_id
+      ? self.unregisteredClientRefusal(client.client_id) : null;
+    if (unknownClient) {
+      if (presented.basic) {
+        res.set('WWW-Authenticate', self.basicChallenge());
+      }
+      log.debug("Leaving the token endpoint. The client is not registered.");
+      errorCodes.mark(res, 'STS-OAUTH-0949');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 401, 'invalid_client',
+                             unknownClient.description);
     }
 
     // FAPI (#138): one client, however many ways the request names it.
@@ -12817,6 +13321,27 @@ class OAuth2Server {
       logArtifact('RFC 8707 resource indicators', 'on the Token Request',
                   requestedResources);
     }
+    // RFC 8707 IN PRODUCT: A RESOURCE NAMES A REGISTERED TARGET (#505), on
+    // every grant but the token exchange — whose `resource` and `audience`
+    // are RFC 8693's targets, resolved and refused (`unregistered-target`,
+    // STS-OAUTH-0793) by the delegation policy in its branch — and BEFORE
+    // anything a grant spends: a code redeemed, a refresh token rotated. The
+    // authorization endpoint asked the same of a code's resources; this is
+    // the door every direct grant comes through. `vetAuthorizationRequest()`
+    // above argues the rest. Development is unchanged.
+    if (grant !== 'urn:ietf:params:oauth:grant-type:token-exchange') {
+      const unregisteredResources = RegisteredTargets.unregistered(
+        requestedResources, req);
+      if (unregisteredResources.length) {
+        log.debug("Leaving the token endpoint. A resource names no " +
+                  "registered target.");
+        errorCodes.mark(res, 'STS-OAUTH-0951');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, 'invalid_target',
+          'RFC 8707 section 2: the resource ' +
+          RegisteredTargets.describe(unregisteredResources));
+      }
+    }
 
     // RFC 9396 SECTION 6, once above every grant for the reason the block above
     // is: every grant may carry `authorization_details` — to NARROW what a code
@@ -12994,8 +13519,10 @@ class OAuth2Server {
 
     // FAPI (#138): a confidential client authenticates with mTLS,
     // private_key_jwt or client_secret_jwt, never a plain secret.
+    // The admin console as a public client is the one exception (#446):
+    // `fapi.js` argues it, and is told which client this is.
     const fapiAuth = fapi.clientAuthenticationRefusal(
-      clientObservation.method);
+      clientObservation.method, client.client_id);
     if (fapiAuth) {
       if (presented.basic) {
         res.set('WWW-Authenticate', self.basicChallenge());
@@ -13192,8 +13719,18 @@ class OAuth2Server {
     // here, known or not.
     const clientlessAssertion = !client.client_id &&
       oauth21.ASSERTION_GRANTS.indexOf(grant) >= 0;
+    // **NOR IS AN OPENID4VCI PRE-AUTHORIZED CODE REDEEMED BY A WALLET THAT
+    // NAMES NONE** (2026-10-05). OpenID4VCI section 6.1 makes `client_id`
+    // optional for this grant — anonymous access, the reason `oauth21.js`
+    // leaves the grant out of its registered-client rule — and the code (with
+    // its Transaction Code, where the offer has one) is the credential. This
+    // check read the missing client_id as an unknown client and refused every
+    // anonymous wallet in product: found by sts_oid4vci_preauth_subject.js
+    // (#158) in single-node. A wallet that NAMES a client is still judged.
+    const clientlessPreAuthorized = !client.client_id &&
+      grant === 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
     if (mode.requiresConfidentialClientAuthentication() &&
-        !clientlessAssertion &&
+        !clientlessAssertion && !clientlessPreAuthorized &&
         bcp.declaredPublic(registeredClient) === false &&
         !clientObservation.authenticated) {
       log.info('oauth2: product mode refused the token request from "' +
@@ -13354,6 +13891,21 @@ class OAuth2Server {
       // is not sender-constrained. Here for the same reason, and reading
       // `withRefresh` — the grant's own answer to "is a refresh token about to
       // be minted" — rather than a list of grants kept beside it.
+      // #446: the admin console as a public client is issued nothing that
+      // is not bound to a key it proved — a rule about that one client and
+      // not a setting. Here, where every grant mints, for the reason the
+      // checks beside it are.
+      const consoleProblem = senderConstraints.publicClientIssuanceRefusal({
+        clientId: opts.client_id,
+        method: clientObservation.method,
+        dpopJkt: dpopJkt,
+        grant: grant
+      });
+      if (consoleProblem) {
+        log.debug("Leaving issue(). The admin console, as a public client, " +
+                  "sent no DPoP proof.");
+        throw new SenderConstraintRefused(log, consoleProblem);
+      }
       if (opts.withRefresh !== false) {
         const constraint = senderConstraints.refreshIssuanceRefusal({
           grant: grant,
@@ -13399,10 +13951,9 @@ class OAuth2Server {
           credential_configuration_id: d.credential_configuration_id,
           credential_identifiers: [
             d.credential_configuration_id + ':' +
-            b64u(crypto.createHash('sha256')
-              .update(String((user && user.sub) || 'anonymous') + ':' +
-                      d.credential_configuration_id)
-              .digest()).slice(0, 16)
+            b64u(stsCrypto.digest('sha256',
+              String((user && user.sub) || 'anonymous') + ':' +
+              d.credential_configuration_id)).slice(0, 16)
           ]
         };
         // Echoed back, and it has to be: this is what the credential endpoint
@@ -13529,7 +14080,8 @@ class OAuth2Server {
             'PKCE was used, so code_verifier is required.');
         }
         const computed = record.code_challenge_method === 'S256'
-          ? b64u(crypto.createHash('sha256').update(verifier, 'ascii').digest())
+          // The 'ascii' reading the hash was always fed, kept (#453).
+          ? b64u(stsCrypto.digest('sha256', Buffer.from(verifier, 'ascii')))
           : verifier;
         if (computed !== record.code_challenge) {
           log.debug("Leaving the token endpoint. The grant was refused.");
@@ -13826,6 +14378,15 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_grant',
                                preAuthSpent.description);
       }
+      // RFC 9068 section 2.2 makes `client_id` REQUIRED in the access token,
+      // and OID4VCI section 6.1 lets a wallet redeem this grant without naming
+      // one (#158). An empty string satisfies neither, so an unnamed wallet is
+      // named ANONYMOUS_WALLET_CLIENT_ID in the TOKEN and nowhere else: the
+      // scope policy, the lifetime and the token registry go on reading the
+      // unnamed client they always read, because a defined value there would
+      // be a client nobody registered being judged as one.
+      const tokenClientId = String(client.client_id || '') ||
+        ANONYMOUS_WALLET_CLIENT_ID;
       // The End-User was identified out of band, so there is a subject and no
       // sign-on session — and the users page has to be able to say that
       // difference rather than report a missing session as an unknown one.
@@ -13835,10 +14396,32 @@ class OAuth2Server {
         method: 'pre-authorized code' + (record.txCode ? ' ' +
             'with a Transaction Code' : ''),
         sub: (record.user && record.user.sub) || '',
-        client_id: client.client_id,
+        client_id: tokenClientId,
         note: 'Identified out of band when the Credential Offer was made; no ' +
               'browser session exists.'
       });
+      // THE PERSON, RESOLVED NOW AND NOT TAKEN FROM THE OFFER (#158). The
+      // offer records whom it is for when it is MINTED, and an offer made for
+      // `oid4vci.offerUsername` before that person had an entry recorded
+      // `sub: ''` — which went into the token as it stood, an anonymous token
+      // about a named person. The authentication recorded just above is what
+      // makes the directory create the entry, so the subject is asked for
+      // after it, as the password and assertion grants ask
+      // (`provisionedPerson()`). An offer made on a signed-in session carries
+      // the session's subject already, and that is the one kept: it named the
+      // entry when the person signed in, and a rename since must not move it.
+      const preAuthUser = record.user && record.user.sub
+        ? record.user
+        : self.provisionedPerson((record.user && record.user.username) || '');
+      if (!preAuthUser) {
+        errorCodes.mark(res, 'STS-OAUTH-0938');
+        log.debug("Leaving OAuth2Server.tokenGrant(). The offered person has " +
+                  "no entry.");
+        return self.oauthError(res, 400, 'invalid_grant',
+          'There is no directory entry for the person this Credential Offer ' +
+          'was made for, so there is no subject to issue a token about; the ' +
+          'person has to be provisioned first.');
+      }
       // OID4VCI section 6.1.1: the Wallet MAY send authorization_details in the
       // Token Request, in the Pre-Authorized Code Flow as well as the
       // Authorization Code one — and here it is the ONLY place it can, because
@@ -13876,7 +14459,8 @@ class OAuth2Server {
       }
       const issued = await issue({
         jkt: dpopJkt,
-        user: record.user, client_id: client.client_id, scope: VCI_SCOPE,
+        user: preAuthUser, client_id: client.client_id, scope: VCI_SCOPE,
+        token_client_id: tokenClientId,
         withRefresh: false,
         // RFC 8707 on an OpenID4VCI Token Request, which OID4VCI section 6.1
         // inherits from RFC 6749 along with everything else about this
@@ -13887,7 +14471,7 @@ class OAuth2Server {
         // the parameter and threw it away would be the bug this closes.
         audience: self.audienceClaim(requestedResources),
         grant: 'pre-authorized code',
-        authorization_details: grantIdentifiers(askedFor.details, record.user)
+        authorization_details: grantIdentifiers(askedFor.details, preAuthUser)
       });
       // Remember which access token belongs to a deferred issuance, so the
       // credential endpoint knows to answer 202 rather than a credential.
@@ -14523,9 +15107,12 @@ class OAuth2Server {
           return self.oauthError(res, 400, 'invalid_grant', allowed.detail);
         }
       }
+      // `door: 'ropc'` (#221): the door a service account's policy names.
+      // Not an app password's door (`app_passwords.ts`), so nothing about
+      // a person's credentials changes here.
       const credential = await credentials.verifyAsync(username,
         String(body.password),
-        { via: 'the OAuth 2.0 password grant' });
+        { via: 'the OAuth 2.0 password grant', door: 'ropc' });
       if (!credential.ok) {
         log.info('oauth2: the password grant for "' + username +
                  '" was refused (' +
@@ -15444,6 +16031,33 @@ class OAuth2Server {
                                    'The actor_token has been revoked.');
           }
         } else {
+          // #116: DEVELOPMENT HOLDS THIS REALM'S OWN actor_token TO ITS
+          // DECLARED TYPE TOO. A token from anywhere is still read unverified
+          // (`mode.exchangesUnverifiedTokens()`), but one that verifies under
+          // this realm's key is one whose kind is known, and an ID Token
+          // declared an access token is the same mistake in either mode — a
+          // TYPE check, not a trust check, which is how the subject_token has
+          // been held since #130.
+          let ownActor: Json = null;
+          try {
+            ownActor = helpers.verifyOwnJws(String(body.actor_token));
+          } catch (e) {
+            log.debug("Caught in OAuth2Server.tokenGrant(): the actor_token is " +
+                      "not this realm's own: " + ((e && e.message) || e));
+            ownActor = null;
+          }
+          const ownMismatch = ownActor ? self.kindProblem(
+            String(body.actor_token_type || '').trim(),
+            self.ownTokenKind(String(body.actor_token), ownActor),
+            'actor_token') : '';
+          if (ownMismatch) {
+            errorCodes.mark(res, 'STS-OAUTH-0628');
+            log.debug("Leaving OAuth2Server.tokenGrant(). The actor_token is " +
+                      "not its declared type.");
+            return self.oauthError(res, 400, 'invalid_request', ownMismatch);
+          }
+        }
+        if (!strictExchange) {
           try {
             actorClaims = jsonFromB64u(String(body.actor_token)
               .split('.')[1]) || {};
@@ -15483,18 +16097,38 @@ class OAuth2Server {
       // WHO IS ASKING TO ACT, for `may_act` and the delegation policy: the
       // actor where an actor_token named one, and otherwise the client — the
       // party section 4.4 names in the same breath ("the client (or party
-      // identified in the actor_token)"). A client is spelled here the two
-      // ways a client_credentials token spells its own subject.
-      const clientAliases = [String(client.client_id || ''),
-        'urn:sts:client:' + String(client.client_id || '')];
-      const actorIdentity = actorClaims
-        ? { sub: String(actorClaims.sub || ''),
-            iss: String(actorClaims.iss || ''),
-            aliases: actorClaims.client_id &&
-                     String(actorClaims.sub || '') ===
-                       'urn:sts:client:' + actorClaims.client_id
-              ? [String(actorClaims.client_id)] : [] }
-        : { sub: clientAliases[0], iss: '', aliases: clientAliases.slice(1) };
+      // identified in the actor_token)").
+      //
+      // A CLIENT IS NAMED IN THE ONE FORM ITS SUBJECT TAKES IN THE MODE
+      // (#471, `clientActorSubject()`): the exchanging client where no
+      // actor_token was sent, and the client a client_credentials
+      // actor_token is about (its `sub` is the client's own subject, so it
+      // is in that form already). `may_act` is compared with BOTH spellings:
+      // the claim this service writes names an application by its bare
+      // client_id (`delegationPolicy.mayActClaimFor()`, from a DN), and a
+      // realm's policy or another issuer may name it by its subject, and
+      // either is the same client — a comparison that held only one would
+      // refuse the client its own subject names, in one mode or the other.
+      const namespacedClients = bcp.enabled();
+      // The client_id of the actor when the actor is a CLIENT: the
+      // exchanging one, or the one a client_credentials actor_token is
+      // about (`sub` its client_id or `urn:sts:client:` and its client_id).
+      const actorTokenSub = actorClaims ? String(actorClaims.sub || '') : '';
+      const actorClientId = !actorClaims ? String(client.client_id || '')
+        : (actorClaims.client_id &&
+           (actorTokenSub === String(actorClaims.client_id) ||
+            actorTokenSub === 'urn:sts:client:' + actorClaims.client_id)
+          ? String(actorClaims.client_id) : '');
+      const actorSubject = actorClaims ? actorTokenSub
+        : OAuth2Server.clientActorSubject(actorClientId, namespacedClients);
+      const actorIdentity = {
+        sub: actorSubject,
+        iss: actorClaims ? String(actorClaims.iss || '') : '',
+        aliases: actorClientId
+          ? [actorClientId, 'urn:sts:client:' + actorClientId]
+            .filter(function (one) { return one !== actorSubject; })
+          : [] as string[]
+      };
       // -----------------------------------------------------------------------
       // `may_act` IS READ IN EVERY MODE (RFC 8693 section 4.4, #108). The
       // claim is the SUBJECT's statement of who may act for them, carried in
@@ -15686,15 +16320,20 @@ class OAuth2Server {
         : String(subject.username || subjectSub);
       const subjectAudiences = (Array.isArray(subject.aud) ? subject.aud
         : (subject.aud ? [subject.aud] : [])).map(String);
+      // The actor as the policy is asked about it: a client by its
+      // client_id however its subject is spelt — the policy's facts are the
+      // APPLICATION's (`partyFacts()` resolves the name to its entry, and
+      // the fact is the entry's identifier in either mode, so they carry no
+      // subject form to make consistent) — a person by name. Kept, so the
+      // act chain below compares the original client with the same name.
+      const actorName = actorClientId || (!actorClaims ? ''
+        : (/^urn:sts:client:/.test(actorTokenSub)
+          ? actorTokenSub.slice('urn:sts:client:'.length)
+          : String(actorClaims.username || actorTokenSub)));
       const decision = delegationPolicy.decide({
         protocol: 'OAuth 2.0',
         requested: (askedSemantics[0] || '') as any,
-        actor: actorClaims
-          ? String(actorIdentity.aliases && actorIdentity.aliases[0] ||
-                   (/^urn:sts:client:/.test(String(actorClaims.sub || ''))
-                     ? String(actorClaims.sub).slice('urn:sts:client:'.length)
-                     : String(actorClaims.username || actorClaims.sub || '')))
-          : client.client_id,
+        actor: actorName,
         subject: subjectName,
         source: subjectAudiences.concat([String(subject.client_id || ''),
                                          String(subject.azp || '')]),
@@ -15707,15 +16346,43 @@ class OAuth2Server {
       // sign-in is the one thing an exchange must not do.
       const issuedSemantics = decision.semantics ||
         (actorClaims ? 'delegation' : 'impersonation');
+      // EVERY ENTRY WRITTEN HERE CARRIES `iss` (#471, `actChainEntry()`):
+      // this authorization server's issuer, the issued token's own. A prior
+      // chain keeps the issuers it carries, and an entry without one is
+      // given this issuer only where this realm signed and verified that
+      // token (`priorActChain()`).
+      const actIssuer = self.issuerOf(base);
+      const ownSubjectChain = subjectVerified && !subjectAssertion;
+      const priorChain = OAuth2Server.priorActChain(priorAct,
+        ownSubjectChain ? actIssuer : '');
       if (issuedSemantics === 'delegation') {
-        act = (actorClaims ? { sub: actorClaims.sub }
-                           : { sub: client.client_id }) as Json;
-        if (priorAct) {
-          act.act = priorAct;
+        // The current actor — a client in its one subject form (#471), so a
+        // delegation the policy chose without an actor_token names the
+        // client as `urn:sts:client:<id>` in RFC 9700 mode, as its
+        // client_credentials token would.
+        act = OAuth2Server.actChainEntry(actorSubject, actIssuer);
+        // Beneath the new actor: the subject_token's own chain, or — on the
+        // first exchange of a token, which has none — the client the chain
+        // began with (#443, `originalClientAct()`). Only where this exchange
+        // adds an actor: an impersonation adds nobody, so it has no chain to
+        // begin (RFC 8693 section 1.1), and keeps a prior one as it is.
+        const original = priorAct ? null : OAuth2Server.originalClientAct(
+          subject, ownSubjectChain, actorName, namespacedClients, actIssuer);
+        if (priorChain) {
+          act.act = priorChain;
+        } else if (original) {
+          act.act = original;
         }
       } else {
-        act = priorAct;
+        act = priorChain;
       }
+      // The actor as the register names it (#471): the party the issued
+      // `act` names — the actor_token's subject, or the exchanging client in
+      // its subject form where the policy chose a delegation without one. An
+      // impersonation names nobody, as before; `delegation.js` draws a
+      // client's subject as that application's box (#468).
+      const registerActor = actorClaims ? actorTokenSub
+        : (issuedSemantics === 'delegation' ? actorSubject : '');
       // THE AUDIENCE: the one target asked for — or, for a self exchange
       // that named none, the subject_token's own.
       const issuedAudiences = decision.allowed && !exchangeAudiences.length &&
@@ -15742,7 +16409,7 @@ class OAuth2Server {
           outcome: 'refused',
           initial: { presented: subject.username || subject.sub || '',
                      what: 'the subject of the token presented' },
-          intermediary: { presented: actorClaims ? actorIdentity.sub : '',
+          intermediary: { presented: registerActor,
                           application: client.client_id,
                           what: actorClaims
                             ? 'the actor named in the actor_token, ' +
@@ -15842,7 +16509,20 @@ class OAuth2Server {
         user: Object.assign(userFor(subject.username),
                             subject.sub ? { sub: subject.sub } : {}),
         client_id: client.client_id,
+        // AN EXCHANGE THAT NAMES NO `scope` CARRIES THE SUBJECT'S FORWARD
+        // (#156). RFC 8693 section 2.1 leaves the scope of the new token to
+        // the server's policy, and this server's is the one rule for every
+        // exchange — an access, refresh or ID Token, a JWT or SAML assertion
+        // (#114): the `scope` asked for, which may narrow and never widen
+        // (above); else the subject_token's `scope` claim; else none. Either
+        // way it then goes through tokenSet()'s narrowing like every other
+        // grant — the client's declared scopes (#110), the roles (#302), and
+        // RFC 9068's audience plan, which takes the OpenID Connect scopes off
+        // a token for another resource server. What survives is the response's
+        // `scope` member, left out when nothing did, and an ID Token comes
+        // back only when `openid` survived (idTokenFollowsIssuedScope).
         scope: String(body.scope || subject.scope || ''),
+        idTokenFollowsIssuedScope: true,
         audience: self.audienceClaim(issuedAudiences), act: act,
         // RFC 9396 on an exchange: the details asked for, as for a direct
         // grant. The audience rule is tokenSet()'s backstop, as the header
@@ -15989,14 +16669,19 @@ class OAuth2Server {
               'authenticated'
         },
         intermediary: {
-          presented: actorClaims ? String(actorClaims.sub || '') : '',
+          presented: registerActor,
           application: client.client_id,
           what: actorClaims
             ? 'the actor named in the actor_token, exchanging through client ' +
               client.client_id
-            : 'the client performing the exchange. No actor_token was sent, ' +
-              'so no identity is named — the client is the whole of the ' +
-              'middle here'
+            : (registerActor
+              ? 'the client performing the exchange, named as the actor by ' +
+                'its own subject — no actor_token was sent, and the ' +
+                'issuance policy chose a delegation, so the client acts for ' +
+                'the subject'
+              : 'the client performing the exchange. No actor_token was ' +
+                'sent, so no identity is named — the client is the whole ' +
+                'of the middle here')
         },
         target: {
           application: audienceApplication ? audienceApplication.identifier :
@@ -16036,8 +16721,9 @@ class OAuth2Server {
           identifier: issuedJti,
           note: act
             ? 'carries an `act` claim naming ' + String(act.sub || '(nobody)') +
-              (act.act ? ', with the prior actors nested beneath it (RFC ' +
-                         '8693 section 4.1)' : '')
+              (act.act ? ', with the prior actors — back to the client the ' +
+                         'chain began with — nested beneath it (RFC 8693 ' +
+                         'section 4.1)' : '')
             : 'carries nothing about the client that exchanged it'
         }].concat(exchanged.id_token ? [{
           kind: 'id_token',
@@ -16453,8 +17139,10 @@ class OAuth2Server {
                       { 'WWW-Authenticate': self.basicChallenge() } : null);
     }
     const observation = await bcp.observeClientAuthentication(authentication);
-    // FAPI (#138): the confidential client authentication methods it allows.
-    const fapiAuth = fapi.clientAuthenticationRefusal(observation.method);
+    // FAPI (#138): the confidential client authentication methods it allows
+    // — and the admin console as a public client, its one exception (#446).
+    const fapiAuth = fapi.clientAuthenticationRefusal(observation.method,
+                                                      clientId);
     if (fapiAuth) {
       log.debug("Leaving OAuth2Server.parRequest(). FAPI refused the " +
                 "client's authentication method.");
@@ -16927,6 +17615,19 @@ class OAuth2Server {
       // the token itself states it — so a resource server that introspects
       // learns what one reading the JWT does.
       device_id: claims.device_id,
+      // RFC 8693 section 7.2 registers `act` and `may_act` as introspection
+      // response members (#469). Without them a resource server that
+      // introspects — an opaque-token deployment, or one asking for RFC
+      // 9701's JWT — could not see who acted, which is the whole of a
+      // delegation at the far end: `act` as the token nests it, the current
+      // actor outermost and the chain beneath it back to the original client
+      // (#443), and `may_act` as the subject stated it. Only as the token
+      // carries them, and only in an answer the caller may see at all —
+      // `intendedFor()` below decides that for this member as for `sub`.
+      act: claims.act && typeof claims.act === 'object'
+        ? claims.act : undefined,
+      may_act: claims.may_act && typeof claims.may_act === 'object'
+        ? claims.may_act : undefined,
       exp: claims.exp, iat: claims.iat, nbf: claims.nbf,
       sub: claims.sub, aud: claims.aud, iss: claims.iss, jti: claims.jti
     }));
@@ -17441,7 +18142,7 @@ class OAuth2Server {
     const made = deviceAuthorization.create(clientId,
       String(registration.client_name || clientId), scope, dpopJkt);
     const base = self.asBaseOf(req);
-    const verification = base + '/portal/device';
+    const verification = helpers.rebaseTo(base, 'portal') + '/portal/device';
     log.debug("Leaving OAuth2Server.deviceAuthorizationRequest().");
     res.status(200).type('application/json').send(JSON.stringify({
       device_code: made.deviceCode,
@@ -19115,13 +19816,14 @@ class OAuth2Server {
    */
   registerRoutes(app: any): void {
     const self = this;
-    const { crypto, realms, forge, jwt, stsCrypto, log, logArtifact, STS,
+    const { realms, forge, jwt, stsCrypto, log, logArtifact, STS,
             baseUrlOf, b64u, jsonFromB64u, nowSec, randomId, xmlEscape,
             parseBody, bodyValues, plainOauthError, signJwt, signJwtAs,
             allSigningKeys, allSigningKeysAsync, signJwtAsAsync, userFor,
             hasScope, signingKeyFor, certificateHeaderFor, publishedKidFor,
             nameForSubject, hasSubjectResolver, LEGACY_SUBJECT_PREFIX,
-            requestObjectKeysFor, dpop, joseKid, mtls, clientAuth,
+            requestObjectKeysFor, dpop, httpSignatures, joseKid, mtls,
+            clientAuth,
             assertionGrant, softwareStatement, samlAssertionGrant, mode,
             authorizationServers, stats, VCI_CONFIGS, VCI_CONFIG_ID, VCI_SCOPE,
             vciFormatOf, vcClaims, deferredAccessTokens, issuerStates,
@@ -19147,6 +19849,10 @@ class OAuth2Server {
     // `verifyProof()` is argued above `PROOF_CLAIM` in `dpop.ts`.
     // -------------------------------------------------------------------------
     app.use(dpop.proofClaims());
+    // FAPI 2.0 HTTP Signatures (#178): a signing client's jwks_uri, fetched
+    // on arrival so the synchronous check at the resource servers finds its
+    // keys. It decides nothing (`oauth-oidc/http_signatures.ts`).
+    app.use(httpSignatures.keyPrefetch());
 
     // -------------------------------------------------------------------------
     // A CLIENT'S `jwks_uri`, FETCHED BEFORE AN ENDPOINT THAT MAY ENCRYPT TO IT
@@ -19233,7 +19939,7 @@ class OAuth2Server {
       const sent = String(req.headers['x-fapi-interaction-id'] || '');
       res.set('x-fapi-interaction-id',
               /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-                .test(sent) ? sent : crypto.randomUUID());
+                .test(sent) ? sent : stsCrypto.randomUuid());
       log.debug("Leaving the x-fapi-interaction-id middleware.");
       next();
     });
@@ -19805,6 +20511,7 @@ export = {
   ownTokenKind: slot.forward('ownTokenKind'),
   // Key Binding's two checks (#150), for tests/device_key_binding.js.
   boundKeyProofRefusal: slot.forward('boundKeyProofRefusal'),
+  sendRedirectInterstitial: slot.forward('sendRedirectInterstitial'),
   boundIdTokenRefusal: slot.forward('boundIdTokenRefusal'),
   exchangeTypeProblem: slot.forward('exchangeTypeProblem'),
   requestedClaimNames: slot.forward('requestedClaimNames'),

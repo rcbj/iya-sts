@@ -1,0 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+# The repository's 80-column rule (root CLAUDE.md, *Code style*).
+max_width = 80

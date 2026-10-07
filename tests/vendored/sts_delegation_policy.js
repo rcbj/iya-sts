@@ -261,6 +261,29 @@ async function wsRefused(r, type, subcode) {
   log.debug("Leaving wsRefused().");
 }
 
+// #496: in product an RST naming no AppliesTo, or one no application
+// registers, is refused BEFORE the delegation policy is asked — the
+// Subcode `subcode`, and no act on the register, since nothing was decided.
+// Development is wsRefused()'s: issued, the act saying it would have been
+// refused.
+async function wsRefusedUnregistered(r, type, subcode, before) {
+  log.debug("Entering wsRefusedUnregistered().");
+  if (!PRODUCT) {
+    await wsRefused(r, type);
+    log.debug("Leaving wsRefusedUnregistered().");
+    return;
+  }
+  assert.strictEqual(r.status, 500, r.text.slice(0, 400));
+  assert.ok(new RegExp('<soap:Subcode><soap:Value xmlns:wst="[^"]+">' +
+                       'wst:' + subcode + '<').test(r.text),
+            "the fault's Subcode: " + r.text.slice(0, 600));
+  const act = await newestAct(type);
+  assert.strictEqual(JSON.stringify(act), JSON.stringify(before),
+                     "no act was recorded for a refusal the policy was " +
+                     "never asked about");
+  log.debug("Leaving wsRefusedUnregistered().");
+}
+
 const SAYS = function () {
   log.debug("Entering SAYS().");
   log.debug("Leaving SAYS().");
@@ -320,14 +343,19 @@ async function wsTrust() {
   r = await delegate(ESB, "ActAs", forBob);
   await wsRefused(r, "wstrust-actas");
   check("W6. a subject carrying stsNotDelegated is " + SAYS(), function () {});
+  let before = await newestAct("wstrust-actas");
   r = await delegate(ESB, "ActAs", forEsb, NOWHERE);
-  await wsRefused(r, "wstrust-actas");
-  check("W7. an AppliesTo no application registers is " + SAYS(),
-        function () {});
+  await wsRefusedUnregistered(r, "wstrust-actas", "InvalidScope", before);
+  check("W7. an AppliesTo no application registers is " +
+        (PRODUCT ? "wst:InvalidScope before the policy is asked (#496)"
+                 : SAYS()), function () {});
   const forMid = await tokenAbout(ALICE, MID);
+  before = await newestAct("wstrust-actas");
   r = await delegate(ESB, "ActAs", forMid, "");
-  await wsRefused(r, "wstrust-actas");
-  check("W8. no AppliesTo, the requester not S, is " + SAYS(), function () {});
+  await wsRefusedUnregistered(r, "wstrust-actas", "InvalidRequest", before);
+  check("W8. no AppliesTo, the requester not S, is " +
+        (PRODUCT ? "wst:InvalidRequest before the policy is asked (#496)"
+                 : SAYS()), function () {});
   r = await delegate(ESB, "both", forEsb);
   check("W9. ActAs and OnBehalfOf in one request: wst:InvalidRequest, in " +
         "every mode", function () {
@@ -399,6 +427,25 @@ async function oauthRefused(r, error, type) {
 async function tokenExchange() {
   log.debug("Entering tokenExchange().");
   log.info("=== O. RFC 8693 token exchange ===");
+  // THE FORM A CLIENT IS NAMED BY AS AN ACTOR (#471): its own subject in the
+  // realm's mode — `urn:sts:client:<id>` in RFC 9700 mode (which product
+  // implies), the bare client_id otherwise — read off a client_credentials
+  // token, whose `sub` is that subject. The exchanges below send no
+  // actor_token, so the policy's delegation names the exchanging client;
+  // until #471 it did so by the bare client_id in every mode.
+  const cc = await token({ grant_type: "client_credentials", client_id: MID,
+                           client_secret: SECRET, scope: "api" });
+  assert.strictEqual(cc.status, 200, "a client_credentials token for " +
+                     MID + ": " + cc.text.slice(0, 300));
+  const namespaced = /^urn:sts:client:/.test(
+    String(claimsOf(cc.json.access_token).sub || ""));
+  assert.ok(!PRODUCT || namespaced, "a product realm names a client " +
+            "urn:sts:client:<id>: " + claimsOf(cc.json.access_token).sub);
+  const asActor = function (identifier) {
+    log.debug("Entering asActor().");
+    log.debug("Leaving asActor().");
+    return namespaced ? "urn:sts:client:" + identifier : identifier;
+  };
   const forMid = await tokenAbout(ALICE, MID, true);
   assert.ok(forMid.split(".").length === 3, "a JWT for Alice: " +
             forMid.slice(0, 80));
@@ -408,8 +455,10 @@ async function tokenExchange() {
   check("O1. DELEGATION by S to R it delegates to: issued, `act` naming S, " +
         "for R", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.strictEqual(claims.act && claims.act.sub, MID,
+    assert.strictEqual(claims.act && claims.act.sub, asActor(MID),
                        JSON.stringify(claims.act));
+    assert.strictEqual(claims.act.iss, claims.iss, "the act entry names " +
+                       "this issuer (#471): " + JSON.stringify(claims));
     assert.ok([].concat(claims.aud).indexOf(TARGET) >= 0,
               JSON.stringify(claims.aud));
   });
@@ -418,7 +467,7 @@ async function tokenExchange() {
   check("O2. by R itself, holding the token S was handed: `act` naming R",
         function () {
           assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-          assert.strictEqual(claims.act && claims.act.sub, BACK,
+          assert.strictEqual(claims.act && claims.act.sub, asActor(BACK),
                              JSON.stringify(claims.act));
         });
   const forMid2 = await tokenAbout(ALICE, MID2, true);
@@ -526,8 +575,10 @@ async function tokenExchange() {
   check("O17. `act` NESTS: R's act outermost, S's beneath it (RFC 8693 " +
         "section 4.1)", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.ok(claims.act && claims.act.sub === BACK && claims.act.act &&
-              claims.act.act.sub === MID, JSON.stringify(claims.act));
+    assert.ok(claims.act && claims.act.sub === asActor(BACK) &&
+              claims.act.act && claims.act.act.sub === asActor(MID) &&
+              claims.act.iss === claims.iss &&
+              claims.act.act.iss === claims.iss, JSON.stringify(claims));
   });
   // A subject token CARRYING a scope (the first hop, scope `api`): a WS-Trust
   // JWT carries none, so there is nothing to compare and nothing is refused.

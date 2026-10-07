@@ -89,6 +89,10 @@ interface AccountSignalsDeps {
 // A CAEP credential-change, as the doors describe it.
 interface CredentialChange {
   username?: string;
+  // WHOSE, WHEN IT IS NOT A PERSON'S (#221 P5): an application entry by its
+  // identifier, or a SPIFFE workload by its SPIFFE ID. One of the three.
+  application?: string;
+  workload?: string;
   credentialType?: string;
   changeType?: string;
   friendlyName?: string;
@@ -181,6 +185,29 @@ class AccountSignals {
    */
   static readonly KERBEROS_KEY_CREDENTIAL_TYPE =
     'urn:iya:sts:credential-type:kerberos-key';
+  // -------------------------------------------------------------------------
+  // AN APPLICATION'S AND A WORKLOAD'S CREDENTIALS (#221 P5), in the same
+  // namespace and for the same reason as #236's: CAEP 1.0 section 3.3.1 has
+  // no value for an OAuth client secret, for a bare registered key (a JWK
+  // set with no certificate), or for a SPIFFE registration entry. A key
+  // pair WITH a certificate is the registered `x509`, as a person's is.
+  // -------------------------------------------------------------------------
+  /**
+   * This service's credential type for an application's OAuth client secret.
+   */
+  static readonly CLIENT_SECRET_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:client-secret';
+  /**
+   * This service's credential type for a registered key with no certificate:
+   * an application's `jwks` / `jwks_uri`, or an RFC 7523 key set alone.
+   */
+  static readonly JWK_CREDENTIAL_TYPE = 'urn:iya:sts:credential-type:jwk';
+  /**
+   * This service's credential type for a SPIFFE registration entry: what lets
+   * a workload be issued an SVID here.
+   */
+  static readonly SPIFFE_REGISTRATION_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:spiffe-registration';
 
   /**
    * Builds the reporter from its dependencies.
@@ -312,7 +339,11 @@ class AccountSignals {
   credentialChanged(change?: CredentialChange): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.credentialChanged().');
-    this.mailNotice('credentialChanged', change || {});
+    // Nobody to mail about an application's or a workload's credential
+    // (#221 P5): the mail notices are a PERSON's.
+    if (!AccountSignals.notPersonal(change)) {
+      this.mailNotice('credentialChanged', change || {});
+    }
     log.debug('Leaving AccountSignals.credentialChanged().');
     return this.deliver('a CAEP credential-change', 'emitCredentialChange',
                         change || {});
@@ -420,7 +451,7 @@ class AccountSignals {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.credentialCompromised().');
     const asked = notice || {};
-    if (!asked.mailed) {
+    if (!asked.mailed && !AccountSignals.notPersonal(asked)) {
       this.mailNotice('credentialCompromised', asked);
     }
     log.debug('Leaving AccountSignals.credentialCompromised().');
@@ -565,6 +596,52 @@ class AccountSignals {
                         'emitIdentityAssuranceChange', notice || {});
   }
 
+  // Whether a notice is about an application or a workload rather than a
+  // person (#221 P5).
+  /**
+   * Says whether a notice names an application or a workload rather than a
+   * person.
+   *
+   * @param notice - the notice
+   * @returns true when it is not about a person
+   */
+  static notPersonal(notice?: Record<string, any> | null): boolean {
+    helpers.log.debug('Entering AccountSignals.notPersonal().');
+    const asked = notice || {};
+    const out = !!(asked.application || asked.workload);
+    helpers.log.debug('Leaving AccountSignals.notPersonal(). ' + out);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // RISC account-purged ABOUT AN APPLICATION (#221 P5): its entry was
+  // deleted, by the registry (the console, `/admin-api`) or by an LDAP
+  // delete. `notice`: `application` (its identifier), `dn`, `via`. An
+  // application has no disabled state here — the registry has none — so
+  // purged is the one lifecycle act it can be the subject of.
+  // ---------------------------------------------------------------------
+  /**
+   * Reports a RISC account-purged about an application entry that was
+   * deleted.
+   *
+   * @param notice - `application` (the identifier), and optionally `dn` and
+   * `via`
+   * @returns a promise that always resolves, to `{ sent, streams }` or, when
+   *   nothing was sent (Shared Signals not loaded here, or the emitter failed),
+   *   with `why` set
+   */
+  applicationPurged(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.applicationPurged().');
+    const asked = notice || {};
+    log.debug('Leaving AccountSignals.applicationPurged().');
+    return this.deliver('a RISC account-purged about an application',
+                        'emitRiscAccountAct',
+                        Object.assign({}, asked, { act: 'purged',
+                          username: '',
+                          application: String(asked.application || '') }));
+  }
+
   // RISC recovery-information-changed: somebody's recovery codes were
   // cleared, confirmed, or (#235) one of them spent — at sign-in or on the
   // forgot-password form. A recovery ADDRESS added, changed, removed or
@@ -637,6 +714,12 @@ export = {
   claimsChanged: slot.forward('claimsChanged'),
   claimsFanOut: slot.forward('claimsFanOut'),
   assuranceChanged: slot.forward('assuranceChanged'),
+  applicationPurged: slot.forward('applicationPurged'),
+  notPersonal: AccountSignals.notPersonal,
+  CLIENT_SECRET_CREDENTIAL_TYPE: AccountSignals.CLIENT_SECRET_CREDENTIAL_TYPE,
+  JWK_CREDENTIAL_TYPE: AccountSignals.JWK_CREDENTIAL_TYPE,
+  SPIFFE_REGISTRATION_CREDENTIAL_TYPE:
+    AccountSignals.SPIFFE_REGISTRATION_CREDENTIAL_TYPE,
   KEY_CREDENTIAL_TYPE: AccountSignals.KEY_CREDENTIAL_TYPE,
   keyCredentialType: AccountSignals.keyCredentialType,
   TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE,

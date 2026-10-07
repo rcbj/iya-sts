@@ -91,6 +91,15 @@ require('./common/config_file').resolveConfigFile();
 // against NODE_OPTIONS and a launcher.
 // ---------------------------------------------------------------------------
 require('./common/process_memory').reexecWithHeapLimit();
+// ---------------------------------------------------------------------------
+// AND THE SECRETS DELIVERED AS FILES (#254): every `<ENV>_FILE` naming one of
+// `common/delivered_secrets.ts`'s settings is read and deleted HERE — after
+// the re-exec above, which would otherwise start a process the file was
+// already gone for, and before the protocol stack loads, because the
+// management API client is seeded with its secret as `ldap_server.js` is
+// required. A file that cannot be read stops the service (STS-CORE-0150).
+// ---------------------------------------------------------------------------
+require('./common/delivered_secrets').load();
 
 const http = require('http');
 const https = require('https');
@@ -290,7 +299,8 @@ function announce() {
            version.buildInfo(APP_VERSION) + ').');
   log.info('WS-Trust STS mock listening on ' + (useHttps ? 'https' : 'http') +
            '://' + HOST + ':' + PORT +
-           ' (WS-Trust issuer ' + config.value('wstrust.issuer') +
+           ' (WS-Trust issuer ' +
+           require('./common/issuer_names').wstrustIssuer() +
            '); POST SOAP RST to /sts');
   if (useHttps) {
     log.info('This port is HTTPS (global.https' +
@@ -1028,44 +1038,59 @@ serviceState.start().then(function (both) {
 // Built rather than started above, because the two shapes differ only in this
 // one expression and writing the whole announcement twice is how the two
 // versions of it come to say different things.
-// A TRUST REALM'S OWN LISTENER (#99, 2026-10-02): an unbound HTTPS server
-// wired exactly as the main port below is — the client-certificate request
-// and the truststore, the TLS policy, the connection observer, the JA4
-// fingerprint and the PROXY protocol — but presenting the realm's own
-// certificate (`certificateOf` hands it to the truststore's re-application, so
-// a truststore change never swaps it for the main port's). Bound, rebound and
-// closed by `tls/realm_listeners.js` as the realm registry changes.
-// `common/app.js`'s `enterRealm` answers only that realm's paths on it.
-function realmListener(label, certificate, certificateOf, realmId) {
-  log.debug("Entering realmListener(). " + label);
-  // The realm's own policy (#423): its listener.* rows, inheriting the
-  // process's TLS settings unless set, and its own client authentication.
-  const policy = tlsServer.policyFor('realm', realmId);
+// A CUSTOM LISTENER (#472, 2026-10-07; a realm's own, #99, is one): an
+// unbound HTTPS server wired exactly as the main port below is — the
+// client-certificate request and the truststore, the TLS policy, the
+// connection observer, the JA4 fingerprint and the PROXY protocol — but
+// presenting the listener's own certificate (`certificateOf` hands it to the
+// truststore's re-application, so a truststore change never swaps it for the
+// main port's). Bound, rebound and closed by `tls/listeners.js` as the
+// definitions change; `common/app.js` answers on it only the applications
+// `listeners.applications` maps to it.
+function customListener(label, certificate, certificateOf, listenerId) {
+  log.debug("Entering customListener(). " + label);
+  // The listener's own policy (#423, #472): its definition's `tls` block,
+  // inheriting the process's TLS settings where it is silent, and its own
+  // client authentication (`clientAuth`).
+  const policy = tlsServer.policyFor('custom', listenerId);
   const server = https.createServer(Object.assign({
     cert: certificate.cert,
     key: certificate.key,
-    // Its own truststore (#429): the realm's listener.trustAnchorsFile and
-    // listener.trustIssuedClientCertificates, else the service's.
+    // Its own truststore (#429): its tls.trustAnchorsFile and
+    // tls.trustIssuedClientCertificates, else the service's.
     ca: tlsServer.clientTruststoreOptions(policy).ca
   // Its TLS session lifetime is in the policy (#429), its session cache
   // attached when it registers below.
   }, tlsServer.clientAuthOptions(policy.clientAuth),
   tlsServer.protocolOptions(policy)), app);
-  // ITS OWN CONNECTION POOLING (#429): the realm's listener.keepAliveTimeoutS
-  // and the rest, inheriting the service's http.* rows; re-applied when
-  // they change.
-  tlsServer.registerHttpListener(server, 'realm', realmId);
+  // ITS OWN CONNECTION POOLING (#429): its tls.keepAliveTimeoutS and the
+  // rest, inheriting the service's http.* rows; re-applied when they change.
+  tlsServer.registerHttpListener(server, 'custom', listenerId);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
-                                      { kind: 'realm', realm: realmId });
+                                      { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
   clientHello.install(server, { label: label });
   proxyProtocol.install(server, { label: label, channel: 'http' });
-  log.debug("Leaving realmListener().");
+  log.debug("Leaving customListener().");
   return server;
 }
 
 function bind() {
 log.debug("Entering bind().");
+// THE LISTENERS AND THE MAPPING THIS PROCESS STARTS WITH (#472), judged as a
+// write of them would be: a value from the environment or the appconfig file
+// was never asked about, and a mapping that names a listener nobody defined,
+// or splits the sign-on session's applications across host names its cookie
+// cannot reach, would answer wrongly rather than slowly. Fatal, here, before
+// a socket is bound — the store is open, so a realm's own values are read.
+const listenerProblem = require('./common/listener_map').startupProblem();
+if (listenerProblem) {
+  log.fatal(errorCodes.tag('STS-CORE-0157') + 'sts: NOT STARTING. The ' +
+            'custom listeners and their applications this process was ' +
+            'given are refused: ' + listenerProblem.message + ' (' +
+            listenerProblem.code + ').');
+  process.exit(1);
+}
 if (useHttps) {
   const serverCert = tlsServer.serverCertificate();
   const mainServer = https.createServer(Object.assign({
@@ -1184,10 +1209,10 @@ if (useHttps) {
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',
                                       channel: 'http' });
   mainServer.listen(PORT, HOST, announce);
-  // AND EVERY REALM THAT ASKS FOR A LISTENER OF ITS OWN (#99), bound beside
-  // the main port and kept in step with the realm registry from here on. A
-  // realm port that cannot bind is recorded, never fatal.
-  require('./tls/realm_listeners').start({ build: realmListener });
+  // AND EVERY CUSTOM LISTENER (#472; a realm's own, #99, among them), bound
+  // beside the main port and kept in step with the definitions from here on.
+  // A listener that cannot bind is recorded, never fatal.
+  require('./tls/listeners').start({ build: customListener });
 } else {
   // `http.createServer(app)` rather than `app.listen()`, which is the same
   // thing with the server object hidden — and the PROXY protocol has to be
@@ -1196,6 +1221,9 @@ if (useHttps) {
   proxyProtocol.install(plainServer, { label: 'the main port (' + PORT + ')',
                                        channel: 'http' });
   plainServer.listen(PORT, HOST, announce);
+  // A custom listener is HTTPS whatever the main port is: it presents its
+  // own certificate, so `global.https` off does not take it away (#472).
+  require('./tls/listeners').start({ build: customListener });
 }
 log.debug("Leaving bind().");
 }

@@ -49,15 +49,12 @@ delete process.env.CONFIG_FILE;
 
 const registry = require('../common/cache_registry');
 const errorCodes = require('../common/error_codes');
-const app = require('../common/app');
-// Loading a module registers nothing since #50's R1, so the page's route is
-// registered here. The console shell comes first, as in the composition root.
-require('../admin-ui/admin').registerRoutes(app);
+// The page's module, loaded for the caches it registers; its page is drawn
+// from `GET /admin-api/caches` since #446 (see `consolePage` below).
 const cachesAdmin = require('../admin-ui/caches_admin');
 // What names this process's figures since #364: pid, and the thread in a
 // worker thread (`processTag()`), because every thread shares the pid.
 const WorkerChannel = require('../common/worker_channel');
-cachesAdmin.registerRoutes(app);
 
 const log = require('bunyan').createLogger({
   name: 'cache_registry',
@@ -137,61 +134,11 @@ function testDescriptor(name, rows) {
   };
 }
 
-function handler() {
-  log.debug("Entering handler().");
-  const layer = (app._router.stack || []).filter(function (one) {
-    return one.route && one.route.path === '/admin/caches' &&
-           one.route.methods.get;
-  })[0];
-  log.debug("Leaving handler(). " + (layer ? "Found." : "Not found."));
-  return layer ? layer.route.stack[0].handle : null;
-}
-
-function draw(query) {
-  log.debug("Entering draw().");
-  const out = { body: '', res: null };
-  const res = {
-    set: function () {
-      return this;
-    },
-    status: function () {
-      return this;
-    },
-    type: function () {
-      return this;
-    },
-    send: function (text) {
-      out.body = String(text);
-      return this;
-    },
-    json: function (value) {
-      out.body = JSON.stringify(value);
-      return this;
-    },
-    get: function () {
-      return undefined;
-    },
-    getHeader: function () {
-      return undefined;
-    },
-    setHeader: function () {
-      return undefined;
-    },
-    locals: {}
-  };
-  out.res = res;
-  const req = { query: query, headers: {}, method: 'GET', cookies: {},
-                url: '/admin/caches', originalUrl: '/admin/caches',
-                path: '/admin/caches',
-                get: function () {
-                  return '';
-                } };
-  handler()(req, res, function (e) {
-    log.debug("The caches handler called next(): " + ((e && e.message) || e));
-  });
-  log.debug("Leaving draw(). " + out.body.length + " character(s).");
-  return out;
-}
+// THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): `GET /admin-api/caches`
+// answering, `web_caches.ts` drawing — there is no console route to call
+// since the cutover.
+const consolePage = require('./tools/console_page')
+  .consolePage(require('path').join(__dirname, '..'));
 
 function claimOne(t) {
   log.debug("Entering claimOne().");
@@ -420,52 +367,46 @@ function claimFive(t) {
   log.debug("Leaving claimFive().");
 }
 
-function claimSix(t) {
+async function claimSix(t) {
   log.debug("Entering claimSix().");
   t.log.info('=== 6. the page ===');
-  t.check(typeof handler() === 'function', 'GET /admin/caches is registered');
-  const list = draw({});
-  t.check(list.body.indexOf('href="/admin/caches?cache=test.paged"') >= 0 &&
-          list.body.indexOf('Hit ratio') >= 0 &&
-          list.body.indexOf('common/secrets.js') >= 0 &&
-          list.body.indexOf('Other cluster nodes') >= 0,
+  const list = await consolePage.draw('/admin/caches', {});
+  t.check(list.status === 200 &&
+          list.html.indexOf('href="/admin/caches?cache=test.paged"') >= 0 &&
+          list.html.indexOf('Hit ratio') >= 0 &&
+          list.html.indexOf('common/secrets.js') >= 0 &&
+          list.html.indexOf('Other cluster nodes') >= 0,
           'the list links every cache, names what it leaves out and has a ' +
           'section for the other nodes');
-  t.check(list.body.indexOf('10 per realm') >= 0 &&
-          list.body.indexOf('fullest realm') >= 0 &&
-          />unbounded</.test(list.body) === false,
+  t.check(list.html.indexOf('10 per realm') >= 0 &&
+          list.html.indexOf('fullest realm') >= 0 &&
+          />unbounded</.test(list.html) === false,
           'a per-realm bound is drawn "per realm" with its fullest realm, ' +
           'and no row says unbounded');
-  const one = draw({ cache: 'test.paged', per: '3', page: '2' });
-  t.check(one.body.indexOf('entry-2') >= 0 &&
-          one.body.indexOf('entry-6') < 0,
+  const one = await consolePage.draw('/admin/caches',
+    { cache: 'test.paged', per: '3', page: '2' });
+  t.check(one.html.indexOf('entry-2') >= 0 &&
+          one.html.indexOf('entry-6') < 0,
           'the drill-down draws the page it was asked for');
-  const pager = one.body.match(/href="\/admin\/caches\?[^"#]*#list-page"/g) ||
+  const pager = one.html.match(/href="\/admin\/caches\?[^"#]*#list-page"/g) ||
     [];
   t.check(pager.length > 0 && pager.every(function (href) {
     return href.indexOf('cache=test.paged') >= 0;
   }), 'every paging link keeps `cache=`', pager.slice(0, 2).join(' '));
-  t.check(/<a href="\/admin\/caches"[ >]/.test(one.body),
-          'the trail leads back to the list');
-  t.check(one.body.indexOf(SECRET) < 0, 'no cached value is drawn');
-  t.check(errorCodes.codeOf(one.res) === '',
-          'a known cache is not marked');
-  const missing = draw({ cache: 'no.such.cache' });
-  t.check(missing.body.indexOf('There is no cache called') >= 0 &&
-          /<a href="\/admin\/caches"[ >]/.test(missing.body),
-          'an unknown cache is a page saying so, with the trail back');
-  t.equal(errorCodes.codeOf(missing.res), 'STS-ADMIN-0021',
-          'and it is marked STS-ADMIN-0021');
-  const json = draw({ cache: 'test.paged', format: 'json' });
-  let parsed = null;
-  try {
-    parsed = JSON.parse(json.body);
-  } catch (e) {
-    log.debug("Caught in claimSix(): " + ((e && e.message) || e));
-    parsed = null;
-  }
-  t.check(!!parsed && parsed.found === true && parsed.paging === undefined,
-          '?format=json answers the public view', json.body.slice(0, 120));
+  t.check(one.html.indexOf(SECRET) < 0 &&
+          JSON.stringify(one.json).indexOf(SECRET) < 0,
+          'no cached value is drawn, or answered');
+  const missing = await consolePage.draw('/admin/caches',
+    { cache: 'no.such.cache' });
+  t.check(missing.html.indexOf('There is no cache called') >= 0 &&
+          missing.json && missing.json.found === false,
+          'an unknown cache is a page saying so, and the answer says it ' +
+          'was not found');
+  const json = await consolePage.get('/admin-api/caches',
+    { cache: 'test.paged' });
+  t.check(!!json.json && json.json.found === true,
+          'the operation answers the cache\'s view',
+          JSON.stringify(json.json || {}).slice(0, 120));
   log.debug("Leaving claimSix().");
 }
 
@@ -634,9 +575,13 @@ function claimEight(t) {
             return typeof c.maxEntries === 'number';
           }),
           'each carries every store\'s figures and how old they are');
-  // The drawing of that section, by the same instance (`private` is a
-  // compile-time word; the method is there at run time).
-  const html = view['otherProcessesHtml'](others);
+  // The drawing of that section, by the page's renderer (#446:
+  // `web_caches.ts`), from the rows passed through JSON as a browser gets
+  // them.
+  const CachesPage = require(path.join(__dirname, '..', 'admin-ui',
+                                       'web_caches'));
+  const html = CachesPage.otherProcessesHtml(
+    JSON.parse(JSON.stringify(others)));
   t.check(html.indexOf('Node other') >= 0 &&
           /This node(&apos;|&#39;|&#x27;|')s front process/.test(html) &&
           html.indexOf('gone-host') < 0,
@@ -660,14 +605,14 @@ function claimEight(t) {
   log.debug("Leaving claimEight().");
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   try {
     claimOne(t);
     claimTwoAndThree(t);
     claimFour(t);
     claimFive(t);
-    claimSix(t);
+    await claimSix(t);
     claimSeven(t);
     claimEight(t);
   } finally {

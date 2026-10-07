@@ -140,6 +140,8 @@ import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import nodeSnapshots = require('../cluster/node_snapshots');
+// The page's renderer (#446): a `web_` module, loadable in a browser.
+import NodeHealthPage = require('./web_node_health');
 
 type Req = any;
 type Res = any;
@@ -1478,326 +1480,27 @@ class NodeHealthAdmin {
     return snapshots().scrub(answer);
   }
 
-  // Bytes as MiB, or a dash for a figure that is not there.
-  private mib(value: unknown): string {
-    const { log } = this.deps;
-    log.debug("Entering NodeHealthAdmin.mib().");
-    log.debug("Leaving NodeHealthAdmin.mib().");
-    return typeof value === 'number' ? (value / MIB).toFixed(1) + ' MiB'
-                                     : '—';
-  }
-
-  // A percentage, or a dash.
-  private pct(value: unknown): string {
-    const { log } = this.deps;
-    log.debug("Entering NodeHealthAdmin.pct().");
-    log.debug("Leaving NodeHealthAdmin.pct().");
-    return typeof value === 'number' ? value.toFixed(1) + ' %' : '—';
-  }
-
-  // A table of three columns: label, value and why.
-  private rows(items: [string, string, string][]): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering NodeHealthAdmin.rows().");
-    log.debug("Leaving NodeHealthAdmin.rows().");
-    return '<table class="grid"><tbody>' +
-      items.map(function (one: [string, string, string]): string {
-        return '<tr><th>' + admin.esc(one[0]) + '</th><td>' + one[1] +
-          '</td><td><small>' + one[2] + '</small></td></tr>';
-      }).join('') + '</tbody></table>';
-  }
-
-  private cpuHtml(cpu: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering NodeHealthAdmin.cpuHtml().");
-    const head = '<h2 id="cpu">Container CPU</h2>';
-    if (!cpu.available) {
-      log.debug("Leaving NodeHealthAdmin.cpuHtml(). Unavailable.");
-      return head + '<p><strong>Not available:</strong> ' +
-        admin.esc(cpu.unavailableText) + '</p>';
-    }
-    const t = cpu.throttling;
-    if (cpu.fromEcs) {
-      const ecsHtml = head + '<p>' + admin.esc(cpu.limitText) + '</p>' +
-        this.rows([
-          ['Utilisation', admin.esc(this.pct(cpu.utilisationPercent)),
-           admin.esc(cpu.coresUsed) + ' CPU(s)' + (cpu.percentOfVcpus
-             ? ' of ' + admin.esc(cpu.percentOfVcpus) : '') +
-           ', as the ECS agent measured it']
-        ]) + '<p><small>The cgroup: ' +
-        admin.esc(cpu.cgroupUnavailableText || '') + '</small></p>';
-      log.debug("Leaving NodeHealthAdmin.cpuHtml(). From ECS.");
-      return ecsHtml;
-    }
-    const html = head + '<p>' + admin.esc(cpu.limitText) + '</p>' +
-      this.rows([
-        ['Utilisation', admin.esc(this.pct(cpu.utilisationPercent)),
-         admin.esc(cpu.coresUsed) + ' of ' + admin.esc(cpu.percentOfVcpus) +
-         ' CPU(s) over ' + admin.esc(cpu.windowSeconds) + ' s, ' +
-         (cpu.sampled === 'fresh-sample' ? 'two samples taken for this page'
-                                         : 'since the previous page')],
-        ['CPU time used', admin.esc(cpu.usageSeconds) + ' s',
-         'every process of the container since it started (user ' +
-         admin.esc(cpu.userSeconds === null ? '—' : cpu.userSeconds) +
-         ' s, system ' +
-         admin.esc(cpu.systemSeconds === null ? '—' : cpu.systemSeconds) +
-         ' s)'],
-        ['Throttled', t ? admin.esc(t.throttledPeriods) + ' of ' +
-           admin.esc(t.periods) + ' periods' : '—',
-         t ? admin.esc(this.pct(t.throttledPercentOfPeriods)) + ' of ' +
-             'periods, ' + admin.esc(t.throttledSeconds) + ' s held back ' +
-             'by the quota'
-           : admin.esc(cpu.throttlingText)]
-      ]) + '<p><small>From cgroup v' + admin.esc(cpu.cgroupVersion) +
-      ', <code>' + admin.esc(cpu.source) + '</code>.</small></p>';
-    log.debug("Leaving NodeHealthAdmin.cpuHtml().");
-    return html;
-  }
-
-  private memoryHtml(m: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering NodeHealthAdmin.memoryHtml().");
-    const head = '<h2 id="memory">Container memory</h2>';
-    if (!m.available) {
-      log.debug("Leaving NodeHealthAdmin.memoryHtml(). Unavailable.");
-      return head + '<p><strong>Not available:</strong> ' +
-        admin.esc(m.unavailableText) + '</p>';
-    }
-    const html = head + '<p>' + admin.esc(m.limitText) + '</p>' +
-      this.rows([
-        ['In use', admin.esc(this.mib(m.currentBytes)),
-         (m.utilisationPercent === null ? 'no limit to measure against'
-            : admin.esc(this.pct(m.utilisationPercent)) + ' of ' +
-              admin.esc(this.mib(m.limitBytes))) +
-         (m.peakBytes === null ? ''
-            : '; the most it has used is ' +
-              admin.esc(this.mib(m.peakBytes)))],
-        ['Anonymous', admin.esc(this.mib(m.anonBytes)),
-         'the processes\' own memory: heaps, stacks, buffers'],
-        ['Page cache', admin.esc(this.mib(m.fileBytes)),
-         'files the kernel caches, and gives back under pressure'],
-        ['Kernel', admin.esc(this.mib(m.kernelBytes)),
-         'the kernel\'s own structures on the container\'s behalf'],
-        ['Killed for memory', m.oomKills === null ? '—'
-                                                  : admin.esc(m.oomKills),
-         'processes the kernel killed at the limit (oom_kill, in ' +
-         'memory.events or v1\'s memory.oom_control)']
-      ]) + '<p><small>' + admin.esc(m.statText) + ' From ' +
-      (m.fromEcs ? 'the ECS agent, because the cgroup cannot be read: ' +
-                   admin.esc(m.cgroupUnavailableText || '')
-                 : 'cgroup v' + admin.esc(m.cgroupVersion) + ', <code>' +
-                   admin.esc(m.source) + '</code>') + '.</small></p>';
-    log.debug("Leaving NodeHealthAdmin.memoryHtml().");
-    return html;
-  }
-
-  private processesHtml(p: Json): string {
-    const { log, admin } = this.deps;
-    const self = this;
-    log.debug("Entering NodeHealthAdmin.processesHtml().");
-    const t = p.totals;
-    const html = '<h2 id="processes">Node.js processes and worker threads' +
-      '</h2>' +
-      this.rows([
-        ['Processes', admin.esc(t.processes), 'listed below'],
-        ['Worker threads', admin.esc(t.workerThreads || 0),
-         'request and hosted-surface workers, threads of the front process'],
-        ['Resident, in all', admin.esc(this.mib(t.rssBytes)),
-         'across ' + admin.esc(t.processesWithRss) + ' process(es); a ' +
-         'thread\'s is its process\'s'],
-        ['Heap used, in all', admin.esc(this.mib(t.heapUsedBytes)),
-         'of ' + admin.esc(this.mib(t.heapTotalBytes)) + ' allocated, ' +
-         'across ' + admin.esc(t.isolatesWithHeap) + ' V8 isolate(s)']
-      ]) + admin.note(admin.esc(p.totalsText), 'How the totals add up') +
-      '<table class="grid"><thead><tr><th>Process or thread</th>' +
-      '<th>Resident</th><th>Heap used</th><th>Heap total</th>' +
-      '<th>External</th><th>Array buffers</th><th>CPU time</th></tr>' +
-      '</thead><tbody>' +
-      p.rows.map(function (r: Json): string {
-        const thread = r.kind === 'thread';
-        return '<tr><td>' + (thread ? 'thread ' + admin.esc(r.threadId) +
-                             ' of pid ' + admin.esc(r.pid)
-                           : 'pid ' + admin.esc(r.pid)) + '<br><small>' +
-          admin.esc(r.role) + '</small></td><td>' +
-          (thread ? '<small>the process\'s</small>'
-           : r.unreadable ? '<small>' + admin.esc(r.unreadable) + '</small>'
-             : admin.esc(self.mib(r.rssBytes))) +
-          (r.notReported ? '<br><small>' + admin.esc(r.notReported) +
-                           '</small>' : '') +
-          '</td><td>' + admin.esc(self.mib(r.heapUsedBytes)) + '</td><td>' +
-          admin.esc(self.mib(r.heapTotalBytes)) + '</td><td>' +
-          admin.esc(self.mib(r.externalBytes)) + '</td><td>' +
-          admin.esc(self.mib(r.arrayBuffersBytes)) + '</td><td>' +
-          (thread ? '<small>the process\'s</small>'
-           : r.cpuUserSeconds === null ? '—'
-             : admin.esc(NodeHealthAdmin.round1(r.cpuUserSeconds +
-                                                r.cpuSystemSeconds)) +
-               ' s' + (r.processWide ? '<br><small>every thread\'s' +
-                                       '</small>' : '')) + '</td></tr>';
-      }).join('') + '</tbody></table>' +
-      (p.unanswered.length ? admin.warn(
-        p.unanswered.length + ' worker thread(s) did not report: ' +
-        p.unanswered.map(function (u: Json): string {
-          return 'thread ' + admin.esc(u.threadId) + ', ' +
-            admin.esc(u.role) + ' (' + admin.esc(u.why) + ')';
-        }).join('; ') + '.') : '') +
-      (p.debuggerNote ? '<p><small>' + admin.esc(p.debuggerNote) +
-                        '</small></p>' : '');
-    log.debug("Leaving NodeHealthAdmin.processesHtml().");
-    return html;
-  }
-
-  private ecsHtml(e: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering NodeHealthAdmin.ecsHtml().");
-    const head = '<h2 id="ecs">ECS task metadata</h2>';
-    if (!e.available) {
-      log.debug("Leaving NodeHealthAdmin.ecsHtml(). Unavailable.");
-      return head + '<p><strong>Not available:</strong> ' +
-        admin.esc(e.unavailableText) + '</p>';
-    }
-    const s = e.stats || {};
-    const limits = e.taskLimits || {};
-    const html = head + '<p>' + admin.esc(e.text) + '</p>' +
-      this.rows([
-        ['Task limits', admin.esc(limits.cpuVcpus === undefined ||
-                                  limits.cpuVcpus === null
-                                    ? '—' : limits.cpuVcpus) + ' vCPU, ' +
-           admin.esc(limits.memoryMiB === undefined ||
-                     limits.memoryMiB === null
-                       ? '—' : limits.memoryMiB) + ' MiB', '/task'],
-        ['Memory', admin.esc(this.mib(s.memoryUsageBytes)),
-         (s.memoryLimitUnlimited ? 'no container limit (the agent\'s "none")'
-            : 'of ' + admin.esc(this.mib(s.memoryLimitBytes))) +
-         ', /task/stats'],
-        ['CPU', s.cpuCoresUsed === null || s.cpuCoresUsed === undefined
-           ? '—' : admin.esc(s.cpuCoresUsed) + ' CPU(s)',
-         admin.esc(this.pct(s.cpuPercentOfTaskLimit)) + ' of the task\'s ' +
-         'vCPUs, between the agent\'s last two samples']
-      ]) + (e.unavailableText ? '<p><small>' + admin.esc(e.unavailableText) +
-                                '</small></p>' : '');
-    log.debug("Leaving NodeHealthAdmin.ecsHtml().");
-    return html;
-  }
-
-  private html(json: Json): string {
-    const { log, admin } = this.deps;
-    log.debug("Entering NodeHealthAdmin.html().");
-    const cpu = json.cpu;
-    const mem = json.memory;
-    const tiles = '<div class="tiles">' +
-      admin.tile(cpu.available ? this.pct(cpu.utilisationPercent) : 'n/a',
-                 'CPU') +
-      admin.tile(!mem.available ? 'n/a'
-                   : mem.utilisationPercent === null
-                     ? this.mib(mem.currentBytes)
-                     : this.pct(mem.utilisationPercent), 'Memory') +
-      admin.tile(this.mib(json.processes.totals.rssBytes),
-                 'Resident, all processes') +
-      admin.tile(String(json.processes.totals.processes), 'Processes') +
-      admin.tile(String(json.processes.totals.workerThreads || 0),
-                 'Worker threads') +
-      '</div>';
-    const about = admin.note(
-      '<p>' + admin.esc(json.scopeText) + '</p><p>The container\'s CPU and ' +
-      'memory are read from its cgroup (v2), each process\'s and worker ' +
-      'thread\'s from the process or thread itself, when the page is ' +
-      'drawn; nothing is kept but the ' +
-      'previous CPU sample. This page changes nothing.</p>',
-      'What this page is');
-    const m = json.machine;
-    const machine = '<h2 id="machine">The machine, not the container</h2>' +
-      '<p>' + admin.esc(m.text) + '</p>' +
-      this.rows([
-        ['Load average', admin.esc((m.loadavg || []).map(
-          function (n: number): string {
-            return n.toFixed(2);
-          }).join(' / ')), '1, 5 and 15 minutes (os.loadavg())'],
-        ['Memory', admin.esc(this.mib(m.freememBytes)) + ' free of ' +
-           admin.esc(this.mib(m.totalmemBytes)),
-         'os.freemem() and os.totalmem()'],
-        ['CPUs', admin.esc(m.cpus), 'os.cpus()']
-      ]);
-    const html = tiles + about + this.cpuHtml(cpu) + this.memoryHtml(mem) +
-      this.processesHtml(json.processes) + this.ecsHtml(json.ecs) + machine;
-    log.debug("Leaving NodeHealthAdmin.html().");
-    return html;
-  }
-
-  // The page for every node: the cluster's totals and a section per node,
-  // this node's from its live view and every other's from its snapshot.
+  // DRAWN BY `web_node_health.ts` (#446): this page is converted for the
+  // static console, and its renderer is a module a browser can load. Until the
+  // cutover this process still draws it, handing the renderer the view passed
+  // THROUGH JSON, so it is held to what the API's caller receives.
   private clusterHtml(json: Json): string {
-    const { log, admin } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering NodeHealthAdmin.clusterHtml().");
-    const c = json.cluster || {};
-    const nodes: Json[] = json.nodes || [];
-    const own = nodes.filter(function (n: Json): boolean {
-      return n.self;
-    })[0];
-    if (!c.clustered || nodes.length < 2) {
-      const html = admin.note(admin.esc(c.text || ''), 'Cluster') +
-        (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
-        (own && own.view ? this.html(own.view)
-                         : nodes[0] && nodes[0].view
-                           ? this.html(nodes[0].view) : '');
-      log.debug("Leaving NodeHealthAdmin.clusterHtml(). One node.");
-      return html;
-    }
-    const t = json.totals;
-    const html = '<h2 id="cluster">Cluster</h2><p>' + admin.esc(c.text) +
-      '</p>' + (c.readError ? admin.warn(admin.esc(c.readError)) : '') +
-      this.rows([
-        ['Container memory', admin.esc(this.mib(t.memoryUsedBytes)),
-         t.memoryLimitBytes === null ? 'no total limit to measure against'
-           : admin.esc(this.pct(t.memoryPercent)) + ' of ' +
-             admin.esc(this.mib(t.memoryLimitBytes))],
-        ['CPU', t.cpuCoresUsed === null ? '—'
-           : admin.esc(t.cpuCoresUsed) + ' CPU(s)',
-         t.cpuPercent === null ? 'not measured'
-           : admin.esc(this.pct(t.cpuPercent)) + ' of ' +
-             admin.esc(t.cpuOf) + ' CPU(s)'],
-        ['Processes', admin.esc(t.processes) + ' and ' +
-           admin.esc(t.workerThreads || 0) + ' worker thread(s)',
-         admin.esc(this.mib(t.rssBytes)) + ' resident (processes only), ' +
-         admin.esc(this.mib(t.heapUsedBytes)) + ' of heap used']
-      ]) + '<p><small>' + admin.esc(t.text) + '</small></p>' +
-      '<table class="grid"><thead><tr><th>Node</th><th>State</th>' +
-      '<th>Age</th></tr></thead><tbody>' +
-      nodes.map(function (n: Json): string {
-        return '<tr><td><a href="#node-' + admin.esc(n.name) + '">' +
-          admin.esc(n.name) + '</a>' + (n.self ? ' (this node)' : '') +
-          '</td><td>' + admin.esc(n.state) + '</td><td>' +
-          (n.ageSeconds === null ? '—' : admin.esc(n.ageSeconds) + ' s') +
-          '</td></tr>';
-      }).join('') + '</tbody></table>' +
-      nodes.map(function (n: Json): string {
-        const head = '<h2 id="node-' + admin.esc(n.name) + '">Node ' +
-          admin.esc(n.name) + (n.self ? ' (this node)' : '') + '</h2><p>' +
-          '<strong>' + admin.esc(n.state) + '</strong>: ' +
-          admin.esc(n.stateText) + '</p>';
-        if (!n.view) {
-          return head;
-        }
-        let body = '';
-        try {
-          body = self.html(n.view);
-        } catch (e) {
-          log.debug("Caught in NodeHealthAdmin.clusterHtml(): " +
-                    ((e && e.message) || e));
-          // A snapshot from another version of this page may lack a figure
-          // this one draws; the node is still listed, and says so.
-          return head + admin.warn('This node\'s snapshot could not be ' +
-                                   'drawn: ' + admin.esc((e && e.message) ||
-                                                         e) + '.');
-        }
-        // Another node's sections carry its name in their anchors, so the
-        // page's own `id="cpu"` and the rest stay this node's.
-        return head + (n.self ? body
-          : body.replace(/ id="/g, ' id="' + admin.esc(n.name) + '-'));
-      }).join('');
+    const drawn = NodeHealthPage.render(JSON.parse(JSON.stringify(json)));
     log.debug("Leaving NodeHealthAdmin.clusterHtml().");
-    return html;
+    return drawn;
+  }
+
+  // ONE NODE'S SECTIONS, by the same renderer and through the same round
+  // trip. Kept because `tests/node_health_page.js` draws a single node's view
+  // with it; the page itself goes through `clusterHtml()` above.
+  private html(json: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering NodeHealthAdmin.html().");
+    const drawn = NodeHealthPage.html(JSON.parse(JSON.stringify(json)));
+    log.debug("Leaving NodeHealthAdmin.html().");
+    return drawn;
   }
 
   /**
@@ -1813,29 +1516,6 @@ class NodeHealthAdmin {
     // is registered by the hand-over, in every process that loads the page.
     this.deps.snapshots().provide('nodeHealth', function (): Promise<Json> {
       return self.localView();
-    });
-    app.get(PAGE, function (req: Req, res: Res): void {
-      log.debug('Entering GET ' + PAGE + '.');
-      self.nodeHealthView({ node: req.query && req.query.node
-                                    ? String(req.query.node) : '' })
-        .then(function (json: Json): void {
-          if (json.notFound) {
-            errorCodes.mark(res, 'STS-CORE-0126');
-            res.status(404).type('text/plain')
-              .send('There is no node named ' + json.notFound + '.');
-            return;
-          }
-          admin.respond(req, res, json, 'Node health', PAGE,
-                        admin.messagesOf(req) + self.clusterHtml(json));
-        }).catch(function (e: any): void {
-        log.debug("Caught in GET " + PAGE + ": " + ((e && e.message) || e));
-        log.error(errorCodes.tag('STS-CORE-0124') + 'The node health ' +
-                  'report could not be built: ' + ((e && e.message) || e));
-        errorCodes.mark(res, 'STS-CORE-0124');
-        res.status(500).type('text/plain')
-          .send('The node health report could not be built.');
-      });
-      log.debug('Leaving GET ' + PAGE + '.');
     });
     log.debug("Leaving NodeHealthAdmin.registerRoutes().");
   }

@@ -66,57 +66,20 @@ const PEOPLE = [0, 1, 2].map(function (n) {
 });
 
 // The GET /admin/pki handler as the router holds it, below the gate.
-function pageHandler() {
-  log.debug("Entering pageHandler().");
-  const layer = (app._router.stack || []).filter(function (one) {
-    return one.route && one.route.path === '/admin/pki' &&
-           one.route.methods.get;
-  })[0];
-  log.debug("Leaving pageHandler(). " + (layer ? "Found." : "Not found."));
-  return layer ? layer.route.stack[0].handle : null;
-}
-
 // The page's HTML for a query. Nothing in a query of this shape opens the
 // certificate dialog, so the handler answers synchronously.
-function drawPage(query) {
+// THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): its `/admin-api`
+// operation's answer, drawn by its renderer (`tests/tools/console_page.js`),
+// where it was the console route's handler until the cutover.
+const drawer = require('./tools/console_page.js')
+  .consolePage(__dirname + '/..');
+
+async function drawPage(query) {
   log.debug("Entering drawPage().");
-  let body = '';
-  const res = {
-    set: function () {
-      return this;
-    },
-    status: function () {
-      return this;
-    },
-    type: function () {
-      return this;
-    },
-    send: function (text) {
-      body = String(text);
-      return this;
-    },
-    get: function () {
-      return undefined;
-    },
-    getHeader: function () {
-      return undefined;
-    },
-    setHeader: function () {
-      return undefined;
-    },
-    locals: {}
-  };
-  const req = { query: query, headers: {}, method: 'GET', cookies: {},
-                url: '/admin/pki', originalUrl: '/admin/pki',
-                path: '/admin/pki',
-                get: function () {
-                  return '';
-                } };
-  pageHandler()(req, res, function (e) {
-    log.debug("The PKI page handler called next(): " + ((e && e.message) || e));
-  });
-  log.debug("Leaving drawPage(). " + body.length + " character(s).");
-  return body;
+  const drawn = await drawer.draw('/admin/pki', query);
+  log.debug("Leaving drawPage(). " + drawn.html.length +
+            " character(s).");
+  return drawn.html;
 }
 
 // The markup between one heading id and the next thing named.
@@ -138,8 +101,9 @@ function namesIn(markup, names) {
 
 async function runBody(t) {
   log.debug("Entering runBody().");
-  t.check(typeof pageHandler() === 'function',
-          'GET /admin/pki is registered and its handler can be reached');
+  t.check(require('../admin-ui/web_pages').PAGES.some(function (one) {
+    return one.path === '/admin/pki';
+  }), '/admin/pki is a console page, drawn from GET /admin-api/pki');
   const built = pki.hasChain() ? { ok: true } : await pki.start({});
   t.check(built.ok, 'a certificate authority exists to issue people\'s key ' +
           'pairs from', (built.errors || []).join(' '));
@@ -216,7 +180,7 @@ async function runBody(t) {
   const personPage = Math.floor(peopleIndex.indexOf(PEOPLE[0]) / perPage) + 1;
   const query = { per: String(perPage), issuedPage: String(appPage),
                   personsPage: String(personPage) };
-  const body = drawPage(query);
+  const body = await drawPage(query);
   t.check(body.indexOf('<table') >= 0, 'the page is drawn',
           body.slice(0, 200));
   const appsMarkup = between(body, 'pki-applications',
@@ -281,29 +245,9 @@ async function runBody(t) {
   t.equal(clamped.issuedPaging.page, clamped.issuedPaging.pages,
           'a page past the end is the last page, not an empty table');
 
-  // -------------------------------------------------------------------------
-  t.log.info('=== 3. where a Take-off button sends the browser ===');
-  t.equal(pkiAdmin.returnTo({ action: 'revoke', target: 'person',
-                              identifier: PEOPLE[0],
-                              back: '?per=2&personsPage=3&issuedPage=2' }),
-          '/admin/pki?per=2&issuedPage=2&personsPage=3#pki-people',
-          'a person\'s Take-off lands on the same pages, at the People table');
-  t.equal(pkiAdmin.returnTo({ action: 'revoke', identifier: APPS[0],
-                              back: '?issuedPage=4' }),
-          '/admin/pki?issuedPage=4#pki-applications',
-          'an application\'s lands at the Applications table');
-  t.equal(pkiAdmin.returnTo({ action: 'revoke', identifier: APPS[0],
-                              back: '?next=//evil.example&per=x&' +
-                                    'issuedPage=2%0d%0aSet-Cookie:a' }),
-          '/admin/pki#pki-applications',
-          'anything in `back` that is not a page number is dropped — the ' +
-          'destination is rebuilt, never echoed');
-  t.equal(pkiAdmin.returnTo({ action: 'revoke', identifier: APPS[0],
-                              back: '?issuedq=pkp&issuedPage=2' }),
-          '/admin/pki?issuedPage=2&issuedq=pkp#pki-applications',
-          'a search in `back` survives the round trip');
-  t.equal(pkiAdmin.returnTo({ action: 'build' }), '/admin/pki',
-          'a control that carries no `back` gets the bare page, as before');
+  // 3. WHERE A TAKE-OFF BUTTON SENT THE BROWSER went with the server-rendered
+  // console (#446): the static console sends the form to its operation and
+  // stays on the page it was on, so there is no destination to rebuild.
 
   // -------------------------------------------------------------------------
   t.log.info('=== 4. each table searched before it is paged ===');
@@ -321,7 +265,8 @@ async function runBody(t) {
   const runApps = pkiAdmin.pkiView({ query: { issuedq: 'pkp-app-' + RUN } });
   t.equal(runApps.issuedPaging.total, APPS.length,
           'a common part of the identifiers matches every one of them');
-  const searchedBody = drawPage({ issuedq: APPS[3], personsq: PEOPLE[0] });
+  const searchedBody = await drawPage({ issuedq: APPS[3],
+                                       personsq: PEOPLE[0] });
   const searchedApps = between(searchedBody, 'pki-applications',
                                'Issue a signing key pair to a person');
   const searchedPeople = between(searchedBody, 'pki-people',
@@ -332,7 +277,7 @@ async function runBody(t) {
           'and People only its own match');
   t.check(/name="back" value="[^"]*issuedq=/.test(searchedApps),
           'a Take-off button carries the search back with it');
-  const missing = drawPage({ personsq: 'nobody-' + RUN });
+  const missing = await drawPage({ personsq: 'nobody-' + RUN });
   t.check(between(missing, 'pki-people', 'Revoking a certificate')
     .indexOf('Nobody matches the search.') >= 0,
           'a search that matches nobody says so');

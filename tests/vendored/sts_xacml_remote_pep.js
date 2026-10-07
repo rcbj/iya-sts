@@ -474,6 +474,11 @@ function certPostJson(url, payload) {
       rejectUnauthorized: false,
       cert: xacmlUser ? xacmlUser.certPem : undefined,
       key: xacmlUser ? xacmlUser.keyPem : undefined,
+      // A full handshake every time (#406): the main port's sessions resume on
+      // either node, and a session first made before this job's anchor
+      // reached that node keeps its "not verified" verdict — a 403 for an
+      // unauthenticated caller in the 2026-10-07 cluster run.
+      agent: false,
       headers: { "Content-Type": "application/json",
                  "Content-Length": Buffer.byteLength(data) }
     }, function (response) {
@@ -2434,10 +2439,18 @@ async function theNudgeIsDelivered(polledMs) {
   check("and the NUDGE's pull acted on it, whether or not a poll beat it",
         function () {
     const byNudge = holding.lastChangeCause === "nudge";
+    // THE NUDGE BROUGHT IT, AND A POLL ALREADY IN FLIGHT ANSWERED LATER
+    // (2026-10-07). A poll that set off with the old ETag before the nudged
+    // pull landed comes back "changed" too, a few milliseconds after, and is
+    // then the last change recorded — memory mode, 0de7bca4: the nudge's
+    // pull "changed" at :40.671 and the poll at :40.682. The nudge acted on
+    // it; what this check refuses is a nudged pull that found nothing.
+    const nudgeChanged = holding.lastNudgeResult === "changed" &&
+      Date.parse(holding.lastNudgeAt) >= started - 1000;
     const pollFirst = holding.lastChangeCause === "poll" &&
       holding.lastNudgeResult === "unchanged" &&
       Date.parse(holding.lastNudgeAt) >= Date.parse(holding.lastChangeAt);
-    assert.ok(byNudge || pollFirst,
+    assert.ok(byNudge || nudgeChanged || pollFirst,
       "the PEP records what asked for the pull that last changed its " +
       "holding (\"" + holding.lastChangeCause + "\" at " +
       holding.lastChangeAt + ") and what its last nudged pull found (\"" +

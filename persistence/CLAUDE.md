@@ -864,6 +864,18 @@ with a page read before a row committed, which `cluster_foundation.js` section 2
 recorded it could not time. The driver keeps `latestBlockingChangeSeq()`;
 nothing in the barrier calls it.
 
+**A pull in flight is waited out only until the barrier's deadline
+(2026-10-07).** Until then the barrier waited for the running pull to
+finish and checked its deadline (`SYNC_DEADLINE_MS`, 4.6 s) only after
+that. A pull applying a burst of rows therefore held every reader for as
+long as it ran. In the `cluster` mode the leader rotated the signing keys of
+dozens of realms at once, and the other node's pull took about 17 s. A
+Kerberos AS-REQ waiting on that barrier was answered 20 s late, after its
+client had given up (`sts_kerberos_rc4`). The barrier now waits for whichever
+comes first, the pull or the deadline. At the deadline it answers from what
+the process has (`STS-STORE-0039`), and the pull goes on.
+`tests/replication.js` section 8c covers it.
+
 **`audit.events` IS STORED IN SEGMENTS OF 32** (`realms.arr({ segment })`,
 `common/CLAUDE.md`): a whole-array `merge: 'own'` row was 2.3 MB sealed and
 written per flush and read back by every other process. Another origin's
@@ -1435,11 +1447,21 @@ alone lets a client use TLS and does not make one.
   which is what `pg_isready` and the entrypoint use, and TLS on a socket that
   never leaves the filesystem buys nothing and would break the healthcheck the
   stack waits on.
-* **The client refuses to make one.** `?sslmode=require` is in the compose
-  default for `STS_DATABASE_URL`, and `persistence_postgres.js` passes `ssl` to
-  the pool only when the URL asked for it — because passing `ssl` regardless
-  would make `sslmode=disable` mean its opposite, a connection string saying
-  one thing while the client does another.
+* **The client refuses to make one, IN EVERY MODE AND WHATEVER THE STRING
+  SAYS (#273, 2026-10-07).** `dialOptions()` dials every connection over TLS:
+  a string with no `sslmode` is `require` (the default
+  `persistence.databaseUrl` has none, and until #273 it connected IN THE CLEAR
+  with a warning, against any database that allowed it), and `prefer` is TLS
+  too. A string whose `sslmode` is `disable` or `allow`, or that is not a
+  `postgres://` URL (a libpq keyword/value string cannot be edited safely, so
+  what `pg` would do with it cannot be told), is REFUSED with
+  `STS-STORE-0078` — not overridden, because passing `ssl` regardless would
+  make `sslmode=disable` mean its opposite, a connection string saying one
+  thing while the client does another. `persistence.start()` is the one fatal
+  open, so the service does not start. The same holds for the read and global
+  databases and for `cell_convert.js`, which dial through the same function.
+  A Unix socket has no TLS: postgres answers the request with "N" and the
+  connection fails.
 
 ### The key pair is generated at container start
 
@@ -1688,8 +1710,9 @@ PostgreSQL has none.
 
 `docs/encryption-at-rest.md` is the whole argument, including what column-level
 encryption misses that block-level does not (the WAL, spilled sorts, `pg_dump`
-output, replicas, query logs) and why the compose stack's `sts-secrets` volume
-must not sit on the same unencrypted disk as the database. **One fact from it
+output, replicas, query logs) and why a key-encryption key kept in a file
+must not sit on the same unencrypted disk as the database (the compose stack
+keeps none since #254: its key is OpenBao's Transit key, `openbao/CLAUDE.md`). **One fact from it
 belongs in a reader's head before they get there**: there is ONE
 key-encryption key for the service, not one per trust realm, so a realm is not a
 cryptographic boundary at rest — `common/CLAUDE.md` carries that argument beside

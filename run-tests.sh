@@ -1527,7 +1527,13 @@ mintThePepCredential()
   # On the project's network, so it dials `sts` by the name in the
   # certificate rather than a published port this stack does not have.
   # ---------------------------------------------------------------------
-  if ! docker run --rm \
+  # AS THE HOST USER (#254): the service image runs as uid 10001 since #254,
+  # which may not write the host directory mounted at /out. Root could, and
+  # would leave files this launcher's own `rm` cannot delete on the next run
+  # (a root-owned crl/ from 2026-09-28 did exactly that), so the one-shot
+  # runs as whoever runs the launcher: the files are theirs, and the PEP
+  # container reads them as it always did.
+  if ! docker run --rm --user "$(id -u):$(id -g)" \
        --network "${COMPOSE_PROJECT}_default" \
        -v "${CURRENT_DIR}:/repo:ro" \
        -v "${XACML_PEP_CERT_DIR}:/out" \

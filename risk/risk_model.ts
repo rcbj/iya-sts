@@ -44,10 +44,25 @@
 //   THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 // ---------------------------------------------------------------------------
-// WHAT THE SCORE IS.
+// WHAT THE SCORE IS — Freeman et al.'s Eq. (7), g_u(x), with p(A|x^k)
+// taken as 1 (no per-value attack data):
 //
 //   risk = Π over features f of  p_global(f) / p_user(f)
 //          × (1 / number of users) / (user's sign-ins / all sign-ins)
+//
+// The last line is the USER TERM, p(u|A) / p(u|L) (section II-B): the same
+// for every context, and above 1 for a person who signs in less often than
+// the realm's average. `factors` carries it as `user` beside `ip` and `ua`,
+// so the three multiply to the score (#499).
+//
+// THE SCORE IS NOT A PROBABILITY AND 1 IS NOT ITS NATURAL LINE. Eq. (4)
+// decides A when g_u(x) > θ = p(L) / p(A) — the prior odds of a legitimate
+// sign-in, which are far above 1 — and Eq. (7) drops further p(A) terms,
+// "compensated for by adjusting the decision threshold θ", which the paper
+// sets on a validation set for a chosen false-positive rate (section II,
+// after Eq. (4); section IV-C). Where every person shares one address and
+// one browser, both feature factors are near 1 and the score is the user
+// term alone (#499).
 //
 // A feature is a HIERARCHY: the address, then the network it is in (ASN),
 // then the country; the browser's User-Agent, then its browser and version,
@@ -69,6 +84,10 @@
 //     of signing in is zero and the score is undefined. `score()` answers
 //     null, and the caller says why.
 //
+// AND ONE THING THE NOTEBOOK NEVER MEETS, because it drops every sign-in
+// with a missing value before it scores anything (`dropna()`): A LEVEL
+// WHOSE LOOKUP FOUND NOTHING (#502, 2026-10-06). See `missing()`, below.
+//
 // The notebook reads pandas frames; this reads COUNTS (`History`), which is
 // what `sts_risk_feature_counts` holds — the same numbers, asked for one
 // value at a time. `tests/risk_model.js` holds the port to the notebook's
@@ -89,6 +108,12 @@ type Json = any;
 // of each is the feature itself; the rest are its levels, coarsest last.
 // `risk_score_weightings` is 1 for both in the notebook, so its power is not
 // carried.
+//
+// A level's name is its feature key in `sts_risk_feature_counts`. `device`
+// is the paper's DEVICE TYPE (desktop, mobile, tablet); the browser
+// fingerprint / registered device the evaluators ask about is the engine's
+// `device-id`, and shared this name until #506 (`risk_engine.ts`,
+// HISTORY_FEATURES). No name of the engine's may be a level here.
 // ---------------------------------------------------------------------------
 /**
  * The features and their weightings: each feature's name and its levels,
@@ -162,6 +187,80 @@ class RiskModel {
     }
     log.debug("Leaving RiskModel.unseen(). " + total);
     return total;
+  }
+
+  // -------------------------------------------------------------------------
+  // A MISSING LEVEL IS UNSEEN, ON BOTH SIDES (#502, 2026-10-06).
+  //
+  // The levels above the first are LOOKUPS: the network and the country an
+  // address is in, the browser, operating system and device type a
+  // User-Agent names. Where the lookup found nothing — every private,
+  // loopback or bridge address, every address on a service with no ASN or
+  // geolocation dataset loaded (or a stale one), a User-Agent bowser cannot
+  // read — the value was '' and was counted as a value. The person's
+  // history and the realm's both held it, so the network and country read
+  // as KNOWN, and a brand-new address on an unmapped network moved a score
+  // from 2.01 to 2.06 (`tests/risk_engine.js` H2's measurement, #499).
+  //
+  // Freeman et al., section II-C: a coarser level is the ENTITY h_k the
+  // value x belongs to, p_k(x) = p(x|h_k) p(h_k) (Eq. 9), and "the ML
+  // estimate of p(h_k) is kept unsmoothed, and it is thus zero for unseen
+  // ISPs (or countries)" — Fig. 1's unseen IP from an unseen ISP and
+  // country has p_1 = p_2 = 0. A lookup that found nothing names no entity,
+  // so no p(h_k) can be more than zero: the level is UNSEEN, and '' is not
+  // an ISP that every unmapped address belongs to. So such a level adds
+  // nothing to the interpolation (Eq. 11) on either side, and is not a
+  // "known" entity in the count of unseen values (M_{h_k}, after Eq. 9:
+  // "the number of known ISPs plus the number of known countries, plus
+  // one"). Dropping the same term from both sides is the same as
+  // renormalising the weights over the levels that are known: a common
+  // factor cancels in the ratio.
+  //
+  // THE PERSON'S HISTORY DOES NOT COUNT A MISSING VALUE EITHER, in either
+  // mode. Section II-C ends: "Similar procedures can be exploited for events
+  // conditioned to a given user ... restricting the available counts to the
+  // conditioning events" — one estimator, two sets of counts. A person's own
+  // unmapped address still counts at the address level, which is what keeps
+  // repeated sign-ins from one bridge address familiar.
+  //
+  // THE FIRST LEVEL IS NOT A LOOKUP, and an empty one keeps its meaning: an
+  // absent User-Agent header is something the client did (a KDC request has
+  // none), observed, and the same for everybody who did it.
+  //
+  // What was unknown is on the assessment (`unknownLevels()`), so the record
+  // says why a factor is what it is.
+  // -------------------------------------------------------------------------
+  // missing() is called for every level of every history row and score: a
+  // hot path, with no Entering/Leaving pair, which would drown the log.
+  /**
+   * Says whether a level's value is missing: the lookup found nothing.
+   *
+   * @param value - the sign-in's value at that level
+   * @returns true for an absent or empty value
+   */
+  static missing(value: unknown): boolean {
+    return value === undefined || value === null || String(value) === '';
+  }
+
+  /**
+   * Names the levels above the first whose lookup found nothing for this
+   * sign-in: the levels the model counted as unseen on both sides (#502).
+   *
+   * @param attempt - this sign-in's value per level name
+   * @returns the level names, in `FEATURES` order
+   */
+  static unknownLevels(attempt: Json): string[] {
+    log.debug("Entering RiskModel.unknownLevels().");
+    const out: string[] = [];
+    FEATURES.forEach(function (feature): void {
+      feature.levels.slice(1).forEach(function (pair): void {
+        if (RiskModel.missing((attempt || {})[pair[0]])) {
+          out.push(pair[0]);
+        }
+      });
+    });
+    log.debug("Leaving RiskModel.unknownLevels(). " + out.join(','));
+    return out;
   }
 
   // The notebook's get_likelihood() for one level of a history.
@@ -250,6 +349,11 @@ class RiskModel {
     let total = 0;
     feature.levels.forEach(function (pair: Json, i: number): void {
       const level = pair[0];
+      // A level whose lookup found nothing is unseen, here and on the other
+      // side: it adds nothing (#502; `missing()`).
+      if (i > 0 && RiskModel.missing(attempt[level])) {
+        return;
+      }
       total += pair[1] * RiskModel.subLikelihood(
         history, feature, level, String(attempt[level] === undefined
                                         ? '' : attempt[level]),
@@ -262,9 +366,9 @@ class RiskModel {
   // -------------------------------------------------------------------------
   // score(attempt, user, population) — the notebook's freeman_rba_score().
   // `attempt` maps each level name to this sign-in's value. Answers
-  // { score, factors } — each feature's population/person ratio, for the
-  // assessment's record — or { score: null, why } for a sign-in that cannot
-  // be scored.
+  // { score, factors, terms } — each feature's population/person ratio and
+  // the user term, which multiply to the score, for the assessment's
+  // record — or { score: null, why } for a sign-in that cannot be scored.
   // -------------------------------------------------------------------------
   /**
    * Scores one sign-in: the notebook's freeman_rba_score().
@@ -272,19 +376,24 @@ class RiskModel {
    * @param attempt - this sign-in's value per level name
    * @param user - the person's history
    * @param population - everybody's history
-   * @returns `{ score, factors }`, each factor a feature's population/person
-   *   ratio, or `{ score: null, why }` for a sign-in that cannot be scored
+   * @returns `{ score, factors, terms, unknown }` — each factor a
+   *   feature's population/person ratio, and `user` the user term, the
+   *   three multiplying to the score; `terms` the counts the user term is
+   *   made of; `unknown` the levels counted as unseen (#502) — or
+   *   `{ score: null, why, unknown }` for a sign-in that cannot be scored
    */
   static score(attempt: Json, user: History, population: History): Json {
     log.debug("Entering RiskModel.score().");
+    const unknown = RiskModel.unknownLevels(attempt);
     if (!user.n) {
       log.debug("Leaving RiskModel.score(). First sign-in.");
       return { score: null, why: 'the first sign-in: there is no history ' +
-               'to compare it with' };
+               'to compare it with', unknown: unknown };
     }
     if (!population.n || !population.users) {
       log.debug("Leaving RiskModel.score(). No population.");
-      return { score: null, why: 'no population history yet' };
+      return { score: null, why: 'no population history yet',
+               unknown: unknown };
     }
     let risk = 1;
     const factors: Json = {};
@@ -300,17 +409,33 @@ class RiskModel {
       factors[feature.name] = ratio;
       risk *= ratio;
     });
+    // THE USER TERM, p(u|A) / p(u|L): Freeman et al., Eq. (7)'s last
+    // factor (section II-A), estimated as section II-B says — p(u|A)
+    // uniform over the users, p(u|L) the person's share of the realm's
+    // sign-ins. It is the same for every context the person signs in from:
+    // it says how much of the person's own traffic an attack spread evenly
+    // over the users would be, and it is above 1 for anybody who signs in
+    // less than the realm's average (#499). It is a FACTOR like the two
+    // features, so `factors` multiplies to the score and the record
+    // explains all of it; `terms` carries the three counts it is made of.
     const userLoginLikelihood = user.n / population.n;
     const attackLikelihood = 1 / population.users;
-    risk = risk * (attackLikelihood / userLoginLikelihood);
+    const userTerm = attackLikelihood / userLoginLikelihood;
+    factors.user = userTerm;
+    risk = risk * userTerm;
     log.debug("Leaving RiskModel.score(). " + risk);
-    return { score: risk, factors: factors };
+    return { score: risk, factors: factors,
+             terms: { users: population.users, signIns: population.n,
+                      userSignIns: user.n },
+             unknown: unknown };
   }
 
   // -------------------------------------------------------------------------
   // A HISTORY FROM ROWS, for the tests and for a process with no store: each
   // row maps level names to values. The same questions `History` asks of
-  // `sts_risk_feature_counts`, answered by counting.
+  // `sts_risk_feature_counts`, answered by counting. A missing value is not
+  // a distinct value (#502): `risk_engine.ts` never records one for a level
+  // above the first, so the store's distinct counts never hold one either.
   // -------------------------------------------------------------------------
   /**
    * Builds a history by counting rows, for the tests and for a process with
@@ -338,14 +463,17 @@ class RiskModel {
         }).length;
       },
       distinct: function (level: string): number {
-        return new Set(rows.map(function (row: Json): string {
+        return new Set(rows.filter(function (row: Json): boolean {
+          return !RiskModel.missing(row[level]);
+        }).map(function (row: Json): string {
           return String(row[level]);
         })).size;
       },
       distinctWithin: function (first: string, value: string,
                                 level: string): number {
         return new Set(rows.filter(function (row: Json): boolean {
-          return String(row[first]) === String(value);
+          return String(row[first]) === String(value) &&
+            !RiskModel.missing(row[level]);
         }).map(function (row: Json): string {
           return String(row[level]);
         })).size;
@@ -365,6 +493,8 @@ export = {
   FEATURES: RiskModel.FEATURES,
   score: RiskModel.score,
   historyOf: RiskModel.historyOf,
+  unknownLevels: RiskModel.unknownLevels,
+  missing: RiskModel.missing,
   unseen: RiskModel.unseen,
   likelihood: RiskModel.likelihood
 };

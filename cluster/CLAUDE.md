@@ -477,6 +477,17 @@ not got this shape:** the did:web document's JOSE keys are the realm's key set
 object keys, the refresh-token keys and the post-quantum keys are all members of
 that set (`common/helpers.js`); a did:jwk is made per request by design.
 
+**The process certificate authority is one for the cluster too (#162,
+2026-10-05).** `pki:*process`, the branch every node's TLS listener
+certificate comes from, is a shared, merged row. Each node makes its own
+listener key; only the certificate's record and serial are shared. Any node
+answers OCSP and serves the CRL for any node's listener. No node's own
+address is published anywhere: rcbj refused that outright. A node waits for
+its listener record to land before it serves, and a responder that has no
+record of a serial reads the row once before it answers `unknown`.
+`common/CLAUDE.md`, *THE PROCESS BRANCH IS ONE AUTHORITY FOR THE CLUSTER*,
+has the detail.
+
 ## Counters: when "once" is not the property (2026-09-14)
 
 `cluster_counters.advance({ scope, key, value })` exists because two

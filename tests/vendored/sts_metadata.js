@@ -5,21 +5,19 @@
 //
 // GET /admin/sts-metadata — IYA STS's own index of what it offers.
 //
-// IT WAS `GET /sts-metadata` AND IT MOVED INTO THE CONSOLE on 2026-08-24, which
-// costs this test two things and is worth knowing before either surprises you:
+// IT WAS `GET /sts-metadata` AND IT MOVED INTO THE CONSOLE on 2026-08-24, and
+// since the #446 cutover the console is a static page. Two things follow:
 //
-//   * **It is behind the console gate**, which is unconditional.
-//     A browser with no session is sent into the authorization code flow and a
-//     caller asking for `?format=json` is refused `401 login_required` — a
-//     redirect to an HTML login screen is not an answer a program can read. So
-//     this file signs in the way tests/vendored/admin_api.js does, and for the
-//     same reason: the point of the checks below is the comparison, so the
-//     answer is to walk through the door rather than to stop reading the page.
-//   * **The page is drawn by the console's shell**, so the document now carries
-//     a sidebar, a breadcrumb and a gate banner around the tables. That is
-//     asserted rather than tolerated — theConsoleChromeIsThere() below —
-//     because "it renders" and "it renders inside the console" are different
-//     claims and only one of them was asked for.
+//   * **The page is its operation's answer, drawn in the browser.** Its data
+//     is `GET /admin-api/sts-metadata`, behind the API's token gate, so this
+//     file signs in as the console does (`console_signin.js`: PKCE, a
+//     DPoP-bound token) and reads that operation — what `?format=json` was —
+//     and draws the page with the console's own renderers.
+//   * **The frame is the console's**, drawn around every page from
+//     `GET /admin-api/console`. That is asserted rather than tolerated —
+//     theConsoleChromeIsThere() below — because "it renders" and "it
+//     renders inside the console" are different claims and only one of them
+//     was asked for.
 //
 // The page lists every endpoint the service registers, the HTTP methods each
 // accepts, and every specification it implements. That list is read from the
@@ -67,7 +65,7 @@ var issuerBase = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/,
 const CONSOLE_USER = "sts-metadata-test";
 
 // ---------------------------------------------------------------------------
-// A browser sign-on session for the console. It was three fetches, lifted from
+// A sign-in as the console. It was three fetches, lifted from
 // tests/vendored/admin_api.js; it is `console_signin.js`'s walk now (below).
 //
 // The role comes from the bootstrap window (`admin-ui/admin_rbac.ts`,
@@ -82,30 +80,18 @@ const CONSOLE_USER = "sts-metadata-test";
 // `admin.authRequired` existed; the setting was removed on 2026-09-06 and the
 // gate cannot be turned off, so today it means something is wrong.
 // ---------------------------------------------------------------------------
-// **THE WALK ITSELF IS IN `console_signin.js` SINCE 2026-09-06.** The console
-// became a relying party of this service's own authorization server on that
-// date, so reaching it is five hops and two cookies rather than three fetches
-// and one — and `admin_api.js` needs the same walk. That file argues every hop.
+// **THE WALK ITSELF IS IN `console_signin.js`**, and since the #446 cutover
+// it is the static console's: the code flow with PKCE as the public client
+// `sts-admin-console`, and a DPoP-bound token for `/admin-api`. The page is
+// that console drawing `GET /admin-api/sts-metadata`'s answer in the
+// browser, so the client this answers reads the operation and draws the
+// page with the console's own renderers (`console.bundle.js`).
 async function signInToTheConsole() {
   log.debug("Entering signInToTheConsole().");
-  const cookie = await consoleSignIn.signInToTheConsole(issuerBase,
-                                                        CONSOLE_USER, log,
-                                                        { grant: "read" });
-  log.debug("Leaving signInToTheConsole(). " +
-            (cookie ? "Holding a session." : "The gate is off."));
-  return cookie;
-}
-
-// One read of the page, carrying the session when there is one.
-function withSession(session, options) {
-  log.debug("Entering withSession().");
-  const opts = Object.assign({}, options || {});
-  if (session) {
-    opts.headers = Object.assign({}, opts.headers || {},
-                                 { Cookie: session });
-  }
-  log.debug("Leaving withSession().");
-  return opts;
+  const consoleClient = await consoleSignIn.signInToTheConsole(issuerBase,
+    CONSOLE_USER, log, { grant: "read" });
+  log.debug("Leaving signInToTheConsole().");
+  return consoleClient;
 }
 
 // Paths that must never be described as spec endpoints, because they are this
@@ -116,17 +102,17 @@ const NON_SPEC_PATHS = ["/oid4vci/last_request", "/oid4vci/notification/:id",
                         "/oid4vp/result/:state", "/admin/sts-metadata",
                             "/healthcheck"];
 
-async function theDocumentIsServed(session) {
+async function theDocumentIsServed(consoleClient) {
   log.debug("Entering theDocumentIsServed().");
   log.info("=== The document, in both forms ===");
-  const json = await common.httpJson(issuerBase +
-      "/admin/sts-metadata?format=json", withSession(session));
-  assert.ok(json.ok,
-            "GET /admin/sts-metadata?format=json should answer 200; got " +
-            json.status + ". A 401 or a 403 here is the console's own gate: " +
-            "the sign-in above got a session but the " +
-            "roster is enforced and " + CONSOLE_USER + " holds no console " +
-            "role, so grant one — the gate itself cannot be turned off.");
+  // THE PAGE'S OPERATION since the #446 cutover: `GET /admin-api/sts-metadata`
+  // is what the console draws the page from, and what `?format=json` was.
+  const json = await consoleClient.get("/admin/sts-metadata?format=json");
+  assert.ok(json.status === 200,
+            "GET /admin-api/sts-metadata, the page's operation, should " +
+            "answer 200; got " + json.status + ". A 401 or a 403 here is " +
+            "the API's gate on the console's token: " + CONSOLE_USER +
+            " was granted Admin Read for this.");
   const doc = json.body;
   assert.ok(doc && Array.isArray(doc.endpoints) && doc.endpoints.length > 20,
     "the document should list this service's endpoints; got " +
@@ -140,32 +126,36 @@ async function theDocumentIsServed(session) {
         "validates no access tokens, " +
     "would be the most misleading thing in the repository.");
 
-  // Fetched directly rather than through httpJson(), which reports no headers:
-  // the content type is the thing being asserted here, since a page served as
-  // JSON or text/plain renders as source in a browser.
-  const htmlResponse = await fetch(issuerBase + "/admin/sts-metadata",
-                                   withSession(session));
-  assert.ok(htmlResponse.ok, "the HTML form should answer 200; got " +
-            htmlResponse.status);
+  // THE ADDRESS ANSWERS THE CONSOLE'S DOCUMENT, as HTML: the static console
+  // (#446) — a whole document that loads its one script from this origin.
+  // Fetched directly, because the content type is the thing asserted: a page
+  // served as JSON or text/plain renders as source in a browser.
+  const htmlResponse = await fetch(issuerBase + "/admin/sts-metadata");
+  assert.ok(htmlResponse.ok, "the console's document should answer 200; " +
+            "got " + htmlResponse.status);
   const contentType = htmlResponse.headers.get("content-type") || "";
   assert.ok(/text\/html/.test(contentType),
     "and it should be served as HTML, or a browser shows the source; got " +
         contentType);
-  const page = await htmlResponse.text();
-  assert.ok(/^<!DOCTYPE html>/.test(page.trim()),
-            "and it should be a whole document.");
+  const shell = await htmlResponse.text();
+  assert.ok(/^<!DOCTYPE html>/.test(shell.trim()) &&
+            /<script src="\/admin\/console\.js"/.test(shell),
+            "and it should be a whole document loading /admin/console.js.");
+  // THE PAGE ITSELF, drawn from the operation's answer by the console.
+  const drawn = await consoleClient.get("/admin/sts-metadata");
+  const page = drawn.text;
   assert.ok(/<table/.test(page) && /Specifications implemented/.test(page),
     "the page should carry the endpoint tables and the specification table.");
-  // The service sets script-src 'none', so a page with a script would be broken
-  // for every visitor rather than merely inelegant.
+  // The page is markup the console's script puts in place: one that carried
+  // a <script> of its own would run nothing (innerHTML runs none) and would
+  // be a page that quietly does less than it draws.
   assert.ok(!/<script/i.test(page),
-    "the page must carry no <script>: this service's Content-Security-Policy " +
-        "is script-src 'none'.");
+    "the page must carry no <script> of its own.");
   log.info("[document] OK — " + doc.endpoints.length + " endpoints, " +
            doc.protocols.length + " protocol families, " +
            doc.specifications.length + " specifications, in HTML and JSON.");
   log.debug("Leaving theDocumentIsServed().");
-  return { doc: doc, page: page };
+  return { doc: doc, page: page, shell: shell };
 }
 
 // ---------------------------------------------------------------------------
@@ -186,58 +176,25 @@ async function theDocumentIsServed(session) {
 // <a> that lost its `download` attribute renders the JSON in the tab instead —
 // which looks like it worked.
 // ---------------------------------------------------------------------------
-function theConsoleChromeIsThere(page) {
+async function theConsoleChromeIsThere(page, consoleClient) {
   log.debug("Entering theConsoleChromeIsThere().");
   log.info("=== The console's shell around it ===");
-  assert.ok(/<title>Service metadata — IYA STS admin<\/title>/.test(page),
-    "the page should carry the console's own title, which is what says it is " +
-    "drawn by admin.js's page() rather than by a second shell of its own.");
-  assert.ok(/<nav aria-label="Admin console sections">/.test(page),
-    "and the console's sidebar. Without it this page is what it was before " +
-    "the move: a document with no way back to anything.");
-  const others = ["/admin/metrics", "/admin/tokens", "/admin/audit",
-                  "/admin/config", "/admin/rbac"];
-  others.forEach(function (path) {
-    assert.ok(page.indexOf('href="' + path + '"') !== -1,
-      "the sidebar should link " + path + ", or the navigation this page was " +
-      "moved for is not there.");
+  // THE FRAME IS THE CONSOLE'S SINCE THE #446 CUTOVER: the static console
+  // draws the sidebar, the active item and the breadcrumb in the browser
+  // from `GET /admin-api/console`, around every page. So what is asserted is
+  // that answer — this page among the sections, with the others the move
+  // was for — and the page drawn inside it carrying the download control.
+  const shell = await consoleClient.api("GET", "/admin-api/console");
+  assert.strictEqual(shell.status, 200,
+    "GET /admin-api/console, the frame's answer, should answer 200; got " +
+    shell.status);
+  const sections = JSON.stringify((shell.json || {}).sections || []);
+  ["/admin/sts-metadata", "/admin/metrics", "/admin/tokens", "/admin/audit",
+   "/admin/config", "/admin/rbac"].forEach(function (path) {
+    assert.ok(sections.indexOf('"' + path + '"') !== -1,
+      "the console's sections should hold " + path + ", or the navigation " +
+      "this page was moved for is not there.");
   });
-  // THE ATTRIBUTES ARE NOT PINNED, AND THAT IS THE POINT OF THE CHANGE.
-  //
-  // This was an exact-string match on `<li><span class="here">Service
-  // metadata</span></li>`, and it broke on 2026-09-05 when the active item
-  // grew `tabindex="-1" autofocus aria-current="page"` — the autofocus is what
-  // scrolls the sidebar so the page you are on is visible in it, and the
-  // console has no script to do that with. The assertion's INTENT survived
-  // that change untouched: the active item is TEXT and not a link. So what is
-  // asserted is the intent, and the attributes are free to grow.
-  assert.ok(/<li><span class="here"[^>]*>Service metadata<\/span><\/li>/.test(
-      page),
-    "and it should mark THIS page as the one being read — the sidebar item " +
-    "for the active page is drawn as text rather than as a link.");
-  // AND THE TWO THINGS THAT MAKE THAT MARK REACHABLE, which are now part of
-  // the contract rather than decoration: `aria-current` is what tells a screen
-  // reader which item is the current page, and `autofocus` is the whole
-  // mechanism that scrolls a 1200px-overflowing sidebar to reveal it. Pinned
-  // because both are invisible — nothing about the rendered page looks wrong
-  // if either is dropped, and the sidebar would quietly go back to starting at
-  // the top on every navigation.
-  const activeItem =
-      /<li><span class="here"([^>]*)>Service metadata<\/span><\/li>/
-    .exec(page);
-  assert.ok(activeItem && /aria-current="page"/.test(activeItem[1]),
-    "the active sidebar item should carry aria-current=\"page\"; it had " +
-    JSON.stringify(activeItem && activeItem[1]));
-  assert.ok(activeItem && /\bautofocus\b/.test(activeItem[1]) &&
-            /tabindex="-1"/.test(activeItem[1]),
-    "and autofocus with tabindex=\"-1\" — the browser scrolls a focused " +
-    "element into view, which is how this console reveals the current page " +
-    "in a sidebar that overflows, with no script anywhere. tabindex=\"-1\" " +
-    "keeps it focusable without putting the page you are already on into the " +
-    "tab order. It had " + JSON.stringify(activeItem && activeItem[1]));
-  assert.ok(/<p class="crumb"><a href="\/admin">Admin console<\/a>/.test(page),
-    "the breadcrumb should start at the console, since that is the trail " +
-    "every other console page draws.");
   assert.ok(
     /<a class="btn" href="\/admin\/sts-metadata\?format=json"[^>]*download=/
       .test(page),
@@ -245,8 +202,8 @@ function theConsoleChromeIsThere(page) {
     "must be an <a download>: the Content-Security-Policy here is " +
     "script-src 'none', so anything that had to run to save the file would " +
     "be a button that does nothing.");
-  log.info("[chrome] OK — the console's title, sidebar, active item, " +
-           "breadcrumb and the download control.");
+  log.info("[chrome] OK — the console's sections and the download " +
+           "control.");
   log.debug("Leaving theConsoleChromeIsThere().");
 }
 
@@ -315,11 +272,9 @@ function theProtocolListIsHonest(doc, page) {
                     "One-time passwords (TOTP)",
                     // THE THIRD SECOND FACTOR (2026-09-10), beside the other
                     // two for the same reason and answering the same endpoint
-                    // group. **It is the second card on this page that
-                    // implements no specification** — there is no RFC for a
-                    // recovery code — so it carries `notAProtocol` and the
-                    // assertion below about every card naming a spec is what
-                    // makes that marker load-bearing rather than decorative.
+                    // group. It carried `notAProtocol` until #283: NIST SP
+                    // 800-63B-4 section 3.1.2's look-up secrets are its
+                    // specification, and the card names it.
                     "Recovery codes",
                     // THE EMAILED CODE AND LINK (#64): a third credential
                     // mechanism that is not a protocol, beside the other two.
@@ -360,8 +315,9 @@ function theProtocolListIsHonest(doc, page) {
     //
     // There are two today: the User Portal, which is an application rather
     // than a protocol and has a card only because this page refuses to report
-    // an endpoint group no card claims; and Recovery codes, a credential
-    // mechanism nobody wrote a specification for (see the list above).
+    // an endpoint group no card claims; and Email codes and links (#64),
+    // which names its specifications anyway. Recovery codes left the list in
+    // #283: NIST SP 800-63B-4 section 3.1.2 is its specification.
     assert.ok(Array.isArray(p.specs) && (p.specs.length || p.notAProtocol),
       p.name + " should name the specifications it implements, or declare " +
       "`notAProtocol` to say why it names none.");
@@ -625,7 +581,7 @@ async function theAdvertisedEndpointsAreAllListed(doc) {
 //   * a path that cannot be followed must NOT be linked: no GET, or a route
 //     pattern with a :parameter or a * in it, which is not the address of
 //     anything.
-async function pathsAreFollowableLinks(doc, page, session) {
+async function pathsAreFollowableLinks(doc, page) {
   log.debug("Entering pathsAreFollowableLinks().");
   log.info("=== The path links ===");
   let checkedLinks = 0;
@@ -661,17 +617,14 @@ async function pathsAreFollowableLinks(doc, page, session) {
     // And it must actually answer. Anything but Express's own "Cannot GET"
     // means a handler was reached — 400 and 401 are fine, they are the endpoint
     // talking.
-    // The session goes on every one of them. Half these links are console
-    // pages now — this one included — and without it they answer a 302 to the
-    // sign-in screen, which is not Express's "Cannot GET" and so would pass
-    // this check while proving nothing about the page behind it.
+    // No session is carried: since the #446 cutover a console page's address
+    // answers the console's document to anybody, and the page's data is its
+    // `/admin-api` operation, which theDocumentIsServed() reads.
     // Redirects are not followed here either, for the reason
     // theMethodsShownActuallyAnswer() gives above: a link that 302s off this
     // service is still this service answering, and chasing it makes the check
     // depend on a host this job knows nothing about.
-    const r = await common.httpJson(e.url,
-                                    withSession(session,
-                                                { redirect: "manual" }));
+    const r = await common.httpJson(e.url, { redirect: "manual" });
     const expressMiss = r.status === 404 && /^Cannot GET/.test(String(r.raw ||
         ""));
     assert.ok(!expressMiss,
@@ -695,15 +648,15 @@ async function pathsAreFollowableLinks(doc, page, session) {
 async function test() {
   log.debug("Entering test().");
   log.info("Running the /admin/sts-metadata checks against " + issuerBase);
-  const session = await signInToTheConsole();
-  const served = await theDocumentIsServed(session);
+  const consoleClient = await signInToTheConsole();
+  const served = await theDocumentIsServed(consoleClient);
   const doc = served.doc;
-  theConsoleChromeIsThere(served.page);
+  await theConsoleChromeIsThere(served.page, consoleClient);
   theProtocolListIsHonest(doc, served.page);
   theIndexMatchesTheRouter(doc);
   specificationsAreHonest(doc);
   await theMethodsShownActuallyAnswer(doc);
-  await pathsAreFollowableLinks(doc, served.page, session);
+  await pathsAreFollowableLinks(doc, served.page);
   await theAdvertisedEndpointsAreAllListed(doc);
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

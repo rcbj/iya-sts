@@ -384,58 +384,10 @@ async function partD(t) {
           (await drained()).length === 0,
           'D3. a provider whose terms nobody accepted is refused before the ' +
           'file is written', JSON.stringify(noTerms.body));
-  // THE ROUTE: a session that may read and not write is refused before the
-  // upload reads anything.
-  const admin = require('../admin-ui/admin');
-  const riskAdmin = require('../admin-ui/risk_admin');
-  const routes = {};
-  riskAdmin.registerRoutes({
-    get: function () {},
-    post: function (p, fn) {
-      routes[p] = fn;
-    }
-  });
-  const saved = admin.mayWrite;
-  admin.mayWrite = function () {
-    return false;
-  };
-  const req = multipart(denyFields([file]));
-  const res = { headers: {}, statusCode: 0, location: '', marked: [] };
-  const answered = new Promise(function (resolve) {
-    res.set = function (k, v) {
-      res.headers[k] = v;
-      return res;
-    };
-    res.status = function (n) {
-      res.statusCode = n;
-      return res;
-    };
-    res.type = function () {
-      return res;
-    };
-    res.send = function (b) {
-      res.body = b;
-      resolve();
-      return res;
-    };
-    res.redirect = function (n, where) {
-      res.statusCode = n;
-      res.location = where;
-      resolve();
-      return res;
-    };
-  });
-  try {
-    routes[riskAdmin.UPLOAD](req, res);
-    await answered;
-  } finally {
-    admin.mayWrite = saved;
-  }
-  t.check(res.statusCode === 303 && /error=/.test(res.location) &&
-          res.headers.Connection === 'close' &&
-          req.readableFlowing === null && filesIn().length === 0,
-          'D4. the console route refuses a session without Admin Write ' +
-          'before the upload reads a byte', JSON.stringify(res));
+  // D4 WAS THE CONSOLE'S UPLOAD ROUTE refusing a session without Admin
+  // Write before reading a byte. The console posts nothing since the
+  // cutover (#446): its upload is `POST /admin-api/risk/upload`, whose
+  // gate refuses a token without `admin:write` before the handler runs.
   log.debug("Leaving partD().");
 }
 

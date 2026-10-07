@@ -641,65 +641,22 @@ async function checkEcs(t) {
   log.debug("Leaving checkEcs().");
 }
 
-// ---------------------------------------------------------------------------
-// 7. THE REAL CHANNEL, THE REAL WORKER, AND THE PAGE.
-// ---------------------------------------------------------------------------
-function draw(query) {
+// THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): its `/admin-api`
+// operation's answer drawn by its renderer (`tests/tools/console_page.js`).
+// `format: 'json'` answers the operation's answer, which is what the page's
+// `?format=json` was. Answers the status and the body.
+const drawer = require('./tools/console_page.js')
+  .consolePage(__dirname + '/..');
+
+async function draw(query) {
   log.debug("Entering draw().");
-  const layer = (app._router.stack || []).filter(function (one) {
-    return one.route && one.route.path === '/admin/node-health' &&
-           one.route.methods.get;
-  })[0];
-  if (!layer) {
-    log.debug("Leaving draw(). No route.");
-    return Promise.resolve(null);
-  }
-  return new Promise(function (resolve) {
-    const res = {
-      statusCode: 200,
-      set: function () {
-        return this;
-      },
-      status: function (code) {
-        this.statusCode = code;
-        return this;
-      },
-      type: function () {
-        return this;
-      },
-      send: function (text) {
-        resolve({ status: this.statusCode, body: String(text) });
-        return this;
-      },
-      json: function (value) {
-        resolve({ status: this.statusCode, body: JSON.stringify(value) });
-        return this;
-      },
-      get: function () {
-        return undefined;
-      },
-      getHeader: function () {
-        return undefined;
-      },
-      setHeader: function () {
-        return undefined;
-      },
-      locals: {}
-    };
-    const req = { query: query, headers: {}, method: 'GET', cookies: {},
-                  url: '/admin/node-health',
-                  originalUrl: '/admin/node-health',
-                  path: '/admin/node-health',
-                  get: function () {
-                    return '';
-                  } };
-    layer.route.stack[0].handle(req, res, function (e) {
-      log.debug("The page's handler called next(): " +
-                ((e && e.message) || e));
-      resolve(null);
-    });
-    log.debug("Leaving draw().");
-  });
+  const asked = Object.assign({}, query || {});
+  const wantsJson = asked.format === 'json';
+  delete asked.format;
+  const drawn = await drawer.draw('/admin/node-health', asked);
+  log.debug("Leaving draw().");
+  return { status: drawn.status,
+           body: wantsJson ? JSON.stringify(drawn.json) : drawn.html };
 }
 
 async function checkTheChannelAndThePage(t) {

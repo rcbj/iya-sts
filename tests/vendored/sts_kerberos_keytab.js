@@ -27,11 +27,13 @@
 //      names their principal; their password on the form gives a keytab on a
 //      no-store 200, and `kinit -k -t` signs in with it; in product a wrong
 //      password is refused with no keytab on the page.
-//   4. THE CONSOLE'S FORM on the person's `/admin/users` page, posted by an
+//   4. THE CONSOLE'S FORM on the person's `/admin/users` page, sent by an
 //      administrator signed in to `/admin` with Admin Write: the section
-//      names the principal, the form answers the shown-once keytab page
-//      (no-store, saying the password was changed), and `kinit -k -t` signs in
-//      with the keytab on it.
+//      names the principal, and the form — since the #446 cutover the
+//      static console's token sending it to its operation — answers the
+//      shown-once keytab (no-store, for the person whose password it
+//      changed), which the console draws in place; `kinit -k -t` signs in
+//      with it.
 //   5. THE REFUSALS THAT CHANGE NOTHING: neither or both of `password` and
 //      `random`, and a person who does not exist — 400 with no keytab.
 //
@@ -629,12 +631,10 @@ async function theConsolesForm() {
                          JSON.stringify(grant.body).slice(0, 200));
       granted = true;
     }
-    const cookie = await consoleSignIn.signInToTheConsole(base, ADMIN, log);
-    const userPage = await fetch(base + "/admin/users?user=" +
-                                 encodeURIComponent(USER),
-                                 { headers: { Cookie: cookie },
-                                   redirect: "manual" });
-    const drawn = await userPage.text();
+    const consoleClient = await consoleSignIn.signInToTheConsole(base, ADMIN,
+                                                                 log);
+    const userPage = await consoleClient.draw("/admin/users", { user: USER });
+    const drawn = userPage.html;
     check("the person's page has a Kerberos section naming their principal " +
           "and the reset form", function () {
       assert.strictEqual(userPage.status, 200, "answered " + userPage.status);
@@ -646,28 +646,23 @@ async function theConsolesForm() {
                 /Reset password and download keytab<\/button>/.test(drawn),
                 "no reset form with a real submit button");
     });
-    const csrf = (drawn.match(/name="csrf_token" value="([^"]+)"/) ||
-                  [])[1] || "";
-    const posted = await fetch(base + "/admin/kerberos/principals", {
-      method: "POST", redirect: "manual",
-      headers: { Cookie: cookie,
-                 "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ csrf_token: csrf,
-                                  action: "reset-person-keytab",
-                                  username: USER, from: "user",
-                                  password: RESET_PASSWORD + "-console" })
-        .toString() });
-    const shown = await posted.text();
-    const b64 = keytabOnPage(shown);
-    check("the form answers the shown-once keytab page, no-store, saying " +
-          "the password was changed", function () {
+    // THE FORM IS ITS OPERATION SINCE THE #446 CUTOVER: the keytab comes
+    // back in the answer, once, and the console draws it in place rather
+    // than the server drawing a page around it.
+    const posted = await consoleClient.act("/admin/kerberos/principals", {
+      action: "reset-person-keytab", username: USER,
+      password: RESET_PASSWORD + "-console" });
+    const b64 = String((posted.json && posted.json.keytab) || "");
+    check("the form answers the shown-once keytab, no-store, for the person " +
+          "whose password it changed", function () {
       assert.strictEqual(posted.status, 200, "answered " + posted.status +
-                         " " + shown.replace(/<[^>]+>/g, " ").slice(0, 300));
+                         " " + posted.text.slice(0, 300));
       assert.ok(/no-store/.test(posted.headers.get("cache-control") || ""),
-                "the keytab page is cacheable");
-      assert.ok(b64, "no keytab on the page");
-      assert.ok(/password was changed/.test(shown),
-                "the page does not say the password was changed");
+                "the keytab answer is cacheable");
+      assert.ok(b64, "no keytab in the answer");
+      assert.strictEqual(posted.json.username, USER,
+                         "the answer does not name the person whose " +
+                         "password was changed");
       readKeytab(b64).forEach(function (one) {
         assert.strictEqual(one.name, USER, "an entry names " + one.name);
       });

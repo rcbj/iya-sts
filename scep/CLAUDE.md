@@ -88,12 +88,23 @@ their failInfo with them.
 4. **Signed attributes are verified over the bytes that arrived**, tag swapped
    to SET; the ones this service signs are DER-sorted.
 
-### Why the codec is in `scep/` and not `common/crypto.js`
+### The codec is in `scep/`; its cryptography is `common/crypto.js`'s (#453)
 
-Rule 3r is about primitives having one policy. This is an ENVELOPE only SCEP
-reads, over node's own primitives, with every algorithm it accepts in a table
-`admin-ui/crypto_metadata.ts` reads (`algorithms()`) — `gnap/gnap_httpsig.ts`'s
-arrangement.
+`scep_cms.ts` reads and writes the CMS envelope — the ASN.1, the attribute
+tables, the refusals — and every cryptographic operation inside it is a named
+function of `common/crypto.js`, group F's region of section 17: the content
+cipher (`scepContentEncrypt()` / `scepContentDecrypt()`, AES-CBC only, with
+`SCEP_CONTENT_CIPHERS` the closed list), the RSA key transport
+(`cmsKeyTransportDecrypt()` for PKCS#1 v1.5 or OAEP, `cmsKeyTransportEncrypt()`
+for the reply), the messageDigest attribute check
+(`cmsMessageDigestMatches()`), and the SignerInfo signature through
+`signBytes()` / `signatureValid()`. Until #453 the codec called node's
+primitives itself, an arrangement rule 3r tolerated for an envelope only SCEP
+reads; rcbj's rule of 2026-10-05 — every cryptographic operation, in every
+protocol, through the common module — ended it, and
+`tests/crypto_centralised.js` keeps it ended. The RA never signs with SHA-1:
+`certRep()` limits its digest to SHA-2, and a request naming SHA-1 or MD5 is
+refused `badAlg` before any signature is checked.
 
 ### The RA certificate
 
@@ -175,6 +186,15 @@ entry through `core.issueForDevice()` (`common/CLAUDE.md`, 3ag's *The
 as `attestations`. A RenewalReq is refused for it (`STS-DEVICE-0025`): the
 renewed certificate is on no person or application entry. The console lists
 it as a tenth profile row.
+
+**A TPM statement over SCEP is never FRESH (#257, rcbj's decision 3).**
+draft-ietf-lamps-attestation-freshness defines a nonce operation for CMP,
+EST and CMC, and nothing defines one for SCEP. The single-use challenge
+password is fresh and bound, but a nonce derived from it would be a
+transformation the statement type's own specification has to define
+(section 9), and none does. So the core records the statement's freshness
+`unproven`, and product refuses it (`STS-DEVICE-0050`): an attested device
+certificate in product is an EST one.
 
 ## Several nodes: the challenge and the transaction (2026-09-14, #46)
 

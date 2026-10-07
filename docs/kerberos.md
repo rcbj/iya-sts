@@ -44,7 +44,8 @@ client cannot guess.
   or subkey in a TGS-REQ, an AP-REQ or FAST armor is refused (`STS-KRB-0157`,
   `0158`, `0159`), and a write naming 23 is refused (`STS-CORE-0103`).
 * **A signed [MS-PAC]** in every ticket, built under `krb5.domainSid`, with
-  `krb5.logonServer` as the LogonServer.
+  `krb5.logonServer` as the LogonServer — and, while `krb5.pacClaims` is on,
+  the client's **claims** (#493, [PAC claims](#pac-claims) below).
 * **Renewable tickets**, bounded by `krb5.ticketLifetimeSeconds` and
   `krb5.renewLifetimeSeconds` (Active Directory's ten hours and seven days).
 * **Cross-realm referrals**, in development mode, to a second realm
@@ -142,13 +143,15 @@ the service's own key, and only in a ticket from this realm's KDC.
 The local realm is stripped from the principal (`alice@EXAMPLE.COM` signs in
 `alice`, the same entry a typed sign-in finds); a foreign realm is kept whole.
 
-It is available to every application and registered for none, three ways:
+It is available to every application that does not restrict its sign-in
+mechanisms (`appAuthnMechanism`, [Applications](applications.md)), and
+registered for none, three ways:
 
 1. **"Sign in with Kerberos"** on `/authn/login` (`krb5.spnegoLoginButton`),
    for whatever flow is in progress — OAuth 2.0, WS-Federation, SAML, the
    console;
-2. **`appAuthnMechanism: spnego`** on an application entry — its people never
-   see the screen;
+2. **`spnego` alone in `appAuthnMechanism`** on an application entry — its
+   people never see the screen;
 3. **`fedAuthnMechanism: spnego`** on an identity-provider-side
    [federation](federation.md) relationship.
 
@@ -352,8 +355,90 @@ The KRB-FX-CF2 and the Kerberos PRF FAST needs are section 9 of
 `common/crypto.js`, held to RFC 3961's and MIT's test vectors.
 
 `/admin/kerberos` and `GET /admin-api/kerberos` (`status`) say what the KDC
-does in the realm. A person whose only second factor is a security key cannot
-use Kerberos yet: PKINIT is [#179](https://github.com/rcbj/iya-sts/issues/179).
+does in the realm. A person whose second factor is a security key uses PKINIT,
+below.
+
+### A certificate as the pre-authentication: PKINIT (#179)
+
+PKINIT (RFC 4556) signs the AS-REQ with a certificate's key — a smart card's,
+a PIV token's, or a key file — and agrees the reply key by Diffie-Hellman, so
+no password is involved. It is on in every realm (`krb5.pkinit`) and is how a
+person whose second factor is a security key gets a ticket in product mode,
+where a password alone is refused them. Implemented with RFC 8070's freshness
+token, RFC 8636's key-derivation agility and RFC 5349's elliptic curves.
+
+**The certificate** is one this realm issued to the person, with
+`id-pkinit-KPClientAuth` or smart-card logon in its extended key usage:
+
+* a **smart-card logon** certificate enrolled on their entry over ACME, EST or
+  SCEP (the `smartcard-logon` profile, e.g. `/.well-known/est/smartcard-logon/
+  simpleenroll`), or
+* any certificate from the realm's identity Issuing CAs whose `id-pkinit-san`
+  names them exactly.
+
+It is validated to the service Root through this realm's own hierarchy, and
+its revocation is consulted under `pki.revocationCheck`. A certificate naming
+somebody else in an `id-pkinit-san` is refused, whatever else it says. The
+portal's TLS client certificates carry no PKINIT purpose and are refused.
+
+**The KDC's certificate** comes from the realm's own *Kerberos KDC* Issuing
+CA (`/admin/pki`), with `id-pkinit-KPKdc` and an `id-pkinit-san` of
+`krbtgt/REALM@REALM`. It is made the first time PKINIT is used, so a client
+needs only the service Root as its anchor.
+
+With MIT Kerberos (the `krb5-pkinit` package):
+
+```bash
+# krb5.conf: [realms] EXAMPLE.COM = { pkinit_anchors = FILE:/etc/sts/root.pem
+#                                      pkinit_pool = FILE:/etc/sts/chain.pem }
+kinit -X X509_user_identity=FILE:alice.pem,alice.key alice@EXAMPLE.COM
+kinit -X X509_user_identity=PKCS11:/usr/lib/opensc-pkcs11.so alice@EXAMPLE.COM
+```
+
+`root.pem` is the service Root and `chain.pem` the Issuing CA and Intermediate
+the certificate was issued under (the enrollment response carries both).
+
+**What the ticket says.** Every PKINIT ticket carries the RFC 8129 indicator
+`pkinit`, and `/authn/spnego` reads it as `amr ["swk"]`, never `pwd`. A
+smart-card logon certificate over a key this service did not generate (that
+is, not EST `/serverkeygen`) is the one case the KDC treats as a hardware
+key: the ticket also carries `pkinit-hardware` and the hw-authent flag, read
+as `amr ["hwk"]`. Either way it is one factor, `acr "1"`. The ticket ends no
+later than the certificate does, and carries `AD-INITIAL-VERIFIED-CAS`.
+
+**Refused, by design:**
+
+* RSA key transport of the reply key (section 3.2.3.2), because it has no
+  forward secrecy;
+* MODP group 2;
+* SHA-1 in a signature or a certificate;
+* a request without a freshness token (`krb5.pkinitRequireFreshness`);
+* a client that offers no RFC 8636 KDF, unless `krb5.pkinitLegacyKdf` is set.
+
+> **Warning.** Turning `krb5.pkinitRequireFreshness` off, or
+> `krb5.pkinitLegacyKdf` on, weakens PKINIT. Do it only for a client that
+> needs it.
+
+**A person with no Kerberos keys** — who has never signed in with a password —
+can still use PKINIT. Their password gets the usual "sign in once" refusal.
+
+**Anonymous PKINIT (RFC 8062)** gives a machine with no host keytab FAST
+armor:
+
+```bash
+kinit -n -c FILE:/tmp/armor @EXAMPLE.COM
+kinit -T FILE:/tmp/armor alice@EXAMPLE.COM
+```
+
+The anonymous ticket names nobody (`WELLKNOWN/ANONYMOUS@WELLKNOWN:ANONYMOUS`)
+and its session key includes the KDC's contribution (PA-PKINIT-KX). It is
+only a TGT for the realm, and the TGS refuses it: it armors and buys nothing.
+`krb5.anonymousPkinit` switches it off.
+
+**Post-quantum.** No post-quantum PKINIT is standardised. The key agreement is
+the quantum-exposed part. An ML-KEM encapsulation would replace it, and ML-DSA
+would replace the CMS signatures, once a client sends either
+(`common/crypto.js` section 16).
 
 ### The `krbtgt` key, and its rotation
 
@@ -408,8 +493,8 @@ ticket"). Since #169:
   strongest registered ones — aes256-cts-hmac-sha384-192 (20, RFC 8009) and
   aes256-cts-hmac-sha1-96 (18) — are symmetric, and Grover's algorithm leaves
   AES-256 at about 128-bit strength, so rotation needs no new enctype. The
-  quantum-exposed part of Kerberos is PKINIT's public-key key agreement, which
-  this service does not implement (#179).
+  quantum-exposed part of Kerberos is PKINIT's Diffie-Hellman key agreement
+  (#179), for which nothing post-quantum is standardised either.
 
 ### What Samba's and Heimdal's clients found (#204, #205)
 
@@ -445,11 +530,64 @@ tools now run against this KDC in the suite (`sts_kerberos_samba.js`,
 What stays different from Active Directory, and why, is listed with each
 exception in `tests/vendored/sts_kerberos_samba.js` and on #204.
 
+### PAC claims
+
+**`PAC_CLIENT_CLAIMS_INFO`** ([MS-PAC] 2.11, buffer type 13) is what a service
+doing claims-based access control — Windows' Dynamic Access Control — reads
+beside the SIDs. While **`krb5.pacClaims`** is on in a realm (off by default;
+a runtime setting, per realm), every ticket this KDC builds carries one
+(#493):
+
+* **Where the claims come from** is the sixth claim set, `kerberos-pac`,
+  configured on **Protocols → Kerberos → PAC claims** (`/admin/kerberos/claims`,
+  `GET` and `POST /admin-api/kerberos/claims/{action}`). A row is a fixed value
+  (with `${placeholders}`) or a directory attribute of the person, and every
+  row has a **type**: `string`, `int64`, `uint64` or `boolean`, the four
+  [MS-ADTS] 2.2.18 claim types. The person's realm-wide **roles** go in as a
+  string claim under the rows (named by `roles.claimName`); nothing is added
+  to the logon information's extra SIDs.
+* **Directory attributes, ticked** (#498): the same page has the table of
+  standard attributes with checkboxes that `/admin/claims`,
+  `/admin/userinfo-claims` and `/admin/saml-attributes` have — one catalogue
+  for all of them, and nothing ticked until somebody ticks it (`POST
+  /admin-api/kerberos/claims/attributes`, `attributes-all`,
+  `attributes-clear`). Each ticked attribute **present on the person's
+  entry** becomes a `string` claim carrying **every value** of it, with the
+  id a row of the attribute's name would have (`ad://ext/ou:<hex>`); an
+  entry without it carries no claim, and nothing is invented. A row of the
+  set, or the roles claim, with the same claim id wins over a ticked
+  attribute. They go in a TGT, reach a service ticket as the rest of its
+  TGT's claims do, and count toward the 64 KiB cap. The `?user=` preview
+  shows what each would carry.
+* **The claim id** is `ad://ext/<name>:<hex>`, Active Directory's form, with
+  the hex the first 16 hexadecimal digits of SHA-256 over the UTF-8 name — the
+  same id on every node, after every restart and in every realm. A row whose
+  name is already a whole `ad://ext/<name>:<hex>` id keeps it, for a claim
+  type an existing forest defines. The page and the API show each row's id.
+* **A TGT** carries the realm's set. **A service ticket carries what its TGT
+  carried** — read out of the TGT's PAC, not re-evaluated — **with the rows of
+  the application that registered the service's SPN** (`krb5ClaimsPac`, on its
+  Configuration tab, Kerberos v5, *PAC claims*) **added and winning by name**.
+  **S4U2Self** carries the impersonated person's claims, evaluated for them;
+  **S4U2Proxy** and a **cross-realm** re-sign carry the claims buffer they
+  arrived with byte for byte, unless the target service's application has rows
+  of its own, which are merged in the same way.
+* **Never compressed** on output. A claims set from another realm compressed
+  with XPRESS Huffman is decoded; LZNT1 and plain XPRESS, which no KDC uses
+  for claims, are reported rather than decoded.
+* A value that is not its type at issuance leaves that claim out
+  (`STS-KRB-0200`); a set over 64 KiB, or one that will not encode, leaves the
+  buffer out (`STS-KRB-0201`, `0202`). Neither refuses the ticket. A change to
+  the set reaches holders of live tickets as CAEP `token-claims-change`.
+* Device claims (type 15) are decoded when they arrive and never produced:
+  they need compound identity (FAST armor naming a computer).
+
 ### Not implemented
 
-PKINIT (#179), anonymous PKINIT armor, OTP PIN change and hashed OTP
-values, kpasswd, request signatures, SID filtering (see [the PAC](#the-pac) below), claims and device info in the
-PAC, and rotation of an inter-realm trust key. DES is decoded and never
+PKINIT's RSA key transport and DH key reuse, anonymous tickets in the TGS
+exchange, OTP PIN change and hashed OTP values, kpasswd, request signatures, SID filtering (see [the PAC](#the-pac) below), device info and device
+claims in the PAC (a device claims buffer from another realm is decoded and
+carried), compression of a claims set this KDC writes, and rotation of an inter-realm trust key. DES is decoded and never
 produced: Windows Server 2025 removed it and it is not coming back. The **AP
 exchange** is not missing from the KDC — it belongs to a service rather than to
 a KDC, and it lives in the [protected service](#the-protected-service).
@@ -498,6 +636,7 @@ modes**, and a replay is refused in both. See
 | `krb5.ticketLifetimeSeconds` | `KRB5_TICKET_LIFETIME_S` | `36000` | yes | The longest a ticket is valid. |
 | `krb5.renewLifetimeSeconds` | `KRB5_RENEW_LIFETIME_S` | `604800` | yes | How far `renew-till` reaches for a renewable ticket. |
 | `krb5.logonServer` | `KRB5_LOGON_SERVER` | `DC01` | yes | The LogonServer name in every PAC. |
+| `krb5.pacClaims` | `KRB5_PAC_CLAIMS` | `false` | yes | Whether every ticket's PAC carries the client's claims (PAC_CLIENT_CLAIMS_INFO, [MS-PAC] 2.11): the realm's Kerberos PAC claims and the person's realm-wide roles in a TGT, and a service ticket's TGT claims with the claims of the application that registered its SPN added. Never compressed. See `docs/kerberos.md`, *PAC claims*. |
 | `krb5.maxRequestBytes` | `KRB5_MAX_REQUEST_BYTES` | `131072` | yes | The most a client may send on one TCP connection before it is closed. |
 | `krb5.udpMaxReplyBytes` | `KRB5_UDP_MAX_REPLY_BYTES` | `1465` | yes | A larger UDP reply is answered `KRB_ERR_RESPONSE_TOO_BIG`. |
 | `krb5.serviceMaxTokenBytes` | `KRB5_SERVICE_MAX_TOKEN_BYTES` | `65536` | yes | The largest token the acceptor and SPNEGO accept. |
@@ -711,7 +850,8 @@ inside `AD-IF-RELEVANT`, so a reader that looks for ad-type 128 at the top
 level finds nothing. A TGT gets two signatures and a service ticket four
 (sections 2.8.2 and 2.8.3).
 
-Claims and device info are not produced, and **SID filtering across a trust is
+Client claims are produced while `krb5.pacClaims` is on ([PAC
+claims](#pac-claims)); device info is not, and **SID filtering across a trust is
 not implemented** — a re-signed PAC keeps every SID it arrived with, which is
 the one place this KDC is more permissive than a real one in a way that
 matters.
@@ -742,19 +882,31 @@ permitted to act on its behalf) — so whoever controls that entry can turn "I
 can write to this account" into "I can reach this service as anybody". Same
 messages, same KDC options, opposite direction of trust.
 
-Classic delegation additionally requires the evidence ticket to be forwardable,
-which S4U2Self grants only where the issuance policy allows the impersonation:
+Both routes require the evidence ticket to be forwardable — classic by
+[MS-SFU] 3.2.5.2.1, resource-based by 3.2.5.2.3 since the CVE-2020-16996
+update, as Windows, Samba and MIT all refuse it — which S4U2Self grants only
+where the issuance policy allows the impersonation:
 the service allows it (`appDelegationSemantics`) and the user is not
 protected. So `HTTP/frontend.example.com` and `HTTP/notrusted.example.com`
 differ in exactly that one attribute and nothing else, because its absence is
 invisible where it is set: S4U2Self still succeeds and returns a ticket that
 simply is not forwardable, and classic S4U2Proxy then fails a step later
-complaining about the evidence. RBCD needs neither, but does need
-`PA-PAC-OPTIONS` with the RBCD bit, without which [MS-SFU] says a KDC MUST
-answer `KDC_ERR_BADOPTION` — an error mentioning nothing about padata, so it
-is refused here with an explanation. RBCD does not stop the policy, though: a
-protected user is refused (`KDC_ERR_POLICY`) even where no forwardable
-evidence was needed.
+complaining about the evidence (`STS-KRB-0012` classic, `STS-KRB-0199`
+resource-based). RBCD also needs `PA-PAC-OPTIONS` with the RBCD bit, without
+which [MS-SFU] says a KDC MUST answer `KDC_ERR_BADOPTION` — an error
+mentioning nothing about padata, so it is refused here with an explanation.
+A protected user's tickets are never forwardable, so neither route reaches a
+back end as them; the issuance policy refuses the rest (`KDC_ERR_POLICY`).
+
+The S4U2Proxy ticket is forwardable when the request asked for it, the front
+end's TGT is forwardable and the user is not protected (RFC 4120 section
+3.3.3; [MS-SFU] 3.2.5.2.4 says nothing of it). Its PAC's
+`S4U_DELEGATION_INFO` ([MS-PAC] 2.9) names the target without its realm and
+every service delegated through with it — `HTTP/frontend.example.com@EXAMPLE.COM`
+— the form Windows, Samba and MIT write. On `/admin/delegation`, S4U2Self is
+an impersonation and every S4U2Proxy a delegation, by mechanism ([MS-SFU]),
+so a protocol-transition chain has one impersonation row followed by
+delegation rows.
 
 ### A service that will not talk to you without a ticket
 

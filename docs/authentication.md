@@ -144,8 +144,9 @@ cluster (`security.rateLimit*`).
 
 ### WebAuthn
 
-Security keys and passkeys, as a WebAuthn Level 3 relying party over FIDO
-CTAP2. A key is enrolled in one of two **roles**:
+Passkeys — on a device, in a password manager, on a phone or on a security
+key — as a WebAuthn Level 3 relying party over FIDO CTAP2. A key is enrolled
+in one of two **roles**:
 
 * **`mfa`** — a second factor after a password: `amr ["pwd","hwk"]`,
   `acr "mfa"`;
@@ -230,6 +231,76 @@ and writes a flag on the entry that already exists (see [LDAP](ldap.md)).
 
 A person removes a key on `/portal/keys`, and an operator on the person's
 `/admin/users` page (`POST /admin-api/users/clear-key`).
+
+**The Passkeys page** (`/portal/keys`, #470) follows the FIDO Alliance's
+passkey management guidelines. It uses *passkey* for every kind and puts them
+under one heading in two groups:
+
+* **Passkeys on your devices** — a credential that may be backed up (the BE
+  flag), or one from an authenticator built into the device.
+* **Passkeys on security keys** — a cross-platform credential that cannot be
+  backed up.
+
+Each row shows:
+
+* an icon;
+* a name — the person's own, otherwise the provider's, otherwise "Passkey"
+  or "Security key";
+* the provider;
+* when it was created and when it was last used;
+* **Rename** and **Remove**;
+* a *Details* section with the role, the algorithm, the attestation, the
+  AAGUID, the backup state and the transports.
+
+**Where the provider's name comes from:**
+
+* When an MDS3 BLOB is loaded, the name is only ever the description FIDO MDS
+  lists for the key's AAGUID.
+* Otherwise a short built-in table of the major credential managers names it.
+
+The name is a label for the owner, and nothing this service decides reads it.
+
+**Creating one:**
+
+* There are two buttons. *Create a passkey* hints `client-device`, then
+  `hybrid`, and REQUIRES a discoverable credential (`residentKey:
+  required`), so the passkey can sign in with no username. *Use a security
+  key* asks for `cross-platform` and hints `security-key`.
+* Every passkey a person registers is created under their **user handle**:
+  64 random bytes stored on their entry, never their username (WebAuthn
+  Level 3 section 5.4.3). A passkey's authenticator hands it back, and an
+  assertion whose handle is not the one its key was created under is
+  refused (section 7.2, step 6).
+* The new passkey is offered a nickname straight after it is created.
+* A person renames one with `POST /portal/rename-key`, an operator with
+  `POST /admin-api/users/rename-key`. An empty name restores the default.
+
+The page also uses the WebAuthn Signal API, under the person's user handle.
+It tells their credential manager which passkeys are still accepted, so one
+removed here disappears there too, and gives it their display name. A person
+whose passkeys were all registered before the user handle existed (when it
+was the username, which every realm shares) is sent nothing.
+
+**Signing in with a passkey and no username** (`webauthn.usernameless`, off
+by default). Where it is on, the sign-in screen draws *Sign in with a
+passkey*, and the username field offers passkeys as autofill in browsers that
+support conditional mediation. The browser is asked for any passkey of this
+service, the user handle it returns names the account, and:
+
+* **user verification is required** — a PIN or biometric on the
+  authenticator — whatever `webauthn.userVerification` says, so the session
+  records `amr ["hwk","user"]` and `acr "mfa"`;
+* only a passkey registered for **signing in** (not one used as a second
+  step after a password) answers it;
+* a passkey registered before this existed was created under the username,
+  and still works only where the username is typed — register it again to
+  use it without one;
+* nothing is enrolled at the sign-in screen this way;
+* a passkey this service holds for nobody is reported to the browser
+  (`signalUnknownCredential`), where only one trust realm is defined.
+
+The button is a real submit button; without JavaScript it explains that a
+passkey needs it, and the password form works as before.
 
 ### TOTP MFA
 
@@ -538,12 +609,13 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.allowedOrigins` | `STS_WEBAUTHN_ALLOWED_ORIGINS` | *(empty: derived)* | yes | The origins a ceremony is accepted from; empty derives one from the address. |
 | `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | every algorithm the verifier checks, ML-DSA-44/65/87 (-48/-49/-50) first | yes | `pubKeyCredParams`, in preference order. On **Protocols → WebAuthn** each algorithm has a checkbox (requested or not) and a number (1 is the most preferred). See [Configuration](configuration.md) for the list. |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `preferred` | yes | Whether the authenticator must verify the person; `required` is enforced. |
-| `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | Attestation conveyance asked for; no statement is verified. |
+| `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | The attestation conveyance asked for at registration. Whether a statement is verified is `webauthn.attestationPolicy`'s decision, not this setting's ([WebAuthn](#webauthn), above). |
 | `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` hint handed to the browser. |
 | `webauthn.authenticatorAttachment` | `STS_WEBAUTHN_ATTACHMENT` | `any` | yes | `platform`, `cross-platform` or `any`; a filter in the browser. |
-| `webauthn.residentKey` | `STS_WEBAUTHN_RESIDENT_KEY` | `discouraged` | yes | Whether the credential should be discoverable on the authenticator. |
+| `webauthn.residentKey` | `STS_WEBAUTHN_RESIDENT_KEY` | `discouraged` | yes | Whether the credential should be discoverable on the authenticator, for the sign-in screen's ceremony and *Use a security key*; *Create a passkey* always asks `required`. |
 | `webauthn.credProps` | `STS_WEBAUTHN_CRED_PROPS` | `true` | yes | Ask the browser to report whether the credential is discoverable. |
 | `webauthn.primaryAllowed` | `STS_WEBAUTHN_PRIMARY_ALLOWED` | `true` | yes | Allow a key to be the only credential (passwordless). |
+| `webauthn.usernameless` | `STS_WEBAUTHN_USERNAMELESS` | `false` | yes | Offer a passkey sign-in with no username: a button and autofill on the sign-in screen; user verification required, `acr "mfa"`. |
 | `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` | yes | Allow a key to be enrolled as a second factor. |
 | `webauthn.maxKeysPerPerson` | `STS_WEBAUTHN_MAX_KEYS` | `10` | yes | How many keys one person may hold; refuses the enrolment, never a sign-in. |
 
@@ -664,7 +736,7 @@ be changed with `POST /admin-api/config/set`.
 * **Sessions** (`/admin/sessions`): every live session, with how it was
   established.
 * **The user portal**: `/portal/mfa` (authenticator app, recovery codes),
-  `/portal/keys` (security keys), `/portal/app-passwords` (app passwords for
+  `/portal/keys` (passkeys), `/portal/app-passwords` (app passwords for
   the password-only doors), `/portal/kerberos` (a Kerberos keytab from your own
   password), `/portal/password`, `/portal/activate` and
   `/portal/reset-password`; and `/portal/consents`, where a person withdraws

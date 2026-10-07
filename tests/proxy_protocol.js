@@ -208,6 +208,48 @@ function checkParser(t) {
 // ---------------------------------------------------------------------------
 // 2. THE SETTING AND THE STARTUP REFUSAL.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 2c. WHETHER THE BYTES AFTER A HEADER ARE A WHOLE TLS ClientHello.
+// ---------------------------------------------------------------------------
+function checkFirstFlight(t) {
+  log.debug("Entering checkFirstFlight().");
+  t.log.info('2c. firstFlightComplete()');
+  // A handshake message of `size` bytes after its four-byte header, in
+  // records of at most `recordSize` bytes.
+  function flight(size, recordSize) {
+    log.debug("Entering flight().");
+    const message = Buffer.alloc(4 + size, 0x41);
+    message[0] = 0x01;
+    message.writeUIntBE(size, 1, 3);
+    const records = [];
+    for (let at = 0; at < message.length; at += recordSize) {
+      const body = message.subarray(at, at + recordSize);
+      const head = Buffer.from([0x16, 0x03, 0x01, 0, 0]);
+      head.writeUInt16BE(body.length, 3);
+      records.push(head, body);
+    }
+    log.debug("Leaving flight().");
+    return Buffer.concat(records);
+  }
+  const whole = flight(20000, 16384);
+  const ff = proxyProtocol.firstFlightComplete;
+  t.equal(ff(whole), true, '2c. a ClientHello across two records, whole');
+  t.equal(ff(whole.subarray(0, 7240)), false,
+          '2c. its first 7240 bytes (what cut the cluster run) are not');
+  t.equal(ff(whole.subarray(0, 16389)), false,
+          '2c. one whole record of two is not');
+  t.equal(ff(whole.subarray(0, whole.length - 1)), false,
+          '2c. one byte short is not');
+  t.equal(ff(whole.subarray(0, 3)), false, '2c. a partial record header is not');
+  t.equal(ff(flight(300, 16384)), true, '2c. a small hello in one record is');
+  t.equal(ff(Buffer.from('GET / HTTP/1.1\r\n')), true,
+          '2c. bytes that are not a TLS handshake are handed over at once');
+  t.equal(ff(Buffer.from([0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28])), true,
+          '2c. an alert record is TLS\'s to judge');
+  t.equal(ff(Buffer.alloc(0)), true, '2c. nothing at all is not held');
+  log.debug("Leaving checkFirstFlight().");
+}
+
 function checkSetting(t) {
   log.debug("Entering checkSetting().");
   t.log.info('2. the setting');
@@ -519,6 +561,77 @@ async function checkRoundTrips(t) {
                                fingerprint.ja4, ms: took }));
     }
 
+    // A HEADER WITH PART OF A ClientHello BEHIND IT (2026-10-06). HAProxy
+    // sends the header in the segment that carries the client's first
+    // bytes, and a large hello arrives in several: in the `cluster` mode
+    // tlsfuzzer's large hellos to LDAPS hung with nothing answered, because
+    // the TLS server was handed the partial hello and the rest was lost. A
+    // relay here forwards a real client's handshake behind a header, the
+    // header and the hello's first 40 bytes in one write, the rest 80ms
+    // later; the gate must hold the partial hello and complete the
+    // handshake.
+    const heldBefore = proxyProtocol.report().heldHello;
+    const relay = net.createServer(function (inbound) {
+      const outbound = net.connect(securePort, '127.0.0.1');
+      let first = true;
+      inbound.on('data', function (d) {
+        if (!first) {
+          outbound.write(d);
+          return;
+        }
+        first = false;
+        outbound.write(Buffer.concat([proxyProtocol.build({
+          source: { address: '198.51.100.12', port: 6004 } }),
+          d.subarray(0, 40)]));
+        setTimeout(function () {
+          outbound.write(d.subarray(40));
+        }, 80);
+      });
+      outbound.on('data', function (d) {
+        inbound.write(d);
+      });
+      outbound.on('end', function () {
+        inbound.end();
+      });
+      inbound.on('error', function (e) {
+        log.debug("Caught in relay: " + ((e && e.message) || e));
+      });
+      outbound.on('error', function (e) {
+        log.debug("Caught in relay: " + ((e && e.message) || e));
+      });
+    });
+    servers.push(relay);
+    const relayPort = await listen(relay);
+    seen = await new Promise(function (resolve) {
+      const client = tls.connect({ host: '127.0.0.1', port: relayPort,
+                                   key: material.key, cert: material.cert,
+                                   ca: [material.cert],
+                                   servername: 'localhost' }, function () {
+        client.write(REQUEST);
+      });
+      let out = '';
+      client.on('data', function (d) {
+        out += d.toString();
+      });
+      client.on('end', function () {
+        resolve(JSON.parse(bodyOf(out) || '{}'));
+      });
+      client.on('error', function (e) {
+        log.debug("Caught in 3n: " + ((e && e.message) || e));
+        resolve({ error: e.message });
+      });
+      setTimeout(function () {
+        client.destroy();
+        resolve({ error: 'no answer in 4s' });
+      }, 4000);
+    });
+    t.equal(seen.remoteAddress + ' ' + seen.authorized,
+            '198.51.100.12 true', '3n. the header with only the first 40 ' +
+            'bytes of a ClientHello behind it: the handshake completes',
+            JSON.stringify(seen));
+    t.equal(proxyProtocol.report().heldHello - heldBefore, 1,
+            '3n. and the gate held the partial hello until it was whole');
+
     // An ldapjs server: the bind limiter reads the connection's address.
     const ldap = require('ldapjs');
     const directory = ldap.createServer({ log: log });
@@ -591,6 +704,7 @@ async function checkRoundTrips(t) {
 async function run(t) {
   log.debug("Entering run().");
   checkParser(t);
+  checkFirstFlight(t);
   checkSetting(t);
   await checkRoundTrips(t);
   log.debug("Leaving run().");

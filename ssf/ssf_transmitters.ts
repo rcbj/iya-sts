@@ -78,7 +78,6 @@
 // (`ssf_transmitters_admin.ts`).
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -256,8 +255,7 @@ class SsfTransmitters {
   static digest(text: string): string {
     helpers.log.debug("Entering SsfTransmitters.digest().");
     helpers.log.debug("Leaving SsfTransmitters.digest().");
-    return nodeCrypto.createHash('sha256').update(String(text))
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(text), 'base64url');
   }
 
   // SSF 1.0 section 7: the configuration document's address for an issuer —
@@ -593,7 +591,7 @@ class SsfTransmitters {
         return this.refusal('STS-SSF-0113', 'A push stream needs this ' +
           'realm\'s address, which comes from the request.');
       }
-      secret = nodeCrypto.randomBytes(32).toString('base64url');
+      secret = stsCrypto.randomBytes(32).toString('base64url');
       asked.delivery.endpoint_url = String(ctx.base) + PUSH_PATH + '/' +
                                     encodeURIComponent(record.fedId);
       asked.delivery.authorization_header = 'Bearer ' + secret;
@@ -746,7 +744,7 @@ class SsfTransmitters {
       what = (action === 'add-subject' ? 'subject added'
                                        : 'subject removed');
     } else if (action === 'verify') {
-      state.verifyState = nodeCrypto.randomBytes(12).toString('base64url');
+      state.verifyState = stsCrypto.randomBytes(12).toString('base64url');
       answer = await this.call(record, 'POST',
         state.config.verification_endpoint,
         { stream_id: state.streamId, state: state.verifyState });
@@ -967,9 +965,10 @@ class SsfTransmitters {
     }
     const given = SsfTransmitters.digest(String(req.headers.authorization ||
                                                 ''));
-    const a = Buffer.from(given);
-    const b = Buffer.from(String(state.pushSecretDigest));
-    if (a.length !== b.length || !nodeCrypto.timingSafeEqual(a, b)) {
+    // A length difference answers false in constantTimeEquals(), as the
+    // check that stood here did.
+    if (!stsCrypto.constantTimeEquals(given,
+                                      String(state.pushSecretDigest))) {
       log.debug("Leaving SsfTransmitters.pushRoute(). Authorization.");
       return refuse(401, 'STS-SSF-0117', 'authentication_failed',
                     'The Authorization header is not this stream\'s.');

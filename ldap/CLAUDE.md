@@ -2710,6 +2710,24 @@ client now — the operator's version is `ldapRefusal()`'s summary.
 `createServer()` calls; `tests/vendored/sts_credential_signals.js` asserts over
 LDAPS that the 53 names `/portal/mfa` and `/portal/keys`.
 
+## AN ADD UNDER `ou=applications` REGISTERS THE APPLICATION (#504, 2026-10-06)
+
+**Since #496 product serves no application without `appRegisteredBy`**, and
+an `ldapadd` of an application entry by an identity allowed to write there is
+an administrator registering it — the console's act by another door. So
+`stampLdapRegistration()`, called by the add handler just before
+`putEntry()`, writes `appRegisteredBy: ldap:<bound DN>` (`ldap` alone for an
+unbound add, which only development allows) beside the registry's
+`administrator`, `rfc7591` and `startup`. Three limits, each a rule of the
+ticket: **only an ADD stamps** — a modify of an entry `seen()` filed changes
+its configuration and does not register it; **an author's value is kept** —
+an add that carries `appRegisteredBy` (an LDIF from another deployment)
+already says who; **only a direct child of `ou=applications`**. A sighting
+never reaches the handler (`seen()` writes through `writeApplication()`), so
+it still never stamps. `tests/ldap_application_registration.js` holds all
+three in both modes, and that an LDAP-added application is served in product
+where a seen-only one is refused.
+
 ## HOW A CONNECTION BINDS AND WHAT IT MAY READ, IN PRODUCT MODE (2026-09-12)
 
 **node-ldapjs decides nothing about security**, and that is the fact to start

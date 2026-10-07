@@ -147,9 +147,12 @@ async function settingValue(key) {
     "GET /admin-api/config answered " + answer.status + " " +
     answer.body.slice(0, 200));
   const json = answer.json || {};
+  // The rows are the groups' `settings`, as admin_api.js reads them. A
+  // top-level `settings` is the page's own settings BLOCK since #446 (an
+  // object), not a list of rows; it is read only when it is an array.
   const row = (json.groups || []).reduce(function (all, g) {
     return all.concat(g.settings || []);
-  }, json.settings || []).filter(function (one) {
+  }, Array.isArray(json.settings) ? json.settings : []).filter(function (one) {
     return one.key === key;
   })[0];
   assert.ok(row, "GET /admin-api/config lists no " + key);

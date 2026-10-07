@@ -486,9 +486,10 @@ class GnapSubject {
    * reference is `unknown_user`.
    *
    * @param user - the `user` member of the grant request
-   * @param ctx - the grant's context: `{ issuer, oauthIssuer, client }`, the
-   *   client being the instance presenting it — a user reference resolves
-   *   only for the client it was issued to
+   * @param ctx - the grant's context: `{ issuer, oauthIssuer, client,
+   *   clientNames }`, the client being the instance presenting it — a user
+   *   reference resolves only for the client it was issued to, and an
+   *   assertion only when one of `clientNames` is its audience
    * @returns `{ ok: true, username, verified }` (username null when nothing
    *   resolved), or a refusal
    */
@@ -521,6 +522,7 @@ class GnapSubject {
     const named = [];
     let verified = false;
     let mayAct = null;
+    let elsewhere = false;
     (user.assertions || []).forEach(function (assertion) {
       const name = self.usernameFromAssertion(assertion, context);
       if (name.ok) {
@@ -529,9 +531,23 @@ class GnapSubject {
         if (!mayAct && name.mayAct) {
           mayAct = name.mayAct;
         }
+      } else if (name.audience) {
+        elsewhere = true;
       }
     });
     const assertionProblems = (user.assertions || []).length && !verified;
+    if (assertionProblems && elsewhere) {
+      // SECTION 11.13 (#497): an assertion this realm issued to ANOTHER
+      // client, presented by this one, is a captured assertion — exactly
+      // how an end user is impersonated. Its own code, so an operator can
+      // tell a stolen assertion from a forged or expired one.
+      log.debug("Leaving GnapSubject.resolveUser(). An assertion for " +
+                "another client.");
+      return this.refusal('STS-GNAP-0073', 'the user assertion was issued ' +
+                          'to another client, and only the client it was ' +
+                          'issued to may present it (RFC 9635 sections 2.4 ' +
+                          'and 11.13).');
+    }
     if (assertionProblems) {
       log.debug("Leaving GnapSubject.resolveUser(). No assertion verified.");
       return this.refusal('STS-GNAP-0071', 'none of the presented user ' +
@@ -641,9 +657,38 @@ class GnapSubject {
     return null;
   }
 
+  // WHETHER THE PRESENTING CLIENT IS AN ASSERTION'S AUDIENCE (#497). RFC
+  // 9635 section 11.13: an assertion presented by a client that is not its
+  // audience is how an end user is impersonated, and the case section 2.4
+  // allows is an assertion the AS issued to the client presenting it — an
+  // ID Token's `aud` holds the client's client_id (OIDC Core section 2),
+  // and a SAML assertion this AS issued names the client in its
+  // AudienceRestriction (`assertionsFor()`). `ctx.clientNames` is every name
+  // the presenting client goes by (its identifier and client_ids); a context
+  // that names none — a caller outside a grant request — asks nothing.
+  private presenterIsAudience(audiences: string[], ctx: any): boolean {
+    const { log } = this;
+    log.debug("Entering GnapSubject.presenterIsAudience().");
+    const names = Array.isArray(ctx && ctx.clientNames)
+      ? ctx.clientNames.map(String).filter(function (one: string): boolean {
+        return !!one;
+      }) : [];
+    if (!names.length) {
+      log.debug("Leaving GnapSubject.presenterIsAudience(). Nobody to ask " +
+                "about.");
+      return true;
+    }
+    const answer = (audiences || []).some(function (one: string): boolean {
+      return names.indexOf(String(one)) >= 0;
+    });
+    log.debug("Leaving GnapSubject.presenterIsAudience(). " + answer);
+    return answer;
+  }
+
   private usernameFromAssertion(assertion: any,
                                 ctx: any): { ok: boolean; username?: string;
-                                             mayAct?: any } {
+                                             mayAct?: any;
+                                             audience?: boolean } {
     const { log } = this;
     const { helpers, STS, stsCrypto, config } = this.deps;
     log.debug("Entering GnapSubject.usernameFromAssertion(). format=" +
@@ -677,6 +722,13 @@ class GnapSubject {
                   "current ID Token from this issuer.");
         return { ok: false };
       }
+      const audiences = Array.isArray(claims.aud) ? claims.aud
+                                                  : [claims.aud];
+      if (!this.presenterIsAudience(audiences, ctx)) {
+        log.debug("Leaving GnapSubject.usernameFromAssertion(). The ID " +
+                  "Token's audience is another client.");
+        return { ok: false, audience: true };
+      }
       const name = claims.preferred_username ||
         helpers.nameForSubject(claims.sub);
       log.debug("Leaving GnapSubject.usernameFromAssertion(). id_token for " +
@@ -699,6 +751,17 @@ class GnapSubject {
         log.debug("Leaving GnapSubject.usernameFromAssertion(). SAML " +
                   "assertion does not verify.");
         return { ok: false };
+      }
+      const audiences: string[] = [];
+      const audienceRe = /<(?:[A-Za-z0-9]+:)?Audience\b[^>]*>([^<]+)<\/(?:[A-Za-z0-9]+:)?Audience>/g;
+      let one: RegExpExecArray | null;
+      while ((one = audienceRe.exec(xml))) {
+        audiences.push(one[1].trim());
+      }
+      if (!this.presenterIsAudience(audiences, ctx)) {
+        log.debug("Leaving GnapSubject.usernameFromAssertion(). The SAML " +
+                  "assertion's audience is another client.");
+        return { ok: false, audience: true };
       }
       const match = xml.match(/<(?:[A-Za-z0-9]+:)?NameID\b[^>]*>([^<]+)<\/(?:[A-Za-z0-9]+:)?NameID>/);
       log.debug("Leaving GnapSubject.usernameFromAssertion(). saml2.");

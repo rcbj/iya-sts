@@ -220,8 +220,10 @@ now asynchronous at that point. What is decided, and why:
 * **Nothing releases it.** The delete has already spent the artifact in this
   process whatever the answer, and a claim given back without the map restored
   would only license another node to resolve it.
-* **A store that cannot be asked refuses** (fail closed) with `StatusCode
-  Responder`, where a used artifact is `Requester` as before.
+* **A store that cannot be asked refuses** (fail closed). Since #160 that
+  refusal, like a used artifact, is the EMPTY response — see *AN ARTIFACT
+  THAT DOES NOT RESOLVE IS ONE ANSWER* below; it was `Responder` and
+  `Requester` until then.
 * Codes: `STS-SAML-0057` (2.0, resolved elsewhere), `0058` (1.1), `0059` (the
   store), `0060` (the answer failed after the spend) — renumbered from
   0055–0058 when feature/46 was rebased onto develop, which had taken 0055 and
@@ -1135,6 +1137,15 @@ leaves it resolvable by the right one):
   or for SAML 1.1 (whose Request names nobody) any responder path segment —
   in every mode (`STS-SAML-0078`);
 * its metadata must not have expired (`STS-SAML-0074`, SAML 2.0);
+* the artifact's SourceID must be the SHA-1 of THIS resolver's entityID
+  (SAML 2.0) or providerID (SAML 1.1) (#160) — with
+  `saml2.perApplicationEntityId` / `saml11.perApplicationProviderId` on, an
+  artifact minted for a party belongs to `/saml2/ars/{sp}` or
+  `/saml11/responder/{rp}`, and the unscoped resolver or another party's
+  answers it with the empty response and leaves it unspent
+  (`STS-SAML-0098`). Checked after the cell relay, so the minting cell
+  decides; a value that is not a 44-byte type 0x0004 (42-byte 0x0001)
+  artifact names no SourceID and is the unknown artifact it looks like;
 * it must be AUTHENTICATED where signed requests are required
   (`saml2.requireSignedAuthnRequests`; product by default) — an enveloped
   signature on the message verifying against its registered certificates, or
@@ -1143,6 +1154,29 @@ leaves it resolvable by the right one):
   for TLS client authentication, self-signed as a rule, so no chain is asked
   for; a revoked chain counts as none) — else `STS-SAML-0077`. A signature
   that is present and wrong is refused in every mode.
+
+### AN ARTIFACT THAT DOES NOT RESOLVE IS ONE ANSWER (#160)
+
+saml-core-2.0-os section 3.5.3 and saml-bindings-1.1 section 4.1.1.6 leave
+the resolver one answer for every artifact it does not hand over: Success,
+nothing embedded. The SAML 2.0 text names a replay and a requester that
+"cannot authenticate itself as the original intended recipient"; the 1.1 text
+a replay ("the same message as … an unknown artifact") and an artifact issued
+to another destination site. So every refusal above, an unknown, expired or
+replayed artifact, another entity's SourceID, a replay seen through the
+cluster claim, a claim store that cannot be asked and an answer that failed
+after the spend all answer `empty()` in `resolveArtifact()` (2.0) and
+`respond()` (1.1): Success, no message or assertion, **no StatusMessage**,
+identical whatever the reason, so the answer says nothing about whether an
+artifact exists or whom it was for. The reason is the error code, the log
+line and the audit row. Until #160 each was `Requester` (or `Responder`) with
+a sentence naming the reason, which neither specification allows. `Requester`
+is kept for a request that is not an artifact resolution at all (not XML, no
+ArtifactResolve or Request, no Artifact). **Owed to the parent project**: its
+`tests/vendored/sts_saml11.js` resolves a per-relying-party artifact at the
+unscoped `/saml11/responder` and expects a replay to be `samlp:Requester`
+naming the one-shot rule; both now fail here until that copy is changed and
+synced.
 
 ### HTTP-POST-SimpleSign
 
@@ -1243,6 +1277,47 @@ one declared for the family in `appAllowedProtocol` — not any application whos
 slug matches: an OAuth client's name is not somebody this identity provider
 has agreed to publish itself to, and a SAML 2.0 service provider is not a SAML
 1.1 relying party.
+**And, since #496, one somebody REGISTERED** (`appRegisteredBy`, #494's
+word): a development sighting writes the kind onto an entry, so the kind
+alone let an entry development had merely seen through every per-SP path in
+product. Both helpers add it in product only.
+
+## A SERVICE PROVIDER NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496, 2026-10-06)
+
+rcbj, widening #496: in product an unregistered application gets nothing but
+a 404 or its protocol's own "unknown application" error, and nothing is
+learnt from it. #112 closed the per-provider paths; the GENERIC doors still
+answered any Issuer, refused only later by the signature or the return
+address rule — after the signature check had written its audit row, and, on
+a signature refusal, after `recordServiceProvider()` had filed a sighting on
+whatever entry the Issuer named. Behind `mode.issuesToUnregisteredApplications()`
+(the `unregistered-saml-providers` row on `/admin/mode`):
+
+* **`/saml2/sso`**: an AuthnRequest whose Issuer (or path segment) is no
+  registered service provider is a **403 page, `STS-SAML-0103`**, on its
+  first arrival, before the signature check. A page and not a SAML
+  Response: no Response may go to an AssertionConsumerService nobody
+  registered, which is the signature refusal's reason too. **The one thing
+  still started is an MDQ lookup for an entityID with NO entry**, through
+  `queueMdqLookup()` and its trust-anchor rule above — the operator's
+  responder is consulted and nothing is taken from the request, and a
+  verified answer is a registration (`createApplication()` stamps it). So
+  `sts_saml_unregistered`'s request-started lookup keeps its shape.
+* **`/saml2/slo`**: a LogoutRequest from an unregistered Issuer ends
+  nothing, **403 page, `STS-SAML-0104`**, before the signature check and the
+  session lookup. With signed requests not required, an unsigned one from an
+  Issuer nobody registered ended the browser's session.
+* **`/saml11/sso`**: a browser flow for a relying party that is not
+  registered (named by `providerId`, the segment, or inferred) is a **403
+  page, `STS-SAML-0105`**, before its addresses are read.
+* **`sp_metadata.ts`**: "known" is "registered" for `mdqImport()` and
+  `queueMdqLookup()`, so a lookup a request starts for an entityID only a
+  sighting filed is gated as for an unknown one (`STS-SAML-0080` with no
+  anchor). Such an entry stays unregistered after a verified refresh — the
+  refresh updates it and does not create it — and is registered by an
+  operator.
+
+`tests/unregistered_applications.js` (S1–S5) holds it in both modes.
 
 **The parent project's paired SAML jobs** (decision 2 above) run against a
 development service, where nothing changed. `tests/vendored/sts_saml11.js` (a

@@ -598,6 +598,89 @@ class SharedSignals {
     return this.deps.helpers.randomId(16);
   }
 
+  // -------------------------------------------------------------------------
+  // THE SUBJECT'S ISSUER IS THE ONE THE RECEIVER DISCOVERED (#154).
+  //
+  // A person is named `iss_sub`, and a receiver matches that pair against
+  // the issuer it discovered — the issuer of the person's ID Tokens, which is
+  // the stream's `iss` and the SET's. The doors that raise an event with no
+  // request in hand (an administrator's password change, disable and enable
+  // through /admin-api, the RISC and CAEP automatic emissions) named the
+  // person under `issuerFor(null)`: this process's own address, which behind
+  // a published port or a proxy is an address no receiver discovered. The
+  // receiver then refused the event as naming an unknown subject — a failure
+  // that looks like a bad subject rather than a misconfigured transmitter —
+  // and a stream that had ADDED the person under the discovered issuer was
+  // not even sent it, the stream's subject key being the pair.
+  //
+  // So, per stream: an `iss_sub` naming THAT request-less issuer — at the
+  // top, or as a complex subject's member — is re-issued under the stream's
+  // `iss`. Nothing else is touched: a federation partner's subject keeps its
+  // partner's issuer, and one already named under the stream's is as it was.
+  // -------------------------------------------------------------------------
+  /**
+   * Names a subject this transmitter built under its request-less issuer
+   * under the stream's issuer instead (#154).
+   *
+   * @param record - the stream
+   * @param subject - the event's subject
+   * @returns the subject, re-issued where it named the request-less issuer
+   */
+  subjectUnderStreamIssuer(record: Json, subject: Json): Json {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.subjectUnderStreamIssuer().');
+    const streamIss = String((record && record.iss) || '');
+    const ownIss = this.issuerFor(null);
+    if (!subject || typeof subject !== 'object' || !streamIss ||
+        streamIss === ownIss) {
+      log.debug('Leaving SharedSignals.subjectUnderStreamIssuer(). ' +
+                'Nothing to re-issue.');
+      return subject;
+    }
+    let changed = 0;
+    const reissue = function (one: Json): Json {
+      if (one && typeof one === 'object' && one.format === 'iss_sub' &&
+          one.iss === ownIss) {
+        changed += 1;
+        return Object.assign({}, one, { iss: streamIss });
+      }
+      return one;
+    };
+    let out = reissue(subject);
+    if (out && out.format === 'complex') {
+      const copy: Json = Object.assign({}, out);
+      Object.keys(copy).forEach(function (member) {
+        if (member !== 'format') {
+          copy[member] = reissue(copy[member]);
+        }
+      });
+      out = copy;
+    }
+    log.debug('Leaving SharedSignals.subjectUnderStreamIssuer(). ' + changed +
+              ' member(s) re-issued.');
+    return changed ? out : subject;
+  }
+
+  /**
+   * Whether a stream covers a subject, asked under the stream's issuer
+   * (#154). Every emitter chooses its candidate streams with this BEFORE it
+   * transmits, so a stream that added the person under the issuer it
+   * discovered is a candidate at all — `transmitNow()` re-issuing the
+   * subject would come too late for a stream never handed the event.
+   *
+   * @param record - the stream
+   * @param subject - the event's subject
+   * @returns true when the stream covers it
+   */
+  coversSubject(record: Json, subject: Json): boolean {
+    const { log, streams } = this.deps;
+    log.debug('Entering SharedSignals.coversSubject().');
+    const covered = streams.streamCoversSubject(record,
+      this.subjectUnderStreamIssuer(record, subject));
+    log.debug('Leaving SharedSignals.coversSubject(). ' + covered);
+    return covered;
+  }
+
   // THE SUBJECT AS THIS RECEIVER KNOWS THE PERSON (#149). A stream's owner
   // is a client, and a client registered for pairwise or ephemeral subjects
   // was never told the person's public `sub`: an event naming it would name
@@ -730,7 +813,15 @@ class SharedSignals {
             errorCodes } = this.deps;
     const { iso } = this.deps.helpers;
     log.debug('Entering SharedSignals.transmitNow(). ' + record.stream_id);
-    const asked = options || {};
+    // #154: a subject this transmitter named under its request-less issuer is
+    // named under the STREAM's — before the coverage check, whose key is the
+    // issuer and the subject together. See subjectUnderStreamIssuer().
+    const given = options || {};
+    const asked = given.subject
+      ? Object.assign({}, given,
+                      { subject: this.subjectUnderStreamIssuer(record,
+                                                               given.subject) })
+      : given;
     const uri = String(asked.uri || '');
     // SSF'S OWN TWO EVENTS ARE ABOUT THE PIPE, AND THE SPECIFICATION LETS THE
     // TRANSMITTER SEND THEM WHETHER OR NOT THEY WERE AGREED (#144): a
@@ -1955,7 +2046,7 @@ class SharedSignals {
       spec_version: '1_0',
       issuer: this.issuerFor(req),
       // baseUrlOf() carries the realm prefix already; see issuerFor().
-      jwks_uri: baseUrlOf(req) + '/oauth2/jwks',
+      jwks_uri: baseUrlOf(req, 'oauth-oidc') + '/oauth2/jwks',
       delivery_methods_supported: streams.offeredDeliveryMethods(),
       configuration_endpoint: base + '/stream',
       status_endpoint: base + '/status',
@@ -3654,14 +3745,15 @@ class SharedSignals {
     // refused, which reads at the far end as a bad subject rather than as a
     // misconfigured transmitter.
     const due: Json = caep.observe(Object.assign({}, notice || {},
-        { issuer: this.issuerFor((notice || {}).req || null) }));
+        { issuer: this.issuerFor((notice || {}).req || null),
+          classifyPrincipal: this.principalOfSession.bind(this) }));
     if (!due) {
       log.debug('Leaving SharedSignals.caepAutoEmit(). Nothing is due.');
       return Promise.resolve({ sent: 0, streams: 0 });
     }
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, due.uri) &&
-             streams.streamCoversSubject(record, due.subject);
+             this.coversSubject(record, due.subject);
     });
     if (!candidates.length) {
       // SAID ONCE, AT INFO, AND IT IS THE MOST USEFUL LINE THIS FEATURE
@@ -3715,6 +3807,66 @@ class SharedSignals {
   }
 
   // ---------------------------------------------------------------------------
+  // WHO A SESSION IS ABOUT, WHEN IT IS NOT A PERSON (#221 P5, rcbj's question 4
+  // of 2026-09-27: whether such sessions are announced, and under what).
+  //
+  // Three families start a session for a caller that need not be a person —
+  // a SCIM client (`scim_auth.ts`), a SPIRE Server API caller
+  // (`spiffe_grpc.ts`) and a WS-Trust requester (`wstrust.ts`) — and they
+  // ARE announced, as they were: a receiver that cares what an application
+  // or a workload is doing with this service is owed the same
+  // session-established / presented / revoked a person's sign-in gets. What
+  // changed is the subject. Until #221 it was a `user` naming "whatever the
+  // directory filed that caller under", which for a SCIM client
+  // authenticated with its own client credentials was an `iss_sub` whose
+  // `sub` was empty or a client_id. Now:
+  //
+  //   * a SPIFFE ID (`spiffe://...`) is a WORKLOAD — `application` with
+  //     format `uri` — even where the directory filed a person entry under
+  //     it: what authenticated is the workload's SVID;
+  //   * a name that resolves to a PERSON entry (it has a `urn:uuid:` `sub`)
+  //     is a person, unchanged — a service account (#221 P1) among them;
+  //   * a name that is an APPLICATION entry's identifier is the application
+  //     — `application` with format `opaque`;
+  //   * anything else is left as it was.
+  //
+  // Asked once per session, when its CAEP row is made (`caep.observe()`).
+  // ---------------------------------------------------------------------------
+  /**
+   * Says what kind of principal a session's subject is when it is not a
+   * person: a SPIFFE workload or an application entry.
+   *
+   * @param username - the name the session was started for
+   * @param sub - the person subject the directory gave it, or ''
+   * @returns `{ workload }`, `{ application }`, or null for a person (or a
+   * name nothing here recognises)
+   */
+  principalOfSession(username: string, sub: string): Json {
+    const { log, applications } = this.deps;
+    log.debug('Entering SharedSignals.principalOfSession().');
+    const name = String(username || '');
+    if (/^spiffe:\/\//i.test(name)) {
+      log.debug('Leaving SharedSignals.principalOfSession(). A workload.');
+      return { workload: name };
+    }
+    if (!name || /^urn:uuid:/i.test(String(sub || ''))) {
+      log.debug('Leaving SharedSignals.principalOfSession(). A person.');
+      return null;
+    }
+    let known = false;
+    try {
+      known = !!applications.get(name);
+    } catch (e) {
+      log.debug('Caught in SharedSignals.principalOfSession(): ' +
+                ((e && e.message) || e));
+      known = false;
+    }
+    log.debug('Leaving SharedSignals.principalOfSession(). ' +
+              (known ? 'An application.' : 'Unknown.'));
+    return known ? { application: name } : null;
+  }
+
+  // ---------------------------------------------------------------------------
   // A REALM'S SIGNING KEYS ROTATED (#42, rcbj's D4) — this service's own event,
   // to every stream that delivers it, from `common/signing_rotation.ts` after
   // the rotation has happened. It has no subject, so every stream that asked
@@ -3753,8 +3905,10 @@ class SharedSignals {
       rotated: (n.rotated || []).map(function (r: Json): string {
         return r.unit + ' ' + r.from + ' -> ' + r.to;
       }).join(', '),
-      jwks_uri: base ? base + '/oauth2/jwks' : '',
-      crypto_metadata_uri: base ? base + '/crypto/metadata.json' : ''
+      jwks_uri: base ? helpers.rebaseTo(base, 'oauth-oidc') +
+                       '/oauth2/jwks' : '',
+      crypto_metadata_uri: base ? helpers.rebaseTo(base, 'pki') +
+                                  '/crypto/metadata.json' : ''
     });
     const candidates = streams.listStreams().filter((record: Json) => {
       return streams.deliversEvent(record, uri);
@@ -4038,7 +4192,7 @@ class SharedSignals {
     const subject = options.subject;
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             (!subject || streams.streamCoversSubject(record, subject));
+             (!subject || this.coversSubject(record, subject));
     });
     if (!candidates.length) {
       // The same line caepAutoEmit() says, for the same reason: "nothing
@@ -4366,7 +4520,7 @@ class SharedSignals {
     const subject = caep.subjectFor(known);
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             streams.streamCoversSubject(record, subject);
+             this.coversSubject(record, subject);
     });
     audit.audit({ action: 'caep.event.emit', category: 'signals',
       protocol: 'CAEP', channel: 'http', target: sessionId,
@@ -4644,11 +4798,13 @@ class SharedSignals {
   // ---------------------------------------------------------------------------
   // CAEP token-claims-change TO EVERY HOLDER A CONFIGURATION CHANGE MOVED
   // (#238): an application's permissions or allowed scopes, a claim set, a
-  // claim setting, a federation release list. One event PER PERSON — a CAEP
-  // subject names a principal, and an application-scoped subject waits on
-  // #221 — to each person holding a live artifact `match` accepts
-  // (`admin_stats.liveClaimBearers()`, which is the live-issuance check), with
-  // the claims `claimsFor(bearer)` answers for their newest such artifact.
+  // claim setting, a federation release list. One event PER HOLDER — a CAEP
+  // subject names a principal — to each person holding a live artifact
+  // `match` accepts (`admin_stats.liveClaimBearers()`, which is the
+  // live-issuance check), with the claims `claimsFor(bearer)` answers for
+  // their newest such artifact. An application holding a live token of its
+  // OWN (client_credentials, no person) is a holder too since #221 P5, and is
+  // told under the application subject (`applicationClaimsEmit()`).
   //
   // **IN SLICES, SO A LARGE REALM DOES NOT WEDGE ANYTHING.** FAN_OUT_SLICE
   // holders at a time, each slice's deliveries awaited and the next slice
@@ -4703,6 +4859,11 @@ class SharedSignals {
       }
       const slice = bearers.slice(from, from + SharedSignals.FAN_OUT_SLICE);
       return Promise.all(slice.map((bearer: Json) => {
+        // AN APPLICATION'S OWN TOKENS (#221 P5): a client_credentials token
+        // is about no person, and is announced under the application.
+        if (bearer.application) {
+          return this.applicationClaimsEmit(bearer, asked);
+        }
         return this.claimsAutoEmit({ kind: 'claims',
           username: bearer.username, liveChecked: true,
           claims: function () {
@@ -4733,6 +4894,76 @@ class SharedSignals {
                ((e && e.message) || e));
       return { sent: sent, streams: people,
                why: String((e && e.message) || e) };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // CAEP token-claims-change ABOUT AN APPLICATION'S OWN TOKENS (#221 P5).
+  //
+  // A client_credentials token names no person: `admin_stats.js` files it
+  // under the client, and until #221 the fan-out sent it as an `iss_sub`
+  // "person" whose `sub` was the client_id — a receiver told that somebody
+  // it had never heard of held changed claims. The holder is the APPLICATION
+  // (`ssf_subjects.js`, *A non-human principal's subject*), and it is told
+  // exactly what claimsAutoEmit() tells a person: the claims `claimsFor()`
+  // answers for its newest live token, through the same act switch
+  // (`claims`) and the same streams, with no session (the token is the
+  // application's own, from no sign-on). `bearer` is a row
+  // `liveClaimBearers()` answered with `application` set, so the live check
+  // is already made. Never rejects.
+  // ---------------------------------------------------------------------------
+  /**
+   * Sends CAEP `token-claims-change` about an application's own live token
+   * (client_credentials), under the application subject.
+   *
+   * @param bearer - a `liveClaimBearers()` row with `application` set
+   * @param asked - the fan-out's notice: `claimsFor`, `protocol`, the
+   * initiating entity and the reasons
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
+  applicationClaimsEmit(bearer: Json, asked: Json): Promise<EmitResult> {
+    const { log, caep, subjects } = this.deps;
+    log.debug('Entering SharedSignals.applicationClaimsEmit().');
+    const application = String((bearer && bearer.application) || '');
+    const notice = asked || {};
+    if (!this.enabled() || !application ||
+        caep.autoEmitActs().indexOf('claims') < 0) {
+      log.debug('Leaving SharedSignals.applicationClaimsEmit(). Off, not an ' +
+                'emitted act, or no application named.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    return Promise.resolve().then(() => {
+      const given: Json = typeof notice.claimsFor === 'function'
+        ? notice.claimsFor(bearer) : null;
+      const claims = given && typeof given === 'object' &&
+        !Array.isArray(given) ? given : null;
+      if (!claims || !Object.keys(claims).length) {
+        log.debug('Leaving SharedSignals.applicationClaimsEmit(). No claim ' +
+                  'moved.');
+        return { sent: 0, streams: 0, why: 'no claim moved' };
+      }
+      const which = Object.keys(claims).join(', ');
+      log.debug('Leaving SharedSignals.applicationClaimsEmit().');
+      return this.emitProtocolEvent({
+        req: null, protocol: String(notice.protocol || 'Applications'),
+        type: 'token-claims-change',
+        subject: subjects.applicationSubject(application, ''),
+        values: { claims: claims },
+        initiatingEntity: String(notice.initiatingEntity || 'admin'),
+        reasonAdmin: (notice.reasonAdmin
+          ? String(notice.reasonAdmin) : 'A configuration change') +
+          ' (the application ' + application + '\'s own token: ' + which +
+          ')',
+        reasonUser: 'Claims in an access token already issued to this ' +
+                    'application changed.' });
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.applicationClaimsEmit(): ' +
+                ((e && e.message) || e));
+      log.warn(this.deps.errorCodes.tag('STS-SSF-0140') + 'caep: a ' +
+               'token-claims-change about the application ' + application +
+               ' could not be decided: ' + ((e && e.message) || e));
+      return { sent: 0, streams: 0, why: String((e && e.message) || e) };
     });
   }
 
@@ -4940,7 +5171,7 @@ class SharedSignals {
     log.debug('Entering SharedSignals.sendOneRiscEvent(). ' + due.uri);
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, due.uri) &&
-             streams.streamCoversSubject(record, due.subject);
+             this.coversSubject(record, due.subject);
     });
     const type = due.uri.slice(events.RISC_PREFIX.length);
     if (!candidates.length) {
@@ -5160,7 +5391,13 @@ class SharedSignals {
     const { subjectForName: helpersSubjectFor } = this.deps.helpers;
     log.debug('Entering SharedSignals.emitCredentialChange().');
     const options = asked || {};
-    const username = String(options.username || '');
+    // WHOSE CREDENTIAL (#221 P5): a person by `username`, an application
+    // entry by `application` (its identifier) or a SPIFFE workload by
+    // `workload` (its SPIFFE ID). `username` below is the name the log, the
+    // audit row and the reasons use for whichever it is.
+    const application = String(options.application || '');
+    const workload = String(options.workload || '');
+    const username = String(options.username || application || workload);
     if (!this.enabled() || !username) {
       log.debug('Leaving SharedSignals.emitCredentialChange(). ' +
                 'SSF is off or nobody named.');
@@ -5208,13 +5445,18 @@ class SharedSignals {
       return Promise.resolve({ sent: 0, streams: 0,
                                why: verdict.errors.join(' ') });
     }
-    // The person's own subject, as every token names them (2026-09-14).
-    const subject = subjects.complexSubject({ user: { format: 'iss_sub',
-      iss: this.issuerFor(null),
-      sub: helpersSubjectFor(username) || username } });
+    // The person's own subject, as every token names them (2026-09-14); an
+    // application's or a workload's as `ssf_subjects.js` argues (#221 P5).
+    const subject = application
+      ? subjects.applicationSubject(application, '')
+      : workload
+        ? subjects.workloadSubject(workload)
+        : subjects.complexSubject({ user: { format: 'iss_sub',
+            iss: this.issuerFor(null),
+            sub: helpersSubjectFor(username) || username } });
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             streams.streamCoversSubject(record, subject);
+             this.coversSubject(record, subject);
     });
     audit.audit({ action: 'caep.event.auto', category: 'signals',
       protocol: 'CAEP', channel: 'http', target: username,
@@ -5278,8 +5520,10 @@ class SharedSignals {
   // events carry the same `device` member (`caep.subjectFor()`), so a
   // receiver that added the device to its stream sees both.
   //
-  // An application's device has no `user`: an application has no CAEP user
-  // subject here (#145), and the device alone is still one principal.
+  // An application's device has no `user`: there is no person, and the
+  // device alone is still one principal. (Its owner application is not added
+  // as an `application` member: the register names the owner, but a device's
+  // events are about the DEVICE, and #221 P5 changed nothing here.)
   // ---------------------------------------------------------------------------
   /**
    * Returns a registered device's subject: `iss_sub` with this realm's issuer
@@ -5299,7 +5543,8 @@ class SharedSignals {
   /**
    * Sends a CAEP event about a registered device (a compliance change, a risk
    * level change, or a credential change for a device key or secret), with a
-   * complex subject naming the device and, for a person's device, its owner.
+   * complex subject naming the device and its owner: a person, or (#221) an
+   * application.
    *
    * @param asked - `type`, `act`, `deviceId`, `username`, `values`,
    * `initiatingEntity` and the reasons
@@ -5326,9 +5571,14 @@ class SharedSignals {
       return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
     }
     const username = String(o.username || '');
+    // AN APPLICATION'S DEVICE (#221) names the application as the owner,
+    // with the `application` member a person's device has as `user`.
+    const application = username ? '' : String(o.application || '');
     const subject = subjects.complexSubject({
       user: username ? { format: 'iss_sub', iss: this.issuerFor(null),
                          sub: subjectForName(username) || username } : null,
+      application: application ? subjects.applicationMember(application)
+                               : null,
       device: this.deviceSubjectOf(deviceId) });
     log.debug('Leaving SharedSignals.emitDeviceEvent().');
     return this.emitProtocolEvent({
@@ -5630,7 +5880,7 @@ class SharedSignals {
     }
     const candidates = streams.listStreams().filter((record) => {
       return streams.deliversEvent(record, uri) &&
-             streams.streamCoversSubject(record, subject);
+             this.coversSubject(record, subject);
     });
     audit.audit({ action: 'risc.event.emit', category: 'signals',
       protocol: 'RISC', channel: 'http', target: accountId,
@@ -6173,6 +6423,10 @@ export = {
   emitClaimsChange: slot.forward('emitClaimsChange'),
   claimsFanOut: slot.forward('claimsFanOut'),
   emitIdentityAssuranceChange: slot.forward('emitIdentityAssuranceChange'),
+  // An application's own token's claims, and what kind of principal a
+  // session is (#221 P5), for `tests/application_signals.js`.
+  applicationClaimsEmit: slot.forward('applicationClaimsEmit'),
+  principalOfSession: slot.forward('principalOfSession'),
   // A person's risk level changed (#62 P4): `risk/risk_engine.ts` sends it.
   riskAutoEmit: slot.forward('riskAutoEmit'),
   riscReport: slot.forward('riscReport'),

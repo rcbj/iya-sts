@@ -12,10 +12,14 @@ half. What it does when the token it holds stops being valid, or when the token
 it reads grows a claim it was not expecting, is the other half, and the console
 is how you cause either without editing this service and restarting it.
 
-**Every page also answers `?format=json`, and every form also accepts a JSON
-body**, because a console reachable only by clicking is one no test can assert
-against. The [management API](management-api.md) at `/admin-api` is the same
-console for a machine: every control has an operation there.
+**The console is a static application over the [management
+API](management-api.md).** `/admin` and every page under it answer the same
+document, and its script draws each page from that page's `/admin-api`
+operation and sends each form to the operation that is that control. So
+everything the console shows, a script can read from `/admin-api`, and
+everything it does, a script can do there: a console reachable only by
+clicking would be one no test could assert against. The page needs its
+script; with scripts blocked it says so and draws nothing else.
 
 This page covers who may use the console, how it is laid out, and the pages
 whose behaviour needs explaining. Pages that belong to one protocol are
@@ -33,25 +37,25 @@ roles**:
   that could change a page it was not allowed to see would be a trap rather
   than a permission.
 
-The console is an **OpenID Connect relying party** of this service's own
-authorization server, as the user portal is: an unauthenticated request is sent
-to `/oauth2/authorize` as the seeded client `sts-admin-console`, the person signs
-in at the sign-in screen, and the code comes back to `/admin/callback`. The
-console session is tied to the sign-on session it came from and ends with it;
-**Sign out** ends both. See [Sessions](sessions.md) and
-[Signing out](signing-out.md).
+The console signs in **in your browser, as a client of this service's own
+authorization server**: the page sends you to `/oauth2/authorize` as the
+seeded public client `sts-admin-console`, with PKCE, you sign in at the
+sign-in screen, and the code comes back to `/admin/callback`, where the page
+redeems it for an access token audienced to the realm's `/admin-api`. The
+token is **DPoP-bound** to a key the browser will not export, held in memory
+only, and renewed with the refresh grant; a reload signs in again, silently
+while your sign-on session lasts. The console keeps no session of its own:
+**Sign out** ends the sign-on session at `/logout`, and with it the console's
+tokens. See [Sessions](sessions.md) and [Signing out](signing-out.md).
+
+On a service with trust realms, the plain `/admin` first asks which realm;
+`/admin?realm=default` skips the question, and a realm's own console is at
+`/realm/<id>/admin`.
 
 **Your own account is one click away, with no second sign-in.** The account
-menu links to the user portal of the realm you signed in through. When the
-portal has no session of its own in your browser but finds a live console
-session, it makes its own from it: the same person, the same realm, and the
-same record of how you signed in. It does this even after the sign-on session
-behind the console has run out, which the console outlives by renewing its
-tokens. You are not asked to choose a realm or to sign in. A realm's own
+menu links to the user portal of the realm you signed in through, which signs
+you in from the same sign-on session the console used. A realm's own
 administrator who opens the plain `/portal` is sent to their realm's portal.
-That portal session ends when the console session does, and **Sign out** in
-the portal ends the console session too. It works one way only: a portal
-session never signs anybody in to the console.
 
 **There is no setting that turns the gate off.** What `global.mode` changes is
 whether the password typed at the sign-in screen is *checked*:
@@ -59,8 +63,8 @@ whether the password typed at the sign-in screen is *checked*:
 * **In development mode** no password is checked, so the gate is a turnstile
   and not a lock: it proves that somebody *typed* a name that holds a role.
   What it buys is what a test service is for — a client, or a person, can be
-  driven through a 302 to a sign-in screen, a 401 with no session, a 403 with
-  the wrong role, and a role model that can be granted and revoked.
+  driven through the sign-in, a 401 with no token, a 403 with the wrong role,
+  and a role model that can be granted and revoked.
 * **In product mode** the password is verified, and the console is the
   administrative surface of a deployed identity service.
 
@@ -215,7 +219,7 @@ spends exactly that, so *back* lands on page 3 of that filter.
 * Four views take a trail leaf — the four that drill in: `?user=`, `?group=`,
   `?application=` and `?profile=`. A parameter that only *filters* a list does
   not; the filter has its own **clear** link.
-* `?format=json` ignores all of it: a caller has the URL it asked for.
+* The page's operation ignores all of it: a caller has the URL it asked for.
 
 ### Paging
 
@@ -232,7 +236,7 @@ exists to prevent.
 * **Every button acts on an identifier, never a row number**, so a row issued
   or revoked between the render and the click cannot make the wrong one the
   target.
-* A `?format=json` reply carries `page`, `pages` and `matched`, so a test can
+* The page's operation answers `page`, `pages` and `matched`, so a test can
   walk the whole list.
 
 **A drill-down with several lists pages each separately.** `?user=` answers
@@ -255,7 +259,9 @@ in the JSON reply.
 **The management API pages the same way.** `GET /admin-api/users` and
 `GET /admin-api/groups` take the same parameters and reply with a
 `<name>Paging` object beside each array — `sessionsPaging`, `membersPaging`, and
-so on — carrying `page`, `pages`, `perPage`, `firstRow`, `lastRow` and `total`.
+so on — carrying `page`, `pages`, `perPage`, `firstRow`, `lastRow` and `total`,
+with `param` (the query parameter that moves that list) and `noun` (what its
+rows are counted in).
 Each session carries its own `tokensPaging`. The counts around them stay counts
 of the whole list: a group's `memberCount`, `presentCount` and `danglingCount`.
 The `session-<id>Page` parameter is described in the operation's prose rather
@@ -345,8 +351,9 @@ anywhere here has an entry at `uid=<name>,ou=users,<base>` ([LDAP](ldap.md)),
 and the two are the same authentication seen from two sides. What is shown is
 the entry itself: its DN, where it came from (`seed` or `authentication`), its
 two generalized-time stamps in the directory's own format, and **every
-attribute with every value, the operational ones included**. `?format=json`
-carries the same object under `ldap`.
+attribute with every value, the operational ones included**. `GET
+/admin-api/users?user=` carries the same object under `ldap`, a credential's
+value masked as no GET carries one.
 
 Where there is no entry, the section says **which** of five reasons it is:
 auto-creation is switched off; the identity is a *client*, not a person; it has
@@ -841,8 +848,8 @@ Every act says in its own column whether it was policed.
 **Every table on `/admin/delegation` is paged at ten rows** and they share one
 `?per=`. Each has a page parameter of its own (`?page=`, `?chainsPage=`,
 `?permissionsPage=`, `?grantsPage=`, `?pairsPage=`, `?flagsPage=`,
-`?mechanismsPage=`), so moving one leaves the others. `?format=json` still
-carries every list whole, with `allowed.filter` and `allowed.paging` reporting
+`?mechanismsPage=`), so moving one leaves the others. The page's operation
+still carries every list whole, with `allowed.filter` and `allowed.paging` reporting
 what the browser was shown.
 
 The data is also at `GET /admin-api/delegation`, with the acts, the distinct
@@ -872,9 +879,9 @@ issued to.
 Under the picture is the same thing in words — every party with its links,
 every relationship as a row, and **every credential that came out** (kind and
 identifier only, never the credential). It takes the table's five filters and is
-drawn from everything that matched, not one page. `?format=json` is the whole
-graph (also the `graph` member of `GET /admin-api/delegation`) and `?format=svg`
-the document on its own.
+drawn from everything that matched, not one page. Its operation answers the
+whole graph (also the `graph` member of `GET /admin-api/delegation`), and the
+page's SVG link saves the drawing on its own.
 
 **`/admin/delegation/chain`** draws one relationship on its own, linked from
 every row. It carries the chain's key rather than a row number, so a link in a
@@ -926,9 +933,9 @@ exchange). The same person search accepts any spelling — `alice`,
   names somebody who was never present, which is the row worth opening.
 
 `/admin/users` links to it; that page is the ledger, where a token is revoked,
-and this one is the relationships. All the delegation pages answer
-`?format=json` and `?format=svg`, and link back to the table carrying whatever
-filter you left it with.
+and this one is the relationships. Every delegation page is drawn from an
+operation under `/admin-api/delegation`, saves its drawing as an SVG file, and
+links back to the table carrying whatever filter you left it with.
 
 **None of them runs a script.** The layout is computed on the server with
 [`@dagrejs/dagre`](https://github.com/dagrejs/dagre) and every shape is this
@@ -1159,14 +1166,18 @@ about.
 `admin.view` event and the list is one row longer than when you asked. That is
 stated rather than suppressed; `?category=` reads past it.
 
+**A management API call names the subject of its token**: the person it was
+issued for, or the client's id for a `client_credentials` token. A caller
+cannot name somebody else.
+
 Filtering is by category, action, outcome, actor and free text, and the filter
 vocabulary is read from the table the log records against. The actor filter is
 a **substring**, because the actor on a directory row is a bind DN and on a
 Kerberos row `alice@REALM`; where an identity has been normalised, the row
 carries both the key and the form presented. Paging is `?page=` and `?per=`, but
 **walk the list by `seq`**: it is monotonic and never reused, so "everything
-after 4,102" is exact while the log is still being written. `?format=json`
-carries `oldestSeq` and `newestSeq`; a gap between the last `seq` a caller saw
+after 4,102" is exact while the log is still being written. The page's
+operation carries `oldestSeq` and `newestSeq`; a gap between the last `seq` a caller saw
 and `oldestSeq` is how many events the cap discarded.
 
 Two things it deliberately does not have:

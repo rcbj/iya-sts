@@ -325,7 +325,9 @@ not assessed yet; they reach the decision in P3 through the issuance gate.
 **THE MODEL IS A PORT, AND THE TEST SAYS SO.** `risk_model.ts` follows the
 notebook's code — its weightings, its unsmoothed user side, its smoothing at
 the first level only, its quarter of the population likelihood for a value
-the person never used, its refusal to score a first sign-in. Its own test
+the person never used, its refusal to score a first sign-in — and departs
+from it in one case the notebook drops rather than scores: a level whose
+lookup found nothing (#502, below). Its own test
 vectors come from das-group's RBA dataset, which is third-party data and not
 here, so `tests/risk_model.js` holds the port to the notebook's functions,
 run unchanged on a synthetic seeded history: all 82 scores reproduced exactly.
@@ -346,6 +348,28 @@ distinct count the smoothing needs, and a `user` row per person for the
 number of users. It is read BEFORE the sign-in is counted — the notebook's
 order — and moved with one statement, so two nodes never lose a count.
 
+**THE HISTORY ALSO HOLDS THREE FEATURES OF THE ENGINE'S OWN, outside the
+model, for the person only**: `ja4` (the TLS stack, `new-tls-stack`),
+`credential`, and **`device-id`** — which device: `registered:<id>` for the
+person's own registered device, the browser fingerprint otherwise
+(`new-device`). `risk_engine.ts`'s `HISTORY_FEATURES` names them.
+**`device-id` WAS `device` UNTIL #506 (2026-10-07)**, the name of the model's
+device-type level, and a feature key is just a name in
+`sts_risk_feature_counts`: the two shared one history per person, so a
+fingerprint was counted as a device type and a device type made a
+fingerprint "seen" — a fingerprint reading `desktop` was never `new-device`
+for a person who had signed in from a desktop, and moved the model's
+`device` count beside the device type's. The model keeps Freeman et al.'s
+name; the engine's feature moved. **No migration (rcbj's rule)**: rows
+counted as `device` before #506 stop moving where they were fingerprints,
+the model asks for its device types by value only, and
+`risk.historyRetentionDays` (180 days since last use) ages out the rest. The
+cost is one `new-device` (×2) per fingerprint already seen, the first time
+it signs in after the upgrade. **No name of the engine's may be a level of
+the model's**: `tests/risk_engine.js` J1 holds that, J2–J3 that the two are
+counted apart and neither makes the other seen, and J4 that the model's
+factors are the same with colliding fingerprints as with none.
+
 **THE EVALUATORS** are factors on the score, in `SIGNALS`: a Tor exit (×5),
 the reputation list (×5), the operator's deny list (×20; ×50 until #226) and allow list
 (×0.2), an automated client (×10), a JA4 this person never signed in with
@@ -354,8 +378,89 @@ the network (×3). **They are a first calibration and deliberately visible**:
 every assessment on the page lists its signals, and what they should be is
 read off that record before P3 lets anything be decided by them.
 
-**THE LEVEL** is CAEP's own: LOW, MEDIUM from `risk.mediumScorePercent` (100,
-a score of 1 — the model's even odds), HIGH from `risk.highScorePercent`
+**THE SCORE HAS THREE FACTORS, AND THE RECORD SHOWS ALL THREE (#499,
+2026-10-06).** Freeman et al.'s Eq. (7) is the product of a ratio per feature,
+p(x^k) / p(x^k|u,L), and the USER TERM p(u|A) / p(u|L) — p(u|A) uniform over
+the people who have signed in, p(u|L) this person's share of the realm's
+sign-ins (section II-B). The model's row carries them as `factors.ip`,
+`factors.ua` and `factors.user`, which multiply to its `score`, and `terms`
+holds the user term's three counts (`users`, `signIns`, `userSignIns`); the
+API answers that row and Monitoring → Risk draws it in the Signals column.
+Until #499 `factors` showed the two features only, and a score of 1.49 with
+factors 0.964 and 0.805 looked like a bug in the model. It was the user term
+(1.92): **the user term is the same for every context a person signs in
+from, and above 1 for anybody who signs in less than the realm's average.**
+Where everybody shares one address and one browser — a NAT, a VPN, a
+container bridge, the test stacks — both feature factors are near 1 and the
+score IS the user term, so a person with a stable setup and below-average
+activity is MEDIUM at a threshold of 1 as soon as they are scored. That is
+the paper's score, and what was wrong was the line it was compared with:
+Eq. (4) puts it at θ = p(L)/p(A), the prior odds of a legitimate sign-in,
+and Eq. (7) drops further p(A) terms "compensated for by adjusting the
+decision threshold θ", which the paper sets on a validation set for a chosen
+false-positive rate (section II after Eq. (4), section IV-C). **rcbj's
+decision (2026-10-06, option A): `risk.mediumScorePercent` defaults to 300,
+θ = 3** — a calibrated line rather than 1, above the largest user term seen
+on a shared-network stack (1.98); `risk.calibrationMediumPercent` is how a
+realm tunes it. HIGH stays at 10 (`risk.highScorePercent` 1000); what that
+does to the evaluators is in `docs/risk-scoring.md`, *Levels*.
+`tests/risk_model.js` holds the decomposition on all 82 notebook scores and
+the shared-network case; `tests/risk_engine.js` C2–C3 the record and the page.
+
+**A LEVEL WHOSE LOOKUP FOUND NOTHING IS UNSEEN, ON BOTH SIDES (#502,
+2026-10-06).** The levels above the first are lookups — the ASN and country
+of the address, the browser, OS and device type bowser reads from the
+User-Agent. Until #502 a lookup that found nothing was the value `''`, and
+the person's history and the population both held it, so the network and
+country of an UNMAPPED address read as known: every private, loopback or
+bridge address, and every address on a service with no ASN or geolocation
+dataset (or a stale one). A brand-new address on an unmapped network moved
+H2's score from 2.01 to 2.06 (#499); with the datasets it moved by ×4.
+**The rule, from the paper**: a coarser level is the entity h_k the value
+belongs to, p_k(x) = p(x|h_k)·p(h_k) (section II-C, Eq. 9), and p(h_k) is
+the unsmoothed ML estimate, "zero for unseen ISPs (or countries)" (Fig. 1:
+p_1 = p_2 = 0). An unanswered lookup names no entity, so `''` is not an ISP
+every unmapped address belongs to: the level adds nothing to Eq. (11)'s
+interpolation on either side — the same, in the ratio, as renormalising the
+weights over the known levels — and is no "known ISP" in the unseen count
+M_{h_k}. **The person's history does not count it either, in both modes**:
+section II-C ends "similar procedures can be exploited for events
+conditioned to a given user ... restricting the available counts" — one
+estimator, two sets of counts — so there is no mode predicate. The
+person's own address still counts at the address level, which is what
+keeps repeated sign-ins from one bridge address familiar
+(`tests/risk_engine.js` I1). **The first level is not a lookup**: an empty
+User-Agent is something the client did (a KDC request sends none) and stays
+a value, or every KDC sign-in would be a never-seen browser (×4).
+
+So: `risk_model.ts`'s `missing()` skips the level, `historyOf()`'s distinct
+counts leave it out, and `risk_engine.ts` neither asks for nor RECORDS a
+missing value (nor an `ip>asn` combination row for one). The model row
+carries `unknown` — the level names, recorded whether or not the sign-in
+was scored — which `GET /admin-api/risk` answers and Monitoring → Risk
+draws after the factors (`unknown: asn, country`). **The notebook never
+meets the case**: it `dropna()`s every sign-in with a missing value before
+scoring, which a service cannot do (no private address would ever be
+assessed); its 82 test scores have every level known and are unchanged.
+**Rows a store already holds for `''`** are never asked for again; one
+can still add one to a distinct count (M) until `risk.historyRetentionDays`
+ages it out — no migration, by rcbj's rule. **With the known-context cap
+(#226)**: a known context is counted on the address digest and the UA,
+never on the ASN or country, so it is unchanged — a familiar bridge address
+is still known after `risk.minimumHistory` sign-ins, and a new unmapped one
+is not, as for a mapped one. **With `risk.listsMatchSpecialPurpose`**: a
+special-purpose address is never mapped, so its ASN and country are always
+unknown; the setting sets LISTS aside and says nothing about the model, so
+a new private address is still ×4 with it off (`tests/risk_engine.js` I4).
+**What it costs a shared-network stack**: a person who signs in from an
+address they never used — another bridge, another node behind a balancer —
+is ×4 against the user term, MEDIUM at θ = 3 once they have
+`risk.minimumHistory` sign-ins. That is the point of the issue; the
+suite's chain jobs sign in from one address and are unaffected.
+
+**THE LEVEL** is CAEP's own: LOW, MEDIUM from `risk.mediumScorePercent` (300,
+a score of 3 — Eq. (4)'s θ calibrated, not the even odds a line at 1 would
+assume; #499), HIGH from `risk.highScorePercent`
 (1000); UNSCORED for a first sign-in with no signal — **and for every
 sign-in before the person has `risk.minimumHistory` (5) earlier ones**
 (2026-09-23, rcbj): with one or two sign-ins the model is mostly the
@@ -482,10 +587,39 @@ sign-in established, with the session's own `amr`/`acr` — the authorization
 endpoint, the token endpoint by the grant's `sid`, SAML 2.0 and 1.1,
 WS-Federation, GNAP); otherwise the person's STANDING held in this process
 (`risk.standingValidMinutes`, `/admin/caches`' `risk.standings`) — which is
-all a Kerberos service ticket has, because the KDC is the parent's locked code
-and asks synchronously, and what WS-Trust reads from the store before it asks.
+all a Kerberos SERVICE ticket has, because the TGS asks synchronously, and
+what a delegated WS-Trust hop reads from the store before it asks (the
+requester's and, since #499, the `OnBehalfOf` / `ActAs` subject's).
 **A standing held per process is a known gap**: a node that did not see the
 sign-in or read the store holds none, and decides that ticket on roles.
+
+**WS-TRUST AND THE KDC DECIDE AT THE DOOR (#499, rcbj's decision 2,
+2026-10-06).** Until then both decided on the STANDING an earlier sign-in
+left — WS-Trust read it from the store, then assessed the sign-in after its
+session — so a refused attempt started no session, was never assessed, and
+the person stayed at MEDIUM for `risk.standingValidMinutes` (720) however
+their score would have moved. Now:
+
+* **WS-Trust** (`wstrust.ts`'s `doorAssessment()`): an Issue or a Renew that
+  delegates nothing is AUTHENTICATED by the route before the exchange, then
+  `authn.assessSignIn()`, and `handleRst()` is handed the authentication
+  (never verified twice: a refused password would count twice) and asks the
+  gate with that assessment's facts; the decision is written onto the
+  assessment, and the session takes it as `detail.risk`. A delegated request,
+  a Validate and a Cancel are as they were.
+* **The KDC**: once an AS-REQ's pre-authentication verified,
+  `principals.decideSignIn()` asks the key source (`krb5_person_keys.ts`'s
+  `decideSignIn()`), which assesses the sign-in (the address is the KDC's
+  ambient audit source), RECORDS it — so the TGS-REQs after it decide on it
+  — and asks the gate with no application, so only a Deny about risk
+  refuses: `KDC_ERR_POLICY` with `STS-RISK-0016` / `0017`. An OTP meets a
+  second-factor step-up, a hardware PKINIT key a security-key one. No new
+  require reaches the parent project's COPY set (`kerberos/CLAUDE.md`).
+
+The evidence signals refuse exactly as before: they are in the assessment the
+door now decides on. `tests/risk_decisions.js` M1–M3 hold both doors: a
+MEDIUM attempt refused and the next one ASSESSED AGAIN, and the person let
+through at the default line.
 
 **THE GATE'S TWO SHORTCUTS WAIVE THE ROLE QUESTION ONLY.** No application
 named, or `roles.enforceIssuance` off, used to answer "allowed" without
@@ -703,8 +837,8 @@ an UNSCORED sign-in scored (`LOWERING_ONLY`), and a compromised device is
 never "compliant".
 
 **THE DEVICE FEATURE.** Where the person's own registered device proved the
-sign-in, the history's `device` feature is `registered:<id>` rather than the
-browser fingerprint (P6), and it is never `new-device`: its key was proven
+sign-in, the history's `device-id` feature (`device` until #506, above) is
+`registered:<id>` rather than the browser fingerprint (P6), and it is never `new-device`: its key was proven
 theirs at enrolment, which is stronger than any history. `riskOf()` carries
 the id as `device.registered`. Somebody else's device changes nothing about
 the fingerprint path.

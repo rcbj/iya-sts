@@ -76,10 +76,10 @@
 
 const kcrypto = require('./krb5_crypto.js');
 const prim = require('./krb5_primitives.js');
-// node's own, for the SHA-256 an on-demand RID is derived from (see
-// autoRidFor()). A builtin, so it adds nothing to the parent project's COPY
-// set.
-const nodeCrypto = require('crypto');
+// `common/crypto.js`, for the SHA-256 an on-demand RID is derived from (see
+// autoRidFor()). `helpers.js` below already requires it at load, so this
+// adds no file to the parent project's COPY set (#453).
+const stsCrypto = require('../common/crypto');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 // The mode. A LEAF (rule 3) that registers nothing and requires only `config`,
@@ -1415,8 +1415,7 @@ function autoRidFor(nameComponents, realm) {
   const span = AUTO_RID_LIMIT - AUTO_RID_BASE;
   // A label in front of the name, so this digest is never the same bytes as
   // any other SHA-256 of a principal name something else computes.
-  const digest = nodeCrypto.createHash('sha256')
-    .update('sts-krb5-auto-rid:' + key, 'utf8').digest();
+  const digest = stsCrypto.digest('sha256', 'sts-krb5-auto-rid:' + key);
   // 48 bits is an exact integer in a double, and 2^48 mod ~2^30 leaves a bias
   // of about one part in a quarter of a million — nothing a SID can show.
   const start = digest.readUIntBE(0, 6) % span;
@@ -2699,6 +2698,51 @@ function personShaped(nameComponents, realm) {
 }
 
 // ---------------------------------------------------------------------------
+// THE SIGN-IN'S RISK, DECIDED AT THE DOOR (#499; rcbj's decision 2). Asked by
+// the KDC once an AS-REQ's pre-authentication has verified, before a ticket
+// is built: the source (`krb5_person_keys.ts`) assesses the sign-in with the
+// risk engine, records it — so the person's standing is THIS sign-in's, which
+// is what the TGS-REQs after it are decided on — and asks the issuance policy.
+// Answers `{ refused: true, errorCode, eText }` when the policy refused it on
+// risk, and null otherwise. One component, this KDC's own realm; a source
+// without the function (the parent project's in-process jobs have none), or
+// one that threw, refuses nobody — an assessment that could not be made is
+// "no facts", which never denies.
+// ---------------------------------------------------------------------------
+/**
+ * Asks the key source to assess an AS-REQ's sign-in for risk and decide on it,
+ * after pre-authentication verified.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @param detail - `{ indicators, pkinit, hardware, method }` of the
+ *   pre-authentication
+ * @returns `{ refused, errorCode, eText }` when refused on risk, or null
+ */
+async function decideSignIn(nameComponents, realm, detail) {
+  log.debug('Entering decideSignIn().');
+  const ctx = current();
+  if (!keySource || typeof keySource.decideSignIn !== 'function' ||
+      !Array.isArray(nameComponents) || nameComponents.length !== 1 ||
+      !nameComponents[0] || (realm || ctx.REALM) !== ctx.REALM) {
+    log.debug('Leaving decideSignIn(). Not asked.');
+    return null;
+  }
+  let answer = null;
+  try {
+    answer = await keySource.decideSignIn(String(nameComponents[0]),
+                                          detail || {});
+  } catch (e) {
+    log.debug('Caught in decideSignIn(): ' + ((e && e.message) || e));
+    // Unknown never denies: the ticket is decided as it was before #499.
+    answer = null;
+  }
+  log.debug('Leaving decideSignIn(). ' +
+            (answer && answer.refused ? 'Refused.' : 'Not refused.'));
+  return answer && answer.refused ? answer : null;
+}
+
+// ---------------------------------------------------------------------------
 // IS THIS PERSON'S ACCOUNT DISABLED? (2026-09-17). Asked by the KDC before an
 // AS-REQ or an S4U2Self is answered, in BOTH modes — a development KDC that
 // would create the principal on the spot still refuses a person an
@@ -2799,6 +2843,23 @@ function preauthProvider() {
   return (keySource && keySource.fast &&
           typeof keySource.fast.openAsRequest === 'function')
     ? keySource.fast : null;
+}
+
+// THE PKINIT PROVIDER (#179), handed over inside the key source beside FAST
+// and for FAST's reason: `krb5_kdc.js` reaches it here and requires nothing
+// new. Null without a key source — the parent project's in-process jobs —
+// so PA-PK-AS-REQ stays unknown padata there, as it always was.
+/**
+ * Returns the PKINIT provider handed over inside the key source.
+ *
+ * @returns the `krb5_pkinit.ts` instance, or null
+ */
+function pkinitProvider() {
+  log.debug('Entering pkinitProvider().');
+  log.debug('Leaving pkinitProvider().');
+  return (keySource && keySource.pkinit &&
+          typeof keySource.pkinit.checkRequest === 'function')
+    ? keySource.pkinit : null;
 }
 
 // The e-texts, one per state the source can report. No em dash and nothing
@@ -2911,10 +2972,89 @@ function directoryUser(name) {
   }
   withKeyCache(record);
   record.keys = new Map(answer.keys);
+  // Keyed now, so not the keyless record certificatePerson() made (#179).
+  record.keyless = false;
   noteKeyed(record);
   attachRetained(record, answer);
   log.debug('Leaving directoryUser(). kvno ' + record.kvno + '.');
   return { principal: record, refusal: null };
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON WITH NO KERBEROS KEYS YET, FOR PKINIT (#179, 2026-10-05).
+//
+// `directoryUser()` refuses a person whose keys were never derived — nobody
+// has typed their password at a door that derives them — or were derived
+// from a password they no longer have, and the refusal tells them to sign in
+// once. That is right for a password, and wrong for a CERTIFICATE: PKINIT
+// needs no long-term key at all (the reply key is agreed by Diffie-Hellman),
+// and a person whose only credential is a smart card may never sign in with
+// a password anywhere. So the KDC asks this, for those two states only, when
+// PKINIT is on: the same registered record a keyed person gets — the PAC, the
+// sign-out instant, everything the TGS reads — with NO keys and `keyless`
+// set. The KDC asks only for a request that brings no password: one that
+// does keeps the "sign in once" refusal, the useful sentence for somebody
+// typing one. Any other state (unknown, off, unreadable) is refused as
+// before. Null when the name is not a directory person's.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a directory person whose Kerberos keys are absent or stale as a
+ * keyless principal, for PKINIT; null otherwise.
+ *
+ * @param nameComponents - the client name
+ * @param realm - the Kerberos realm
+ * @returns the principal, `keyless` set, or null
+ */
+function certificatePerson(nameComponents, realm) {
+  log.debug('Entering certificatePerson().');
+  if (!keySource || !personShaped(nameComponents, realm)) {
+    log.debug('Leaving certificatePerson(). Not a directory person.');
+    return null;
+  }
+  const name = String(nameComponents[0]);
+  let answer = null;
+  try {
+    answer = keySource.personKeys(name) || {};
+  } catch (e) {
+    log.debug('Caught in certificatePerson(): ' + ((e && e.message) || e));
+    answer = { state: 'unreadable' };
+  }
+  if (answer.state !== 'none' && answer.state !== 'stale') {
+    log.debug('Leaving certificatePerson(). State ' + answer.state + '.');
+    return null;
+  }
+  const REALM = current().REALM;
+  const key = name + '@' + REALM;
+  let record = principals.get(key);
+  if (!record) {
+    record = register({
+      name: [name],
+      type: 1,
+      realm: REALM,
+      salt: REALM + name,
+      etypes: offeredEtypes(current()),
+      directoryKeys: true,
+      description: 'a person in the directory with no Kerberos keys, ' +
+                   'authenticated by a certificate (PKINIT)',
+      pac: {
+        rid: autoRidFor([name], REALM),
+        groups: [RID.DOMAIN_USERS],
+        userAccountControl: UAC.NORMAL_ACCOUNT,
+        // S-1-18-1 would say a password logon; this one was a certificate,
+        // which is what S-1-18-1's sibling for a key-trust logon is not
+        // either, so the authentication-authority SID is left out.
+        extraSids: ['S-1-5-11']
+      }
+    });
+    principals.set(key, record);
+  }
+  withKeyCache(record);
+  record.keys = new Map();
+  record.keyless = true;
+  log.info('krb5: ' + key + ' has no Kerberos keys (' + answer.state + '); ' +
+           'it may authenticate with a certificate (PKINIT) and nothing else.');
+  log.debug('Leaving certificatePerson().');
+  return record;
 }
 
 // ---------------------------------------------------------------------------
@@ -4007,7 +4147,10 @@ module.exports = {
   lookupUser: lookupUser,
   personDisabled: personDisabled,
   personSecondFactor: personSecondFactor,
+  decideSignIn: decideSignIn,
   preauthProvider: preauthProvider,
+  pkinitProvider: pkinitProvider,
+  certificatePerson: certificatePerson,
   // Previous key versions (see PREVIOUS KEY VERSIONS).
   retainedKeyFor: retainedKeyFor,
   retainedKvnosOf: retainedKvnosOf,

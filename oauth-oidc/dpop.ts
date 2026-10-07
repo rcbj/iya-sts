@@ -59,7 +59,6 @@
 // forward to the installed instance.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and nothing else here, so it cannot join a cycle and it registers
 // no route, so its position is not a position at all.
@@ -155,6 +154,12 @@ interface DpopDeps {
   stepUp: typeof stepUp;
   clusterClaims: typeof clusterClaims;
   capabilities: typeof capabilities;
+  // FAPI 2.0 HTTP Signatures (#178), asked last of an accepted token.
+  // Reached LAZILY, so this file stays the leaf rule 3 asks it to be: the
+  // profile reads the application register and the client key cache.
+  httpSignatures: () => {
+    atResource(req: Req, res: Res, presented: Json, where?: string): boolean;
+  };
 }
 
 const PROOF_TYP = 'dpop+jwt';
@@ -480,7 +485,10 @@ class Dpop {
       config: config,
       stepUp: stepUp,
       clusterClaims: clusterClaims,
-      capabilities: capabilities
+      capabilities: capabilities,
+      httpSignatures: function () {
+        return require('./http_signatures');
+      }
     };
   }
 
@@ -749,9 +757,9 @@ class Dpop {
     const { log, b64u } = this.deps;
     log.debug("Entering Dpop.athOf().");
     log.debug("Leaving Dpop.athOf().");
-    return b64u(crypto.createHash('sha256')
-                      .update(String(accessToken), 'ascii')
-                      .digest());
+    // The 'ascii' reading the hash was always fed, kept (#453).
+    return b64u(stsCrypto.digest('sha256',
+                                 Buffer.from(String(accessToken), 'ascii')));
   }
 
   // -------------------------------------------------------------------------
@@ -1597,10 +1605,16 @@ class Dpop {
                   "required.");
         return null;
       }
+      const bearer = { accessToken: accessToken, claims: claims,
+                       scheme: scheme, jkt: '', verified: verified };
+      if (!this.deps.httpSignatures().atResource(req, res, bearer, where)) {
+        log.debug("Leaving Dpop.presentedAccessToken(). FAPI 2.0 HTTP " +
+                  "Signatures refused the request.");
+        return null;
+      }
       log.debug("Leaving Dpop.presentedAccessToken(). A Bearer request. " +
                 "verified=" + verified);
-      return { accessToken: accessToken, claims: claims, scheme: scheme,
-               jkt: '', verified: verified };
+      return bearer;
     }
 
     const checked = this.verifyProof(req.headers['dpop'], {
@@ -1642,13 +1656,22 @@ class Dpop {
       log.debug("Leaving Dpop.presentedAccessToken(). Step-up is required.");
       return null;
     }
-    log.debug("Leaving Dpop.presentedAccessToken(). A valid DPoP request. " +
-              "jkt=" + checked.jkt +
-              ", token verified=" + verified);
-    return {
+    const proved = {
       accessToken: accessToken, claims: claims, scheme: scheme,
       jkt: checked.jkt, verified: verified, dpop: checked
     };
+    // FAPI 2.0 HTTP SIGNATURES (#178), LAST: a signature is checked only on
+    // a request whose token, binding and step-up requirement all held, and
+    // the response signer is armed only for a response to one.
+    if (!this.deps.httpSignatures().atResource(req, res, proved, where)) {
+      log.debug("Leaving Dpop.presentedAccessToken(). FAPI 2.0 HTTP " +
+                "Signatures refused the request.");
+      return null;
+    }
+    log.debug("Leaving Dpop.presentedAccessToken(). A valid DPoP request. " +
+              "jkt=" + checked.jkt +
+              ", token verified=" + verified);
+    return proved;
   }
 
   // RFC 9470 SECTION 3: answer the request with the challenge and return true

@@ -2,10 +2,10 @@
 
 Kerberos v5 — a KDC on raw TCP and UDP 88 and over MS-KKDCP, a Kerberos-protected
 service, the same acceptor over HTTP as SPNEGO (RFC 4559/4178), and **a way of
-signing in with it**. Nineteen files, and they divide into three groups — the two
-stored-key modules of 2026-09-12, the two FAST modules of 2026-09-22 and the
-krbtgt rotation of 2026-09-23 belong to the service group and are described at
-the foot.
+signing in with it**. Twenty-one files, and they divide into three groups — the
+two stored-key modules of 2026-09-12, the two FAST modules of 2026-09-22, the
+krbtgt rotation of 2026-09-23 and the two PKINIT modules of 2026-10-05 belong
+to the service group and are described at the foot.
 
 **The codec**, which knows nothing about this service: `krb5_primitives.js`,
 `krb5_asn1.js`, `krb5_crypto.js`, `krb5_messages.js`, `krb5_ndr.js`,
@@ -311,6 +311,40 @@ policy. rcbj's decisions on #186, each load-bearing:
   (PA-PAC-OPTIONS for RBCD, forwardable evidence for classic), and the
   policy's other rules (a protected user, subject groups, semantics,
   authority) refuse with `KDC_ERR_POLICY` (`STS-KRB-0177`).
+* **THE MODE IS THE MECHANISM'S, AS [MS-SFU] NAMES IT (#491, 2026-10-06).**
+  [MS-SFU] 1.3 calls S4U2Self protocol transition and S4U2Proxy constrained
+  delegation, and the register records them so whatever chain they belong
+  to: a protocol-transition chain (S4U2Self, then S4U2Proxy hops) has ONE
+  impersonation row and delegation rows after it, where the OAuth 2.0
+  impersonation chain is impersonation at every hop. That is right rather
+  than a mismatch — an S4U2Proxy ticket carries the chain in its PAC
+  (S4U_DELEGATION_INFO), and an exchanged token with no `act` carries none —
+  and the console's Kerberos rows say it under their mode
+  (`web_delegation.ts`'s `kerberosModeNote()`), as `docs/delegation.md` and
+  the chain jobs' headers do.
+* **FORWARDABLE EVIDENCE FOR BOTH ROUTES, AND THE REPLY'S FLAG (#492).**
+  [MS-SFU] 3.2.5.2.1 refuses non-forwardable evidence for classic delegation
+  and 3.2.5.2.3, since the CVE-2020-16996 update, for resource-based too;
+  Samba (`mssfu.c`), MIT (`check_tgs_s4u2proxy()`) and Samba's
+  `test_rbcd_non_forwardable` (written against Windows) agree. RBCD with
+  non-forwardable evidence is `KDC_ERR_BADOPTION`, `STS-KRB-0199`; it was
+  allowed until #492. [MS-SFU] 3.2.5.2.4 says nothing of the reply's flags,
+  so RFC 4120 section 3.3.3 decides as in MIT and Heimdal: forwardable when
+  the request asks for it and the front end's TGT is forwardable, and never
+  for a protected user ([MS-SFU] 3.2.1, DelegationNotAllowed). It was added
+  unconditionally until then. A protected user's evidence is never
+  forwardable, so the policy's own protected-user refusal (`STS-KRB-0177`,
+  `KDC_ERR_POLICY`) is no longer what a protected user meets at S4U2Proxy:
+  the evidence refusal comes first.
+* **S4U_DELEGATION_INFO NAMES (#489).** Each transited service is written
+  `SPN@REALM` and the S4U2proxyTarget is the bare SPN — what Samba
+  (`samba_kdc_update_delegation_info_blob()`) and MIT
+  (`update_delegation_info()`) write and Samba's s4u_tests expect of
+  Windows (`host/<service1>@<REALM>`). [MS-PAC] 2.9 fixes no syntax. Both are
+  built in `krb5_kdc.js` (`resolveS4u()`'s `transited`, `answerTgsReq()`'s
+  `delegationInfo`); the vendored PAC codec only encodes what it is given,
+  and was not changed. An evidence ticket from before #489 keeps its bare
+  entries, and the new one is appended after them.
 * **ENTRIES ONLY.** `krb5_principals.js` keeps no delegation field on a
   principal. The fixture definitions' rules are SEEDS (`delegationSeeds()`),
   written onto the services' entries by `krb5_delegation.ts` the first time a
@@ -1313,9 +1347,9 @@ at a full stack WILL see is one more entry, PA-FX-FAST (136), in every
 factor it takes, the indicator — which `GET /admin-api/kerberos` carries as
 `status` (rule 7).
 
-**NOT BUILT**: anonymous PKINIT armor, PKINIT itself (#179 — so a person whose
-only second factor is a security key cannot get a ticket in product), RFC 6113
-authentication sets, OTP PIN change and hashed OTP values. (FAST in the TGS exchange
+**NOT BUILT**: RFC 6113 authentication sets, OTP PIN change and hashed OTP
+values. (PKINIT and anonymous PKINIT armor were on this list until #179 — the
+section below.) (FAST in the TGS exchange
 and hide-client-names were on this list until #204 — see the section at the foot.)
 
 **TESTS.** `tests/kerberos_fast_otp.js` (in process: the vectors, the codec's DER
@@ -1328,6 +1362,130 @@ both modes: the host armor from a keytab the API hands over, the portal-enrolled
 code, the refusal and PREAUTH_FAILED, FAST and OTP with its own client in
 `krb5_wire.js`, the indicator read with the keytab key, the SPNEGO session's
 `amr`, and MIT `kinit -k`, `kinit -T` and `kvno`).
+
+## PKINIT: A CERTIFICATE AS THE PRE-AUTHENTICATION (#179, 2026-10-05)
+
+**THE HOLE #173 LEFT.** A product person who holds or owes a second factor is
+refused a ticket on the password alone, and FAST with OTP is the way in for
+an authenticator app. A person whose only second factor is a SECURITY KEY had
+no way in: Kerberos has no WebAuthn pre-authentication. What it has is PKINIT
+(RFC 4556), with RFC 8070's freshness token, RFC 8636's KDF agility, RFC 5349's
+curves and RFC 8062's anonymous PKINIT. `krb5_pkinit.ts` is the KDC's half,
+`krb5_pkinit_codec.ts` its wire format, and `common/crypto.js` section 16 every
+cryptographic operation: CMS SignedData read, verify and write, DH/ECDH, the
+two reply-key derivations. The headers of those three argue each section; the
+decisions a reader needs here:
+
+* **rcbj's two answers (2026-10-05, on #179).**
+  * *Which certificates:* this realm's identity Issuing CAs (the
+    `tls-client`, `acme`, `est` and `scep` authorities, read from
+    `tls_client_certificates.js`'s list), with id-pkinit-KPClientAuth or
+    smart-card logon. Bound by RFC 4556's first rule, the certificate
+    recorded on the person's entry (`identityOf()` + `stillHeld()`), or its
+    second, an id-pkinit-san naming exactly the client. An id-pkinit-san
+    naming anybody else refuses whatever else matches. The portal's TLS
+    client certificates are not widened.
+  * *What the ticket claims:* `pkinit` always, and `pkinit-hardware` (with
+    hw-authent) only for a smart-card logon certificate whose key this
+    service did not generate (`keySource` on the enrolled record). Read by
+    `spnego_authn.ts` as `swk` and `hwk`, NEVER `pwd`; one factor, so `acr
+    "1"`.
+* **REACHED THROUGH THE KEY SOURCE, BESIDE FAST** (`setKeySource({ ...,
+  fast, pkinit })`, `principals.pkinitProvider()`), for #173's reason:
+  `krb5_kdc.js`, `krb5_principals.js` and `krb5_service.js` gained no
+  require, so the parent project's COPY set is what it was. A process
+  without the key source (the parent's in-process jobs) does not offer
+  PA-PK-AS-REQ and ignores it as unknown padata. `pki.js` and `crypto.js`
+  changed, but required nothing new.
+* **THE KDC CERTIFICATE** is a new realm use case, `kdc` — its own Issuing
+  CA, because "may answer PKINIT as this realm's KDC" is a power over every
+  client that trusts the Root (and the enrollment protocols refuse the `kdc`
+  profile for the same reason). `pki.issueKdcKeyPair()` makes one per realm
+  per PROCESS on first use, with id-pkinit-KPKdc, digitalSignature and an
+  id-pkinit-san of krbtgt/REALM@REALM, the KRB5PrincipalName encoded by the
+  codec (the vendored encoder's `krb5` SAN kind writes a UTF8String, which no
+  client reads). The private key lives in that process's memory only; a slot
+  per node, pid and thread keeps one process from superseding another's.
+* **THE CLIENT'S PATH** is built to the service Root through the realm's own
+  Issuing CAs (`pki.describeIssuer()`), because MIT's `FILE:` identity sends
+  the leaf alone. Which authority signed the leaf is read off the register
+  (`revocation_status.walk()`), so a leaf from another realm, or from a
+  non-identity authority, is CLIENT_NOT_TRUSTED although it chains to the
+  same Root. Revocation is `localVerdictFor()` under `pki.revocationCheck`.
+* **WHAT THE WIRE TAUGHT** (MIT Kerberos 1.22, driven against an in-process
+  KDC): PA-PK-AS-REP's `dhInfo [0]` is EXPLICIT, as the RFC's module says. It
+  was written IMPLICIT first, and MIT refused it ("ASN.1 length doesn't match
+  expected value"). MIT also names the anonymous client in realm
+  WELLKNOWN:ANONYMOUS in RFC 8636's partyUInfo, so that is what the KDC
+  derives with. RFC 8636 section 8's vectors are reproduced only with the
+  server name's type NT-PRINCIPAL, which is what MIT parses `krbtgt/SU.SE`
+  as.
+* **MOST SECURE BY DEFAULT**:
+  * The freshness token is required (`krb5.pkinitRequireFreshness`).
+  * RFC 4556's own KDF is refused (`krb5.pkinitLegacyKdf`, with a warning).
+  * MODP group 2 is refused, although the RFC makes it a MUST: MIT itself
+    defaults to 2048 bits.
+  * SHA-1 in a CMS signature or a certificate is refused, with RFC 8636's
+    error data.
+  * RSA key transport (section 3.2.3.2) is not implemented at all,
+    KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED: no forward secrecy.
+  * DH keys are never reused.
+  * The ticket ends no later than the certificate.
+  * The AuthPack is spent once across the cluster
+    (`krb5.pkinit-authpack`).
+* **AD-INITIAL-VERIFIED-CAS** goes into the TGT inside AD-IF-RELEVANT, after
+  the indicator's CAMMAC, and the TGS copies it ("any TGS MUST copy").
+* **ANONYMOUS PKINIT IS FAST ARMOR AND NOTHING ELSE** (`krb5.anonymousPkinit`,
+  `answerAnonymousAsReq()` in `krb5_kdc.js`):
+  * only a TGT for this realm is issued;
+  * it carries no PAC, no indicator and no AD-INITIAL-VERIFIED-CAS;
+  * its session key is KRB-FX-CF2 of the KDC's PA-PKINIT-KX contribution and
+    the reply key;
+  * `answerTgsReq()` refuses any TGS-REQ presenting an anonymous ticket
+    (KDC_ERR_POLICY, `STS-KRB-0198`);
+  * `armorFromApReq()` needed no change: an anonymous TGT is a TGT for this
+    realm's TGS.
+* **A PERSON WITH NO KERBEROS KEYS** (never signed in with a password, or
+  keys stale) is refused before pre-authentication with "sign in once"
+  (`STS-KRB-0104`), which is wrong for a certificate. With PKINIT on, a
+  request that brings NO password is answered for them through
+  `principals.certificatePerson()`, a registered record with no keys. One
+  that brings a password keeps the old refusal.
+* **POST-QUANTUM**: nothing is standardised. ML-KEM would replace the key
+  agreement and ML-DSA the CMS signatures (crypto.js section 16's header).
+  `krb5.pkinitKdcKeyAlgorithm` is the row an ML-DSA KDC key would be added
+  to.
+
+**NOT BUILT**:
+* RSA key transport;
+* DH key reuse;
+* anonymous tickets in the TGS exchange (RFC 8062 section 4.2) and an
+  authenticated client asking for an anonymous ticket;
+* TD-TRUSTED-CERTIFIERS hints from the client (read and ignored: the KDC has
+  one chain);
+* `kdcPkId`;
+* RSASSA-PSS and EdDSA CMS signatures;
+* certificates from any authority but this realm's.
+
+**CODES**: `STS-KRB-0178`–`0198`, `STS-PKI-0219`. **CONSOLE AND API**: a
+PKINIT block on `/admin/kerberos`, `status.pkinit` on `GET /admin-api/kerberos`
+(`Krb5Pkinit.policy()`).
+
+**TESTS**:
+* `tests/kerberos_pkinit.js` (in process):
+  * RFC 8636's vectors and the codec;
+  * SPNEGO's reading;
+  * a development AS exchange with an EST-enrolled smart-card logon
+    certificate, through the reply key and into the TGT (indicators,
+    hw-authent, AD-INITIAL-VERIFIED-CAS, lifetime);
+  * the refusals: no token, another's certificate, replay, 1024-bit MODP, no
+    KDF, no DH, revoked;
+  * anonymous PKINIT with PA-PKINIT-KX and the TGS refusal;
+  * a product child: password alone refused and the certificate admitted
+    for a two-factor person, and a keyless person admitted.
+* `tests/vendored/sts_kerberos_pkinit.js` (`local: true`): MIT `kinit -X` and
+  `kinit -n` / `-T` against the running service. The tests image installs
+  `krb5-pkinit`.
 
 ## RC4-HMAC IS DEVELOPMENT MODE'S (#182, 2026-09-23)
 
@@ -1643,3 +1801,212 @@ for an exported `answerMessage(bytes, transport)` — the home cell needs to run
 what `handleMessage()` does on bytes that arrived without a socket.
 
 Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`.
+
+---
+
+## PAC CLIENT CLAIMS (#493, 2026-10-06)
+
+`PAC_CLIENT_CLAIMS_INFO` ([MS-PAC] 2.11, buffer type 13), written while
+`krb5.pacClaims` is on in the realm. rcbj's four decisions on #493: the claims
+are the sixth claim set of `common/admin_stats.js`, `kerberos-pac`, with a
+per-application override applied to SERVICE tickets; claim ids are
+`ad://ext/<name>:<hex>`; roles go as claims and never as extraSids; a claims
+set is never compressed. `docs/kerberos.md`, *PAC claims*, is the user's half.
+
+**THE CODEC IS THE PARENT'S, AS EVER.** The NDR encoder and decoder for
+`CLAIMS_SET_METADATA` / `CLAIMS_SET` and the XPRESS Huffman decompressor are in
+`krb5_pac.js`, written in the parent project (`feature/pac-claims`) and synced
+here byte for byte. No new codec FILE, so `sync-to-mock-sts.sh`'s list and the
+parent's `sts/` COPY closure are unchanged. `parsePac()` decodes types 13 and
+15; `resignPac()` always carried them (its comment said otherwise) and now
+takes `clientClaims` to replace or remove type 13.
+
+**THE KDC SIDE IS `claimsForTicket()` IN `krb5_kdc.js`, AND IT ADDS NO
+REQUIRE.** The claims come through `admin_stats.js` (`kerberosPacClaims()`,
+`kerberosApplicationPacClaims()`), which this file already required, and
+`admin_stats.js` reaches the application by SPN through
+`applications.forServicePrincipal()` (a file it already required) and hashes
+the claim id with `common/crypto.js` (already loaded by `helpers.js`). So the
+four in-process jobs of the parent project owe NOTHING for #493 — and with the
+setting off by default, they see no buffer at all.
+
+The shapes, each in the comment above `claimsForTicket()`:
+
+| Ticket | Claims |
+|---|---|
+| TGT (AS, or a TGS for a krbtgt) | the realm's set for the person, their realm-wide roles under it; never an application's rows |
+| AS-REQ straight to a service | the realm's set, then that SPN's application rows |
+| service ticket from this realm's TGT | the TGT's claims, decoded out of its PAC (NOT re-evaluated), then the SPN's application rows, winning by claim id |
+| S4U2Self | the IMPERSONATED person's realm set, evaluated now (the TGT is the service's), then the rows |
+| S4U2Proxy, cross-realm | the arriving buffer byte for byte; merged and replaced only when the target SPN's application has rows |
+
+**Not re-evaluating at the TGS is the issue's rule and it differs from the
+rest of this PAC**, whose groups ARE re-read from the principal table per
+service ticket (the simplification named above `encodeTicketPart`). A claim
+is something a relying party may cache an authorization on; a TGT's claims
+staying what they were for its life is AD's behaviour, and a set change
+reaches holders as CAEP `token-claims-change` instead (recordTicket() files
+`claimSet: 'kerberos-pac'` and the username on a ticket that carries claims).
+
+**Failures cost claims, never tickets**: a value that is not its type drops
+that claim (`STS-KRB-0200`), a set over 64 KiB or one that will not encode
+drops the buffer (`STS-KRB-0201`, `0202`), an undecodable carried buffer is
+treated as none (`STS-KRB-0203`).
+
+**`krb5.pacClaims` IS A PLAIN RUNTIME ROW, NOT `realmRuntime`**, although the
+issue body asked for the latter: that marker is for a row restart-only for the
+process and settable on a realm, and this one is read per ticket and is
+already per realm through the realm layer, like `krb5.pkinit`. The argument
+is at the row in `common/config.js`; `tests/config_realm_layer.js`'s list is
+unchanged.
+
+**THE TICKED CATALOGUE (#498, 2026-10-06)** reverses #493's "no catalogue
+half" (`STS-ADMIN-0848`, retired). The set has the table of standard
+attributes the other five have, from `claim_attributes.ts`'s one catalogue and
+its `kerberos-pac` selection (nothing ticked by default); rcbj's rules:
+
+* each ticked attribute PRESENT ON THE ENTRY is a claim — never the persona
+  the JWT sets fall back to — with id `ad://ext/<attribute>:<hex>` derived by
+  `pacClaimId()` from the canonical catalogue spelling, exactly as a row of
+  that name; type STRING, every value, source type AD;
+* a set ROW and the ROLES claim the KDC writes win over a ticked attribute of
+  the same claim id, which then adds nothing;
+* it is part of `kerberosPacClaims()` — a TGT's claims — so a service ticket
+  gets it through the carry and override rules above, unchanged, and it
+  counts toward `PAC_CLAIMS_MAX_BYTES`. An application holds no selection of
+  its own for this set.
+
+**THIS FILE CHANGED NOTHING FOR IT.** `admin_stats.js` reads the selection
+through the attribute resolver slot's fourth member, `selectedAttributes`
+(filled by `claim_attributes.ts`; the require would close rule 2's cycle),
+and the entry through the third, so the parent's COPY closure still owes
+nothing.
+
+Tests: `tests/pac_claims.js` (in process: the rows, a TGT's claims and
+signatures, carry versus re-evaluation, the override on one SPN only, a krbtgt
+SPN's application ignored, S4U2Self, S4U2Proxy, a cross-realm re-sign byte for
+byte; thirteen mutants, all caught; section G is #498's ticked catalogue, eleven more)
+and `tests/vendored/sts_kerberos_pac_claims.js`
+(over `/KdcProxy` in a throwaway realm, tickets opened with
+`create-service` keytabs). The codec's own tests are in the parent's
+`tests/krb5_pac_layout.js`.
+
+---
+
+## THE AS-REQ'S RISK, DECIDED AT THE DOOR (#499, 2026-10-06)
+
+rcbj's decision on #499: the KDC assesses the sign-in being made and decides
+on that assessment, rather than issuing every TGT and leaving the TGS to
+decide on whatever standing another door left. Once an AS-REQ's
+pre-authentication verified (and after the password-alone refusal),
+`krb5_kdc.js` asks `principals.decideSignIn(cname, realm, { indicators,
+pkinit, hardware, method })`; the principal database forwards to the key
+source's `decideSignIn()` (`krb5_person_keys.ts`), which calls
+`authn.assessSignIn()` — the address is the KDC's ambient audit source, the
+same one its `authentication` row names — RECORDS the assessment, which is
+then the person's standing for the TGS-REQs that follow, and asks the issuance
+gate with no application (`KERBEROS_TICKET`), so only a Deny about risk can
+refuse. A refusal is `KDC_ERR_POLICY` (12) with `STS-RISK-0017` for a step-up
+(the eText says to use FAST with OTP or PKINIT) or `STS-RISK-0016`; an OTP
+meets a second-factor step-up (`acr` `mfa`), a hardware PKINIT key a
+security-key one (`amr` `hwk`). Development observes, as everywhere.
+
+**NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_kdc.js` gained
+one call through `principals`, and `krb5_principals.js` one forwarder over the
+key source it already holds; `authn`, the risk engine and the gate are
+required LAZILY from `krb5_person_keys.ts`, which is outside the closure. A
+database with no key source — the parent project's in-process jobs — refuses
+nobody, so **nothing is owed to the parent project**.
+`tests/risk_decisions.js` M3 holds it over an in-process AS exchange.
+
+
+---
+
+## PORT 88 IS ANSWERED IN A REQUEST WORKER (2026-10-07, rcbj's decision)
+
+**THE RACE.** The KDC answered TCP and UDP 88 in the FRONT process, from the
+front's copy of the store, while everything HTTP — a sign-out, a password set,
+an authenticator enrolled — is answered by a request worker. Each learns of
+the other's writes through the change log. `sts_kerberos_signout` in
+single-node: a sign-in's principal row written here, a global logout answered
+3 s later by a worker that had not received it, so it stamped nothing
+(STS-LOGOUT-0007, "ended 0 of 1") and the old TGT was honoured. The
+`catchUpWithWorkers()` of 2026-09-23 covered the other direction (a KDC read
+of a worker's write) by making the front process wait, which is the cost
+rcbj wants off the main event loop.
+
+**THE CUT** (`krb5_kdc.js`, the block above `answerSocketMessage()`). The
+sockets, the TCP length prefix, the datagram and the write of the reply stay
+in the front process; each complete message is the request pool's OPERATION
+`krb5.message`, LDAP's and SPIFFE's arrangement. A worker runs the SAME
+`handleMessage()` — MS-KKDCP has run it in workers since HTTP was dispatched,
+so nothing it touches is new to a worker. `runOperation()` puts the message
+behind the pool's read barrier, which orders it against the HTTP writes and
+reads around it with both ends in workers. **No catch-up remains on the
+dispatched path**: the front process waits for nothing, and
+`catchUpWithWorkers()` returns at once in a worker (it used to pull the change
+log a second time per MS-KKDCP request there, because `pool.size()` answers
+the CONFIGURED count in a worker too). It still runs in the front process when
+a message is answered there.
+
+* **What crosses**: the bytes (a Buffer, revived by `worker_channel.ts`), the
+  client's address as the socket saw it (the PROXY header's, with
+  `global.proxyProtocol`), the transport and the port. The worker enters the
+  same audit source the socket handlers enter, so every row the message
+  causes names the client, and #499's risk assessment reads the same address.
+  **No realm crosses**: the sockets pass none, and `routeOf()` chooses it from
+  the Kerberos realm name in the bytes.
+* **What comes back**: the reply and its REFUSAL, which `errorReply()` hangs
+  under a Symbol that a structured clone drops; the front process puts it
+  back, so `recordRawRefusal()` writes the transport's row as before.
+* **No affinity**: a message carries its own credential.
+* **Not dispatched** — no pool module (the parent project's in-process
+  copies), `krb5` not in `workers.dispatch`, no worker ready — is answered in
+  the front process exactly as before, `catchUpWithWorkers()` included.
+* **A worker that fails mid-message is not retried here** (LDAP's rule: it
+  may have written — an AuthPack or an OTP step spent, a principal
+  registered, a risk assessment recorded). The client is told
+  KDC_ERR_SVC_UNAVAILABLE (29), STS-KRB-0204, which MIT and Heimdal read as
+  "try again / the next KDC"; a worker answering no bytes is the same error
+  with STS-KRB-0205.
+* **The worker table is filled only in a worker** (`registerWorkerOperation()`
+  at the foot of the file, gated on `STS_REQUEST_WORKER`, idempotent) —
+  `spiffe/CLAUDE.md`, *The worker table is filled only in a worker*.
+
+**WHAT THE KDC HOLDS IN PROCESS MEMORY, CHECKED FOR THE MOVE.** Nothing it
+needs to agree on across processes:
+
+* the principal database (a persisted per-realm map) and its derived-key
+  cache (`krb5.long-term-keys`, a cache, re-derived on a miss);
+* FAST's cookie and PKINIT's freshness token — sealed under the krbtgt key,
+  opened by any process holding it;
+* the OTP step (`authn.totp-step`, a cluster counter), the encrypted
+  challenge, the PKINIT AuthPack (`krb5.pkinit-authpack`) and the acceptor's
+  Authenticator (`krb5.authenticator`) — cluster claims;
+* **the PKINIT KDC certificate** (`pki.issueKdcKeyPair()`) — one per realm per
+  process, in that process's memory only, by design (a slot per node, pid and
+  thread). Each worker makes its own on its first PKINIT request; a client
+  verifies it to the service Root, so which worker answered does not matter;
+* `krb5_delegation.ts`'s `seeded` set — which realms' DEVELOPMENT fixture
+  rules this process has written; idempotent;
+* **`admin_stats`' per-process records** (`recordTicket()`,
+  `recordAuthentication()`): a port-88 sign-in is now recorded in the worker
+  that answered it, as an MS-KKDCP one always was. `admin_stats.users` is one
+  of the three stores that do not fan in (`common/CLAUDE.md`), so a console
+  page drawn by another process under-reports it; the audit log and the
+  principal row are the durable record.
+
+**THE PARENT PROJECT'S COPY CLOSURE OWES NOTHING.** `request_pool.js` was
+already required lazily here (`catchUpWithWorkers()`), and `request_worker`
+is required only when `STS_REQUEST_WORKER` is set, which the parent's
+in-process jobs never set; both requires are guarded.
+
+**CELLS (#98, #317).** `answerSocketMessage()` is now the one function both
+sockets call before `handleMessage()`, which is where the message router
+#317 asks the parent project for would sit. Port 88 is still not placed in
+the client's home cell.
+
+Tests: `tests/kdc_broker_operations.js` sections 1 to 5 (the real pool with a
+stub worker thread, the two fallbacks, a dying worker, the table, a whole AS
+exchange through the table function with the address on the authentication
+row, and no catch-up in a worker); seven mutants, all caught.

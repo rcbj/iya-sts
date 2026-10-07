@@ -91,10 +91,11 @@ const log = bunyan.createLogger({
   level: config.value('global.logLevel')
 });
 
-const nodeCrypto = require('crypto');
-// THE ONE PLACE THIS SERVICE SIGNS AND HASHES. Used here for the thumbprint and
-// the JWK canonicalisation only — the certificate encoding is the vendored
-// module's, which is the point of vendoring it.
+// THE ONE PLACE THIS SERVICE SIGNS AND HASHES. Used here for the thumbprints,
+// the JWK canonicalisation, and since #453 for every certificate parse, key
+// import and digest this file makes — node's own `crypto` is not required
+// here. The certificate encoding is the vendored module's, which is the point
+// of vendoring it.
 const stsCrypto = require('./crypto');
 const keystore = require('./keystore');
 const realms = require('./realms');
@@ -351,19 +352,42 @@ const USE_CASES = [
           'Issued to a REGISTERED PEP from /admin/xacml/peps or POST ' +
           '/admin-api/xacml/issue-pep-certificate; the private key is ' +
           'handed over once and this service keeps no copy.' },
-  // **A TRUST REALM'S OWN FRONT-END LISTENER (#99, 2026-10-02).** REALM-scoped
-  // for `pep-tls`'s reason: the listener answers one realm, so the authority
-  // vouching for its front door is that realm's. Issued by
-  // `tls/realm_listeners.js` through `issueTlsServerKeyPair()`, one slot per
-  // node — each node presents a key of its own, and a slot per node keeps one
-  // node's issuance from superseding (and revoking) another's.
-  { id: 'realm-tls', scope: 'realm', label: 'Realm listeners',
+  // **A CUSTOM LISTENER'S CERTIFICATE (#99 2026-10-02, #472 2026-10-07).**
+  // REALM-scoped for `pep-tls`'s reason: the authority vouching for a
+  // listener's front door is that of the realm that owns it — a realm's own
+  // listener its realm's, a service listener (`listeners.custom`) the default
+  // realm's. Issued by `tls/listeners.js` through `issueTlsServerKeyPair()`,
+  // one slot per listener per node — each node presents a key of its own,
+  // and a slot per node keeps one node's issuance from superseding (and
+  // revoking) another's.
+  { id: 'realm-tls', scope: 'realm', label: 'Custom listeners',
     cn: 'Realm Listener TLS Issuing CA',
-    what: 'The certificates a trust realm\'s own HTTPS listener presents ' +
-          '(listener.port) when no operator certificate is configured, for ' +
-          'listener.hostnames. REALM-scoped because the listener answers ' +
-          'that realm alone. One per node; the private key never leaves ' +
-          'the node that serves it.' },
+    what: 'The certificates a custom HTTPS listener presents (#472: ' +
+          'listeners.custom for the service\'s, listeners.realm for a ' +
+          'realm\'s own) when its definition names no certificate files, ' +
+          'for its hostnames. REALM-scoped because a listener belongs to ' +
+          'one realm — the default realm, for the service\'s. One per ' +
+          'listener per node; the private key never leaves the node that ' +
+          'serves it.' },
+  // **THE REALM'S KDC, FOR PKINIT (#179, 2026-10-05).** A PKINIT reply is a
+  // CMS SignedData the client verifies against this service's Root, and RFC
+  // 4556 section 3.2.4 has it require that the KDC's certificate name the
+  // ticket-granting service of the realm it asked (an id-pkinit-san
+  // `krbtgt/REALM@REALM`) or carry id-pkinit-KPKdc — this authority's leaves
+  // carry both. REALM-scoped because a KDC answers one trust realm's Kerberos
+  // realm, and an Issuing CA of its own because "this certificate may answer
+  // PKINIT as the realm's KDC" is a power over every client that trusts the
+  // Root: no other authority here issues it, and the enrollment protocols
+  // refuse the `kdc` profile for the same reason. One leaf per realm per
+  // process, issued by `issueKdcKeyPair()` on first use, its private key held
+  // in that process's memory and nowhere else.
+  { id: 'kdc', scope: 'realm', label: 'Kerberos KDC (PKINIT)',
+    cn: 'Kerberos KDC Issuing CA',
+    what: 'The certificate this realm\'s KDC signs its PKINIT replies with ' +
+          '(RFC 4556): id-pkinit-KPKdc in its extended key usage and the ' +
+          'realm\'s ticket-granting service, krbtgt/REALM@REALM, in an ' +
+          'id-pkinit-san. One per process, made when PKINIT is first used; ' +
+          'the private key never leaves the process that made it.' },
   // **THE THREE ENROLLMENT PROTOCOLS (2026-09-13).** One Issuing CA per
   // protocol rather than one for all three, for the reason `jose` and `xml`
   // are two: a relying party that trusts what ACME issued has said nothing
@@ -1127,8 +1151,8 @@ function scopeChainsToRoot(scopeId) {
     return true;
   }
   try {
-    const signed = new nodeCrypto.X509Certificate(intermediate.certificatePem)
-      .verify(new nodeCrypto.X509Certificate(root.certificatePem).publicKey);
+    const signed = stsCrypto.parseCertificate(intermediate.certificatePem)
+      .verify(stsCrypto.parseCertificate(root.certificatePem).publicKey);
     log.debug('Leaving scopeChainsToRoot(). ' + signed);
     return signed;
   } catch (e) {
@@ -3563,7 +3587,7 @@ function pathSubjectOf(one) {
   log.debug("Entering pathSubjectOf().");
   let text = '';
   try {
-    text = oneLineName(new nodeCrypto.X509Certificate(one.der).subject);
+    text = oneLineName(stsCrypto.parseCertificate(one.der).subject);
   } catch (e) {
     log.debug("Caught in pathSubjectOf(): " + ((e && e.message) || e));
     text = '';
@@ -4621,7 +4645,7 @@ async function verifyLeaf(realmId, leafPem, presentedChainPems, opts) {
   // -------------------------------------------------------------------------
   const terminates = (function () {
     try {
-      const last = new nodeCrypto.X509Certificate(path[path.length - 1]);
+      const last = stsCrypto.parseCertificate(path[path.length - 1]);
       return last.subject === last.issuer;
     } catch (e) {
       log.debug("Caught in a callback in verifyLeaf(): " +
@@ -4666,7 +4690,7 @@ async function verifyLeaf(realmId, leafPem, presentedChainPems, opts) {
     const nameOf = function (pem) {
       log.debug("Entering nameOf().");
       try {
-        const cert = new nodeCrypto.X509Certificate(pem);
+        const cert = stsCrypto.parseCertificate(pem);
         log.debug("Leaving nameOf().");
         return { subject: cert.subject, issuer: cert.issuer };
       } catch (e) {
@@ -5193,7 +5217,7 @@ async function registerCertificate(realmId, opts) {
   for (let i = 0; i < everything.length; i++) {
     let cert;
     try {
-      cert = new nodeCrypto.X509Certificate(everything[i].pem);
+      cert = stsCrypto.parseCertificate(everything[i].pem);
     } catch (e) {
       log.debug("Caught in registerCertificate(): " + ((e && e.message) || e));
       log.debug('Leaving registerCertificate(). An unreadable certificate.');
@@ -5524,7 +5548,7 @@ function realmCandidatesFor(id) {
   const push = function (pem) {
     log.debug("Entering push().");
     try {
-      out.push({ cert: new nodeCrypto.X509Certificate(pem), pem: pem,
+      out.push({ cert: stsCrypto.parseCertificate(pem), pem: pem,
                  uploaded: false });
     } catch (e) {
       // A tier node cannot read is not a candidate; the path simply does not
@@ -5636,7 +5660,7 @@ function chainPemsOf(value) {
 function certificateSpkiDer(pem) {
   log.debug("Entering certificateSpkiDer().");
   try {
-    const der = new nodeCrypto.X509Certificate(pem).publicKey
+    const der = stsCrypto.parseCertificate(pem).publicKey
       .export({ type: 'spki', format: 'der' });
     log.debug("Leaving certificateSpkiDer(). node.");
     return der;
@@ -5667,7 +5691,7 @@ function certificateHoldsKey(pem, key) {
     } else {
       const jwk = Object.assign({}, key);
       delete jwk.x5c;
-      want = nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' })
+      want = stsCrypto.publicKeyFromJwk(jwk)
         .export({ type: 'spki', format: 'der' });
     }
     const held = certificateSpkiDer(pem);
@@ -5772,7 +5796,7 @@ async function verifySignerChain(realmId, material) {
   }
   const entryOf = function (pem, uploaded) {
     log.debug("Entering entryOf().");
-    const cert = new nodeCrypto.X509Certificate(pem);
+    const cert = stsCrypto.parseCertificate(pem);
     log.debug("Leaving entryOf().");
     return { cert: cert, pem: cert.toString(), uploaded: uploaded };
   };
@@ -6083,7 +6107,7 @@ function pemToDer(pem) {
 function publicJwkOf(publicPem) {
   log.debug("Entering publicJwkOf().");
   log.debug("Leaving publicJwkOf().");
-  return nodeCrypto.createPublicKey(publicPem).export({ format: 'jwk' });
+  return stsCrypto.publicKeyOf(publicPem).export({ format: 'jwk' });
 }
 
 // The JWS `alg` a key of this kind signs with, so that the JWK this module
@@ -6904,6 +6928,232 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
              anchorPem: root ? root.certificatePem : '',
              replacedSerialHex: was ? was.serialHex : null
            }) };
+}
+
+// ===========================================================================
+// THE REALM'S KDC CERTIFICATE, FOR PKINIT (#179, 2026-10-05).
+//
+// RFC 4556 section 3.2.4: a client MUST validate the KDC's certificate to an
+// anchor it trusts and MUST find in it either an id-pkinit-san naming the
+// ticket-granting service of the realm it asked or the id-pkinit-KPKdc
+// extended key usage. This leaf carries BOTH, from the `kdc` use case's
+// Issuing CA, with keyUsage `digitalSignature` alone — the one use the RFC
+// says must be consistent with id-pkinit-KPKdc, and all a KDC does with the
+// key, since a Diffie-Hellman reply is SIGNED and nothing is ever encrypted
+// to it (#179 implements no RSA key transport).
+//
+// **THE CALLER ENCODES THE NAME.** The id-pkinit-san's value is a Kerberos
+// KRB5PrincipalName, which `kerberos/krb5_pkinit_codec.ts` writes; this
+// module takes its DER and puts it in an otherName, so the certificate
+// authority learns nothing about Kerberos. (The vendored encoder's `krb5`
+// kind writes a UTF8String there, which no PKINIT client reads as a name —
+// the reason the raw `otherName` kind is used instead.)
+//
+// **THE PRIVATE KEY IS HANDED BACK AND NOT KEPT**, as
+// `issueTlsServerKeyPair()` hands a listener's back: `kerberos/krb5_pkinit.ts`
+// holds it in the memory of the process that asked, per realm, and a slot per
+// process (`spec.slot`) keeps one process's certificate from superseding —
+// and so revoking — another's.
+// ===========================================================================
+/**
+ * The key algorithms a KDC certificate is issued with: the ones every
+ * PKINIT client verifies a CMS signature with.
+ */
+const KDC_KEY_ALGS = ['ec-p256', 'ec-p384', 'rsa-2048', 'rsa-3072'];
+/**
+ * The key algorithm a KDC certificate is issued with when none is named.
+ */
+const DEFAULT_KDC_KEY_ALG = 'ec-p256';
+
+/**
+ * Generates and certifies a realm's KDC key pair for PKINIT: id-pkinit-KPKdc,
+ * digitalSignature, and an id-pkinit-san the caller encoded.
+ *
+ * @param scopeId - the realm
+ * @param spec - `slot`, `principalNameDer` (the KRB5PrincipalName of
+ *   krbtgt/REALM@REALM), `commonName` and `keyAlg`
+ * @returns a promise of `{ ok: true, issued }`, `issued` carrying the
+ *   certificate, its chain without the Root, the private key and the
+ *   anchor, or `{ ok: false, errors }`
+ */
+async function issueKdcKeyPair(scopeId, spec) {
+  log.debug('Entering issueKdcKeyPair(). scope=' + scopeId);
+  const s = spec || {};
+  const id = realmIdOf(scopeId);
+  const slot = String(s.slot || '').trim();
+  if (!slot || !s.principalNameDer) {
+    log.debug('Leaving issueKdcKeyPair(). No slot or name.');
+    return errorCodes.mark({ ok: false,
+             errors: ['A KDC certificate names the realm\'s ticket-granting ' +
+                      'service and is held in a slot; one of the two is ' +
+                      'missing.'] }, 'STS-PKI-0219');
+  }
+  const keyAlgId = String(s.keyAlg || DEFAULT_KDC_KEY_ALG);
+  const keyDesc = keyMaterial.keyAlg(keyAlgId);
+  if (!keyDesc || KDC_KEY_ALGS.indexOf(keyAlgId) < 0) {
+    log.debug('Leaving issueKdcKeyPair(). Key algorithm refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + keyAlgId + '" is not a key algorithm a KDC ' +
+                      'certificate is issued with here. It may be ' +
+                      KDC_KEY_ALGS.join(', ') + '.'] }, 'STS-PKI-0219');
+  }
+  const branch = await ensureScope(id);
+  if (!branch.ok) {
+    log.debug('Leaving issueKdcKeyPair(). No branch.');
+    return branch;
+  }
+  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  const was = certificateFor(id, 'kdc', slot);
+  const made = await certify(id, 'kdc', {
+    slot: slot,
+    label: 'KDC ' + slot,
+    commonName: String(s.commonName || 'kdc'),
+    keyAlg: keyAlgId,
+    publicKeyPem: pair.publicPem,
+    profile: 'kdc',
+    days: s.days,
+    keyUsage: ['digitalSignature'],
+    extensions: {
+      extKeyUsage: { present: true, critical: false,
+                     usages: ['kdcAuthentication'] },
+      subjectAltName: { present: true, critical: false, names: [{
+        kind: 'otherName', oid: PKINIT_SAN_OID,
+        value: Buffer.from(s.principalNameDer).toString('base64') }] }
+    }
+  });
+  if (!made.ok) {
+    log.debug('Leaving issueKdcKeyPair(). certify() refused.');
+    return made;
+  }
+  if (was && normalSerialsDiffer(was.serialHex, made.record.serialHex)) {
+    supersede(id, 'kdc', was, 'replaced by a new KDC certificate for "' +
+              slot + '"');
+  }
+  const root = serviceRoot();
+  log.info('pki: a ' + keyDesc.label + ' KDC certificate was issued for "' +
+           slot + '" in "' + (id || 'default') + '"; expires ' +
+           made.record.notAfter + '. The private key was handed to the ' +
+           'caller and is not kept here.');
+  log.debug('Leaving issueKdcKeyPair().');
+  return { ok: true,
+           issued: Object.assign(describeCertificate(made.record), {
+             scope: id,
+             privateKeyPem: pair.privatePem,
+             // RFC 4556 section 3.2.3.1 item 6: a PKINIT reply's certificates
+             // "MUST NOT contain root CA certificates".
+             chainWithoutRootPem: (made.record.chainPem || []).filter(
+               function (pem) {
+                 const x = stsCrypto.parseCertificate(pem);
+                 return x.subject !== x.issuer;
+               }),
+             anchorPem: root ? root.certificatePem : ''
+           }) };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A PKINIT CLIENT CERTIFICATE SAYS (#179): its extended key usages, the
+// digitalSignature bit, the KRB5PrincipalNames in its id-pkinit-san
+// otherNames (as their DER, which `krb5_pkinit_codec.ts` reads), and the
+// digest its issuer signed it with — RFC 4556 section 3.2.2's
+// KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED is about that digest, and SHA-1 and MD5
+// are refused. Read from the DER with asn1js, because node's X509Certificate
+// prints an otherName as "othername:<unsupported>".
+// ---------------------------------------------------------------------------
+/**
+ * The OID of RFC 4556's id-pkinit-san otherName.
+ */
+const PKINIT_SAN_OID = '1.3.6.1.5.2.2';
+
+// Certificate signature algorithms by the digest they sign over.
+const CERT_SIGNATURE_DIGESTS = {
+  '1.2.840.113549.1.1.4': 'md5',
+  '1.2.840.113549.1.1.5': 'sha1',
+  '1.2.840.10045.4.1': 'sha1',
+  '1.2.840.113549.1.1.11': 'sha256',
+  '1.2.840.113549.1.1.12': 'sha384',
+  '1.2.840.113549.1.1.13': 'sha512',
+  '1.2.840.10045.4.3.2': 'sha256',
+  '1.2.840.10045.4.3.3': 'sha384',
+  '1.2.840.10045.4.3.4': 'sha512'
+};
+
+/**
+ * Reads what PKINIT asks of a certificate: its extended key usages, whether
+ * keyUsage allows digitalSignature, its id-pkinit-san names as DER, the
+ * digest it was signed over and its validity.
+ *
+ * @param der - the certificate
+ * @returns `{ ekus, digitalSignature, pkinitSans, signatureAlgorithm,
+ *   signatureDigest, notBefore, notAfter, issuer, subject }`
+ * @throws Error when it is not a certificate
+ */
+function pkinitCertificateFacts(der) {
+  log.debug('Entering pkinitCertificateFacts().');
+  const buf = Buffer.from(der);
+  const x509 = stsCrypto.parseCertificate(buf);
+  const parsed = asn1js.fromBER(new Uint8Array(buf).buffer);
+  if (parsed.offset === -1) {
+    log.debug('Leaving pkinitCertificateFacts(). Unreadable.');
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('pki: not a certificate');
+  }
+  const kids = function (node) {
+    log.debug('Entering kids().');
+    log.debug('Leaving kids().');
+    return node && node.valueBlock && Array.isArray(node.valueBlock.value)
+      ? node.valueBlock.value : [];
+  };
+  const cert = kids(parsed.result);
+  const tbs = kids(cert[0]);
+  const sigAlg = String(kids(cert[1])[0].valueBlock.toString());
+  const extsNode = tbs.filter(function (one) {
+    return one.idBlock.tagClass === 3 && one.idBlock.tagNumber === 3;
+  })[0];
+  let digitalSignature = true;
+  const pkinitSans = [];
+  kids(kids(extsNode)[0]).forEach(function (ext) {
+    const parts = kids(ext);
+    const oid = String(parts[0].valueBlock.toString());
+    const value = Buffer.from(parts[parts.length - 1].valueBlock.valueHexView);
+    if (oid === '2.5.29.15') {
+      // KeyUsage: bit 0 is digitalSignature. An absent extension allows it.
+      // A cast because asn1js types a parse result's value block as any of
+      // its kinds; a KeyUsage is a BIT STRING, whose block has the octets.
+      const bits = asn1js.fromBER(new Uint8Array(value).buffer).result;
+      const bytes = Buffer.from(/** @type {any} */ (bits.valueBlock)
+        .valueHexView);
+      digitalSignature = bytes.length > 0 && (bytes[0] & 0x80) !== 0;
+    } else if (oid === '2.5.29.17') {
+      const names = asn1js.fromBER(new Uint8Array(value).buffer).result;
+      kids(names).forEach(function (gn) {
+        if (gn.idBlock.tagClass !== 3 || gn.idBlock.tagNumber !== 0) {
+          return;
+        }
+        const on = kids(gn);
+        if (on.length === 2 &&
+            String(on[0].valueBlock.toString()) === PKINIT_SAN_OID) {
+          const inner = kids(on[1])[0];
+          if (inner) {
+            pkinitSans.push(Buffer.from(inner.valueBeforeDecodeView));
+          }
+        }
+      });
+    }
+  });
+  const ekus = Array.isArray(x509.keyUsage) ? x509.keyUsage.slice() : [];
+  log.debug('Leaving pkinitCertificateFacts(). ' + pkinitSans.length +
+            ' id-pkinit-san(s).');
+  return {
+    ekus: ekus,
+    digitalSignature: digitalSignature,
+    pkinitSans: pkinitSans,
+    signatureAlgorithm: sigAlg,
+    signatureDigest: CERT_SIGNATURE_DIGESTS[sigAlg] || '',
+    notBefore: new Date(x509.validFrom),
+    notAfter: new Date(x509.validTo),
+    issuer: x509.issuer,
+    subject: x509.subject
+  };
 }
 
 // ===========================================================================
@@ -8172,8 +8422,7 @@ async function certifySignerGroups(realmId, members) {
     try {
       spkiPem = one.kind === 'pq'
         ? pqSubjectPublicKeyPem(one.alg, one.publicJwk)
-        : String(nodeCrypto.createPublicKey({ key: one.publicJwk,
-                                              format: 'jwk' })
+        : String(stsCrypto.publicKeyFromJwk(one.publicJwk)
                    .export({ type: 'spki', format: 'pem' }));
       // The ALTERNATIVE key is a classical key's ML-DSA partner; an ML-DSA
       // key's own certificate (D7) carries none.
@@ -8361,13 +8610,11 @@ function adoptGenerationCertificate(id, useCaseId, slot, kid, publicKeyPem) {
  *
  * @param realmId - the realm
  * @param keys - the realm's key set
- * @param nodeCryptoModule - optionally, the node crypto module to use
  * @returns a promise of `{ certified, failed }`
  */
-async function certifyStandbyKeys(realmId, keys, nodeCryptoModule) {
+async function certifyStandbyKeys(realmId, keys) {
   log.debug('Entering certifyStandbyKeys(). realm=' + realmId);
   const id = realmIdOf(realmId);
-  const nodeC = nodeCryptoModule || nodeCrypto;
   const standby = (keys && keys.generations && keys.generations.standby) || [];
   let certified = 0;
   const failed = [];
@@ -8384,8 +8631,7 @@ async function certifyStandbyKeys(realmId, keys, nodeCryptoModule) {
       if (one.memberKind === 'pq' && one.pairedSlot && one.group !== 'xml') {
         continue;
       }
-      const groupDone = await certifyStandbyGroupEntry(id, one, standby,
-                                                       nodeC);
+      const groupDone = await certifyStandbyGroupEntry(id, one, standby);
       if (groupDone === true) {
         certified += 1;
       } else if (groupDone) {
@@ -8398,9 +8644,9 @@ async function certifyStandbyKeys(realmId, keys, nodeCryptoModule) {
       publicPem = one.kind === 'pq'
         ? pqSubjectPublicKeyPem(one.alg, one.publicJwk)
         : one.kind === 'rsa'
-          ? nodeC.createPublicKey(one.certPem)
+          ? stsCrypto.publicKeyOf(one.certPem)
               .export({ type: 'spki', format: 'pem' })
-          : nodeC.createPublicKey({ key: one.publicJwk, format: 'jwk' })
+          : stsCrypto.publicKeyFromJwk(one.publicJwk)
               .export({ type: 'spki', format: 'pem' });
     } catch (e) {
       failed.push(one.unit + '@' + one.kid + ': ' + e.message);
@@ -8444,7 +8690,7 @@ async function certifyStandbyKeys(realmId, keys, nodeCryptoModule) {
 // (same unit, same role) in subjectAltPublicKeyInfo, in the entry's own
 // generation slot. Resolves true when issued, null when already current, or
 // a failure sentence.
-async function certifyStandbyGroupEntry(id, one, standby, nodeC) {
+async function certifyStandbyGroupEntry(id, one, standby) {
   log.debug('Entering certifyStandbyGroupEntry(). ' + one.unit + '@' +
             one.kid);
   const signerGroups = require('./signer_groups');
@@ -8453,7 +8699,7 @@ async function certifyStandbyGroupEntry(id, one, standby, nodeC) {
   try {
     publicPem = one.memberKind === 'pq'
       ? pqSubjectPublicKeyPem(one.alg, one.publicJwk)
-      : String(nodeC.createPublicKey({ key: one.publicJwk, format: 'jwk' })
+      : String(stsCrypto.publicKeyFromJwk(one.publicJwk)
                  .export({ type: 'spki', format: 'pem' }));
     if (one.pairedSlot && one.memberKind !== 'pq') {
       const partner = standby.filter(function (other) {
@@ -8507,13 +8753,11 @@ async function certifyStandbyGroupEntry(id, one, standby, nodeC) {
  *
  * @param realmId - the realm
  * @param keys - the realm's key set
- * @param nodeCryptoModule - optionally, the node crypto module to use
  * @returns a promise of `{ ok, certified, failed }`
  */
-async function certifyKeySet(realmId, keys, nodeCryptoModule) {
+async function certifyKeySet(realmId, keys) {
   log.debug('Entering certifyKeySet(). realm=' + realmId);
   const id = realmIdOf(realmId);
-  const nodeC = nodeCryptoModule || nodeCrypto;
   if (!rawRowFor(id) || !rawRowFor(id).issuing) {
     log.debug('Leaving certifyKeySet(). No branch for that realm.');
     return errorCodes.mark({ ok: false, certified: 0,
@@ -8532,7 +8776,7 @@ async function certifyKeySet(realmId, keys, nodeCryptoModule) {
   // --- the RSA key, under JOSE and under XML -------------------------------
   let rsaPublicPem = '';
   try {
-    rsaPublicPem = nodeC.createPublicKey(keys.privateKeyPem)
+    rsaPublicPem = stsCrypto.publicKeyOf(keys.privateKeyPem)
       .export({ type: 'spki', format: 'pem' });
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0030') + 'pki: the "' + id + '" ' +
@@ -8548,7 +8792,7 @@ async function certifyKeySet(realmId, keys, nodeCryptoModule) {
   let xmlPublicPem = rsaPublicPem;
   if (keys.xmlKey && keys.xmlKey.privateKeyPem) {
     try {
-      xmlPublicPem = nodeC.createPublicKey(keys.xmlKey.privateKeyPem)
+      xmlPublicPem = stsCrypto.publicKeyOf(keys.xmlKey.privateKeyPem)
         .export({ type: 'spki', format: 'pem' });
     } catch (e) {
       log.debug("Caught in certifyKeySet(): " + ((e && e.message) || e));
@@ -8595,8 +8839,8 @@ async function certifyKeySet(realmId, keys, nodeCryptoModule) {
     const slot = jwk.crv ? (one.alg + ':' + jwk.crv) : one.alg;
     let publicPem = '';
     try {
-      publicPem = nodeC.createPublicKey({ key: jwk, format: 'jwk' })
-        .export({ type: 'spki', format: 'pem' });
+      publicPem = String(stsCrypto.publicKeyFromJwk(jwk)
+        .export({ type: 'spki', format: 'pem' }));
     } catch (e) {
       failed.push('jose/' + slot + ': ' + e.message);
       continue;
@@ -8648,7 +8892,7 @@ async function certifyKeySet(realmId, keys, nodeCryptoModule) {
   }
 
   // --- every STANDBY key generation, in a slot of its own (#42) -----------
-  const standby = await certifyStandbyKeys(id, keys, nodeC);
+  const standby = await certifyStandbyKeys(id, keys);
   certified += standby.certified;
   standby.failed.forEach(function (one) {
     failed.push(one);
@@ -8859,7 +9103,7 @@ async function recertifyUseCase(scopeId, useCaseId) {
     let publicPem = was.subjectPublicKeyPem || '';
     if (!publicPem) {
       try {
-        publicPem = new nodeCrypto.X509Certificate(was.certificatePem)
+        publicPem = stsCrypto.parseCertificate(was.certificatePem)
           .publicKey.export({ type: 'spki', format: 'pem' });
       } catch (e) {
         failed.push(was.slot + ': ' + e.message);
@@ -8953,7 +9197,7 @@ async function recertifyOrphanedSlots(scopeId, slots) {
     let publicPem = was.subjectPublicKeyPem || '';
     if (!publicPem) {
       try {
-        publicPem = new nodeCrypto.X509Certificate(was.certificatePem)
+        publicPem = stsCrypto.parseCertificate(was.certificatePem)
           .publicKey.export({ type: 'spki', format: 'pem' });
       } catch (e) {
         failed.push(name + ': ' + e.message);
@@ -9185,7 +9429,7 @@ async function importCa(scopeId, useCaseId, material) {
   }
   let cert;
   try {
-    cert = new nodeCrypto.X509Certificate(certificatePem);
+    cert = stsCrypto.parseCertificate(certificatePem);
   } catch (e) {
     log.debug("Leaving importCa().");
     return errorCodes.mark({ ok: false,
@@ -9194,7 +9438,7 @@ async function importCa(scopeId, useCaseId, material) {
   }
   let key;
   try {
-    key = nodeCrypto.createPrivateKey(privateKeyPem);
+    key = stsCrypto.privateKeyFrom(privateKeyPem);
   } catch (e) {
     log.debug("Leaving importCa().");
     return errorCodes.mark({ ok: false,
@@ -9383,8 +9627,8 @@ async function pinKeyPair(scopeId, useCaseId, slot, material, options) {
   let key;
   let publicKeyPem;
   try {
-    key = nodeCrypto.createPrivateKey(privateKeyPem);
-    publicKeyPem = nodeCrypto.createPublicKey(key)
+    key = stsCrypto.privateKeyFrom(privateKeyPem);
+    publicKeyPem = stsCrypto.publicKeyOf(key)
       .export({ type: 'spki', format: 'pem' });
   } catch (e) {
     log.debug("Leaving pinKeyPair().");
@@ -9396,7 +9640,7 @@ async function pinKeyPair(scopeId, useCaseId, slot, material, options) {
   if (certificatePem) {
     let cert;
     try {
-      cert = new nodeCrypto.X509Certificate(certificatePem);
+      cert = stsCrypto.parseCertificate(certificatePem);
     } catch (e) {
       log.debug("Leaving pinKeyPair().");
       return errorCodes.mark({ ok: false,
@@ -9655,7 +9899,7 @@ function readPinnedKey(spec, slot, privateKeyPem) {
   }
   let key;
   try {
-    key = nodeCrypto.createPrivateKey(privateKeyPem);
+    key = stsCrypto.privateKeyFrom(privateKeyPem);
   } catch (e) {
     log.debug("Caught in readPinnedKey(): " + ((e && e.message) || e));
     log.debug("Leaving readPinnedKey(). Unreadable.");
@@ -9686,7 +9930,7 @@ function readPinnedKey(spec, slot, privateKeyPem) {
                  ', and the slot needs ' + spec.alg + ' on ' + spec.crv +
                  '.');
   }
-  const publicKey = nodeCrypto.createPublicKey(key);
+  const publicKey = stsCrypto.publicKeyOf(key);
   log.debug("Leaving readPinnedKey(). " + type + ".");
   return { ok: true,
            publicKeyPem: String(publicKey.export({ type: 'spki',
@@ -9701,8 +9945,8 @@ function readPinnedKey(spec, slot, privateKeyPem) {
 function pinnedKidOf(spkiDer) {
   log.debug("Entering pinnedKidOf().");
   log.debug("Leaving pinnedKidOf().");
-  return PINNED_KID_PREFIX + nodeCrypto.createHash('sha256')
-    .update(spkiDer).digest('hex').slice(0, 12);
+  return PINNED_KID_PREFIX +
+    stsCrypto.digest('sha256', spkiDer, 'hex').slice(0, 12);
 }
 
 // The operator's certificate and chain, checked: the certificate holds the
@@ -9712,7 +9956,7 @@ function checkOperatorCertificate(certificatePem, chainText, spkiDer, nowMs) {
   log.debug("Entering checkOperatorCertificate().");
   let cert;
   try {
-    cert = new nodeCrypto.X509Certificate(certificatePem);
+    cert = stsCrypto.parseCertificate(certificatePem);
   } catch (e) {
     log.debug("Caught in checkOperatorCertificate(): " +
               ((e && e.message) || e));
@@ -9753,7 +9997,7 @@ function checkOperatorCertificate(certificatePem, chainText, spkiDer, nowMs) {
   for (let i = 0; i < pems.length; i++) {
     let one;
     try {
-      one = new nodeCrypto.X509Certificate(pems[i]);
+      one = stsCrypto.parseCertificate(pems[i]);
     } catch (e) {
       log.debug("Caught in checkOperatorCertificate(): " +
                 ((e && e.message) || e));
@@ -9975,7 +10219,7 @@ function pinnedPublicJwk(meta, kid, publicKeyPem) {
       return { kty: 'AKP', alg: meta.alg, use: 'sig', kid: kid,
                pub: Buffer.from(spki.pub).toString('base64url') };
     }
-    const jwk = /** @type {any} */ (nodeCrypto.createPublicKey(publicKeyPem)
+    const jwk = /** @type {any} */ (stsCrypto.publicKeyOf(publicKeyPem)
       .export({ format: 'jwk' }));
     jwk.kid = kid;
     jwk.use = 'sig';
@@ -10048,7 +10292,7 @@ function pinnedSigningKey(scopeId, useCaseId, slot, kid) {
       return parsed && parsed.priv ? parsed.priv : null;
     }
     log.debug("Leaving pinnedSigningKey(). Classical.");
-    return nodeCrypto.createPrivateKey(found.privateKeyPem);
+    return stsCrypto.privateKeyFrom(found.privateKeyPem);
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0214') + 'pki: the pinned ' +
               useCaseId + ' key ' + kid + ' for "' + slot + '" could not be ' +
@@ -11120,12 +11364,12 @@ function report(realmId) {
 function certificateFromDer(der) {
   log.debug("Entering certificateFromDer().");
   try {
-    const x509cert = new nodeCrypto.X509Certificate(Buffer.from(der || []));
+    const x509cert = stsCrypto.parseCertificate(Buffer.from(der || []));
     log.debug("Leaving certificateFromDer().");
     return { der: Buffer.from(x509cert.raw), pem: x509cert.toString(),
              x509: x509cert,
-             sha1: nodeCrypto.createHash('sha1').update(x509cert.raw)
-               .digest('hex') };
+             sha1: stsCrypto.sha1Digest('certificate-fingerprint',
+                                        x509cert.raw, 'hex') };
   } catch (e) {
     log.debug("Caught in certificateFromDer(): " + ((e && e.message) || e));
     log.debug("Leaving certificateFromDer(). Not a certificate.");
@@ -11662,6 +11906,35 @@ function verifyIssuedDirectly(leafDer, authorities, opts) {
 }
 
 
+// ----- A certificate's serial, as a status list keys it (#256) --------------
+//
+// Google's Android key attestation status list keys each entry by the
+// certificate's serial number in lower-case hexadecimal with no leading
+// zeros; `risk_datasets.androidSerialKey()` normalises the list's side the
+// same way. '' for bytes that are not a certificate.
+/**
+ * Returns a certificate's serial number as lower-case hexadecimal with no
+ * leading zeros.
+ *
+ * @param {Buffer|string} der - the certificate, DER bytes or PEM
+ * @returns {string} the serial, or '' for a value that is not a certificate
+ */
+function certificateSerialHex(der) {
+  log.debug("Entering certificateSerialHex().");
+  let out = '';
+  try {
+    const cert = stsCrypto.parseCertificate(
+      typeof der === 'string' ? der : Buffer.from(der || []));
+    out = String(cert.serialNumber || '').toLowerCase()
+      .replace(/^0+(?=.)/, '');
+  } catch (e) {
+    log.debug("Caught in certificateSerialHex(): " + ((e && e.message) || e));
+    out = '';
+  }
+  log.debug("Leaving certificateSerialHex().");
+  return out;
+}
+
 // ----- WebAuthn attestation certificates (#105) -----------------------------
 //
 // What `authn/webauthn_attestation.ts` asks of an attestation certificate —
@@ -11699,7 +11972,7 @@ function attestationCertificateFacts(der) {
   let node = null;
   try {
     cert = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(der || [])));
-    node = new nodeCrypto.X509Certificate(Buffer.from(der || []));
+    node = stsCrypto.parseCertificate(Buffer.from(der || []));
   } catch (e) {
     log.debug("Caught in attestationCertificateFacts(): " +
               ((e && e.message) || e));
@@ -11788,7 +12061,7 @@ function attestationKeyIdentifier(der) {
     const bits = Buffer.from(cert.subjectPublicKeyInfo.subjectPublicKey
       .valueBlock.valueHexView);
     log.debug("Leaving attestationKeyIdentifier().");
-    return nodeCrypto.createHash('sha1').update(bits).digest('hex');
+    return stsCrypto.sha1Digest('key-identifier', bits, 'hex');
   } catch (e) {
     log.debug("Caught in attestationKeyIdentifier(): " +
               ((e && e.message) || e));
@@ -11883,8 +12156,8 @@ function sshKeyFields(type, reader) {
     const e = reader.mpint();
     const n = reader.mpint();
     log.debug("Leaving sshKeyFields(). RSA.");
-    return { key: nodeCrypto.createPublicKey({ format: 'jwk',
-      key: { kty: 'RSA', n: b64u(n), e: b64u(e) } }), curve: '' };
+    return { key: stsCrypto.publicKeyFromJwk(
+      { kty: 'RSA', n: b64u(n), e: b64u(e) }), curve: '' };
   }
   const ecdsa = /^ecdsa-sha2-(nistp256|nistp384|nistp521)$/.exec(type);
   if (ecdsa) {
@@ -11898,10 +12171,10 @@ function sshKeyFields(type, reader) {
                       ' point');
     }
     log.debug("Leaving sshKeyFields(). ECDSA.");
-    return { curve: ecdsa[1], key: nodeCrypto.createPublicKey({ format: 'jwk',
-      key: { kty: 'EC', crv: spec.crv,
-             x: b64u(q.subarray(1, 1 + spec.bytes)),
-             y: b64u(q.subarray(1 + spec.bytes)) } }) };
+    return { curve: ecdsa[1], key: stsCrypto.publicKeyFromJwk(
+      { kty: 'EC', crv: spec.crv,
+        x: b64u(q.subarray(1, 1 + spec.bytes)),
+        y: b64u(q.subarray(1 + spec.bytes)) }) };
   }
   if (type === 'ssh-ed25519') {
     const pk = reader.string();
@@ -11911,8 +12184,8 @@ function sshKeyFields(type, reader) {
       throw new Error('an Ed25519 key is 32 bytes');
     }
     log.debug("Leaving sshKeyFields(). Ed25519.");
-    return { key: nodeCrypto.createPublicKey({ format: 'jwk',
-      key: { kty: 'OKP', crv: 'Ed25519', x: b64u(pk) } }), curve: '' };
+    return { key: stsCrypto.publicKeyFromJwk(
+      { kty: 'OKP', crv: 'Ed25519', x: b64u(pk) }), curve: '' };
   }
   log.debug("Leaving sshKeyFields(). Unsupported.");
   // error-code: none — see sshReader()
@@ -12055,8 +12328,7 @@ function parseSshAuthorizedKey(line) {
 function sshFingerprint(key) {
   log.debug("Entering sshFingerprint().");
   log.debug("Leaving sshFingerprint().");
-  return nodeCrypto.createHash('sha256').update(key.blob).digest('base64')
-    .replace(/=+$/, '');
+  return stsCrypto.digest('sha256', key.blob, 'base64').replace(/=+$/, '');
 }
 
 // Does `signature` (`{ format, blob }`) over `data` verify under the SSH key?
@@ -12274,8 +12546,7 @@ function deviceAnchorTable() {
     DEVICE_ANCHOR_KINDS.forEach(function (kind) {
       table[kind] = (raw[kind] || []).filter(function (row) {
         const one = certificateBundle(row.pem).certificates[0] || null;
-        const digest = one ? nodeCrypto.createHash('sha256').update(one.der)
-          .digest('hex') : '';
+        const digest = one ? stsCrypto.digest('sha256', one.der, 'hex') : '';
         if (!one || digest !== String(row.sha256 || '').toLowerCase()) {
           log.error(errorCodes.tag('STS-DEVICE-0027') + 'pki: the shipped ' +
                     kind + ' anchor "' + String(row.subject || '') + '" ' +
@@ -12572,7 +12843,7 @@ function sigstoreSignerFacts(der) {
   let node = null;
   try {
     cert = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(der || [])));
-    node = new nodeCrypto.X509Certificate(Buffer.from(der || []));
+    node = stsCrypto.parseCertificate(Buffer.from(der || []));
   } catch (e) {
     log.debug("Caught in sigstoreSignerFacts(): " + ((e && e.message) || e));
     log.debug("Leaving sigstoreSignerFacts(). Not a certificate.");
@@ -12718,8 +12989,8 @@ async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
   const tbs = precertificateTbs(leaf);
   let issuerKeyHash = null;
   try {
-    issuerKeyHash = nodeCrypto.createHash('sha256').update(Buffer.from(
-      issuer.subjectPublicKeyInfo.toSchema().toBER(false))).digest();
+    issuerKeyHash = stsCrypto.digest('sha256', Buffer.from(
+      issuer.subjectPublicKeyInfo.toSchema().toBER(false)));
   } catch (e) {
     log.debug("Caught in verifyEmbeddedScts(): " + ((e && e.message) || e));
   }
@@ -12816,6 +13087,7 @@ module.exports = {
   pathRuleProblem: pathRuleProblem,
   // --- WebAuthn attestation certificates (#105) ---
   attestationCertificateFacts: attestationCertificateFacts,
+  certificateSerialHex: certificateSerialHex,
   attestationKeyIdentifier: attestationKeyIdentifier,
   // --- the FIDO MDS3 BLOB (#62 P5) ---
   fidoMdsRoots: fidoMdsRoots,
@@ -12913,6 +13185,13 @@ module.exports = {
   publishedCertificateFor: publishedCertificateFor,
   forgetCertificate: forgetCertificate,
   issueTlsServerKeyPair: issueTlsServerKeyPair,
+  // The realm's KDC certificate and a client certificate's PKINIT facts
+  // (#179).
+  issueKdcKeyPair: issueKdcKeyPair,
+  KDC_KEY_ALGS: KDC_KEY_ALGS,
+  DEFAULT_KDC_KEY_ALG: DEFAULT_KDC_KEY_ALG,
+  PKINIT_SAN_OID: PKINIT_SAN_OID,
+  pkinitCertificateFacts: pkinitCertificateFacts,
   certifyVerifierKey: certifyVerifierKey,
   verifierCertificateFor: verifierCertificateFor,
   MAX_VERIFIER_CERTIFICATES: MAX_VERIFIER_CERTIFICATES,

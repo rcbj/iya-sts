@@ -73,7 +73,6 @@
 //     finishes loading).
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import net = require('net');
 import asn1js = require('asn1js');
 import pkijs = require('pkijs');
@@ -83,6 +82,10 @@ const { log } = helpers;
 import applications = require('./applications');
 import audit = require('./audit');
 import config = require('./config');
+// This service's one cryptographic module (#453): every certificate parse,
+// digest, random value, key import and signature check below. A leaf that
+// requires nothing here; `helpers.js` above has loaded it already.
+import stsCrypto = require('./crypto');
 import credentials = require('./credentials');
 import enrollmentProfiles = require('./enrollment_profiles');
 import errorCodes = require('./error_codes');
@@ -244,6 +247,15 @@ const URN_PREFIX = { person: 'urn:sts:person:',
 //     (draft-ietf-lamps-csr-attestation), a TPM key attestation, verified by
 //     `device_attestation.csrAttestation()`; product refuses a key without a
 //     verified, anchored one (`mode.acceptsUnattestedDeviceKeys()`).
+//   * **FRESHNESS** (#257): a TPM statement's TPMS_ATTEST extraData must be
+//     a nonce EST /nonce issued to the same principal and the same nonce
+//     cookie (draft-ietf-lamps-attestation-freshness section 5.1), spent
+//     here once across the cluster. A statement that is not — no nonce, an
+//     expired, spent or foreign one, or any request over SCEP, which has no
+//     nonce operation — is recorded `unproven` in development and REFUSED in
+//     product (`mode.requiresFreshKeyAttestation()`, STS-DEVICE-0050). It is
+//     asked after the level, so a statement product refuses for its anchor
+//     spends nothing.
 //   * **RE-ENROLMENT** is a `simpleenroll` naming the device's URN — EST
 //     `/simplereenroll` and SCEP RenewalReq find the renewed certificate on a
 //     person or application entry, and a device certificate is on neither,
@@ -284,7 +296,7 @@ const EAB_CLAIM_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // file used to reach for itself, passed in so that the composition root can
 // build one and a test can build one with stubs.
 interface CertEnrollmentDeps {
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   net: typeof net;
   asn1js: typeof asn1js;
   pkijs: typeof pkijs;
@@ -314,6 +326,10 @@ interface CertEnrollmentDeps {
   // (`websecurityModule()`).
   loadRevocation(): typeof import('./pki_revocation');
   loadWebsecurity(): typeof import('./websecurity');
+  // `device_enrolment.ts`, whose challenge store holds EST's freshness
+  // nonces (#257), by `issueForDevice()`. Lazily: it requires the WebAuthn
+  // verifier and the credentials module, which nothing else here needs.
+  loadDeviceEnrolment(): typeof import('./device_enrolment');
 }
 
 /**
@@ -398,7 +414,7 @@ class CertEnrollment {
     log.debug("Entering CertEnrollment.defaultDeps().");
     log.debug("Leaving CertEnrollment.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       net: net,
       asn1js: asn1js,
       pkijs: pkijs,
@@ -428,6 +444,9 @@ class CertEnrollment {
       },
       loadWebsecurity: function () {
         return require('./websecurity');
+      },
+      loadDeviceEnrolment: function () {
+        return require('./device_enrolment');
       }
     };
   }
@@ -619,12 +638,12 @@ class CertEnrollment {
    *   several, or cannot be read
    */
   entryNamedByCertificate(certificate) {
-    const { nodeCrypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.entryNamedByCertificate().");
     let cert = null;
     try {
-      cert = certificate ? new nodeCrypto.X509Certificate(certificate) : null;
+      cert = certificate ? stsCrypto.parseCertificate(certificate) : null;
     } catch (e) {
       log.debug("Caught in CertEnrollment.entryNamedByCertificate(): " +
                 ((e && e.message) || e));
@@ -955,14 +974,12 @@ class CertEnrollment {
   }
 
   secretsEqual(presented, expected) {
-    const { nodeCrypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     log.debug("Entering CertEnrollment.secretsEqual().");
-    const a = nodeCrypto.createHash('sha256').update(String(presented || ''))
-      .digest();
-    const b = nodeCrypto.createHash('sha256').update(String(expected || ''))
-      .digest();
+    const a = stsCrypto.digest('sha256', String(presented || ''));
+    const b = stsCrypto.digest('sha256', String(expected || ''));
     log.debug("Leaving CertEnrollment.secretsEqual().");
-    return nodeCrypto.timingSafeEqual(a, b) && !!expected;
+    return stsCrypto.bytesEqualConstantTime(a, b) && !!expected;
   }
 
   /**
@@ -1089,7 +1106,7 @@ class CertEnrollment {
    * @returns a promise of `ok` and the principal, or a refusal
    */
   async authenticatePresentedCertificate(pem, via?, options?) {
-    const { nodeCrypto, log, pki, realms, x509 } = this.deps;
+    const { stsCrypto, log, pki, realms, x509 } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.authenticatePresentedCertificate().");
     const opts = options || {};
@@ -1103,7 +1120,7 @@ class CertEnrollment {
     }
     let cert = null;
     try {
-      cert = new nodeCrypto.X509Certificate(pem);
+      cert = stsCrypto.parseCertificate(pem);
     } catch (e) {
       log.debug("Caught in " +
                 "CertEnrollment.authenticatePresentedCertificate(): " +
@@ -1872,7 +1889,7 @@ class CertEnrollment {
   }
 
   async proofOfPossession(csr, spkiPem, desc) {
-    const { nodeCrypto, log, x509 } = this.deps;
+    const { stsCrypto, log, x509 } = this.deps;
     log.debug("Entering CertEnrollment.proofOfPossession(). kind=" + desc.kind);
     try {
       const tbs = csr.tbsView ? Buffer.from(csr.tbsView)
@@ -1885,8 +1902,8 @@ class CertEnrollment {
         return !!ok;
       }
       if (desc.kind === 'okp') {
-        const key = nodeCrypto.createPublicKey(spkiPem);
-        const ok = nodeCrypto.verify(null, tbs, key, signature);
+        const key = stsCrypto.publicKeyOf(spkiPem);
+        const ok = stsCrypto.signatureValid(null, tbs, key, signature);
         log.debug("Leaving CertEnrollment.proofOfPossession(). Ed25519=" + ok);
         return !!ok;
       }
@@ -2407,7 +2424,7 @@ class CertEnrollment {
    *   (audited)
    */
   async issue(spec?) {
-    const { nodeCrypto, log, helpers, audit, config, errorCodes, pki,
+    const { stsCrypto, log, helpers, audit, config, errorCodes, pki,
             realms } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.issue().");
@@ -2567,7 +2584,7 @@ class CertEnrollment {
     let thumbprint = '';
     let subjectDn = '';
     try {
-      const cert = new nodeCrypto.X509Certificate(issued.certificatePem);
+      const cert = stsCrypto.parseCertificate(issued.certificatePem);
       thumbprint = cert.fingerprint256.replace(/:/g, '').toLowerCase();
       subjectDn = helpers.dnRfc4514(cert.subject);
     } catch (e) {
@@ -2666,18 +2683,23 @@ class CertEnrollment {
                 notAfter: record.notAfter }
     });
     // A PERSON's certificate is one of their credentials, and CAEP says so
-    // with its issuer and serial (#145). An application's is not a person's
-    // and has no CAEP subject here.
-    if (kind === 'person') {
-      accountSignals.certificateChanged({ username: resolved.entry.id,
+    // with its issuer and serial (#145); an APPLICATION's is one of its own,
+    // said under the application subject (#221 P5).
+    if (kind === 'person' || kind === 'application') {
+      accountSignals.certificateChanged({
+        username: kind === 'person' ? resolved.entry.id : '',
+        application: kind === 'application' ? resolved.entry.id : '',
         pem: issued.certificatePem, changeType: 'create',
         friendlyName: profile.profile + ' certificate',
         initiatingEntity: allowed.admin ? 'admin' : 'user',
         via: FAMILY_LABELS[family],
         reasonAdmin: 'A ' + profile.profile + ' certificate was issued to ' +
+                     (kind === 'application' ? 'the application ' : '') +
                      resolved.entry.id + ' over ' + FAMILY_LABELS[family] +
                      '.',
-        reasonUser: 'A certificate was issued to you.' });
+        reasonUser: kind === 'application'
+          ? 'A certificate was issued to this application.'
+          : 'A certificate was issued to you.' });
     }
     if (replacing) {
       const by = asked.principal ? String(asked.principal.id) : '';
@@ -2740,23 +2762,81 @@ class CertEnrollment {
   // key's thumbprint (`crypto.certificateSpkiThumbprint()` over the
   // certificate that will carry this key), asked before anything is issued.
   spkiThumbprintOf(publicKeyPem) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering CertEnrollment.spkiThumbprintOf().");
     const body = String(publicKeyPem || '').replace(/-----[^-]+-----/g, '')
       .replace(/\s+/g, '');
     log.debug("Leaving CertEnrollment.spkiThumbprintOf().");
-    return nodeCrypto.createHash('sha256').update(Buffer.from(body, 'base64'))
-      .digest('base64url');
+    return stsCrypto.digest('sha256', Buffer.from(body, 'base64'),
+                            'base64url');
+  }
+
+  // ---------------------------------------------------------------------------
+  // WAS A TPM STATEMENT MADE NOW (#257)? `attested` is
+  // `csrAttestation()`'s answer; `asked` is `issueForDevice()`'s spec, whose
+  // `attestationSession.handle` is the EST nonce cookie's (absent over SCEP).
+  // Resolves `{ ok, status: 'fresh' | 'unproven' | 'none', detail }`, or the
+  // claim store's 503 refusal: a nonce that could not be proved unspent is
+  // not believed in either mode.
+  // ---------------------------------------------------------------------------
+  /**
+   * Decides whether a TPM key attestation was made now: its extraData spent
+   * as the nonce EST /nonce issued to this principal and cookie.
+   *
+   * @param family - `est` or `scep`
+   * @param asked - `issueForDevice()`'s spec
+   * @param attested - `deviceAttestation.csrAttestation()`'s answer
+   * @returns a promise of `{ ok, status, detail }` (`status` `fresh`,
+   *   `unproven`, or `none` when there is no TPM statement), or a 503
+   *   refusal
+   */
+  async attestationFreshness(family, asked, attested) {
+    const { log, loadDeviceEnrolment, errorCodes } = this.deps;
+    log.debug("Entering CertEnrollment.attestationFreshness().");
+    if (!attested || attested.attestation.format !== 'tcg-tpm2-key' ||
+        !Buffer.isBuffer(attested.extraData)) {
+      log.debug("Leaving CertEnrollment.attestationFreshness(). None.");
+      return { ok: true, status: 'none', detail: '' };
+    }
+    if (family !== 'est') {
+      log.debug("Leaving CertEnrollment.attestationFreshness(). " + family);
+      return { ok: true, status: 'unproven', detail: FAMILY_LABELS[family] +
+        ' has no nonce operation (draft-ietf-lamps-attestation-freshness ' +
+        'defines one for CMP, EST and CMC only), so a TPM statement sent ' +
+        'over it cannot be shown to have been made now; enroll over EST ' +
+        'after /nonce' };
+    }
+    const principal = asked.principal || {};
+    const spent = await loadDeviceEnrolment().spendAttestationNonce(
+      attested.extraData, {
+        sessionId: (asked.attestationSession &&
+                    asked.attestationSession.handle) || '',
+        username: principal.kind && principal.id
+          ? String(principal.kind) + ':' + String(principal.id) : '' });
+    if (spent.ok) {
+      log.debug("Leaving CertEnrollment.attestationFreshness(). Fresh.");
+      return { ok: true, status: 'fresh', detail: 'its extraData was the ' +
+        'nonce EST /nonce issued to this client, now spent' };
+    }
+    if (errorCodes.codeOf(spent) === 'STS-DEVICE-0028') {
+      log.debug("Leaving CertEnrollment.attestationFreshness(). Store.");
+      return Object.assign({ status: 503 }, spent);
+    }
+    log.debug("Leaving CertEnrollment.attestationFreshness(). Unproven.");
+    return { ok: true, status: 'unproven', detail: 'its extraData is not ' +
+      'a live nonce issued to this client: ' +
+      String((spent.errors || [])[0] || spent.error || '') };
   }
 
   // ---------------------------------------------------------------------------
   // A CERTIFICATE FOR A DEVICE (the header's `device` profile). `spec` is
   // `issue()`'s, and `attestations` — the request's id-aa-attestation
-  // values.
+  // values — and `attestationSession` — `{ handle }`, EST's nonce cookie
+  // (#257), absent over SCEP.
   // ---------------------------------------------------------------------------
   async issueForDevice(spec) {
     const { log, audit, config, errorCodes, pki, realms, mode, devices,
-            deviceAttestation, deviceRecognition, nodeCrypto } = this.deps;
+            deviceAttestation, deviceRecognition, stsCrypto } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.issueForDevice().");
     const asked = spec || {};
@@ -2875,6 +2955,28 @@ class CertEnrollment {
         'verified and chained to devices.tpmTrustAnchors: ' +
         attested.attestation.summary));
     }
+    const freshness = await self.attestationFreshness(family, asked,
+                                                      attested);
+    if (!freshness.ok) {
+      log.debug("Leaving CertEnrollment.issueForDevice(). Freshness store.");
+      return refused(freshness);
+    }
+    if (freshness.status === 'unproven' &&
+        mode.requiresFreshKeyAttestation()) {
+      deviceRecognition.noteAttestationRefused('stale');
+      log.debug("Leaving CertEnrollment.issueForDevice(). Not fresh.");
+      return refused(self.refuse('STS-DEVICE-0050', 403, 'This realm ' +
+        'certifies a device key only with a TPM key attestation made for ' +
+        'this request, and this one is not shown to be: ' +
+        freshness.detail + '.'));
+    }
+    if (freshness.status !== 'none') {
+      attested.attestation.freshness = { status: freshness.status,
+                                         detail: freshness.detail };
+      attested.attestation.summary = String(attested.attestation.summary) +
+        ' Freshness ' + freshness.status.toUpperCase() + ': ' +
+        freshness.detail + '.';
+    }
     const thumbprint = self.spkiThumbprintOf(asked.publicKeyPem);
     const holder = devices.byKeyThumbprint(thumbprint, 'x509');
     if (holder && (!device || holder.id !== device.id)) {
@@ -2951,7 +3053,7 @@ class CertEnrollment {
                                     attested.attestation.format);
     let certThumbprint = '';
     try {
-      certThumbprint = new nodeCrypto.X509Certificate(issued.certificatePem)
+      certThumbprint = stsCrypto.parseCertificate(issued.certificatePem)
         .fingerprint256.replace(/:/g, '').toLowerCase();
     } catch (e) {
       log.debug("Caught in CertEnrollment.issueForDevice(): " +
@@ -3233,8 +3335,14 @@ class CertEnrollment {
     // Revoked, told to a person's receivers whether or not the audit row is
     // quiet (#145): a certificate superseded by its renewal is still one the
     // person no longer holds, and that act is the system's.
-    if (found.entry && found.entry.kind === 'person') {
-      accountSignals.certificateChanged({ username: found.entry.id,
+    // An APPLICATION's enrolled certificate is told the same way, under the
+    // application subject (#221 P5).
+    const holderKind = found.entry ? String(found.entry.kind || '') : '';
+    if (holderKind === 'person' || holderKind === 'application') {
+      const whose = holderKind === 'application'
+        ? { application: String(found.entry.id), username: '' }
+        : { username: String(found.entry.id) };
+      accountSignals.certificateChanged({ ...whose,
         pem: found.record.certificatePem, changeType: 'revoke',
         friendlyName: String(found.record.profile || '') + ' certificate',
         initiatingEntity: reason === 'superseded' ? 'system'
@@ -3249,7 +3357,7 @@ class CertEnrollment {
       // which RISC 1.0 section 2.7 says as `credential-compromise` — beside
       // the CAEP `credential-change` above, which says only that it went.
       if (reason === 'keyCompromise') {
-        accountSignals.credentialCompromised({ username: found.entry.id,
+        accountSignals.credentialCompromised({ ...whose,
           credentialType: 'x509',
           initiatingEntity: String(by || '') === String(found.entry.id)
             ? 'user' : 'admin',
@@ -3329,12 +3437,12 @@ class CertEnrollment {
   // `redeemScepChallengeOnce()`) is held in one cell. A single-cell service
   // appends nothing, so its identifiers are what they always were.
   credentialId(prefix, entry) {
-    const { nodeCrypto, log, cellLocator } = this.deps;
+    const { stsCrypto, log, cellLocator } = this.deps;
     log.debug("Entering CertEnrollment.credentialId().");
     log.debug("Leaving CertEnrollment.credentialId().");
     return prefix + '-' + (entry.kind === 'person' ? 'p' : 'a') + '-' +
            Buffer.from(entry.id, 'utf8').toString('base64url') + '-' +
-           cellLocator.stamp(nodeCrypto.randomBytes(8).toString('hex'));
+           cellLocator.stamp(stsCrypto.randomBytes(8).toString('hex'));
   }
 
   entryOfCredentialId(prefix, id) {
@@ -3396,7 +3504,7 @@ class CertEnrollment {
    *   expiry and the target; or a refusal
    */
   createEab(spec?) {
-    const { nodeCrypto, log, audit } = this.deps;
+    const { stsCrypto, log, audit } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.createEab().");
     const asked = spec || {};
@@ -3423,7 +3531,7 @@ class CertEnrollment {
                          'Delete one first.');
     }
     const kid = self.credentialId('eab', resolved.entry);
-    const hmacKey = nodeCrypto.randomBytes(32).toString('base64url');
+    const hmacKey = stsCrypto.randomBytes(32).toString('base64url');
     const sealed = self.sealText(hmacKey, 'acme-eab-key',
                                  resolved.entry.kind === 'person' ? 'cell'
                                                                   : '');
@@ -3702,26 +3810,30 @@ class CertEnrollment {
   //
   // Binding an EAB key to an account and redeeming a challenge send nothing
   // here: each is followed by the certificate it produced, which `issue()`
-  // already sends as `x509`. Only a PERSON's credential is sent; an
-  // application's has no CAEP subject here. `by` is the actor: the person
-  // themselves is `user`, and anybody else — an unnamed caller of the API
-  // included — `admin`: nothing automatic makes or deletes either.
+  // already sends as `x509`. A person's credential is sent about the
+  // person, and an APPLICATION's (#221 P5) about the application. `by` is
+  // the actor: the holder themselves is `user`, and anybody else — an
+  // unnamed caller of the API included — `admin`: nothing automatic makes or
+  // deletes either.
   // -------------------------------------------------------------------------
   private signalEnrolmentCredential(entry, which: 'eab' | 'scep',
                                     change: string, by, id: string): void {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.signalEnrolmentCredential(). " +
               which + " " + change);
-    if (!entry || entry.kind !== 'person') {
+    if (!entry || (entry.kind !== 'person' &&
+                   entry.kind !== 'application')) {
       log.debug("Leaving CertEnrollment.signalEnrolmentCredential(). Not " +
-                "a person's.");
+                "a person's or an application's.");
       return;
     }
     const actor = String(by || '');
     const initiating = actor && actor === String(entry.id) ? 'user' : 'admin';
     const what = which === 'eab' ? 'ACME External Account Binding key'
                                  : 'SCEP challenge password';
-    accountSignals.credentialChanged({ username: String(entry.id),
+    accountSignals.credentialChanged({
+      username: entry.kind === 'person' ? String(entry.id) : '',
+      application: entry.kind === 'application' ? String(entry.id) : '',
       credentialType: which === 'eab'
         ? accountSignals.ACME_EAB_KEY_CREDENTIAL_TYPE : 'password',
       changeType: change, initiatingEntity: initiating,
@@ -3775,7 +3887,7 @@ class CertEnrollment {
    *   and the target; or a refusal
    */
   createScepChallenge(spec?) {
-    const { nodeCrypto, log, audit } = this.deps;
+    const { stsCrypto, log, audit } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.createScepChallenge().");
     const asked = spec || {};
@@ -3805,12 +3917,12 @@ class CertEnrollment {
                          'challenges. Delete one first.');
     }
     const id = self.credentialId('scep', resolved.entry);
-    const secret = nodeCrypto.randomBytes(24).toString('base64url');
+    const secret = stsCrypto.randomBytes(24).toString('base64url');
     const lifetimeS = self.lifetimeOf(asked.lifetimeS,
                                       'scep.challengeLifetimeS');
     const record = {
       id: id,
-      sha256: nodeCrypto.createHash('sha256').update(secret).digest('hex'),
+      sha256: stsCrypto.digest('sha256', secret, 'hex'),
       profile: profile.profile,
       createdAt: new Date(nowMs).toISOString(),
       expiresAt: new Date(nowMs + lifetimeS * 1000).toISOString(),
@@ -3853,7 +3965,7 @@ class CertEnrollment {
    * @returns `ok`, the id, the entry and the profile; or a refusal
    */
   redeemScepChallenge(challenge, options?) {
-    const { nodeCrypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     const self = this;
     log.debug("Entering CertEnrollment.redeemScepChallenge().");
     const opts = options || {};
@@ -3876,10 +3988,10 @@ class CertEnrollment {
                 "challenge.");
       return generic;
     }
-    const presented = nodeCrypto.createHash('sha256').update(secret).digest();
+    const presented = stsCrypto.digest('sha256', secret);
     const expected = Buffer.from(String(record.sha256 || ''), 'hex');
     if (expected.length !== presented.length ||
-        !nodeCrypto.timingSafeEqual(presented, expected)) {
+        !stsCrypto.bytesEqualConstantTime(presented, expected)) {
       log.debug("Leaving CertEnrollment.redeemScepChallenge(). Wrong secret.");
       return generic;
     }

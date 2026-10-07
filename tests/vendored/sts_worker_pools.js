@@ -184,11 +184,10 @@ function theFrontProcessAnswered(body) {
   log.debug("Leaving theFrontProcessAnswered().");
 }
 
-async function thePageAgrees(cookie, body) {
+async function thePageAgrees(consoleClient, body) {
   log.debug("Entering thePageAgrees().");
   log.info("=== 3. /admin/worker-pools draws the same pools ===");
-  const page = await call("GET", base + "/admin/worker-pools",
-                          { headers: { Cookie: cookie } });
+  const page = await consoleClient.get("/admin/worker-pools");
   check("the page answers 200 and draws each pool", function () {
     assert.strictEqual(page.status, 200, page.text.slice(0, 300));
     ["pool-request", "pool-surface"].forEach(function (anchor) {
@@ -197,8 +196,7 @@ async function thePageAgrees(cookie, body) {
     assert.ok(page.text.indexOf('id="pool-post-quantum"') < 0,
               "a post-quantum pool is still drawn");
   });
-  const json = await call("GET", base + "/admin/worker-pools?format=json",
-                          { headers: { Cookie: cookie } });
+  const json = await consoleClient.get("/admin/worker-pools?format=json");
   check("its ?format=json agrees with the API on each pool's state and " +
         "maximum", function () {
     assert.strictEqual(json.status, 200, json.text.slice(0, 300));
@@ -333,11 +331,11 @@ async function everyNodeByName() {
 async function main() {
   log.debug("Entering main().");
   const admin = "pools-admin-" + STAMP;
-  const cookie = await signin.signInToTheConsole(base, admin, log,
-                                                 { grant: "read" });
+  const consoleClient = await signin.signInToTheConsole(base, admin, log,
+                                                        { grant: "read" });
   const body = await theApiAnswersTwoPools();
   theFrontProcessAnswered(body);
-  await thePageAgrees(cookie || "", body);
+  await thePageAgrees(consoleClient, body);
   await everyNodeByName();
   await aRealmTokenIsRefused();
   log.info("sts_worker_pools: " + checks + " check(s) passed.");

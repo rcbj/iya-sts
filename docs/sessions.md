@@ -130,7 +130,7 @@ demand, and a WS-Federation `wfresh` too old all end at the screen.
 
 | Activity | What it reaches |
 |---|---|
-| `GET /oauth2/logout` | OpenID Connect RP-Initiated Logout |
+| `GET\|POST /oauth2/logout` | OpenID Connect RP-Initiated Logout |
 | `GET\|POST /wsfed?wa=wsignout1.0` | WS-Federation 1.2 §13.2.4 |
 | `GET\|POST /saml2/slo` | SAML 2.0 Single Logout |
 | `GET\|POST /logout` | the protocol-independent sign-out — everything, across every family |
@@ -147,7 +147,9 @@ written, so a sign-out that revoked nothing and logged nothing is not reachable.
 SAML assertions and Kerberos tickets issued on it stay valid — that is what
 `/admin/tokens` lists, and it is the state an OIDC client is in when its ID Token
 still verifies and the browser would be asked to sign in again. Refresh tokens
-are the exception in RFC 9700 mode.
+issued on the session without `offline_access` are the exception, in every
+mode: a sign-out revokes them (OpenID Connect Back-Channel Logout section 2.7,
+`oauth2.revokeRefreshOnLogout`, on by default and settable per client).
 
 ### One session per sign-in, several per person
 

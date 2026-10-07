@@ -66,7 +66,7 @@
 // through the functions that module exports — never the store itself.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -259,8 +259,7 @@ class EmailFactor {
     const { log } = this.deps;
     log.debug("Entering EmailFactor.hashOf().");
     log.debug("Leaving EmailFactor.hashOf().");
-    return nodeCrypto.createHash('sha256').update(String(value), 'utf8')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(value), 'base64url');
   }
 
   private bindingOf(req: any): string {
@@ -326,7 +325,7 @@ class EmailFactor {
       binding: ''
     };
     if (kind === 'link') {
-      const binding = nodeCrypto.randomBytes(32).toString('base64url');
+      const binding = stsCrypto.randomBytes(32).toString('base64url');
       state.binding = this.hashOf(binding);
       this.setBinding(res, binding, settings.ttlS + 60);
     }
@@ -638,7 +637,7 @@ class EmailFactor {
     authn.takePending(record);
     const step: any = {
       authn: record, username: username,
-      challenge: nodeCrypto.randomBytes(32).toString('base64url'),
+      challenge: stsCrypto.randomBytes(32).toString('base64url'),
       factor: 'email-' + kind, alternate: '', backup: false,
       passwordless: false, primary: true, firstAmr: [],
       decoy: !!reason, email: '',

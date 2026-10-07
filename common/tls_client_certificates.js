@@ -82,7 +82,9 @@
 // own Intermediate on an assertion's path.
 // ===========================================================================
 
-const nodeCrypto = require('crypto');
+// This service's one cryptographic module (#453): the register slot's random
+// part, the memo's digest and the leaf's parse. `helpers.js` loads it first.
+const crypto = require('./crypto');
 const { log } = require('./helpers');
 const config = require('./config');
 const realms = require('./realms');
@@ -205,7 +207,7 @@ function slotFor(holder, kind) {
   const k = kindOf(kind) || 'person';
   log.debug("Leaving slotFor().");
   return KINDS[k].slot + String(holder) + ':' +
-    nodeCrypto.randomBytes(6).toString('hex');
+    crypto.randomBytes(6).toString('hex');
 }
 
 // `{ kind, id }` for a slot this module wrote, or null.
@@ -524,17 +526,23 @@ async function issue(realmId, spec) {
            '", serial ' +
            made.record.serialHex + ', expires ' + made.record.notAfter +
            '. The private key was handed to the caller and is not kept.');
-  // A person's certificate is one of their credentials (#145); an
-  // application's has no CAEP subject here. A person issues their own.
-  if (kind === 'person') {
-    accountSignals().certificateChanged({ username: username,
-      pem: made.record.certificatePem, changeType: 'create',
+  // A person's certificate is one of their credentials (#145), and so —
+  // since #221 P5 — is an application's (its RFC 8705 tls_client_auth
+  // certificate), told under the application subject. A person issues their
+  // own; an application's is issued by an administrator.
+  accountSignals().certificateChanged(Object.assign(
+    kind === 'application' ? { application: username, initiatingEntity:
+                               'admin', via: '/admin/applications' }
+                           : { username: username, initiatingEntity: 'user',
+                               via: 'portal' },
+    { pem: made.record.certificatePem, changeType: 'create',
       friendlyName: String(made.record.label || 'TLS client certificate'),
-      initiatingEntity: 'user', via: 'portal',
-      reasonAdmin: 'A TLS client certificate was issued to ' + username +
-                   '.',
-      reasonUser: 'You were issued a TLS client certificate.' });
-  }
+      reasonAdmin: 'A TLS client certificate was issued to ' +
+                   (kind === 'application' ? 'the application ' : '') +
+                   username + '.',
+      reasonUser: kind === 'application'
+        ? 'A TLS client certificate was issued to this application.'
+        : 'You were issued a TLS client certificate.' }));
   log.debug("Leaving issue().");
   return {
     ok: true,
@@ -707,25 +715,38 @@ function revoke(realmId, username, serialHex, reasonId, kind) {
       ? 'revoked for the application ' + username + ' by an administrator'
       : 'revoked by ' + username + ' on the user portal'
   });
-  if (done.ok && holderKind === 'person') {
-    accountSignals().certificateChanged({ username: username,
+  // A person's revoke is theirs, on the portal; an application's (#221 P5)
+  // is an administrator's, on /admin/applications.
+  const whose = holderKind === 'application'
+    ? { application: username, initiatingEntity: 'admin',
+        via: '/admin/applications' }
+    : { username: username, initiatingEntity: 'user', via: 'portal' };
+  const label = holderKind === 'application'
+    ? 'the application ' + username : username;
+  if (done.ok) {
+    accountSignals().certificateChanged(Object.assign({}, whose, {
       pem: mine.certificatePem, x509Serial: mine.serialHex,
       changeType: 'revoke',
       friendlyName: String(mine.label || 'TLS client certificate'),
-      initiatingEntity: 'user', via: 'portal',
-      reasonAdmin: 'A TLS client certificate of ' + username + ' was ' +
+      reasonAdmin: 'A TLS client certificate of ' + label + ' was ' +
                    'revoked (' + reason + ').',
-      reasonUser: 'You revoked a TLS client certificate.' });
+      reasonUser: holderKind === 'application'
+        ? 'A TLS client certificate of this application was revoked.'
+        : 'You revoked a TLS client certificate.' }));
     // "SOMEBODY ELSE MAY HAVE THE KEY" (#231): RFC 5280's `keyCompromise` is
     // a compromise of the credential, which RISC 1.0 section 2.7 says as
     // `credential-compromise`, beside the CAEP revoke above.
     if (reason === 'keyCompromise') {
-      accountSignals().credentialCompromised({ username: username,
-        credentialType: 'x509', initiatingEntity: 'user', via: 'portal',
-        reasonAdmin: username + ' revoked a TLS client certificate (serial ' +
-                     mine.serialHex + ') because its key was compromised.',
-        reasonUser: 'You revoked a TLS client certificate because somebody ' +
-                    'else may have its key.' });
+      accountSignals().credentialCompromised(Object.assign({}, whose, {
+        credentialType: 'x509',
+        reasonAdmin: 'A TLS client certificate of ' + label + ' (serial ' +
+                     mine.serialHex + ') was revoked because its key was ' +
+                     'compromised.',
+        reasonUser: holderKind === 'application'
+          ? 'A TLS client certificate of this application was revoked ' +
+            'because somebody else may have its key.'
+          : 'You revoked a TLS client certificate because somebody else ' +
+            'may have its key.' }));
     }
   }
   log.debug("Leaving revoke(). ok=" + !!done.ok);
@@ -918,8 +939,7 @@ function identityOf(input) {
                                                 : Buffer.from(input.leaf);
   const heldKey = (typeof status.heldAuthorityKey === 'function')
     ? status.heldAuthorityKey() : '';
-  const key = nodeCrypto.createHash('sha256').update(leafBytes)
-    .digest('hex') + '|' + heldKey;
+  const key = crypto.digest('sha256', leafBytes, 'hex') + '|' + heldKey;
   if (memo.has(key)) {
     memoCount.hit();
     log.debug("Leaving identityOf(). Memoised.");
@@ -936,7 +956,7 @@ function identityOf(input) {
     answer = { issuedHere: false, accepted: false };
   } else {
     const first = links[0];
-    const leaf = new nodeCrypto.X509Certificate(leafBytes);
+    const leaf = crypto.parseCertificate(leafBytes);
     const commonName = subjectCnOf(leaf);
     const eku = Array.isArray(leaf.keyUsage) ? leaf.keyUsage : [];
     const uris = String(leaf.subjectAltName || '').split(/,\s*/)

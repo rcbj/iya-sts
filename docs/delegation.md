@@ -208,6 +208,32 @@ mode — are listed in [XACML](xacml.html).
 * **Delegation** puts `act: { sub: <actor> }` on the access token, nesting any
   `act` the subject token carried. **Impersonation** issues a token about the
   subject with no new `act`.
+* **The chain begins with the original client.** When the subject token
+  carries no `act` — the first exchange of a token — delegation nests the
+  client that token was issued to (its `client_id`) beneath the actor. Two
+  hops from a web application's sign-in therefore read
+  `act: { sub: <second actor>, act: { sub: <first actor>, act: { sub:
+  <web application> } } }`. A client's `sub` here is `urn:sts:client:<id>` in
+  RFC 9700 mode (and so in product mode) and the bare `client_id` otherwise,
+  as for an actor token from `client_credentials`. Nothing is nested when the
+  client exchanging the token is the one it was issued to. Only the outermost
+  `act` is the current actor; the nested ones are history.
+* **Every entry names its issuer, and a client has one form.** Each `act`
+  entry the exchange writes carries `iss`, the issuer of the token it is in,
+  as the token-chaining profile requires — so two hops read
+  `act: { sub: <second actor>, iss: <issuer>, act: { sub: <first actor>,
+  iss: <issuer>, act: { sub: <web application>, iss: <issuer> } } }`. An entry
+  copied from the subject token keeps its own `iss`; one without is given
+  this issuer only when this service issued the subject token. A client named
+  as an actor — including the exchanging client when the policy chooses a
+  delegation and no actor token was sent — is always `urn:sts:client:<id>` in
+  RFC 9700 mode (and so in product mode) and the bare `client_id` otherwise.
+  A `may_act` naming the client in either form names it.
+* **Introspection returns the chain.** `/oauth2/introspect` answers with the
+  token's `act`, nested as in the token, and its `may_act` (RFC 8693 section
+  7.2), in the JSON response and in the RFC 9701 JWT alike, under the rule
+  every other member follows: an authenticated caller the token is not for
+  is told only that it is not active.
 * `may_act` is read off the verified subject token and compared with the
   actor's `sub` (and `iss`, when the claim has one). It is *issued* on a
   person's access tokens when their entry carries `stsMayAct`.
@@ -215,6 +241,21 @@ mode — are listed in [XACML](xacml.html).
   (`exchange-widens-scope`): in product, a scope outside the subject token's
   `scope` is `invalid_scope`. A subject token with no `scope` claim (an ID
   Token, a WS-Trust JWT) has nothing to compare against.
+* **No `scope` on the exchange carries the subject token's forward.** The
+  issued token is asked for the `scope` sent, else the subject token's `scope`
+  claim, else nothing — the same rule for every kind of subject token. Either
+  way it is then narrowed as every grant here is: to the scopes the client
+  declares, the roles that authorize them, and — for an `audience` or
+  `resource` that is not this service — without the OpenID Connect scopes
+  (`openid`, `profile`, …), which belong to this service's own UserInfo
+  (RFC 9068 section 2.2.3).
+* **The response says what was issued.** `scope` names the scopes the access
+  token carries and is left out when it carries none (RFC 6749 section 3.3
+  has no empty value). An `id_token` comes back beside it only when the
+  issued token's scope carries `openid` — so an exchange for another resource
+  server returns an access token and nothing else, whatever the subject
+  token's scope was. `issued_token_type` is always
+  `urn:ietf:params:oauth:token-type:access_token`.
 * **Refusals** are spoken as RFC 8693 section 2.2.2 says:
 
 | Refusal | Error |
@@ -302,7 +343,12 @@ refused in both modes: there is no unverified reading of XML to fall back on.
     one `del:Delegate` per party, least to most recent, as that profile
     orders them;
   * a **JWT** (`TokenType` `urn:ietf:params:oauth:token-type:jwt`) carries the
-    same chain as nested `act` claims, the most recent outermost.
+    same chain as nested `act` claims, the most recent outermost, in the
+    shape an OAuth 2.0 token exchange writes:
+    * each entry has `iss`;
+    * an application is named `urn:sts:client:<client_id>` in RFC 9700 mode
+      and by its bare client_id otherwise;
+    * the JWT's `client_id` is the requester's application.
 * **`OnBehalfOf` asks for impersonation** (1.3 section 9.2). The token is the
   subject's, and adds nobody to the chain; one the delegated assertion
   already carried is kept.
@@ -311,7 +357,10 @@ refused in both modes: there is no unverified reading of XML to fall back on.
 * A request with **no `AppliesTo`** is refused unless it is a self one.
 * **Every policy refusal is a SOAP Fault carrying WS-Trust 1.4 section 11's
   `wst:RequestFailed`**: the `faultcode` on SOAP 1.1, the `Subcode` on SOAP
-  1.2. The fault's reason says which rule refused.
+  1.2. The fault's reason says which rule refused. A refused act is on
+  `/admin/delegation`; its subject is not added to `/admin/users`, which lists
+  a delegated subject only once the policy has allowed the act (or, in
+  development, recorded that it would have refused it).
 * `may_act` is not read here: the delegated token is always a SAML assertion,
   which has no such claim. A **JWT** issued about a person who set
   `stsMayAct` carries `may_act`, as an access token does.
@@ -347,11 +396,28 @@ does not already hold, and the person `sensitive` carries `stsNotDelegated`.
     the back end;
   * the actor is the front end, which is S;
   * **classic** constrained delegation is the front end's
-    `appAllowedToDelegateTo` naming the back end, and needs a forwardable
-    evidence ticket;
+    `appAllowedToDelegateTo` naming the back end;
   * **resource-based** constrained delegation (the request carries
     `PA-PAC-OPTIONS` with the RBCD bit) is the back end's
-    `appAllowedToActOnBehalfOf` naming the front end.
+    `appAllowedToActOnBehalfOf` naming the front end;
+  * both need a **forwardable evidence ticket** ([MS-SFU] 3.2.5.2.1 and,
+    since the CVE-2020-16996 update, 3.2.5.2.3);
+  * the ticket out of it is forwardable when the request asks for it, the
+    front end's TGT is forwardable and the user is not protected (RFC 4120
+    section 3.3.3);
+  * its PAC carries `S4U_DELEGATION_INFO` ([MS-PAC] 2.9): the target's name
+    (`HTTP/backend.example.com`) and every service delegated through, each
+    with its realm (`HTTP/frontend.example.com@EXAMPLE.COM`), oldest first.
+* **The register records each mechanism by its own mode**, as [MS-SFU]
+  names them: S4U2Self is protocol transition, so impersonation, and
+  S4U2Proxy is constrained delegation, so delegation, whatever made its
+  evidence. A Kerberos impersonation chain — a service signs somebody in
+  without Kerberos, uses S4U2Self, then S4U2Proxy hop after hop — therefore
+  has ONE impersonation row and the rest delegation, where an OAuth 2.0
+  impersonation chain (token exchange with no `actor_token`) is
+  impersonation at every hop. The difference is real: an S4U2Proxy ticket
+  carries the chain in its PAC, and a token exchanged with no `actor_token`
+  carries none. The register's Kerberos rows say so under their mode.
 * **Protected users** (`delegation.protectedGroups`, `stsNotDelegated`) are
   never the subject of S4U, and their tickets are not forwardable.
 * **The evidence ticket is not taken on trust.** It is encrypted in the
@@ -412,6 +478,9 @@ See [GNAP](gnap.html#acting-for-somebody-else).
 * **The picture** (`/admin/delegation/map`) draws the same acts as a diagram:
   * a box per party and a line per relationship;
   * chains across protocols join where they share an application;
+  * an application is one box however it was named — its identifier, an
+    audience it registered, its client_id, or the subject it acts under
+    with a `client_credentials` token (`urn:sts:client:<id>` in product);
   * drill-downs per chain, per application and per person.
 * **Who may act for whom** (the page's *policy* section) lists the configured
   relationships, actors with their semantics and subject groups, and

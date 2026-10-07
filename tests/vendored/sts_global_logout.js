@@ -730,7 +730,11 @@ async function x509(username) {
         // The SERVER's certificate is not verified here: what is under test
         // is the CLIENT certificate. (This said the server's was self-signed;
         // it is certified under the service Root now, `tls/CLAUDE.md`.)
-        rejectUnauthorized: false
+        rejectUnauthorized: false,
+        // A full handshake every time: a session resumed from a try made
+        // before the anchor arrived keeps that handshake's "not verified"
+        // (`sts_console_bootstrap_product.js`, 2026-10-07).
+        agent: false
       }, function (res) {
         let body = "";
         res.on("data", function (d) { body += d; });

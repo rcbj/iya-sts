@@ -16,6 +16,7 @@
     - { title: Configuration, url: /configuration.html }
     - { title: Endpoints, url: /endpoints.html }
     - { title: Trust realms, url: /trust-realms.html }
+    - { title: Listeners and hosted applications, url: /listeners.html }
     - { title: What is not checked, url: /what-is-not-checked.html }
     - { title: Conformance suites, url: /conformance.html }
     - { title: Departures from the specifications, url: /spec-departures.html }
@@ -51,8 +52,10 @@
     - { title: Signing out, url: /signing-out.html }
     - { title: Risk scoring, url: /risk-scoring.html }
     - { title: Devices, url: /devices.html }
+    - { title: Service accounts, url: /service-accounts.html }
     - { title: "Mail: reset, verification, notices", url: /mail.html }
     - { title: Attribute sources, url: /attribute-sources.html }
+    - { title: Secret push destinations, url: /secret-destinations.html }
 
 - section: Verifiable credentials
   items:

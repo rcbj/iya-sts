@@ -65,6 +65,15 @@ entityID — for a service provider library that keys its trust store off the
 entityID and is surprised to find a new one per application; the endpoints stay
 per application either way.
 
+**The same entityID signs WS-Trust's and WS-Federation's assertions for that
+application** (#480, #494), in either mode. A WS-Trust token whose AppliesTo a
+REGISTERED application answers to, and a WS-Federation sign-in to a
+registered `wtrealm`, carry `saml2.entityId:{sp}` as their Issuer unless
+`saml.issuer` is set; the application's own WS-Federation metadata,
+`/wsfed/metadata/{rp}`, names it too. One application, one name, in all three
+protocols. An AppliesTo or `wtrealm` nobody registered (one this service has
+merely seen) gets the shared `saml2.entityId`.
+
 `{sp}` is the service provider's entityID percent-encoded, or a **slug** — the
 entityID where it is safe in a URL path, otherwise `app-` and twelve hex
 characters of its SHA-256. A slug is not reversible, so `/admin/saml2` lists the
@@ -434,7 +443,11 @@ outbound policy: https with the certificate verified (plain http only with
 failure changes nothing, so an application that was working keeps working.
 
 Four block ciphers (`aes256-gcm`, `aes128-gcm`, `aes256-cbc`, `aes128-cbc`) and
-two key transports (`rsa-oaep-mgf1p`, `rsa-1_5`). CBC is unauthenticated and
+three key transports to an RSA key (`rsa-oaep-mgf1p`; `rsa-oaep`, XML Encryption
+1.1's RSA-OAEP with SHA-256 and MGF1-SHA-256, which this service's own
+federation relationships publish and require (#168); and `rsa-1_5`). A recipient
+whose certificate is EC is encrypted to by ECDH-ES key agreement whatever the
+setting says. CBC is unauthenticated and
 `rsa-1_5` is Bleichenbacher-broken; both are offered because deployed service
 providers require them. **`rsa-1_5` is development mode's only** (#181): a
 product realm wraps with `rsa-oaep-mgf1p` whatever the setting or the
@@ -544,6 +557,7 @@ being answered.
 | Unsigned request, or signed with no registered certificate | accepted (`saml2.requireSignedAuthnRequests=auto`) | refused |
 | `AssertionConsumerServiceURL` with no consumed metadata | used as it stands; with none, the registered address or `/saml2/sp` | must be a registered `samlAssertionConsumerService`, exact match, no mock fallback; an address development merely observed is refused until confirmed |
 | An unknown entityID's request, or a metadata request for one | accepted, and its application entry created | answered without creating an entry; its AuthnRequest is refused — no registered return address and no signature (an MDQ lookup can register it) |
+| An AuthnRequest or LogoutRequest from a service provider nobody **registered** — unknown, or recorded only because a development request named it | answered | a 403 page before the signature is checked, and nothing recorded; a LogoutRequest ends nothing (#496). Only an MDQ lookup for an entityID with no entry is still started, under the trust-anchor rule. The per-SP paths, the attribute authority and an MDQ lookup count only a registered entry |
 | Encryption wanted and no certificate | sent **in clear**, with a WARN | refused with a `Responder` status and no assertion |
 | Encryption to an observed request certificate | yes | only once an operator confirms it |
 | `WantAssertionsSigned` in the SP's metadata with `saml2.signAssertion` off | the setting wins, and the request is logged | the assertion is signed — as it is for every service provider (#181) |
@@ -563,7 +577,7 @@ one-shot artifact are enforced in **both** modes. See
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `saml.issuer` | `STS_SAML_ISSUER` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` | yes | Who signed an assertion: the issuer of the SAML assertions WS-Trust and WS-Federation carry, and what `/wsfed/rp` checks one against. The browser profiles name themselves with `saml2.entityId` and `saml11.providerId`. |
+| `saml.issuer` | `STS_SAML_ISSUER` (or `STS_ISSUER`) | *(empty)*: `saml2.entityId`, per application for a registered one | yes | Who signed an assertion: the issuer of the SAML assertions WS-Trust and WS-Federation carry, and what `/wsfed/rp` checks one against. The browser profiles name themselves with `saml2.entityId` and `saml11.providerId`. Unset, in either mode (#480, #494), it is the entityID — `saml2.entityId:{sp}` for a token to a registered application, the shared one otherwise. Set, it is every such assertion's Issuer. |
 | `saml.clockSkewS` | `STS_SAML_CLOCK_SKEW_S` | `0` | yes | Seconds added to both ends of every issued assertion's validity window (at most 300). |
 | `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The XML signature algorithm and Redirect `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. `rsa-sha1` is development mode only: product signs with `rsa-sha256` instead and refuses setting it (#181). **In a realm with `keys.signerModel = hybrid-groups` (#68)** it may also be `ecdsa-sha256` or `ecdsa-sha384` (the XML signer group's P-256 or P-384 key) or `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87` or `slh-dsa-sha2-128s` (the group's post-quantum keys, each with its own certificate, under the W3C xmldsig-more **draft** identifiers — few service providers verify them yet). Elsewhere, or before that key is certified, the realm signs `rsa-sha256` and says so once. |
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`; inclusive c14n is not offered. |
@@ -585,7 +599,7 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.artifactTtlS` | `STS_SAML2_ARTIFACT_TTL_S` | `300` | yes | How long an unresolved artifact lives (it is one-shot regardless); per application with `saml2ArtifactTtlS`. |
 | `saml2.encryptAssertion` | `STS_SAML2_ENCRYPT_ASSERTION` | `false` | yes | Encrypt the assertion; per application with `saml2EncryptAssertion`. |
 | `saml2.encryptionAlgorithm` | `STS_SAML2_ENCRYPTION_ALGORITHM` | `aes256-gcm` | yes | The block cipher: `aes256-gcm`, `aes128-gcm`, `aes256-cbc`, `aes128-cbc`. |
-| `saml2.keyTransportAlgorithm` | `STS_SAML2_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | The key wrap: `rsa-oaep-mgf1p` or the broken `rsa-1_5`. `rsa-1_5` is development mode only: product wraps with `rsa-oaep-mgf1p` instead, here and per application, and refuses setting it (#181). |
+| `saml2.keyTransportAlgorithm` | `STS_SAML2_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | The key wrap to an RSA key: `rsa-oaep-mgf1p`, `rsa-oaep` (SHA-256 and MGF1-SHA-256, #168) or the broken `rsa-1_5`; an EC recipient gets ECDH-ES whatever this says. `rsa-1_5` is development mode only: product wraps with `rsa-oaep-mgf1p` instead, here and per application, and refuses setting it (#181). |
 | `saml2.encryptLogoutNameId` | `STS_SAML2_ENCRYPT_LOGOUT_NAMEID` | `false` | yes | Send `<saml:EncryptedID>` in the LogoutRequests this service sends. |
 | `saml2.autocreateApplications` | `STS_SAML2_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry for a new entityID on its first valid AuthnRequest or metadata request. |
 | `saml2.requireSignedAuthnRequests` | `STS_SAML2_REQUIRE_SIGNED_AUTHN_REQUESTS` | `auto` | yes | Refuse unsigned requests: `auto` (on in product), `on` or `off`; also sets `WantAuthnRequestsSigned`. |

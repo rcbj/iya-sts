@@ -117,6 +117,11 @@ interface RolePermissionsDeps {
   adminRbac: typeof adminRbac;
 }
 
+// The admin console's own client, whose issuance is a sign-in to the console
+// (`noteConsoleSignIn()`, #446). `common/applications.js` seeds it in every
+// realm under this identifier.
+const CONSOLE_CLIENT_ID = 'sts-admin-console';
+
 // Who a decision is about: `roles.rolesOf()`'s context, less the scopes.
 interface Subject {
   kind?: string;
@@ -356,6 +361,110 @@ class RolePermissions {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // THE BOOTSTRAP ADMINISTRATOR'S CLAIM, AT ISSUANCE (#446, 2026-10-05).
+  //
+  // The bootstrap administrator holds its console roles only once it has
+  // CLAIMED the console (#103): signed in to it, and in product with a
+  // password this service verified. The server-rendered console made that
+  // claim itself, from its own callback, on the first request of its session
+  // (`admin-ui/admin_rbac.ts`'s `noteConsoleSignIn()`). A console that is a
+  // static client of `/admin-api` has no callback on the server, and until
+  // the claim is made `heldRoles()` above gives that account no console role
+  // — so the authorization endpoint would narrow `admin:read` and
+  // `admin:write` off the very token the console needs, and nobody could
+  // ever make the claim.
+  //
+  // So the claim is made HERE, by the authorization endpoint, when the
+  // CONSOLE'S OWN CLIENT asks for a gated permission for somebody: that is
+  // the moment a sign-in to the console happens, as the callback was. It is
+  // the same function and so the same rule — in product only a `pwd` sign-in
+  // this service itself vouched for claims anything, and any other sign-in
+  // as that account claims nothing and is then narrowed as before.
+  //
+  // ONLY THE CONSOLE'S CLIENT. Another application asking for `admin:read`
+  // on the bootstrap administrator's session is not a sign-in to the
+  // console, and must not close the window or be handed the roles.
+  // ---------------------------------------------------------------------------
+  /**
+   * Makes the bootstrap administrator's claim of the console when the
+   * console's own client is being issued a gated permission for them.
+   *
+   * @param subject - `{ kind, name, authenticated }`
+   * @param signIn - `{ clientId, amr, signInAuthority }`: the client asking,
+   *   how the person authenticated and who vouched for it
+   * @returns true when this call closed the bootstrap window
+   */
+  noteConsoleSignIn(subject: Subject, signIn: any): boolean {
+    const { log, adminRbac, realms } = this.deps;
+    log.debug("Entering RolePermissions.noteConsoleSignIn().");
+    const who = subject || {};
+    const how = signIn || {};
+    if (String(how.clientId || '') !== CONSOLE_CLIENT_ID ||
+        who.kind === 'application' || who.authenticated === false ||
+        !String(who.name || '').trim()) {
+      log.debug("Leaving RolePermissions.noteConsoleSignIn(). Not a " +
+                "sign-in to the console.");
+      return false;
+    }
+    let closed = false;
+    try {
+      closed = adminRbac.noteConsoleSignIn(String(who.name), {
+        derivedFromRealm: realms.currentId(),
+        amr: Array.isArray(how.amr) ? how.amr.slice(0) : [],
+        signInAuthority: String(how.signInAuthority || '')
+      }, realms.DEFAULT_ID) === true;
+    } catch (e) {
+      // A roster that cannot be written claims nothing: the narrowing that
+      // follows then gives the account no console role, which is the safe
+      // direction.
+      log.debug("Caught in RolePermissions.noteConsoleSignIn(): " +
+                ((e && e.message) || e));
+      closed = false;
+    }
+    log.debug("Leaving RolePermissions.noteConsoleSignIn(). " +
+              (closed ? 'Claimed.' : 'Nothing claimed.'));
+    return closed;
+  }
+
+  // ---------------------------------------------------------------------------
+  // conferredOn(subject, clientId) — THE ROLES A CLIENT CONFERS (#454).
+  //
+  // The third way of holding a role. A person holds a role as a member or
+  // through the console roster, an application as a member for its own
+  // `client_credentials` token, and — this — a PERSON holds every role the
+  // client they signed in through names them in `roleConferredBy`, on that
+  // client's token and no other. It is read in the ambient realm, which is
+  // the realm that issues the token or, at a resource server, the one that
+  // issued it (`effectiveRoles()` runs this inside `inRealm()`).
+  //
+  // **NOT FOR AN APPLICATION'S OWN TOKEN**: a client conferring a role on
+  // itself would be a membership nobody wrote down. And not for a subject
+  // that did not authenticate or has no name, who holds no configured role.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the roles a client confers on the person a token is for.
+   *
+   * @param subject - `{ kind, name, authenticated }`
+   * @param clientId - the client the person signed in through
+   * @returns the role names; empty for an application or an anonymous subject
+   */
+  conferredOn(subject: Subject, clientId: unknown): string[] {
+    const { log, roles } = this.deps;
+    log.debug("Entering RolePermissions.conferredOn().");
+    const who = subject || {};
+    const client = String(clientId == null ? '' : clientId);
+    if (!client || who.kind === 'application' || who.authenticated === false ||
+        !String(who.name || '').trim()) {
+      log.debug("Leaving RolePermissions.conferredOn(). Nothing conferred.");
+      return [];
+    }
+    const out = roles.conferredBy(client);
+    log.debug("Leaving RolePermissions.conferredOn(). " + out.length +
+              " role(s).");
+    return out;
+  }
+
   // The configured roles of a subject, for the PIP's role designator. The
   // built-in ones are left out: they are facts about the REQUEST (who
   // authenticated, over what) that a PIP naming a subject cannot know, and
@@ -435,6 +544,18 @@ class RolePermissions {
     const who = subject || {};
     const ctx = context || {};
     const held = this.heldRoles(who);
+    // AND WHAT THE CLIENT CONFERS ON THEM (#454): a person signing in
+    // through a client holds the roles that client confers, on this token,
+    // beside their own — the console's client conferring ADMIN_CONSOLE is
+    // what lets every person who signs in to the console be issued
+    // `admin:console`. Never for a client's own token.
+    const conferred = this.conferredOn(who, ctx.clientId);
+    conferred.forEach(function (role) {
+      if (held.configured.indexOf(role) < 0) {
+        held.configured.push(role);
+        held.all.push(role);
+      }
+    });
     const authorizes = this.permissionsByRole();
     // THE FACTS, AND THE POLICY DECIDES (#304, part C of #88). Every value
     // of the scope goes to the issuance policy with whether its resource
@@ -591,6 +712,16 @@ class RolePermissions {
           name: String(c.username || c.preferred_username || c.sub || '') };
     return this.inRealm(tokenRealm, function () {
       const held = self.heldRoles(subject);
+      // THE CLIENT'S CONFERRED ROLES, MIXED WITH THE PERSON'S OWN (#454),
+      // read NOW in the realm that issued the token, as the person's are: a
+      // client taken off `roleConferredBy` stops conferring on the tokens it
+      // already holds at once.
+      self.conferredOn(subject, client ? '' : c.client_id)
+        .forEach(function (role) {
+          if (held.configured.indexOf(role) < 0) {
+            held.configured.push(role);
+          }
+        });
       const builtIn = roles.rolesOf({ kind: subject.kind, name: subject.name,
                                       authenticated: true, scopes: scopes })
         .filter(function (one) {
@@ -660,6 +791,8 @@ export = {
   heldRoles: slot.forward('heldRoles'),
   configuredRolesOf: slot.forward('configuredRolesOf'),
   narrowScope: slot.forward('narrowScope'),
+  noteConsoleSignIn: slot.forward('noteConsoleSignIn'),
+  CONSOLE_CLIENT_ID: CONSOLE_CLIENT_ID,
   isClientToken: slot.forward('isClientToken'),
   effectiveRoles: slot.forward('effectiveRoles')
 };

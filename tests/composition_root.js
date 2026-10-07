@@ -103,7 +103,7 @@ function childScript(mode) {
     .join('\n');
 }
 
-function runChild(t, mode) {
+function runChild(t, mode, extraEnv) {
   log.debug("Entering runChild(). " + mode);
   const os = require('os');
   const fs = require('fs');
@@ -111,7 +111,7 @@ function runChild(t, mode) {
   const outFile = path.join(dir, 'out.json');
   const env = Object.assign({}, process.env, {
     LOG_LEVEL: 'fatal', PROBE_OUT: outFile, SPIFFE_GRPC_PORT: '0'
-  });
+  }, extraEnv || {});
   delete env.CONFIG_FILE;
   const child = childProcess.spawnSync(process.execPath,
     ['-e', childScript(mode)],
@@ -152,6 +152,26 @@ function run(t) {
     }).join(' | '), '',
             'loading the stack prints no circular-dependency warning (the ' +
             'root no longer requires itself)');
+  }
+
+  // PRODUCT MODE LOADS DIFFERENT CODE AT WIRE TIME (2026-10-06): WS-Trust's
+  // startup warning asked for the issuer name, which product aligns with the
+  // SAML entityID, and the read built the SSO module's DEFAULT instance before
+  // the root installed it — so the root's install refused and a product
+  // service did not start. Development never reached that read until #494
+  // aligned the name in both modes; the guard in `issuer_names.ts` is what
+  // both children above and this one now stand on.
+  t.log.info('=== the whole stack in PRODUCT mode: still the root\'s ===');
+  const product = runChild(t, 'stack', {
+    STS_MODE: 'product', STS_PERSISTENCE_MODE: 'memory'
+  });
+  if (product) {
+    const early = (product.origins || []).filter(function (row) {
+      return row.origin !== 'root';
+    });
+    t.check((product.origins || []).length > 0 && early.length === 0,
+            'in product mode every instance is the root\'s too',
+            JSON.stringify(early));
   }
 
   t.log.info('=== a request worker: required first, then the stack ===');

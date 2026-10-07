@@ -263,9 +263,10 @@ sign-in screen's own verifier and spent from the same once-only step, so one
 code cannot be used at both. The ticket carries the RFC 8129 authentication
 indicator `otp`, copied into the service tickets it buys, and `/authn/spnego`
 counts it as the second factor. An app password is never a Kerberos key, so the
-KDC refuses it like any wrong password. A person whose only second factor is a
-security key cannot use Kerberos at all yet: PKINIT is
-[#179](https://github.com/rcbj/iya-sts/issues/179).
+KDC refuses it like any wrong password. A person whose second factor is a
+security key uses PKINIT (#179): a smart-card logon certificate this realm
+issued them, checked to the service Root, for revocation and against their
+entry, with no password at all.
 
 **In development mode** any username authenticates and every user shares one
 password (`password!`, `KRB5_USER_PASSWORD`), with a name nobody configured
@@ -769,9 +770,9 @@ no longer declares the scope an operation needs is refused 403
 (`STS-API-0123`). The seeded `sts-management-api` and `sts-admin-console` declare
 both, in every realm.
 
-`adminApi.authRequired=false` behaves differently by mode. **In development** it
-opens the API to anybody who can reach the port. **In product** it falls back to
-the console's own gate — a session and a role — plus the XACML policy.
+`adminApi.authRequired=false` is a development setting. **In development** it
+opens the API to anybody who can reach the port. **In product** it is refused
+on write and ignored where it is stored, so the token is always required.
 
 ## GNAP proves the key, and that is not a turnstile
 
@@ -963,10 +964,11 @@ be exercised with no attestor at all.
 Selector matching still **decides** which entries answer a caller
 (`spiffe.attestWorkloads`, on by default). **Off is development only** (#104):
 it hands every caller every entry, so a product realm reads it as on whatever
-is stored and refuses turning it off. A caller that matches no entry gets
-an empty SVID list — what a real agent does for an unregistered workload — **in
-product always**, and in development when `spiffe.autoCreateEntries` is off;
-with it on, development creates an entry for the caller. Product seeds no
+is stored and refuses turning it off. A caller that matches no entry is
+refused `PERMISSION_DENIED` — what the Workload API says and a real agent
+answers an unregistered workload — **in product always**, and in development
+when `spiffe.autoCreateEntries` is off; with it on, development creates an
+entry for the caller. Product seeds no
 registration entries at all. **`spiffe.acceptAssertedSelectors`** (off) makes
 the server believe selectors a caller sends in a header — in development only;
 product mode never believes them (#40).
@@ -1009,11 +1011,8 @@ grant that names no client is refused.
 
 ## What product mode still does not check
 
-These are true in a product deployment today, and are tracked as issues:
-
-* **A person whose only second factor is a security key cannot use Kerberos.**
-  Since #173 the KDC refuses a password alone to anybody who holds or must hold
-  a second factor, and takes an authenticator app's code through FAST and OTP
-  pre-authentication; the security-key equivalent, PKINIT, is
-  [#179](https://github.com/rcbj/iya-sts/issues/179). (FAST in the TGS
-  exchange, which this list also named, is implemented since #204.)
+Nothing is listed here at present. The last entry, that a person whose
+only second factor is a security key could not use Kerberos, was closed by
+PKINIT ([#179](https://github.com/rcbj/iya-sts/issues/179)): see
+[Kerberos](kerberos.md). (FAST in the TGS exchange, which this list also named,
+is implemented since #204.)

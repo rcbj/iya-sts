@@ -256,9 +256,28 @@ async function withAGarbageToken() {
 async function withTheWrongAudience() {
   log.debug("Entering withTheWrongAudience().");
   log.info("=== A real token minted for another resource ===");
-  const elsewhere = await tokens.tokenFor(base, {
-    audience: "https://example.test/some-other-api"
+  // The other resource is REGISTERED first, as an application whose audience
+  // it is. Since #505 product refuses an RFC 8707 resource naming no
+  // registered target (`invalid_target`, STS-OAUTH-0951) at the token
+  // endpoint, so without it this section never reached /admin-api at all.
+  // A name per run, because no job removes what it registers.
+  const stamp = Date.now().toString(36);
+  const audience = "https://example.test/some-other-api-" + stamp;
+  const registered = await fetchJson(base + "/admin-api/applications/create", {
+    method: "POST",
+    headers: { authorization: "Bearer " + RUN_TOKEN,
+               "content-type": "application/json" },
+    body: JSON.stringify({ identifier: "other-api-" + stamp,
+                           name: "Another resource " + stamp,
+                           protocols: ["oauth2"],
+                           fields: { oauthAudience: [audience] } })
   });
+  check("the other resource is registered", function () {
+    assert.strictEqual(registered.status, 200,
+      "registering the application the wrong-audience token is minted for " +
+      "answered " + registered.status + ": " + registered.text.slice(0, 300));
+  });
+  const elsewhere = await tokens.tokenFor(base, { audience: audience });
   const read = await readWith("Bearer " + elsewhere);
   check("a token for another audience is refused", function () {
     assert.strictEqual(read.status, 403,

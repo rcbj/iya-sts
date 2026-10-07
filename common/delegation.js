@@ -111,6 +111,48 @@ const stats = require('./admin_stats');
 const replication = require('../persistence/persistence_replication');
 
 // ---------------------------------------------------------------------------
+// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY:
+// this file is in the parent project's in-process Kerberos COPY closure
+// (kerberos/CLAUDE.md), and a top-level require would owe it two more files.
+// `seq_allocator` hands out a number unique across every process of the
+// service; the origin is this process's stable name in the store, or '' with
+// no shared store. Neither throws: a failure is the caller's own counter and
+// an empty origin.
+// ---------------------------------------------------------------------------
+const seqAllocator = {
+  next: function next(name, local) {
+    log.debug("Entering next().");
+    let allocator = null;
+    try {
+      allocator = require('./seq_allocator');
+    } catch (e) {
+      log.debug("Caught in next(): " + ((e && e.message) || e));
+      allocator = null;
+    }
+    log.debug("Leaving next().");
+    return allocator ? allocator.next(name, local) : local();
+  }
+};
+
+/**
+ * This process's stable origin in the store, or '' without a shared store.
+ *
+ * @returns the origin
+ */
+function processOrigin() {
+  log.debug("Entering processOrigin().");
+  let origin = '';
+  try {
+    origin = String(require('../persistence/persistence').originId() || '');
+  } catch (e) {
+    log.debug("Caught in processOrigin(): " + ((e && e.message) || e));
+    origin = '';
+  }
+  log.debug("Leaving processOrigin().");
+  return origin;
+}
+
+// ---------------------------------------------------------------------------
 // THE TWO AXES, AND WHY THE PROTOCOL-INDEPENDENT ONE IS `mode` RATHER THAN THE
 // TYPE.
 //
@@ -181,7 +223,9 @@ const TYPES = [
           'involved at all — no password, no ticket of theirs, nothing they ' +
           'consented to. It is how a service that authenticated somebody by ' +
           'other means gets a Kerberos identity for them, and it is not a ' +
-          'privilege: the ticket is to yourself.' },
+          'privilege: the ticket is to yourself. [MS-SFU] calls it protocol ' +
+          'transition, and it is the one impersonation in a Kerberos ' +
+          'chain: the S4U2Proxy hops after it are delegation (#491).' },
   { type: 'krb5-s4u2proxy-classic', protocol: 'Kerberos v5', mode: 'delegation',
     label: 'S4U2Proxy — classic constrained delegation', spec: '[MS-SFU] ' +
         '3.2.5.2',
@@ -189,15 +233,18 @@ const TYPES = [
     what: 'The front end then reached ANOTHER service as that user. ' +
           'Authorized by msDS-AllowedToDelegateTo on the FRONT-END account, ' +
           'which only a domain admin can set, and requiring the evidence ' +
-          'ticket to be forwardable.' },
+          'ticket to be forwardable. Delegation even when its evidence came ' +
+          'from S4U2Self: the ticket carries the chain in the PAC\'s ' +
+          'S4U_DELEGATION_INFO ([MS-SFU] constrained delegation, #491).' },
   { type: 'krb5-s4u2proxy-rbcd', protocol: 'Kerberos v5', mode: 'delegation',
     label: 'S4U2Proxy — resource-based (RBCD)', spec: '[MS-SFU] 3.2.5.2',
     policed: true,
     what: 'The same messages, authorized from the opposite direction: ' +
           'msDS-AllowedToActOnBehalfOfOtherIdentity on the BACK-END account, ' +
           'which whoever controls that object can set themselves. That is ' +
-          'the entire security story of RBCD, and it needs no forwardable ' +
-          'evidence — but does need PA-PAC-OPTIONS.' },
+          'the entire security story of RBCD. It needs PA-PAC-OPTIONS, and ' +
+          'since the CVE-2020-16996 update ([MS-SFU] 3.2.5.2.3) forwardable ' +
+          'evidence too (#492). Delegation, like classic (#491).' },
   { type: 'krb5-forwarded', protocol: 'Kerberos v5', mode: 'impersonation',
     label: 'Forwarded TGT (unconstrained delegation)', spec: 'RFC 4120 5.8.1',
     policed: true,
@@ -584,10 +631,17 @@ function recordUnguarded(info) {
   }
   const outcome = OUTCOMES.indexOf(String(info.outcome || '')) >= 0
     ? String(info.outcome) : 'issued';
-  seq++;
   recorded++;
   const record = {
-    seq: seq,
+    // UNIQUE ACROSS EVERY PROCESS OF THE SERVICE (#465): from this process's
+    // block leased from the store, or this module's own counter where there is
+    // one writer. See common/seq_allocator.ts.
+    seq: seqAllocator.next('delegation', function () {
+      seq++;
+      return seq;
+    }),
+    // WHICH PROCESS RECORDED IT (#465), the tie-break merged() sorts on.
+    origin: processOrigin(),
     at: Date.now(),
     protocol: String(info.protocol || (known ? known.protocol : '')),
     type: type,
@@ -646,9 +700,11 @@ function recordUnguarded(info) {
 // ever sees more than this process's own acts. Two consequences, and they are
 // audit.js's two:
 //
-//   * **`seq` IS ONLY MONOTONIC WITHIN ONE PROCESS.** It always was — it is a
-//     per-realm counter assigned here — and with several processes it is per
-//     process as well. The sort below is by TIME, because time is the only
+//   * **`seq` IS UNIQUE ACROSS PROCESSES, AND RISES WITHIN EACH ONE (#465).**
+//     Each process numbers from blocks it leased from the store
+//     (`common/seq_allocator.ts`), so no two acts share a number — but two
+//     processes hold different blocks, so the numbers are not one order
+//     across them. The sort below is by TIME, because time is the only
 //     ordering two processes share.
 //   * **THE CAP IS PER PROCESS**, so three workers hold up to three times
 //     `delegation.maxRecords` between them. That is the honest behaviour
@@ -676,14 +732,15 @@ function merged() {
       all = all.concat(rows);
     }
   });
-  // BY TIME, and stably by sequence within one millisecond so that two acts a
-  // process recorded in one tick keep the order it recorded them in. There is
-  // no `origin` on a delegation row to break the tie with — audit.js has one —
-  // so two processes that recorded in the same millisecond sort by their own
-  // sequences, which is arbitrary between them and stable within each.
+  // BY TIME, and stably by origin and sequence within one millisecond so
+  // that two acts a process recorded in one tick keep the order it recorded
+  // them in. Every row carries `origin` since #465, as audit.js's do.
   all.sort(function (a, b) {
     if ((a.at || 0) !== (b.at || 0)) {
       return (a.at || 0) - (b.at || 0);
+    }
+    if ((a.origin || '') !== (b.origin || '')) {
+      return String(a.origin || '') < String(b.origin || '') ? -1 : 1;
     }
     return (a.seq || 0) - (b.seq || 0);
   });
@@ -762,8 +819,11 @@ function summary() {
     recorded: recorded, dropped: dropped,
     maxRecords: maxRecords(),
     chains: Object.keys(chains).length,
+    // THE OLDEST AND NEWEST ACTS' NUMBERS, by time, out of every process's
+    // acts (#465). `newestSeq` was this process's own counter, which named an
+    // act only this process held and, with several, no act at all.
     oldestSeq: all.length ? all[0].seq : 0,
-    newestSeq: seq,
+    newestSeq: all.length ? all[all.length - 1].seq : 0,
     byType: byType, byMode: byMode, byOutcome: byOutcome, byProtocol: byProtocol
   };
   log.debug("Leaving summary(). " + out.held + " act(s) over " + out.chains +
@@ -909,9 +969,122 @@ function chainList(rows) {
 // The table is deliberately left alone: it shows both spellings side by side in
 // two columns, where seeing them is the point, and changing `chainKey` would
 // change what `/admin-api/delegation` calls a chain.
+// ---------------------------------------------------------------------------
+// AN APPLICATION IS ONE BOX HOWEVER IT WAS NAMED (2026-10-06, rcbj). An act or
+// a configured pair can name an application by its identifier, by an audience
+// it registered on `oauthAudience`, or by its client_id — an RFC 8693
+// exchange recorded before the audience was registered keeps the audience as
+// it was asked for, and `appAllowedToDelegateTo` may hold an audience, which
+// the delegation policy resolves (`resolveTarget()`). Keyed as written, the
+// picture drew `api` and `https://api.example.com` as two boxes for one
+// application. So an application name is resolved to the entry that
+// registered it — the identifier, then an audience, then a client_id, the
+// order `delegation_policy.ts`'s resolveTarget() and applicationFor() use —
+// and keyed by that entry's identifier. A name no entry answers to is kept as
+// written: an unregistered audience is still its own dashed box, which the
+// header above argues for. The table (`chainKey`) is left alone, as it is for
+// two spellings of one identity.
+//
+// `applications.js` is required LAZILY: it is loaded after this module by
+// the console, and a registry that cannot be read leaves the name as written
+// rather than costing the picture.
+// ---------------------------------------------------------------------------
+/**
+ * Resolves an application name — identifier, audience or client_id — to the
+ * identifier of the application that registered it.
+ *
+ * @param name - the name as an act or a configured pair gave it
+ * @returns the registered application's identifier, or the name as given
+ */
+function applicationNameOf(name) {
+  log.debug("Entering applicationNameOf().");
+  const wanted = String(name == null ? '' : name).trim();
+  if (!wanted) {
+    log.debug("Leaving applicationNameOf(). Nothing named.");
+    return '';
+  }
+  let found = null;
+  try {
+    const applications = require('./applications');
+    found = applications.get(wanted) || applications.forAudience(wanted) ||
+      applications.forClientId(wanted) || null;
+  } catch (e) {
+    log.debug("Caught in applicationNameOf(): " + ((e && e.message) || e));
+    found = null;
+  }
+  log.debug("Leaving applicationNameOf(). " +
+            (found ? found.identifier : 'Unregistered.'));
+  return found ? String(found.identifier) : wanted;
+}
+
+// ---------------------------------------------------------------------------
+// A CLIENT'S OWN SUBJECT IS THAT APPLICATION'S BOX (#468, 2026-10-06).
+//
+// A party with a PRESENTED identity is keyed by it, before its application —
+// right for a person, and wrong for a client acting as itself. An RFC 8693
+// delegation whose actor_token came from a client_credentials grant names
+// the client by that token's `sub`, which is the client's own subject: the
+// bare client_id with RFC 9700 mode off, and `urn:sts:client:<id>` with it
+// on (section 4.13's namespace; product implies the mode). In product the
+// actor of hop 2 was therefore keyed `urn:sts:client:esb1-del` and the
+// application hop 1 reached `esb1-del`, and a two-hop chain was drawn as two
+// unconnected halves — the drawing the audience resolution above was added
+// to prevent, one layer further in.
+//
+// So a presented identity that IS a client's subject is drawn as that
+// application, by the same resolution `applicationNameOf()` gives a name an
+// act calls an application:
+//
+//   * `urn:sts:client:<id>` — a client's subject by construction, whether or
+//     not `<id>` is registered (an unregistered one is a box named `<id>`, as
+//     an unregistered client_id target is);
+//   * a bare name that is a REGISTERED client_id — the client_credentials
+//     `sub` with the mode off. Only a registered one: a bare name is also how
+//     a person is presented, and the registry is what says it is a client.
+//
+// A username that is also a registered client_id is the collision RFC 9700
+// section 4.13 is about; with the mode off this service's tokens cannot
+// tell them apart either, and the picture follows the token.
+//
+// `applications.js` is required lazily, for `applicationNameOf()`'s reasons.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the application a presented identity names when it is a client's
+ * own subject, or '' when it is not one.
+ *
+ * @param presented - the identity as the act recorded it
+ * @returns the registered application's identifier (or the client_id as
+ *   written, for an unregistered `urn:sts:client:` subject), or ''
+ */
+function clientApplicationOf(presented) {
+  log.debug("Entering clientApplicationOf().");
+  const value = String(presented == null ? '' : presented).trim();
+  const namespaced = /^urn:sts:client:(.+)$/.exec(value);
+  if (namespaced) {
+    log.debug("Leaving clientApplicationOf(). A client's subject.");
+    return applicationNameOf(namespaced[1]);
+  }
+  if (!value) {
+    log.debug("Leaving clientApplicationOf(). Nothing presented.");
+    return '';
+  }
+  let found = null;
+  try {
+    found = require('./applications').forClientId(value) || null;
+  } catch (e) {
+    log.debug("Caught in clientApplicationOf(): " +
+              ((e && e.message) || e));
+    found = null;
+  }
+  log.debug("Leaving clientApplicationOf(). " +
+            (found ? found.identifier : 'Not a client.'));
+  return found ? String(found.identifier) : '';
+}
+
 /**
  * Returns the key a party is drawn under, so two spellings of one identity
- * or application are one box.
+ * or application are one box — and a client acting as itself is its
+ * application's box.
  *
  * @param party - a party `{ key, presented, application }`
  * @returns the node id
@@ -919,12 +1092,17 @@ function chainList(rows) {
 function nodeIdOf(party) {
   log.debug("Entering nodeIdOf().");
   if (party.key) {
+    const asClient = clientApplicationOf(party.presented);
+    if (asClient) {
+      log.debug("Leaving nodeIdOf(). A client's own subject.");
+      return stats.identityKeyOf(asClient);
+    }
     log.debug("Leaving nodeIdOf().");
     return party.key;
   }
   if (party.application) {
     log.debug("Leaving nodeIdOf().");
-    return stats.identityKeyOf(party.application);
+    return stats.identityKeyOf(applicationNameOf(party.application));
   }
   log.debug("Leaving nodeIdOf().");
   return party.presented || '';
@@ -1041,7 +1219,9 @@ function graph(rows, options) {
     kind: 'sts',
     realm: { id: realm.id, name: realm.name,
              isDefault: realms.isDefault(realm) },
-    issuer: String(config.value('wstrust.issuer') || ''),
+    // #480: the STS's name as published (`issuer_names.ts`), required here
+    // lazily — it is a TypeScript library, compiled beside this file.
+    issuer: String(require('./issuer_names').wstrustIssuer() || ''),
     roles: { initial: 0, intermediary: 0, target: 0 },
     acts: 0, issued: 0, refused: 0
   };
@@ -1058,6 +1238,9 @@ function graph(rows, options) {
         // party can arrive as a bare name on one act and with its application
         // identifier on the next, and the box should carry both.
         key: '', presented: '', application: '',
+        // The OTHER names an application box was given — an audience, a
+        // client_id — once they are resolved to the one it is drawn as.
+        aliases: [],
         // What the party IS, in the protocol's own words, from the act that
         // said it first. They are per-role sentences, and the box's role is
         // whichever it played most, which is settled below.
@@ -1077,8 +1260,32 @@ function graph(rows, options) {
     if (party) {
       if (party.key && !node.key) node.key = party.key;
       if (party.presented && !node.presented) node.presented = party.presented;
-      if (party.application &&
-          !node.application) node.application = party.application;
+      if (party.application) {
+        // The REGISTERED identifier, whatever the act spelled, so the page
+        // finds the entry; the spelling given is kept as an alias.
+        const resolved = applicationNameOf(party.application);
+        if (!node.application) {
+          node.application = resolved;
+        }
+        if (party.application !== node.application &&
+            node.aliases.indexOf(party.application) < 0) {
+          node.aliases.push(party.application);
+        }
+      }
+      // A client acting as itself (#468): the box is its application, and
+      // the subject it presented — `urn:sts:client:<id>` — is one more name
+      // the box was given.
+      const asClient = party.presented ?
+        clientApplicationOf(party.presented) : '';
+      if (asClient) {
+        if (!node.application) {
+          node.application = asClient;
+        }
+        if (party.presented !== node.application &&
+            node.aliases.indexOf(party.presented) < 0) {
+          node.aliases.push(party.presented);
+        }
+      }
       if (party.what && !node.what) node.what = party.what;
     }
     log.debug("Leaving nodeFor().");

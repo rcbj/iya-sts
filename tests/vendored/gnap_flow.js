@@ -27,13 +27,16 @@ const nodeCrypto = require("crypto");
 const gnap = require("./gnap_client.js");
 
 // `options`: { base, realm, password, log }. Answers the harness bound to them.
+// An EMPTY realm is the DEFAULT realm (#497): the chain jobs leave their
+// entries there, as the other protocols' chain jobs do, for the delegation
+// picture. `realmBase` and `realmApi` are then the service's own.
 function harness(options) {
   const base = options.base;
-  const REALM = options.realm;
+  const REALM = options.realm || "";
   const PASSWORD = options.password;
   const log = options.log;
   const api = base + "/admin-api";
-  const realmBase = base + "/realm/" + REALM;
+  const realmBase = REALM ? base + "/realm/" + REALM : base;
   const realmApi = realmBase + "/admin-api";
   const GRANT = realmBase + "/gnap";
   const FINISH = "https://client.gnap.test/callback";
@@ -266,7 +269,8 @@ function harness(options) {
       assert.ok(authnId,
                 "the sign-in screen carries an authn_id: " +
                 r.text.slice(0, 300));
-      r = await b.go("POST", "/realm/" + REALM + "/authn/login",
+      r = await b.go("POST", (REALM ? "/realm/" + REALM : "") +
+                     "/authn/login",
                      { authn_id: authnId, username: who, password: PASSWORD,
                        action: "login",
                        csrf_token: self.csrfOf(r.text) });
@@ -372,6 +376,26 @@ function harness(options) {
                                                           json: {
                                                             interact_ref:
                                                               finished.ref } });
+    // SECTION 5's WAIT, honoured (#497): a realm that has not set
+    // `gnap.continueWaitS` to 0 — the default realm a chain job uses, whose
+    // settings are not a job's to change — answers too_fast to a client
+    // that continues early, with the `wait` it asked for. The client waits
+    // and continues once more, as section 5 says it should.
+    const early = r.json && r.json.error &&
+      (r.json.error.code || r.json.error) === "too_fast";
+    if (early) {
+      const wait = Number((r.json.continue || {}).wait ||
+                          pending.continue.wait || 5);
+      log.info("the continuation was too fast; waiting " + wait + " s " +
+               "(RFC 9635 section 5)");
+      await new Promise(function (resolve) {
+        setTimeout(resolve, wait * 1000 + 250);
+      });
+      const again = r.json.continue || pending.continue;
+      r = await client.send("POST", again.uri,
+                            { token: again.access_token.value,
+                              json: { interact_ref: finished.ref } });
+    }
     assert.strictEqual(r.status, 200,
                        "the continuation releases the grant: " +
                        r.text.slice(0, 400));

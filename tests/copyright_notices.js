@@ -66,8 +66,10 @@ const HEADER_WINDOW = 8;
 const SKIP_DIRS = new Set(['node_modules', '.git', '.terraform', 'coverage',
                            '__pycache__']);
 // `apidocs` is ./run-jsdoc.sh's output (2026-09-27), generated like coverage/.
+// `rust/target` is cargo's build output (#444).
 const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded',
-                    'tests/report', 'tests/vectors', 'data', 'apidocs'];
+                    'tests/report', 'tests/vectors', 'data', 'apidocs',
+                    'rust/target'];
 
 // Trees this repository may not edit, and which therefore carry no header of
 // their own: REUSE.toml declares them.
@@ -82,7 +84,7 @@ const KERBEROS_COPIES = ['kerberos/krb5_primitives.js',
 // Which files can carry a comment, and so must carry the header.
 const COMMENTED = new Set(['js', 'ts', 'cjs', 'mjs', 'java', 'c', 'php',
                            'sql', 'sh', 'py', 'tf', 'hcl', 'yml', 'yaml',
-                           'cfg', 'conf', 'tfvars']);
+                           'cfg', 'conf', 'tfvars', 'rs']);
 
 function foreignVendoredJobs() {
   log.debug("Entering foreignVendoredJobs().");

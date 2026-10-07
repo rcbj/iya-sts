@@ -255,7 +255,82 @@ this service signed something takes two things a deployment has to keep:
   limit access to it and keep it no longer than you need.
 
 HTTP message signatures on resource requests and responses (RFC 9421) are not
-part of the final Message Signing specification. They are tracked in #178.
+part of the final Message Signing specification. They are the next section.
+
+### FAPI 2.0 HTTP Signatures
+
+The OpenID Foundation's *FAPI 2.0 Http Signatures*, **draft of 26 June 2026**,
+profiles RFC 9421 (HTTP Message Signatures) and RFC 9530 (Digest Fields) for
+two messages: a resource request and a resource response. This service
+implements both halves at every resource server that takes an OAuth access
+token. Those are UserInfo, the RFC 9470 step-up resource, the OpenID4VCI
+endpoints, `/scim/v2`, the Shared Signals endpoints, Grant Management and the
+VC-API test endpoints. The draft says nothing about how it is turned on, so
+it is a setting of its own and not a value of `oauth2.fapi`.
+
+**A signed request** carries an HTTP message signature with
+`tag="fapi-2-request"`. This service verifies it with the key the
+signature's `keyid` names. That key comes from the registration of the client
+the access token was issued to: its `jwks`, or its `jwks_uri`, fetched when
+the request arrives. The signature must cover:
+
+* `@method`, `@target-uri` and `authorization`;
+* `dpop`, when the request carries a DPoP proof;
+* `content-digest`, when the request has a body. The Content-Digest is
+  checked against the bytes received.
+
+It must also carry a `created` within `oauth2.httpSignatureMaxAgeS` (60
+seconds, the draft's recommendation) of the server's clock. Any failure is
+`401` with `error="invalid_request"`.
+
+**A signature a client sends is verified in every setting.** A client that
+signed its request expects the signature to protect it, and a server that
+ignored it would be checking nothing.
+
+**A signed response** carries `tag="fapi-2-response"`, a `created`, and the
+`keyid` of the realm key in `/oauth2/jwks` that signed it. It also carries a
+sha-256 `Content-Digest` of its body. The signature covers:
+
+* the response's `@status`, `content-type` and `content-digest`;
+* through RFC 9421's `;req` flag, the request's `@method`, `@target-uri` and
+  `content-digest`;
+* when the request was signed, every component the request signature
+  covered, and that signature's `Signature` and `Signature-Input` members.
+
+The algorithm is the one the key is published with (RFC 9421 section 3.3.7
+forbids sending it as the `alg` parameter). So a client verifies with the
+JWK the `keyid` names and takes the algorithm from its `alg`.
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `oauth2.httpSignatures` | `STS_OAUTH2_HTTP_SIGNATURES` | `off` | yes | `off`, `sign-responses` (sign every response to a request whose token was accepted) or `require-requests` (that, and refuse an unsigned request with 401) |
+| `oauth2.httpSignatureMaxAgeS` | `STS_OAUTH2_HTTP_SIGNATURE_MAX_AGE_S` | `60` | yes | How far a signed request's `created` may be from the server's clock, either way |
+| `oauth2.httpSignatureResponseAlg` | `STS_OAUTH2_HTTP_SIGNATURE_RESPONSE_ALG` | `ES256` | yes | Which realm key signs a response: `ES256`, `ES384`, `EdDSA` (Ed25519 only under FAPI 2.0), `ML-DSA-44`, `ML-DSA-65` or `ML-DSA-87` |
+
+A response is signed when the setting is not `off`, when the client set
+`oauthHttpSignedRequests`, or when the request carried a valid signature.
+
+**One client can require signed requests of itself** with
+`oauthHttpSignedRequests=TRUE` on its entry, written through the console or
+`POST /admin-api/applications/set`. The draft defines no registration
+metadata for this, so a client cannot set it itself through dynamic
+registration.
+
+> **Warning: post-quantum response signatures.** `ML-DSA-44`, `ML-DSA-65`
+> and `ML-DSA-87` are RFC 9964's JOSE algorithms. A client that does not
+> implement RFC 9964 cannot verify them. They are offered so that a
+> deployment can test a post-quantum resource client. They are not FAPI 2.0
+> algorithms.
+
+Two places where the draft and RFC 9421 differ, and what this service does:
+
+* RFC 9421 section 2.4 calls covering a request's `Signature` and
+  `Signature-Input` in a response NOT RECOMMENDED. The draft requires it.
+  This service does both things the two documents ask: it covers the two
+  members as the draft says, and it covers every component the request
+  signature covered, as section 2.4 recommends instead.
+* The draft has no worked examples. The implementation is held to RFC 9421's
+  own test vectors (Appendix B and section 2.4).
 
 ### The OpenID Foundation's conformance suite
 
@@ -363,6 +438,30 @@ certificate. A client that authenticated **by certificate** may refresh with a
 new certificate (section 7.1), and the new tokens bind to it.
 `tls_client_certificate_bound_access_tokens` is advertised only where the port
 is TLS.
+
+### The admin console as a public client
+
+The admin console is being converted to a static application that runs in the
+browser and holds its own tokens (a public client,
+`token_endpoint_auth_method` `none`). Until that conversion is finished the
+seeded `sts-admin-console` client is still a confidential client, and nothing
+in this section applies to it.
+
+Once it is a public client, two rules apply to it and to no other client.
+Neither is a setting:
+
+* **Every token issued to it is DPoP-bound.** The token endpoint refuses a
+  request from it that carries no DPoP proof (`invalid_dpop_proof`). Its
+  refresh token is bound to the same key, as RFC 9449 section 5 requires for
+  any public client. The management API refuses an access token issued to it
+  that carries no `cnf.jkt`.
+* **It is the one public client a confidential-only FAPI profile allows.**
+  FAPI 1.0 Advanced and FAPI 2.0 support no public client. In a realm with one
+  of those profiles on, the console may still sign in. **The console does not
+  conform to the profile in that realm.** Every other client is held to the
+  profile, and the console's tokens are still sender-constrained.
+
+The user portal is not affected. It stays a confidential client.
 
 ### Requiring a sender constraint — five settings
 
@@ -700,6 +799,14 @@ is shown and `login_required` is the answer, and **a refusal coming back from th
 sign-in screen**, where the person is present and has just decided. A success is
 never affected, because it implies a session.
 
+**A timed continue is available, and off (#317).** `oauth2.errorPageAutoRedirectS`
+above `0` makes the page follow its own link after that many seconds (a meta
+refresh, still no script) and say so. It is off by default because it gives back
+part of what the page is for: a browser that has not authenticated here is sent
+on without anyone choosing. The address is still one the client registered.
+Turn it on for a development or test realm where the pause is only in the way.
+A `form_post` error keeps its button whatever the setting.
+
 A request with **no `client_id`** is a 400 and never redirected: RFC 6749
 section 4.1.2.1 forbids redirecting for an invalid `client_id` and
 `redirect_uri` combination, and no client means the URI belongs to nobody.
@@ -1011,8 +1118,10 @@ The one page that may be framed is the OpenID Connect Session Management OP
 iframe, off by default (see
 [Session Management](oauth-oidc.md#session-management)), and it narrows the
 clause to the realm's registered redirect origins rather than dropping it.
-There is no device authorization grant, so there is no `user_code` page; the row
-exists so a reader checking the table against the section finds the answer.
+The device authorization grant's `user_code` page, `/portal/device` (RFC 8628,
+off by default behind `oauth2.deviceAuthorization` — see
+[Signing in a device](oauth-oidc.md#signing-in-a-device-rfc-8628)), relaxes
+nothing, so it carries the same framing clauses as every other page.
 
 ### In-browser communication (section 4.17)
 

@@ -296,7 +296,17 @@ function childMain() {
     ldap.createUser('asf-carl', { invent: false });
     adminRbac.grant('asf-carl', 'read', { via: 'test', actor: 'test' });
     const b4 = browser(port, CHROME);
-    const riskyPage = await passwordStep(b4, '/admin', 'asf-carl');
+    // THE CONSOLE SIGNS IN IN THE BROWSER since the cutover (#446): the
+    // shell is drawn, and its sign-in starts at the authorize endpoint as
+    // the public client, with PKCE, at the callback the shell registers.
+    await b4.go('GET', '/admin');
+    const consoleAuthorize = '/oauth2/authorize?' + new URLSearchParams({
+      client_id: 'sts-admin-console', response_type: 'code',
+      redirect_uri: 'http://127.0.0.1:' + port + '/admin/callback',
+      scope: 'openid admin:read admin:write', state: 's',
+      code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+      code_challenge_method: 'S256' }).toString();
+    const riskyPage = await passwordStep(b4, consoleAuthorize, 'asf-carl');
     const riskyId = ignoreOf(riskyPage.text);
     const atRisk = auditOf('authn.mfa.enrolment.at-risk', 'asf-carl');
     let riskyDone = riskyId ? await b4.go('POST', '/authn/mfa-setup',

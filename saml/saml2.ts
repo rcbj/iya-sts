@@ -52,6 +52,8 @@ import stsCrypto = require('../common/crypto');
 // saml.issuer, read per assertion rather than captured at require time so
 // that /admin/config can change what the next one says it came from.
 import config = require('../common/config');
+// #480: the names this service signs under, in one place (a library).
+import IssuerNames = require('../common/issuer_names');
 // The error-code registry, a leaf; the signing failure below is tagged with its
 // code.
 import errorCodes = require('../common/error_codes');
@@ -102,6 +104,10 @@ interface BuildOptions {
   // #186: the parties that acted, least to most recent.
   delegates?: Array<{ nameId: string; format?: string;
                       instant?: string }>;
+  // #483: the application whose claim settings govern the custom
+  // attributes, when the audience is not its identifier (a WS-Trust
+  // AppliesTo).
+  application?: string;
   [member: string]: unknown;
 }
 
@@ -371,7 +377,9 @@ class Saml2Assertions {
     // Who signed it. Read once, because it appears in the Issuer element and in
     // the default `issuedBy` attribute, and two reads of a runtime-changeable
     // setting inside one document can disagree with each other.
-    const issuer = opts.issuer || config.value('saml.issuer');
+    // #480: `saml.issuer`, or in product the SAML entityID where nobody set
+    // it (`common/issuer_names.ts`).
+    const issuer = opts.issuer || IssuerNames.samlIssuer();
     const attributes: AttributeRow[] =
       (opts.attributes && opts.attributes.length) ? opts.attributes : [
         { name: 'name', value: subject },
@@ -383,9 +391,16 @@ class Saml2Assertions {
     // does not) both carry them. A configured attribute that displaced the
     // claim a relying party keys off would break the sign-in and look like a
     // bug in the relying party.
+    // `application` (#483): the entry whose settings govern them, where the
+    // caller resolved it — WS-Trust names the AppliesTo's application, which
+    // the audience string alone does not reach (see wstrust.ts). Absent, the
+    // audience is looked up as it always was.
     const custom = stats.samlAttributes('saml2',
-                                        { subject: subject,
-                                          audience: audience });
+                                        Object.assign({ subject: subject,
+                                                        audience: audience },
+                                          opts.application
+                                            ? { application: opts.application }
+                                            : {}));
     // Appended, and FILTERED against what is already there by name. The rule is
     // the one the JWT builders follow — the protocol's own claims win — but it
     // has to be written as a filter rather than as an assignment order, because

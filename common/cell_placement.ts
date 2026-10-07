@@ -105,9 +105,10 @@ const ROWS: Row[] = [
          'owner\'s own session may register one' },
   { prefix: '/.well-known/est', strategy: 'handler',
     handler: 'est/est.ts',
-    why: 'an EST enrollment is served where the person its Basic name or ' +
-         'client certificate names is homed; cacerts and csrattrs are the ' +
-         'same in every cell' },
+    why: 'an EST enrollment, and the /nonce its TPM attestation spends ' +
+         '(#257), is served where the person its Basic name or client ' +
+         'certificate names is homed; cacerts and csrattrs are the same ' +
+         'in every cell' },
   { prefix: '/pki', strategy: 'local',
     why: 'the certificate authority is the global tier\'s' },
   { prefix: '/crypto', strategy: 'local',

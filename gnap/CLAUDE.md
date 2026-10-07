@@ -28,14 +28,46 @@ as **digest tokens** (`gnap:<22 chars of base64url SHA-256 over the canonical
 JSON of one access right>`) — rcbj approved that shape — and **every GNAP
 endpoint validates its body against a JSON Schema and sanitises it**.
 
+## No cryptography in this directory (#178, 2026-10-05)
+
+**rcbj, 2026-10-05: "All crypto operations across all protocols and use
+cases are to be centralized in a common module."** Nothing in `gnap/` calls
+node's `crypto`. HTTP message signatures, the detached-JWS check
+(`crypto.jwsSignatureValid()`), digests (`crypto.digest()`), the realm HKDF
+(`crypto.hkdf()`), key import and export (`crypto.publicKeyFromJwk()`,
+`publicKeyOf()`, `spkiDerOf()`) and certificate parsing
+(`pki.certificateFromDer()`) are all in `common/`. A new GNAP feature that
+needs a cryptographic operation adds it to `common/crypto.js` (or `pki.js`)
+and calls it from here.
+
+**The three token libraries are `common/crypto.js`'s too (#453, rcbj's
+decision of 2026-10-05)**: `macaroon`, `jsonld-signatures` with the Digital
+Bazaar ZCAP and Ed25519 packages, and `@biscuit-auth/biscuit-wasm` are
+required by `crypto.js` and by nothing in `gnap/`. `crypto.js` loads each
+lazily, turns the realm's keys into the library's key objects, decides the
+algorithms and key sizes (`MACAROON_MIN_ROOT_KEY_BYTES`, Ed25519 for a
+biscuit), and runs the library: `macaroonMint()` / `macaroonImport()` /
+`macaroonVerify()` / `macaroonAttenuate()`, `zcapDelegate()` /
+`zcapVerifyDelegation()` / `zcapVerificationMethod()`, and `biscuitMint()` /
+`biscuitAuthorize()` / `biscuitAttenuate()`. The token modules keep the
+formats' grammar — the caveat grammar and access model, the capability
+document and its controller documents, the Datalog and the model queries —
+and hand it over as data or a callback. **What wrapping does not change**:
+the macaroon HMAC chain and the biscuit block signatures are still computed
+inside those libraries, which have no hook for an external MAC or signer.
+`Ed25519Signature2020` does have one, so that suite is handed a signer and a
+verifier backed by `signRawSignature()` / `verifyRawSignature()` and the
+library only canonicalises; the three JCS zcap suites stay on
+`oid4vc/vc_data_integrity.ts`, which already signs through `crypto.js`.
+`crypto.js`'s group A header argues the split.
+
 ## The modules
 
 Route-free libraries, each require-able from an in-process test:
 
 | Module | What it is |
 |---|---|
-| `gnap_sf.ts` | RFC 8941 structured fields, written out here — the signature base is the thing both ends must build byte for byte |
-| `gnap_httpsig.ts` | RFC 9421 sign and verify, RFC 9530 Content-Digest. `tests/gnap_httpsig.js` holds it to the RFC's Appendix B vectors |
+| ~~`gnap_sf.ts`~~, ~~`gnap_httpsig.ts`~~ | **Moved out of `gnap/` by #178 (2026-10-05)**. RFC 8941 is `common/structured_fields.ts`; RFC 9421 and RFC 9530 are `common/crypto.js` section 14, shared with the FAPI 2.0 HTTP Signatures profile at the OAuth resource servers. `tests/http_signatures.js` holds them to the RFC's vectors. The codes they raised, STS-GNAP-0200 to 0246, are retired as STS-KEYS-0107 to 0153 |
 | `gnap_keys.ts` | key formats, proof method normalisation, thumbprints, the key descriptor every other module takes |
 | `gnap_proof.ts` | verifies a request's proof — httpsig, mtls, jwsd, jws, and the nested proofs of a key rotation |
 | `gnap_schemas.ts` | the six ajv 2020-12 JSON Schemas. Types, bounds, URI formats, and **no control character in any string**. No `required` or `enum`: those are the walker's, so a refusal names the RFC section |
@@ -80,19 +112,21 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
 * **`macaroon@3`'s `exportBinary()` is broken for V2.** `token_macaroon.ts`
   writes the V2 binary encoding itself (`encodeBinaryV2()`), and
   `tests/vendored/sts_gnap_rs.js` decodes it with a decoder of its own.
-* **`@biscuit-auth/biscuit-wasm` needs a custom WebAssembly loader** that walks
-  `Module.imports`, and every authorization must go through
+* **`@biscuit-auth/biscuit-wasm` needs a custom WebAssembly loader** (in
+  `common/crypto.js` since #453) that walks `Module.imports`, and every
+  authorization must go through
   `authorizeWithLimits` — Datalog carried in a token is code a holder wrote.
 * **The biscuit library's first rule-applying evaluation after it is loaded
   can come back as a run-limit refusal whatever the budget** (#432,
   2026-10-03), so raising `LIMITS` is not the fix. It surfaced only when the
   #432 lanes merged and `tests/gnap_delegation.js` happened to verify a
-  token with an audience first. `token_biscuit.ts`'s `primeRunClock()` runs
+  token with an audience first. `common/crypto.js`'s `biscuitPrime()` runs
   one throwaway evaluation at load, and `tests/gnap_token_formats.js`
   verifies first in fresh processes. **Load the module once per process**:
   a second instance in the same process is not supported.
 * **`@digitalbazaar/zcap` and the jsonld-signatures stack are ESM**, loaded by
-  dynamic import, with an **offline document loader**: the contexts are
+  dynamic import (in `common/crypto.js` since #453), with an **offline
+  document loader**: the contexts are
   vendored and nothing is fetched. Under a JCS suite the loader serves only
   the root capability.
 * **A ZCAP `invocationTarget` must be an absolute URI and an RS identifier
@@ -133,6 +167,15 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
   continue to the discovery handler whatever it decides about the origin.
 * **`/:as/gnap` matches `/admin/gnap`.** Reserved first segments fall through
   (`RESERVED_AS_NAMES`); the console route is registered later and still wins.
+* **A JWT's type is its HEADER `typ`, `gnap-at+jwt` (#157, 2026-10-05).** Until
+  then the header said `JWT`, `docs/gnap.md` said it said `GNAP`, and
+  `GnapTokens.verify()` read the PAYLOAD's `typ: GNAP` — the token register's
+  private marker, the same kind as OAuth's `Bearer`. Every JWT a realm signs
+  uses one key, so explicit typing (RFC 8725 section 3.11) is what tells a
+  GNAP token from an ID Token or an `at+jwt`; the name is PRIVATE (RFC 9767
+  registers none) and the docs say so. `verify()` holds both: the header is
+  the type, and the payload marker keeps a GNAP-typed header over somebody
+  else's claims out (`STS-GNAP-0343` for either).
 
 ## Delegation: who may act for whom, through #186's policy (#432 phase 1, 2026-10-03)
 
@@ -164,6 +207,16 @@ exchange, WS-Trust and the KDC do (`common/CLAUDE.md` rule 3az, `docs/delegation
   narrowing the policy calls self. **One question per R**, because the policy
   issues for exactly one; the first enforced refusal is the one the client
   hears (request_denied, 0770–0781 by refusal kind).
+* **THE ASSERTION MUST BE THE PRESENTING CLIENT'S (#497, every mode).** An
+  ID Token's `aud`, or a SAML assertion's `Audience`, must name the client
+  presenting it — its identifier or an `oauthClientId` (`gnap_subject.ts`'s
+  `presenterIsAudience()`, the names passed by `createGrant()`); otherwise
+  `unknown_user`, STS-GNAP-0073, before the policy is asked. RFC 9635
+  section 11.13: a captured assertion presented by a client that is not its
+  audience is exactly how an end user is impersonated, and section 2.4's
+  case is an assertion the AS issued to the presenting client. Until #497
+  only the signature, issuer and expiry were checked, so any registered
+  client holding a person's ID Token could present it as its own.
 * **Enforced in product, recorded in development** — the policy's own
   `enforced`, read nowhere else; a may_act mismatch in every mode. A `may_act`
   in the presented ID Token is read only after its signature verified
@@ -839,7 +892,7 @@ header argues the design; what a reader needs here:
 
 | Range | Where |
 |---|---|
-| 0001–0199 | keys, request walkers, subjects, the grant engine, the routes |
+| 0001–0199 | keys, request walkers, subjects (0073: a user assertion issued to another client, #497), the grant engine, the routes |
 | 0200–0299 | HTTP message signatures, Content-Digest, proofs |
 | 0300–0399 | access rights and the token formats |
 | 0400–0499 | the resource-owner pages |
@@ -864,7 +917,7 @@ failure patterns.
 
 | File | What it holds |
 |---|---|
-| `tests/gnap_httpsig.js` | RFC 9421 / 9530 / 8941, including the Appendix B vectors |
+| `tests/http_signatures.js` | RFC 9421 / 9530 / 8941, including the Appendix B and section 2.4 vectors (it was `tests/gnap_httpsig.js` until #178) |
 | `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate; since #432 the full model carries a two-link `act` chain every format round-trips, an `act` appended to a macaroon by a holder is refused (0316), and the chain's grammar; since phase 5 a right with every kind of limit and the model's `grant` round-trip too |
 | `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
@@ -883,8 +936,9 @@ failure patterns.
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_revocation.js` | #432 in process with the whole stack: the sign-out families, a grant ending with its session, `/admin/sessions`, `revokeGrantsOf()` narrowed and whole (and never a global sign-out for a person holding nothing), a global sign-out, the check at use and the disable, the entry's key replaced and deleted, a compromised device. The partner's signal is `tests/ssf_transmitters.js` K |
 | `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
-| `tests/gnap_delegation.js` | #432 phase 1 in process, in a child serving the whole stack, both modes: impersonation refused (0772), recorded "would have been refused", allowed; 0770 with no reach, R the client itself for unregistered rights; `stsNotDelegated` and `appDelegationSubjectGroup` (0771) with may_act standing in; may_act naming somebody else in every mode (0774); the client as itself releasing no subject; `appAllowedProtocol` at the gate; derivation refused (0776) and allowed, `act` on the token, the subset rule in both modes (0513), the depth cap (0782), the chain nesting and at introspection; `act` verified back from each of the five formats; the register, its summary and map |
+| `tests/gnap_delegation.js` | #432 phase 1 in process, in a child serving the whole stack, both modes: an ID Token issued to another client refused (0073, #497), impersonation refused (0772), recorded "would have been refused", allowed; 0770 with no reach, R the client itself for unregistered rights; `stsNotDelegated` and `appDelegationSubjectGroup` (0771) with may_act standing in; may_act naming somebody else in every mode (0774); the client as itself releasing no subject; `appAllowedProtocol` at the gate; derivation refused (0776) and allowed, `act` on the token, the subset rule in both modes (0513), the depth cap (0782), the chain nesting and at introspection; `act` verified back from each of the five formats; the register, its summary and map |
 | `tests/vendored/sts_gnap_delegation.js` | the same over HTTP in whichever mode the service is in: product's refusals by their audited codes, development's rows, `act` on a derived token and at introspection, the cap, and `GET /admin-api/delegation` |
+| `tests/vendored/sts_gnap_chain_impersonation.js`, `sts_gnap_chain_delegation.js` | #497: the four-tier chain (webapp1, apigw1, esb1, sp1) in the default realm, both modes — impersonation by webapp1's own ID Token then two derivations, and apigw1 refused presenting it (0073); delegation by bob's approval then the same derivations, the original client traced through `grant_id` to its grant. Every token's JWS verified by the job and introspected by its tier; the register and the picture. `gnap_chain_kit.js` is the shared half |
 | `tests/vendored/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |
 
 The three jobs share `tests/vendored/gnap_client.js` (an independent client
@@ -1061,3 +1115,59 @@ its reference is written into grant requests that may reach any cell.
   than the peer's private name, and the body's exact bytes
   (`cell_placement.ts` `serialisedBody()` prefers `req.rawBody`). See
   `common/cell_channel.ts`'s `relay()`.
+
+## A CLIENT NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496, 2026-10-06)
+
+rcbj, widening #496: in product an unregistered application gets nothing but
+its protocol's own "unknown application" error. The unknown-key refusal
+(`STS-GNAP-0082`) asked only whether ANY entry held the key, and an entry
+development created on first sight of a proved key holds it
+(`gnapKeyIdentity`) with no `appRegisteredBy` — so a realm switched to
+product went on accepting that key, and its instance identifier, as though
+an administrator had provisioned them. `unregisteredCaller()` asks #494's
+question of the application a key or an instance resolves to, behind
+`mode.issuesToUnregisteredApplications()` (the `unregistered-gnap-clients`
+row on `/admin/mode`): 401 `invalid_client` / `invalid_resource_server`,
+`STS-GNAP-0902`, before the entry is sighted again or anything is issued.
+For an instance identifier it is asked before the key is even described; for
+a key, once the proof has said whose key it is.
+
+**An access right whose `locations` name no registered resource server** was
+left open here and is #505's, below.
+
+`tests/unregistered_applications.js` (G1) holds it, the proof stubbed: what
+is held is whose key it is, which is decided after the proof verifies.
+
+## A RIGHT'S LOCATIONS NAME A REGISTERED RESOURCE SERVER, IN PRODUCT (#505, 2026-10-06)
+
+A location that resolved to no resource server was LEFT OUT: the right was
+granted and the token issued with no audience for it (`resourceServersFor()`
+matches a location only to a `gnapResourceServerUri`). rcbj's follow-up to
+#496: in product every location of every access right must name a registered
+target, and a right that names one that does not is REFUSED rather than
+dropped — the request is answered `invalid_request` (400, RFC 9635 section
+3.6), `STS-GNAP-0903`, the code family a location the catalogue's owner does
+not answer to already gets (`STS-GNAP-0812`).
+
+A location is registered when `common/registered_targets.ts` says so — the
+one definition shared with RFC 8707's `resource` (`oauth-oidc/CLAUDE.md`):
+one of this service's own resource servers (the default resource indicator,
+`/admin-api`, the demonstration resource server at `/gnap/rs/resource` while
+`gnap.demoResourceServer` is on) or a registered application by audience,
+permission base URI, client_id or identifier — or when it is AT or UNDER the
+`gnapResourceServerUri` of a REGISTERED GNAP resource server, GNAP's own
+addressing and the match `resourceServersFor()` makes. "Registered" is
+`appRegisteredBy`; an RS a development sighting filed is not one.
+
+`unregisteredLocationRefusal()` is asked in `judgeRequested()`, right after
+the catalogue's well-formedness and before the issuance policy's questions,
+so at creation, modification and derivation alike and before anybody is
+asked to approve. A reference string names no location and is not asked.
+What a location that IS registered contributes to a token's audience is
+unchanged: `resourceServersFor()` still adds only a matched GNAP resource
+server (so a location naming a registered application by its audience passes
+the check and adds nothing, as before). Behind
+`mode.issuesToUnregisteredApplications()`, the
+`unregistered-resource-targets` row on `/admin/mode`; development is
+unchanged. `tests/registered_targets.js` (T5) holds it in both modes,
+through `judgeRequested()` on a `GnapGrants` built in the test.

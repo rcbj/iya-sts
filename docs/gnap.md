@@ -88,7 +88,7 @@ All five formats RFC 9767 registers are minted and verified.
 
 | Format | What it is | How a resource server verifies it |
 |---|---|---|
-| `jwt-signed` | a JWT with `typ` `GNAP`, signed with the realm key | `/oauth2/jwks` |
+| `jwt-signed` | a JWT whose protected header carries `typ` `gnap-at+jwt`, signed with the realm key | `/oauth2/jwks`, and refuse any other header `typ` (see below) |
 | `jwt-encrypted` | that JWT inside a JWE | to the resource server's own `gnapJweKey` (RSA-OAEP-256 or ECDH-ES+A256KW), else `dir` A256GCM that only introspection can open |
 | `macaroon` | the V2 binary format, HMAC-SHA256, first-party caveats | the root key written onto the resource server's application entry as `gnapMacaroonKey` |
 | `biscuit` | Ed25519, Datalog facts and checks | the root public key in `/gnap/keys` |
@@ -99,6 +99,30 @@ that accepts only some formats, then the resource server's
 `gnapAccessTokenFormat`, then the client's, then `gnap.accessTokenFormat`.
 
 **Resource servers can always introspect**, whatever the format.
+
+### The JWT formats' type
+
+A `jwt-signed` token's protected header is
+`{"alg": "RS256", "typ": "gnap-at+jwt", "kid": …}` (with `x5c` or `x5u` where
+`gnap.accessTokenCertificateHeader` asks), and the JWS inside a
+`jwt-encrypted` token carries the same header. Every JWT this realm signs —
+ID Tokens, RFC 9068 access tokens, logout tokens — is signed with the same
+key, so **a resource server must check the header `typ`** (RFC 8725 section
+3.11, explicit typing), comparing it case-insensitively and accepting
+`application/gnap-at+jwt` as the same type (RFC 7515 section 4.1.9). This
+service's own resource server does, and refuses anything else
+(`STS-GNAP-0343`); an OAuth resource server here likewise refuses a GNAP
+token, whose header is not `at+jwt`.
+
+> **`gnap-at+jwt` is a private media type.** RFC 9767 registers no media type
+> for a JWT access token, so this service names one the way RFC 9068 named
+> `at+jwt`. It is not in the IANA media types registry, and another GNAP
+> implementation will not use it.
+
+The payload also carries `"typ": "GNAP"`. That is a private claim, the
+marker every token this service signs carries for its own token register
+(`Bearer`, `ID`, `Refresh` on the OAuth tokens); it is not the token's type,
+and a resource server should not dispatch on it.
 
 ### Seeing a revocation without introspection
 
@@ -213,7 +237,21 @@ kinds: `gnap-client` or `gnap-resource-server`. The attributes:
 | `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri` | what the approval page shows |
 
 **An unknown key** is given an entry on first sight in development mode. In
-product mode it is refused `invalid_client` until it is registered.
+product mode it is refused `invalid_client` until it is registered — and so
+is a key, or an instance identifier, belonging to an entry development
+created that way: an entry made on first sight is not a registration (#496,
+`STS-GNAP-0902`). Register the client through the console or `/admin-api`.
+
+**A right's locations must name a registered resource server in product
+mode** (#505). Each location of each access right must be at or under the
+`gnapResourceServerUri` of a registered resource server, be one of this
+service's own resource servers (the demonstration resource server at
+`/gnap/rs/resource`, the default resource indicator, `/admin-api`), or name
+a registered application by its audience, permission base URI, `client_id`
+or identifier. Otherwise the request is refused `invalid_request` (400,
+`STS-GNAP-0903`) at creation, modification and derivation alike — the right
+is not quietly left out of the token's audience, as it is in development
+mode.
 
 The two sealed attributes are encrypted under the process key-encryption key
 whenever keys persist — see [encryption at rest](encryption-at-rest.md).
@@ -287,6 +325,16 @@ mode** issues the token and records that it *would have been refused*. A
 `may_act` naming somebody else is refused in both. Every act, issued or
 refused, is listed on **Monitoring → Delegation** and at `GET
 /admin-api/delegation` under protocol `GNAP`.
+
+**The assertion must have been issued to the client presenting it**, in
+both modes: an ID Token's `aud` must name the client (its identifier or one
+of its `oauthClientId` values), and a SAML assertion's `Audience` likewise.
+An assertion issued to another client is refused `unknown_user`
+(`STS-GNAP-0073`): RFC 9635 section 11.13 names a captured assertion
+presented by a client that is not its audience as the way an end user is
+impersonated. A web application that signed a person in with OpenID Connect
+presents its own ID Token; it cannot hand that token to a back-end service
+to present in its place.
 
 A client that skips interaction **without** a user assertion acts for nobody:
 nothing is asked, and no subject information is released.

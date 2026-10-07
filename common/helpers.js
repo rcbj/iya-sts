@@ -57,7 +57,6 @@ require('./config_file').resolveConfigFile();
 // It is BELOW this module in the dependency graph and requires nothing from
 // here, which is what keeps the graph a tree (rule 3).
 const config = require('./config');
-const crypto = require('crypto');
 const forge = require('node-forge');
 const jwt = require('jsonwebtoken');
 const bunyan = require("bunyan");
@@ -94,6 +93,11 @@ const signerGroups = require('./signer_groups');
 // is how eight of them reach a signing key. realms.js requires config.js and
 // nothing else here, so this cannot be a cycle.
 const realms = require('./realms');
+// WHICH HOSTED APPLICATION A PATH IS, AND WHERE EACH IS ADVERTISED (#472):
+// every URL built here is built on the base of the application it is for.
+// Two LEAVES (they require the settings, the realms and each other).
+const hostedApplications = require('./hosted_applications');
+const listenerMap = require('./listener_map');
 // A LEAF over `config` alone (see its header), so this require can close no
 // cycle. `userFor()` asks it whether to invent persona values.
 const mode = require('./mode');
@@ -418,11 +422,12 @@ const HOST = config.value('global.host');
 // that needed one of them to be its own real name had to change all three.
 //
 // They are now `saml.issuer`, `wstrust.issuer` and `wsfed.entityId` in
-// config.js, all three still defaulting to `urn:wstrust:mock:sts` and all
-// three still fed by STS_ISSUER when it is set, so nothing that worked before
-// changed. Callers read them from config.js directly rather than through a
-// re-export here: they are runtime-settable, so a constant captured at
-// require time would be the one thing the console could not change.
+// config.js, all three still fed by STS_ISSUER when it is set. Their default
+// was `urn:wstrust:mock:sts` until #494; it is empty now, meaning the realm's
+// SAML 2.0 entityID (`common/issuer_names.ts`). Callers read them through
+// that library, per use, rather than through a re-export here: they are
+// runtime-settable, so a constant captured at require time would be the one
+// thing the console could not change.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -487,8 +492,8 @@ const VCI_REQUEST_ENC_ALG = 'RSA-OAEP-256';
  */
 function requestEncryptionJwkOf(privateKey) {
   log.debug("Entering requestEncryptionJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving requestEncryptionJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -505,7 +510,7 @@ function makeRequestEncryptionKey(made) {
   log.debug("Entering makeRequestEncryptionKey().");
   const bits = rsaBitsFor('oid4vci.requestEncryptionKeyBits');
   const pair = made ||
-               crypto.generateKeyPairSync('rsa', { modulusLength: bits });
+               stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
   const out = { privateKey: pair.privateKey,
                 publicJwk: requestEncryptionJwkOf(pair.privateKey) };
   log.debug("Leaving makeRequestEncryptionKey(). " + bits + " bits, kid=" +
@@ -556,8 +561,8 @@ const REFRESH_TOKEN_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
 
 function refreshTokenJwkOf(privateKey, kind) {
   log.debug("Entering refreshTokenJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving refreshTokenJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -582,9 +587,9 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
   const curve = REFRESH_TOKEN_CURVES[curveName] ||
                 REFRESH_TOKEN_CURVES['P-256'];
   const rsa = madeRsa ||
-              crypto.generateKeyPairSync('rsa', { modulusLength: bits });
-  const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
-  const secret = crypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
+              stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const ec = stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
+  const secret = stsCrypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
   const out = {
     rsa: { privateKey: rsa.privateKey,
            publicJwk: refreshTokenJwkOf(rsa.privateKey, 'rsa') },
@@ -595,10 +600,7 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
     // names which realm's secret opened it. A hash of 64 random bytes reveals
     // nothing usable about them, and it is never published anyway.
     secretKid: 'sts-rt-secret-' +
-      crypto.createHash('sha256')
-            .update(secret)
-            .digest('base64url')
-            .slice(0, 16)
+      stsCrypto.digest('sha256', secret, 'base64url').slice(0, 16)
   };
   log.debug("Leaving makeRefreshTokenEncryptionKeys(). rsa " + bits +
             " bits, " +
@@ -632,8 +634,8 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
 // ---------------------------------------------------------------------------
 function requestObjectJwkOf(privateKey, kind) {
   log.debug("Entering requestObjectJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving requestObjectJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -650,8 +652,8 @@ function makeRequestObjectEncryptionKeys(madeRsa) {
   const curve = REFRESH_TOKEN_CURVES[curveName] ||
                 REFRESH_TOKEN_CURVES['P-256'];
   const rsa = madeRsa ||
-              crypto.generateKeyPairSync('rsa', { modulusLength: bits });
-  const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
+              stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const ec = stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
   const out = {
     rsa: { privateKey: rsa.privateKey,
            publicJwk: requestObjectJwkOf(rsa.privateKey, 'rsa') },
@@ -678,8 +680,8 @@ function makeRequestObjectEncryptionKeys(madeRsa) {
 // ---------------------------------------------------------------------------
 function browserDeviceJwkOf(privateKey, use) {
   log.debug("Entering browserDeviceJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving browserDeviceJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -691,8 +693,10 @@ function browserDeviceJwkOf(privateKey, use) {
 
 function makeBrowserDeviceKeys() {
   log.debug("Entering makeBrowserDeviceKeys().");
-  const sign = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-  const enc = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const sign = stsCrypto.generateKeyPairSync('ec',
+                                             { namedCurve: 'prime256v1' });
+  const enc = stsCrypto.generateKeyPairSync('ec',
+                                            { namedCurve: 'prime256v1' });
   const out = {
     sign: { privateKey: sign.privateKey,
             publicJwk: browserDeviceJwkOf(sign.privateKey, 'sig') },
@@ -865,11 +869,7 @@ function makeStsKeys(made) {
   // reasoning about kid collisions above holds per key rather than per service.
   // -------------------------------------------------------------------------
   const extraKeys = CURVE_KEY_SPECS.map(function (spec) {
-    // `any`: the key type is a table value, and the overloads want literals.
-    const generate = /** @type {any} */ (crypto.generateKeyPairSync);
-    const pair = spec.gen[1]
-      ? generate(spec.gen[0], spec.gen[1])
-      : generate(spec.gen[0]);
+    const pair = stsCrypto.generateKeyPairSync(spec.gen[0], spec.gen[1]);
     return curveKeyFrom(spec, pair);
   });
 
@@ -963,7 +963,7 @@ function plainKeySet(realmId, stored) {
   certifiedView(set, realmId, stored);
   // The parsed RSA key, for makeStsKeys()'s measured reason: parsing the PEM
   // per signature was 21% of non-idle CPU.
-  set.privateKey = crypto.createPrivateKey(set.privateKeyPem);
+  set.privateKey = stsCrypto.privateKeyFrom(set.privateKeyPem);
   // The post-quantum half, where the sibling had already made it. Absent means
   // "not warmed yet"; this process will make and republish them.
   if (stored.pqKeys) {
@@ -1318,7 +1318,7 @@ function xmlKeyView(realmId, stored, privateOf) {
   } else {
     view.privateKeyPem = stored.privateKeyPem;
     view.privateKey = stored.privateKey ||
-                      crypto.createPrivateKey(stored.privateKeyPem);
+                      stsCrypto.privateKeyFrom(stored.privateKeyPem);
   }
   log.debug("Leaving xmlKeyView(). kid=" + kid);
   return view;
@@ -1356,7 +1356,7 @@ function generationsView(realmId, stored, privateOf) {
     });
     if (entry.kind === 'rsa' && !entry.publicJwk && entry.certPem) {
       entry.publicJwk = Object.assign(
-        crypto.createPublicKey(entry.certPem).export({ format: 'jwk' }),
+        stsCrypto.publicKeyOf(entry.certPem).export({ format: 'jwk' }),
         { kid: entry.kid, use: 'sig', alg: 'RS256' });
     }
     const kid = entry.kid;
@@ -2276,7 +2276,7 @@ const stsKeysFor = realms.keyed(function (realm) {
   // It is derived rather than stored: there is exactly one private key per
   // realm and this is the same one, so the two cannot drift apart.
   // ---------------------------------------------------------------------
-  keys.privateKey = crypto.createPrivateKey(keys.privateKeyPem);
+  keys.privateKey = stsCrypto.privateKeyFrom(keys.privateKeyPem);
   keys.realm = realm.id;
   // **AND THE CERTIFICATE VIEW, WHICH THIS PATH NEEDS MOST.** The two branches
   // above build their sets through `lazyKeySet()` and `plainKeySet()` and get
@@ -2429,6 +2429,7 @@ function keySetNeedsMaking(realmId) {
   return true;
 }
 
+// On libuv's thread pool, through `crypto.js`'s generateKeyPairAsync() (#453).
 function generateRsaPairAsync(bits, asPem) {
   log.debug("Entering generateRsaPairAsync(). bits=" + bits);
   const options = { modulusLength: bits };
@@ -2437,16 +2438,7 @@ function generateRsaPairAsync(bits, asPem) {
     options.publicKeyEncoding = { type: 'pkcs1', format: 'pem' };
   }
   log.debug("Leaving generateRsaPairAsync().");
-  return new Promise(function (resolve, reject) {
-    crypto.generateKeyPair('rsa', options, function (err, publicKey,
-                                                     privateKey) {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve({ publicKey: publicKey, privateKey: privateKey });
-    });
-  });
+  return stsCrypto.generateKeyPairAsync('rsa', options);
 }
 
 // Resolves once the realm's key set is held by this process (or there was
@@ -3987,7 +3979,7 @@ function ownSignerFor(alg) {
 function ownPublicKeyFor(alg) {
   log.debug("Entering ownPublicKeyFor(). alg=" + alg);
   const signer = ownSignerFor(alg);
-  const publicKeyPem = String(crypto.createPublicKey(signer.key)
+  const publicKeyPem = String(stsCrypto.publicKeyOf(signer.key)
     .export({ type: 'spki', format: 'pem' }));
   log.debug("Leaving ownPublicKeyFor().");
   return { kid: signer.kid, publicKeyPem: publicKeyPem };
@@ -4018,8 +4010,7 @@ function ownCandidatesFor(alg) {
   // ones, so a token a group key signed verifies here — found by its kid.
   const groupCandidates = groupVerifiersFor(alg).map(function (one) {
     return { kid: one.publicJwk.kid, role: 'current',
-             certPem: crypto.createPublicKey({ key: one.publicJwk,
-                                               format: 'jwk' })
+             certPem: stsCrypto.publicKeyFromJwk(one.publicJwk)
                .export({ type: 'spki', format: 'pem' }) };
   });
   if (spec.family === 'rsa') {
@@ -4030,8 +4021,7 @@ function ownCandidatesFor(alg) {
   const now = Date.now();
   const out = [];
   classicalKeysFor(alg).forEach(function (one) {
-    const pem = crypto.createPublicKey({ key: one.publicJwk,
-                                         format: 'jwk' })
+    const pem = stsCrypto.publicKeyFromJwk(one.publicJwk)
       .export({ type: 'spki', format: 'pem' });
     out.push({ kid: one.publicJwk.kid, certPem: pem, role: 'current' });
     standbyOf(keys, 'jose:' + certificateSlotOf(one)).filter(function (sb) {
@@ -4546,22 +4536,9 @@ function curveSpecFor(unitRow) {
 function generateCurvePairAsync(spec) {
   log.debug("Entering generateCurvePairAsync(). alg=" + spec.alg);
   log.debug("Leaving generateCurvePairAsync().");
-  return new Promise(function (resolve, reject) {
-    const done = function (err, publicKey, privateKey) {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve({ publicKey: publicKey, privateKey: privateKey });
-    };
-    // `any`: the key type is a table value, and the overloads want literals.
-    const generate = /** @type {any} */ (crypto.generateKeyPair);
-    if (spec.gen[1]) {
-      generate(spec.gen[0], spec.gen[1], done);
-    } else {
-      generate(spec.gen[0], done);
-    }
-  });
+  // On libuv's thread pool, through `crypto.js` (#453). An absent options
+  // object is `{}` there, which is what node made of the two-argument call.
+  return stsCrypto.generateKeyPairAsync(spec.gen[0], spec.gen[1]);
 }
 
 async function mintStandbyKey(unitRow, role) {
@@ -4578,10 +4555,10 @@ async function mintStandbyKey(unitRow, role) {
     log.debug("Leaving mintStandbyKey(). RSA " + kid);
     return Object.assign(base, {
       kid: kid, privateKeyPem: made.privateKeyPem,
-      privateKey: crypto.createPrivateKey(made.privateKeyPem),
+      privateKey: stsCrypto.privateKeyFrom(made.privateKeyPem),
       certPem: made.certPem, certB64: made.certB64,
       publicJwk: Object.assign(
-        crypto.createPublicKey(made.certPem).export({ format: 'jwk' }),
+        stsCrypto.publicKeyOf(made.certPem).export({ format: 'jwk' }),
         { kid: kid, use: 'sig', alg: 'RS256' })
     });
   }
@@ -4961,7 +4938,7 @@ async function promoteGenerations(realmId, options) {
     if (row.unit === 'jose:RS256') {
       Object.assign(retiredFrom, {
         privateKeyPem: copy.privateKeyPem,
-        privateKey: crypto.createPrivateKey(copy.privateKeyPem),
+        privateKey: stsCrypto.privateKeyFrom(copy.privateKeyPem),
         certPem: copy.selfSignedCertPem, certB64: copy.selfSignedCertB64,
         createdAt: copy.createdAt });
       copy.privateKeyPem = nextEntry.privateKeyPem;
@@ -4970,7 +4947,7 @@ async function promoteGenerations(realmId, options) {
     } else if (row.unit === 'xml:RS256') {
       Object.assign(retiredFrom, {
         privateKeyPem: copy.xmlKey.privateKeyPem,
-        privateKey: crypto.createPrivateKey(copy.xmlKey.privateKeyPem),
+        privateKey: stsCrypto.privateKeyFrom(copy.xmlKey.privateKeyPem),
         certPem: copy.xmlKey.selfSignedCertPem,
         certB64: copy.xmlKey.selfSignedCertB64 });
       copy.xmlKey = { privateKeyPem: nextEntry.privateKeyPem,
@@ -5029,7 +5006,7 @@ async function promoteGenerations(realmId, options) {
     }
     if (retiredFrom.kind === 'rsa' && retiredFrom.certPem) {
       retiredFrom.publicJwk = Object.assign(
-        crypto.createPublicKey(retiredFrom.certPem).export({ format: 'jwk' }),
+        stsCrypto.publicKeyOf(retiredFrom.certPem).export({ format: 'jwk' }),
         { kid: retiredFrom.kid, use: 'sig', alg: 'RS256' });
     }
     if (o.emergency) {
@@ -5374,7 +5351,7 @@ function nowSec() { return Math.floor(Date.now() / 1000); }
 function randomId(bytes) {
   log.debug("Entering randomId().");
   log.debug("Leaving randomId().");
-  return b64u(crypto.randomBytes(bytes || 24));
+  return b64u(stsCrypto.randomBytes(bytes || 24));
 }
 
 // ---------------------------------------------------------------------------
@@ -5409,8 +5386,8 @@ const BBS_UNIT = 'bbs:BBS';
 function bbsKidOf(publicKey) {
   log.debug("Entering bbsKidOf().");
   log.debug("Leaving bbsKidOf().");
-  return 'bbs-' + crypto.createHash('sha256')
-    .update(Buffer.from(publicKey)).digest('base64url').slice(0, 22);
+  return 'bbs-' + stsCrypto.digest('sha256', Buffer.from(publicKey),
+                                   'base64url').slice(0, 22);
 }
 
 function bbsKeyFor(keys) {
@@ -6557,8 +6534,8 @@ function certificateHeaderFor(useCaseId, alg, kid) {
       spkiPem: function () {
         log.debug("Entering spkiPem().");
         log.debug("Leaving spkiPem().");
-        return crypto.createPublicKey(keys.selfSignedCertPem || keys.certPem)
-                     .export({ type: 'spki', format: 'pem' });
+        return stsCrypto.publicKeyOf(keys.selfSignedCertPem || keys.certPem)
+          .export({ type: 'spki', format: 'pem' });
       }
     };
   } else {
@@ -6587,8 +6564,8 @@ function certificateHeaderFor(useCaseId, alg, kid) {
             return require('./pki').pqSubjectPublicKeyPem(entryAlg, publicJwk);
           }
           log.debug("Leaving spkiPem().");
-          return crypto.createPublicKey({ key: publicJwk, format: 'jwk' })
-                       .export({ type: 'spki', format: 'pem' });
+          return stsCrypto.publicKeyFromJwk(publicJwk)
+                          .export({ type: 'spki', format: 'pem' });
         }
       };
     }
@@ -6633,8 +6610,8 @@ function publicJwkOfKid(kid) {
   log.debug("Entering publicJwkOfKid().");
   const keys = stsKeysFor();
   if (kid && kid === keys.kid) {
-    const jwk = crypto.createPublicKey(keys.selfSignedCertPem || keys.certPem)
-                      .export({ format: 'jwk' });
+    const jwk = stsCrypto.publicKeyOf(keys.selfSignedCertPem || keys.certPem)
+      .export({ format: 'jwk' });
     log.debug("Leaving publicJwkOfKid(). The RSA key.");
     return jwk;
   }
@@ -6643,8 +6620,8 @@ function publicJwkOfKid(kid) {
   const xml = keys.xmlKey;
   if (kid && xml && kid === xml.kid) {
     log.debug("Leaving publicJwkOfKid(). The XML key.");
-    return crypto.createPublicKey(xml.selfSignedCertPem || xml.certPem)
-                 .export({ format: 'jwk' });
+    return stsCrypto.publicKeyOf(xml.selfSignedCertPem || xml.certPem)
+                    .export({ format: 'jwk' });
   }
   const entry = (keys.extraKeys || []).concat(keys.pqKeys || [])
     .concat(standbyOf(keys)).concat(groupMembersOf(keys))
@@ -7145,50 +7122,171 @@ function forwardedFrom(req) {
 // property a deployed identity provider needs and a mock reached by three
 // container names does not. The realm prefix is still appended.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND SINCE #472 (2026-10-07) IT IS THE BASE OF ONE HOSTED APPLICATION.
+//
+// An administrator maps each hosted application — the console, the API, the
+// portal, the sign-in service, each protocol — to listeners, and advertises
+// it on one (`common/listener_map.js`). A URL is built on the advertised
+// listener of the application it is FOR: that listener's `publicBaseUrl`, or
+// for the main port `global.publicBaseUrl` or the request's own address, as
+// before. So:
+//
+//   * `pinnedBaseUrl(app)` — the pinned base of one application, or of `*`
+//     (every application not named) when no application is given, which is
+//     what #99's realm listener was: a realm with its own listener maps `*`
+//     to it. The 19 callers without a request ask it.
+//   * `baseUrlOf(req, app)` — `app` defaults to the application the REQUEST
+//     belongs to, so the hundreds of call sites that build a URL of their own
+//     application were not edited. One that builds a URL of ANOTHER
+//     application — the authorization endpoint's sign-in screen, the portal's
+//     authorization server — names it, or uses:
+//   * `urlOf(req, path)` — the whole URL of a path, on the base of the
+//     application that path belongs to.
+//
+// A service with no custom listener answers exactly what it did: every
+// application is on `main`, advertised there.
+// ---------------------------------------------------------------------------
 /**
- * Returns `global.publicBaseUrl` without its trailing slashes, the base URL
- * that overrides every request's own.
+ * Returns the base URL that overrides every request's own for one hosted
+ * application: its advertised listener's `publicBaseUrl` (#472), or
+ * `global.publicBaseUrl`, without trailing slashes or the realm prefix.
  *
+ * @param app - the application's id; omitted, every application not named
+ *   in `listeners.applications` (`*`)
  * @returns the pinned base, or '' when none is set
  */
-// A REALM WITH A LISTENER OF ITS OWN (#99, 2026-10-02) is built on its own
-// base: `listener.publicBaseUrl` is read in the ambient realm (it is
-// `realmOnly`, so only that realm's own value is ever seen) and wins over
-// `global.publicBaseUrl`. Every URL a realm builds goes through here — 529
-// calls of `baseUrlOf()` — background jobs with no request included, so one
-// line moves them all; the `/realm/<id>` prefix still follows the base.
-function pinnedBaseUrl() {
-  log.debug("Entering pinnedBaseUrl().");
-  const own = String(config.value('listener.publicBaseUrl') || '').trim();
+function pinnedBaseUrl(app) {
+  log.debug("Entering pinnedBaseUrl(). " + (app || '*'));
+  const own = listenerMap.advertisedBase(app || null);
   const raw = own || String(config.value('global.publicBaseUrl') || '').trim();
   log.debug("Leaving pinnedBaseUrl().");
   return raw ? raw.replace(/\/+$/, '') : '';
 }
 
 /**
+ * Which hosted application a request is for: its path, without the realm
+ * prefix, classified by `common/hosted_applications.js`.
+ *
+ * @param req - the request
+ * @returns the application's id, or null for a path no application claims
+ */
+function applicationOf(req) {
+  log.debug("Entering applicationOf().");
+  const raw = String((req && (req.originalUrl || req.url)) || '/')
+    .split('?')[0];
+  const match = realms.matchPath(raw);
+  const found = hostedApplications.classify(match ? match.rest : raw);
+  log.debug("Leaving applicationOf(). " + found);
+  return found === hostedApplications.EVERYWHERE ? null : found;
+}
+
+/**
  * Returns the base URL a request should be answered under, the trust realm's
  * path prefix included.
  *
- * `global.publicBaseUrl` pins it; otherwise it is read off the request,
- * forwarded headers only where a proxy is trusted.
+ * The base is that of one hosted application (#472): the request's own,
+ * unless another is named. Its advertised listener's `publicBaseUrl` pins it,
+ * or `global.publicBaseUrl` where that is the main port; otherwise it is read
+ * off the request, forwarded headers only where a proxy is trusted — on the
+ * main port's port when the request arrived on another listener.
  *
  * @param req - the request
+ * @param app - optional; the application the URL is for
  * @returns the base URL, without a trailing slash
  */
-function baseUrlOf(req) {
+function baseUrlOf(req, app) {
   log.debug("Entering baseUrlOf().");
-  const pinned = pinnedBaseUrl();
+  const which = app === undefined ? applicationOf(req) : app;
+  const pinned = pinnedBaseUrl(which);
   if (pinned) {
     const base = pinned + realms.currentPrefix();
-    log.debug("Leaving baseUrlOf(). base=" + base + " (global.publicBaseUrl)");
+    log.debug("Leaving baseUrlOf(). base=" + base + " (pinned, " +
+              (which || '*') + ")");
     return base;
   }
   const from = forwardedFrom(req);
-  const base = from.proto + '://' + from.host + realms.currentPrefix();
+  let proto = from.proto;
+  let host = from.host;
+  // THE MAIN PORT IS ADVERTISED AND THE REQUEST CAME ON ANOTHER LISTENER:
+  // its own Host names that listener, so the main port is this host name on
+  // the main port's port and scheme. `global.publicBaseUrl` is the way to
+  // say it outright, and the Listeners page recommends it.
+  if (req && listenerMap.listenerOf(req) !== listenerMap.MAIN) {
+    const name = String(host).replace(/:\d+$/, '');
+    proto = config.value('global.https') === true ? 'https' : 'http';
+    host = name + ':' + PORT;
+  }
+  const base = proto + '://' + host + realms.currentPrefix();
   log.debug("Leaving baseUrlOf(). base=" + base +
             (from.forwarded ? " (from forwarded headers; global.trustProxy " +
                               "is on)" : ""));
   return base;
+}
+
+/**
+ * A base URL moved to where one hosted application is advertised (#472), for
+ * a caller that holds a base and no request — an issuer computed from the
+ * base of the request that happened to ask. Unchanged where the application
+ * is advertised on the main port.
+ *
+ * @param base - a base URL, the realm prefix included
+ * @param app - the application the URL is for
+ * @returns the base it is advertised on, the realm prefix included
+ */
+function rebaseTo(base, app) {
+  log.debug("Entering rebaseTo(). " + app);
+  if (listenerMap.isTrivial()) {
+    log.debug("Leaving rebaseTo(). No custom listener.");
+    return base;
+  }
+  const own = listenerMap.advertisedBase(app);
+  if (own) {
+    log.debug("Leaving rebaseTo(). On its listener.");
+    return own + realms.currentPrefix();
+  }
+  // ADVERTISED ON THE MAIN PORT, AND THE BASE IS A CUSTOM LISTENER'S: the
+  // main port's pinned base, or that host name on the main port.
+  let origin = '';
+  let host = '';
+  try {
+    const parsed = new URL(String(base || ''));
+    origin = parsed.origin;
+    host = parsed.hostname;
+  } catch (e) {
+    log.debug("Caught in rebaseTo(): " + ((e && e.message) || e));
+    log.debug("Leaving rebaseTo(). Not a URL.");
+    return base;
+  }
+  const custom = listenerMap.ownOrigins().indexOf(origin) >= 0;
+  if (!custom) {
+    log.debug("Leaving rebaseTo(). Already the main port's.");
+    return base;
+  }
+  const main = String(config.value('global.publicBaseUrl') || '').trim()
+    .replace(/\/+$/, '') ||
+    (config.value('global.https') === true ? 'https' : 'http') + '://' +
+    hostForUrl(host) + ':' + PORT;
+  log.debug("Leaving rebaseTo(). The main port.");
+  return main + String(base).slice(origin.length);
+}
+
+/**
+ * The absolute URL of a path, on the base of the hosted application the path
+ * belongs to (#472) — for a URL one application builds of another's.
+ *
+ * @param req - the request, or null outside one
+ * @param path - a root-relative path, without the realm prefix
+ * @returns the URL, the realm prefix included
+ */
+function urlOf(req, path) {
+  log.debug("Entering urlOf(). " + path);
+  const found = hostedApplications.classify(String(path || '/'));
+  const app = found === hostedApplications.EVERYWHERE ? null : found;
+  const base = req ? baseUrlOf(req, app)
+                   : pinnedBaseUrl(app) + realms.currentPrefix();
+  log.debug("Leaving urlOf().");
+  return base + String(path || '');
 }
 
 // ---------------------------------------------------------------------------
@@ -7659,6 +7757,12 @@ module.exports = {
   iso: iso,
   baseUrlOf: baseUrlOf,
   pinnedBaseUrl: pinnedBaseUrl,
+  applicationOf: applicationOf,
+  urlOf: urlOf,
+  rebaseTo: rebaseTo,
+  // The sign-on session's cookie Domain (#472, `authn.cookieDomain`), as a
+  // Set-Cookie attribute: `common/listener_map.js`'s.
+  cookieDomainAttribute: listenerMap.cookieDomainAttribute,
   listenHost: listenHost,
   loopbackHost: loopbackHost,
   hostForUrl: hostForUrl,

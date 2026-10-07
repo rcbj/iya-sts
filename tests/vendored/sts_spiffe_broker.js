@@ -48,7 +48,8 @@
 //   * ANSWERED WITH ONE: FetchJWTSVID and SubscribeToX509SVID for a PROCESS
 //     reference — pid 1 in the service's container, attested by the unix
 //     attestor as the uid the service runs as (STS_SPIFFE_BROKER_PID_UID,
-//     0 by default, since the image runs as root) — and FetchJWTSVID for a
+//     10001 by default: the image runs as `sts`, uid 10001, since #254 — it
+//     was root, and 0, until then) — and FetchJWTSVID for a
 //     POD reference by UID, attested by the k8s attestor over the fake
 //     kubelet; a pod no entry selects is PERMISSION_DENIED
 //     (WORKLOAD_NOT_ENTITLED);
@@ -626,7 +627,7 @@ async function test() {
   const ca = await testCa.makeCa();
   const kube = await kubelet(ca);
   const realmsMade = [];
-  const uid = String(process.env.STS_SPIFFE_BROKER_PID_UID || "0");
+  const uid = String(process.env.STS_SPIFFE_BROKER_PID_UID || "10001");
   const shared = { ca: ca, uid: uid,
                    kubeletPort: kube.address().port,
                    broker: await svid(ca, "spiffe://" + BROKER_TD +

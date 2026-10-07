@@ -32,6 +32,9 @@ interface OidfedApiDeps {
   parseBody: typeof parseBody;
   errorCodes: typeof errorCodes;
   loadOidfed(): Json;
+  // The page's module, for the one view the page and the GET both answer
+  // (#446), lazily as `loadOidfed` is.
+  loadPage(): Json;
 }
 
 const ENTITY = { type: 'string', maxLength: 2048,
@@ -78,6 +81,9 @@ class OidfedApi {
       log: log, parseBody: parseBody, errorCodes: errorCodes,
       loadOidfed: function (): Json {
         return require('./oidfed');
+      },
+      loadPage: function (): Json {
+        return require('./oidfed_admin');
       }
     };
   }
@@ -152,7 +158,7 @@ class OidfedApi {
    * @returns the rows
    */
   buildRoutes(): Json[] {
-    const { log, loadOidfed, errorCodes, parseBody } = this.deps;
+    const { log, loadOidfed, loadPage, errorCodes, parseBody } = this.deps;
     const self = this;
     log.debug("Entering OidfedApi.buildRoutes().");
     const ROUTES = [
@@ -186,7 +192,7 @@ class OidfedApi {
         handler: function (req: Json, res: Json): Promise<void> {
           log.debug("Entering the management API OpenID Federation " +
                     "endpoint.");
-          return loadOidfed().view(req).then(function (view: Json): void {
+          return loadPage().oidfedView(req).then(function (view: Json): void {
             self.send(res, 200, view);
             log.debug("Leaving the management API OpenID Federation " +
                       "endpoint.");

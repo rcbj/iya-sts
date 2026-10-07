@@ -57,6 +57,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 import errorCodes = require('../common/error_codes');
+// The page's renderer (#446): a `web_` module, loadable in a browser.
+import DebuggerPage = require('./web_debugger');
 
 const PAGE_PATH = '/admin/debugger';
 
@@ -129,115 +131,16 @@ class DebuggerAdmin {
     return status;
   }
 
-  /**
-   * Draws one row of a key/value table.
-   *
-   * @param label - the heading, escaped here
-   * @param value - the cell, as HTML
-   * @returns the table row
-   */
-  row(label, value) {
-    const { log, admin } = this.deps;
-    log.debug("Entering DebuggerAdmin.row().");
-    log.debug("Leaving DebuggerAdmin.row().");
-    return '<tr><th>' + admin.esc(label) + '</th><td>' + value + '</td></tr>';
-  }
-
-  /**
-   * Draws a value in a code element, or a muted `none` when it is empty.
-   *
-   * @param text - the value, escaped here
-   * @returns the HTML
-   */
-  code(text) {
-    const { log, admin } = this.deps;
-    log.debug("Entering DebuggerAdmin.code().");
-    log.debug("Leaving DebuggerAdmin.code().");
-    return text === null || text === undefined || text === ''
-      ? '<span class="muted">none</span>'
-      : '<code>' + admin.esc(String(text)) + '</code>';
-  }
-
-  /**
-   * Draws the page body: tiles, an explanation, any startup problem, the
-   * listener and api-process tables, and the settings forms.
-   *
-   * @param json - the view from debuggerView()
-   * @returns the HTML
-   */
+  // DRAWN BY `web_debugger.ts` (#446): this page is converted for the static
+  // console, and its renderer is a module a browser can load. Until the
+  // cutover this process still draws it, handing the renderer the view passed
+  // THROUGH JSON, so it is held to what the API's caller receives.
   body(json) {
-    const { log, admin } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering DebuggerAdmin.body().");
-    const api = json.api || {};
-    const origin = json.publicBaseUrl ||
-                   (json.scheme + '://&lt;this host&gt;:' + json.port);
-    const tiles = '<div class="tiles">' +
-      admin.tile(json.embedded ? 'embedded' : 'off', 'debugger') +
-      admin.tile(json.listening ? String(json.port) : 'not bound', 'listener') +
-      admin.tile(String(api.state || 'stopped'), 'api process') +
-      admin.tile(api.allowList ? String((api.allowedRanges || []).length)
-                               : 'none', 'allow-listed ranges') +
-      '</div>';
-    const what = admin.note(
-      'The identity protocol debugger, served by this process on a listener ' +
-      'of its own so that its pages — which carry inline scripts and render ' +
-      'tokens from any identity provider — are on an origin other than this ' +
-      'console\'s. Its user interface is static files; its api runs as a ' +
-      'child process on a unix socket, forwarded at <code>/api</code>. It is ' +
-      'signed in to through this service\'s authorization server as ' +
-      this.code(json.clientId) + ', and every request needs an access token ' +
-      'addressed to ' + this.code(json.audience) + ' carrying ' +
-      this.code(json.permission) +
-      ' — which the authorization server issues to members of the two groups ' +
-      'on <a href="/admin/rbac">Admin roles</a> and leaves off for anybody ' +
-      'else. <strong>No setting below opens it.</strong>');
-    const problems = [json.startProblem, json.listenError, api.lastError]
-      .filter(Boolean);
-    const warning = !json.embedded ? '' : (problems.length
-      ? admin.warn(problems.map(admin.esc).join('<br>'), 'Not running')
-      : '');
-    const listener = '<h2>Listener</h2><table class="kv">' +
-      this.row('Embedded', this.code(json.embedded ? 'yes' : 'no') + ' — ' +
-               'debugger.enabled is ' + this.code(json.setting) + ' in ' +
-               this.code(json.mode) + ' mode') +
-      this.row('Port', this.code(json.port) + (json.listening ? ' (bound)' :
-                                                ' (not bound)')) +
-      this.row('Origin', json.listening
-        ? '<code>' + origin + '</code>'
-        : '<span class="muted">not serving</span>') +
-      this.row('Static site', this.code(json.uiDirectory)) +
-      this.row('Client', this.code(json.clientId)) +
-      this.row('Resource server', this.code(json.resource)) +
-      this.row('Permission', this.code(json.permission)) +
-      '</table>';
-    const process = '<h2>Api process</h2><table class="kv">' +
-      this.row('State', this.code(api.state)) +
-      this.row('Process id', this.code(api.pid)) +
-      this.row('Socket', this.code(api.socket)) +
-      this.row('Tree', this.code(api.apiDirectory)) +
-      this.row('Starts', this.code(api.starts)) +
-      this.row('Failures in a row', this.code(api.consecutiveFailures)) +
-      this.row('Listening since', this.code(api.listeningAt)) +
-      this.row('Last exit', api.lastExit
-        ? this.code((api.lastExit.signal ? 'signal ' + api.lastExit.signal
-                                         : 'code ' + api.lastExit.code) +
-                    ' at ' + api.lastExit.at + ' after ' +
-                    api.lastExit.upSeconds + 's')
-        : this.code('')) +
-      this.row('May dial', api.allowList
-        ? (api.allowedRanges || []).map(this.code.bind(this)).join(' ') +
-               ((api.allowListProblems || []).length
-                 ? '<br>' + admin.warn('Left out, not ranges: ' +
-                                       api.allowListProblems.map(admin.esc)
-                                         .join(', '),
-                                         'debugger.allowedDestinations')
-                 : '')
-        : 'anything, private networks included — development mode passes the ' +
-               'api no allow-list') +
-      '</table>';
+    const drawn = DebuggerPage.render(JSON.parse(JSON.stringify(json)));
     log.debug("Leaving DebuggerAdmin.body().");
-    return tiles + what + warning + listener + process +
-           '<h2>Settings</h2>' + admin.configFormsFor(PAGE_PATH);
+    return drawn;
   }
 
   // THE ROUTES, registered where they always were: the composition root
@@ -254,27 +157,6 @@ class DebuggerAdmin {
     const { log, errorCodes, admin } = this.deps;
     const self = this;
     log.debug("Entering DebuggerAdmin.registerRoutes().");
-    app.get(PAGE_PATH, function (req, res) {
-      log.debug("Entering GET " + PAGE_PATH + ".");
-      let json = null;
-      try {
-        json = self.debuggerView();
-      } catch (e) {
-        log.error(errorCodes.tag('STS-DBG-0023') + 'debugger_admin: the page ' +
-                  'threw: ' + ((e && e.stack) || e));
-        errorCodes.mark(res, 'STS-DBG-0023');
-        admin.respond(req, res,
-                      { ok: false, error: String((e && e.message) || e) },
-                      'Protocol debugger', PAGE_PATH,
-                      admin.warn(admin.esc(String((e && e.message) || e)),
-                                 'This page could not be drawn'));
-        log.debug("Leaving GET " + PAGE_PATH + ". It threw.");
-        return;
-      }
-      admin.respond(req, res, json, 'Protocol debugger', PAGE_PATH,
-                    self.body(json));
-      log.debug("Leaving GET " + PAGE_PATH + ".");
-    });
     log.debug("Leaving DebuggerAdmin.registerRoutes().");
   }
 }

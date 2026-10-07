@@ -210,10 +210,14 @@ function body(t) {
           '4c. a token of this realm is told apart by what it carries');
 
   t.log.info('=== 5. the console block ===');
-  const admin = require('../admin-ui/admin');
-  const consolePage = new admin.AdminConsole(admin.AdminConsole.defaultDeps());
-  const drawn = consolePage.mfaSection({ name: 'nsso-alice' }, 'nsso-alice',
-    { write: true }, '').html;
+  // The person page's sections are drawn from its answer since #446: the
+  // second factors from `page.mfa` of `GET /admin-api/users?user=`.
+  const UsersPage = require('../admin-ui/web_users');
+  const mfaData = JSON.parse(JSON.stringify(
+    require('../admin-core/admin_views')
+      .userDetailJson({ query: {}, headers: {} }, 'nsso-alice').json.page.mfa));
+  const drawn = UsersPage.mfaSection({ name: 'nsso-alice' }, 'nsso-alice',
+    { write: true }, '', mfaData);
   t.check(/<h3>Devices<\/h3>/.test(drawn) &&
           /value="remove-device"/.test(drawn) &&
           drawn.indexOf(second.device.id) >= 0,

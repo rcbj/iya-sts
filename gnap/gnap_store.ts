@@ -59,7 +59,7 @@
 // loads.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
@@ -306,9 +306,7 @@ class GnapStore {
     const { log } = this.deps;
     log.debug("Entering GnapStore.digest().");
     log.debug("Leaving GnapStore.digest().");
-    return nodeCrypto.createHash('sha256')
-                     .update(String(value), 'utf8')
-                     .digest('base64url');
+    return stsCrypto.digest('sha256', String(value), 'base64url');
   }
 
   // A value of the given length made of unreserved characters (RFC 3986

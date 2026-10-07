@@ -172,6 +172,18 @@ const SCHEMA = {
             'its resource application GATES (`oauthRoleGatedPermission`); ' +
             'a gated permission is issued only to a subject holding a role ' +
             'that names it, and an ungated one as it always was.' },
+    { name: 'roleConferredBy',
+      what: 'A client this role is CONFERRED BY (#454): every person who ' +
+            'signs in through that client holds the role on the access ' +
+            'token the client is issued, and on no other token. Multi-' +
+            'valued, client_ids of applications in this realm. A role ' +
+            'held this way is a fact about the TOKEN rather than about ' +
+            'the person, so it is mixed with the roles the person holds ' +
+            'themselves on every call, and taking a client off it takes ' +
+            'the role off that client\'s tokens at once. Never applied to ' +
+            'a client\'s own client_credentials token, whose roles are ' +
+            'its membership. ADMIN_CONSOLE is seeded conferred by ' +
+            '`sts-admin-console`.' },
     { name: 'roleApplication',
       what: 'The ONE application this role belongs to (#310), by its ' +
             'identifier in ou=applications; absent, the role is realm-wide. ' +
@@ -513,8 +525,8 @@ const CONSOLE_ROLE_APPLICATION = 'sts-management-api';
 // ---------------------------------------------------------------------------
 // THE NATIVE ROLES (#309, a follow-up to #88, 2026-09-28): every role that
 // authorizes one of this service's NATIVE permissions — the two console roles
-// above, and DEVICE_COMPLIANCE. Each is seeded in every realm, cannot be
-// deleted, and authorizes exactly its permission.
+// above, ADMIN_CONSOLE (#454) and DEVICE_COMPLIANCE. Each is seeded in every
+// realm, cannot be deleted, and authorizes exactly its permission.
 //
 // **DEVICE_COMPLIANCE WAS THE LAST ROLE READ OFF A SCOPE.** It was built in:
 // a token carrying `device:compliance` WAS the MDM feed (#164 phase 3), the
@@ -527,6 +539,25 @@ const CONSOLE_ROLE_APPLICATION = 'sts-management-api';
 // decision 2 made on purpose.
 // ---------------------------------------------------------------------------
 const NATIVE_ROLES = CONSOLE_ROLES.concat([
+  // THE ADMIN CONSOLE'S OWN ROLE (#454). What the console needs to draw
+  // itself — its frame, its drawings, its form helpers — is a set of
+  // operations under `/admin-api/console`, apart from the management
+  // operations an external client relies on, and this role is what reaches
+  // them. Nobody is a member: it is CONFERRED by the console's client
+  // (`roleConferredBy`), so every person who signs in to the console holds it
+  // on that token, beside whatever ADMIN_READ or ADMIN_WRITE they hold
+  // themselves. A console page that shows realm data asks for both
+  // (`mgmt-api/admin_api.ts`, the gate).
+  { name: 'ADMIN_CONSOLE', consoleRole: '', permission: 'admin:console',
+    groupSettings: [], seedApplications: [],
+    seedConferredBy: ['sts-admin-console'],
+    what: 'The admin console: the operations under /admin-api/console that ' +
+          'exist only to draw the console — its frame, its drawings and its ' +
+          'form helpers. Authorizes the admin:console permission. Conferred ' +
+          'by the console\'s own client, sts-admin-console, on every person ' +
+          'who signs in to the console, and held by nobody as a member. It ' +
+          'grants nothing else: a page that shows realm data also asks for ' +
+          'ADMIN_READ.' },
   { name: 'DEVICE_COMPLIANCE', consoleRole: '', permission: 'device:compliance',
     groupSettings: [], seedApplications: [],
     what: 'The device compliance feed: an MDM or posture feed reporting a ' +
@@ -733,6 +764,9 @@ function all() {
       groups: consoleRow ? consoleRoleGroups(consoleRow)
                          : allValues(at, 'roleMemberGroup'),
       applications: allValues(at, 'roleMemberApplication'),
+      // THE CLIENTS THAT CONFER IT (#454) on every person signing in
+      // through them.
+      conferredBy: allValues(at, 'roleConferredBy'),
       permissions: nativeRow ? [nativeRow.permission]
                              : allValues(at, 'rolePermission'),
       console: !!consoleRow,
@@ -939,6 +973,39 @@ function write(name, record) {
                   ' only, and ' + excluded.join(' and ') + ' cannot be ' +
                   'its members.' }, 'STS-XACML-0082');
   }
+  // THE CLIENTS THAT CONFER IT (#454). `undefined` keeps what the entry
+  // holds, because every caller of this function writes the WHOLE record and
+  // all but one of them were written before the attribute existed — a
+  // describe-role or an add-member that dropped it would silently stop the
+  // console's client conferring ADMIN_CONSOLE. Two kinds of role may not be
+  // conferred: one only applications may hold (it is conferred on PEOPLE),
+  // and the two console roles, whose people are the roster's — the reason a
+  // person cannot be written onto them is the reason a client cannot hand
+  // them out either.
+  const conferredBy = (given.conferredBy === undefined
+    ? ((read(name) || {}).conferredBy || [])
+    : given.conferredBy).map(function (one) {
+      return String(one).trim();
+    }).filter(function (one, at, list) {
+      return one && list.indexOf(one) === at;
+    });
+  if (conferredBy.length && consoleRow) {
+    log.debug('Leaving write(). A console role conferred by a client.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" is one of the two console roles, and the ' +
+                  'people who hold it are the console roster\'s: a client ' +
+                  'cannot confer it on everybody signing in through it. ' +
+                  'Grant it on /admin/rbac.' }, 'STS-XACML-0089');
+  }
+  if (conferredBy.length && memberTypes.length &&
+      memberTypes.indexOf('user') < 0) {
+    log.debug('Leaving write(). Conferred on people, held by applications.');
+    return errorCodes.mark({ ok: false,
+             why: '"' + name + '" may be held by applications only, and a ' +
+                  'role a client confers is held by the PEOPLE who sign in ' +
+                  'through it. Let people hold it, or take ' +
+                  conferredBy.join(', ') + ' off it.' }, 'STS-XACML-0088');
+  }
   // THE CLASS THE SCHEMA ABOVE DECLARES, written on the entry (2026-09-23).
   // Until then a role was the one registry entry carrying no objectClass at
   // all — `cn` and the role attributes only — so `(objectClass=stsRole)`
@@ -956,6 +1023,7 @@ function write(name, record) {
     roleMemberUser: (given.users || []).map(String),
     roleMemberGroup: (given.groups || []).map(String),
     roleMemberApplication: (given.applications || []).map(String),
+    roleConferredBy: conferredBy,
     roleApplication: application ? [application] : [],
     roleAllowedMemberType: memberTypes,
     displayName: String(given.displayName || '').trim()
@@ -1044,7 +1112,8 @@ function seedNativeRoles() {
     }
     const written = write(row.name, {
       description: row.what,
-      applications: (row.seedApplications || []).slice(0) });
+      applications: (row.seedApplications || []).slice(0),
+      conferredBy: (row.seedConferredBy || []).slice(0) });
     if (written.ok) {
       made += 1;
     } else {
@@ -1076,6 +1145,32 @@ function rolesAuthorizing(permission) {
     return row.name;
   });
   log.debug('Leaving rolesAuthorizing(). ' + out.length + ' role(s).');
+  return out;
+}
+
+// The configured roles a client confers on the people who sign in through it
+// (#454), in the ambient realm. A client_id is compared exactly, as it is
+// everywhere it is a key.
+/**
+ * Lists the configured roles a client confers on every person who signs in
+ * through it (`roleConferredBy`), in the ambient realm.
+ *
+ * @param clientId - the client_id the token was issued to
+ * @returns the role names
+ */
+function conferredBy(clientId) {
+  log.debug('Entering conferredBy().');
+  const wanted = String(clientId == null ? '' : clientId);
+  if (!wanted) {
+    log.debug('Leaving conferredBy(). No client.');
+    return [];
+  }
+  const out = all().filter(function (row) {
+    return (row.conferredBy || []).indexOf(wanted) >= 0;
+  }).map(function (row) {
+    return row.name;
+  });
+  log.debug('Leaving conferredBy(). ' + out.length + ' role(s).');
   return out;
 }
 
@@ -1370,6 +1465,7 @@ module.exports = {
   nativeRoleFor: nativeRoleFor,
   isNativeRole: isNativeRole,
   seedNativeRoles: seedNativeRoles,
+  conferredBy: conferredBy,
   rolesAuthorizing: rolesAuthorizing,
   setDirectory: setDirectory,
   directoryInstalled: directoryInstalled,

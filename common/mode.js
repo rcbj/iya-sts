@@ -69,8 +69,9 @@
 //      and that is a total authentication bypass which cannot survive into a
 //      product. Since 2026-09-09 an OAuth 2.0 access token is required in BOTH
 //      modes (`adminApi.authRequired`, on by default); what this file decides
-//      is what happens with that setting OFF — open in development, the
-//      console's session and roles in product. See `gatesManagementApi()`.
+//      is whether that setting may be turned OFF — in development it may, and
+//      the API is then open; in product it is ignored and the token is
+//      required (#446). See `opensManagementApi()`.
 //
 // ---------------------------------------------------------------------------
 // IT IS PER TRUST REALM, and that is worth stating because it is unusual.
@@ -1352,6 +1353,53 @@ function acceptsUnattestedDeviceKeys() {
   return !isProduct();
 }
 
+// Must a TPM key attestation in a device certificate request be FRESH (#257,
+// 2026-10-06)? draft-ietf-lamps-csr-attestation section 6.2 lets the CA
+// "ignore attestations that are stale, or whose freshness cannot be
+// determined", and draft-ietf-lamps-attestation-freshness gives EST a /nonce
+// for the TPM to sign as TPM2_Certify's qualifyingData, which comes back as
+// TPMS_ATTEST's extraData. Without it a captured statement — which says
+// nothing more than that SOME TPM certified this key once — could be sent
+// again, in a new request for the same key, by whoever holds the key now.
+// Development records such a statement's freshness UNPROVEN and keeps its
+// level, because a client under test may have no nonce exchange (and SCEP
+// has none at all). Product REFUSES it (STS-DEVICE-0050).
+// `common/cert_enrollment.ts` asks it.
+/**
+ * Tells whether a TPM key attestation must carry a live nonce this realm
+ * issued (EST /nonce) for a device certificate to be issued.
+ *
+ * @returns true in product mode
+ */
+function requiresFreshKeyAttestation() {
+  log.debug("Entering requiresFreshKeyAttestation().");
+  log.debug("Leaving requiresFreshKeyAttestation().");
+  return isProduct();
+}
+
+// Is an Android attestation whose REVOCATION could not be checked — no
+// current Android attestation status list (#256), never fetched, failing, or
+// stale — refused as unattested? Development records it attested with the
+// reason, whatever the setting, because a client under test reaches no
+// Google. Product does the same unless `devices.androidRevocationRequired`
+// is on (off by default, so an install that cannot reach Google still
+// attests), and then records the chain self-asserted — which
+// `acceptsUnattestedDeviceKeys()` then refuses for a device key, and which
+// makes a WebAuthn `android-key` statement untrusted.
+// `common/attestation_revocation.ts` asks it.
+/**
+ * Tells whether an Android attestation whose revocation status could not be
+ * checked is treated as unattested.
+ *
+ * @returns true in product mode with devices.androidRevocationRequired on
+ */
+function refusesUncheckedAttestationRevocation() {
+  log.debug("Entering refusesUncheckedAttestationRevocation().");
+  log.debug("Leaving refusesUncheckedAttestationRevocation().");
+  return isProduct() &&
+         config.value('devices.androidRevocationRequired') === true;
+}
+
 // May a password alone open a PASSWORD-ONLY DOOR for a person who holds, or
 // is required to hold, a second factor (#101, 2026-09-22)? An LDAP simple
 // bind, a WS-Security UsernameToken, SCIM and SSF HTTP Basic and EST Basic
@@ -1625,6 +1673,40 @@ function publishesMetadataForUnregisteredProviders() {
   return !isProduct();
 }
 
+// Does this service ISSUE a token to an application nobody registered
+// (#496, rcbj 2026-10-06)? A WS-Trust AppliesTo and a WS-Federation wtrealm
+// name the relying party a token is FOR. Development answers yes: a token is
+// issued for any of them under the shared entityID, and the protocol's
+// `seen()` files the application, which is how a relying party can be pointed
+// here before anything is provisioned. Product answers no: an application
+// nobody registered (no `appRegisteredBy` — an entry `seen()` filed in
+// development is not a registration) is refused before anything is issued or
+// recorded, in that protocol's own vocabulary, and an RST naming no AppliesTo
+// at all is refused with it, because a token with no audience is one every
+// relying party would be entitled to accept. The rule is rcbj's on #496: in
+// product an unregistered application gets nothing but a 404 or its
+// protocol's own "unknown application" error.
+// The same question is asked of every door where a request names an
+// application (#496, widened by rcbj the same day): an OAuth 2.0 client and
+// an RFC 8693 target, a SAML service provider or relying party, a GNAP
+// client — each refusing in its own protocol's words, each with its own row
+// in REQUIREMENTS below. And (#505) of the two doors that name the party a
+// token is FOR by an address rather than a client: an RFC 8707 resource and
+// a GNAP access right's locations, through `common/registered_targets.ts`.
+/**
+ * Tells whether a token may be issued for an application nobody registered
+ * (a WS-Trust AppliesTo, a WS-Federation wtrealm, an OAuth client, a SAML
+ * service provider, a GNAP client, the target an RFC 8707 resource or a GNAP
+ * location names), or for no application.
+ *
+ * @returns true in development mode
+ */
+function issuesToUnregisteredApplications() {
+  log.debug("Entering issuesToUnregisteredApplications().");
+  log.debug("Leaving issuesToUnregisteredApplications().");
+  return !isProduct();
+}
+
 // Does this process embed the identity protocol debugger (2026-09-13)?
 // `debugger.enabled` decides where it says `on` or `off`; its default, `auto`,
 // is this predicate's own answer: yes in development, where the debugger is
@@ -1756,6 +1838,25 @@ function capturesMail() {
   return !isProduct();
 }
 
+// May a secret push destination be a FILE on this container's disk (#221 P3)?
+// rcbj's answer 5 on #221: the file destination is for development mode only.
+// Development answers yes — it is how the test suite exercises a rotation
+// without a secrets manager. Product answers no: a destination naming
+// `file` is reported unusable, and a push to it is refused
+// (STS-SECDEST-0006), because a password written to the service's own disk
+// is not in a secrets manager.
+/**
+ * Tells whether a secret push destination may write a file on this
+ * container's disk rather than to a secrets manager.
+ *
+ * @returns true in development mode
+ */
+function acceptsFileSecretDestinations() {
+  log.debug("Entering acceptsFileSecretDestinations().");
+  log.debug("Leaving acceptsFileSecretDestinations().");
+  return !isProduct();
+}
+
 // May a link this service MAILS be built on the listener's configured address
 // when `global.publicBaseUrl` is empty (#63)? Never on the request's — a link
 // in a message is not answered to whoever asked, so a `Host` header it came
@@ -1794,22 +1895,30 @@ function acceptsNonconformingResourceMetadata() {
   return !isProduct();
 }
 
-// Is the management API gated by the console's session and roles WHEN
-// `adminApi.authRequired` IS OFF? Since 2026-09-09 that setting — on by
-// default, in both modes — puts an access token in front of `/admin-api`
-// first, and `mgmt-api/admin_api.ts` asks this only below it. See the note
-// above on why it is open in development. **THIS IS THE ONLY GATE THE MODE
-// TURNS ON**, because it is the only one that was ever off.
+// May `adminApi.authRequired` be turned OFF, opening the management API to
+// anybody who can reach the port (#446, 2026-10-05)? Since 2026-09-09 that
+// setting — on by default, in both modes — puts an access token in front of
+// `/admin-api`. Development may turn it off: it is what a test drives and the
+// way back in when nobody can mint a token. **Product may not.** Until #446
+// product fell back to the console's session and roles with the setting off
+// (`gatesManagementApi()`, #411); the console is becoming a static
+// application whose only gate IS this API's, so a setting that opened the
+// API would open the console with it, and a console session is no longer a
+// thing to fall back on. The row carries the `onlyWhile` marker on this
+// predicate: `false` is refused on write in product (STS-CORE-0103) and
+// ignored where it is read (`valueInForce()`, STS-CORE-0106). The way back
+// in for a product deployment is `adminApi.clientSecret`, pinned before the
+// start.
 /**
- * Tells whether the management API is gated by the console's session and roles
- * when `adminApi.authRequired` is off.
+ * Tells whether `adminApi.authRequired` may be turned off, which opens the
+ * management API to anybody who can reach the port.
  *
- * @returns true in product mode
+ * @returns true in development mode
  */
-function gatesManagementApi() {
-  log.debug("Entering gatesManagementApi().");
-  log.debug("Leaving gatesManagementApi().");
-  return isProduct();
+function opensManagementApi() {
+  log.debug("Entering opensManagementApi().");
+  log.debug("Leaving opensManagementApi().");
+  return !isProduct();
 }
 
 // ---------------------------------------------------------------------------
@@ -2270,6 +2379,19 @@ const REQUIREMENTS = [
              'link is mailed only when global.publicBaseUrl is set ' +
              '(STS-MAIL-0015).',
     where: 'common/mail.ts' },
+  { id: 'secret-destinations',
+    what: 'A service account\'s rotated password is pushed to a secrets ' +
+          'manager, never to this container\'s disk',
+    development: 'A secret push destination may be a FILE: a push writes ' +
+                 'the password into an existing file under the ' +
+                 'destination\'s directory, which is how the test suite ' +
+                 'exercises a rotation without a secrets manager.',
+    product: 'A destination naming `file` is reported unusable and a push ' +
+             'to it is refused (STS-SECDEST-0006). AWS Secrets Manager, ' +
+             'Google Cloud Secret Manager, Azure Key Vault and a Vault or ' +
+             'OpenBao KV version 2 engine remain, each over verified TLS ' +
+             'with the destination\'s own write credential (#221).',
+    where: 'common/secrets.js, common/secret_destinations.ts' },
   { id: 'outbound-tls',
     what: 'An outbound request verifies the certificate of whoever answers, ' +
           'and does not go out over plain http',
@@ -2578,19 +2700,22 @@ const REQUIREMENTS = [
              'request_uri is fetched only when the client registered it.',
     where: 'oauth-oidc/request_object.ts' },
   // 2026-09-09: `adminApi.authRequired` (on by default, both modes) put an
-  // access token in front of this surface, so the two columns below are what
-  // happens with that setting OFF. Both columns say so.
+  // access token in front of this surface. Since #446 (2026-10-05) product
+  // ignores the setting turned off, where it fell back to the console's
+  // session and roles until then.
   { id: 'management-api',
-    what: '/admin-api requires a sign-in and a role',
+    what: '/admin-api requires an access token and a role',
     development: 'An OAuth 2.0 access token carrying admin:read or ' +
                  'admin:write, while adminApi.authRequired is on (the ' +
                  'default). With it off: open. It is what the tests drive ' +
                  'and the way back in when nobody holds a role — which also ' +
                  'means anybody who can reach this port can grant themselves ' +
                  'both roles through it.',
-    product: 'The same access token while adminApi.authRequired is on. With ' +
-             'it off: gated exactly as /admin is — the same session, the ' +
-             'same two roles.',
+    product: 'The same access token, always. adminApi.authRequired=false ' +
+             'is refused on write and ignored where it is stored: this ' +
+             'API\'s gate is the console\'s only gate, so nothing may open ' +
+             'it. The way back in is adminApi.clientSecret, pinned before ' +
+             'the start.',
     where: 'mgmt-api/admin_api.ts' },
   { id: 'console',
     what: '/admin requires a sign-in and a role',
@@ -2685,8 +2810,11 @@ const REQUIREMENTS = [
     product: 'A value comes from the person\'s directory entry or is ' +
              'omitted; `verified_claims` are released only from a ' +
              'verification recorded on the entry, and email_verified is ' +
-             'true only for an address the person verified through a ' +
-             'mailed link (#63).',
+             'true only for a verified address: one the person proved ' +
+             'through a mailed link (#63), or one a trusted source wrote — ' +
+             'an administrator (the console, /admin-api, or an LDAP write ' +
+             'holding Admin Write), SCIM, or a federation partner that did ' +
+             'not say email_verified false (#64).',
     where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
            'ssf/ssf_subjects.js, ssf/risc.ts, ' +
            'common/identity_assurance.js' },
@@ -2739,6 +2867,99 @@ const REQUIREMENTS = [
              '1.1 relying party (STS-SAML-0083). The unscoped documents are ' +
              'unchanged.',
     where: 'saml/saml2_sso.ts, saml/saml11_sso.ts' },
+  { id: 'unregistered-applications',
+    what: 'A token is issued only for a registered application (#496)',
+    development: 'A WS-Trust RST is answered for any AppliesTo, and for none ' +
+                 '(a token with no audience restriction); a WS-Federation ' +
+                 'wsignin1.0 for any wtrealm. Each is issued under the ' +
+                 'shared entityID, and the application is filed in the ' +
+                 'register by its first sighting.',
+    product: 'An RST whose AppliesTo resolves to no registered application ' +
+             '(appRegisteredBy unset — a sighting is not a registration) is ' +
+             'refused with wst:InvalidScope (STS-WSTRUST-0030), and one with ' +
+             'no AppliesTo with wst:InvalidRequest (STS-WSTRUST-0031), for ' +
+             'every token type and OnBehalfOf / ActAs, before the requester ' +
+             'is authenticated or anything is recorded. A wsignin1.0 whose ' +
+             'wtrealm names no registered relying party is refused with a ' +
+             '404 page (STS-WSFED-0021) before the sign-in screen.',
+    where: 'ws-trust/wstrust.ts, ws-federation/wsfed.ts' },
+  { id: 'unregistered-oauth-clients',
+    what: 'An OAuth 2.0 client is served only when registered (#496)',
+    development: 'The authorization endpoint asks nothing about the ' +
+                 'client_id beyond its redirect URIs, and the token ' +
+                 'endpoint files a client it has seen before refusing it. ' +
+                 'An RFC 8693 audience a sighting filed is a target, and an ' +
+                 'assertion\'s audience naming one is a relying party.',
+    product: 'An authorization request or PAR naming a client_id nobody ' +
+             'registered (appRegisteredBy unset — a sighting is not a ' +
+             'registration) is a 400 on this server, never redirected ' +
+             '(STS-OAUTH-0947; none named: STS-OAUTH-0948); a token request ' +
+             'naming one is 401 invalid_client (STS-OAUTH-0949) before it ' +
+             'is counted or recorded. An RFC 8693 audience or resource ' +
+             'naming an unregistered application is the policy\'s ' +
+             'unregistered-target (invalid_target, STS-OAUTH-0793), and an ' +
+             'exchanged assertion\'s audience must be a registered ' +
+             'application under any-declared-relying-party.',
+    where: 'oauth-oidc/oauth2.ts, common/delegation_policy.ts, ' +
+           'oauth-oidc/exchange_assertions.ts' },
+  { id: 'unregistered-saml-providers',
+    what: 'A SAML service provider or relying party is answered only when ' +
+          'registered (#496)',
+    development: 'An AuthnRequest, a LogoutRequest and a SAML 1.1 browser ' +
+                 'flow are answered for any Issuer; the signature check ' +
+                 'records it, and an entry a sighting filed counts as a ' +
+                 'service provider on the per-SP paths.',
+    product: 'An AuthnRequest whose Issuer is no registered SAML 2.0 ' +
+             'service provider (appRegisteredBy unset — a sighting is not ' +
+             'a registration) is a 403 page before its signature is ' +
+             'checked (STS-SAML-0103; only a Metadata Query lookup for an ' +
+             'unknown entityID is still queued, under the trust-anchor ' +
+             'rule); a LogoutRequest from one ends nothing (STS-SAML-0104); ' +
+             'a SAML 1.1 flow for an unregistered relying party is a 403 ' +
+             'page (STS-SAML-0105). The per-SP paths, the attribute ' +
+             'authority and the SAML 1.1 responder count only a registered ' +
+             'entry, and an MDQ lookup treats an unregistered entry as ' +
+             'unknown.',
+    where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, saml/sp_metadata.ts' },
+  { id: 'unregistered-gnap-clients',
+    what: 'A GNAP client or resource server is served only when ' +
+          'registered (#496)',
+    development: 'An unknown proved key is made an application entry on ' +
+                 'first sight, and that entry\'s key and instance ' +
+                 'identifier are accepted from then on.',
+    product: 'An unknown key is refused (STS-GNAP-0082), and so is a key or ' +
+             'an instance identifier belonging to an entry nobody ' +
+             'registered (appRegisteredBy unset — one created on first ' +
+             'sight is not a registration): 401 invalid_client or ' +
+             'invalid_resource_server (STS-GNAP-0902), before the entry is ' +
+             'sighted again or anything is issued.',
+    where: 'gnap/gnap_grants.ts' },
+  { id: 'unregistered-resource-targets',
+    what: 'An RFC 8707 resource and a GNAP right\'s locations name a ' +
+          'registered target (#505)',
+    development: 'Any absolute URI is accepted as a resource at the ' +
+                 'authorization, PAR and token endpoints and becomes the ' +
+                 'token\'s aud; a GNAP location that names no resource ' +
+                 'server is left out of the token\'s audience and the ' +
+                 'right is granted.',
+    product: 'A resource (outside a token exchange, whose targets are the ' +
+             'policy\'s unregistered-target) and every location of a GNAP ' +
+             'access right must name a registered target: one of this ' +
+             'service\'s own resource servers (the default resource ' +
+             'indicator UserInfo, SCIM, Shared Signals and OpenID4VCI ' +
+             'accept; /admin-api; the GNAP demonstration resource server) ' +
+             'or an application registered ahead of time (appRegisteredBy ' +
+             'set — a sighting is not a registration), by its ' +
+             'oauthAudience, permission base URI, client_id or identifier ' +
+             '— the embedded debugger\'s api is one, seeded registered. A ' +
+             'GNAP location at or under a registered resource server\'s ' +
+             'gnapResourceServerUri names it too. Otherwise invalid_target: ' +
+             'redirected from the authorization endpoint and 400 at PAR ' +
+             '(STS-OAUTH-0950), 400 at the token endpoint before anything ' +
+             'is spent (STS-OAUTH-0951); for GNAP the request is refused ' +
+             'invalid_request (STS-GNAP-0903), not the right dropped.',
+    where: 'common/registered_targets.ts, oauth-oidc/oauth2.ts, ' +
+           'gnap/gnap_grants.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +
@@ -3099,7 +3320,39 @@ const REQUIREMENTS = [
              'chained to an anchor registers a key. An administrator ' +
              'entering a key by value is an administrator\'s act and is ' +
              'accepted in both modes, recorded proof admin, self-asserted.',
-    where: 'common/device_enrolment.ts, common/cert_enrollment.ts' }
+    where: 'common/device_enrolment.ts, common/cert_enrollment.ts' },
+  // 2026-10-06 (#256).
+  { id: 'android-attestation-revocation',
+    what: 'An Android attestation whose revocation could not be checked is ' +
+          'not trusted, where the realm says so',
+    development: 'With no current Android attestation status list (never ' +
+                 'downloaded, the download failing, or stale) an Android ' +
+                 'chain is recorded attested, its revocation UNCHECKED, ' +
+                 'whatever devices.androidRevocationRequired says. A chain ' +
+                 'the list revokes or suspends is self-asserted in both ' +
+                 'modes.',
+    product: 'The same by default. With devices.androidRevocationRequired ' +
+             'on, an unchecked chain is recorded self-asserted: a device key ' +
+             'is then refused (STS-DEVICE-0024) and a WebAuthn android-key ' +
+             'statement untrusted.',
+    where: 'common/attestation_revocation.ts' },
+  // 2026-10-06 (#257).
+  { id: 'fresh-key-attestation',
+    what: 'A TPM key attestation in a device certificate request must be ' +
+          'fresh',
+    development: 'A TPM2_Certify statement whose extraData is not a live ' +
+                 'nonce issued at EST /nonce to the same client and cookie ' +
+                 '(none fetched, expired, already spent, another client\'s, ' +
+                 'or a request over SCEP, which has no nonce operation) ' +
+                 'keeps its level and is recorded with freshness UNPROVEN ' +
+                 'and the reason. A nonce that matches is spent.',
+    product: 'Such a statement is refused (STS-DEVICE-0050): a captured ' +
+             'attestation replayed in a new request for the same key is ' +
+             'not a key made and held in a TPM now. A device certificate ' +
+             'with a TPM attestation is therefore issued over EST only, ' +
+             'after /nonce (draft-ietf-lamps-attestation-freshness section ' +
+             '5.1).',
+    where: 'common/cert_enrollment.ts, common/device_enrolment.ts, est/est.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -3492,7 +3745,11 @@ const WRITE_REFUSALS = {
     'without the workload.spiffe.io header MUST be refused.',
   derivesKrbtgtFromPassword:
     'the krbtgt key is random there, made once per realm and kept sealed ' +
-    'on the directory, so no password is read for it.'
+    'on the directory, so no password is read for it.',
+  opensManagementApi:
+    'the management API always requires an access token there, because ' +
+    'its gate is the admin console\'s only gate; pin adminApi.clientSecret ' +
+    'before the start to be able to mint one.'
 };
 
 /**
@@ -3588,7 +3845,7 @@ module.exports = {
   requiresConfidentialClientAuthentication:
     requiresConfidentialClientAuthentication,
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
-  gatesManagementApi: gatesManagementApi,
+  opensManagementApi: opensManagementApi,
   seedsDemoData: seedsDemoData,
   rotatesSigningKeys: rotatesSigningKeys,
   rotatesKerberosKeys: rotatesKerberosKeys,
@@ -3624,6 +3881,8 @@ module.exports = {
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,
   acceptsUnattestedDeviceKeys: acceptsUnattestedDeviceKeys,
+  refusesUncheckedAttestationRevocation: refusesUncheckedAttestationRevocation,
+  requiresFreshKeyAttestation: requiresFreshKeyAttestation,
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
@@ -3638,12 +3897,14 @@ module.exports = {
   registersFromMetadataQuery: registersFromMetadataQuery,
   publishesMetadataForUnregisteredProviders:
     publishesMetadataForUnregisteredProviders,
+  issuesToUnregisteredApplications: issuesToUnregisteredApplications,
   embedsProtocolDebugger: embedsProtocolDebugger,
   limitsDebuggerDestinations: limitsDebuggerDestinations,
   dialsInternalAddresses: dialsInternalAddresses,
   skipsOutboundTlsVerification: skipsOutboundTlsVerification,
   dialsPlainHttpOutbound: dialsPlainHttpOutbound,
   capturesMail: capturesMail,
+  acceptsFileSecretDestinations: acceptsFileSecretDestinations,
   mailsLinksFromListenerAddress: mailsLinksFromListenerAddress,
   acceptsNonconformingResourceMetadata: acceptsNonconformingResourceMetadata,
   gatesConsole: gatesConsole,

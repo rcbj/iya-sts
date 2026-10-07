@@ -60,6 +60,7 @@ Cancel too.
 | `TokenType` | What is issued |
 |---|---|
 | `urn:ietf:params:oauth:token-type:jwt` | a JWT signed with `wstrust.jwtAlgorithm` |
+| `http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV1.1` or `urn:oasis:names:tc:SAML:1.0:assertion` | a signed SAML 1.1 assertion, from the SAML 1.1 builder, with the application's SAML 1.1 attributes (#487). An ActAs in SAML 1.1 names no delegate: SAML 1.1 has no Delegation Restriction |
 | anything else, or none | a signed SAML 2.0 assertion, the default |
 
 **The SAML assertion** comes from the same builder the
@@ -72,12 +73,44 @@ its audience is the `AppliesTo`, its validity window is widened by
 assertion, `unspecified` for a delegation or nothing. The `wsu:Lifetime` around
 it states the lifetime without the skew.
 
-**The JWT** has `iss` `wstrust.issuer`, a `jti`, and the realm key's `kid` in
-its header (published at `/oauth2/jwks`). Its `sub` is the person's stable
+**The JWT** has `iss` the realm's OAuth 2.0 issuer, the one
+`/.well-known/oauth-authorization-server` publishes and `GET /sts` names as
+`JWT issuer:`. It also has a `jti`, and the realm key's `kid` in its header
+(published at `/oauth2/jwks`). Its `sub` is the person's stable
 subject, `urn:uuid:<entryUUID>`; a JWT for somebody the directory does not hold
 is refused with a SOAP Fault rather than issued with a bare name. By default the
 header also carries `x5u`, the address of the signing key's certificate chain
 (`wstrust.jwtCertificateHeader`).
+
+The JWT's structure and claims follow
+[RFC 9068](https://www.rfc-editor.org/rfc/rfc9068) and
+[RFC 8693](https://www.rfc-editor.org/rfc/rfc8693):
+
+* its header carries `typ: at+jwt`;
+* it carries `iss`, `sub`, `aud` (the `AppliesTo`), `iat`, `exp` (the
+  lifetime the RSTR's `wst:Lifetime` states) and `jti`;
+* `client_id` is the application the requester authenticated as;
+* `act` (for `ActAs`) has the shape this service's OAuth tokens give it:
+  * the current actor outermost;
+  * each entry with `iss`;
+  * an application named `urn:sts:client:<client_id>` in RFC 9700 mode and
+    by its bare client_id otherwise.
+
+Some claims are left out on purpose:
+
+* **No `client_id` for a person's own token.** A person who asks for a token
+  about themselves with their own UsernameToken has no client.
+* **No `scope` unless the application configures it.** An RST asks for
+  none. The AppliesTo's application may list OAuth 2.0 scopes on
+  `wstrustJwtScope` (Configuration → WS-Trust). They are judged as an
+  access token's are, with the application as the client: its
+  `oauthAllowedScope` in product, and the issuance policy. What is left off
+  is audited.
+* **No `auth_time`, `acr` or `amr`.** RFC 9068 makes them optional.
+
+`iss` is the realm's OAuth issuer, so RFC 9068 section 4's check against the
+authorization server's metadata holds (#480). The RST and RSTR are unchanged: the `wst:TokenType` answered is still
+`urn:ietf:params:oauth:token-type:jwt`.
 
 ### Lifetime
 
@@ -108,6 +141,12 @@ method.
 * **`wst14:ActAs`** (WS-Trust 1.4) asks for a token about the subject with the
   requester **acting**: delegation.
 
+The token inside either element is one this STS issued: a SAML 2.0
+assertion, or a JWT in the `wsse:BinarySecurityToken` an RSTR carries one
+in. In product it must verify with this realm's key, be unexpired, carry
+this STS's issuer and name a person in the directory. Its audience is S, and
+a JWT's `act` supplies the earlier delegates.
+
 Both are recorded as such on `/admin/delegation`, with the requester as the
 intermediary and the application registered for the `AppliesTo` as the target,
 so a chain of hops (a web application, then an ESB, then a back end) draws as
@@ -133,10 +172,18 @@ does not state in the assertion that a middle tier acted.
 
 The `AppliesTo` address is the token's audience, and it is resolved through the
 application registry (`wstrustAppliesTo`, then `samlEntityId`) so that the
-console names an application rather than a URL. That is a lookup, not a
-permission: an unregistered address is still answered. The issuance policy —
-XACML, where it is configured — can refuse a token for a subject and audience
-with a SOAP Fault.
+console names an application rather than a URL. In **development** that is a
+lookup, not a permission: an unregistered address, and a request with no
+`AppliesTo` at all, are still answered, and the address is filed in the
+register. In **product** a token is issued only for a **registered**
+application — one an administrator, RFC 7591, an OpenID Federation or this
+service's own seeding put in the register; an address the register merely
+recorded from an earlier request is not one. An `AppliesTo` that resolves to
+no registered application is refused with `wst:InvalidScope`, and a request
+with no `AppliesTo` with `wst:InvalidRequest`, for every token type and for
+`OnBehalfOf` / `ActAs`, before the requester is authenticated or anything is
+recorded (#496). The issuance policy — XACML, where it is configured — can
+refuse a token for a subject and audience with a SOAP Fault.
 
 ### Encryption, as a test control
 
@@ -151,15 +198,37 @@ development and refused in product.
 
 Request signatures are not verified; `Validate` reports whether a token is
 **present**, not whether it verifies; `Cancel` recalls nothing already issued;
-refusals other than the delegation policy's send a generic SOAP Fault rather
-than one of section 11's `wst:` codes; and a SAML assertion presented as a
-credential is trusted only when **this** STS signed it — there is no register
-of foreign issuers.
+and a SAML assertion presented as a credential is trusted only when **this**
+STS signed it — there is no register of foreign issuers.
+
+### Faults
+
+Every refusal is a SOAP Fault carrying one of WS-Trust 1.4 section 11's fault
+codes, in the request's own trust namespace: on SOAP 1.1 it is the
+`faultcode`, and on SOAP 1.2 it is the `Subcode` under `soap:Sender`.
+
+| Refusal | Fault code |
+|---|---|
+| The body is not well-formed XML | `wst:InvalidRequest` |
+| An `AppliesTo` that resolves to no registered application (product) | `wst:InvalidScope` |
+| No `AppliesTo`, or an empty one, on a request that issues (product) | `wst:InvalidRequest` |
+| The requester's credential is incomplete, wrong, or an assertion that does not verify, is not yet valid or names nobody; no credential at all (product); a delegation with no requester credential (product) | `wst:FailedAuthentication` |
+| An assertion, as the credential or inside `OnBehalfOf` / `ActAs`, that has expired, or an expired JWT inside either | `wst:ExpiredData` |
+| The token inside `OnBehalfOf` / `ActAs` is not an assertion or a JWT this STS issued, or does not verify, is not yet valid or names nobody (product) | `wst:InvalidRequest` |
+| Both `OnBehalfOf` and `ActAs`; `Cancel` in WS-Trust 2004/04; `?encrypt=1` with no recipient certificate (product) | `wst:InvalidRequest` |
+| The issuance policy refuses the token or the delegation; a JWT about somebody the directory does not hold; `?encrypt=1` to a certificate that cannot be used (product); a delegation about a person in another cell that cannot be fetched | `wst:RequestFailed` |
+
+A failure of the service itself, not of the request, is `soap:Receiver` (SOAP
+1.2) or `soap:Server` (SOAP 1.1), with no `wst:` code. `Validate` with no token
+to validate is not a fault: it answers `wst:Status` `invalid`. The fault never
+says whether a username or a password was wrong. Each refusal's error code is
+in [Error codes](error-codes.md).
 
 ## Development and product mode
 
 | | Development | Product |
 |---|---|---|
+| The `AppliesTo` | any address, or none; the address is filed in the register | a registered application only, or a `wst:InvalidScope` fault; none is a `wst:InvalidRequest` fault |
 | A request with no credential | a token for the literal subject `anonymous` (a Renew for whoever its `RenewTarget` names) | refused, with a SOAP Fault naming what to present |
 | A UsernameToken password | any password but `invalid` | verified against the person's stored `userPassword`; a person who holds or must hold a second factor is refused their own password with the same fault a wrong one gets, and presents an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `wstrust` |
 | A SAML assertion as the credential | believed | must verify against this realm's own signing certificate (`/sts/cert`) and be inside its `Conditions` |
@@ -176,7 +245,7 @@ The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `wstrust.issuer` | `STS_WSTRUST_ISSUER` (or `STS_ISSUER`) | `urn:wstrust:mock:sts` | yes | The `iss` of an issued JWT and the issuer named on `GET /sts`; a SAML token carries `saml.issuer` instead. |
+| `wstrust.issuer` | `STS_WSTRUST_ISSUER` (or `STS_ISSUER`) | *(empty)*: the SAML 2.0 entityID | yes | The name `GET /sts` publishes; unset, in either mode, the realm's `saml2.entityId` (#480, #494). A SAML token carries `saml.issuer` — for a registered AppliesTo, that application's own entityID — and a JWT the realm's OAuth issuer. |
 | `wstrust.tokenLifetimeMin` | `STS_WSTRUST_TOKEN_LIFETIME_MIN` | `60` | yes | Token lifetime when the RST carries no `wst:Lifetime`. |
 | `wstrust.maxTokenLifetimeMin` | `STS_WSTRUST_MAX_TOKEN_LIFETIME_MIN` | `1440` | yes | The ceiling a requested `wst:Lifetime` is clamped to, in both modes. |
 | `wstrust.jwtAlgorithm` | `STS_WSTRUST_JWT_ALGORITHM` | `RS256` | yes | The JWT's `alg`: `RS256`–`RS512`, `PS256`–`PS512`, `ES256`–`ES512` or `EdDSA`. |
@@ -219,7 +288,14 @@ changed on `/admin/wstrust` or with `POST /admin-api/config/set`.
   rather than any assertion at all.
 * **Two issuer settings, and disagreement is reported rather than
   reconciled.** `wstrust.issuer` names the STS and `saml.issuer` the signer of
-  an assertion; `GET /sts` and the startup log say when they differ.
+  an assertion; `GET /sts` and the startup log say when they differ. **Unset,
+  in either mode, both are the SAML 2.0 entityID** (#480, #494). A WS-Trust
+  assertion — SAML 2.0 or SAML 1.1 — whose AppliesTo a REGISTERED
+  application answers to carries that application's own entityID where
+  `saml2.perApplicationEntityId` is on: the one its `/saml2/metadata/{sp}`
+  and `/wsfed/metadata/{rp}` name, so SAML SSO, WS-Trust and WS-Federation
+  give one application one name. An AppliesTo nobody registered gets the
+  shared entityID. The JWT's `iss` stays the realm's OAuth issuer.
 * **A JWT needs a directory entry.** A bare name as `sub` would be inherited by
   a person created later under that name.
 

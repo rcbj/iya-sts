@@ -48,6 +48,15 @@
 //   this file                      what a TOKEN carries                /admin/claims
 //   this file (the same store)     what a USERINFO RESPONSE carries    /admin/userinfo-claims
 //   this file (the same store)     what an ASSERTION carries           /admin/saml-attributes
+//   this file (the same store)     what a KERBEROS PAC carries         /admin/kerberos/claims
+//
+// THE SIXTH SET, `kerberos-pac` (#498, 2026-10-06), is read differently and
+// NOT through claimsFor(): admin_stats.js's kerberosPacClaims() asks this
+// file only WHICH attributes are ticked (the slot's `selectedAttributes`
+// member) and reads their values off the entry itself, every value as a PAC
+// STRING claim, never a persona — see KERBEROS PAC CLAIMS there. The
+// selection, the funnel, the audit row and the catalogue are this file's, as
+// for the other five.
 //
 // Keeping them separate is what makes "issue a credential carrying a claim the
 // access token does not" and "ask for a claim nothing here issues" reachable.
@@ -168,9 +177,12 @@ interface SelectionResult {
 interface ClaimAttributesDeps {
   log: typeof helpers.log;
   stats: {
-    CLAIM_SETS: Record<string, { label?: string }>;
+    CLAIM_SETS: Record<string, { label?: string; kind?: string }>;
     DEFAULT_SAML11_NAMESPACE: string;
     setAttributeResolver(hooks: unknown): void;
+    // The application an issuance's claims are for (#495). Optional, so a
+    // test supplying the rest need not supply it: none means the realm's.
+    claimApplicationOf?(setId: unknown, context: unknown): any;
     // CAEP token-claims-change to the holders of what the set shapes (#238).
     // Optional, so a test supplying the rest need not supply it.
     announceClaimsReshaped?(change: Record<string, unknown>): void;
@@ -266,6 +278,32 @@ CATALOGUE.forEach(function (row) {
  */
 const SET_IDS: string[] = stats.CLAIM_SET_IDS;
 
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S OWN SELECTION (#495). Each of the five sets may also be
+// selected on an APPLICATION, on its configuration tab's OAuth / OpenID
+// Connect and SAML sub-tabs, as one JSON array of attribute names on its
+// entry. WHEN IT HOLDS ONE, IT REPLACES THE REALM'S SELECTION for that set —
+// rcbj's "the application scope takes precedence": an application may drop
+// an attribute the realm ticks as well as add one, which an additive rule
+// could not express. ABSENT is not EMPTY: no value is the realm's selection,
+// and `[]` is "this application's tokens carry no directory attribute".
+//
+// The typed and attribute ROWS (`admin_stats.APP_CLAIM_ATTRIBUTES`) are a
+// different rule — added to the realm's and winning by name — because a row
+// is named and a selection is a set; the page says both.
+//
+// WHICH APPLICATION is the one the rows answer for
+// (`admin_stats.claimApplicationOf()`), so the two halves of one claim set
+// never disagree about whose configuration is in force.
+// ---------------------------------------------------------------------------
+const APP_SELECTION_ATTRIBUTES: Record<string, string> = {
+  access_token: 'oauthClaimAttributesAccessToken',
+  id_token: 'oauthClaimAttributesIdToken',
+  userinfo: 'oauthClaimAttributesUserinfo',
+  saml2: 'saml2ClaimAttributes',
+  saml11: 'saml11ClaimAttributes'
+};
+
 // setId -> list of lower-cased attribute names (see below for why a list).
 // Empty on a fresh start, in every one of them; see the header for why that is
 // the only defensible default. This comment used to say it was held in memory
@@ -318,6 +356,10 @@ class ClaimAttributes {
    * The claim set ids.
    */
   static readonly SET_IDS = SET_IDS;
+  /**
+   * The application attribute holding its own selection, per set (#495).
+   */
+  static readonly APP_SELECTION_ATTRIBUTES = APP_SELECTION_ATTRIBUTES;
 
   /**
    * Builds the selection service.
@@ -364,12 +406,14 @@ class ClaimAttributes {
     log.debug("Leaving ClaimAttributes.wire().");
   }
 
+  // Known by the set ids admin_stats.js declares, not by the partition's
+  // keys: a partition persisted before a set existed (the sixth, #493) lacks
+  // its key, and every reader below takes a missing list as nothing ticked.
   private isKnownSet(setId: unknown): boolean {
-    const { log, selections } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering ClaimAttributes.isKnownSet().");
     log.debug("Leaving ClaimAttributes.isKnownSet().");
-    return Object.prototype.hasOwnProperty.call(selections,
-                                                String(setId || ''));
+    return SET_IDS.indexOf(String(setId || '')) >= 0;
   }
 
   // -------------------------------------------------------------------------
@@ -436,6 +480,113 @@ class ClaimAttributes {
     log.debug("Leaving ClaimAttributes.isSelected().");
     return !!chosen &&
       chosen.indexOf(String(ldapName || '').toLowerCase()) >= 0;
+  }
+
+  // -------------------------------------------------------------------------
+  // An application's own selection (#495) — see APP_SELECTION_ATTRIBUTES.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Checks a list of attribute names against the catalogue, as an
+   * application's selection is checked at the write.
+   *
+   * @param names - the names offered
+   * @returns `{ ok, names, errors }`, `names` canonically spelled in
+   *   catalogue order
+   */
+  checkNames(names: unknown[]): { ok: boolean; names: string[];
+                                   errors: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering ClaimAttributes.checkNames().");
+    const errors: string[] = [];
+    const wanted = new Set<string>();
+    (Array.isArray(names) ? names : []).forEach(function (name) {
+      const key = String(name == null ? '' : name).trim().toLowerCase();
+      if (!key) {
+        return;
+      }
+      if (!BY_LDAP.has(key)) {
+        errors.push('There is no attribute called "' +
+                    String(name).slice(0, 80) + '" in the catalogue.');
+        return;
+      }
+      wanted.add(key);
+    });
+    const out = CATALOGUE.filter(function (row) {
+      return wanted.has(row.ldap.toLowerCase());
+    }).map(function (row) {
+      return row.ldap;
+    });
+    log.debug("Leaving ClaimAttributes.checkNames(). " + errors.length +
+              " error(s).");
+    return { ok: errors.length === 0, names: out, errors: errors };
+  }
+
+  /**
+   * Returns an application's own selection for a set, or null when it holds
+   * none and the realm's is in force. A value that will not parse, or names
+   * an attribute the catalogue does not hold, is ignored with a warning —
+   * the realm's selection is issued — rather than costing the issuance.
+   *
+   * @param setId - the claim set id
+   * @param application - the application's view, or null
+   * @returns the canonically spelled names, or null
+   */
+  applicationSelection(setId: unknown, application: any): string[] | null {
+    const { log } = this.deps;
+    log.debug("Entering ClaimAttributes.applicationSelection(). setId=" +
+              setId);
+    const attribute = APP_SELECTION_ATTRIBUTES[String(setId || '')];
+    const raw = attribute && application && application.fields
+      ? [].concat(application.fields[attribute] || [])[0] : '';
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+      log.debug("Leaving ClaimAttributes.applicationSelection(). None.");
+      return null;
+    }
+    let names = null;
+    try {
+      names = JSON.parse(String(raw));
+    } catch (e) {
+      log.debug("Caught in ClaimAttributes.applicationSelection(): " +
+                ((e && e.message) || e));
+      names = null;
+    }
+    const checked = Array.isArray(names) ? this.checkNames(names) : null;
+    if (!checked || !checked.ok) {
+      log.warn(errorCodes.tag('STS-REG-0214') + 'admin: the application "' +
+               application.identifier + '" carries ' + attribute + ' that ' +
+               'is not a JSON array of catalogue attribute names; its own ' +
+               setId + ' selection is ignored and the realm\'s is issued.');
+      log.debug("Leaving ClaimAttributes.applicationSelection(). Refused.");
+      return null;
+    }
+    log.debug("Leaving ClaimAttributes.applicationSelection(). " +
+              checked.names.length + ".");
+    return checked.names;
+  }
+
+  /**
+   * Returns the catalogue rows in force for a set: an application's own
+   * selection when it holds one, else the realm's.
+   *
+   * @param setId - the claim set id
+   * @param application - the application's view, or null for the realm's
+   * @returns the rows, in catalogue order
+   */
+  effectiveRows(setId: unknown, application?: any): CatalogueRow[] {
+    const { log } = this.deps;
+    log.debug("Entering ClaimAttributes.effectiveRows().");
+    const own = application ? this.applicationSelection(setId, application)
+                            : null;
+    if (!own) {
+      log.debug("Leaving ClaimAttributes.effectiveRows(). The realm's.");
+      return this.selectedRows(setId);
+    }
+    const keys = own.map(function (name) { return name.toLowerCase(); });
+    log.debug("Leaving ClaimAttributes.effectiveRows(). The application's.");
+    return CATALOGUE.filter(function (row) {
+      return keys.indexOf(row.ldap.toLowerCase()) >= 0;
+    });
   }
 
   // Every name in the catalogue, for the "select all" button and for the
@@ -517,6 +668,16 @@ class ClaimAttributes {
     log.debug("Leaving ClaimAttributes.recordChange().");
   }
 
+  // The Kerberos PAC set (#498), told apart by its kind as admin_stats.js
+  // declares it rather than by its id.
+  private isKerberosSet(setId: string): boolean {
+    const { log, stats } = this.deps;
+    log.debug("Entering ClaimAttributes.isKerberosSet().");
+    const set = stats.CLAIM_SETS[setId];
+    log.debug("Leaving ClaimAttributes.isKerberosSet().");
+    return !!set && set.kind === 'kerberos';
+  }
+
   private labelOf(setId: string): string {
     const { log, stats } = this.deps;
     log.debug("Entering ClaimAttributes.labelOf().");
@@ -586,8 +747,8 @@ class ClaimAttributes {
       wanted.add(key);
     });
     if (errors.length) {
-      this.recordChange(id, how || 'select', [], [], selections[id].length,
-                        false, errors,
+      this.recordChange(id, how || 'select', [], [],
+                        (selections[id] || []).length, false, errors,
                         'STS-REG-0035');
       log.debug("Leaving ClaimAttributes.setSelection(). " + errors.length +
           " error(s); nothing changed.");
@@ -595,7 +756,7 @@ class ClaimAttributes {
     }
 
     // A Set for the difference below; the stored form is the list.
-    const before = new Set<string>(selections[id]);
+    const before = new Set<string>(selections[id] || []);
     const added: string[] = [];
     const removed: string[] = [];
     wanted.forEach(function (key) {
@@ -638,10 +799,14 @@ class ClaimAttributes {
       return;
     }
     const saml = setId === 'saml2' || setId === 'saml11';
+    // A PAC claim is named by the attribute itself (#498): its id is
+    // `ad://ext/<attribute>:<hex>`, and claimValuesFor() finds it by that name.
+    const pac = this.isKerberosSet(setId);
     const names: string[] = [];
     attributes.forEach(function (ldapName) {
       const row = BY_LDAP.get(String(ldapName).toLowerCase());
-      const name = row ? (saml ? row.claim.join('.') : row.claim[0]) : '';
+      const name = !row ? '' : pac ? row.ldap
+        : (saml ? row.claim.join('.') : row.claim[0]);
       if (name && names.indexOf(name) < 0) {
         names.push(name);
       }
@@ -721,6 +886,28 @@ class ClaimAttributes {
     return String(ctx.username || ctx.subject || '');
   }
 
+  // The application an issuance is for (#495), asked of admin_stats so the
+  // typed rows and the selection answer for the same one. A registry that
+  // throws costs the application's selection and never the issuance.
+  private applicationOf(setId: unknown, context: unknown): any {
+    const { log, stats } = this.deps;
+    log.debug("Entering ClaimAttributes.applicationOf().");
+    if (typeof stats.claimApplicationOf !== 'function') {
+      log.debug("Leaving ClaimAttributes.applicationOf(). No lookup.");
+      return null;
+    }
+    try {
+      log.debug("Leaving ClaimAttributes.applicationOf().");
+      return stats.claimApplicationOf(setId, context) || null;
+    } catch (e) {
+      log.debug("Caught in ClaimAttributes.applicationOf(): " +
+                ((e && e.message) || e));
+      // The realm's selection is issued: see the comment above.
+      log.debug("Leaving ClaimAttributes.applicationOf(). Failed.");
+      return null;
+    }
+  }
+
   // The claims the selected attributes produce for one person, nested where
   // the catalogue nests (`address.locality` becomes an `address` object with a
   // `locality` member, which is what OIDC Core 5.1.1 defines and what a client
@@ -733,14 +920,17 @@ class ClaimAttributes {
    *
    * @param setId - the claim set id
    * @param username - the person
+   * @param application - optional; the application the artifact is for,
+   *   whose own selection replaces the realm's (#495)
    * @returns the claims, a per-claim report with each value's source, and
    *   whether an entry was found
    */
-  claimsFor(setId: unknown, username: unknown): any {
+  claimsFor(setId: unknown, username: unknown, application?: any): any {
     const { log, vcClaims } = this.deps;
     log.debug("Entering ClaimAttributes.claimsFor(). setId=" + setId +
               ", user=" + username);
-    const rows = this.selectedRows(setId);
+    // An application's own selection replaces the realm's (#495).
+    const rows = this.effectiveRows(setId, application);
     if (!rows.length) {
       log.debug("Leaving ClaimAttributes.claimsFor(). Nothing is selected " +
                 "for that set.");
@@ -777,13 +967,16 @@ class ClaimAttributes {
    * @param setId - the claim set id (`saml11` attributes carry the default SAML
    *   1.1 namespace)
    * @param username - the person
+   * @param application - optional; the application the assertion is for
+   *   (#495)
    * @returns the attributes, each a name and value
    */
-  samlAttributesFor(setId: unknown, username: unknown): any[] {
+  samlAttributesFor(setId: unknown, username: unknown,
+                    application?: any): any[] {
     const { log, stats } = this.deps;
     log.debug("Entering ClaimAttributes.samlAttributesFor(). setId=" + setId +
               ", user=" + username);
-    const built = this.claimsFor(setId, username);
+    const built = this.claimsFor(setId, username, application);
     const out = built.report.map(function (item) {
       const attribute: { name: string; value: unknown;
                          namespace?: string } =
@@ -810,14 +1003,16 @@ class ClaimAttributes {
    *
    * @param setId - the claim set id
    * @param username - the person
+   * @param application - optional; the application whose selection is
+   *   previewed (#495)
    * @returns the person, whether an entry was found, the claims and the
    *   per-claim report
    */
-  previewFor(setId: unknown, username: unknown) {
+  previewFor(setId: unknown, username: unknown, application?: any) {
     const { log } = this.deps;
     log.debug("Entering ClaimAttributes.previewFor(). setId=" + setId +
               ", user=" + username);
-    const built = this.claimsFor(setId, username);
+    const built = this.claimsFor(setId, username, application);
     log.debug("Leaving ClaimAttributes.previewFor(). " + built.report.length +
               " claim(s).");
     return { user: username, entryFound: built.entryFound,
@@ -1121,7 +1316,10 @@ class ClaimAttributes {
         sets[id] = this.isSelected(id, row.ldap);
       });
       return { ldap: row.ldap, claim: row.claim.join('.'), label: row.label,
-               schema: row.schema, sets: sets };
+               schema: row.schema, sets: sets,
+               // Whether a person's value is GENERATED where the entry has
+               // none, which the console's catalogue table says (#446).
+               generated: !!row.from };
     });
     log.debug("Leaving ClaimAttributes.catalogueRows(). " + out.length +
               " row(s).");
@@ -1134,7 +1332,8 @@ class ClaimAttributes {
   // This is the whole of the installation, and it is why no issuance site
   // changed. admin_stats.js calls these two from inside jwtClaims() and
   // samlAttributes(), wraps them, and merges what comes back UNDER the typed
-  // claims — see the note there about precedence.
+  // claims — see the note there about precedence. Two more members: the
+  // entry (#94) and, for the Kerberos PAC set, the selection alone (#498).
   //
   // Done at require time, like every other inverted dependency here: since
   // #50's R2 `wire()` calls this when the root installs the instance (or,
@@ -1154,12 +1353,22 @@ class ClaimAttributes {
       jwtClaims: function (setId, context) {
         log.debug("Entering jwtClaims().");
         log.debug("Leaving jwtClaims().");
-        return self.claimsFor(setId, self.subjectOf(context)).claims;
+        return self.claimsFor(setId, self.subjectOf(context),
+                              self.applicationOf(setId, context)).claims;
       },
       samlAttributes: function (setId, context) {
         log.debug("Entering samlAttributes().");
         log.debug("Leaving samlAttributes().");
-        return self.samlAttributesFor(setId, self.subjectOf(context));
+        return self.samlAttributesFor(setId, self.subjectOf(context),
+                                      self.applicationOf(setId, context));
+      },
+      // WHICH ATTRIBUTES ARE TICKED (#498), for the Kerberos PAC set, whose
+      // values admin_stats.js reads off the entry itself (every value, as a
+      // PAC string). The realm's selection: no application holds one.
+      selectedAttributes: function (setId) {
+        log.debug("Entering selectedAttributes().");
+        log.debug("Leaving selectedAttributes().");
+        return self.selectedNames(setId);
       },
       // THE ENTRY ITSELF (#94), for the claim sets' attribute claims: every
       // attribute, lower-cased, of the person the token is about, or null.
@@ -1222,6 +1431,10 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   CATALOGUE: ClaimAttributes.CATALOGUE,
   SET_IDS: ClaimAttributes.SET_IDS,
+  APP_SELECTION_ATTRIBUTES: ClaimAttributes.APP_SELECTION_ATTRIBUTES,
+  checkNames: slot.forward('checkNames'),
+  applicationSelection: slot.forward('applicationSelection'),
+  effectiveRows: slot.forward('effectiveRows'),
   selectedRows: slot.forward('selectedRows'),
   selectedNames: slot.forward('selectedNames'),
   isSelected: slot.forward('isSelected'),

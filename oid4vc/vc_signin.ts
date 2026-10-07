@@ -139,7 +139,6 @@
 // `registerRoutes(app)` after `vc_verifier` and after `authn`.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import qrcode = require('qrcode');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
@@ -426,8 +425,7 @@ class VcSignin {
     const { log } = this.deps;
     log.debug("Entering VcSignin.hashOf().");
     log.debug("Leaving VcSignin.hashOf().");
-    return crypto.createHash('sha256').update(String(value || ''), 'utf8')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(value || ''), 'base64url');
   }
 
   // This service's origin — what `expected_origins` names and what the

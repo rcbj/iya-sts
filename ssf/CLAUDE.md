@@ -560,6 +560,20 @@ The middle state exchanges everything, and the specification says why: it
 exists to stop a hijacker from opting out the moment they take an account over
 and silencing the very events that would report them.
 
+**AND THE GATE IS FOR AN ACCOUNT HOLDER, WHICH TWO KINDS OF ACCOUNT HAVE NOT
+(#221 P5, rcbj's decision of 2026-10-05).** An APPLICATION entry and a SERVICE
+ACCOUNT (a person entry flagged `stsServiceAccount`) have nobody whose choice
+section 2.8's opt-out is. So `risc.optOutApplies()` answers no for both, and
+the gate is NOT APPLIED — and says so rather than silently: `gate()` answers
+`notApplicable` with the sentence, the row keeps it in its notes once,
+`optOutOf()` offers no move and carries `applies: false` and `why`,
+`report()` carries `optOutApplies`, and `/portal/signals` shows a service
+account the sentence instead of a button (a POST of a move is the same 409,
+STS-PORTAL-0075, with that sentence). Whether a person entry IS a service
+account is read off the directory write (`RiscRegister.serviceAccountIn()`,
+the attribute), the one function to point at P1's `isServiceAccount()` when
+`common/service_accounts.ts` lands.
+
 **One more asymmetry, and it looks like a bug until it is stated.** A
 suppressed AUTOMATIC event still moves the register and a suppressed HAND
 EMISSION does not. In `observe()` the directory really changed — somebody was
@@ -2091,8 +2105,9 @@ did; nothing is migrated.
 **A certificate goes out as `x509` with `x509_issuer` and `x509_serial`**,
 through `accountSignals.certificateChanged({ pem })`. That call uses
 `common/crypto.js`'s `certificateIdentifiers()`: the issuer as an RFC 4514
-string, and the serial as the lower-case hex the PKI registers use. Only a
-PERSON's certificate is sent; an application has no CAEP subject here.
+string, and the serial as the lower-case hex the PKI registers use. An
+APPLICATION's certificate is sent too since #221 P5, under the application
+subject (*An application's own subject*, below).
 **Recovery codes have no CAEP type**, so the portal's confirm sends RISC's
 `recovery-information-changed`, as the console's clear does.
 
@@ -2178,9 +2193,9 @@ the value), `admin_stats.setClaimSet()`, `claim_attributes.setSelection()`, a
 release list (`federation.js`'s `announceReleaseChange()`) —
 `admin_stats.announceClaimsReshaped()` for the last four. **Not sent:**
 adding a grant or scope (a token carries what was asked for),
-`appRequiredRole` (who may be ISSUED a token, no claim in one), the UserInfo
-set (built per call), and an application's own `client_credentials` tokens,
-whose subject waits on #221.
+`appRequiredRole` (who may be ISSUED a token, no claim in one) and the
+UserInfo set (built per call). An application's own `client_credentials`
+tokens are a holder of their own since #221 P5 (below).
 
 **IDENTITY ASSURANCE (#243)** — `identity_assurance.ts`'s `store()` is the
 one write for `record()`, `remove()` and `recordAutomatic()`, and announces
@@ -2358,7 +2373,8 @@ A SCEP challenge IS a password; the friendly name keeps it apart from the
 account's own, for a receiver and for the person's "password changed" mail
 (which is sent only for an unnamed `password`). Binding an EAB key and
 redeeming a challenge send nothing: the certificate each produces is
-already `x509`. Only a person's credential is sent. **#86's closed sets name
+already `x509`. A person's credential is sent about the person, and an
+application's EAB key or challenge about the application (#221 P5). **#86's closed sets name
 no credential type** (`CREDENTIAL_TYPES` is an `openenum`: an unknown value
 is a warning, never a refusal), so nothing there changed.
 
@@ -2377,6 +2393,25 @@ is a warning, never a refusal), so nothing there changed.
 
 `tests/credential_signals.js` holds every row in process;
 `tests/vendored/sts_credential_signals.js` the ones a wire can reach.
+
+## A SUBJECT IS NAMED UNDER THE STREAM'S ISSUER (#154, 2026-10-05)
+
+The doors that raise an event with no request in hand — `/admin-api`'s
+set-password, disable and enable, and the automatic CAEP and RISC emissions —
+named the person `iss_sub` under `issuerFor(null)`, this process's own
+address, while each SET's `iss` is the stream's: the issuer its receiver
+discovered. Behind a published port or a proxy the two differ, so a receiver
+refused the subject, and a stream that had ADDED the person under the
+discovered issuer was never a candidate (`subjectKey()` is the pair).
+`ssf.ts`'s `subjectUnderStreamIssuer()` re-issues, per stream, an `iss_sub`
+naming that request-less issuer — at the top or as a complex subject's
+member — under the stream's `iss`; `coversSubject()` asks every emitter's
+candidate filter with it, and `transmitNow()` sends it. A partner's subject
+and one already under the stream's issuer are untouched.
+`tests/ssf_subject_issuer.js` holds it in process, with the published issuer
+set on the stream by hand; `tests/vendored/sts_ssf_subject_issuer.js` over the
+wire, with the issuer DISCOVERED at the URL the suite reaches, which is where
+the mismatch happens (every local mode and an AWS target).
 
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
 
@@ -2453,8 +2488,11 @@ same way, through `pairwise_subjects.deviceIdFor()`:
 * an ephemeral client is told no device, and the member is dropped;
 * a public client is told the register's id.
 
-An application's device has no `user` member and is sent as it is: pairwise
-subjects protect End-Users. `oauth-oidc/CLAUDE.md` 3bo argues the claim.
+An application's device has no `user` member: since #221 it carries an
+`application` member naming its owner (format `opaque`, the application's
+identifier — the member every other event about the application carries),
+and its device id is sent as it is, because pairwise subjects protect
+End-Users. `oauth-oidc/CLAUDE.md` 3bo argues the claim.
 
 **RISK SCORING SETS A DEVICE'S LEVEL** (#164 phase 5): after a sign-in the
 person's own device proved, the device takes that sign-in's level, so the
@@ -2509,3 +2547,84 @@ place a limit is read; an internal stream asks no application.
 
 `tests/ssf_application_settings.js` holds it (five mutants, all caught); the
 console section is `admin-ui/CLAUDE.md`'s, the write rule `common/CLAUDE.md`'s.
+
+
+## AN APPLICATION'S OWN SUBJECT, AND THE NON-HUMAN ROWS (#221 P5, 2026-10-06)
+
+rcbj's 2026-09-27 table on #221 listed every act on a non-human identity that
+#231–#245 stopped at, because each sent signals about a PERSON only. Each row
+is now a funnel change at the place the table named, on the same patterns.
+
+**THE SUBJECT.** SSF 1.0 section 3.3's complex subject has an `application`
+member, and an application entry is named
+`{ "format": "complex", "application": { "format": "opaque", "id": <id> } }`,
+the id being the identifier the realm's registry holds it under — an OAuth
+client's `client_id`. `ssf_subjects.js`'s `applicationSubject()` builds it and
+its header argues the three choices:
+* **`opaque`, not `uri`**: a client_id is usually not an absolute URI, and a
+  `uri` would have to be a name nobody was issued; `opaque` carries the value
+  the receiver holds. The SET's `iss` scopes it to the realm, which is what
+  RFC 9493 section 3.2.4 asks of an opaque id.
+* **not `iss_sub`**: that pair names a PERSON here (an ID Token's `iss` and
+  `sub`); a receiver reading one reads a user.
+* **always complex**: a bare `opaque` says nothing about what kind of
+  principal it is. RISC's subject is complex here too, which the plain-subject
+  argument in `risc.ts` allows: the member IS the account, it narrows nothing.
+
+A SPIFFE workload is the same member with format `uri` (its SPIFFE ID); a
+registration entry's removal names it as a plain `uri`. A SERVICE ACCOUNT is
+a person entry (P1) and keeps a person's `iss_sub`.
+
+**THE GRAMMAR AND THE FILTERS NEEDED NOTHING NEW**: `ssf_subjects.js` already
+accepted the member and `streamCoversSubject()` already matched it — a stream
+that adds the complex subject, or the bare opaque member, covers every event
+about the application, with or without a session.
+
+| Row | What is sent | Where |
+|---|---|---|
+| client secret added / regenerated or rotated / removed or expired | CAEP `credential-change`, `urn:iya:sts:credential-type:client-secret`, create / update / revoke | `common/applications.js` `save()`: the record carries its credential snapshot from `recordFromAttributes()`, and the writes of one act are merged and flushed on a microtask (`noteCredentialWrite()`, `announceCredentialChanges()`) |
+| registered `jwks` / `jwks_uri` | `urn:iya:sts:credential-type:jwk`, create / update / revoke | the same |
+| RFC 7523 key pair issued or uploaded; RFC 7522 key pair and certificates; SAML certificates | `x509` (with issuer and serial), `jwk` for a key set alone; ONE event per act (seven writes on `/admin/pki`) | the same |
+| TLS client certificate issued / revoked | `x509` create / revoke; RISC `credential-compromise` for keyCompromise | `common/tls_client_certificates.js` `issue()`, `revoke()` |
+| ACME / EST / SCEP certificate, EAB key, challenge | `x509`; `...:acme-eab-key`, `password` | `common/cert_enrollment.ts` `issue()`, `revokeEnrolled()`, `signalEnrolmentCredential()` |
+| a certificate revoked on `/admin/pki` | `x509` revoke; RISC `credential-compromise` | `admin-ui/pki_admin.ts` `revoke-certificate` |
+| an authority above it reissued, rebuilt or revoked | `x509` update / revoke; RISC `credential-compromise` | `ssf/service_signals.ts` — `holdingsOf()` walks application slots and `subjectKind: 'application'` key pairs |
+| its own tokens' claims moved (permissions, allowed scopes, claim configuration) | `token-claims-change` | `admin_stats.liveClaimBearers()` lists a client_credentials token under the APPLICATION (`applicationOfToken()`); `ssf.ts` `claimsFanOut()` → `applicationClaimsEmit()` |
+| its own role (`roleMemberApplication`) | `token-claims-change`, the roles claim | `ldap/ldap_server.js` `noteRoleChange()` → `noteApplicationRoleChange()` |
+| its client_credentials grant revoked | `session-revoked`, session `oauth-grant:<id>` | `oauth-oidc/oauth_grant_signals.ts` `observe()` / `subjectFor()` |
+| entry deleted | RISC `account-purged`; register row `application:<id>`, `kind: 'application'` | `ldap/ldap_server.js` `noteApplicationRemoved()`, from `deleteApplicationEntry()` and the LDAP delete handler; `account_signals.applicationPurged()`; `risc.observeAct()` |
+| a session it authenticated (SCIM, WS-Trust), a SPIRE caller's | session events under `application` (opaque / uri) | `ssf.ts` `principalOfSession()`, asked once per CAEP row (`caep.observe()`'s `classifyPrincipal`) |
+| SPIFFE registration entry removed | `credential-change`, `...:spiffe-registration`, update (another still names it) / delete (the last) | `spiffe/spiffe_registry.ts` `signalRegistrationRemoved()` |
+
+**DECIDED HERE, AND WHY:**
+* **No `account-disabled` for an application**: the registry has no disabled
+  state (`applications.js`, *A GNAP client's grants end with its entry*).
+  Deletion is the one lifecycle act.
+* **No `session-revoked` for a SPIFFE registration removed**: nothing ended —
+  an SVID already issued verifies until it expires, and a workload holds no
+  session here.
+* **The seeding of this service's own applications is quiet** (`save(record,
+  { quiet: true })`): provisioning at start, which a development process would
+  otherwise announce on every start; any later change is announced.
+* **The initiating entity of an application credential change** is `admin`
+  where the door named an actor (the console, `/admin-api`) and `system`
+  otherwise (registration, the expiry job).
+* **No mail notice**: the security-notice mails are a person's
+  (`AccountSignals.notPersonal()`).
+
+**AND OVER THE LDAP SOCKET** (#221, closing what P5 left): an add or modify of
+an application entry over the socket is committed by the directory itself,
+not through `save()`, so the directory hands the entry's attributes as they
+were and as they are to `applications.noteDirectoryWrite()` — the SAME
+comparison and the same queue, so an act that also passed through `save()` is
+announced once, and the bound DN makes the entity `admin`. A delete is not:
+the application is gone, and RISC `account-purged` says so. A SPIFFE
+registration entry deleted over the socket is reported through
+`spiffe_registry.noteEntryRemovedOutside()` exactly as `deleteEntry()` reports
+its own. A GNAP client's key (`gnapKey`) is GNAP's own and ends its grants
+instead.
+
+`tests/application_signals.js` holds every row in process (the recorder sits
+on `ssf_streams.ts`'s three filters, so the real emitters build each event);
+`tests/vendored/sts_application_signals.js` subscribes a receiver to an
+application and rotates its secret over the wire.

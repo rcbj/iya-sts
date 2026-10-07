@@ -135,6 +135,10 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
+// The store's own status, for what a settings write's reply says about
+// whether the override is kept across a restart (rcbj, 2026-10-07). A
+// library, required in the ordinary direction, as `admin_views.ts` does.
+import persistence = require('../persistence/persistence');
 import credentials = require('../common/credentials');
 import realms = require('../common/realms');
 import stats = require('../common/admin_stats');
@@ -195,6 +199,10 @@ import personEditor = require('../ldap/person_editor');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
 import devices = require('../common/devices');
+// #221: the service-account flag and the policy that governs it.
+import serviceAccounts = require('../common/service_accounts');
+import serviceAccountPolicy = require('../common/service_account_policy');
+import serviceAccountRotation = require('../common/service_account_rotation');
 import ciba = require('../oauth-oidc/ciba');
 import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
@@ -351,6 +359,8 @@ const USER_FIELD_PREFIX = 'field.';
  */
 const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
+                       // A passkey's name (#470, rcbj's decision D).
+                       'rename-key',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
@@ -386,7 +396,10 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'remove-attribute',
                        // Several at once, a person's field grid's Save
                        // (2026-10-01).
-                       'update-fields'];
+                       'update-fields',
+                       // A service account (#221, 2026-10-06), and its
+                       // password rotated now.
+                       'set-service-account', 'rotate-password'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -460,7 +473,17 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // its auth_req_id) waiting for the person, as they would on /portal/ciba —
   // DEVELOPMENT ONLY (`mode.opensTestControls()`): in product only the
   // person answers.
-  'answer-ciba-request'];
+  'answer-ciba-request',
+  // A SERVICE ACCOUNT (#221, 2026-10-06): `set-service-account` makes the
+  // person one (`serviceAccount` true, the default), changes its `owner`,
+  // `destination` and `secretName`, or makes it a person again
+  // (`serviceAccount` false). `common/service_accounts.ts` checks and keeps
+  // it; where the realm's policy refuses a service account every browser
+  // sign-in, becoming one ends the person's sessions. `rotate-password`
+  // QUEUES a rotation of a service account's password on the scheduler's
+  // leader (`common/service_account_rotation.ts`): pushed first, committed
+  // after; the answer is the run's id, never a password.
+  'set-service-account', 'rotate-password'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -525,14 +548,15 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'discard-address',
                              'regenerate-secret', 'rotate-secret',
                              'add-secret', 'remove-secret',
-                             'generate-secret',
+                             'reveal-secret', 'generate-secret',
                              'issue-software-statement',
                              'issue-tls-client-certificate',
                              'revoke-tls-client-certificate',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
-                             'remove-custom-claim', 'set-access-type',
+                             'remove-custom-claim', 'set-claim-attributes',
+                             'inherit-claim-attributes', 'set-access-type',
                              'remove-access-type', 'forget'];
 
 // ---------------------------------------------------------------------------
@@ -643,7 +667,8 @@ const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
  */
 const ROLE_ACTIONS = ['create-role', 'delete-role', 'add-member',
                       'remove-member', 'describe-role', 'add-permission',
-                      'remove-permission'];
+                      'remove-permission', 'add-conferring-client',
+                      'remove-conferring-client'];
 
 // The three kinds of thing that can hold a role, in one table because four
 // places have to agree about them — the two member actions, the console's
@@ -904,6 +929,8 @@ interface AdminActionsDeps {
   b64uDecode: typeof helpers.b64uDecode;
   numberWord: typeof helpers.numberWord;
   config: typeof config;
+  // Whether a settings override is written down (`overrideDurability()`).
+  persistence: typeof persistence;
   credentials: typeof credentials;
   realms: typeof realms;
   stats: typeof stats;
@@ -939,6 +966,9 @@ interface AdminActionsDeps {
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
   devices: typeof devices;
+  serviceAccounts: typeof serviceAccounts;
+  serviceAccountPolicy: typeof serviceAccountPolicy;
+  serviceAccountRotation: typeof serviceAccountRotation;
   ciba: typeof ciba;
   backchannel: typeof backchannel;
   oauth2: typeof oauth2;
@@ -991,6 +1021,7 @@ class AdminActions {
       b64uDecode: helpers.b64uDecode,
       numberWord: helpers.numberWord,
       config: config,
+      persistence: persistence,
       credentials: credentials,
       realms: realms,
       stats: stats,
@@ -1026,6 +1057,9 @@ class AdminActions {
       identityAssurance: identityAssurance,
       siop: siop,
       devices: devices,
+      serviceAccounts: serviceAccounts,
+      serviceAccountPolicy: serviceAccountPolicy,
+      serviceAccountRotation: serviceAccountRotation,
       ciba: ciba,
       backchannel: backchannel,
       oauth2: oauth2,
@@ -2738,6 +2772,39 @@ class AdminActions {
             message: done.removed + ' no longer signs ' + who + ' in.' };
     }
 
+    if (action === 'set-service-account') {
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "set-service-account.");
+      return this.serviceAccountAction(who, body, ctx, audited);
+    }
+
+    if (action === 'rotate-password') {
+      const { serviceAccountRotation } = this.deps;
+      const queued = serviceAccountRotation.requestRotation(
+        realms.currentId(), who,
+        { requestedBy: ctx.actor, via: ctx.via, channel: ctx.via });
+      audited('admin.service-account.rotate',
+              (queued.ok ? 'queued' : 'could not queue') + ' a rotation of ' +
+              'the password of ' + who,
+              { runId: queued.runId || null,
+                errors: queued.ok ? undefined : [queued.why] },
+              queued.ok ? 'success' : 'failure');
+      if (!queued.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "rotate-password was refused.");
+        return this.refusedBy(queued.errorCode || 'STS-SVCACCT-0040',
+                              { ok: false, errors: [queued.why] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "rotate-password.");
+      return { ok: true, username: who, runId: queued.runId,
+               alreadyQueued: queued.alreadyQueued,
+               message: 'A rotation of ' + who + '\'s password is queued ' +
+                        '(run ' + queued.runId + '): the new password is ' +
+                        'pushed to its destination first and committed ' +
+                        'after. Monitoring → Scheduler shows the run.' };
+    }
+
     // require-mfa and stop-requiring-mfa
     const wanted = action === 'require-mfa';
     const result = credentials.setMfaRequired(who, wanted);
@@ -2769,6 +2836,63 @@ class AdminActions {
                    ? ' The REALM still requires one (the authentication ' +
                      'policy).' : '')
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SERVICE ACCOUNT (#221): the flag, its owner and its push destination,
+  // set or cleared. The checks are `service_accounts.set()`'s; this audits,
+  // and where the realm keeps service accounts out of every browser it ends
+  // the sessions a person who has just become one still holds — the policy
+  // would refuse them at the next sign-in, and a session already open is the
+  // same browser.
+  // ---------------------------------------------------------------------------
+  private serviceAccountAction(who, body, ctx, audited) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug("Entering AdminActions.serviceAccountAction().");
+    const wanted = body.serviceAccount === undefined ? true
+      : this.truthy(body.serviceAccount);
+    const result = serviceAccounts.set(who, {
+      serviceAccount: wanted,
+      owner: body.owner,
+      destination: body.destination,
+      secretName: body.secretName
+    });
+    audited(wanted ? 'admin.service-account.set'
+                   : 'admin.service-account.cleared',
+            (result.ok ? '' : 'could not ') +
+            (wanted ? 'make ' + who + ' a service account'
+                    : 'make ' + who + ' an ordinary person again'),
+            { owner: String(body.owner || ''),
+              destination: String(body.destination || ''),
+              secretName: String(body.secretName || ''),
+              errors: result.ok ? undefined
+                : ((result as any).errors || []) },
+            result.ok ? 'success' : 'failure');
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.serviceAccountAction(). Refused.");
+      return this.refusedBy('STS-SVCACCT-0027', result);
+    }
+    const done = result as any;
+    let signedOut = null;
+    if (wanted && done.changed &&
+        !serviceAccountPolicy.allowsDoor('browser')) {
+      signedOut = this.signOutEverywhere(who, ctx,
+                                         'becoming a service account');
+    }
+    log.debug("Leaving AdminActions.serviceAccountAction().");
+    return { ok: true, username: done.username || who,
+             serviceAccount: wanted, account: done.account,
+             signedOut: signedOut,
+             message: wanted
+               ? who + ' is ' + (done.changed ? 'now' : 'still') + ' a ' +
+                 'service account' + (done.account && done.account.owner
+                   ? ', owned by ' + done.account.owner : '') + '.' +
+                 (signedOut ? ' This realm refuses a service account every ' +
+                   'browser sign-in, so their sessions were ended.' : '')
+               : who + ' is an ordinary person' +
+                 (done.changed ? ' again' : '') + '; the owner, the push ' +
+                 'destination and the rotation state are gone from the ' +
+                 'entry.' };
   }
 
   // ---------------------------------------------------------------------------
@@ -3323,6 +3447,41 @@ class AdminActions {
       return this.refusedBy('STS-ADMIN-0522', result);
     }
 
+    // RENAMING SOMEBODY'S PASSKEY (#470, 2026-10-06; rcbj's decision D on
+    // the ticket). THROUGH `credentials.renameKey()`, the one writer the
+    // person's own `/portal/rename-key` also calls, so the two doors cannot
+    // disagree about what a name may be; an empty name restores the default.
+    // Audited, and no CAEP event: a name says nothing about what the key
+    // proves.
+    if (action === 'rename-key') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0849', { ok: false, errors: ['Name ' +
+          'the person whose passkey is being renamed.'] });
+      }
+      const result = credentials.renameKey(who,
+        String(body.credentialId || ''), String(body.label || ''));
+      auditLog.record({
+        category: 'authentication', action: 'admin.mfa.key.renamed',
+        actor: ctx.actor, target: who,
+        outcome: result.ok ? 'success' : 'failure',
+        summary: (result.ok ? 'renamed' : 'could not rename') +
+                 ' a passkey of ' + who,
+        detail: { username: who, via: ctx.via,
+                  credentialId: String(body.credentialId || ''),
+                  from: result.ok ? result.previous : undefined,
+                  to: result.ok ? result.label : undefined,
+                  errors: result.ok ? undefined : (result.errors || []) }
+      });
+      log.debug("Leaving AdminActions.usersAction(). rename-key " +
+                (result.ok ? "ok." : "refused."));
+      return result.ok
+        ? { ok: true, message: 'The passkey of ' + who + ' is now called "' +
+            result.label + '".', label: result.label }
+        : this.refusedBy('STS-ADMIN-0850', result);
+    }
+
     // SET A PASSWORD ON SOMEBODY WHO IS ALREADY HERE (2026-09-06).
     //
     // **IT EXISTED IN PROSE BEFORE IT EXISTED IN CODE**, which is the reason it
@@ -3423,6 +3582,19 @@ class AdminActions {
       const typed = this.userFieldsFrom(body);
       const invent = body.invent === undefined ? true :
                      this.truthy(body.invent);
+      // A SERVICE ACCOUNT FROM THE START (#221): checked BEFORE the person
+      // exists, so a refused owner or destination leaves nobody behind as an
+      // ordinary person.
+      const asServiceAccount = this.truthy(body.serviceAccount);
+      if (asServiceAccount) {
+        const { serviceAccounts } = this.deps;
+        const precheck = serviceAccounts.check(body, '');
+        if (precheck.ok !== true) {
+          log.debug("Leaving AdminActions.usersAction(). The service " +
+                    "account was refused before the create.");
+          return this.refusedBy('STS-SVCACCT-0027', precheck);
+        }
+      }
       const result = directoryWriter(username, {
         origin: 'console',
         note: String(body.note || '').trim() ||
@@ -3467,6 +3639,27 @@ class AdminActions {
                        entry: result.entry, typed: result.typed || [],
                        invented: !!result.invented, credential: credential };
       let credentialSaid = '';
+      if (asServiceAccount) {
+        const { serviceAccounts } = this.deps;
+        const flagged = serviceAccounts.set(result.username, {
+          serviceAccount: true, owner: body.owner,
+          destination: body.destination, secretName: body.secretName });
+        answer.serviceAccount = !!flagged.ok;
+        if (!flagged.ok) {
+          answer.serviceAccountError = ((flagged as any).errors || [])
+            .join(' ');
+        } else {
+          auditLog.record({
+            category: 'admin', action: 'admin.service-account.set',
+            actor: (body.actor || ''), target: result.username,
+            outcome: 'success',
+            summary: result.username + ' was created as a service account',
+            detail: { owner: String(body.owner || ''),
+                      destination: String(body.destination || ''),
+                      via: ctx.via }
+          });
+        }
+      }
       if (credential === 'password' || credential === 'generate') {
         const generated = credential === 'generate';
         if (!generated && String(body.password || '') === '') {
@@ -4034,6 +4227,47 @@ class AdminActions {
   }
 
   // ---------------------------------------------------------------------------
+  // A SAVED WRITE THAT LEAVES A wstrustJwtScope VALUE THE SCOPE POLICY WILL
+  // DROP (#488): the reply says so. The write stands (#485); the reply
+  // carries `warnings`, the list `scopePolicy.configuredScopeWarnings()`
+  // gives (the same list the application's GET view and the console's cell
+  // carry, rule 7), and its sentences after the reply's `message`, which is
+  // what the console's Save shows. A refused write and a clean one are
+  // returned as they came.
+  // ---------------------------------------------------------------------------
+  private withScopeWarnings(identifier, result) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.withScopeWarnings().");
+    if (!result || result.ok === false || !identifier) {
+      log.debug("Leaving AdminActions.withScopeWarnings(). Not saved.");
+      return result;
+    }
+    let warnings = [];
+    try {
+      warnings = require('../common/scope_policy')
+        .configuredScopeWarnings(identifier) || [];
+    } catch (e) {
+      // A policy that cannot be asked costs the warning, never the write.
+      log.debug("Caught in AdminActions.withScopeWarnings(): " +
+                ((e && e.message) || e));
+      warnings = [];
+    }
+    if (!warnings.length) {
+      log.debug("Leaving AdminActions.withScopeWarnings(). None.");
+      return result;
+    }
+    const said = warnings.map(function (one) {
+      return String(one.text);
+    }).join(' ');
+    log.debug("Leaving AdminActions.withScopeWarnings(). " + warnings.length +
+              ".");
+    return Object.assign({}, result, {
+      warnings: warnings,
+      message: (result.message ? String(result.message) + ' ' : 'Saved. ') +
+               'WARNING: ' + said });
+  }
+
+  // ---------------------------------------------------------------------------
   // A PERSON'S FIELD GRID SAVE (2026-10-01), `updateApplicationFields()`'s
   // shape for a person. Every attribute the body covers is brought to the
   // values given — a single-valued one SET (empty clears it), a multi-valued
@@ -4402,12 +4636,13 @@ class AdminActions {
                       'confirm-address',
                       'discard-address', 'regenerate-secret',
                       'rotate-secret', 'add-secret', 'remove-secret',
-                      'issue-software-statement',
+                      'reveal-secret', 'issue-software-statement',
                       'issue-tls-client-certificate',
                       'revoke-tls-client-certificate',
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
-                      'remove-custom-claim', 'set-access-type',
+                      'remove-custom-claim', 'set-claim-attributes',
+                      'inherit-claim-attributes', 'set-access-type',
                       'remove-access-type', 'forget'];
     if (needsOne.indexOf(action) >= 0 && !identifier) {
       log.debug("Leaving AdminActions.applicationsAction(). No application " +
@@ -4522,7 +4757,8 @@ class AdminActions {
       });
       log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
-      return this.refusedBy('STS-ADMIN-0531', result);
+      return this.refusedBy('STS-ADMIN-0531',
+                            this.withScopeWarnings(identifier, result));
     }
 
     // ---------------------------------------------------------------------
@@ -4534,8 +4770,8 @@ class AdminActions {
     // whose values did not change is not written at all, which is what lets
     // a form carry every field and still refuse nothing it did not touch.
     if (action === 'update-fields') {
-      const result = this.updateApplicationFields(identifier, body,
-                                                  protocols);
+      const result = this.withScopeWarnings(identifier,
+        this.updateApplicationFields(identifier, body, protocols));
       log.debug("Leaving AdminActions.applicationsAction(). update-fields " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return result;
@@ -4577,7 +4813,8 @@ class AdminActions {
     // on, behind the same fold the old one was, and a secret in a query string
     // would be a secret in the browser history and every log on the way.
     if (action === 'regenerate-secret') {
-      const result = applications.regenerateClientSecret(identifier);
+      const result = applications.regenerateClientSecret(identifier,
+        { actor: body.actor || '' });
       log.debug("Leaving AdminActions.applicationsAction(). " +
                 "regenerate-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -4630,7 +4867,9 @@ class AdminActions {
       const SET_FAMILIES = {
         access_token: ['oauth2', 'oidc', 'oid4vci'],
         id_token: ['oidc', 'oauth2'], userinfo: ['oidc', 'oauth2'],
-        saml2: ['saml2'], saml11: ['saml11']
+        saml2: ['saml2'], saml11: ['saml11'],
+        // #493: a Kerberos service's own PAC claims.
+        'kerberos-pac': ['krb5']
       };
       const declaredFamilies = applications.declaredFamiliesOf(entry);
       if (action === 'set-custom-claim' &&
@@ -4666,6 +4905,11 @@ class AdminActions {
               type: String(body.type || 'string') }
           : { name: name, value: String(body.value == null ? ''
                                                            : body.value) };
+        // A Kerberos PAC row's type (#493); the other sets' typed rows have
+        // none, and checkClaimEntries() keeps it for that set alone.
+        if (!attributeName && body.type) {
+          row.type = String(body.type);
+        }
         if (body.nameFormat) {
           row.nameFormat = String(body.nameFormat);
         }
@@ -4700,6 +4944,98 @@ class AdminActions {
                  : 'The ' + setId + ' claim "' + name + '" is set on "' +
                    identifier + '"; it is added to the realm\'s set and wins ' +
                    'by name.') };
+    }
+
+    // ---------------------------------------------------------------------
+    // AN APPLICATION'S OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495), from the
+    // catalogue sections of its OAuth / OpenID Connect, SAML and Verifiable
+    // Credentials sub-tabs. `set` names one of the five claim sets or
+    // `credential`; `set-claim-attributes` writes the application's own
+    // selection (`attributes`, or a form's repeated `attribute`), which
+    // REPLACES the realm's for that set — an empty one included, which
+    // carries nothing; `inherit-claim-attributes` takes it off, and the
+    // realm's selection is in force again. The names are held to the
+    // catalogue by `updateApplication()` (`STS-REG-0215`).
+    // ---------------------------------------------------------------------
+    if (action === 'set-claim-attributes' ||
+        action === 'inherit-claim-attributes') {
+      const setId = String(body.set || '');
+      const SELECTION_FAMILIES = {
+        access_token: ['oauth2', 'oidc', 'oid4vci'],
+        id_token: ['oidc', 'oauth2'], userinfo: ['oidc', 'oauth2'],
+        saml2: ['saml2'], saml11: ['saml11'], credential: ['oid4vci']
+      };
+      const attribute = setId === 'credential'
+        ? vcClaims.APP_SELECTION_ATTRIBUTE
+        : claimAttributes.APP_SELECTION_ATTRIBUTES[setId];
+      if (!attribute || !SELECTION_FAMILIES[setId]) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such set.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['set must be one of ' +
+            Object.keys(SELECTION_FAMILIES).join(', ') + ', not "' +
+            setId.slice(0, 60) + '".'] });
+      }
+      const entry = applications.get(identifier);
+      if (!entry) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such application.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['There is no application called "' + identifier +
+                   '".'] });
+      }
+      // THE SET'S PROTOCOL MUST BE DECLARED, for set-custom-claim's reason:
+      // a selection nothing can issue reads like a policy in force.
+      const declaredFamilies = applications.declaredFamiliesOf(entry);
+      if (action === 'set-claim-attributes' &&
+          !SELECTION_FAMILIES[setId].some(function (one) {
+            return declaredFamilies.indexOf(one) >= 0;
+          })) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the set's protocol is not declared.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['The application "' + identifier + '" is not declared ' +
+            'for ' + SELECTION_FAMILIES[setId].join(' or ') + ', so a ' +
+            setId + ' selection would reach nothing. Tick the family ' +
+            'first.'] });
+      }
+      let value = '';
+      let names = null;
+      if (action === 'set-claim-attributes') {
+        const offered = body.attributes !== undefined ? body.attributes
+                                                      : body.attribute;
+        const list = Array.isArray(offered) ? offered
+          : (offered === undefined || offered === null || offered === ''
+            ? [] : String(offered).split(/[\s,]+/));
+        const checked = setId === 'credential'
+          ? vcClaims.checkNames(list) : claimAttributes.checkNames(list);
+        if (!checked.ok) {
+          log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                    ": an attribute the catalogue does not hold.");
+          return this.refused('STS-REG-0215', { ok: false,
+            errors: checked.errors });
+        }
+        names = checked.names;
+        value = JSON.stringify(names);
+      }
+      const write = applications.updateApplication(identifier, {
+        mode: 'set', attribute: attribute, value: value });
+      if (!write.ok) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the write was refused.");
+        return this.refusedBy('STS-REG-0215', write);
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                " ok.");
+      return { ok: true, application: identifier, set: setId,
+               inherited: names === null, attributes: names,
+               message: names === null
+                 ? '"' + identifier + '" uses the realm\'s ' + setId +
+                   ' selection again.'
+                 : '"' + identifier + '" now selects ' +
+                   (names.length ? names.join(', ') : 'no attribute') +
+                   ' for its ' + setId + ' set, in place of the realm\'s ' +
+                   'selection.' };
     }
 
     // ---------------------------------------------------------------------
@@ -4793,7 +5129,7 @@ class AdminActions {
         ok: true,
         did: did, kid: pair.kid, algorithm: pair.alg,
         verificationMethod: did + '#' + pair.kid,
-        documentUrl: base + '/applications/' +
+        documentUrl: helpers.rebaseTo(base, 'oid4vc') + '/applications/' +
                      encodeURIComponent(identifier) + '/did.json',
         publicJwk: pair.publicJwk, privateJwk: pair.privateJwk,
         privateKeyPem: pair.privateKeyPem, replaced: replace,
@@ -4827,7 +5163,12 @@ class AdminActions {
     // A ROTATION (#49 P5): the same new secret, with the old one still
     // accepted for oauth2.clientSecretOverlapS so the client can change over.
     if (action === 'rotate-secret') {
-      const result = applications.rotateClientSecret(identifier);
+      // THE ACTOR GOES WITH IT (2026-10-06): the register names the act's
+      // initiating entity `admin` from it, and `system` without one — so a
+      // rotation an administrator asked for was announced to Shared Signals
+      // as the service's own (sts_application_signals found it).
+      const result = applications.rotateClientSecret(identifier,
+        { actor: body.actor || '' });
       log.debug("Leaving AdminActions.applicationsAction(). rotate-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
@@ -4839,17 +5180,81 @@ class AdminActions {
     // primary); the reply carries a new secret once, as regenerate's does.
     if (action === 'add-secret') {
       const result = applications.addClientSecret(identifier, {
-        lifetimeDays: body.lifetimeDays, description: body.description });
+        lifetimeDays: body.lifetimeDays, description: body.description,
+        actor: body.actor || '' });
       log.debug("Leaving AdminActions.applicationsAction(). add-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
     }
     if (action === 'remove-secret') {
       const result = applications.removeClientSecret(identifier, {
-        id: body.secret });
+        id: body.secret, actor: body.actor || '' });
       log.debug("Leaving AdminActions.applicationsAction(). remove-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
+    }
+
+    // ---------------------------------------------------------------------
+    // ONE CREDENTIAL'S VALUE, ON DEMAND (#446, rcbj 2026-10-05). The
+    // application's page showed every client secret and the registration
+    // access token behind folds, drawn by the server; a page drawn from
+    // `GET /admin-api/applications` cannot, because that answer carries a
+    // secret's id and expiry and never its value — and no GET here carries a
+    // credential. So the fold asks for the one value it opens: `secret` is a
+    // client secret's id, or `registration-access-token`. A WRITE ROLE'S
+    // ACT, because handing out a credential is one, and AUDITED with what was
+    // revealed and never the value.
+    if (action === 'reveal-secret') {
+      const entry = applications.get(identifier);
+      const fields = (entry && entry.fields) || {};
+      const asked = String(body.secret || '').trim();
+      let value = '';
+      if (entry && asked === 'registration-access-token') {
+        value = String([].concat(fields.appRegistrationAccessToken || [])[0] ||
+                       '');
+      } else if (entry && asked !== 'didPrivateKeys' &&
+                 // A WITHHELD credential (a secret destination's, #221 P3)
+                 // is sealed too and is never revealed: it leaves this
+                 // service only on the wire to its own secrets manager.
+                 (applications.WITHHELD_FIELDS || []).indexOf(asked) < 0 &&
+                 (applications.SEALED_FIELDS || []).indexOf(asked) >= 0) {
+        // A SEALED CREDENTIAL BY ITS ATTRIBUTE (#446): an RFC 7523 or RFC
+        // 7522 signing key an operator collects to sign the assertions,
+        // GNAP's shared key or macaroon root key. The registry opens it; the
+        // answers that list the application never carry it. A DID's private
+        // keys are handed over when they are generated, and only then.
+        value = String([].concat(fields[asked] || [])[0] || '');
+      } else if (entry && asked) {
+        applications.clientSecretRecordsOf(fields).forEach(function (rec) {
+          if (rec.id === asked) {
+            value = String(rec.secret || '');
+          }
+        });
+      }
+      if (!value) {
+        log.debug("Leaving AdminActions.applicationsAction(). reveal-secret " +
+                  "found nothing to reveal.");
+        return this.refused('STS-ADMIN-0842', { ok: false, errors: [
+          !entry ? 'No application called "' + identifier + '" is recorded ' +
+                   'here.'
+                 : 'This application holds no ' +
+                   (asked === 'registration-access-token'
+                     ? 'registration access token.'
+                     : (applications.SEALED_FIELDS || []).indexOf(asked) >= 0
+                       ? asked + ' that can be revealed.'
+                       : 'client secret with the id "' + asked + '". The ' +
+                         'ids are in its credentials.clientSecret' +
+                         '.secrets.')] });
+      }
+      auditLog.record({ category: 'application',
+        action: 'application.secret-revealed',
+        actor: body.actor || '', target: identifier, outcome: 'success',
+        summary: 'A credential of ' + identifier + ' was revealed: ' + asked +
+                 '.',
+        detail: { application: identifier, secret: asked } });
+      log.debug("Leaving AdminActions.applicationsAction(). reveal-secret.");
+      return { ok: true, changed: false, application: identifier,
+               secret: asked, value: value };
     }
 
     // ---------------------------------------------------------------------
@@ -6068,6 +6473,84 @@ class AdminActions {
                    '".' };
     }
 
+    // -------------------------------------------------------------------------
+    // WHICH CLIENTS CONFER A ROLE (#454). `roleConferredBy` on the role entry
+    // names the clients through which every person signing in holds the
+    // role, on that client's token alone — the third way of holding a role,
+    // beside a person's membership (or the console roster) and an
+    // application's own. The client must be registered here, for the
+    // ordering rule add-permission keeps: a typo must not become a role
+    // conferred by nobody that looks conferred by somebody. Which roles may
+    // be conferred at all is `roles.write()`'s to refuse.
+    // -------------------------------------------------------------------------
+    if (action === 'add-conferring-client' ||
+        action === 'remove-conferring-client') {
+      const client = String(body.client || '').trim();
+      const row = roles.read(name);
+      if (!row) {
+        log.debug("Leaving AdminActions.rolesAction(). No such role.");
+        return this.refused(roles.isBuiltIn(name) ? 'STS-ADMIN-0546'
+                                                  : 'STS-ADMIN-0543',
+          { ok: false, errors: [roles.isBuiltIn(name)
+            ? '"' + name + '" is a BUILT-IN role, computed from the context ' +
+              'of each decision; no client can confer it.'
+            : 'There is no role called "' + name + '". Create it first.'] });
+      }
+      if (!client) {
+        log.debug("Leaving AdminActions.rolesAction(). No client named.");
+        return this.refused('STS-ADMIN-0845', { ok: false, errors: [
+          '`client` names the application that confers the role: its ' +
+          'client_id in this realm.'] });
+      }
+      const conferring = (row.conferredBy || []).slice();
+      const at = conferring.indexOf(client);
+      if (action === 'add-conferring-client') {
+        if (!applications.get(client)) {
+          log.debug("Leaving AdminActions.rolesAction(). No such client.");
+          return this.refused('STS-ADMIN-0845', { ok: false, errors: [
+            'There is no application "' + client + '" in this realm to ' +
+            'confer "' + name + '".'] });
+        }
+        if (at >= 0) {
+          log.debug("Leaving AdminActions.rolesAction(). Already conferred.");
+          return this.refused('STS-ADMIN-0846', { ok: false, errors: ['"' +
+            client + '" already confers "' + name + '".'] });
+        }
+        conferring.push(client);
+      } else {
+        if (at < 0) {
+          log.debug("Leaving AdminActions.rolesAction(). Not conferred.");
+          return this.refused('STS-ADMIN-0847', { ok: false, errors: ['"' +
+            client + '" does not confer "' + name + '".'] });
+        }
+        conferring.splice(at, 1);
+      }
+      const result = roles.write(name, {
+        description: row.description, users: row.users, groups: row.groups,
+        applications: row.applications, permissions: row.permissions,
+        application: row.application, displayName: row.displayName,
+        memberTypes: row.memberTypes, conferredBy: conferring
+      });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). The write was refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
+                            { ok: false, errors: [result.why] });
+      }
+      auditLog.audit({
+        action: action === 'add-conferring-client' ? 'roles.confer'
+                                                   : 'roles.unconfer',
+        actor: actor, target: client, protocol: 'XACML', channel: 'http',
+        detail: '"' + client + '" ' + (action === 'add-conferring-client'
+          ? 'now confers' : 'no longer confers') + ' the role "' + name +
+          '" on everybody signing in through it' });
+      log.debug("Leaving AdminActions.rolesAction(). " + action + " ok.");
+      return { ok: true, role: name, client: client,
+               message: action === 'add-conferring-client'
+                 ? '"' + client + '" now confers "' + name + '" on everybody ' +
+                   'who signs in through it.'
+                 : '"' + client + '" no longer confers "' + name + '".' };
+    }
+
     log.debug("Leaving AdminActions.rolesAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
@@ -6231,9 +6714,16 @@ class AdminActions {
     }
     const label = stats.CLAIM_SETS[setId].label;
 
+    // THE KERBEROS PAC SET HAS A CATALOGUE HALF SINCE #498: #493 refused the
+    // three `attributes*` actions for it (STS-ADMIN-0848, retired), and they
+    // now act on its selection exactly as on the other five — the KDC reads
+    // it (admin_stats.js, kerberosPacClaims()).
+
     if (action === 'add') {
       const entry: Record<string, any> = { name: String(body.name || '').trim(),
                       value: String(body.value == null ? '' : body.value) };
+      // A Kerberos PAC row's type (#493); ignored by the other sets.
+      if (body.type) entry.type = String(body.type).trim();
       if (body.nameFormat) entry.nameFormat = String(body.nameFormat).trim();
       if (body.namespace) entry.namespace = String(body.namespace).trim();
       const result = stats.setClaimSet(setId,
@@ -6415,12 +6905,15 @@ class AdminActions {
     }
 
     log.debug("Leaving AdminActions.claimsAction(). Unknown action.");
+    // Every claim-set door has the same eight since the Kerberos PAC set
+    // gained its catalogue half (#498) — the walk of the management API holds
+    // the sentence to the operations each door documents.
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The eight are: add, ' +
-                                      'add-attribute-claim, remove, clear, ' +
-                                      'replace, attributes, attributes-all, ' +
-                                      'attributes-clear.'] });
+                     'The eight are: add, ' +
+                     'add-attribute-claim, remove, clear, ' +
+                     'replace, attributes, attributes-all, ' +
+                     'attributes-clear.'] });
   }
 
   // The sweep's outcome as a sentence, appended to whatever message the action
@@ -6790,6 +7283,9 @@ class AdminActions {
       log.debug("Leaving AdminActions.realmsAction(). create ok, " +
                 Object.keys(result.realm.overrides).length + " setting(s).");
       return { ok: true, realm: result.realm.id,
+               // Where its endpoints answer, for a link to its console: the
+               // static console cannot ask `realms.prefixOf()` (#446).
+               prefix: realms.prefixOf(result.realm),
                bootstrap: seeded.ran
                  ? { username: seeded.username, created: !!seeded.created,
                      passwordResetRequired: !!seeded.created }
@@ -6942,6 +7438,111 @@ class AdminActions {
       'The five are: create, update, set, unset, remove.'] });
   }
 
+  // Moved here from the console's `POST /admin/config` (#446): the static
+  // console sends a settings form as it is drawn, to the operation, so the
+  // fold is the action's — and a machine sending the same fields gets the
+  // same answer.
+  // THE FOLD, for a form that drew `orderedChoiceControl()`: the ticked
+  // values sorted by their numbers (a number that does not read as one goes
+  // last; a tie keeps the order the form posted), joined into the setting's
+  // value, and the per-value fields removed so `set-many` sees only real
+  // keys. Ticking nothing is refused (STS-ADMIN-0840) rather than saved as
+  // an empty list, which the setting would silently replace with its
+  // fallback. Anything else the setting does not take is `checkWrite()`'s
+  // to refuse, as for every other row.
+  /**
+   * Folds an ordered choice's checkbox and order fields into the setting's
+   * one comma-separated value.
+   *
+   * @param body - the parsed form body, changed in place
+   * @returns a refusal, or null
+   */
+  foldOrderedChoices(body) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.foldOrderedChoices().");
+    const markers = Object.keys(body || {}).filter(function (name) {
+      return /\.ordered$/.test(name);
+    });
+    let refusal = null;
+    markers.forEach(function (marker) {
+      const key = marker.slice(0, -'.ordered'.length);
+      const picks = [];
+      Object.keys(body).forEach(function (name, n) {
+        if (name.indexOf(key + '.pick.') === 0) {
+          const value = name.slice((key + '.pick.').length);
+          const rank = Number(body[key + '.rank.' + value]);
+          picks.push({ value: value, n: n,
+                       rank: Number.isFinite(rank) ? rank : Infinity });
+        }
+      });
+      Object.keys(body).forEach(function (name) {
+        if (name === marker || name.indexOf(key + '.pick.') === 0 ||
+            name.indexOf(key + '.rank.') === 0) {
+          delete body[name];
+        }
+      });
+      if (!picks.length) {
+        refusal = refusal || errorCodes.mark({ ok: false, errors: [key +
+          ': choose at least one. A list with nothing in it is not saved; ' +
+          'the setting would fall back to a default nobody chose.'] },
+          'STS-ADMIN-0840');
+        return;
+      }
+      picks.sort(function (a, b) {
+        return a.rank - b.rank || a.n - b.n;
+      });
+      body[key] = picks.map(function (one) { return one.value; }).join(',');
+    });
+    log.debug("Leaving AdminActions.foldOrderedChoices(). " +
+              markers.length + " folded.");
+    return refusal;
+  }
+  // WHETHER A SETTINGS OVERRIDE JUST WRITTEN OUTLIVES THIS PROCESS (rcbj,
+  // 2026-10-07). Every reply below used to end "gone on restart", which was
+  // true for the whole life of this service until 2026-08-27 and has been
+  // wrong on every persistent store since: on 8081 (product, postgres)
+  // `POST /admin-api/config/set` said the override was gone on restart while
+  // the store was holding it. The settings block on every console page words
+  // both cases from `persistsAppconfig` (`web_settings.ts`); this is the same
+  // fact for a reply, asked of the same `persistence.status()`.
+  //
+  // WHICH OF THE TWO FACTS DEPENDS ON WHERE THE WRITE LANDED. `setOverride()`
+  // puts a write made while a non-default realm is ambient on that realm's
+  // own override object, which is written down with the realm row
+  // (`persistsRealms`), and every other write in the process-wide map
+  // (`persistsAppconfig`). The two `realms.*` rows always land process-wide,
+  // so a write naming only those is asked about the process.
+  /**
+   * Words whether the overrides just written are kept across a restart.
+   *
+   * @param keys - the settings written; optional
+   * @returns one sentence: written to the store and kept, or in memory and
+   *   gone on restart with how to keep it
+   */
+  overrideDurability(keys?: string[]): string {
+    const { log, persistence, realms } = this.deps;
+    log.debug("Entering AdminActions.overrideDurability().");
+    const status = persistence.status();
+    const realmWide = (keys || ['']).some(function (key) {
+      return String(key).indexOf('realms.') !== 0;
+    });
+    const inRealm = realmWide && !realms.isDefault();
+    const kept = inRealm ? !!status.persistsRealms
+      : !!status.persistsAppconfig;
+    if (kept) {
+      log.debug("Leaving AdminActions.overrideDurability(). Kept.");
+      return 'It is written to the ' + status.mode + ' store' +
+             (inRealm ? ' with the "' + realms.currentId() + '" realm' : '') +
+             ' and kept across restarts.';
+    }
+    log.debug("Leaving AdminActions.overrideDurability(). Not kept.");
+    return 'It is in memory and gone on restart; to keep it, put it in the ' +
+           'appconfig file or its environment variable, or turn on a ' +
+           'persistent store (' +
+           (inRealm ? 'persistence.realms' : 'persistence.appconfig') +
+           ').';
+  }
+
   // The action switch. `set` and `reset` name one setting; `set-many` is what a
   // section's Save posts, and it is not a convenience — a section is how a
   // person changes configuration, and turning that into one call per field
@@ -6961,6 +7562,23 @@ class AdminActions {
     const self = this;
     log.debug("Entering AdminActions.configAction(). action=" + (body &&
                                                                  body.action));
+    // A SECTION'S RESET BUTTON names its setting in `reset` (it was the
+    // `?reset=` of the console's own URL, which the static console carries
+    // into the fields it sends), whatever action the section's form posts.
+    // And an ordered choice's checkboxes and numbers are folded into its one
+    // value first: that is the shape the form is drawn in.
+    const resetKey = body && body.reset !== undefined
+      ? String(body.reset || '').trim() : '';
+    if (resetKey) {
+      body = { action: 'reset', key: resetKey, from: body.from };
+    } else if (body) {
+      const refused = this.foldOrderedChoices(body);
+      if (refused) {
+        log.debug("Leaving AdminActions.configAction(). An ordered choice " +
+                  "was refused.");
+        return refused;
+      }
+    }
     const action = String((body && body.action) || '').trim();
 
     if (action === 'set') {
@@ -6975,7 +7593,7 @@ class AdminActions {
                setting: config.describe(this.configSettingFor(key)),
                message: key + ' is now "' + config.text(key) + '". It ' +
                         'applies to the next token, assertion, ticket or ' +
-                        'search, and is gone on restart.' };
+                        'search. ' + this.overrideDurability([key]) };
     }
 
     if (action === 'set-many') {
@@ -7035,7 +7653,7 @@ class AdminActions {
                message: changed.length
                  ? changed.length + ' setting(s) changed: ' +
                  changed.join(', ') +
-                   '. Gone on restart.'
+                   '. ' + self.overrideDurability(changed)
                  : 'Nothing changed — every value posted was the one already ' +
                    'in force.' };
     }
@@ -7205,7 +7823,10 @@ class AdminActions {
                    'in force.') +
                  ' It applies to the NEXT token signed; nothing already ' +
                  'issued is affected, because a lifetime is stamped into a ' +
-                 'token as its exp claim. Gone on restart.' };
+                 'token as its exp claim.' +
+                 (changed.length
+                   ? ' ' + self.overrideDurability(changed)
+                   : '') };
     }
 
     if (action === 'defaults') {
@@ -7342,7 +7963,10 @@ class AdminActions {
                    'in force.') +
                  ' It applies to the NEXT assertion signed; nothing already ' +
                  'issued is affected, because a validity window is stamped ' +
-                 'into an assertion when it is signed. Gone on restart.' };
+                 'into an assertion when it is signed.' +
+                 (changed.length
+                   ? ' ' + self.overrideDurability(changed)
+                   : '') };
     }
 
     if (action === 'defaults') {

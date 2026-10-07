@@ -29,16 +29,19 @@
 //      outside it (400, the same sentence); on a GET, a value from it must
 //      not be refused on that parameter.
 //   3. THE CONSOLE. Every operation whose description says it mirrors a
-//      `POST /admin…` control has its FLAT enums posted to each such page as
-//      a real form — a console session, the page's CSRF token, the
-//      operation's `action` — with a value outside the set; the console must
-//      refuse it 400 `invalid_value` before any handler runs.
+//      `POST /admin…` control has its FLAT enums sent from each such page as
+//      the console sends the form — since the #446 cutover the static
+//      console's token (PKCE, DPoP) to the operation the form at that page
+//      with that `action` is (`console_signin.js`'s `act()`) — with a value
+//      outside the set; it must be refused 400, naming the field and every
+//      value, before any handler runs. The console's own form parser and its
+//      `invalid_value` answer went with the server-rendered console.
 //   4. THE SETTINGS. Every editable setting of type `enum` in `GET
 //      /admin-api/config`, and every `csv` one carrying `csvValues` (a list
 //      with one entry outside it), is set to a value outside its set through
 //      `POST /admin-api/config/set-many` (refused, all-or-nothing) and through
-//      the console's `set-many` on `/admin/config`; afterwards no setting
-//      holds the value.
+//      the console's Save on `/admin/config` (the same operation, as the
+//      console's token, since #446); afterwards no setting holds the value.
 //
 // Nothing here lists an endpoint or a set: both come off the document the
 // service publishes, so an enum added tomorrow is probed tomorrow. The floors
@@ -474,39 +477,19 @@ async function theQueries(doc) {
   log.debug("Leaving theQueries().");
 }
 
-async function csrfTokenFor(cookie) {
-  log.debug("Entering csrfTokenFor().");
-  const page = await call("GET", base + "/admin",
-                          { headers: { Cookie: cookie } });
-  const token = (page.text.match(/name="csrf_token" value="([^"]+)"/) ||
-                 [])[1] || "";
-  log.debug("Leaving csrfTokenFor(). " + (token ? "Found." : "None."));
-  return token;
-}
-
-async function postForm(url, cookie, fields) {
-  log.debug("Entering postForm(). " + url);
-  const r = await call("POST", url, {
-    headers: { Cookie: cookie,
-               "Content-Type": "application/x-www-form-urlencoded",
-               Accept: "application/json" },
-    body: new URLSearchParams(fields).toString()
-  });
-  log.debug("Leaving postForm().");
-  return r;
-}
-
 // 3. The console.
-async function theConsole(doc, cookie) {
+async function theConsole(doc, consoleClient) {
   log.debug("Entering theConsole().");
   log.info("=== 3. every console control a closed set is declared for ===");
-  const token = await csrfTokenFor(cookie);
-  check("the console draws a CSRF token for this session", function () {
-    assert.ok(token, "no csrf_token on /admin for the signed-in session");
-  });
   let probed = 0;
   for (const row of doc.ops) {
     if (row.method === "GET") {
+      continue;
+    }
+    // AN OPERATION THAT TAKES A SCOPE OF ITS OWN (#164's
+    // `device:compliance`) is not one the console's token reaches; part 1
+    // probes it with a client of that scope.
+    if (ownScopeOf(row.op)) {
       continue;
     }
     const pages = mirroredPages(row.op);
@@ -521,18 +504,19 @@ async function theConsole(doc, cookie) {
     const action = row.path.split("/").pop();
     for (const f of flat) {
       for (const page of pages) {
-        const fields = { csrf_token: token, action: action };
-        fields[f.path[0]] = OUTSIDE;
-        const r = await postForm(base + page, cookie, fields);
+        // In the shape the console's runtime sends a list in (a field
+        // shaped to the schema, `shapeFields()`): a list of one.
+        const fields = { action: action };
+        fields[f.path[0]] = f.path.length === 2 ? [OUTSIDE] : OUTSIDE;
+        const r = await consoleClient.act(page, fields);
+        const said = errorsOf({ body: r.json });
         const where = "POST " + page + " action=" + action + " " + f.path[0];
         check(where + " refuses a value outside its set", function () {
           assert.strictEqual(r.status, 400, where + ": " +
                              r.text.slice(0, 400));
-          assert.strictEqual(r.body && r.body.error, "invalid_value",
-                             where + ": " + r.text.slice(0, 400));
-          const said = String(r.body.error_description || "");
-          assert.ok(SENTENCE.test(said) && namesEvery(said, f.values),
-                    where + ": " + said);
+          assert.ok(refusalNames(said, spelt(f.path), f.values),
+                    where + ": the refusal should name the field and all " +
+                    f.values.length + " values; it said " + said);
         });
         probed += 1;
       }
@@ -562,7 +546,7 @@ function settingsOf(body) {
 }
 
 // 4. The settings.
-async function theSettings(cookie) {
+async function theSettings(consoleClient) {
   log.debug("Entering theSettings().");
   log.info("=== 4. every runtime setting of type enum ===");
   const listed = await call("GET", API + "/config");
@@ -579,7 +563,6 @@ async function theSettings(cookie) {
             (s.type === "csv" && Array.isArray(s.csvValues) &&
              s.csvValues.length));
   });
-  const token = cookie ? await csrfTokenFor(cookie) : "";
   for (const s of rows) {
     const body = {};
     body[s.key] = s.type === "csv" ? s.csvValues[0] + "," + OUTSIDE : OUTSIDE;
@@ -590,11 +573,9 @@ async function theSettings(cookie) {
       assert.ok(r.text.indexOf(s.key) >= 0, s.key + ": the refusal should " +
                 "name the setting: " + r.text.slice(0, 300));
     });
-    if (cookie) {
-      const fields = { csrf_token: token, action: "set-many" };
-      fields[s.key] = body[s.key];
-      await postForm(base + "/admin/config", cookie, fields);
-    }
+    const fields = { action: "set-many" };
+    fields[s.key] = body[s.key];
+    await consoleClient.act("/admin/config", fields);
   }
   const after = await call("GET", API + "/config");
   const again = settingsOf(after.body);
@@ -623,15 +604,10 @@ async function main() {
   const doc = await theDocument();
   await theBodies(doc);
   await theQueries(doc);
-  const cookie = await signin.signInToTheConsole(base,
+  const consoleClient = await signin.signInToTheConsole(base,
     "closed-sets-" + Date.now().toString(36), log, { grant: "write" });
-  if (cookie) {
-    await theConsole(doc, cookie);
-  } else {
-    log.info("  (no console session in this stack, so the console door is " +
-             "not probed)");
-  }
-  await theSettings(cookie || "");
+  await theConsole(doc, consoleClient);
+  await theSettings(consoleClient);
   log.info("sts_admin_closed_sets: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

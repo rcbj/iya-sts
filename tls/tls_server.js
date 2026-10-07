@@ -148,7 +148,6 @@
 
 const https = require('https');
 const tls = require('tls');
-const crypto = require('crypto');
 const fs = require('fs');
 const forge = require('node-forge');
 // The RSA keygen-and-self-sign skeleton this shares with `common/helpers.js`
@@ -237,6 +236,10 @@ const identityAssurance = require('../common/identity_assurance');
 // the ambient realm. A LEAF this module's closure already holds (`app.js` and
 // `helpers.js` both require it).
 const realms = require('../common/realms');
+// THE CUSTOM LISTENERS' DEFINITIONS (#472): a custom listener's TLS policy and
+// client authentication are members of its definition. A LEAF (it requires
+// the settings, the realms and the catalogue of applications).
+const listenerMap = require('../common/listener_map');
 // WHICH CELL SIGNS A CERTIFICATE'S HOLDER IN (#98): the cell map and the
 // placement helper. Libraries that register nothing; their own requires of
 // the channel and the routing index are lazy.
@@ -353,10 +356,11 @@ const CLIENT_AUTH_SETTINGS = {
   ldaps: ['ldap.ldapsDisableOptionalClientCertificate',
           'ldap.ldapsRequireClientCertificate'],
   debugger: ['debugger.disableOptionalClientCertificate',
-             'debugger.requireClientCertificate'],
-  realm: ['listener.disableOptionalClientCertificate',
-          'listener.requireClientCertificate']
+             'debugger.requireClientCertificate']
 };
+// A CUSTOM LISTENER (#472; a realm's own since #99 is one) carries its client
+// authentication in its definition — `clientAuth`, none / optional /
+// required — rather than in a pair of settings: `customClientAuth()`.
 
 // A list setting as an array of trimmed, non-empty entries.
 function listOf(raw) {
@@ -415,11 +419,13 @@ function clientAuthFrom(disableOptional, require) {
 // EVERY SETTING PER LISTENER, INHERITING THE SERVICE'S (#429, 2026-10-02).
 //
 // A listener's own row is `listener<Id>.<name>` (generated in common/config.js
-// from `PER_LISTENER_SETTINGS`), and a realm's own listener's is
-// `listener.<name>` read inside the realm. `own()` answers that row's value,
-// or undefined where the row says inherit — `inherit` in an enum, the empty
-// string otherwise — or the listener has no such row; `pick()` falls back to
-// the service-wide row.
+// from `PER_LISTENER_SETTINGS`), and a custom listener's (#472, a realm's own
+// among them) is the same name in its definition's `tls` block
+// (`common/listener_map.js`), kind `custom` and the listener's id where a
+// realm id was. `own()` answers that value, or undefined where it says
+// inherit — `inherit` in an enum, the empty string otherwise, -1 for a number
+// — or the listener has no such value; `pick()` falls back to the
+// service-wide row.
 // ---------------------------------------------------------------------------
 const LISTENER_KINDS = ['main', 'ldaps', 'debugger', 'spiffeServer',
                         'spiffeBroker', 'cell', 'revocation'];
@@ -429,11 +435,10 @@ function ownValue(kind, realmId, name) {
   log.debug("Entering ownValue(). " + kind + " " + name);
   let raw;
   try {
-    if (kind === 'realm') {
-      const realm = realms.get(String(realmId || ''));
-      raw = realm ? realms.run(realm, function () {
-        return config.value('listener.' + name);
-      }) : undefined;
+    if (kind === 'custom') {
+      const one = listenerMap.listenerById(String(realmId || ''));
+      raw = one && Object.prototype.hasOwnProperty.call(one.tls, name)
+        ? one.tls[name] : undefined;
     } else if (LISTENER_KINDS.indexOf(String(kind)) >= 0) {
       raw = config.value('listener' + String(kind).charAt(0).toUpperCase() +
                          String(kind).slice(1) + '.' + name);
@@ -454,13 +459,24 @@ function ownValue(kind, realmId, name) {
   return raw === 'on' ? true : raw === 'off' ? false : raw;
 }
 
+// A custom listener's client authentication, from its definition: `none`,
+// `optional` (the default, as the main port's) or `required`. A listener
+// that has gone since it registered answers optional; it is about to be
+// forgotten.
+function customClientAuth(id) {
+  log.debug("Entering customClientAuth(). " + id);
+  const one = listenerMap.listenerById(id);
+  log.debug("Leaving customClientAuth().");
+  return one && one.clientAuth ? one.clientAuth : 'optional';
+}
+
 /**
  * The policy one listener is held to: each of its own settings where it has
  * one, the service-wide setting where it inherits.
  *
  * @param kind - `main`, `ldaps`, `debugger`, `spiffeServer`, `spiffeBroker`,
- *   `cell` or `realm`; omitted, the service-wide policy
- * @param realmId - for `realm`, the realm whose own listener it is
+ *   `cell` or `custom`; omitted, the service-wide policy
+ * @param realmId - for `custom`, the listener's id (#472)
  * @returns `{ kind, realm, minVersion, disableTls12, pqcOnly, tls13Suites,
  *   ciphers12, groups, sigalgs, trustAnchorsFile, trustIssued, clientAuth }`;
  *   `clientAuth` is null for a kind whose protocol decides it
@@ -477,12 +493,8 @@ function policyFor(kind, realmId) {
   let suites = listOf(pick('tls13CipherSuites', 'tls.tls13CipherSuites'));
   let clientAuth = null;
   const pair = CLIENT_AUTH_SETTINGS[String(k || '')];
-  if (k === 'realm') {
-    const realm = realms.get(String(realmId || ''));
-    clientAuth = realm ? realms.run(realm, function () {
-      return clientAuthFrom(config.value(pair[0]) === true,
-                            config.value(pair[1]) === true);
-    }) : 'optional';
+  if (k === 'custom') {
+    clientAuth = customClientAuth(String(realmId || ''));
   } else if (pair) {
     clientAuth = clientAuthFrom(config.value(pair[0]) === true,
                                 config.value(pair[1]) === true);
@@ -519,7 +531,7 @@ function policyFor(kind, realmId) {
     // THE TLS SESSION CACHE (#429): how long a session resumes, and how many
     // session IDs this listener keeps (`attachSessionCache()`).
     sessionTimeoutS: Math.max(1, Number(pick('sessionTimeoutS',
-                                             'tls.sessionTimeoutS')) || 60),
+                                             'tls.sessionTimeoutS')) || 300),
     sessionCacheSize: Math.max(0, Number(pick('sessionCacheSize',
                                               'tls.sessionCacheSize')) || 0),
     clientAuth: clientAuth
@@ -586,7 +598,7 @@ function protocolOptions(policy) {
   // — and each renegotiation is a full handshake's CPU spent at the peer's
   // choosing, so OpenSSL refuses every one with a no_renegotiation warning.
   // TLS 1.3 has no renegotiation to refuse.
-  options.secureOptions = crypto.constants.SSL_OP_NO_RENEGOTIATION;
+  options.secureOptions = stsCrypto.TLS_NO_RENEGOTIATION;
   // How long a session may be resumed (#429): a ticket's lifetime and the
   // session cache's. In the context, so every re-application carries it.
   if (p.sessionTimeoutS) {
@@ -1209,7 +1221,7 @@ function suppliedServerCertificate() {
   // that names OpenSSL rather than this setting.
   let leaf = null;
   try {
-    leaf = new crypto.X509Certificate(certPem);
+    leaf = stsCrypto.parseCertificate(certPem);
   } catch (e) {
     log.debug('Leaving suppliedServerCertificate(). Unparseable.');
     throw new Error(errorCodes.tag('STS-TLS-0004') +
@@ -1220,7 +1232,7 @@ function suppliedServerCertificate() {
   // surfaces as an OpenSSL message three layers down.
   let pair = false;
   try {
-    pair = leaf.checkPrivateKey(crypto.createPrivateKey(keyPem));
+    pair = leaf.checkPrivateKey(stsCrypto.privateKeyFrom(keyPem));
   } catch (e) {
     throw new Error(errorCodes.tag('STS-TLS-0005') +
       'tls: ' + keyFile + ' is not a readable private key: ' +
@@ -1317,8 +1329,8 @@ function splitSuppliedBundle(bundlePem, certFile) {
       return;
     }
     try {
-      const top = new crypto.X509Certificate(topPem);
-      if (top.verify(new crypto.X509Certificate(pem).publicKey)) {
+      const top = stsCrypto.parseCertificate(topPem);
+      if (top.verify(stsCrypto.parseCertificate(pem).publicKey)) {
         anchorPem = pem;
       }
     } catch (e) {
@@ -1346,7 +1358,7 @@ function splitSuppliedBundle(bundlePem, certFile) {
 function isSelfSignedPem(pem) {
   log.debug('Entering isSelfSignedPem().');
   try {
-    const cert = new crypto.X509Certificate(pem);
+    const cert = stsCrypto.parseCertificate(pem);
     const self = cert.checkIssued(cert) && cert.verify(cert.publicKey);
     log.debug('Leaving isSelfSignedPem(). ' + self);
     return self;
@@ -1500,7 +1512,7 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   record.fingerprint256 = fingerprintOf(certPem);
   record.selfSigned = false;
   try {
-    const read = new crypto.X509Certificate(certPem);
+    const read = stsCrypto.parseCertificate(certPem);
     record.subject = read.subject.replace(/\n/g, ', ');
     record.notAfter = new Date(read.validTo).toISOString();
   } catch (e) {
@@ -1830,7 +1842,7 @@ function notifyCertificateObservers(algorithm) {
     publicKeyPem: function () {
       log.debug("Entering publicKeyPem().");
       log.debug("Leaving publicKeyPem().");
-      return crypto.createPublicKey(SERVER_CERTIFICATE.privateKeyPem)
+      return stsCrypto.publicKeyOf(SERVER_CERTIFICATE.privateKeyPem)
         .export({ type: 'spki', format: 'pem' });
     },
     onCertified: function (certPem, chainPem) {
@@ -1879,7 +1891,7 @@ function notifyCertificateObservers(algorithm) {
       publicKeyPem: function () {
         log.debug("Entering publicKeyPem().");
         log.debug("Leaving publicKeyPem().");
-        return crypto.createPublicKey(record.privateKeyPem)
+        return stsCrypto.publicKeyOf(record.privateKeyPem)
           .export({ type: 'spki', format: 'pem' });
       },
       onCertified: function (certPem, chainPem) {
@@ -1951,7 +1963,7 @@ function describePem(pem) {
     // before giving up, or every ML-DSA root a debugger uploads is labelled
     // '(unreadable)' on a page whose whole job is to say what was trusted.
     try {
-      subject = new crypto.X509Certificate(pem).subject
+      subject = stsCrypto.parseCertificate(pem).subject
           .split('\n').join(', ');
     } catch (openSslError) {
       log.warn('tls: an anchor could not be parsed for display: ' +
@@ -1968,7 +1980,7 @@ function describePem(pem) {
   let details = { issuer: '', serial: '', notBefore: '', notAfter: '',
                   ca: false, readable: false };
   try {
-    const parsed = new crypto.X509Certificate(pem);
+    const parsed = stsCrypto.parseCertificate(pem);
     details = {
       issuer: parsed.issuer.split('\n').join(', '),
       serial: parsed.serialNumber,
@@ -2225,8 +2237,8 @@ function anchorSigns(anchorPem, record) {
     return false;
   }
   try {
-    const anchor = new crypto.X509Certificate(anchorPem);
-    const top = new crypto.X509Certificate(topPem);
+    const anchor = stsCrypto.parseCertificate(anchorPem);
+    const top = stsCrypto.parseCertificate(topPem);
     log.debug("Leaving anchorSigns().");
     // `verify()` is the SIGNATURE and not the name. That is the whole point:
     // the two Roots this has to tell apart have identical subjects, so
@@ -2736,7 +2748,7 @@ function adoptServerCertificate(bundle) {
   SERVER_CERTIFICATE.selfSigned = !(bundle.chainPem || []).length;
   SERVER_CERTIFICATE.fingerprint256 = fingerprintOf(bundle.certPem);
   try {
-    const read = new crypto.X509Certificate(bundle.certPem);
+    const read = stsCrypto.parseCertificate(bundle.certPem);
     SERVER_CERTIFICATE.subject = read.subject.replace(/\n/g, ', ');
     SERVER_CERTIFICATE.notAfter = new Date(read.validTo).toISOString();
   } catch (e) {
@@ -2857,7 +2869,7 @@ function anchorCertificates() {
     if (!parsedAnchors.has(text)) {
       let parsed = null;
       try {
-        parsed = new crypto.X509Certificate(text);
+        parsed = stsCrypto.parseCertificate(text);
       } catch (e) {
         log.debug("Caught in anchorCertificates(): " +
                   ((e && e.message) || e));
@@ -3032,9 +3044,10 @@ function refuseNonNistCurveCertificatesOn(server, label) {
  * @param server - the TLS listener
  * @param label - its name, for the log
  * @param certificateOf - optional; for a listener that presents a certificate
- *   of its own rather than this module's (a realm's listener, #99), answers
+ *   of its own rather than this module's (a custom listener, #472), answers
  *   `{ key, cert }` each time the truststore is applied
- * @param which - optional `{ kind, realm }` naming the listener's policy
+ * @param which - optional `{ kind, realm }` naming the listener's policy;
+ *   for kind `custom`, `realm` is the listener's id
  *   (`policyFor()`, #423); omitted, the main port's
  * @returns true when it was registered; false (logged) when `server` is not a
  * TLS server
@@ -3084,8 +3097,8 @@ function trustClientCertificatesOn(server, label, certificateOf, which) {
 
 
 /**
- * Stops applying the truststore to a listener that has closed — a realm's
- * listener taken away or rebound (#99) — so the list does not keep it.
+ * Stops applying the truststore to a listener that has closed — a custom
+ * listener taken away or rebound (#99, #472) — so the list does not keep it.
  *
  * @param server - the listener given to `trustClientCertificatesOn()`
  * @returns true when it was registered
@@ -3117,10 +3130,10 @@ function applyAnchors() {
   // EVERY listener is an external one since 2026-09-16: this module creates
   // none of its own any more, so the list that was "our two, plus theirs" is
   // now just theirs — the main HTTPS port and the debugger's.
-  // A REALM'S LISTENER PRESENTS A CERTIFICATE OF ITS OWN (#99): it said so
-  // when it registered, and its own key and chain replace this module's in the
-  // context it is given, so a truststore change never swaps its certificate
-  // for the main port's.
+  // A CUSTOM LISTENER PRESENTS A CERTIFICATE OF ITS OWN (#99, #472): it said
+  // so when it registered, and its own key and chain replace this module's in
+  // the context it is given, so a truststore change never swaps its
+  // certificate for the main port's.
   externalServers.forEach(function (one) {
     const server = one.server;
     try {
@@ -3173,7 +3186,7 @@ const policyAppliers = [];
  * @param label - its name, for the log and the Listeners page
  * @param kind - as for `policyFor()`
  * @param apply - re-keys the listener with a policy
- * @param realm - for a realm's own listener, its id
+ * @param realm - for a custom listener, its id (#472)
  * @returns a function that unregisters it
  */
 function registerPolicyApplier(label, kind, apply, realm) {
@@ -3259,16 +3272,192 @@ realms.onChange(function () {
 // `resumeSession` events — its documented external cache. This is that cache:
 // a Map per listener, bounded by the listener's sessionCacheSize (the oldest
 // forgotten past it) and its sessionTimeoutS, both read at each event so a
-// change takes effect at once. Size 0 keeps nothing, which is the default:
-// every resumption is a ticket's.
+// change takes effect at once. Size 0 keeps nothing: every resumption is then
+// a ticket's.
+//
+// A SESSION IS RESUMED ONLY UNDER THE SERVER NAME IT WAS MADE UNDER (RFC 6066
+// section 3, 2026-10-07). "A server that implements this extension MUST NOT
+// accept the request to resume the session if the server_name extension
+// contains a different name. Instead, it proceeds with a full handshake to
+// establish a new session." Neither half of the stack does that for us:
+// OpenSSL, given a TLS 1.2 session by ID, resumes it and merely notes that
+// the name differs (tls_parse_ctos_server_name() sets servername_done = 0 on
+// a hit, and parses no name at all, so a malformed one is not refused
+// either), and node's `resumeSession` event hands the listener the session
+// ID and nothing else. tlsfuzzer found it the day the cache went on by
+// default (2048, 2026-10-07): test-invalid-server-name-extension-
+// resumption.py's "session resume with different SNI" and "... malformed
+// SNI" were RESUMED on the debugger's listener, where with the cache at 0
+// they had full handshakes.
+//
+// So the cache keeps the name with the session and compares. The name a
+// ClientHello OFFERS is known to node before OpenSSL sees the hello — its
+// own ClientHello parser hands it to the socket's `onclienthello` as
+// `hello.servername`, the call that then emits `resumeSession` — but only
+// there; `watchClientHello()` wraps that handler (and `onnewsession`, for
+// the full handshake that makes a session) on every server socket of a
+// listener with a cache, and `offeredHello` carries the name to the two
+// listeners for exactly the length of that SYNCHRONOUS call. A resumption
+// whose name differs in any byte — a different name, an added or missing
+// one, a NUL inside it — is answered "nothing to resume", which is the full
+// handshake the RFC asks for; OpenSSL then judges the name as it judges any
+// full handshake's (a malformed one is refused, unrecognized_name).
+//
+// FAILING CLOSED: a name the cache does not know (the hook missing, a node
+// that stopped passing `servername`) refuses the resumption rather than
+// skipping the comparison, so the failure mode is a full handshake.
+// tests/listener_tls_policy.js L5 resumes one, so that state is not silent.
+//
+// Tickets are NOT covered: node resumes a ticket inside OpenSSL with no
+// event, and OpenSSL makes the same TLS 1.2 non-check there. Recorded on
+// tls/CLAUDE.md, *The session cache and the server name*.
 // ---------------------------------------------------------------------------
+
+/**
+ * The server name of the ClientHello whose handler is running, while it
+ * runs: `{ servername }`, or null between hellos.
+ * @type {{servername: (string|null)}|null}
+ */
+let offeredHello = null;
+
+/** The servers whose sockets carry `watchClientHello()`. */
+const helloWatchedServers = new WeakSet();
+
+let clientHelloHookInstalled = false;
+
+/**
+ * The server name a parsed ClientHello offered, '' for none, null if node
+ * did not say.
+ *
+ * @param hello - node's parsed ClientHello
+ * @returns the name, '' or null
+ */
+// A hot path: called for every handshake on a listener with a cache, and no
+// Entering/Leaving pair here would tell a reader anything but would drown
+// the log.
+function offeredServername(hello) {
+  if (hello && typeof hello.servername === 'string') {
+    return hello.servername;
+  }
+  return null;
+}
+
+/**
+ * Wraps one server socket's `onclienthello` and `onnewsession` so that the
+ * session cache's listeners can see the server name its hello offered.
+ *
+ * @param handle - the socket's TLSWrap handle
+ */
+// A hot path: once per connection on every listener with a cache, and no
+// Entering/Leaving pair here would tell a reader anything but would drown
+// the log.
+function watchClientHello(handle) {
+  const onHello = handle.onclienthello;
+  const onNewSession = handle.onnewsession;
+  if (typeof onHello !== 'function' || typeof onNewSession !== 'function') {
+    return;
+  }
+  // The name THIS connection's hello offered, for its newSession, which
+  // comes at the end of the full handshake.
+  let offered = null;
+  handle.onclienthello = function (hello) {
+    offered = offeredServername(hello);
+    const outer = offeredHello;
+    offeredHello = { servername: offered };
+    try {
+      return onHello.apply(this, arguments);
+    } finally {
+      offeredHello = outer;
+    }
+  };
+  handle.onnewsession = function () {
+    const outer = offeredHello;
+    offeredHello = { servername: offered };
+    try {
+      return onNewSession.apply(this, arguments);
+    } finally {
+      offeredHello = outer;
+    }
+  };
+}
+
+/**
+ * Installs, once, the hook through which every server socket of a listener
+ * with a session cache gets `watchClientHello()`. node builds a server's
+ * sockets inside `tls.Server`'s own connection listener and hands the
+ * listener no socket, so the one place a socket can be reached before its
+ * hello arrives is `TLSSocket.prototype._init`, which sets the handlers
+ * this wraps; it is wrapped for the servers in `helloWatchedServers` alone.
+ *
+ * @returns whether the hook is in place
+ */
+function installClientHelloHook() {
+  log.debug('Entering installClientHelloHook().');
+  if (clientHelloHookInstalled) {
+    log.debug('Leaving installClientHelloHook(). Already.');
+    return true;
+  }
+  // `_init`, `_tlsOptions`, `_handle` and `server` are node's own and
+  // undeclared in @types/node, hence the cast.
+  const proto = /** @type {any} */ (tls.TLSSocket &&
+                                     tls.TLSSocket.prototype);
+  const originalInit = proto && proto._init;
+  if (typeof originalInit !== 'function') {
+    // Fails CLOSED: every session-ID resumption is then refused (a full
+    // handshake), never resumed under a name nobody compared.
+    log.error(errorCodes.tag('STS-TLS-0046') +
+              'tls: this node has no TLSSocket.prototype._init, so the TLS ' +
+              'session cache cannot see a ClientHello\'s server name; no ' +
+              'session will be resumed by ID (RFC 6066 section 3).');
+    log.debug('Leaving installClientHelloHook(). No _init.');
+    return false;
+  }
+  // A hot path: every TLS socket in the process is built through it, and
+  // no Entering/Leaving pair here would tell a reader anything but would
+  // drown the log.
+  proto._init = function () {
+    const out = originalInit.apply(this, arguments);
+    const socket = /** @type {any} */ (this);
+    if (socket._tlsOptions && socket._tlsOptions.isServer &&
+        socket._handle && helloWatchedServers.has(socket.server)) {
+      watchClientHello(socket._handle);
+    }
+    return out;
+  };
+  clientHelloHookInstalled = true;
+  log.debug('Leaving installClientHelloHook().');
+  return true;
+}
+
+/**
+ * Whether a held session may be resumed by the hello now offering it: only
+ * under the very server name it was made under (RFC 6066 section 3).
+ *
+ * @param held - the cache's entry
+ * @param offered - `offeredHello`, as the listener found it
+ * @returns true to resume
+ */
+// A hot path: every TLS 1.2 resumption by ID, and no Entering/Leaving pair
+// here would tell a reader anything but would drown the log.
+function sameServerName(held, offered) {
+  if (!held || !offered) {
+    return false;
+  }
+  if (typeof held.servername !== 'string' ||
+      typeof offered.servername !== 'string') {
+    return false;
+  }
+  return held.servername === offered.servername;
+}
+
 /**
  * Attaches a session-ID cache to a TLS server, bounded by the listener's
- * policy.
+ * policy, and resuming a session only under the server name it was made
+ * under.
  *
  * @param server - the TLS server
  * @param kind - the listener's kind, as for `policyFor()`
- * @param realmId - for a realm's own listener, its id
+ * @param realmId - for a custom listener, its id (#472)
  * @returns the cache, for its report
  */
 function attachSessionCache(server, kind, realmId) {
@@ -3277,6 +3466,8 @@ function attachSessionCache(server, kind, realmId) {
     log.debug('Leaving attachSessionCache(). Not a server.');
     return null;
   }
+  installClientHelloHook();
+  helloWatchedServers.add(server);
   const cache = new Map();
   const bounds = function () {
     const policy = policyFor(kind, realmId);
@@ -3288,7 +3479,9 @@ function attachSessionCache(server, kind, realmId) {
     if (b.size > 0) {
       const key = Buffer.from(id).toString('hex');
       cache.delete(key);
-      cache.set(key, { data: data, at: Date.now() });
+      cache.set(key, { data: data, at: Date.now(),
+                       servername: offeredHello ? offeredHello.servername
+                         : null });
       while (cache.size > b.size) {
         cache.delete(cache.keys().next().value);
       }
@@ -3302,7 +3495,15 @@ function attachSessionCache(server, kind, realmId) {
     const key = Buffer.from(id).toString('hex');
     const held = b.size > 0 ? cache.get(key) : null;
     if (held && Date.now() - held.at <= b.ttlMs) {
-      done(null, held.data);
+      if (sameServerName(held, offeredHello)) {
+        done(null, held.data);
+        return;
+      }
+      // Not resumed, and not forgotten: the session is still good for the
+      // name it was made under. The full handshake makes a new one.
+      log.debug('tls: a ' + kind + ' session ID offered under another ' +
+                'server name is not resumed (RFC 6066 section 3).');
+      done(null, null);
       return;
     }
     cache.delete(key);
@@ -3331,8 +3532,8 @@ const httpListeners = [];
  * The connection-pooling values one HTTP listener is held to: its own where
  * set, the service's otherwise.
  *
- * @param kind - `main`, `debugger`, `revocation` or `realm`
- * @param realmId - for `realm`, the realm
+ * @param kind - `main`, `debugger`, `revocation` or `custom`
+ * @param realmId - for `custom`, the listener's id
  * @returns `{ keepAliveTimeoutS, headersTimeoutS, maxRequestsPerSocket,
  *   maxConnections }`, the header timeout resolved
  */
@@ -3379,8 +3580,8 @@ function applyHttpPolicy(entry) {
  * listener's settings, now and whenever they change.
  *
  * @param server - the http or https server
- * @param kind - `main`, `debugger`, `revocation` or `realm`
- * @param realmId - for `realm`, the realm
+ * @param kind - `main`, `debugger`, `revocation` or `custom`
+ * @param realmId - for `custom`, the listener's id
  * @returns a function that unregisters it
  */
 function registerHttpListener(server, kind, realmId) {
@@ -5727,7 +5928,7 @@ module.exports = {
   trustClientCertificatesOn: trustClientCertificatesOn,
   forgetListener: forgetListener,
   // Applies the truststore again to every registered listener — and so each
-  // listener's own certificate, after a realm listener's is renewed (#99).
+  // listener's own certificate, after a custom listener's is renewed (#99, #472).
   reapplyTruststore: applyAnchors,
   // #212: the guard, for a TLS listener that does not register above.
   refuseNonNistCurveCertificatesOn: refuseNonNistCurveCertificatesOn,

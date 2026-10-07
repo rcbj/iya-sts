@@ -235,33 +235,10 @@ function checkMarker(t) {
     // #170: the SPIFFE Broker API's listener, bound with the realm's others.
     'spiffe.brokerPort',
     'spiffe.grpcHost',
-    // #99: a realm's own front-end listener, bound with the realm and
-    // `realmOnly` besides — read from the realm's overrides alone.
-    'listener.port',
-    'listener.publicBaseUrl',
-    'listener.hostnames',
-    'listener.certificateFile',
-    'listener.privateKeyFile',
-    // #423: that listener's TLS policy and client authentication.
-    'listener.disableTls12',
-    'listener.tls13CipherSuites',
-    'listener.pqcOnly',
-    'listener.disableOptionalClientCertificate',
-    'listener.requireClientCertificate',
-    // #429: the rest of the listener's TLS settings, generated.
-    'listener.minVersion',
-    'listener.ciphers',
-    'listener.groups',
-    'listener.signatureAlgorithms',
-    'listener.trustAnchorsFile',
-    'listener.trustIssuedClientCertificates',
-    // #429: its TLS session cache and HTTP connection pooling.
-    'listener.sessionTimeoutS',
-    'listener.sessionCacheSize',
-    'listener.keepAliveTimeoutS',
-    'listener.headersTimeoutS',
-    'listener.maxRequestsPerSocket',
-    'listener.maxConnections'
+    // #99, #472: a realm's own listeners, bound with the realm and
+    // `realmOnly` besides — read from the realm's overrides alone. Their TLS
+    // policy and client authentication are members of each definition.
+    'listeners.realm',
   ];
   const marked = config.SETTINGS.filter(function (s) {
     return s.realmRuntime;
@@ -456,12 +433,11 @@ function checkReadingEnd(t) {
     return s.derived && FOLLOWS_THE_REALM.indexOf(s.key) === -1;
   });
   const flipped = {};
-  // The `listener.*` rows (#99) are left out: a realm's listener settings are
-  // accepted only together (a port needs an https base), so a set of
-  // placeholder values is refused by their own rules, which
-  // tests/realm_listener.js holds. None of them is read by a derived row.
+  // `listeners.realm` (#99, #472) is left out: a placeholder value is not a
+  // listener definition, and is refused by its own rules, which
+  // tests/custom_listeners.js holds. No derived row reads it.
   config.SETTINGS.filter(function (s) {
-    return s.realmRuntime && s.key.indexOf('listener.') !== 0;
+    return s.realmRuntime && s.key !== 'listeners.realm';
   }).forEach(function (s) {
       flipped[s.key] = differentValue(s);
     });

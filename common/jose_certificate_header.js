@@ -130,15 +130,18 @@
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route, so its position in the require
-// order is not a position. It requires `config`, `realms` and `error_codes` at
-// the top and nothing that requires it back; `pki.js` and `helpers.js` are
-// required LAZILY, inside the functions that need them — `helpers.js` requires
-// THIS file, and `pki.js` is kept out of the load path of every in-process
-// caller of helpers for the reason `helpers.js`'s certifiedView() gives.
+// order is not a position. It requires `config`, `crypto`, `realms` and
+// `error_codes` at the top and nothing that requires it back; `pki.js` and
+// `helpers.js` are required LAZILY, inside the functions that need them —
+// `helpers.js` requires THIS file, and `pki.js` is kept out of the load path
+// of every in-process caller of helpers for the reason `helpers.js`'s
+// certifiedView() gives.
 // ===========================================================================
 
 const bunyan = require('bunyan');
-const nodeCrypto = require('crypto');
+// This service's one cryptographic module (#453), to parse a certificate. A
+// leaf that requires nothing here.
+const crypto = require('./crypto');
 const { AsyncLocalStorage } = require('async_hooks');
 const config = require('./config');
 const realms = require('./realms');
@@ -415,7 +418,7 @@ function holdsKey(pki, record, signer) {
     // of one, and a post-quantum certificate is never that old, so a throw
     // here is an unreadable certificate and the answer is no.
     try {
-      held = pki.thumbprintOf(new nodeCrypto.X509Certificate(
+      held = pki.thumbprintOf(crypto.parseCertificate(
         record.certificatePem).publicKey.export({ type: 'spki',
                                                   format: 'pem' }));
     } catch (e) {
@@ -469,8 +472,8 @@ function chainPemsOf(pki, record) {
     chainsCount.miss();
     let underRoot = false;
     try {
-      const last = new nodeCrypto.X509Certificate(pems[pems.length - 1]);
-      const anchor = new nodeCrypto.X509Certificate(rootPem);
+      const last = crypto.parseCertificate(pems[pems.length - 1]);
+      const anchor = crypto.parseCertificate(rootPem);
       underRoot = last.issuer === anchor.subject &&
                   last.verify(anchor.publicKey);
     } catch (e) {
@@ -499,7 +502,9 @@ function scopeSegmentOf(realmId) {
 function chainUrlFor(realmId, thumbprint) {
   log.debug("Entering chainUrlFor().");
   const helpers = require('./helpers');
-  let origin = helpers.pinnedBaseUrl();
+  // Where the certificate authority's documents are advertised (#472); the
+  // chain path names its realm itself, so no realm prefix follows it.
+  let origin = helpers.pinnedBaseUrl('pki');
   if (!origin) {
     const req = currentRequest();
     if (!req) {

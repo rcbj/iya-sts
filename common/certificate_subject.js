@@ -50,11 +50,12 @@
 // this file does not guess at, and an operator who registered one spelling can
 // see the one the certificate carries in the refusal.
 //
-// A LEAF (rule 3): it requires node's `crypto` and `net` and `helpers.js` for the
-// logger, and nothing requires it that it requires back.
+// A LEAF (rule 3): it requires `crypto.js` (to parse the certificate, #453),
+// node's `net`, and `helpers.js` for the logger, and nothing requires it that
+// it requires back.
 // ===========================================================================
 
-const nodeCrypto = require('crypto');
+const crypto = require('./crypto');
 const net = require('net');
 const { log } = require('./helpers');
 
@@ -613,7 +614,7 @@ function matches(member, registered, raw) {
   const row = MEMBERS[member];
   let x509 = null;
   try {
-    x509 = new nodeCrypto.X509Certificate(raw);
+    x509 = crypto.parseCertificate(raw);
   } catch (e) {
     log.debug("Caught in matches(): " + ((e && e.message) || e));
     x509 = null;

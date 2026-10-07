@@ -76,7 +76,7 @@ registered each assertion consumer service WITH its profile — a Shibboleth SP
 publishes `/SAML/POST` as `browser-post` and `/SAML/Artifact` as
 `artifact-01` — so the `shire` it sends chooses, which is what a Shibboleth
 identity provider does. Otherwise `saml11.defaultProfile` decides, and the
-non-spec `profile` parameter (or an arriving `SAMLart`) overrides it — the same
+non-spec `profile` parameter overrides both — the same
 kind of device as WS-Trust's `/sts?encrypt=1`, and marked as non-spec wherever
 it appears.
 
@@ -110,7 +110,7 @@ names the SOAP request and its `Recipient` names whoever asked.
 
 | Request | Answer |
 |---|---|
-| `AssertionArtifact` | the assertion — **exactly once**, across every node of a cluster: resolving destroys it (bindings section 3.2.3), and a second attempt is refused with a status naming the reason. `saml11.artifactTtlS` only bounds how long an unresolved one lives |
+| `AssertionArtifact` | the assertion — **exactly once**, across every node of a cluster: resolving destroys it (bindings section 3.2.3), and a second attempt — like an unknown artifact, another provider's, or one asked for by the wrong relying party — gets `samlp:Success` with no assertion and no status message, as bindings section 4.1.1.6 requires; the reason is in the log under its error code. `saml11.artifactTtlS` only bounds how long an unresolved one lives |
 | `AssertionIDReference` | an assertion this realm issued, from a cache of `saml11.assertionCacheMax`; not one-shot, since holding the reference means already holding the assertion |
 | `AttributeQuery` | an assertion carrying the person's attributes and **no** `AuthenticationStatement` — in product under a release policy, below |
 | `AuthenticationQuery` | answered from a live, authenticated session for that name, with its real method and instant; with no such session, Success and no assertion — in product under the same policy |
@@ -233,6 +233,7 @@ subject and the attributes.
 
 | | Development | Product |
 |---|---|---|
+| A relying party nobody **registered** — unknown, or recorded only because a development request named it | answered | a 403 page before its addresses are read (#496); the per-RP paths and the responder count only a registered entry |
 | `shire` | used as it stands; with none, the mock relying party | must be a registered `samlAssertionConsumerService`, exact match, no mock fallback; an address development merely observed is refused until confirmed |
 | `AttributeQuery`, `AuthenticationQuery` | answered, to anybody who can reach the port — logged as such | answered only to a registered, authenticated relying party about a person it holds a live session for, by the NameIdentifier it was given |
 | Artifact resolver authentication | not required (follows `saml2.requireSignedAuthnRequests`) | required |

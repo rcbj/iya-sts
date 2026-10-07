@@ -40,7 +40,7 @@ ubuntu:latest                                                ubuntu:latest
 debian:bookworm-slim                                         debian:bookworm-slim
 node:24.16.0-bookworm-slim                                   node:24.16.0-bookworm-slim
 node:24.16.0-bookworm                                        node:24.16.0-bookworm
-node:22-alpine                                               node:22-alpine
+rust:1.97-bookworm                                           rust:1.97-bookworm
 golang:1.26.8-bookworm                                       golang:1.26.8-bookworm
 golang:1.26                                                  golang:1.26
 maven:3.9.16-eclipse-temurin-21-noble                        maven:3.9.16-eclipse-temurin-21-noble

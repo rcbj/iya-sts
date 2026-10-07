@@ -463,102 +463,65 @@ function childMain() {
          'a product-mode realm refuses ACME over plain HTTP',
          JSON.stringify(productBody).slice(0, 200));
 
-    // --- 9. the console pages, through their own handlers -------------------
-    // Behind the console gate, so the route's handler is called with a request
-    // carrying only what it reads; a session is `sts_admin_console.js`'s.
-    const router = app._router || app.router;
-    function handlerFor(method, routePath) {
-      const layer = router.stack.filter(function (one) {
-        return one.route && one.route.path === routePath &&
-               one.route.methods[method];
-      })[0];
-      return layer.route.stack[layer.route.stack.length - 1].handle;
-    }
-    function fakeRes(done) {
-      const res = { headers: {}, statusCode: 200, locals: {} };
-      res.set = function (k, v) {
-        res.headers[String(k).toLowerCase()] = v;
-        return res;
-      };
-      res.append = res.set;
-      res.status = function (c) {
-        res.statusCode = c;
-        return res;
-      };
-      res.type = function (t) {
-        res.headers['content-type'] = t;
-        return res;
-      };
-      res.send = function (b) {
-        res.body = String(b);
-        done(res);
-        return res;
-      };
-      res.redirect = function (c, u) {
-        res.statusCode = c;
-        res.headers.location = u;
-        done(res);
-        return res;
-      };
-      return res;
-    }
-    function fakeReq(method, routePath, query, body) {
-      return { method: method, path: routePath, originalUrl: routePath,
-               url: routePath, query: query || {}, protocol: 'https',
-               headers: { host: 'console.test',
-                          'content-type': 'application/x-www-form-urlencoded' },
-               body: body || '', cookies: {},
-               get: function (name) {
-                 return String(name).toLowerCase() === 'host' ? 'console.test'
-                                                              : undefined;
-               } };
-    }
-    function drive(method, routePath, query, body) {
-      return new Promise(function (resolve) {
-        realms.run(realms.get(A), function () {
-          handlerFor(method, routePath)(fakeReq(method, routePath, query,
-                                                body), fakeRes(resolve));
-        });
-      });
-    }
-    const page = await drive('get', '/admin/acme', {});
-    note(page.statusCode === 200 &&
-         /\/enroll\/acme\/directory/.test(page.body) &&
-         /Create EAB key/.test(page.body) &&
-         page.body.indexOf('www.' + ALICE + '.test') >= 0 &&
-         /revoked/.test(page.body) &&
-         /root-ca/.test(page.body) && page.body.indexOf(eab.body.hmacKey) < 0,
+    // --- 9. the console pages, as the static console draws them -------------
+    // Each page is its `/admin-api` operation's answer drawn by its renderer
+    // (#446), asked in realm A past the API's token gate.
+    const drawer = require(ROOT_DIR + '/tests/tools/console_page.js')
+      .consolePage(ROOT_DIR);
+    const inA = function (work) {
+      return realms.run(realms.get(A), work);
+    };
+    const page = await inA(function () {
+      return drawer.draw('/admin/acme', {});
+    });
+    note(page.status === 200 &&
+         /\/enroll\/acme\/directory/.test(page.html) &&
+         /Create EAB key/.test(page.html) &&
+         page.html.indexOf('www.' + ALICE + '.test') >= 0 &&
+         /revoked/.test(page.html) &&
+         /root-ca/.test(page.html) && page.html.indexOf(eab.body.hmacKey) < 0,
          'the ACME console page draws the directory, the EAB form, the ' +
          'registered host, the revoked certificate and the refused profiles, ' +
          'and no HMAC key',
-         String(page.body).slice(0, 200));
-    const pageJson = JSON.parse((await drive('get', '/admin/acme',
-                                             { format: 'json' })).body);
+         String(page.html).slice(0, 200));
     const apiJson = (await api(A, '/acme')).body;
-    note(JSON.stringify(Object.keys(pageJson).filter(function (k) {
+    note(JSON.stringify(Object.keys(page.json).filter(function (k) {
       return k !== 'protocolEndpoints';
     }).sort()) === JSON.stringify(Object.keys(apiJson).filter(function (k) {
       return k !== 'protocolEndpoints';
-    }).sort()) && pageJson.certificates.paging.total ===
+    }).sort()) && page.json.certificates.paging.total ===
          apiJson.certificates.paging.total,
-         'the page\'s JSON and GET /admin-api/acme are one model (rule 7)');
-    const monitorPage = await drive('get', '/admin/acme/monitor', {});
-    note(monitorPage.statusCode === 200 &&
-         /STS-ACME-0018/.test(monitorPage.body),
+         'the page is drawn from GET /admin-api/acme\'s answer (rule 7)');
+    const monitorPage = await inA(function () {
+      return drawer.draw('/admin/acme/monitor', {});
+    });
+    note(monitorPage.status === 200 &&
+         /STS-ACME-0018/.test(monitorPage.html),
          'the monitor page draws the refusals by code');
-    const onConsole = await drive('post', '/admin/acme', {},
-      'action=create-eab&kind=person&identifier=' + encodeURIComponent(BOB));
-    note(onConsole.statusCode === 200 &&
+    // THE KEY, ONCE: the console's Create EAB key is the operation, whose
+    // answer carries it `no-store`, and the static console draws that
+    // answer in place (`web_answers.ts`) — never on a URL.
+    const WebAnswers = require(ROOT_DIR + '/admin-ui/web_answers');
+    const onConsole = await inA(function () {
+      return drawer.act('/admin-api/acme/create-eab',
+                        { kind: 'person', identifier: BOB });
+    });
+    const shown = WebAnswers.once('/admin/acme', 'create-eab',
+      { kind: 'person', identifier: BOB }, onConsole.json,
+      { back: '/admin/acme' });
+    note(onConsole.status === 200 &&
          /no-store/.test(onConsole.headers['cache-control']) &&
-         /--eab-hmac-key [A-Za-z0-9_-]{43}/.test(onConsole.body),
-         'create-eab on the console answers a 200 no-store page with the key ' +
-         'once, never a redirect carrying it',
-         onConsole.statusCode + ' ' + JSON.stringify(onConsole.headers));
-    const deleted = await drive('post', '/admin/acme', {},
-      'action=delete-eab&kid=eab-p-bm9uZQ-0000000000000000');
-    note(deleted.statusCode === 303 && /error=/.test(deleted.headers.location),
-         'a refused action answers the 303 with an error notice',
-         deleted.headers.location);
+         !!shown && /--eab-hmac-key [A-Za-z0-9_-]{43}/.test(shown.html),
+         'create-eab answers 200 no-store with the key once, and the ' +
+         'console draws it in place',
+         onConsole.status + ' ' + JSON.stringify(onConsole.headers));
+    const deleted = await inA(function () {
+      return drawer.act('/admin-api/acme/delete-eab',
+                        { kid: 'eab-p-bm9uZQ-0000000000000000' });
+    });
+    note(deleted.status === 400 && deleted.json && deleted.json.ok === false,
+         'a refused action answers 400 with its reasons',
+         deleted.status + ' ' + JSON.stringify(deleted.json).slice(0, 200));
 
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));

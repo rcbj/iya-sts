@@ -63,30 +63,12 @@ var config = {
     corsOrigins: ""                // Origins treated as this service's own
   },
 
-  // --- Realm listener --------------------------------------------------
-  listener: {
-    port: 0,                                  // The realm's own HTTPS port; restart to apply
-    publicBaseUrl: "",                        // The realm's public base URL; restart to apply
-    hostnames: "",                            // DNS names on the realm listener's certificate; restart to apply
-    certificateFile: "",                      // The realm listener's certificate file; restart to apply
-    privateKeyFile: "",                       // The realm listener's private key file; restart to apply
-    disableTls12: "inherit",                  // The realm listener: disable TLS 1.2; restart to apply
-    tls13CipherSuites: "",                    // The realm listener's TLS 1.3 cipher suites; restart to apply
-    pqcOnly: "inherit",                       // The realm listener: post-quantum safe only; restart to apply
-    disableOptionalClientCertificate: false,  // The realm listener: do not ask for a client certificate; restart to apply
-    requireClientCertificate: false,          // The realm listener: require a client certificate; restart to apply
-    minVersion: "inherit",                    // The realm listener: minimum TLS version; restart to apply
-    ciphers: "",                              // The realm listener: tLS 1.2 cipher list; restart to apply
-    groups: "",                               // The realm listener: tLS key-exchange groups; restart to apply
-    signatureAlgorithms: "",                  // The realm listener: tLS signature algorithms; restart to apply
-    trustAnchorsFile: "",                     // The realm listener: client certificate trust anchors file; restart to apply
-    trustIssuedClientCertificates: "inherit", // The realm listener: trust TLS client certificates issued on the user portal; restart to apply
-    sessionTimeoutS: -1,                      // The realm listener: tLS session lifetime (s); restart to apply
-    sessionCacheSize: -1,                     // The realm listener: tLS session cache size (sessions); restart to apply
-    keepAliveTimeoutS: -1,                    // The realm listener: idle connection kept for (s); restart to apply
-    headersTimeoutS: -1,                      // The realm listener: request header timeout (s); restart to apply
-    maxRequestsPerSocket: -1,                 // The realm listener: requests per connection; restart to apply
-    maxConnections: -1                        // The realm listener: open connections at most; restart to apply
+  // --- Custom listeners ------------------------------------------------
+  listeners: {
+    custom: "",         // The service's custom listeners
+    realm: "",          // This realm's own listeners; restart to apply
+    applications: "",   // Which application is on which listener
+    adminOnMain: false  // Rescue: the console and the API on the main port; restart to apply
   },
 
   // --- HTTP connections ------------------------------------------------
@@ -198,6 +180,7 @@ var config = {
   // --- Web security ----------------------------------------------------
   authn: {
     sessionSweepS: 30,              // How often expired sessions are ended (seconds)
+    cookieDomain: "",               // Sign-on session cookie domain
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
     maxSessions: 100000,            // Most sign-on sessions per realm
@@ -268,6 +251,7 @@ var config = {
     residentKey: "discouraged",                                                                                                                        // Discoverable credential (CTAP resident key)
     credProps: true,                                                                                                                                   // Ask for the credProps extension
     primaryAllowed: true,                                                                                                                              // Allow a key as a PRIMARY credential
+    usernameless: false,                                                                                                                               // Sign in with a passkey and no username
     mfaAllowed: true,                                                                                                                                  // Allow a key as a SECOND factor
     maxKeysPerPerson: 10                                                                                                                               // Keys per person
   },
@@ -380,6 +364,9 @@ var config = {
     refreshTokenRotation: false,                   // Rotate refresh tokens
     refreshTokenRequireDpop: false,                // Require DPoP on refresh tokens
     refreshTokenRequireMtls: false,                // Require mutual TLS on refresh tokens
+    httpSignatures: "off",                         // FAPI 2.0 HTTP Signatures at the resource servers
+    httpSignatureMaxAgeS: 60,                      // Signed request age limit (s)
+    httpSignatureResponseAlg: "ES256",             // Signed response algorithm
     accessTokenRequireDpop: false,                 // Require DPoP for every access token
     accessTokenRequireMtls: false,                 // Require mutual TLS for every access token
     openRegistration: false,                       // Open dynamic client registration (product mode)
@@ -483,6 +470,7 @@ var config = {
     parAllowUnregisteredRedirectUris: false,       // Pushed requests may name an unregistered redirect_uri
     stepUpAcrValues: "",                           // Step-up: acr values this service's resource server requires
     stepUpMaxAgeS: -1,                             // Step-up: oldest authentication this service's resource server accepts (s)
+    errorPageAutoRedirectS: 0,                     // Error page: continue to the client after (seconds)
     sessionManagement: false,                      // OpenID Connect Session Management
     frontchannelLogout: true,                      // OpenID Connect Front-Channel Logout
     frontchannelLogoutWaitS: 3,                    // Front-channel logout: seconds before returning
@@ -502,28 +490,33 @@ var config = {
 
   // --- Devices ---------------------------------------------------------
   devices: {
-    maxPerPerson: 20,                                   // Devices one person may hold
-    maxPerApplication: 1000,                            // Devices one application may own
-    maxKeysPerDevice: 10,                               // Keys one device may hold
-    eventsKept: 5000,                                   // Device events kept for monitoring
-    complianceFeedMaxReports: 500,                      // Compliance reports per feed request
-    challengeTtlSeconds: 300,                           // Enrolment challenge lifetime (seconds)
-    maxChallenges: 10000,                               // Enrolment challenges held
-    androidAttestationTrustAnchors: "",                 // Android Key Attestation roots (PEM)
-    androidMinimumSecurityLevel: "trusted-environment", // Android Key Attestation: least security level
-    appleAppAttestTrustAnchors: "",                     // Apple App Attest root (PEM)
-    appleAppAttestAppIds: "",                           // Apple App Attest app identifiers
-    appleAppAttestAllowDevelopment: false,              // Apple App Attest: accept the development environment
-    tpmTrustAnchors: "",                                // TPM attestation roots (PEM)
-    lastUsedResolutionSeconds: 60,                      // Last-used resolution (seconds)
-    expectRegistered: false,                            // Expect every person to sign in from a registered device
-    requireCompliantDevice: false,                      // Require a compliant registered device
-    compliantDeviceAttested: false,                     // A compliant device must also be attested
-    refuseCompromised: true,                            // Refuse a compromised device
-    browserDevices: true,                               // Remembered browsers
-    browserTokenLifetimeDays: 180,                      // Remembered browser cookie lifetime (days)
-    browserReissueGraceSeconds: 60,                     // Remembered browser: previous token accepted for (seconds)
-    browserTokenCertificateHeader: "x5u"                // Remembered browser token certificate header
+    maxPerPerson: 20,                                                      // Devices one person may hold
+    maxPerApplication: 1000,                                               // Devices one application may own
+    maxKeysPerDevice: 10,                                                  // Keys one device may hold
+    eventsKept: 5000,                                                      // Device events kept for monitoring
+    complianceFeedMaxReports: 500,                                         // Compliance reports per feed request
+    challengeTtlSeconds: 300,                                              // Enrolment challenge lifetime (seconds)
+    maxChallenges: 10000,                                                  // Enrolment challenges held
+    androidAttestationTrustAnchors: "",                                    // Android Key Attestation roots (PEM)
+    androidMinimumSecurityLevel: "trusted-environment",                    // Android Key Attestation: least security level
+    androidStatusUrl: "https://android.googleapis.com/attestation/status", // Android attestation status list address
+    androidStatusRefreshS: 86400,                                          // Download the Android status list every (seconds)
+    androidStatusMaxBytes: 16777216,                                       // Largest Android status list (bytes)
+    androidStatusStaleHours: 48,                                           // Android status list is stale after (hours)
+    androidRevocationRequired: false,                                      // An Android attestation needs a current status list
+    appleAppAttestTrustAnchors: "",                                        // Apple App Attest root (PEM)
+    appleAppAttestAppIds: "",                                              // Apple App Attest app identifiers
+    appleAppAttestAllowDevelopment: false,                                 // Apple App Attest: accept the development environment
+    tpmTrustAnchors: "",                                                   // TPM attestation roots (PEM)
+    lastUsedResolutionSeconds: 60,                                         // Last-used resolution (seconds)
+    expectRegistered: false,                                               // Expect every person to sign in from a registered device
+    requireCompliantDevice: false,                                         // Require a compliant registered device
+    compliantDeviceAttested: false,                                        // A compliant device must also be attested
+    refuseCompromised: true,                                               // Refuse a compromised device
+    browserDevices: true,                                                  // Remembered browsers
+    browserTokenLifetimeDays: 180,                                         // Remembered browser cookie lifetime (days)
+    browserReissueGraceSeconds: 60,                                        // Remembered browser: previous token accepted for (seconds)
+    browserTokenCertificateHeader: "x5u"                                   // Remembered browser token certificate header
   },
 
   // --- PKI -------------------------------------------------------------
@@ -671,7 +664,7 @@ var config = {
 
   // --- SAML ------------------------------------------------------------
   saml: {
-    issuer: "urn:wstrust:mock:sts",                         // Assertion issuer
+    issuer: "",                                             // Assertion issuer
     clockSkewS: 0,                                          // Assertion clock skew (s)
     signatureAlgorithm: "rsa-sha256",                       // XML signature algorithm
     canonicalizationAlgorithm: "exclusive",                 // XML canonicalization
@@ -727,18 +720,18 @@ var config = {
 
   // --- WS-Trust --------------------------------------------------------
   wstrust: {
-    issuer: "urn:wstrust:mock:sts", // Token issuer
-    tokenLifetimeMin: 60,           // Token lifetime (minutes)
-    maxTokenLifetimeMin: 1440,      // Longest lifetime a request may ask for (minutes)
-    jwtAlgorithm: "RS256",          // JWT signature algorithm
-    jwtCertificateHeader: "x5u"     // JWT certificate header
+    issuer: "",                  // Token issuer
+    tokenLifetimeMin: 60,        // Token lifetime (minutes)
+    maxTokenLifetimeMin: 1440,   // Longest lifetime a request may ask for (minutes)
+    jwtAlgorithm: "RS256",       // JWT signature algorithm
+    jwtCertificateHeader: "x5u"  // JWT certificate header
   },
 
   // --- WS-Federation assertions ----------------------------------------
   wsfed: {
-    assertionLifetimeMin: 60,         // Assertion lifetime (minutes)
-    entityId: "urn:wstrust:mock:sts", // Entity ID
-    mockRpContextTtlMin: 30           // Mock relying party wctx lifetime (minutes)
+    assertionLifetimeMin: 60, // Assertion lifetime (minutes)
+    entityId: "",             // Entity ID
+    mockRpContextTtlMin: 30   // Mock relying party wctx lifetime (minutes)
   },
 
   // --- TLS -------------------------------------------------------------
@@ -760,8 +753,8 @@ var config = {
     mainPortRequireClientCertificate: false,                                                                                                                                                                                                                                                                   // Main port: require a client certificate
     sessionTicketRotationS: 3600,                                                                                                                                                                                                                                                                              // Shared session-ticket key rotation (s)
     mainPortSharedTickets: true,                                                                                                                                                                                                                                                                               // Main port shares the cluster session-ticket key; restart to apply
-    sessionTimeoutS: 60,                                                                                                                                                                                                                                                                                       // TLS session lifetime (s)
-    sessionCacheSize: 0,                                                                                                                                                                                                                                                                                       // TLS session cache size (sessions)
+    sessionTimeoutS: 300,                                                                                                                                                                                                                                                                                      // TLS session lifetime (s)
+    sessionCacheSize: 2048,                                                                                                                                                                                                                                                                                    // TLS session cache size (sessions)
     resumedChainWaitMs: 2000,                                                                                                                                                                                                                                                                                  // Wait for a resumed session's certificate chain (ms)
     trustAnchorsFile: "",                                                                                                                                                                                                                                                                                      // Client certificate trust anchors file; restart to apply
     selfSignedKeyBits: 2048,                                                                                                                                                                                                                                                                                   // Self-signed certificate RSA key size; restart to apply
@@ -901,6 +894,7 @@ var config = {
     ticketLifetimeSeconds: 36000,                                  // Ticket lifetime (s)
     renewLifetimeSeconds: 604800,                                  // Renewable lifetime (s)
     logonServer: "DC01",                                           // PAC logon server
+    pacClaims: false,                                              // PAC client claims (PAC_CLIENT_CLAIMS_INFO)
     maxRequestBytes: 131072,                                       // Largest KDC request over TCP (bytes)
     udpMaxReplyBytes: 1465,                                        // Largest KDC reply over UDP (bytes)
     serviceMaxTokenBytes: 65536,                                   // Largest AP-REQ the acceptor reads (bytes)
@@ -923,6 +917,11 @@ var config = {
     retainedKeyVersions: 1,                                        // Previous key versions kept
     retainedKeyTtlS: 0,                                            // Previous key version lifetime (s)
     krbtgtRotationIntervalDays: 180,                               // Rotate the krbtgt key every (days)
+    pkinit: true,                                                  // PKINIT (certificate pre-authentication)
+    pkinitRequireFreshness: true,                                  // PKINIT requires a freshness token
+    pkinitLegacyKdf: false,                                        // PKINIT accepts RFC 4556's own key derivation
+    pkinitKdcKeyAlgorithm: "ec-p256",                              // PKINIT KDC key algorithm
+    anonymousPkinit: true,                                         // Anonymous PKINIT (FAST armor)
     spnegoLoginButton: true,                                       // Offer Kerberos at the sign-in screen
     s2kparams: "omit"                                              // Send s2kparams
   },
@@ -1060,7 +1059,7 @@ var config = {
     mdsStaleGraceDays: 7,                                  // FIDO metadata grace after its nextUpdate (days)
     rescoreEveryS: 300,                                    // Re-check live sessions every (seconds)
     standingCacheSize: 20000,                              // People whose standing each process holds
-    mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
+    mediumScorePercent: 300,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
     minimumHistory: 5,                                     // Earlier sign-ins before a person is scored
     geoMinimumCount: 3,                                    // Fewest people a place is numbered with on the map
@@ -1078,7 +1077,7 @@ var config = {
   risc: {
     enabled: true,                                                                                                                                                                                                                                                                                    // RISC enabled
     autoEmit: true,                                                                                                                                                                                                                                                                                   // Emit events when the directory really changes
-    autoEmitTypes: "account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,account-credential-change-required,recovery-information-changed,recovery-activated,credential-compromise,opt-out-initiated,opt-out-cancelled,opt-out-effective,opt-in,sessions-revoked",   // Which acts emit automatically
+    autoEmitTypes: "account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,account-credential-change-required,recovery-information-changed,recovery-activated,credential-compromise,opt-out-initiated,opt-out-cancelled,opt-out-effective,opt-in",                    // Which acts emit automatically
     recycleWindowDays: 365,                                                                                                                                                                                                                                                                           // Recycled identifier window (days)
     optOutDelayHours: 24,                                                                                                                                                                                                                                                                             // Opt-out takes effect after (hours)
     eventsSupported: "account-credential-change-required,account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,credential-compromise,opt-in,opt-out-initiated,opt-out-cancelled,opt-out-effective,recovery-activated,recovery-information-changed,sessions-revoked", // RISC event types offered

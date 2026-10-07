@@ -37,8 +37,13 @@
 delete process.env.CONFIG_FILE;
 
 const config = require('../common/config');
-const app = require('../common/app');
-require('../admin-ui/admin').registerRoutes(app);
+// THE PAGE AND ITS FORM AS THE STATIC CONSOLE DRAWS AND SENDS THEM (#446):
+// `GET /admin-api/protocol-settings`-style answer drawn by its renderer, and
+// the form sent to the operation that mirrors it (`web_forms.ts`).
+const consolePage = require('./tools/console_page')
+  .consolePage(require('path').join(__dirname, '..'));
+const WebForms = require('../admin-ui/web_forms');
+const adminApi = require('../mgmt-api/admin_api');
 
 const log = require('bunyan').createLogger({
   name: 'ordered_choice_setting',
@@ -46,105 +51,22 @@ const log = require('bunyan').createLogger({
 
 const KEY = 'webauthn.algorithms';
 
-function handlerFor(method, path) {
-  log.debug("Entering handlerFor(). " + method + " " + path);
-  const layer = (app._router.stack || []).filter(function (one) {
-    return one.route && one.route.path === path && one.route.methods[method];
-  })[0];
-  log.debug("Leaving handlerFor(). " + (layer ? "Found." : "Not found."));
-  return layer ? layer.route.stack[layer.route.stack.length - 1].handle :
-                 null;
-}
-
-function fakeRes() {
-  log.debug("Entering fakeRes().");
-  const out = { status: 200, body: '', headers: {} };
-  const res = {
-    out: out,
-    set: function (k, v) {
-      if (typeof k === 'string') {
-        out.headers[k.toLowerCase()] = v;
-      }
-      return this;
-    },
-    status: function (n) {
-      out.status = n;
-      return this;
-    },
-    type: function () {
-      return this;
-    },
-    send: function (text) {
-      out.body = String(text);
-      return this;
-    },
-    end: function () {
-      return this;
-    },
-    redirect: function (code, where) {
-      out.status = typeof code === 'number' ? code : 302;
-      out.headers.location = typeof code === 'number' ? where : code;
-      return this;
-    },
-    get: function () {
-      return undefined;
-    },
-    getHeader: function () {
-      return undefined;
-    },
-    setHeader: function (k, v) {
-      out.headers[String(k).toLowerCase()] = v;
-      return undefined;
-    },
-    locals: {}
-  };
-  log.debug("Leaving fakeRes().");
-  return res;
-}
-
-function fakeReq(method, path, body, type) {
-  log.debug("Entering fakeReq().");
-  log.debug("Leaving fakeReq().");
-  return { method: method, url: path, originalUrl: path, path: path,
-           query: {}, cookies: {}, body: body,
-           headers: type ? { 'content-type': type } : {},
-           get: function () {
-             return '';
-           } };
-}
-
-// The protocol pages answer after a promise (a row may `prepare`), so the
-// draw waits until the body has been sent, a bounded number of turns.
 async function drawPage() {
   log.debug("Entering drawPage().");
-  const res = fakeRes();
-  handlerFor('get', '/admin/webauthn')(fakeReq('GET', '/admin/webauthn'),
-    res, function (e) {
-      log.debug("The page handler called next(): " + ((e && e.message) || e));
-    });
-  for (let i = 0; i < 200 && !res.out.body; i++) {
-    await new Promise(function (resolve) {
-      setImmediate(resolve);
-    });
-  }
-  log.debug("Leaving drawPage(). " + res.out.body.length + " character(s).");
-  return res.out.body;
+  const drawn = await consolePage.draw('/admin/webauthn', {});
+  log.debug("Leaving drawPage(). " + drawn.html.length + " character(s).");
+  return drawn.html;
 }
 
-function post(fields, form) {
+async function post(fields) {
   log.debug("Entering post().");
-  const res = fakeRes();
-  const body = form
-    ? new URLSearchParams(fields).toString()
-    : JSON.stringify(fields);
-  handlerFor('post', '/admin/config')(
-    fakeReq('POST', '/admin/config', body,
-            form ? 'application/x-www-form-urlencoded' : 'application/json'),
-    res, function (e) {
-      log.debug("The save handler called next(): " + ((e && e.message) || e));
-    });
-  log.debug("Leaving post(). " + res.out.status);
-  return res.out;
+  const operation = WebForms.resolve(
+    WebForms.table(adminApi.operationSummaries()), '/admin/config',
+    fields.action);
+  const answer = await consolePage.act(operation, fields);
+  log.debug("Leaving post(). " + answer.status);
+  return { status: answer.status,
+           body: answer.text || JSON.stringify(answer.json || {}) };
 }
 
 // The fields the drawn table posts for `chosen` (value -> number), every
@@ -217,7 +139,7 @@ async function runBody(t) {
 
   try {
     t.log.info('=== 3. a save stores the ticked values in number order ===');
-    const saved = post(fieldsFor({ 'ES256': 3, 'ML-DSA-65': 1,
+    const saved = await post(fieldsFor({ 'ES256': 3, 'ML-DSA-65': 1,
                                    'Ed25519': 2 }));
     t.check(saved.status === 200,
             '3. the save is accepted', saved.status + ' ' +
@@ -235,14 +157,14 @@ async function runBody(t) {
             }).join(','));
 
     t.log.info('=== 4. ties and numbers that are not numbers ===');
-    post(fieldsFor({ 'RS256': 'x', 'ES384': 1, 'ES256': 1 }));
+    await post(fieldsFor({ 'RS256': 'x', 'ES384': 1, 'ES256': 1 }));
     t.equal(config.text(KEY), 'ES384,ES256,RS256',
             '4. a tie keeps the posted order; a number that is not one ' +
             'goes last');
 
     t.log.info('=== 5. ticking nothing is refused ===');
     const before = config.text(KEY);
-    const empty = post(fieldsFor({}));
+    const empty = await post(fieldsFor({}));
     t.check(empty.status === 400 &&
             /choose at least one/.test(empty.body) &&
             config.text(KEY) === before,
@@ -250,21 +172,16 @@ async function runBody(t) {
             empty.status + ' ' + empty.body.slice(0, 200));
 
     t.log.info('=== 6. a value outside the list is refused ===');
-    const outside = post(fieldsFor({ 'ES256': 1, 'NOT-AN-ALG': 2 }));
+    const outside = await post(fieldsFor({ 'ES256': 1, 'NOT-AN-ALG': 2 }));
     t.check(outside.status === 400 && config.text(KEY) === before,
             '6. a value outside the closed list is refused by the ' +
             'setting\'s own check, and nothing changes',
             outside.status + ' ' + outside.body.slice(0, 200));
 
-    t.log.info('=== 7. the shape a browser posts ===');
-    const browser = post(fieldsFor({ 'PS256': 2, 'ML-DSA-44': 1 }), true);
-    t.check(browser.status === 303 &&
-            config.text(KEY) === 'ML-DSA-44,PS256',
-            '7. a form-encoded save folds the same way and redirects back',
-            browser.status + ' ' + config.text(KEY));
-    t.check(String(browser.headers.location || '').indexOf('/admin/webauthn')
-            === 0,
-            '7. back to /admin/webauthn', browser.headers.location);
+    // 7 WAS THE FORM-ENCODED BODY A BROWSER POSTED TO /admin/config AND
+    // THE REDIRECT BACK: the static console sends every form as JSON to its
+    // operation and draws the answer itself (#446), so there is no such
+    // post or redirect to hold.
   } finally {
     config.clearOverride(KEY);
   }

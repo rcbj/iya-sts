@@ -46,7 +46,8 @@
 //      setting, and each overriding attribute, logged ONCE (STS-CORE-0106).
 //   C. THE REPORT AND ITS TWO ROUTES: `mode.report()` carries the three new
 //      requirements and every marked row with its stored and in-force value;
-//      `GET /admin-api/mode` answers it; `GET /admin/mode` is registered.
+//      `GET /admin-api/mode` answers it; `GET /admin/mode` is the static
+//      console's page drawn from it (#446).
 //
 // The same over HTTP, against a running service in two throwaway realms, is
 // `tests/vendored/sts_mode_weak_settings.js`.
@@ -326,7 +327,7 @@ function childMain() {
       out.routes = [];
       (app._router ? app._router.stack : app.router.stack)
         .forEach(function (layer) {
-          if (layer.route && (layer.route.path === '/admin/mode' ||
+          if (layer.route && (layer.route.path === '/admin/*' ||
                               layer.route.path === '/admin-api/mode')) {
             out.routes.push(layer.route.path);
           }
@@ -336,7 +337,7 @@ function childMain() {
       // In DEVELOPMENT, where `adminApi.authRequired` off opens the API: in
       // product the same setting means the console's own sign-in.
       out.api = await getJson('/admin-api/mode');
-      out.page = await getJson('/admin/mode?format=json');
+      out.page = await getJson('/admin/mode');
 
       // ---- the verdicts ------------------------------------------------
       const d0 = out.devOff;
@@ -436,12 +437,14 @@ function childMain() {
            Array.isArray(out.api.json.developmentOnlySettings),
            'C. GET /admin-api/mode answers the report',
            out.api.status + ' ' + out.api.text.slice(0, 300));
-      note(out.routes.indexOf('/admin/mode') >= 0 &&
+      // `/admin/mode` is a page of the static console (#446): the shell
+      // answers every `/admin/*` path and draws it from /admin-api/mode.
+      note(out.routes.indexOf('/admin/*') >= 0 &&
            out.routes.indexOf('/admin-api/mode') >= 0,
-           'C. GET /admin/mode and GET /admin-api/mode are registered',
+           'C. the console\'s shell and GET /admin-api/mode are registered',
            out.routes.join(', '));
       note(out.page.status !== 404,
-           'C. GET /admin/mode answers (behind the console gate)',
+           'C. GET /admin/mode answers (the console\'s shell)',
            out.page.status + ' ' + out.page.text.slice(0, 200));
       server.close();
     } catch (e) {

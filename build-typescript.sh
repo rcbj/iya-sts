@@ -107,6 +107,82 @@ else
   echo "build-typescript.sh: no .ts sources; nothing to compile"
 fi
 
+# ---------------------------------------------------------------------------
+# THE ADMIN CONSOLE'S BROWSER BUNDLE (#446, 2026-10-05).
+#
+# The console is being converted into a static application that draws its
+# pages in the browser from /admin-api's JSON. Its page renderers are the
+# `admin-ui/web_*.ts` modules — the same functions this service draws those
+# pages with until the cutover — and this is where they are bundled into the
+# ONE file a browser loads: `admin-ui/console.bundle.js`, an IIFE whose value
+# is the global `StsConsole` (`admin-ui/web_pages.ts`, the entry).
+#
+# esbuild, as a BUNDLER and nothing else (rcbj's choice on #446): no
+# framework, no transform of what the pages are. It is run FOR A BROWSER, and
+# that is the check: a `web_` module that reaches a server module, or one of
+# node's, does not resolve and the image does not build.
+#
+# Bundled from the .ts sources, which tsc has just type-checked, and BEFORE
+# the strip below removes them. Like every compiled file it is written inside
+# an image build only, and the strip takes its comments with the rest.
+#
+# esbuild is `tests/package.json`'s, as the compiler is: a build tool the
+# typescript stage installs and the service image never carries.
+# ---------------------------------------------------------------------------
+BUNDLE_ENTRY=admin-ui/web_pages.ts
+BUNDLE_OUT=admin-ui/console.bundle.js
+if [ -f "$BUNDLE_ENTRY" ]; then
+  ESBUILD=tests/node_modules/.bin/esbuild
+  if [ ! -x "$ESBUILD" ]; then
+    echo "build-typescript.sh: $ESBUILD is missing; install" \
+         "tests/package.json first (npm install --prefix tests)." >&2
+    exit 1
+  fi
+  echo "build-typescript.sh: bundling the admin console for a browser" \
+       "(esbuild $BUNDLE_ENTRY)"
+  # The bundle is this repository's own source in another shape, so it opens
+  # with the two SPDX lines every source file here carries
+  # (tests/copyright_notices.js reads them in the tests image).
+  BUNDLE_OWNER="2026 Iya CyberSecurity Solutions, LLC"
+  BUNDLE_BANNER="// SPDX-FileCopyrightText: ${BUNDLE_OWNER}
+// SPDX-License-Identifier: BUSL-1.1"
+  "$ESBUILD" "$BUNDLE_ENTRY" --bundle --platform=browser --format=iife \
+    --global-name=StsConsole --target=es2022 --charset=ascii \
+    --legal-comments=none --log-level=warning \
+    --banner:js="$BUNDLE_BANNER" --outfile="$BUNDLE_OUT"
+  if [ ! -s "$BUNDLE_OUT" ]; then
+    echo "build-typescript.sh: esbuild wrote no $BUNDLE_OUT" >&2
+    exit 1
+  fi
+  # AND THE CONSOLE ITSELF (#446, step 5): `admin-ui/console.js`, the
+  # runtime (`web_runtime.ts`, started by `web_console.ts`) with every
+  # renderer, the shell and the form table in one file. `console.bundle.js`
+  # above stays, the renderers alone under a global, because that is what
+  # `tests/console_web_bundle.js` compares this process's pages with.
+  #
+  # **MINIFIED (rcbj, 2026-10-05)**, because it is the one generated file a
+  # browser downloads: whitespace and syntax compacted and local names
+  # shortened (`--minify`): 1.89 MB to 1.47 MB (461 KB to 420 KB gzipped)
+  # on 2026-10-05 — most of it is the pages' own prose, which minifying
+  # cannot shorten. The renderers are string-building functions and nothing
+  # reads a function's or a class's name, so shortening them changes nothing
+  # a page does. No source map: one would carry the sources' comments, which
+  # the shipped image strips (#365).
+  # `console.bundle.js` above is NOT minified: no browser loads it, and the
+  # tests that do are easier to read a failure out of in its own shape.
+  # The stylesheet (`/admin/console.css`) needs no step: `stylesheet()`
+  # writes it as one line with no whitespace or comments to remove.
+  CONSOLE_ENTRY=admin-ui/web_console.ts
+  CONSOLE_OUT=admin-ui/console.js
+  "$ESBUILD" "$CONSOLE_ENTRY" --bundle --platform=browser --format=iife \
+    --target=es2022 --charset=ascii --legal-comments=none --minify \
+    --log-level=warning --banner:js="$BUNDLE_BANNER" --outfile="$CONSOLE_OUT"
+  if [ ! -s "$CONSOLE_OUT" ]; then
+    echo "build-typescript.sh: esbuild wrote no $CONSOLE_OUT" >&2
+    exit 1
+  fi
+fi
+
 if [ "$STRIP" = true ]; then
   # The list is taken BEFORE anything is deleted, so the count is honest.
   STRIPPED="$(sources | wc -l | tr -d ' ')"
@@ -117,4 +193,34 @@ if [ "$STRIP" = true ]; then
   # The comments, from what is left (#365). Its parser is a dependency of
   # tests/package.json, installed by the caller with the compiler.
   node tests/tools/strip-comments.js .
+fi
+
+# ---------------------------------------------------------------------------
+# THE CONSOLE'S SCRIPT, PRECOMPRESSED (rcbj, 2026-10-05). `admin-ui/
+# console.js.br` (brotli, quality 11) and `console.js.gz` (gzip, level 9) are
+# written beside it, LAST — after the comment strip above, which rewrites the
+# script, so each is the script exactly as it is served. `AdminConsole`
+# serves whichever the request's Accept-Encoding takes, with `Vary:
+# Accept-Encoding`; nothing is compressed per request for this file, which is
+# the one large thing a browser downloads (1.47 MB; 322 KB as brotli and
+# 419 KB as gzip on 2026-10-05).
+# Only the console's own files are compressed: an /admin-api or protocol
+# answer often carries a secret beside text the caller chose, which is what
+# BREACH reads through compression.
+# ---------------------------------------------------------------------------
+if [ -f admin-ui/console.js ]; then
+  node -e '
+    const fs = require("fs");
+    const zlib = require("zlib");
+    const file = "admin-ui/console.js";
+    const raw = fs.readFileSync(file);
+    fs.writeFileSync(file + ".br", zlib.brotliCompressSync(raw, { params: {
+      [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
+      [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } }));
+    fs.writeFileSync(file + ".gz", zlib.gzipSync(raw, { level: 9 }));
+    console.log("build-typescript.sh: precompressed " + file + ": " +
+                raw.length + " bytes, " +
+                fs.statSync(file + ".br").size + " as brotli, " +
+                fs.statSync(file + ".gz").size + " as gzip");
+  '
 fi

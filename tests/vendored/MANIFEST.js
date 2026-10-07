@@ -97,15 +97,17 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // copy beside it rather than one over there.
 //
 // `browser: true` means the job drives Chrome through selenium-webdriver. There
-// are TWO, and both are console coverage against this working tree, which is
-// why `--no-browser` names them when it leaves them out.
+// are THREE, all coverage of this working tree's own pages, which is why
+// `--no-browser` names them when it leaves them out.
 // `sts_admin_console.js` walks every page; `sts_xacml_editor.js` drives ONE
 // page in depth — the guided policy editor, whose forty forms per render, whose
 // menus and whose nested-form hazard are markup rather than behaviour, and are
 // therefore invisible to the in-process suite that already holds its grammar.
 // They are not redundant: the first would notice the editor page failing to
 // draw, and nothing but the second notices it drawing a menu against the wrong
-// row's path.
+// row's path. The third, `sts_portal_device_webauthn.js` (#258), is the
+// portal's: the one scripted step on `/portal/devices`, run by Chrome against
+// a virtual authenticator, which no HTTP job can make.
 //
 // ---------------------------------------------------------------------------
 // `docker: true` MEANS THE JOB NEEDS A REMOTE PEP CONTAINER, AND IT IS A
@@ -324,6 +326,70 @@ const JOBS = [
   // SAML Recipient under forwarding. `local: true`: the feature is ours. Its
   // realm is left standing.
   { file: 'sts_token_exchange_assertions.js', browser: false, local: true },
+  // WHAT AN EXCHANGE ANSWERS (#156, 2026-10-05): no `"scope": ""`, no
+  // id_token beside a token whose scope names no openid, and the subject's
+  // scope carried forward when the exchange asks for none. `local: true`:
+  // the response is ours. Its realm is left standing.
+  { file: 'sts_token_exchange_response.js', browser: false, local: true },
+  // A FOUR-TIER TOKEN-EXCHANGE CHAIN OVER HTTP (#467, 2026-10-06): a web
+  // application, an API gateway, a service bus and a service provider — the
+  // parent's oauth2_delegation_chain.js without its browser — once as an
+  // impersonation (no actor_token) and once as a delegation (each tier's
+  // client_credentials token as actor_token, `act` nested). app1-scope on
+  // every token, every hop naming its target by a registered audience.
+  // `local: true`: the scenario is ours. Their entries are left standing.
+  { file: 'sts_token_exchange_chain_impersonation.js', browser: false,
+    local: true },
+  { file: 'sts_token_exchange_chain_delegation.js', browser: false,
+    local: true },
+  // THE SAME FOUR TIERS IN SAML ASSERTIONS OVER WS-TRUST (#473, 2026-10-06):
+  // a UsernameToken sign-in to the web application, then three RSTs, once
+  // with <wst:OnBehalfOf> (impersonation, no delegate on any assertion) and
+  // once with <wst14:ActAs> (delegation, the SAML Delegation Restriction
+  // naming every requester least to most recent, the web application
+  // first). Every AppliesTo the next tier's registered identifier. `local:
+  // true`: the scenario is ours. Their entries are left standing.
+  { file: 'sts_wstrust_chain_impersonation.js', browser: false,
+    local: true },
+  { file: 'sts_wstrust_chain_delegation.js', browser: false,
+    local: true },
+  // AND AGAIN WITH JWT RESPONSE TOKENS (#473): every RST asks for
+  // urn:ietf:params:oauth:token-type:jwt and each hop presents the JWT the
+  // last produced. The JWT is held to RFC 9068 (typ at+jwt, its claims,
+  // verified against /oauth2/jwks) and RFC 8693 (act for ActAs, nested,
+  // `iss` in every entry, urn:sts:client: in product; none for
+  // OnBehalfOf). They need #476 and #477.
+  { file: 'sts_wstrust_jwt_chain_impersonation.js', browser: false,
+    local: true },
+  { file: 'sts_wstrust_jwt_chain_delegation.js', browser: false,
+    local: true },
+  // AND AGAIN WITH SAML 1.1 TOKENS (#487): every RST asks for the SAML Token
+  // Profile's SAML 1.1 type. The assertions carry the application's SAML 1.1
+  // attributes, and an ActAs names no delegate, since SAML 1.1 has no
+  // Delegation Restriction; the chain is in the register.
+  { file: 'sts_wstrust_saml11_chain_impersonation.js', browser: false,
+    local: true },
+  { file: 'sts_wstrust_saml11_chain_delegation.js', browser: false,
+    local: true },
+  // AND IN KERBEROS (#486): the same four tiers as service principals,
+  // reached over MS-KKDCP. Impersonation is protocol transition — apigw1's
+  // S4U2Self for a user who signed in to webapp1 without Kerberos, then
+  // S4U2Proxy to esb1 and sp1 — and delegation is bob's own ticket to
+  // webapp1 presented by S4U2Proxy at every hop, the PAC's
+  // S4U_DELEGATION_INFO naming webapp1, apigw1 and esb1 at sp1. `local:
+  // true`: the scenario is ours. Their entries are left standing.
+  { file: 'sts_kerberos_chain_impersonation.js', browser: false,
+    local: true },
+  { file: 'sts_kerberos_chain_delegation.js', browser: false,
+    local: true },
+  // AND IN GNAP (#497): the same four tiers as GNAP parties. Impersonation
+  // is a trusted client presenting the person's ID Token (issued to it) as
+  // a user assertion, then two RFC 9767 derivations; delegation is the
+  // person approving webapp1's grant, then the same derivations, the
+  // original client traced through the grant every token names. `local:
+  // true`: GNAP exists here and nowhere else. Entries are left standing.
+  { file: 'sts_gnap_chain_impersonation.js', browser: false, local: true },
+  { file: 'sts_gnap_chain_delegation.js', browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
@@ -410,6 +476,14 @@ const JOBS = [
   // attribute is this repository's own and the assertion spans an /admin-api
   // write and a protocol delivery.
   { file: 'sts_ssf_allowed_events.js',   browser: false, local: true },
+  // THE SUBJECT'S ISSUER IS THE ONE THE RECEIVER DISCOVERED (#154,
+  // 2026-10-05): an administrator's set-password, disable and enable send
+  // CAEP and RISC events whose iss_sub names the person under the SET's own
+  // iss, read from the realm's SSF configuration at the URL the suite
+  // reaches — on a stream about everybody and on one that added the person
+  // under that issuer. `local: true`: this repository's own transmitter, in
+  // a throwaway realm it leaves behind.
+  { file: 'sts_ssf_subject_issuer.js',   browser: false, local: true },
   // SSF 1.0 FINAL OVER THE WIRE (#144, 2026-09-22): stream ownership (another
   // receiver's stream is a 404 on all ten endpoints), a Transmitter-Supplied
   // aud, the RFC 9493 names and the final complex subject, the inserted-path
@@ -510,6 +584,13 @@ const JOBS = [
   // approving session, and in product the OpenID4VCI offer. `local: true`:
   // this repository's own transmitter.
   { file: 'sts_caep_oauth_grants.js',    browser: false, local: true },
+  // AN OPENID4VCI PRE-AUTHORIZED CODE NAMES ITS PERSON (#158, 2026-10-05): a
+  // cross-device offer redeemed by an anonymous wallet gives an access token
+  // whose `sub` is the person's ID Token `sub` — in development for an
+  // offer made before the person had an entry — and whose `client_id` is
+  // the anonymous wallet's defined value. `local: true`: this repository's
+  // own credential issuer.
+  { file: 'sts_oid4vci_preauth_subject.js', browser: false, local: true },
   // RISC ON ITS OWN (#146, 2026-09-22): a reset link marked compromised
   // (account-credential-change-required, recovery-activated,
   // credential-compromise), a disable's reason, an address recycled, and the
@@ -533,6 +614,19 @@ const JOBS = [
   // pwdReset (account-credential-change-required). `local: true`: this
   // repository's own transmitter and directory, in a throwaway product realm.
   { file: 'sts_credential_signals.js',   browser: false, local: true },
+  // SHARED SIGNALS ABOUT AN APPLICATION (#221 P5, 2026-10-06): a receiver
+  // adds an application (SSF's complex subject, `application` opaque
+  // client_id) to its poll stream, the application's client secret is
+  // rotated on /admin-api, and ONE credential-change (client-secret, update)
+  // about the application arrives; another application's does not.
+  // `local: true`: this repository's own transmitter and management API, in
+  // a throwaway realm.
+  { file: 'sts_application_signals.js', browser: false, local: true },
+  // SERVICE ACCOUNTS (#221 P1, P2, P4): the flag through /admin-api, the
+  // users list's tag and filter, the third policy kind, Rotate now's
+  // refusals and Monitoring → Service accounts. `local: true`: this
+  // repository's own management API, in a throwaway realm.
+  { file: 'sts_service_accounts.js',     browser: false, local: true },
   // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
   // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
   // token is confined, and in the `cluster` mode both nodes name one leader
@@ -565,6 +659,13 @@ const JOBS = [
   // missing token, the wrong body type. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_admin_risk_upload.js',    browser: false, local: true },
+  // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256): a synthetic list
+  // uploaded through POST /admin-api/risk/upload with no terms to accept,
+  // active with a row per REVOKED or SUSPENDED entry, named by
+  // /admin-api/device-registration's androidStatus on every process; a
+  // document that is not the list refused; a newer list replacing it.
+  // `local: true`: this repository's own /admin-api.
+  { file: 'sts_android_attestation_status.js', browser: false, local: true },
   // MONITORING → GEOLOCATION (#255, 2026-09-26): the live window counting
   // this job's own sign-in, every window and level in its shape with every
   // count at or over risk.geoMinimumCount or held back, the four refusals,
@@ -810,6 +911,12 @@ const JOBS = [
   // would otherwise be asserting against a store the other job is still
   // filling.
   { file: 'sts_portal_backup_keys.js',   browser: false, local: true },
+  // PASSKEYS AS DISCOVERABLE CREDENTIALS (#474): a passkey registered
+  // through an activation link under a minted user handle, then signed in
+  // with and no username — all in a throwaway realm of its own, whose
+  // `webauthn.usernameless` changes no screen another lane loads.
+  // `local: true`: this repository's own sign-in screen and API.
+  { file: 'sts_passkey_usernameless.js', browser: false, local: true },
   // A SECURITY KEY'S ATTESTATION, VERIFIED (#105): keys enrolled at
   // /portal/keys in a throwaway realm with statements this job makes — an
   // x5c packed statement under a root minted at run time and configured as
@@ -869,9 +976,21 @@ const JOBS = [
   // `/portal/mfa`, and the challenge the stand-in resource and UserInfo send.
   // After the monitor job, in a throwaway realm it leaves standing.
   { file: 'sts_step_up.js',              browser: false, local: true },
+  // FAPI 2.0 HTTP Signatures at the resource servers (#178): a signed
+  // request verified at /scim/v2 in a throwaway realm, its signed answer
+  // verified by the job's own RFC 9421 code with the realm's published key,
+  // the refusals, oauth2.httpSignatures and the client's
+  // oauthHttpSignedRequests, both written through /admin-api.
+  { file: 'sts_fapi_http_signatures.js', browser: false, local: true },
   { file: 'sts_roles.js',              browser: false, local: true },
   { file: 'sts_roles_builtin.js',        browser: false, local: true },
-  { file: 'sts_saml11.js',               browser: false },
+  // OWNED HERE SINCE 2026-10-05, TEMPORARILY (rcbj): rcbj/iya-sts#160 made the
+  // SAML 1.1 responder answer only its own SourceID and send the empty
+  // response for any artifact it does not hand over, and the parent's copy
+  // still resolved a relying party's artifact at the unscoped responder and
+  // expected Requester for a replay. Fixed here first; it goes back to the
+  // parent with rcbj/id-proto-debugger#353, and this flag comes off then.
+  { file: 'sts_saml11.js',               browser: false, local: true },
   // OWNED HERE SINCE 2026-09-21, when it was a byte-identical copy of the
   // parent's: its no-certificate case had to stop registering a signing
   // certificate in development (the service encrypts to one, so the in-clear
@@ -910,6 +1029,14 @@ const JOBS = [
   // indicator in the tickets — with real MIT kinit where it is installed.
   // `local: true`: this repository's KDC, portal and API.
   { file: 'sts_kerberos_fast_otp.js',    browser: false, local: true },
+  // A CERTIFICATE AS THE KERBEROS PRE-AUTHENTICATION (#179, 2026-10-05):
+  // over TCP 88 in both modes, a smart-card logon certificate enrolled over
+  // EST with a key made at run time, then real MIT `kinit -X` (hw-authent),
+  // the password alone refused in product once a second factor is required,
+  // another person's certificate a client name mismatch, and `kinit -n` as
+  // FAST armor for `kinit -T` — the MIT half skipped where kinit or its
+  // PKINIT plugin is absent. `local: true`: this repository's KDC and EST.
+  { file: 'sts_kerberos_pkinit.js',      browser: false, local: true },
   // A PERSON'S KEYTAB (#59, 2026-09-22): from the administrator's reset, a
   // generated password and /portal/kerberos, each read with `klist -k` and
   // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
@@ -942,6 +1069,13 @@ const JOBS = [
   // on the kvno — in both modes. `local: true`: this repository's KDC,
   // scheduler and API.
   { file: 'sts_kerberos_krbtgt_rotation.js', browser: false, local: true },
+  // KERBEROS PAC CLIENT CLAIMS (#493): a throwaway realm with
+  // krb5.pacClaims on, its claim set and one service's own row through
+  // /admin-api, and a service ticket for each of two services opened with the
+  // service's keytab — PAC_CLIENT_CLAIMS_INFO decoded by the claim ids the
+  // API names, the service's own row in place of the realm's, none with the
+  // setting off. `local: true`: this repository's KDC and API.
+  { file: 'sts_kerberos_pac_claims.js',  browser: false, local: true },
   // SAMBA'S RAW KERBEROS KDC TESTS (#204, 2026-09-26): python/samba/tests/
   // krb5 from a pinned Samba built into the tests image (GPL-3.0, never
   // vendored), every module run unchanged by tests/kerberos-interop/
@@ -991,6 +1125,25 @@ const JOBS = [
   // Devices, Device registration and /admin/ldap/devices. `local: true`:
   // this repository's register and API.
   { file: 'sts_devices.js',              browser: false, local: true },
+  // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
+  // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
+  // roaming key and a platform key on /portal/keys; the roaming one is
+  // passed over and refused when forced; with script blocked the armed
+  // page's real button answers in a sentence and links nothing; the armed
+  // response is `script-src 'self'` with frame-ancestors; the script runs
+  // the ceremony — linked in development, refused in product (an
+  // unattested key, STS-DEVICE-0024) — and in development the device holds
+  // the key and a later WebAuthn sign-in recognises it. `local: true`: the
+  // portal and the API it is read back through are this repository's. AFTER
+  // sts_devices.js, which holds the register this one writes to.
+  { file: 'sts_portal_device_webauthn.js', browser: true, local: true },
+  // A TPM KEY ATTESTATION'S FRESHNESS OVER EST (#257, 2026-10-06):
+  // /nonce (draft-ietf-lamps-attestation-freshness section 5.1), a device
+  // enrolment over a fresh TPM2_Certify statement built here, the same
+  // statement replayed (unproven in development, refused in product), and
+  // the nonce request's refusals. `local: true`: this repository's EST
+  // server and device register.
+  { file: 'sts_est_attestation_freshness.js', browser: false, local: true },
   // OPENID CONNECT CIBA (#131, 2026-09-23): the endpoint's refusals, poll
   // with an approval on /portal/ciba, deny, the user code, and ping and
   // push in development. `local: true`: this repository's own endpoint.
@@ -1211,6 +1364,11 @@ const JOBS = [
   // a sign-in carrying the attribute claim, and refuse on failure. Skips
   // without STS_TEST_ATTRIBUTE_DB_URL or a shared directory.
   { file: 'sts_attribute_sources.js',    browser: false, local: true },
+  // Secret push destinations (#221 P3): the register over /admin-api in a
+  // realm of its own — the write credential in no answer and refused by
+  // reveal-secret, and in development a file destination on the shared
+  // directory, test-pushed and read back. Refused in product mode.
+  { file: 'sts_secret_destinations.js',  browser: false, local: true },
   // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
   // attester made at run time, the challenge endpoint, PAR, the code and
   // refresh token bound to the client instance, the DPoP combined mode and
@@ -1370,6 +1528,11 @@ const HELPERS = [
 // a silent gap. A local helper that nothing lists gets that guarantee from
 // nothing.
 const LOCAL_HELPERS = [
+  // The console's sign-in and a client of the operations its pages are
+  // drawn from (#446). Copied from the parent on 2026-09-06 and written here
+  // since; the static console (#446) made it a different helper from the
+  // parent's, which signs in to a cookie-holding console.
+  'console_signin.js',
   // What the OpenID conformance suite's drivers share (#187): the suite's
   // API, a plan run module by module, and the ledger of argued failures and
   // known warnings. `sts_fapi_conformance.js` keeps its own copy (#176).
@@ -1455,7 +1618,39 @@ const LOCAL_HELPERS = [
   // follows no redirect, a JWT checked against a key set with node's own
   // crypto, and a bounded wait for the global tier. Nothing from the
   // service.
-  'cells_kit.js'
+  'cells_kit.js',
+  // WHAT THE TWO TOKEN-EXCHANGE CHAIN JOBS SHARE (#467): the four tiers'
+  // provisioning, a browser's authorization-code walk with a desktop
+  // User-Agent, the client_credentials and exchange requests, introspection,
+  // and the delegation register and graph read back. Nothing from the
+  // service.
+  'token_exchange_chain_kit.js',
+  // WHAT THE FOUR WS-TRUST CHAIN JOBS SHARE (#473): the four tiers and the
+  // requesters' service accounts, the UsernameToken sign-in, the
+  // OnBehalfOf / ActAs requests, an assertion or a JWT read and its
+  // signature verified as a relying party would, and the register read
+  // back. It takes the protocol-independent half from
+  // token_exchange_chain_kit.js.
+  'wstrust_chain_kit.js',
+  // WHAT THE TWO KERBEROS CHAIN JOBS SHARE (#486): the four service
+  // principals and their keys, the S4U2Self and S4U2Proxy requests over
+  // krb5_wire.js, each ticket opened by the tier it is for (the AP-REQ, the
+  // PAC's server signature, S4U_DELEGATION_INFO), and the register read
+  // back. It takes the protocol-independent half from
+  // token_exchange_chain_kit.js.
+  'kerberos_chain_kit.js',
+  // WHAT THE TWO GNAP CHAIN JOBS SHARE (#497): the four GNAP parties and
+  // their keys, the catalogue they declare, the OpenID Connect sign-in, the
+  // user assertion, the approval and the RFC 9767 derivations over
+  // gnap_client.js, each token verified and introspected by its tier, the
+  // original grant, the register and the optional capture. It takes the
+  // protocol-independent half from token_exchange_chain_kit.js.
+  'gnap_chain_kit.js',
+  // THE CHAIN JOBS' OPTIONAL RECORD OF WHAT EACH LAYER WAS ISSUED: off
+  // unless STS_CHAIN_CAPTURE names a directory, then `<job>.json` there with
+  // every token, assertion or ticket, decoded. Required by the three chain
+  // kits above and by the GNAP one. Nothing from the service.
+  'chain_capture.js'
 ];
 
 // ---------------------------------------------------------------------------

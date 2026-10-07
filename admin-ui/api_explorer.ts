@@ -308,8 +308,12 @@ class ApiExplorer {
     const self = this;
     log.debug("Entering ApiExplorer.explorerJson().");
     const gate = adminViews.gateStateFor(req);
-    const document = spec.buildSpec(adminApi.ROUTES,
-                                    adminApi.specOptions(req));
+    // THE MANAGEMENT OPERATIONS ALONE (#454): this page is the management
+    // API's, and the console's own operations — its frame, drawings and
+    // form helpers — are not part of what it documents or calls.
+    const document = spec.buildSpec(adminApi.ROUTES.filter(function (entry) {
+      return (entry.kind || 'management') === 'management';
+    }), adminApi.specOptions(req));
     const paths = Object.keys(document.paths || {});
     let operations = 0;
     paths.forEach(function (one) {
@@ -319,7 +323,7 @@ class ApiExplorer {
     return {
       page: PATH,
       api: adminApi.BASE,
-      document: PATH + '/openapi.json',
+      document: adminApi.BASE + '/openapi.json',
       version: VERSION,
       paths: paths.length,
       operations: operations,
@@ -335,7 +339,14 @@ class ApiExplorer {
       // is the shape a script reads — a page handing one to a browser it has
       // already authenticated is a different act from an API handing one to
       // whoever asked.
-      tokenInReply: false
+      tokenInReply: false,
+      // What the static console draws the page from (#446): who the calls
+      // are made as (the API's handler names the token's subject and its
+      // scopes, which a console session cannot), the realm the document and
+      // the calls are under, and the explorer's script.
+      who: gate.username || '',
+      realmPrefix: this.deps.realms.currentPrefix() || '',
+      script: PATH + '/explorer.js'
     };
   }
 
@@ -350,93 +361,7 @@ class ApiExplorer {
             docs } = this.deps;
     const self = this;
     log.debug("Entering ApiExplorer.registerRoutes().");
-    // -------------------------------------------------------------------------
-    // THE PAGE.
-    // -------------------------------------------------------------------------
-    app.get(PATH, async function (req, res, next) {
-      log.debug("Entering the API explorer console page.");
-      // THE ONE CLAUSE THIS PAGE RELAXES, and it is the same shape every other
-      // scripted page in this service uses: `script-src 'self'` naming one
-      // resource, never `'unsafe-inline'`, through
-      // `app.contentSecurityPolicy()` so that `frame-ancestors` and `base-uri`
-      // are re-added whatever is asked for. `connect-src 'self'` is the
-      // second, and it is what lets the page call the API it documents and
-      // nothing else.
-      res.set('Content-Security-Policy', app.contentSecurityPolicy({
-        'script-src': "'self'",
-        'connect-src': "'self'"
-      }));
-      const gate = adminViews.gateStateFor(req);
-      let token = '';
-      try {
-        token = await self.tokenFor(req, gate);
-      } catch (e) {
-        log.debug("Caught in the API explorer console page: " +
-                  ((e && e.message) || e));
-        // tokenFor() answers '' for every failure it knows of; anything
-        // else is the error handler's, as a throw here always was.
-        log.debug("Leaving the API explorer console page. Failed.");
-        next(e);
-        return;
-      }
-      const prefix = realms.currentPrefix() || '';
-      const inner = docs.consoleBody({
-        // -----------------------------------------------------------------
-        // ONE OF THESE CARRIES THE REALM PREFIX AND THE OTHER MUST NOT, and
-        // the asymmetry is `app.js`'s rewrite rather than an inconsistency
-        // here.
-        //
-        // That middleware rewrites every root-relative `href`, `action` and
-        // `src` in an HTML response to carry the current realm's prefix —
-        // which is what makes this whole console realm-correct without a line
-        // of its markup being edited. So `scriptUrl` goes in BARE: it becomes
-        // a `src`, and prefixing it here as well would produce
-        // `/realm/acme/realm/acme/...` and a page whose script 404s in every
-        // realm but the default.
-        //
-        // `specUrl` becomes a DATA ATTRIBUTE, which that rewrite does not
-        // touch — it is not markup a browser resolves, it is a string a
-        // script reads — so it carries the prefix explicitly. That is the
-        // same split the page had when it lived at `/admin-api/docs`, and it
-        // is worth restating because getting it backwards fails in exactly
-        // one realm out of two.
-        // -----------------------------------------------------------------
-        specUrl: prefix + PATH + '/openapi.json',
-        scriptUrl: PATH + '/explorer.js',
-        version: VERSION,
-        // THE EXPLORER PREPENDS THIS TO EVERY REQUEST IT MAKES. The paths in
-        // the document are the paths the routes are REGISTERED at and no
-        // route in this service carries a realm, so without it Try it inside
-        // a realm would call the default realm's API — the call would succeed
-        // and it would have changed the wrong service.
-        realmPrefix: prefix,
-        token: token,
-        who: gate.username || '',
-        scope: self.scopesFor(gate)
-      });
-      admin.respond(req, res, self.explorerJson(req), 'API explorer', PATH,
-                    inner);
-      log.debug("Leaving the API explorer console page.");
-    });
 
-    // -------------------------------------------------------------------------
-    // THE DOCUMENT, on the console's own path so that it arrives on this
-    // session.
-    // -------------------------------------------------------------------------
-    app.get(PATH + '/openapi.json', function (req, res) {
-      log.debug("Entering the API explorer's OpenAPI document.");
-      // THE OPTIONS COME FROM `admin_api.js` rather than being assembled here.
-      // This page serves a SECOND copy of that API's document — on the
-      // console's own path, so that it arrives on the session the page was
-      // drawn with — and two copies built from two sets of facts is two
-      // documents. The one that used to be missing from both is the gate's
-      // state.
-      res.set('Cache-Control', 'no-store').type('application/json')
-         .send(JSON.stringify(spec.buildSpec(adminApi.ROUTES,
-                                             adminApi.specOptions(req)),
-                              null, 2));
-      log.debug("Leaving the API explorer's OpenAPI document.");
-    });
 
     // -------------------------------------------------------------------------
     // THE SCRIPT. A separate resource rather than an inline block precisely so

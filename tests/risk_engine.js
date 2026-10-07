@@ -30,6 +30,16 @@
 //   F. `assess()` never rejects, and a person nobody named is not assessed.
 //   G. An operator's factor (`risk.signalFactors`, calibration) is the one a
 //      sign-in is scored with, and an entry naming no signal is ignored.
+//   H. One shared network at the default threshold (#499), with datasets.
+//   I. The same with NO datasets (#502): every address unmapped, as on a
+//      container bridge. Repeated sign-ins stay LOW; a new address with no
+//      ASN and no country is new, and the record says which levels were
+//      unknown.
+//   J. The device feature is `device-id`, not the model's `device` (#506):
+//      the history's own feature names are none of the model's levels, a
+//      fingerprint and a device type are counted apart, neither makes the
+//      other "seen", and the model's factors are the same with fingerprints
+//      as without them.
 //
 // Every address is a documentation one (RFC 5737), every list synthetic.
 // ===========================================================================
@@ -65,7 +75,8 @@ function signIn(address, userAgent, extra) {
       'session-' + require('crypto').randomBytes(8).toString('hex'),
     door: 'the sign-in screen', clientId: 'a-client',
     context: { address: address, uaFingerprint: 'fp-' + userAgent.length,
-               ja4: e.ja4 || '', credential: { kind: 'password' } },
+               ja4: e.ja4 || '', device: e.device || '',
+               credential: { kind: 'password' } },
     userAgent: userAgent });
 }
 
@@ -123,6 +134,53 @@ async function run(t) {
   t.check(again && again.level === 'LOW' && again.score < 1,
           'C1. the same person from the same network and device scores LOW',
           again && again.score);
+  // THE MODEL ROW EXPLAINS THE WHOLE SCORE (#499): the two features and the
+  // user term multiply to the model's score, the counts the user term is
+  // made of beside them — on the record, so on the API's assessment too —
+  // and Monitoring → Risk draws all three.
+  const row = (again && again.signals[0]) || {};
+  const f = row.factors || {};
+  const t3 = row.terms || {};
+  t.check(typeof f.user === 'number' &&
+          Math.abs(f.ip * f.ua * f.user - row.score) <= 1e-12 * row.score &&
+          t3.users === 1 && t3.userSignIns > 0 &&
+          t3.signIns === t3.userSignIns &&
+          Math.abs(f.user - (1 / t3.users) / (t3.userSignIns / t3.signIns)) <
+            1e-12,
+          'C2. the model row carries ip, ua and the user term, which ' +
+          'multiply to its score, and the counts the user term is made of',
+          JSON.stringify(row));
+  const recorded = (await riskEngine.view(REALM, { subject: ALICE, days: 1 }))
+    .assessments.rows.filter(function (a) {
+      return again && a.id === again.id;
+    })[0] || {};
+  let drawn = '';
+  try {
+    const RiskPage = require('../admin-ui/web_risk');
+    drawn = RiskPage.assessmentsHtml({ query: {}, write: false },
+      JSON.parse(JSON.stringify({
+        assessments: { rows: [recorded], total: 1 }, subjects: [],
+        assessmentsPaging: { page: 1, pages: 1, perPage: 50, firstRow: 1,
+                             lastRow: 1, total: 1,
+                             param: 'assessmentsPage', noun: 'assessments' },
+        subjectsPaging: { page: 1, pages: 1, perPage: 25, firstRow: 0,
+                          lastRow: 0, total: 0, param: 'subjectsPage',
+                          noun: 'people' } })));
+  } catch (e) {
+    drawn = 'threw: ' + (e && e.message);
+  }
+  const rf = (recorded.signals && recorded.signals[0] &&
+              recorded.signals[0].factors) || {};
+  t.check(typeof rf.user === 'number' &&
+          drawn.indexOf('model: ip ×') >= 0 &&
+          drawn.indexOf('user ×' + Number(rf.user).toPrecision(3)) >= 0 &&
+          drawn.indexOf((recorded.signals[0].terms || {}).signIns +
+                        ' sign-ins') >= 0,
+          'C3. the recorded assessment (what GET /admin-api/risk answers) ' +
+          'keeps the user term, and Monitoring → Risk draws the model\'s ' +
+          'three factors from it',
+          drawn.slice(drawn.indexOf('<tbody>'), drawn.indexOf('<tbody>') +
+                      600));
 
   // --- D. the evaluators ----------------------------------------------------
   config.setOverride('risk.datasetShrinkLimitPercent', 100);
@@ -225,7 +283,304 @@ async function run(t) {
 
   config.setOverride('risk.datasetShrinkLimitPercent', 50);
   config.clearOverride('risk.minimumHistory');
+  await sharedNetwork(t);
+  await unmappedNetwork(t);
+  await deviceFeature(t);
   log.debug("Leaving run().");
+}
+
+// ---------------------------------------------------------------------------
+// H. ONE SHARED NETWORK, AT THE DEFAULT THRESHOLD (#499). Every person behind
+// one address with one browser — a NAT, a VPN, a container bridge, a test
+// stack — and one of them signing in far more than the rest. With
+// risk.minimumHistory at its default, a person whose earlier sign-ins are all
+// from that same context is scored, and the score is mostly the model's
+// user term (above 1: they sign in less than the average). At the default
+// MEDIUM line (risk.mediumScorePercent 300, Freeman et al.'s θ calibrated —
+// rcbj's decision on #499) that is LOW; at the old line of 1 it was MEDIUM,
+// which is what refused the WS-Trust chain jobs on a long-lived service. A
+// genuinely new address, or a new browser, still raises the score past it.
+// ---------------------------------------------------------------------------
+async function sharedNetwork(t) {
+  log.debug("Entering sharedNetwork().");
+  riskStore.reset();
+  riskDatasets.forget();
+  // Two networks in two countries, so a new address can be in a new one.
+  // Without the datasets every address has no network and no country, which
+  // the model counts as unseen since #502 — section I, below.
+  await require('../risk/risk_terms').accept({ provider: 'dbip-lite',
+    acceptedBy: 'a test', via: 'upload' });
+  const networks = await riskDatasets.importVersion({ dataset: 'asn',
+    format: 'dbip-asn-csv', version: 'h-asn', source: 'upload',
+    content: '192.0.2.0,192.0.2.255,64496,Example Networks\n' +
+             '198.18.8.0,198.18.8.255,64497,Documentation Carrier' });
+  const places = await riskDatasets.importVersion({ dataset: 'geo.city',
+    format: 'dbip-city-csv', version: 'h-city', source: 'upload',
+    content: '192.0.2.0,192.0.2.255,OC,AU,Queensland,Example City,' +
+             '-27.4748,153.017\n198.18.8.0,198.18.8.255,EU,DE,Berlin,' +
+             'Berlin,52.52,13.405' });
+  const SHARED = '192.0.2.50';
+  const HEAVY = 'urn:uuid:00000000-0000-4000-8000-0000000000aa';
+  const people = ['b1', 'b2', 'b3'].map(function (n) {
+    return 'urn:uuid:00000000-0000-4000-8000-0000000000' + n;
+  });
+  const minimum = Number(config.value('risk.minimumHistory'));
+  for (let i = 0; i < 30; i++) {
+    await signIn(SHARED, CHROME, { subject: HEAVY });
+  }
+  let last = null;
+  for (const person of people) {
+    for (let i = 0; i <= minimum; i++) {
+      last = await signIn(SHARED, CHROME, { subject: person });
+    }
+  }
+  const model = (last && last.signals[0]) || {};
+  const f = model.factors || {};
+  t.check(Number(config.value('risk.mediumScorePercent')) === 300 &&
+          last && last.level === 'LOW' && typeof model.score === 'number' &&
+          model.score > 1 && last.score < 3 && f.user > 1 &&
+          f.ip <= 1 && f.ua <= 1 && model.knownContext === true,
+          'H1. a person with risk.minimumHistory (' + minimum + ') identical ' +
+          'sign-ins on a shared network is LOW at the default MEDIUM line ' +
+          '(3): the score is above 1 only by the user term, which says they ' +
+          'sign in less than average and nothing about this context',
+          JSON.stringify({ level: last && last.level, score: last &&
+                           last.score, factors: f }));
+  const person = people[people.length - 1];
+  const newAddress = await signIn('198.18.8.10', CHROME,
+                                  { subject: person });
+  const newBrowser = await signIn(SHARED, 'Mozilla/5.0 (X11; Linux x86_64; ' +
+    'rv:142.0) Gecko/20100101 Firefox/142.0', { subject: person });
+  t.check(networks && networks.ok && places && places.ok &&
+          newAddress && newBrowser &&
+          newAddress.score > last.score * 2 &&
+          newBrowser.score > last.score * 2 &&
+          newAddress.level !== 'LOW' && newBrowser.level !== 'LOW' &&
+          JSON.stringify(newAddress.signals[0].unknown) === '[]' &&
+          JSON.stringify(model.unknown) === '[]',
+          'H2. a genuinely new address (on a new network), or a new ' +
+          'browser, still raises the ' +
+          'same person\'s score past the MEDIUM line',
+          JSON.stringify({ networks: networks.ok, places: places.ok,
+                           known: last && last.score,
+                           address: newAddress && newAddress.score,
+                           browser: newBrowser && newBrowser.score }));
+  log.debug("Leaving sharedNetwork().");
+}
+
+// ---------------------------------------------------------------------------
+// I. NO DATASETS, ONE BRIDGE (#502). H again with nothing loaded: every
+// address — a private one on a container bridge, as every suite job is —
+// has no ASN and no country. Until #502 that empty network and country were
+// values everybody shared, so a new address read as a new address on a
+// known network and moved the score from 2.01 to 2.06. Now the two levels
+// are unseen on both sides (Freeman et al. section II-C, Eq. (9)), so the
+// person's repeated sign-ins from the bridge are still LOW (their address
+// counts at the address level) and a new unmapped address is new.
+// ---------------------------------------------------------------------------
+async function unmappedNetwork(t) {
+  log.debug("Entering unmappedNetwork().");
+  riskStore.reset();
+  riskDatasets.forget();
+  const BRIDGE = '172.29.0.1';
+  const HEAVY = 'urn:uuid:00000000-0000-4000-8000-0000000000ca';
+  const people = ['c1', 'c2', 'c3'].map(function (n) {
+    return 'urn:uuid:00000000-0000-4000-8000-0000000000' + n;
+  });
+  const minimum = Number(config.value('risk.minimumHistory'));
+  for (let i = 0; i < 30; i++) {
+    await signIn(BRIDGE, CHROME, { subject: HEAVY });
+  }
+  let last = null;
+  for (const person of people) {
+    for (let i = 0; i <= minimum; i++) {
+      last = await signIn(BRIDGE, CHROME, { subject: person });
+    }
+  }
+  const model = (last && last.signals[0]) || {};
+  const f = model.factors || {};
+  t.check(last && last.level === 'LOW' && last.score < 3 &&
+          f.ip <= 1 && f.ua <= 1 && model.knownContext === true &&
+          JSON.stringify(model.unknown) === '["asn","country"]',
+          'I1. with no datasets, a person\'s repeated sign-ins from one ' +
+          'bridge address stay LOW at the default MEDIUM line (H1\'s case, ' +
+          'unmapped), a known context, with asn and country recorded unknown',
+          JSON.stringify({ level: last && last.level, score: last &&
+                           last.score, model: model }));
+  const person = people[people.length - 1];
+  const fresh = await signIn('172.29.0.9', CHROME, { subject: person });
+  const freshModel = (fresh && fresh.signals[0]) || {};
+  t.check(fresh && freshModel.factors && freshModel.factors.ip === 4 &&
+          fresh.score > last.score * 3 && fresh.level !== 'LOW' &&
+          freshModel.knownContext === false &&
+          JSON.stringify(freshModel.unknown) === '["asn","country"]',
+          'I2. a new address with no ASN and no country raises the score ' +
+          'past the MEDIUM line: ip ×4, where the shared empty network gave ' +
+          '~1 (2.01 → 2.06 on #499)',
+          JSON.stringify({ known: last && last.score, fresh: fresh &&
+                           fresh.score, factors: freshModel.factors }));
+  const empties = await riskStore.featureCounts(REALM, '*',
+    [{ feature: 'asn', value: '' }, { feature: 'country', value: '' }],
+    false);
+  const mine = await riskStore.featureCounts(REALM, person,
+    [{ feature: 'asn', value: '' }, { feature: 'country', value: '' }],
+    false);
+  // Nor as a network or country an address was seen in: no ASN or country
+  // was ever known here, so the combination rows the smoothing counts are
+  // empty.
+  const combos = [];
+  for (const level of ['ip>asn', 'ip>country']) {
+    combos.push(await riskStore.distinctValues(REALM, '*', level, '', false));
+  }
+  t.check(empties.length === 0 && mine.length === 0 &&
+          combos[0] === 0 && combos[1] === 0,
+          'I3. and a missing network or country is never counted as a ' +
+          'value, for the population or the person, nor as a network or ' +
+          'country an address was seen in',
+          JSON.stringify({ population: empties, person: mine,
+                           combinations: combos }));
+  // `risk.listsMatchSpecialPurpose` sets the LISTS aside for a private
+  // address (#226); it does not make the model treat one as familiar.
+  config.setOverride('risk.listsMatchSpecialPurpose', false);
+  let aside = null;
+  try {
+    aside = await signIn('10.0.0.7', CHROME, { subject: person });
+  } finally {
+    config.clearOverride('risk.listsMatchSpecialPurpose');
+  }
+  t.check(aside && aside.signals[0].factors &&
+          aside.signals[0].factors.ip === 4 && aside.level !== 'LOW',
+          'I4. with risk.listsMatchSpecialPurpose off, a new private address ' +
+          'is still new to the model: the setting is about lists',
+          JSON.stringify(aside && aside.signals[0]));
+  let drawn = '';
+  try {
+    const RiskPage = require('../admin-ui/web_risk');
+    drawn = RiskPage.modelCell(freshModel) + ' | ' +
+      RiskPage.modelCell({ signal: 'model', score: null,
+                           unknown: ['asn', 'country'] });
+  } catch (e) {
+    drawn = 'threw: ' + (e && e.message);
+  }
+  t.check(/model: ip ×4\.00 .* · unknown: asn, country \|/.test(drawn) &&
+          /\| model: unknown: asn, country$/.test(drawn),
+          'I5. Monitoring → Risk draws the unknown levels beside the ' +
+          'factors, and on an unscored sign-in too', drawn);
+  log.debug("Leaving unmappedNetwork().");
+}
+
+// ---------------------------------------------------------------------------
+// J. THE DEVICE FEATURE HAS A NAME OF ITS OWN (#506). Until #506 the browser
+// fingerprint / registered device was counted under `device`, the name of
+// the model's device-type level (desktop, mobile), so the two shared one
+// history per person. The fingerprints below are chosen to COLLIDE with the
+// device types — a fingerprint reading `desktop`, then `mobile` — which is
+// what shows a shared key: a fingerprint would count as a device type, and a
+// device type would make a fingerprint "seen" (no `new-device`). The last
+// check runs the same sign-ins twice, with and without fingerprints, and
+// asks for the same model factors every time.
+// ---------------------------------------------------------------------------
+async function deviceFeature(t) {
+  log.debug("Entering deviceFeature().");
+  const levels = [];
+  require('../risk/risk_model').FEATURES.forEach(function (f) {
+    f.levels.forEach(function (l) {
+      levels.push(l[0]);
+    });
+  });
+  const own = riskEngine.HISTORY_FEATURES || [];
+  t.check(riskEngine.DEVICE_ID_FEATURE === 'device-id' &&
+          own.indexOf('device-id') >= 0 && levels.indexOf('device') >= 0 &&
+          !own.some(function (name) {
+            return levels.indexOf(name) >= 0 || name === 'user' ||
+              name === '_total' || name.indexOf('>') >= 0;
+          }),
+          'J1. the history\'s own features (' + own.join(', ') + ') are ' +
+          'none of the model\'s levels (' + levels.join(', ') + '), whose ' +
+          'device type keeps the paper\'s name',
+          JSON.stringify({ own: own, levels: levels }));
+
+  const PERSON = 'urn:uuid:00000000-0000-4000-8000-0000000000d1';
+  const ADDRESS = '192.0.2.77';
+  // The sequence: enough history from one desktop browser with one
+  // fingerprint, then a phone whose fingerprint reads `desktop`, a phone
+  // whose fingerprint reads `mobile`, the desktop with that one, and the
+  // phone with none.
+  const steps = [];
+  for (let i = 0; i < 6; i++) {
+    steps.push({ ua: CHROME, device: 'fp-a' });
+  }
+  steps.push({ ua: CHROME, device: 'fp-a' });
+  steps.push({ ua: SAFARI, device: 'desktop' });
+  steps.push({ ua: SAFARI, device: 'mobile' });
+  steps.push({ ua: CHROME, device: 'mobile' });
+  steps.push({ ua: SAFARI, device: '' });
+  const play = async function (fingerprints) {
+    log.debug("Entering play(). " + fingerprints);
+    riskStore.reset();
+    riskDatasets.forget();
+    const out = [];
+    for (const s of steps) {
+      out.push(await signIn(ADDRESS, s.ua, { subject: PERSON,
+        device: fingerprints ? s.device : '' }));
+    }
+    log.debug("Leaving play().");
+    return out;
+  };
+  const newDevice = function (a) {
+    return !!a && a.signals.some(function (s) {
+      return s.signal === 'new-device';
+    });
+  };
+  const count = async function (feature, value) {
+    log.debug("Entering count(). " + feature);
+    const rows = await riskStore.featureCounts(REALM, PERSON,
+      [{ feature: feature, value: value }], false);
+    log.debug("Leaving count().");
+    return rows.length ? rows[0].count : 0;
+  };
+  const withPrints = await play(true);
+  const counted = {
+    'device-id fp-a': await count('device-id', 'fp-a'),
+    'device fp-a': await count('device', 'fp-a'),
+    'device desktop': await count('device', 'desktop'),
+    'device mobile': await count('device', 'mobile'),
+    'device-id desktop': await count('device-id', 'desktop'),
+    'device-id mobile': await count('device-id', 'mobile')
+  };
+  t.check(counted['device-id fp-a'] === 7 && counted['device fp-a'] === 0 &&
+          counted['device desktop'] === 8 && counted['device mobile'] === 3 &&
+          counted['device-id desktop'] === 1 &&
+          counted['device-id mobile'] === 2,
+          'J2. a fingerprint is counted under device-id and a device type ' +
+          'under device, each once per sign-in, neither in the other\'s ' +
+          'history', JSON.stringify(counted));
+  t.check(!newDevice(withPrints[6]) && newDevice(withPrints[7]) &&
+          newDevice(withPrints[8]),
+          'J3. a fingerprint already seen is not new-device; one reading ' +
+          '"desktop" or "mobile" is, although this person has signed in ' +
+          'from a desktop (and, by then, a mobile) — the device type does ' +
+          'not make a fingerprint seen',
+          JSON.stringify(withPrints.slice(6, 9).map(function (a) {
+            return a && a.signals.map(function (s) {
+              return s.signal;
+            });
+          })));
+  const factorsOf = function (list) {
+    return JSON.stringify(list.map(function (a) {
+      return a && a.signals[0].factors;
+    }));
+  };
+  const without = await play(false);
+  const scored = without.filter(function (a) {
+    return a && a.signals[0].factors;
+  }).length;
+  t.check(scored >= 5 && factorsOf(withPrints) === factorsOf(without),
+          'J4. and the model\'s factors are the same, sign-in by sign-in, ' +
+          'with those fingerprints as without any: a fingerprint does not ' +
+          'move the device-type level (' + scored + ' scored)',
+          factorsOf(withPrints) + ' vs ' + factorsOf(without));
+  log.debug("Leaving deviceFeature().");
 }
 
 module.exports = {
@@ -233,7 +588,8 @@ module.exports = {
   describe: 'assessing a sign-in (#62 P2): the device a User-Agent names, a ' +
             'first sign-in unscored, the same person LOW, the evaluators ' +
             'taking a sign-in to HIGH, no address kept in the clear, the ' +
-            'person\'s standing and the session\'s context kept, and never ' +
-            'a rejection',
+            'person\'s standing and the session\'s context kept, never ' +
+            'a rejection, and the device feature apart from the device ' +
+            'type (#506)',
   run: run
 };

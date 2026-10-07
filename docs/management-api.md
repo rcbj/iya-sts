@@ -36,6 +36,13 @@ To get a token, call the token endpoint with the client-credentials grant, the
 scopes you need, and `resource=<base>/admin-api`. The `resource` value sets
 the token's audience, and the API refuses a token audienced to anything else.
 
+**On a stack you run, getting in takes two steps.** Use `sts-management-api`
+for the **first** token only
+([The first token](#the-first-token-on-a-stack-you-run)). With that token,
+create an application of your own that holds the admin roles, and use that
+application from then on
+([An application of your own](#an-application-of-your-own-for-every-token-after-that)).
+
 ```bash
 BASE=https://localhost:8081          # the main port is HTTPS by default
 
@@ -61,11 +68,174 @@ an authority it generates at each start. See [TLS](tls.md).)
 generated at every start. That secret can only be read through the API it
 unlocks, so after a restart nobody can get a token wherever secrets are
 checked. Any deployment, and any launcher that starts the service for a test
-run, should set `adminApi.clientSecret` (`ADMIN_API_CLIENT_SECRET`) **before
-the service starts**, because the seeded client reads the setting when it is
-created. After that, the setting is the only way to change the secret: the
-default realm's `regenerate-secret` action on this client is refused while the
-secret is pinned.
+run, should set `adminApi.clientSecret` **before the service starts**, because
+the seeded client reads the setting when it is created. After that, the
+setting is the only way to change the secret: the default realm's
+`regenerate-secret` action on this client is refused while the secret is
+pinned.
+
+You can hand the setting over in two ways:
+
+* **`ADMIN_API_CLIENT_SECRET`** holds the secret itself, in the environment.
+  This works, but the secret then shows in `docker inspect` and in the
+  process's environment.
+* **`ADMIN_API_CLIENT_SECRET_FILE`** holds the path of a file that contains
+  the secret. The service reads the file once at start, before it loads the
+  protocol stack, and then **deletes the file**. The value is never put in the
+  process's environment. If the file is empty or cannot be read, the service
+  does not start, because starting without the secret would mint a different
+  one. The same `_FILE` form works for `KRB5_KRBTGT_PASSWORD` and
+  `KRB5_SERVICE_PASSWORD`, and for no other setting.
+
+The compose stack in this repository uses the second form, so the secret is
+never in the service's environment (see the next section).
+
+### The first token, on a stack you run
+
+**In the compose stack (`docker compose up`), the secret is kept in OpenBao**,
+at `secret/sts-admin` in the field `adminApiClientSecret`. The seeder
+generates it on the run that initialises the store. To choose the value
+yourself, set `ADMIN_API_CLIENT_SECRET` in the host's environment before that
+first `up`. Compose passes it to the **seeder**, which stores it. It does not
+pass it to the service.
+
+The service's own OpenBao identity cannot read `secret/sts-admin`. Instead,
+each `up` gives the service a single-use token that reads the secret once, at
+start, and the value reaches the service as a file that it reads and deletes.
+
+To read the secret yourself, use the **operator token** that the seeder prints
+each time it runs. That token can read `secret/sts-admin` and nothing else,
+and it lasts 24 hours (`STS_BAO_OPERATOR_TTL`). Find it in the seeder's log,
+then read the secret with it:
+
+```bash
+docker compose logs --no-log-prefix openbao-seed \
+  | grep 'OPERATOR TOKEN' | tail -1 | jq -r .msg
+#   an OPERATOR TOKEN for the first /admin-api token on this stack — read
+#   on secret/sts-admin and nothing else, for 24h (docs/management-api.md): <token>
+
+BAO_OPERATOR_TOKEN='<token>'   # the value at the end of that line
+
+ADMIN_API_CLIENT_SECRET=$(docker compose exec -T \
+  -e BAO_TOKEN="$BAO_OPERATOR_TOKEN" openbao \
+  bao kv get -address=https://127.0.0.1:8200 \
+    -ca-cert=/openbao/file/tls/server.crt \
+    -field=adminApiClientSecret secret/sts-admin)
+```
+
+Then mint the token as `sts-management-api`, as the example at the top of
+this section does.
+
+* **If no operator token is printed,** `STS_BAO_PRINT_CREDENTIALS=false` is
+  set. Run `docker compose up` again without that setting, and the seeder
+  prints a new token.
+* **If the operator token has expired,** run `docker compose up` again. Every
+  seeder run prints a new one.
+* **`docker compose restart sts` does not run the seeder again**, so the
+  service starts without its single-use token and **without the pinned
+  secret**. It then mints a secret of its own that nobody can read. Run
+  `docker compose up` to start it with the secret again.
+* **On the run that initialises the store,** the seeder also prints OpenBao's
+  **recovery key**, once, and nothing keeps a copy of it. The seeder revokes
+  the root token when it finishes, so nothing on disk holds root. The recovery
+  key is what `bao operator generate-root` needs to make a root token again,
+  for example to change a policy. Store it somewhere safe the first time you
+  see it.
+
+### An application of your own, for every token after that
+
+Use the first token to set up the credential you will keep using: **create an
+application, give it a client secret and the `ADMIN_READ` and `ADMIN_WRITE`
+roles, and get its tokens with the OAuth 2.0 client credentials grant.** Each
+token it gets carries the admin scopes that its roles allow. Do not keep
+using `sts-management-api` for routine work: its secret is the stack's
+bootstrap, and reading it means unlocking the secret store.
+
+**The realm you create the application in decides what it may administer:**
+
+| Created in | Its token is minted at | It may administer |
+|---|---|---|
+| the default realm | `<base>/oauth2/token`, with `resource=<base>/admin-api` | **every realm**: `/admin-api` and every `/realm/<id>/admin-api` |
+| a trust realm `<id>` | `<base>/realm/<id>/oauth2/token`, with `resource=<base>/realm/<id>/admin-api` | **that realm only**, under `/realm/<id>/admin-api`, and with the same limits as that realm's console administrators ([Trust realms and per-realm administrators](#trust-realms-and-per-realm-administrators)) |
+
+**API.** These calls use the first token, in `$TOKEN`. For an application in
+a trust realm, put the realm's prefix on every path
+(`$BASE/realm/<id>/admin-api/…`): the roles, the application and the grant
+all belong to one realm.
+
+```bash
+API=$BASE/admin-api               # or $BASE/realm/<id>/admin-api
+APP=ops-automation                # the client_id of your application
+
+api() {   # api <path under the API> '<json body>'
+  curl -sk -X POST "$API/$1" \
+    -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+    -d "$2"
+}
+
+# 1. A random secret, made by the service. This call stores nothing.
+APP_SECRET=$(api applications/generate-secret '{}' | jq -r .clientSecret)
+
+# 2. The application: an OAuth 2.0 client on client_credentials that
+#    declares the two admin scopes. The secret becomes its credential.
+api applications/create '{
+  "identifier": "'"$APP"'", "name": "'"$APP"'",
+  "protocols": ["oauth2"],
+  "fields": {
+    "oauthClientId": ["'"$APP"'"],
+    "oauthClientSecret": "'"$APP_SECRET"'",
+    "oauthGrantType": ["client_credentials"],
+    "oauthTokenEndpointAuthMethod": "client_secret_basic",
+    "oauthAllowedScope": ["admin:read", "admin:write"]
+  }}'
+
+# 3. The two roles.
+api roles/add-member '{"role":"ADMIN_READ","kind":"application","member":"'"$APP"'"}'
+api roles/add-member '{"role":"ADMIN_WRITE","kind":"application","member":"'"$APP"'"}'
+```
+
+From then on, the application gets its own tokens. For an application in the
+default realm:
+
+```bash
+TOKEN=$(curl -sk -u "$APP:$APP_SECRET" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode 'scope=admin:read admin:write' \
+  --data-urlencode "resource=$BASE/admin-api" \
+  "$BASE/oauth2/token" | jq -r .access_token)
+```
+
+For an application in realm `<id>`, call `$BASE/realm/<id>/oauth2/token`, with
+`resource=$BASE/realm/<id>/admin-api`.
+
+To give an application that already exists a new secret, call
+`POST …/applications/add-secret` with `{"application": "<client_id>"}`. The
+new secret is in `clientSecret` in the reply, and this reply is the only
+place the act hands it out.
+
+**Console.** On the realm's console (`/admin`, or `/realm/<id>/admin`):
+
+1. Go to **Directory → Applications → New application ›**
+   (`/admin/applications/new`). Set **Identifier** to the client_id, tick
+   **OAuth 2.0**, and click **Generate Secret** in **The client secret**.
+   Copy the value before you create the application.
+2. On the application's page, in **Change what it is allowed to do**: tick
+   `client_secret_basic` under `oauthTokenEndpointAuthMethod` and nothing
+   else, add `client_credentials` to `oauthGrantType`, and add `admin:read`
+   and `admin:write` to `oauthAllowedScope`.
+3. On `/admin/roles`, under **Give a person, a group or an application a
+   role**, choose the role `ADMIN_READ`, the kind *application* and your
+   application's identifier, and click **Add**. Do the same for
+   `ADMIN_WRITE`.
+
+**Why it needs both the scopes and the roles.** The token endpoint issues
+`admin:read` and `admin:write` only to a client whose `oauthAllowedScope`
+declares them, and each one only while the client is a member of the role
+that authorizes it: `ADMIN_READ` for `admin:read`, `ADMIN_WRITE` for
+`admin:write`. The API checks both again on every call. So if you take the
+application out of a role, or remove a scope from its `oauthAllowedScope`,
+the tokens it already holds stop working at their next call. That is also how
+to retire the application.
 
 In development mode, outside [RFC 9700 and OAuth 2.1 mode](oauth-security.md),
 the token endpoint does not check client credentials. In product mode it
@@ -107,6 +277,35 @@ The refusals are in the `STS-API-*` rows of [error codes](error-codes.md).
 The code is recorded in the audit log and the service log, and is never sent
 to the caller.
 
+## Who a call is recorded as
+
+Every call is written to the audit log, and the row names **the subject of the
+access token**: the person the token was issued for, or the client's id for a
+`client_credentials` token. The rows an operation writes about what it changed
+name the same subject. A caller cannot choose the name: an operation's schema
+refuses an `actor` member in a request body, and the name always comes from
+the token.
+
+Where no token is required (development mode with `adminApi.authRequired`
+off), a call names nobody.
+
+`GET /admin-api/me` answers what the API decided about the caller: who the
+token names, which realm issued it and whether that makes the caller a service
+or a realm administrator, the scopes and roles in effect, whether it may read
+and write, and the console pages it may reach. The roles are read on every
+call, so a role granted or revoked since the token was minted shows at once.
+
+## A token ends with its sign-on session
+
+An access token issued to a person through a sign-in is tied to that sign-on
+session. When the session ends, by a sign-out or by running out, the API
+refuses the token (`401 invalid_token`), even though the token itself has not
+expired. A person's other sessions, and the tokens issued on them, are not
+affected.
+
+A token that no sign-in is behind is not tied to anything: a
+`client_credentials` token works until it expires or is revoked.
+
 ## What it covers
 
 ### Every console control, for a machine
@@ -119,8 +318,8 @@ already written code that assumed it was there. Parity is kept structurally:
 * **The API decides nothing on its own.** Each `POST` calls the same action
   function the console's form posts to, with the action taken from the URL
   (`POST /admin-api/tokens/revoke`) rather than from a hidden form field.
-  Each `GET` returns the same view the console page's `?format=json` returns.
-  The two doors cannot disagree about what is allowed.
+  Each console page is DRAWN from its `GET`, and each console form is SENT
+  to its `POST`, so the two doors cannot disagree about what is allowed.
 * **A page with no form has only a `GET`.** The audit log is an example.
   There is nothing to change, so there is no operation to mirror.
 * **Each operation's description ends by naming the console control it
@@ -179,7 +378,54 @@ cover:
 For the full list, with request and response schemas and examples, see
 `GET /admin-api/openapi.json`. The index at `GET /admin-api` returns the
 version and build, whether the API is protected, and a one-line summary of
-every operation.
+every operation. Both describe the management operations alone; the
+console's own are below.
+
+### The console's own operations
+
+The admin console is a static application whose one data source is this API,
+and some operations exist only to draw it: its frame, its drawings and its
+form helpers. Their answers follow the console's pages, which change, so they
+are **not part of the management API** and live apart from it under
+`/admin-api/console` (#454):
+
+| Operation | What it is for |
+|---|---|
+| `GET /admin-api/console` | The frame around every page: the sidebar, banners, realm switcher and footer |
+| `GET /admin-api/console/operations` | Every operation of both kinds, for resolving a console form to its operation |
+| `GET /admin-api/console/openapi.json` | The OpenAPI document for these operations |
+| `GET /admin-api/console/dashboard` | The front page: `GET /admin-api/status` with the base URL, persistence and the visible sections |
+| `GET /admin-api/console/api-explorer` | The explorer page's own facts |
+| `GET /admin-api/console/delegation-settings` | The permissions register as its page lays it out |
+| `GET /admin-api/console/delegation/{map,cluster,allowed,chain}`, `GET /admin-api/console/federation/map` | The drawings |
+| `GET /admin-api/console/delegation/{user,application}` | One person's or application's delegations, drawn |
+| `GET /admin-api/console/applications/new` | The new application form's layout |
+| `POST /admin-api/console/pki/{apply-profile,generate-keys,generate-alt-keys,use-key}` | Fill the certificate form; write nothing |
+| `POST /admin-api/console/applications/generate-secret` | Mint a secret for the new application form; write nothing |
+
+Every console **control** is still a management operation. A console
+operation is a read or a form helper that writes nothing, and the data behind
+a drawing is a management operation too: `GET /admin-api/delegation/user`,
+`/delegation/application`, `/applications/new` and `/status` answer the same
+data as their console twins without the drawing or the form's layout, and
+refuse `format=svg` (`STS-API-0129`). A form helper asked at its old address
+is answered 404 (`STS-API-0128`).
+
+They take the scope `admin:console`, which is issued only to the console's
+client: the `ADMIN_CONSOLE` role authorizes it, and it is **conferred** by
+`sts-admin-console` on every person who signs in to the console rather than
+held by anybody (`roleConferredBy`, managed on `/admin/roles` and with
+`POST /admin-api/roles/add-conferring-client` and
+`remove-conferring-client`). The roles a person holds themselves and the
+roles their client confers are mixed on every call. The frame and the
+operation list need `ADMIN_CONSOLE` alone, so a person with no console role is
+still told so; every other console operation needs `ADMIN_READ` too, or
+`ADMIN_WRITE` for a form helper. A token without `admin:console`, such as
+`sts-management-api`'s, is refused 403 (`STS-API-0127`).
+
+A console client entry persisted before #454 does not declare
+`admin:console`. Add it to that entry's `oauthAllowedScope` and
+`oauthGlobalConsent` and sign in again.
 
 ### Request bodies
 
@@ -209,8 +455,10 @@ its `csvValues`. `GET /admin-api/config` publishes both.
 
 ### The explorer
 
-`/admin/api-explorer` is a console page, behind the console's session and
-roles. It shows the document, a form for each operation, the response, and
+`/admin/api-explorer` (Server configuration → API explorer) is a console page,
+behind the console's session and roles. It shows the management API's document
+— the console's own operations are not in it — a form for each operation, the
+response, and
 the equivalent `curl` command. Its **Try it** button calls `/admin-api` with a
 token the page mints for you. That token carries only the scopes your console
 roles grant (`admin:read` for Admin Read, `admin:write` for Admin Write). The
@@ -317,31 +565,41 @@ side.
 ## Development and product mode
 
 With `adminApi.authRequired` on (the default), **both modes require the token
-and check it the same way**. What `global.mode` changes around the API:
+and check it the same way**. Only development mode can turn it off. What
+`global.mode` changes around the API:
 
 | | Development | Product |
 |---|---|---|
 | The token, when `adminApi.authRequired` is on | required and verified | required and verified |
 | The client secret at `/oauth2/token` | not checked, outside RFC 9700 / OAuth 2.1 mode | checked (product mode implies RFC 9700 mode) |
-| `adminApi.authRequired` **off** | **the API is open** to anybody who can reach the port | the API falls back to the **console's gate**: a sign-in session, the role the method needs (Admin Read for `GET`, Admin Write otherwise), and the XACML policy above the roles |
+| `adminApi.authRequired` **off** | **the API is open** to anybody who can reach the port | **ignored**: the token is still required. Writing `false` is refused (`STS-CORE-0103`), and a `false` already stored is read as `true` and logged once (`STS-CORE-0106`) |
 
-The off switch exists because it is the recovery path. If nobody can mint a
-token, it restores the open API so that `POST /admin-api/rbac/grant` can give
-somebody a console role again. In development mode that also means **anybody
-who can reach the port can grant themselves both roles**, which is as
-dangerous as it sounds. In product mode, with the switch off, a browser that
-navigates to the API gets a 403 page telling it to sign in at `/admin`, and a
-realm administrator's session is confined to their realm as described above.
+The off switch exists because it is the recovery path in development. If
+nobody can mint a token, it restores the open API so that
+`POST /admin-api/rbac/grant` can give somebody a console role again. That also
+means **anybody who can reach the port can grant themselves both roles**,
+which is as dangerous as it sounds.
+
+**Product mode has no off switch** (since 2026-10-05). This API's gate is
+becoming the admin console's only gate, so a setting that opened the API
+would open the console too. Until then product fell back to the console's own
+session and roles when the switch was off; a console session is no longer a
+credential here in either mode. The recovery path in product is the seeded
+`sts-management-api` client: set `adminApi.clientSecret` before the service
+starts, so a token can always be minted. In the compose stack that secret is
+in OpenBao, and the seeder's operator token reads it
+([The first token](#the-first-token-on-a-stack-you-run)). An application of
+your own that holds both roles is a second way in, and it does not depend on
+the secret store.
 
 Whatever the state, **whoever can call this API can revoke every token this
 service has issued and change what the next one contains**. Do not expose a
 development-mode instance on a public address.
 
-The policy layer runs only where the API is gated. In development with the
+The policy layer runs wherever the token is required. In development with the
 switch off there is no credential and so no subject, and a policy that
-refused an unauthenticated subject would close the recovery path. On an
-unedited product deployment, the policy permits anybody who has already
-passed the role check.
+refused an unauthenticated subject would close the recovery path, so it is
+not asked there.
 
 ## Configuration
 
@@ -350,8 +608,8 @@ override them, because they decide who administers the service.
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `adminApi.authRequired` | `ADMIN_API_AUTH_REQUIRED` | `true` | yes | Require an access token on every `/admin-api` call; off restores the open API (development) or the console's gate (product). |
-| `adminApi.clientSecret` | `ADMIN_API_CLIENT_SECRET` | empty (generated per start) | no | The `client_secret` of the default realm's seeded `sts-management-api` client; set it so the secret survives a restart. Secret. |
+| `adminApi.authRequired` | `ADMIN_API_AUTH_REQUIRED` | `true` | yes | Require an access token on every `/admin-api` call; off restores the open API. Off is honoured in development mode only: product refuses it and ignores it where it is stored. |
+| `adminApi.clientSecret` | `ADMIN_API_CLIENT_SECRET` | empty (generated per start) | no | The `client_secret` of the default realm's seeded `sts-management-api` client; set it so the secret survives a restart. Secret. `ADMIN_API_CLIENT_SECRET_FILE` names a file to read it from instead; the file is deleted once read. |
 | `adminApi.audience` | `ADMIN_API_AUDIENCE` | derived: `global.publicBaseUrl` + `/admin-api`, or this process's scheme, host and port + `/admin-api` | yes | The `aud` a token must carry. At its default, `/admin-api` under the host the request arrived on is accepted as well; any other value pins that one value. |
 | `admin.readGroup` | `ADMIN_READ_GROUP` | `admin-read` | yes | The directory group whose members hold Admin Read, which lets them read the console and, with the token gate off in product mode, `GET` the API. |
 | `admin.writeGroup` | `ADMIN_WRITE_GROUP` | `admin-write` | yes | The directory group whose members hold Admin Write; write implies read. |
@@ -362,7 +620,7 @@ override them, because they decide who administers the service.
 | `oauth2.accessTokenRequireDpop` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_DPOP` | `false` | yes | Refuse any access token that is not DPoP-bound and proved, here and at every other resource server; the explorer stops working. |
 | `oauth2.accessTokenRequireMtls` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_MTLS` | `false` | yes | Refuse any access token that is not bound to the certificate the connection presents (RFC 8705). |
 | `global.publicBaseUrl` | `STS_PUBLIC_BASE_URL` | empty (read from each request) | yes | The base of every issuer and address the service builds, including this API's default audience. |
-| `global.mode` | `STS_MODE` | `development` | yes | `development` or `product`; decides what `adminApi.authRequired=false` falls back to. Per trust realm. |
+| `global.mode` | `STS_MODE` | `development` | yes | `development` or `product`; decides whether `adminApi.authRequired=false` is honoured. Per trust realm. |
 
 The `adminApi.*` and `admin.*` groups are edited on `/admin/rbac`. See
 [Configuration](configuration.md) for how values resolve, and for changing
@@ -371,8 +629,11 @@ them on the console or with `POST /admin-api/config/set`.
 ## Design decisions
 
 * **An API, because a form is the right shape for a person and the wrong one
-  for anything else.** Every console page always answered `?format=json`, so
-  reading was never the problem; *changing* something was. Without the API a
+  for anything else.** Every console page answered `?format=json` from the
+  start, so reading was never the problem; *changing* something was. Since
+  the console became a static application over this API (2026-10-05), the
+  API is not a second door beside the console but the only one: the console
+  is its client. Without the API a
   script that wanted to revoke a token, or a CI job narrowing the issuer's
   claim set before running a wallet against it, would have to parse a 303
   redirect for its message or know which hidden input a form carried — driving
@@ -457,6 +718,7 @@ them on the console or with `POST /admin-api/config/set`.
 | `GET /admin-api` | The index: name, version and build, whether the API is `protected`, where the document and the explorer are, and a summary of every operation |
 | `GET /admin-api/openapi.json` | The OpenAPI 3.1 document, with `servers[0].url` set to the address the request reached. Behind the gate like everything else |
 | `GET /admin-api/status` | The cheapest call, and the one to poll: the issuer, the start time and the running totals |
+| `GET /admin-api/me` | What the API decided about the caller: who, which authority, the roles in effect and the pages they may reach |
 | `/admin/api-explorer` | The explorer, on the console; `GET /admin-api/api-explorer` reports where the document is, how many operations it describes and what your roles would grant |
 | `/admin/rbac` | The two console roles, and the `adminApi.*` and `admin.*` settings; `GET /admin-api/rbac` and `POST /admin-api/rbac/{grant,revoke}` |
 | `/admin/applications?application=sts-management-api` | The seeded client in this realm, including its secret |

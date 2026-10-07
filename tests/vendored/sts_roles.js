@@ -498,29 +498,38 @@ async function anUnconfiguredRealmRefusesNobody() {
       "GET /admin-api/roles should answer 200; it answered " +
       register.status);
   });
-  check("a new realm holds exactly the three native roles", function () {
+  check("a new realm holds exactly the four native roles", function () {
     // #303: ADMIN_READ and ADMIN_WRITE are CONFIGURED roles seeded into every
     // realm, each held by the realm's own management API client and
     // authorizing its admin scope. #309: DEVICE_COMPLIANCE beside them,
-    // authorizing device:compliance and seeded with NO member. Nothing else
-    // is seeded.
+    // authorizing device:compliance and seeded with NO member. #454:
+    // ADMIN_CONSOLE, authorizing admin:console, with no member either — it
+    // is CONFERRED by the console's own client, sts-admin-console. Nothing
+    // else is seeded.
     const names = register.body.roles.map(function (r) { return r.name; });
     assert.strictEqual(JSON.stringify(names.slice().sort()),
-      JSON.stringify(["ADMIN_READ", "ADMIN_WRITE", "DEVICE_COMPLIANCE"]),
-      "a realm's ou=roles starts with the three native roles; this one " +
+      JSON.stringify(["ADMIN_CONSOLE", "ADMIN_READ", "ADMIN_WRITE",
+                      "DEVICE_COMPLIANCE"]),
+      "a realm's ou=roles starts with the four native roles; this one " +
       "holds " + JSON.stringify(names));
     const wanted = { ADMIN_READ: "admin:read", ADMIN_WRITE: "admin:write",
-                     DEVICE_COMPLIANCE: "device:compliance" };
+                     DEVICE_COMPLIANCE: "device:compliance",
+                     ADMIN_CONSOLE: "admin:console" };
     register.body.roles.forEach(function (row) {
-      const feed = row.name === "DEVICE_COMPLIANCE";
-      assert.ok(row.native === true && row.console === !feed &&
-                (feed ? row.applications.length === 0
-                      : row.applications.indexOf("sts-management-api") >= 0) &&
+      const unheld = row.name === "DEVICE_COMPLIANCE" ||
+                     row.name === "ADMIN_CONSOLE";
+      assert.ok(row.native === true && row.console === !unheld &&
+                (unheld ? row.applications.length === 0
+                        : row.applications.indexOf("sts-management-api") >=
+                          0) &&
+                (row.name !== "ADMIN_CONSOLE" ||
+                 (row.conferredBy || []).indexOf("sts-admin-console") >= 0) &&
                 row.permissions.length === 1 &&
                 row.permissions[0] === wanted[row.name],
                 "each authorizes its own native permission; the console " +
-                "roles are held by sts-management-api and DEVICE_COMPLIANCE " +
-                "by nobody: " + JSON.stringify(row));
+                "roles are held by sts-management-api, DEVICE_COMPLIANCE " +
+                "by nobody, and ADMIN_CONSOLE by nobody but conferred by " +
+                "sts-admin-console: " + JSON.stringify(row));
     });
   });
   check("and the built-in ones are there anyway", function () {
@@ -1202,13 +1211,19 @@ async function applicationPermissions() {
 }
 
 // ---------------------------------------------------------------------------
-// 7. WS-TRUST, WHERE THE APPLICATION MAY BE ABSENT AND THAT IS NOT AN ERROR.
+// 7. WS-TRUST, WHERE THE APPLICATION MAY BE ABSENT AND THAT IS NOT AN ERROR —
+// IN DEVELOPMENT.
 //
 // The one issuance site here whose application is optional: AppliesTo is
-// optional in an RST, and a token with no audience restriction is a state this
-// service deliberately allows. So there is nothing to have a requirement, and
-// the gate ALLOWS — which is the honest answer and the one most likely to be
-// "fixed" into a refusal by somebody reading the table of nine kinds.
+// optional in an RST, and a token with no audience restriction is a state
+// development deliberately allows. So there is nothing to have a requirement,
+// and the gate ALLOWS — which is the honest answer and the one most likely to
+// be "fixed" into a refusal by somebody reading the table of nine kinds.
+//
+// PRODUCT REFUSES IT BEFORE THE GATE IS ASKED (#496, rcbj): an RST naming no
+// application is wst:InvalidRequest (STS-WSTRUST-0031), since a token with
+// no audience is one every relying party would be entitled to accept. That
+// is not the role gate refusing — the gate is never reached.
 // ---------------------------------------------------------------------------
 async function wsTrustWithNoAppliesTo() {
   log.debug("Entering wsTrustWithNoAppliesTo().");
@@ -1249,12 +1264,25 @@ async function wsTrustWithNoAppliesTo() {
   }
 
   const anonymous = await rstFor(null);
-  check("an RST with NO AppliesTo is answered", function () {
-    assert.strictEqual(anonymous.status, 200,
-      "nothing named an application, so there is no requirement to check and " +
-      "the honest answer is to issue. It answered " + anonymous.status + " " +
-      String(anonymous.text).slice(0, 300));
-  });
+  const product = await require("./sts_applications.js")
+    .isProduct(realmUrl(""));
+  if (product) {
+    check("PRODUCT: an RST with NO AppliesTo is refused before the role " +
+          "gate, wst:InvalidRequest (#496)", function () {
+      assert.ok(anonymous.status === 500 &&
+                /wst:InvalidRequest/.test(String(anonymous.text)),
+        "product issues a token only for a registered application, and " +
+        "never with no audience. It answered " + anonymous.status + " " +
+        String(anonymous.text).slice(0, 300));
+    });
+  } else {
+    check("an RST with NO AppliesTo is answered", function () {
+      assert.strictEqual(anonymous.status, 200,
+        "nothing named an application, so there is no requirement to check " +
+        "and the honest answer is to issue. It answered " + anonymous.status +
+        " " + String(anonymous.text).slice(0, 300));
+    });
+  }
 
   const narrowed = await rstFor(NARROWED);
   check("and one naming a narrowed application is refused with a SOAP fault",

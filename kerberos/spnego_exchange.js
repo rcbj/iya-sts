@@ -66,7 +66,10 @@
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
-const nodeCrypto = require('crypto');
+// `common/crypto.js`, for a pending exchange's id. `helpers.js` above already
+// requires it at load, so this adds no file to the parent project's copy set
+// (#453).
+const stsCrypto = require('../common/crypto');
 // For the two limits below. `helpers.js` above already requires it, so this
 // adds no file to the parent project's copy set.
 const config = require('../common/config');
@@ -732,7 +735,7 @@ async function negotiate(req, opts) {
     // skipped. Real acceptors do this — Windows sets request-mic whenever it
     // wants the list protected regardless of preference order.
     prunePending(Date.now());
-    const pendingId = nodeCrypto.randomBytes(18).toString('base64url');
+    const pendingId = stsCrypto.randomBytes(18).toString('base64url');
     pending.set(pendingKey(door, pendingId), {
       at: Date.now(),
       id: pendingId,

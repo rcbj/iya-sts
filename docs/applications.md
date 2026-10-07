@@ -35,8 +35,9 @@ publishes the schema; `?format=json` is the machine-readable form.
 An entry appears the first time an identifier is **accepted**:
 
 * a `client_id` at the authorization or token endpoint;
-* a `wtrealm` on a `wsignin1.0` response;
-* an `AppliesTo` on an issued WS-Trust token;
+* a `wtrealm` on a `wsignin1.0` response (in development: product signs in
+  only a registered relying party);
+* an `AppliesTo` on an issued WS-Trust token (likewise);
 * a Kerberos service principal name on a TGS-REP, **and again when a ticket
   for it is accepted**;
 * the OpenID4VP Verifier's own `client_id`.
@@ -82,6 +83,15 @@ the record is rebuilt, that document is the *starting point*, and every member
 that has an attribute of its own is then overwritten from the attribute. An
 operator who edits `oauthRedirectUri` is therefore never ignored by the check
 that reads it.
+
+**An LDAP add registers the application.** In product mode an application is
+served only when somebody registered it — `appRegisteredBy` on its entry:
+`administrator` (the console or the management API), `rfc7591`, `startup`, or
+`ldap:<bound DN>` for an `ldapadd` under `ou=applications` (`ldap` alone for an
+unbound add, which only development allows). An add whose author included
+`appRegisteredBy` keeps that value. Only an add stamps it: an `ldapmodify` of
+an entry a development sighting filed changes its configuration and does not
+register it, and a sighting never registers anything.
 
 **Deleting a registration keeps the entry.** `appRegistered` becomes `FALSE`,
 the `client_secret` and the registration access token are removed, and the
@@ -176,8 +186,8 @@ startup, under `ou=applications` with everything else:
 
 | Entry | What it is | Realms |
 |---|---|---|
-| `sts-admin-console` | The admin console at `/admin`: a confidential OpenID Connect relying party on the authorization code grant, redirect URI `/admin/callback` | every realm |
-| `sts-user-portal` | The user portal at `/portal`: the same shape, redirect URI `/portal/callback` | every realm |
+| `sts-admin-console` | The admin console at `/admin`: a PUBLIC client on the authorization code grant with PKCE, its tokens always DPoP-bound and audienced to the realm's `/admin-api`, redirect URI `/admin/callback` | every realm |
+| `sts-user-portal` | The user portal at `/portal`: a confidential OpenID Connect relying party on the authorization code grant, redirect URI `/portal/callback` | every realm |
 | `sts-management-api` | The [management API](management-api.md): a confidential OAuth client on `client_credentials`, with `client_secret_basic`, scope `admin:read admin:write`, and no redirect URI | every realm |
 | `sts-debugger-api` | The [embedded protocol debugger's](admin-console.md#the-embedded-protocol-debugger) api: a resource server that defines one delegated permission, `urn:sts:debugger-api:debugger` | default realm, only while the debugger is embedded |
 | `sts-debugger-ui` | The embedded debugger's browser client: a relying party granted that permission | default realm, only while the debugger is embedded |
@@ -309,7 +319,33 @@ by kind, page with `?page=` and `?per=`, and `?application=<id>` drills into
 one: every attribute of its directory entry with what the published schema says
 each attribute *is*, paged under `?attributesPage=`. `?format=json` returns the
 same data, and `GET /admin-api/applications` is the same view with the same
-parameters.
+parameters — and one more, `exclude` (repeatable), the identifiers to leave
+out of the match before it is paged.
+
+**Finding the other application of a delegation.** On an application's
+Configuration tab, *Every protocol*, the `appAllowedToDelegateTo` and
+`appAllowedToActOnBehalfOf` cells each carry a search: the same match as this
+page's filter (a substring of the identifier or the name), five results a page
+with Previous and Next, leaving out the application itself and what the list
+already holds, and an **Add** beside each result that puts its identifier in
+the list (written by the tab's Save). `appDelegationSubjectGroup` has the same
+search over the realm's **groups** — the Groups page's match (a substring of the
+DN or the name), backed by `GET /admin-api/groups`, which takes `exclude` too
+(group DNs, compared as LDAP compares a DN) — and Add puts the group's DN in the
+list. Each cell grows to show its search while you work in it and shrinks back
+when you move to another field. Neither application list
+may name the application itself — its identifier, an identifier it answers to,
+or an audience it registered: the console and the API refuse that value
+(`STS-REG-0335`), since both lists name the *other* party of a delegation.
+
+`appMayAct` — the ONE party, a person or another application, that may act
+for this application — has the same search, with a toggle between **people**
+(the Users page's match, `GET /admin-api/users`, whose rows carry each person's
+entry `dn`) and **applications** (as above, leaving out the application
+itself). **Use** replaces the field's one value with the chosen entry's DN,
+the form the attribute holds and `may_act` is resolved from; a person with no
+directory entry has no DN and cannot be chosen. An `appMayAct` naming the
+application's own entry is refused too (`STS-REG-0335`).
 
 **"Every attribute" is meant literally.** The drill-down shows the whole entry,
 including the operational attributes `createTimestamp` and `modifyTimestamp`
@@ -490,6 +526,14 @@ families and this service advertises a W3C DID for it:
 The DID follows the address the service is reached on; pin
 `global.publicBaseUrl` so it does not change with the host name.
 
+### A secret push destination
+
+An application declared for **Secret push destination** is not a client: it
+is a secrets manager this service writes a service account's rotated
+password to. Its location appears in the application's configuration; its
+write credential is set on **Directory → Secret destinations**, where it is
+never shown again. See [Secret push destinations](secret-destinations.md).
+
 ### Certificate enrollment (ACME, EST, SCEP)
 
 ACME, EST and SCEP are three protocol families an application may be
@@ -539,8 +583,8 @@ answers with, which links back to the application. `GET
 
 ### Custom claims, SAML attributes and token lifetimes
 
-The realm's **Token lifetimes**, **Custom claims**, **UserInfo claims** and
-**Custom SAML attributes** pages (under Protocols) apply to every
+The realm's **Token lifetimes**, **Custom claims**, **UserInfo claims**,
+**Custom SAML attributes** and **Credential claims** pages (under Protocols) apply to every
 application. An application can override them on its own configuration tabs
 (**Directory → Applications → the application → Configuration**):
 
@@ -549,6 +593,7 @@ application. An application can override them on its own configuration tabs
 | OAuth 2.0 / OpenID Connect | **Token lifetimes** | Shows the access token, ID Token, refresh token and refresh-idle lifetimes in force for this client, whether each is its own or the realm's, and the realm page's warnings. The overrides are the `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS` and `oauthRefreshIdleSeconds` fields on the same tab. The clock skew stays realm-wide. |
 | OAuth 2.0 / OpenID Connect | **Custom claims** | The access token, ID Token and UserInfo claims for this client. |
 | SAML | **Custom SAML attributes** | The SAML 2.0 attributes (with an optional NameFormat) and SAML 1.1 attributes (with a namespace) for this audience. |
+| Verifiable Credentials | **Credential claims** | The directory attributes a credential issued to this OpenID4VCI client carries (see below). |
 
 **An application's claims are added to the realm's, and win by name.** The
 realm's claims still go out. Where the application and the realm name the
@@ -575,6 +620,46 @@ The management API: `POST /admin-api/applications/set-custom-claim` (with
 `POST /admin-api/applications/remove-custom-claim`. `GET
 /admin-api/applications?application=<id>` returns `customClaims` and
 `tokenLifetimes`.
+
+#### Directory attributes and credential claims
+
+Under the rows, each section also draws the realm's **ticked catalogue of
+directory attributes** for that set — the attributes the realm's Custom
+claims, UserInfo claims and Custom SAML attributes pages tick — and the
+**Verifiable Credentials** sub-tab draws the realm's **Credential claims**
+selection for an application declared for OpenID4VCI.
+
+**A selection is a whole set, so the application's replaces the realm's.**
+While the application has none of its own, the realm's selection is in force
+and its boxes are ticked. Tick the boxes this application should carry and
+press **Save this application's selection**: from then on the realm's
+selection is not used for it, so an attribute the realm ticks can be dropped
+as well as one added, and saving with every box unticked issues none.
+**Use the realm's selection** takes the application's off again. A typed or
+attribute row above still wins over a selected attribute of the same name.
+
+| Set | Applies to |
+|---|---|
+| Access token, ID Token, UserInfo | tokens and UserInfo answered to this client (`client_id`) |
+| SAML 2.0, SAML 1.1 | assertions for this audience |
+| Credential claims | Verifiable Credentials issued on an access token issued to this client |
+
+The credential issuer metadata still advertises the realm's selection: it is
+one document for every client. A wallet asking for particular claims is held
+to what the metadata advertises, and then given those this client's selection
+holds.
+
+Each section previews what its selection would carry for one person
+(**Preview for**, `alice` by default). An unknown attribute, or a set whose
+protocol the application is not declared for, is refused (`STS-REG-0215`).
+
+The management API: `POST /admin-api/applications/set-claim-attributes`
+(with `set` = `access_token`, `id_token`, `userinfo`, `saml2`, `saml11` or
+`credential`, and `attributes`, a list of catalogue names from `GET
+/admin-api/claims`) and `POST
+/admin-api/applications/inherit-claim-attributes`. `GET
+/admin-api/applications?application=<id>&claimsUser=<person>` returns
+`claimSelections`.
 
 ### CORS: which pages may read an answer
 
@@ -607,6 +692,108 @@ logged as `STS-HTTP-0019` (a preflight), `STS-HTTP-0020` (no client named),
 `STS-HTTP-0021` (unknown client) or `STS-HTTP-0022` (the client does not list
 the origin).
 
+### Sign-in mechanisms: how its people may sign in
+
+**`appAuthnMechanism`** is the list of mechanisms an application's people may
+sign in to it with. It is a checkbox per mechanism on the application's
+Configuration tab (*Every protocol*):
+
+| Mechanism | A session satisfies it when |
+|---|---|
+| `password` | this service checked a password |
+| `password-mfa` | this service checked a password and a second factor |
+| `webauthn` | a security key (WebAuthn) answered |
+| `spnego` | a Kerberos ticket signed the person in at `/authn/spnego` |
+| `wallet` | a wallet presentation signed the person in at `/authn/wallet` |
+| `federation` | a federation partner signed the person in |
+
+**None ticked allows every mechanism.** With some ticked it is **enforced, in
+both modes, at every browser sign-in to the application**: OAuth 2.0 /
+OpenID Connect's authorization endpoint, SAML 2.0 (solicited and
+identity-provider-initiated), SAML 1.1 and WS-Federation. The issuance
+policy's `authn-mechanism` rule decides it (`decideAuthnMechanisms` on the
+`role-issuance` template). It compares the mechanisms the person's session
+satisfies with the ones the application allows:
+
+* **A session that satisfies none is re-prompted, not refused.** The person
+  is sent to sign in again, and the screen offers only the allowed
+  mechanisms. Since that screen accepts nothing else, the person comes back
+  with a session that satisfies one, or cancels (`access_denied` at the
+  authorization endpoint). SAML 2.0, SAML 1.1 and WS-Federation make the trip
+  once anyway, and refuse a request that comes back still unmet
+  (`STS-SAML-0100`, `STS-SAML-0102`, `STS-WSFED-0018`); SAML 2.0's
+  `IsPassive` is refused at once. `prompt=none` is answered `login_required`
+  (`STS-OAUTH-0946`).
+* **A sign-in made with a mechanism the application does not allow is
+  refused at the sign-in door** (`STS-AUTHN-0298`), and the screen is drawn
+  again naming the ones it does.
+* **One ticked is also where the sign-in goes**: straight to
+  `/authn/spnego`, `/authn/wallet` or the partner, or the screen in the shape
+  named. Several ticked draw the screen with only those offered. A mechanism
+  this service has switched off (`spnego` while `krb5.spnegoAuthentication`
+  is off, `wallet` while `oid4vp.signIn` is off) is named on the screen and
+  not offered.
+
+Browser authentication only. The password grant, WS-Trust, an LDAP bind,
+the token endpoint and SAML 2.0's attribute query are not covered. Set it
+from the application's page, `POST /admin-api/applications/update-fields`, or
+`add` / `remove` with `attribute: appAuthnMechanism`. A value that is not a
+mechanism is refused (`STS-REG-0203`).
+
+### Second factors: which ones its people may use
+
+**`appMfaMechanism`** is the list of second factors an application's people
+may use. It is a checkbox per factor on the application's Configuration tab
+(*Every protocol*), beside the sign-in mechanisms:
+
+| Second factor | A session gave it when |
+|---|---|
+| `securityKey` | a security key (WebAuthn) answered after a first factor |
+| `totp` | an authenticator app's one-time code was checked |
+| `recoveryCode` | one of the person's recovery codes was spent |
+| `emailCode` | an emailed six-digit code was checked |
+| `emailLink` | an emailed sign-in link was followed |
+| `password` | the person's password was checked after a wallet sign-in |
+| `wallet` | a wallet presentation was checked after a password |
+
+**None ticked leaves the realm's authentication policy as it is.** With some
+ticked:
+
+* **It only narrows.** The realm's policy (Directory > Policies) is asked
+  first. A second factor the realm has switched off stays off for every
+  application, and an emailed one is never offered while the realm cannot
+  send mail.
+* **It says which second factors, never whether one is needed.** That is
+  still the realm's, the account's and risk's. A person signed in on one
+  factor is not asked for a second because of this list.
+* **The sign-in screen asks only for an allowed second factor.** A person who
+  holds several is asked for one the application allows, and the links to
+  the others are not drawn.
+* **A person who holds none of the allowed ones is offered one to set up** (a
+  security key or an authenticator app, where ticked). If they hold some
+  other second factor, they give it first, and only then are offered the
+  set-up. Offering it before would let anybody who knows the password skip
+  the factor the account already has. If neither a security key nor an
+  authenticator app is ticked, or the realm allows neither to be set up, the
+  sign-in is refused (`STS-AUTHN-0306`).
+* **A second factor demanded and not allowed is refused.** A security key
+  the relying party demanded (`acr_values`, `wauth`), or a step-up on risk,
+  that the list leaves the person nothing to answer with is refused
+  (`STS-AUTHN-0307`): a step-up never enrols one.
+* **A session that gave a second factor not allowed is re-prompted**, in
+  both modes, at every browser sign-in to the application, exactly as for
+  sign-in mechanisms: OAuth's authorization endpoint (`STS-OAUTH-0952`;
+  `prompt=none` is `login_required`, `STS-OAUTH-0953`), SAML 2.0
+  (`STS-SAML-0106`, then `STS-SAML-0107`), SAML 1.1 (`STS-SAML-0108`, then
+  `STS-SAML-0109`) and WS-Federation (`STS-WSFED-0022`, then
+  `STS-WSFED-0023`). The issuance policy's `mfa-mechanism` rule decides it
+  (`decideMfaMechanisms` on the `role-issuance` template).
+
+Browser authentication only, as for sign-in mechanisms. Set it from the
+application's page, `POST /admin-api/applications/update-fields`, or `add` /
+`remove` with `attribute: appMfaMechanism`. A value that is not a second
+factor is refused (`STS-REG-0203`).
+
 ## Development and product mode
 
 | | Development | Product |
@@ -619,6 +806,7 @@ the origin).
 | RFC 9728 import from a URL | internal addresses and a mismatched `resource` are reported, then imported | refused |
 | Credential attributes over LDAP | readable by a search | never returned by a search, filter or compare |
 | SAML 2.0 per-SP paths for an unregistered SP | answered | refused |
+| A WS-Trust `AppliesTo` or a WS-Federation `wtrealm` nobody registered, or no `AppliesTo` | a token is issued, and an entry is recorded | refused before anything is issued or recorded (#496); an entry a development sighting recorded is not a registration |
 | CORS | the allowlist | the allowlist |
 
 See [What is not checked](what-is-not-checked.md) for the full picture.

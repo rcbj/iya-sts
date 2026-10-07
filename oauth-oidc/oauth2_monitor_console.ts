@@ -66,6 +66,7 @@ import adminViews = require('../admin-core/admin_views');
 import par = require('./par');
 import monitor = require('./oauth2_monitor');
 import stepUp = require('./step_up');
+import OAuth2MonitorPage = require('./web_oauth2_monitor');
 
 type Req = any;
 type Json = any;
@@ -84,13 +85,16 @@ interface OAuth2MonitorConsoleDeps {
 const vz = validation.z;
 const vt = validation.types;
 
-const PAGE_PATH = '/admin/oauth2/monitor';
+// The page's path and the filter's states are the RENDERER's since #446 —
+// `web_oauth2_monitor.ts` draws from both and may require no server module —
+// and are read back here.
+const PAGE_PATH = OAuth2MonitorPage.PAGE_PATH;
 
 const MONITOR_ACTIONS = ['delete-pushed-request'];
 
-// Which pushed requests the table shows. `par.list()` knows these three words
-// and nothing else; an `expired` record is swept before it could be listed.
-const STATES = ['live', 'spent', 'all'];
+// Which pushed requests the table shows: `web_oauth2_monitor.ts`'s list,
+// with its comment.
+const STATES = OAuth2MonitorPage.STATES;
 
 // The largest page of pushed requests one reply carries — `par.list()`'s own
 // ceiling, repeated as a bound on the query rather than discovered by a silent

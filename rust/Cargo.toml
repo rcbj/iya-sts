@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# The Rust runtime's workspace (#444). rust/DESIGN.md is the design it is
+# held to; a crate is added here in the phase that ports it.
+
+[workspace]
+resolver = "2"
+members = [
+  "crates/sts-core",
+  "crates/sts-xacml",
+  "bins/xacml-pep",
+]
+
+[workspace.package]
+edition = "2021"
+license = "BUSL-1.1"
+rust-version = "1.85"
+publish = false
+
+# Every third-party version is pinned once, here, and a member names it with
+# `workspace = true` — so two crates cannot quietly disagree about which
+# release of a library the service runs.
+[workspace.dependencies]
+sts-core = { path = "crates/sts-core" }
+sts-xacml = { path = "crates/sts-xacml" }
+axum = "0.8"
+base64 = "0.23"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["server", "server-auto", "tokio", "service"] }
+# OpenSSL 3.5+ built from source, so every machine and image has the same
+# library and the post-quantum algorithms (rust/DESIGN.md section 6, D5).
+openssl = { version = "0.10", features = ["vendored"] }
+reqwest = { version = "0.12", default-features = false, features = ["native-tls-vendored", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["full"] }
+tokio-openssl = "0.6"
+tracing-subscriber = { version = "0.3", features = ["registry"] }
+indexmap = "2.14"
+num-bigint = "0.5"
+num-traits = "0.2"
+regex = "1.13"
+roxmltree = "0.21"
+thiserror = "2.0"
+tracing = "0.1"
+
+[workspace.lints.rust]
+# The one exception (rust/DESIGN.md section 6) is the openssl-sys wrapper in
+# sts-crypto, which will say so with an `allow` of its own.
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# No swallowed error and no panic in service code (DESIGN.md section 4.5).
+unwrap_used = "deny"
+expect_used = "deny"
+let_underscore_must_use = "deny"

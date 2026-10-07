@@ -90,7 +90,6 @@
 // disowns) can all require it without a cycle.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import helpers = require('../common/helpers');
 import realms = require('../common/realms');
 import stsCrypto = require('../common/crypto');
@@ -276,8 +275,8 @@ class VcIssued {
     const { log } = this.deps;
     log.debug("Entering VcIssued.digestOf().");
     const jwt = String(credential || '').split('~')[0];
-    const digest = crypto.createHash('sha256').update(jwt, 'ascii')
-      .digest('base64url');
+    const digest = stsCrypto.digest('sha256', Buffer.from(jwt, 'ascii'),
+                                    'base64url');
     log.debug("Leaving VcIssued.digestOf().");
     return digest;
   }
@@ -293,8 +292,8 @@ class VcIssued {
     const { log } = this.deps;
     log.debug("Entering VcIssued.keyForHolder().");
     log.debug("Leaving VcIssued.keyForHolder().");
-    return 'ldp:' + jkt + ':' + crypto.createHash('sha256')
-      .update(String(subject), 'utf8').digest('base64url');
+    return 'ldp:' + jkt + ':' +
+           stsCrypto.digest('sha256', String(subject), 'base64url');
   }
 
   // ---------------------------------------------------------------------------

@@ -324,11 +324,22 @@ const FIELD_EXAMPLES: Record<string, string> = {
   mail: 'alice@example.com'
 };
 
-// WHAT THE SIMPLE VIEW OF `/admin/users/new` OFFERS: the names, the address
-// and the contact details somebody creating a person usually has. Lower-cased.
+// WHAT THE SIMPLE VIEW OFFERS: the names, the address and the contact details
+// somebody creating or looking after a person usually has. Lower-cased. ONE
+// LIST FOR TWO PAGES (#500, 2026-10-07): the simple view of `/admin/users/new`
+// and the simple view of each sub-tab of a person's Attributes tab, which
+// shows these and keeps the rest of the tab behind its advanced view. A
+// sub-tab of fewer than six fields has no advanced view (rcbj), so a row
+// here for one of those changes only the create form. The sub-tabs' sets
+// were last held to the shape of an application's Every protocol and OAuth
+// sub-tabs: the fields an operator fills in, not every one the schema has.
 const SIMPLE_FIELDS = ['cn', 'sn', 'givenname', 'displayname', 'mail',
-                       'telephonenumber', 'mobile', 'title', 'o', 'ou',
-                       'preferredlanguage'];
+                       'telephonenumber', 'mobile', 'preferredlanguage',
+                       'title', 'o', 'ou', 'departmentnumber',
+                       'employeenumber', 'employeetype', 'manager',
+                       'street', 'l', 'st', 'postalcode', 'c',
+                       'schacdateofbirth', 'schaccountryofcitizenship',
+                       'placeofbirthcountry', 'description'];
 
 /**
  * Returns the field grid group an attribute is drawn in.

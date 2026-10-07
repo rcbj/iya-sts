@@ -209,11 +209,11 @@ async function theHelps(t) {
           'G3. a partner whose release list does not name the claim is ' +
           'reported as withholding it, in the JSON the API answers',
           JSON.stringify({ withheld: set.withheldFrom }));
-  // AND THE PAGE DRAWS ALL THREE: the section the three claim pages share.
+  // AND THE PAGE DRAWS ALL THREE: the section the three claim pages share,
+  // drawn from that same answer since #446.
   const admin = require('../admin-ui/admin');
-  const html = admin.claimSetSection('id_token', PERSON,
-    require('../common/claim_attributes').catalogueValuesFor(PERSON),
-    '/admin/claims');
+  const html = admin.claimSetSection('id_token',
+    JSON.parse(JSON.stringify(json)), '/admin/claims');
   t.check(html.indexOf('<datalist id="ac-id_token">') >= 0 &&
           html.indexOf('value="employeeGrade"') >= 0 &&
           html.indexOf('&quot;CC-7&quot;') >= 0 &&
