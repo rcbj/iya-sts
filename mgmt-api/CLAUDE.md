@@ -178,8 +178,12 @@ appconfig file names the `appconfig` and `defaults` sources mean
 (`context.configFile`, null when none was named, and `context.defaultsFile`
 — `GET /admin-api/config`'s members of the same names), whether a value set
 here survives a restart (`context.persistsAppconfig`,
-`context.persistenceMode`), and, by group, the other console pages that draw
-the same group. The block is drawn from this member alone now
+`context.persistenceMode` — and since 2026-10-07 `context.persistsRealms`,
+`context.inRealm` and `context.realmId`, because a value set inside a
+non-default realm lands on the realm's row and `persistsRealms` decides it
+there, the rule `AdminActions.overrideDurability()` words a reply by), and, by
+group, the other console pages that draw the same group. The block is drawn
+from this member alone now
 (`admin-ui/web_settings.ts`); `admin-ui/CLAUDE.md`, *The settings block*.
 
 **Two of the paths are not the obvious ones**, and the collision is worth

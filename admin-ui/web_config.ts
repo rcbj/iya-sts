@@ -98,7 +98,7 @@ class ConfigPage {
       // Worded from the block's own `context` (rcbj, 2026-10-07): this
       // said "in memory and gone on restart" unconditionally, which has been
       // wrong on every persistent store since 2026-08-27.
-      (stored.persistsAppconfig
+      (SettingsForms.keeps(stored)
         ? '<div class="ok"><strong>Changes SURVIVE A RESTART.</strong> ' +
           SettingsForms.durability(stored) + ' The file is left alone ' +
           'deliberately: a service that edited a file checked into a ' +

@@ -7251,18 +7251,28 @@ class AdminConsole {
    * block's prose states.
    *
    * @returns `{ configFile, defaultsFile, persistsAppconfig,
-   *   persistenceMode }`; `configFile` is null when CONFIG_FILE is unset
+   *   persistsRealms, persistenceMode, inRealm, realmId }`; `configFile` is
+   *   null when CONFIG_FILE is unset
    */
   settingsContext() {
-    const { log, config, persistence } = this.deps;
+    const { log, config, persistence, realms } = this.deps;
     log.debug("Entering AdminConsole.settingsContext().");
     const status = persistence.status();
     log.debug("Leaving AdminConsole.settingsContext().");
+    // WHERE A WRITE FROM THIS PAGE LANDS (rcbj, 2026-10-07). `setOverride()`
+    // puts a write made while a non-default realm is ambient on that realm's
+    // row, which `persistsRealms` decides, and every other in the
+    // process-wide map, which `persistsAppconfig` decides — the rule
+    // `AdminActions.overrideDurability()` words a reply by. Both facts and
+    // the realm travel, so a page drawn in a browser words it the same way.
     return {
       configFile: process.env.CONFIG_FILE || null,
       defaultsFile: config.DEFAULTS_FILE,
       persistsAppconfig: !!status.persistsAppconfig,
-      persistenceMode: String(status.mode)
+      persistsRealms: !!status.persistsRealms,
+      persistenceMode: String(status.mode),
+      inRealm: !realms.isDefault(),
+      realmId: realms.currentId()
     };
   }
 

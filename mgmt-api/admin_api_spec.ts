@@ -942,9 +942,28 @@ const SETTINGS_BLOCK = openObject(
                        'persistent store and applied again at the next ' +
                        'start.'
         },
+        persistsRealms: {
+          type: 'boolean',
+          description: 'Whether a realm\'s own overrides are written down ' +
+                       'with its row in the realm registry ' +
+                       '(`persistence.realms`) and applied again at the ' +
+                       'next start.'
+        },
         persistenceMode: {
           type: 'string',
           description: 'The `persistence.mode` in force.'
+        },
+        inRealm: {
+          type: 'boolean',
+          description: 'Whether a non-default realm is ambient. A value set ' +
+                       'then lands on that realm, so `persistsRealms` says ' +
+                       'whether it survives a restart, and ' +
+                       '`persistsAppconfig` otherwise.'
+        },
+        realmId: {
+          type: 'string',
+          description: 'The ambient realm\'s id (`default` for the ' +
+                       'default realm).'
         }
       }),
     sharedWith: {

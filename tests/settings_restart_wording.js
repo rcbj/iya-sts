@@ -187,6 +187,44 @@ function run(t) {
           '4. the pages\' sentence and the Source column branch on the ' +
           'block\'s context the same way', JSON.stringify([pageKept,
                                                            pageLost]));
+
+  // --- 5. The pages, inside a realm ---------------------------------------
+  // The rule the replies follow (3): a non-default realm's write is kept
+  // when `persistsRealms` is, whatever `persistsAppconfig` says, and a
+  // `realms.*` row is the process's either way.
+  const realmLostCtx = { persistsAppconfig: true, persistsRealms: false,
+                         persistenceMode: 'postgres', inRealm: true,
+                         realmId: 'acme', configFile: null };
+  const realmKeptCtx = { persistsAppconfig: false, persistsRealms: true,
+                         persistenceMode: 'ldif', inRealm: true,
+                         realmId: 'acme', configFile: null };
+  const pageRealmLost = SettingsForms.durability(realmLostCtx);
+  const pageRealmKept = SettingsForms.durability(realmKeptCtx);
+  const block = function (context) {
+    return SettingsForms.forms({ groups: [{ group: 'Groups', settings: [] }],
+                                 settingCount: 0, editableCount: 0,
+                                 overridden: [], context: context,
+                                 sharedWith: {} }, '/admin/x');
+  };
+  const leadLost = block(realmLostCtx);
+  const leadKept = block(realmKeptCtx);
+  t.check(/in memory and are gone on restart/.test(pageRealmLost) &&
+          /persistence\.realms/.test(pageRealmLost) &&
+          /kept across restarts/.test(pageRealmKept) &&
+          /<code>acme<\/code> realm's row/.test(pageRealmKept) &&
+          SettingsForms.overrideKept(realmLostCtx, KEY) === 'in memory only' &&
+          SettingsForms.overrideKept(realmLostCtx, 'realms.enabled') ===
+            'kept in the store' &&
+          SettingsForms.overrideKept(realmKeptCtx, KEY) ===
+            'kept in the store' &&
+          /are in memory and are gone on restart/.test(leadLost) &&
+          leadLost.indexOf('SURVIVE A RESTART') < 0 &&
+          /SURVIVE A RESTART/.test(leadKept) &&
+          /<code>acme<\/code> realm's row/.test(leadKept),
+          '5. inside a non-default realm, the pages\' sentence, the Source ' +
+          'column and the block\'s lead note follow persistsRealms, as the ' +
+          'replies do, and a realms.* row follows the process',
+          JSON.stringify([pageRealmLost, pageRealmKept]));
   log.debug("Leaving run().");
 }
 
