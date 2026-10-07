@@ -325,7 +325,9 @@ not assessed yet; they reach the decision in P3 through the issuance gate.
 **THE MODEL IS A PORT, AND THE TEST SAYS SO.** `risk_model.ts` follows the
 notebook's code — its weightings, its unsmoothed user side, its smoothing at
 the first level only, its quarter of the population likelihood for a value
-the person never used, its refusal to score a first sign-in. Its own test
+the person never used, its refusal to score a first sign-in — and departs
+from it in one case the notebook drops rather than scores: a level whose
+lookup found nothing (#502, below). Its own test
 vectors come from das-group's RBA dataset, which is third-party data and not
 here, so `tests/risk_model.js` holds the port to the notebook's functions,
 run unchanged on a synthetic seeded history: all 82 scores reproduced exactly.
@@ -382,6 +384,57 @@ realm tunes it. HIGH stays at 10 (`risk.highScorePercent` 1000); what that
 does to the evaluators is in `docs/risk-scoring.md`, *Levels*.
 `tests/risk_model.js` holds the decomposition on all 82 notebook scores and
 the shared-network case; `tests/risk_engine.js` C2–C3 the record and the page.
+
+**A LEVEL WHOSE LOOKUP FOUND NOTHING IS UNSEEN, ON BOTH SIDES (#502,
+2026-10-06).** The levels above the first are lookups — the ASN and country
+of the address, the browser, OS and device type bowser reads from the
+User-Agent. Until #502 a lookup that found nothing was the value `''`, and
+the person's history and the population both held it, so the network and
+country of an UNMAPPED address read as known: every private, loopback or
+bridge address, and every address on a service with no ASN or geolocation
+dataset (or a stale one). A brand-new address on an unmapped network moved
+H2's score from 2.01 to 2.06 (#499); with the datasets it moved by ×4.
+**The rule, from the paper**: a coarser level is the entity h_k the value
+belongs to, p_k(x) = p(x|h_k)·p(h_k) (section II-C, Eq. 9), and p(h_k) is
+the unsmoothed ML estimate, "zero for unseen ISPs (or countries)" (Fig. 1:
+p_1 = p_2 = 0). An unanswered lookup names no entity, so `''` is not an ISP
+every unmapped address belongs to: the level adds nothing to Eq. (11)'s
+interpolation on either side — the same, in the ratio, as renormalising the
+weights over the known levels — and is no "known ISP" in the unseen count
+M_{h_k}. **The person's history does not count it either, in both modes**:
+section II-C ends "similar procedures can be exploited for events
+conditioned to a given user ... restricting the available counts" — one
+estimator, two sets of counts — so there is no mode predicate. The
+person's own address still counts at the address level, which is what
+keeps repeated sign-ins from one bridge address familiar
+(`tests/risk_engine.js` I1). **The first level is not a lookup**: an empty
+User-Agent is something the client did (a KDC request sends none) and stays
+a value, or every KDC sign-in would be a never-seen browser (×4).
+
+So: `risk_model.ts`'s `missing()` skips the level, `historyOf()`'s distinct
+counts leave it out, and `risk_engine.ts` neither asks for nor RECORDS a
+missing value (nor an `ip>asn` combination row for one). The model row
+carries `unknown` — the level names, recorded whether or not the sign-in
+was scored — which `GET /admin-api/risk` answers and Monitoring → Risk
+draws after the factors (`unknown: asn, country`). **The notebook never
+meets the case**: it `dropna()`s every sign-in with a missing value before
+scoring, which a service cannot do (no private address would ever be
+assessed); its 82 test scores have every level known and are unchanged.
+**Rows a store already holds for `''`** are never asked for again; one
+can still add one to a distinct count (M) until `risk.historyRetentionDays`
+ages it out — no migration, by rcbj's rule. **With the known-context cap
+(#226)**: a known context is counted on the address digest and the UA,
+never on the ASN or country, so it is unchanged — a familiar bridge address
+is still known after `risk.minimumHistory` sign-ins, and a new unmapped one
+is not, as for a mapped one. **With `risk.listsMatchSpecialPurpose`**: a
+special-purpose address is never mapped, so its ASN and country are always
+unknown; the setting sets LISTS aside and says nothing about the model, so
+a new private address is still ×4 with it off (`tests/risk_engine.js` I4).
+**What it costs a shared-network stack**: a person who signs in from an
+address they never used — another bridge, another node behind a balancer —
+is ×4 against the user term, MEDIUM at θ = 3 once they have
+`risk.minimumHistory` sign-ins. That is the point of the issue; the
+suite's chain jobs sign in from one address and are unaffected.
 
 **THE LEVEL** is CAEP's own: LOW, MEDIUM from `risk.mediumScorePercent` (300,
 a score of 3 — Eq. (4)'s θ calibrated, not the even odds a line at 1 would

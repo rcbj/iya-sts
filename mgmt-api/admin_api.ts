@@ -3105,7 +3105,12 @@ class AdminApi {
                      'or a name\'s digest, the door, the network prefix, the ' +
                      'ASN and the code, never an address. A page of the ' +
                      'realm\'s assessed sign-ins in `assessments` ' +
-                     '(`{ total, rows }`, the last 7 days, newest first) and ' +
+                     '(`{ total, rows }`, the last 7 days, newest first; ' +
+                     'each row\'s first signal is the model\'s, with its ' +
+                     '`factors`, the user term\'s `terms`, and `unknown`, ' +
+                     'the levels whose lookup found nothing — `asn`, ' +
+                     '`country`, `browser`, `os`, `device` — which the model ' +
+                     'counts as unseen) and ' +
                      'of its people by current standing in `subjects`, ' +
                      'each with its `assessmentsPaging` / `subjectsPaging`. ' +
                      'Every row naming a person\'s `subject` also carries ' +

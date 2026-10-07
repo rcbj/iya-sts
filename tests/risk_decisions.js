@@ -443,7 +443,16 @@ function childMain() {
     ldap.createUser('rd-kurt', { invent: false });
     const kurtFirst = await kinit('rd-kurt');
     config.setOverride('risk.mediumScorePercent', 1);
-    const kurtHeld = await kinit('rd-kurt');
+    // FROM AN ADDRESS KURT NEVER USED. Since #502 a KDC sign-in from his
+    // usual address is so familiar — no User-Agent and that address, both
+    // his and both rare in the realm — that it scores under the lowest line
+    // the setting can hold (0.01, measured at 0.007): the lookups an absent
+    // header and an unmapped address fail are no longer values everybody
+    // shares. A new address (×4, unmapped) is what puts it over.
+    const kurtHeld = await require(ROOT + '/common/audit').withSource(
+      { address: '198.51.100.77' }, function () {
+        return kinit('rd-kurt');
+      });
     config.clearOverride('risk.mediumScorePercent');
     const kurtBack = await kinit('rd-kurt');
     const kurtRows = await assessedFor('rd-kurt', 'Kerberos');
@@ -457,7 +466,8 @@ function childMain() {
          'gets one — each recorded',
          JSON.stringify({ first: kurtFirst, held: kurtHeld, back: kurtBack,
                           rows: kurtRows.map(function (a) {
-                            return [a.level, a.decision];
+                            return [a.level, a.score, a.decision,
+                                    a.signals[0].factors];
                           }) }));
     config.clearOverride('risk.minimumHistory');
 
