@@ -4205,6 +4205,14 @@ class AdminConsole {
       // (withReturnAnchors()), so a notice drawn at the top of the card would
       // be off screen; it sticks to the top of the window instead. The
       // sections a page is anchored at leave room under it.
+      // THE SESSION-ENDED BAR (#508, `ConsoleRuntime.drawReauthBar()`):
+      // over the page, which stays as it is under it, until the person is
+      // signed in again.
+      '.reauth{position:fixed;left:0;right:0;top:0;z-index:60;' +
+      'background:#fff4e5;border-bottom:2px solid #f0a020;padding:10px ' +
+      '16px;display:flex;flex-wrap:wrap;gap:.5em 1em;align-items:center;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,.15)}' +
+      '.reauth-note{flex-basis:100%;font-size:.9em}' +
       '.flash{position:sticky;top:0;z-index:30;padding-top:6px;' +
       'background:#fff}.flash>*:last-child{margin-bottom:10px}' +
       'h2[id],h3[id],h4[id],.fg-cell[id]{scroll-margin-top:5rem}' +
