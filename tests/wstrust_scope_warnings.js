@@ -32,6 +32,11 @@ const config = require('../common/config');
 const realms = require('../common/realms');
 require('../common/app');
 const applications = require('../common/applications');
+// The directory is the registry's store. Loaded here, not left to whichever
+// file ran before this one in the same process: the report runner gives every
+// file a process of its own, and without it every create was refused (no
+// ou=applications container).
+require('../ldap/ldap_server');
 const adminActions = require('../admin-core/admin_actions');
 const adminViews = require('../admin-core/admin_views');
 const WebKit = require('../admin-ui/web_kit');
