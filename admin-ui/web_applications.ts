@@ -1722,7 +1722,9 @@ class ApplicationsPage {
                 return String(v).trim() !== '';
               });
             }).length);
-      return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
+      // THE SUB-TAB'S SECTIONS: the realm's pages for this application, and
+      // the DID and enrollment panels.
+      const sections =
         (group.id === 'did'
           ? ApplicationsPage.applicationDidPanel(ctx, row, carryBack,
             'config') : '') +
@@ -1732,7 +1734,8 @@ class ApplicationsPage {
           : '') +
         // The realm's Token lifetimes, Custom claims and UserInfo claims
         // pages, and its Custom SAML attributes page, for this application
-        // (2026-10-01): sections at the head of the tab they belong to.
+        // (2026-10-01): sections of the tab they belong to, under its fields
+        // since #500.
         (group.id === 'oauth'
           ? ApplicationsPage.applicationTokenLifetimesSection(row) +
             ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
@@ -1761,8 +1764,10 @@ class ApplicationsPage {
         (group.id === 'krb5'
           ? ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
               ['kerberos-pac'], 'cfg-krb5-claims', 'PAC claims')
-          : '') +
-        // A sub-tab drawn only for a section above has no fields to save.
+          : '');
+      // The sub-tab's own fields, in one form.
+      const fieldForm =
+        // A sub-tab drawn only for a section has no fields to save.
         (!mine.length ? '' : formOpen(group.id, mine.map(function (one) {
           return one.attribute;
         })) + viewSwitch +
@@ -1776,7 +1781,15 @@ class ApplicationsPage {
                              finds: (state && state.finds) || {},
                              // #488: the scope policy's warnings, by field.
                              fieldWarnings: config.fieldWarnings || {} }) +
-        saveButton('Save ' + group.label) + '</form>') + '</div>';
+        saveButton('Save ' + group.label) + '</form>');
+      // ON OAUTH AND SAML THE FIELDS COME FIRST (rcbj, 2026-10-07, #500):
+      // their simplified view is the attributes most often set, and the
+      // claims and lifetimes sections were drawn above it. Elsewhere the
+      // section is the sub-tab's main content and stays at its head.
+      const fieldsFirst = group.id === 'oauth' || group.id === 'saml';
+      return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
+        (fieldsFirst ? fieldForm + sections : sections + fieldForm) +
+        '</div>';
     }).join('');
     const bar = '<nav class="tabbar subbar" aria-label="Configuration">' +
       '<a class="first" href="#cfg-families">Protocol families</a>' +
