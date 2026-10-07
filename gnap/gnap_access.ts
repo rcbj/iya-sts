@@ -102,9 +102,11 @@
 // claim rather than three promises.
 //
 // `libraryInfo()` / `packageDir()` are here for `describe()`, which the crypto
-// metadata page reads, and for the biscuit loader: a package's version is read
-// from its own package.json rather than written down, and one of the three
-// packages hides that file behind an exports map.
+// metadata page reads: a package's version is read from its own package.json
+// rather than written down, and one of the three packages hides that file
+// behind an exports map. (The biscuit loader, which read `packageDir()` too,
+// is `common/crypto.js`'s since #453 and walks `module.paths` itself, because
+// `crypto.js` is a leaf and may not require this file.)
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
