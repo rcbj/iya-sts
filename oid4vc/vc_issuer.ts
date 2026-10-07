@@ -62,7 +62,6 @@
 // exported beside them.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle and it registers no route, so its position is not a position at all.
@@ -168,7 +167,6 @@ interface VcIssuerDeps {
   requestEncryptionKeyFor: typeof helpers.requestEncryptionKeyFor;
   certificateHeaderFor: typeof helpers.certificateHeaderFor;
   publishedKidFor: typeof helpers.publishedKidFor;
-  crypto: typeof crypto;
   stsCrypto: typeof stsCrypto;
   config: typeof config;
   bbs2023: typeof bbs2023;
@@ -469,7 +467,6 @@ class VcIssuer {
       requestEncryptionKeyFor: helpers.requestEncryptionKeyFor,
       certificateHeaderFor: helpers.certificateHeaderFor,
       publishedKidFor: helpers.publishedKidFor,
-      crypto: crypto,
       stsCrypto: stsCrypto,
       config: config,
       bbs2023: bbs2023,
@@ -1045,7 +1042,7 @@ class VcIssuer {
     blocks.forEach(function (pem, i) {
       try {
         out.push({ label: 'trusted key attester ' + (i + 1),
-                   cert: new crypto.X509Certificate(pem) });
+                   cert: stsCrypto.parseCertificate(pem) });
       } catch (e) {
         log.debug("Caught in VcIssuer.attesterKeys(): " +
                   ((e && e.message) || e));
@@ -1322,14 +1319,13 @@ class VcIssuer {
   // A Disclosure is base64url(JSON [salt, claim name, claim value]); the digest
   // that goes in _sd is base64url(SHA-256(the ASCII of that base64url string)).
   private makeDisclosure(name, value) {
-    const { log, b64u, crypto } = this.deps;
+    const { log, b64u, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.makeDisclosure(). name=" + name);
-    const salt = b64u(crypto.randomBytes(16));
+    const salt = b64u(stsCrypto.randomBytes(16));
     const encoded = b64u(Buffer.from(JSON.stringify([salt, name, value]),
                                      'utf8'));
-    const digest = b64u(crypto.createHash('sha256')
-                              .update(encoded, 'ascii')
-                              .digest());
+    const digest = b64u(stsCrypto.digest('sha256',
+                                         Buffer.from(encoded, 'ascii')));
     log.debug("Leaving VcIssuer.makeDisclosure(). digest=" + digest);
     return { salt: salt, name: name, value: value, encoded: encoded,
              digest: digest };
@@ -1337,7 +1333,7 @@ class VcIssuer {
 
   private async buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer,
                              issuerDid, status) {
-    const { log, logArtifact, b64u, certificateHeaderFor, crypto, stsCrypto,
+    const { log, logArtifact, b64u, certificateHeaderFor, stsCrypto,
             VCI_VCT } = this.deps;
     // An extension, not the spec: draft-ietf-oauth-sd-jwt-vc defines no
     // DID-based issuer signature mechanism. When one is configured the iss
@@ -1362,9 +1358,8 @@ class VcIssuer {
       });
     // A decoy digest: RFC 9901 section 4.2.5 — hash a random value so the count
     // of _sd entries does not reveal how many claims there really are.
-    const decoy = b64u(crypto.createHash('sha256')
-                             .update(b64u(crypto.randomBytes(16)), 'ascii')
-                             .digest());
+    const decoy = b64u(stsCrypto.digest('sha256',
+      Buffer.from(b64u(stsCrypto.randomBytes(16)), 'ascii')));
     const digests = disclosures.map((d) => { return d.digest; })
                                .concat([decoy])
                                .sort();
@@ -1379,7 +1374,7 @@ class VcIssuer {
       nbf: times.nbf,
       exp: times.exp,
       vct: VCI_VCT,
-      sub: subjectClaims.sub || 'urn:uuid:' + crypto.randomUUID(),
+      sub: subjectClaims.sub || 'urn:uuid:' + stsCrypto.randomUuid(),
       cnf: { jwk: holderJwk },
       _sd_alg: 'sha-256',
       _sd: digests
@@ -1440,7 +1435,7 @@ class VcIssuer {
   // signed with that key rather than a Key Binding JWT.
   private async buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer,
                                issuerDid, status) {
-    const { log, logArtifact, certificateHeaderFor, crypto, stsCrypto,
+    const { log, logArtifact, certificateHeaderFor, stsCrypto,
             VCI_JWT_TYPES, VC_CONTEXT } = this.deps;
     // As for ldp_vc, naming the issuer by DID is ordinary in a W3C credential
     // rather than an extension — this is VCDM, and the DID goes in both the
@@ -1459,7 +1454,8 @@ class VcIssuer {
     const now = rounded.nbf;
     const exp = rounded.exp;
     const signer = await this.credentialSignerAsync();
-    const subjectId = subjectClaims.sub || ('urn:uuid:' + crypto.randomUUID());
+    const subjectId = subjectClaims.sub ||
+                      ('urn:uuid:' + stsCrypto.randomUuid());
 
     // credentialSubject.id is the subject identifier; the rest of the claims
     // sit beside it. `sub` is not repeated inside as a claim of its own — it IS
@@ -1492,7 +1488,7 @@ class VcIssuer {
       iat: now,
       nbf: now,
       exp: exp,
-      jti: 'urn:uuid:' + crypto.randomUUID(),
+      jti: 'urn:uuid:' + stsCrypto.randomUuid(),
       cnf: { jwk: holderJwk },
       vc: vc
     };
@@ -2042,7 +2038,7 @@ class VcIssuer {
    * @returns the claims
    */
   subjectClaimsFrom(accessToken, configId) {
-    const { log, jsonFromB64u, crypto, stats, vciFormatOf, vcClaims
+    const { log, jsonFromB64u, stsCrypto, stats, vciFormatOf, vcClaims
             } = this.deps;
     log.debug("Entering VcIssuer.subjectClaimsFrom(). configId=" +
               (configId || '(none)'));
@@ -2116,7 +2112,8 @@ class VcIssuer {
       : own;
     const built = vcClaims.subjectClaimsFor(user, t, rows);
     const claims = Object.assign({ sub: t.sub ||
-                                        ('urn:uuid:' + crypto.randomUUID()) },
+                                        ('urn:uuid:' +
+                                         stsCrypto.randomUuid()) },
                                  built.claims);
     log.debug("Leaving VcIssuer.subjectClaimsFrom(). The credential will " +
               "describe " + user +
@@ -2341,9 +2338,9 @@ class VcIssuer {
   }
 
   private newNotificationId(accessToken) {
-    const { log, b64u, crypto, offerTtlMs, notificationIds } = this.deps;
+    const { log, b64u, stsCrypto, offerTtlMs, notificationIds } = this.deps;
     log.debug("Entering VcIssuer.newNotificationId().");
-    const id = b64u(crypto.randomBytes(12));
+    const id = b64u(stsCrypto.randomBytes(12));
     notificationIds.set(id,
                         { accessToken: accessToken,
                           expires: Date.now() + offerTtlMs(), event: null });
@@ -2783,7 +2780,7 @@ class VcIssuer {
    */
   registerRoutes(app: RouteApp): void {
     const { log, logArtifact, baseUrlOf, b64u, randomId, bbsKeyPair, vciError,
-            crypto, config, bbs2023, dpop, errorCodes, vciBatchSize,
+            stsCrypto, config, bbs2023, dpop, errorCodes, vciBatchSize,
             VCI_CONFIGS, VCI_CONFIG_ID, configIdOfIdentifier, vciConfigIds,
             vciFormatOf, issuerDidFor, deferredIntervalS, deferredReadyMs,
             deferredAccessTokens, deferredTransactions, offerTtlMs, vciNonces,
@@ -2812,7 +2809,7 @@ class VcIssuer {
     // --- Nonce Endpoint ------------------------------------------------------
     app.post('/oid4vci/nonce', (req, res) => {
       log.debug("Entering the OID4VCI nonce endpoint.");
-      const nonce = b64u(crypto.randomBytes(24));
+      const nonce = b64u(stsCrypto.randomBytes(24));
       const now = Date.now();
       // The expired go first, then the bound (oid4vci.cNonceCacheSize): a
       // c_nonce is a value this issuer handed out, so at the bound the

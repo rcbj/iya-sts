@@ -71,7 +71,7 @@
 // ---------------------------------------------------------------------------
 
 import http = require('http');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
@@ -100,7 +100,7 @@ import InstanceSlot = require('../common/instance_slot');
 // one and a test can build one with stubs.
 interface PkiServiceDeps {
   http: typeof http;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   app: typeof app;
   log: typeof log;
   config: typeof config;
@@ -144,7 +144,7 @@ class PkiService {
     helpers.log.debug("Leaving PkiService.defaultDeps().");
     return {
       http: http,
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       app: app,
       log: log,
       config: config,
@@ -283,7 +283,7 @@ class PkiService {
    * @param caId - the certificate authority's id
    */
   caCertificateFor(req, res, scopeSegment, caId) {
-    const { log, revocation, errorCodes, nodeCrypto } = this.deps;
+    const { log, revocation, errorCodes, stsCrypto } = this.deps;
     log.debug("Entering PkiService.caCertificateFor().");
     const scope = revocation.scopeFromSegment(scopeSegment);
     const authority = revocation.authorityFor(scope, caId);
@@ -306,13 +306,15 @@ class PkiService {
     // holding the old certificate for an hour built chains to a key that no
     // longer signs anything. `no-cache` with a strong ETag lets a client keep
     // the bytes and costs it one conditional request to learn they are still
-    // right.
+    // right. The ETag is the SHA-256 of the bytes (#453; it was SHA-1): a
+    // client compares it and never computes it (RFC 9110 section 8.8.3), so
+    // any collision-resistant digest serves and SHA-1 is in no list a caller
+    // here may choose from.
     res.status(200)
        .set('Content-Type', 'application/pkix-cert')
        .set('Content-Length', String(der.length))
        .set('Cache-Control', 'no-cache')
-       .set('ETag', '"' + nodeCrypto.createHash('sha1').update(der)
-         .digest('hex') + '"')
+       .set('ETag', '"' + stsCrypto.digest('sha256', der, 'hex') + '"')
        .send(der);
     log.debug("Leaving PkiService.caCertificateFor().");
   }
@@ -328,9 +330,13 @@ class PkiService {
   // no-store" header in authoritative OCSP responses*, and asks for `max-age`
   // no later than
   // `nextUpdate`, `Last-Modified` at `thisUpdate`, `Expires` at `nextUpdate`
-  // and an `ETag` of the response. What a person revoking something needs is
-  // served anyway: a client asking with a nonce gets an answer no cache may
-  // hand to anybody else, and `nextUpdate` is `pki.crlLifetimeMinutes` away.
+  // and an `ETag` of the response — the hex SHA-1 of it, section 6.2
+  // RECOMMENDS, and the SHA-256 here since #453: an ETag is opaque to the
+  // client (RFC 9110 section 8.8.3), which compares it and never recomputes
+  // it, and SHA-1 is in no list a caller here may choose from. What a person
+  // revoking something needs is served anyway: a client asking with a nonce
+  // gets an answer no cache may hand to anybody else, and `nextUpdate` is
+  // `pki.crlLifetimeMinutes` away.
   //
   // **A RESPONSE CARRYING A NONCE IS `private, max-age=0`**, because that
   // answer belongs to one request and a shared cache handing it to the next
@@ -348,7 +354,7 @@ class PkiService {
    * @param made - the response the responder made
    */
   sendOcsp(res, made) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering PkiService.sendOcsp().");
     if (made.status !== 'successful' || !made.nextUpdate) {
       this.sendDer(res, 'application/ocsp-response', made.der, false);
@@ -365,8 +371,7 @@ class PkiService {
          : 'max-age=' + maxAge + ', public, no-transform, must-revalidate')
        .set('Last-Modified', new Date(made.thisUpdate).toUTCString())
        .set('Expires', new Date(nextMs).toUTCString())
-       .set('ETag', '"' + nodeCrypto.createHash('sha1').update(made.der)
-         .digest('hex') + '"')
+       .set('ETag', '"' + stsCrypto.digest('sha256', made.der, 'hex') + '"')
        .send(made.der);
     log.debug("Leaving PkiService.sendOcsp(). Authoritative.");
   }

@@ -78,7 +78,7 @@
 // three realm hooks is AMBIENT-REALM; the hooks enter the default realm.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
@@ -230,7 +230,7 @@ class SubordinateEvents {
     const atMs = Number.isFinite(Number(o.atMs)) && Number(o.atMs) > 0
       ? Number(o.atMs) : Date.now();
     const ev: SubordinateEvent = {
-      id: String(o.id || nodeCrypto.randomBytes(12).toString('hex')),
+      id: String(o.id || stsCrypto.randomBytes(12).toString('hex')),
       iat: Math.floor(atMs / 1000),
       event: event
     };

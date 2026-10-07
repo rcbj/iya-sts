@@ -40,7 +40,7 @@
 // hand; the list of attributes that may be dialled is unchanged.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import EntityStatement = require('./entity_statement');
@@ -334,7 +334,7 @@ class OidfedRp {
     const iat = Math.floor(now() / 1000);
     const claims: Json = { iss: effective.fedClientId, aud:
                            effective.fedOpIssuer, jti:
-                           nodeCrypto.randomUUID(), iat: iat,
+                           stsCrypto.randomUuid(), iat: iat,
                            exp: iat + 300 };
     params.forEach(function (value: string, name: string): void {
       claims[name] = value;
@@ -375,7 +375,7 @@ class OidfedRp {
     return signJwtAsAsync({ iss: effective.fedClientId,
                             sub: effective.fedClientId,
                             aud: effective.fedOpIssuer,
-                            jti: nodeCrypto.randomUUID(), iat: iat,
+                            jti: stsCrypto.randomUuid(), iat: iat,
                             exp: iat + 300 }, RP_ALG, null, {});
   }
 }

@@ -150,7 +150,7 @@ import keystore = require('../common/keystore');
 // LIBRARY (rule 3) — it registers no route — so requiring it here moves
 // nothing.
 import pki = require('../common/pki');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import appPermissions = require('../common/app_permissions');
 import consent = require('../common/consent');
 import roles = require('../common/roles');
@@ -526,7 +526,7 @@ interface AdminViewsDeps {
   personAssertions: typeof personAssertions;
   keystore: typeof keystore;
   pki: typeof pki;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   appPermissions: typeof appPermissions;
   consent: typeof consent;
   roles: typeof roles;
@@ -640,7 +640,7 @@ class AdminViews {
       personAssertions: personAssertions,
       keystore: keystore,
       pki: pki,
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       appPermissions: appPermissions,
       consent: consent,
       roles: roles,
@@ -9627,10 +9627,10 @@ class AdminViews {
   // process as JSON.
   // ---------------------------------------------------------------------------
   private certificateSummary(pem) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering AdminViews.certificateSummary().");
     try {
-      const cert = new nodeCrypto.X509Certificate(String(pem));
+      const cert = stsCrypto.parseCertificate(String(pem));
       const notAfter = new Date(cert.validTo);
       const summary = {
         subject: String(cert.subject || '').split('\n').filter(Boolean)
@@ -9643,8 +9643,7 @@ class AdminViews {
         expired: notAfter.getTime() < Date.now(),
         selfSigned: cert.subject === cert.issuer,
         keyType: cert.publicKey.asymmetricKeyType,
-        thumbprint: nodeCrypto.createHash('sha256').update(cert.raw)
-          .digest('base64url')
+        thumbprint: stsCrypto.digest('sha256', cert.raw, 'base64url')
       };
       log.debug("Leaving AdminViews.certificateSummary().");
       return summary;

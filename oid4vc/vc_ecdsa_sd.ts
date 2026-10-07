@@ -48,7 +48,6 @@
 // A LIBRARY (rule 3): no route.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
@@ -125,7 +124,7 @@ class VcEcdsaSd {
       randomUuid: function randomUuid(): string {
         helpers.log.debug("Entering randomUuid().");
         helpers.log.debug("Leaving randomUuid().");
-        return crypto.randomUUID();
+        return stsCrypto.randomUuid();
       }
     };
   }
@@ -175,7 +174,7 @@ class VcEcdsaSd {
     }
     const spki = Buffer.concat([Buffer.from('3039301306072a8648ce3d0201' +
       '06082a8648ce3d030107032200', 'hex'), bytes.subarray(2)]);
-    const key = crypto.createPublicKey({ key: spki, format: 'der',
+    const key = stsCrypto.publicKeyOf({ key: spki, format: 'der',
                                         type: 'spki' });
     const jwk: any = key.export({ format: 'jwk' });
     log.debug("Leaving VcEcdsaSd.p256JwkOfMultikeyBytes().");
@@ -643,9 +642,7 @@ class VcEcdsaSd {
     const { log } = this.deps;
     log.debug("Entering VcEcdsaSd.sha256().");
     log.debug("Leaving VcEcdsaSd.sha256().");
-    return crypto.createHash('sha256')
-      .update(typeof data === 'string' ? Buffer.from(data, 'utf8') : data)
-      .digest();
+    return stsCrypto.digest('sha256', data);
   }
 
   // The proof configuration's hash (3.6.3 and 3.5.9): the proof without its
@@ -706,7 +703,7 @@ class VcEcdsaSd {
       verificationMethod: o.verificationMethod,
       proofPurpose: o.proofPurpose || 'assertionMethod'
     };
-    const hmacKey = crypto.randomBytes(32);
+    const hmacKey = stsCrypto.randomBytes(32);
     const grouped = await this.canonicalizeAndGroup(document,
       this.hmacLabelMapFactory(hmacKey), { mandatory: mandatoryPointers });
     const mandatory = Array.from(grouped.groups.mandatory.matching.values());
@@ -950,15 +947,13 @@ class VcEcdsaSd {
                  nonMandatory.length + ').' };
       }
       const mandatoryHash = this.sha256(mandatory.join(''));
-      const issuerKey = crypto.createPublicKey({ key: issuerJwk,
-                                                 format: 'jwk' });
+      const issuerKey = stsCrypto.publicKeyFromJwk(issuerJwk);
       const scheme = { family: 'ecdsa', hash: 'sha256', encoding: 'p1363' };
       let verified = await stsCrypto.verifyRawSignature(scheme, issuerKey,
         Buffer.concat([proofHash, parsed.publicKey, mandatoryHash]),
         parsed.baseSignature);
       const scopedJwk = this.p256JwkOfMultikeyBytes(parsed.publicKey);
-      const scopedKey = crypto.createPublicKey({ key: scopedJwk,
-                                                 format: 'jwk' });
+      const scopedKey = stsCrypto.publicKeyFromJwk(scopedJwk);
       for (let i = 0; i < nonMandatory.length && verified; i++) {
         verified = await stsCrypto.verifyRawSignature(scheme, scopedKey,
           Buffer.from(nonMandatory[i], 'utf8'), parsed.signatures[i]);

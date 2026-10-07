@@ -34,7 +34,6 @@
 // a default at load.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import forge = require('node-forge');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
@@ -489,9 +488,9 @@ class VcDid {
       let key = null;
       let kid = '';
       try {
-        key = crypto.createPrivateKey({ key: jwk, format: 'jwk' });
+        key = stsCrypto.privateKeyFrom({ key: jwk, format: 'jwk' });
         kid = stsCrypto.jwkThumbprint(
-          crypto.createPublicKey(key).export({ format: 'jwk' }));
+          stsCrypto.publicKeyOf(key).export({ format: 'jwk' }));
       } catch (e) {
         log.debug("Caught in VcDid.applicationDomainLinkage(): " +
                   ((e && e.message) || e));
@@ -638,7 +637,7 @@ class VcDid {
       if (own.role === 'current') {
         return;
       }
-      const jwk: any = crypto.createPublicKey(own.certPem)
+      const jwk: any = stsCrypto.publicKeyOf(own.certPem)
         .export({ format: 'jwk' });
       methods.push({ id: did + '#' + own.kid, type: 'JsonWebKey2020',
                      controller: did,
@@ -869,7 +868,8 @@ class VcDid {
   private generatedDidJwk(): any {
     const { log } = this.deps;
     log.debug("Entering VcDid.generatedDidJwk().");
-    const pair = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const pair = stsCrypto.generateKeyPairSync('ec',
+                                               { namedCurve: 'P-256' });
     const publicJwk = pair.publicKey.export({ format: 'jwk' });
     // The member order is the one a did:jwk is conventionally built from, and
     // it is not cosmetic: the identifier is the base64url of these exact
@@ -911,14 +911,14 @@ class VcDid {
     const { log, logArtifact, config, stsCrypto } = this.deps;
     log.debug("Entering VcDid.credentialSignedBy(). alg=" + alg);
     const now = Math.floor(Date.now() / 1000);
-    const salt = crypto.randomBytes(16).toString('base64url');
+    const salt = stsCrypto.randomBytes(16).toString('base64url');
     const disclosure = Buffer.from(JSON.stringify([salt, 'given_name', 'Ada']),
                                    'utf8')
       .toString('base64url');
-    const digest = crypto.createHash('sha256')
-                         .update(disclosure, 'ascii')
-                         .digest('base64url');
-    const holder = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    // The disclosure is base64url, so its ASCII and UTF-8 bytes are one.
+    const digest = stsCrypto.digest('sha256', disclosure, 'base64url');
+    const holder = stsCrypto.generateKeyPairSync('ec',
+                                                 { namedCurve: 'P-256' });
     const holderJwk = holder.publicKey.export({ format: 'jwk' });
     const payload = {
       iss: issuerDid, nbf: now,
@@ -928,7 +928,7 @@ class VcDid {
            (Number(config.value('oid4vci.generatedDidCredentialLifetimeS')) ||
             3600),
       vct: 'urn:idptools:did-tools:generated',
-      sub: 'urn:uuid:' + crypto.randomUUID(),
+      sub: 'urn:uuid:' + stsCrypto.randomUuid(),
       cnf: { jwk: { kty: holderJwk.kty, crv: holderJwk.crv, x: holderJwk.x,
                     y: holderJwk.y } },
       _sd_alg: 'sha-256', _sd: [digest]

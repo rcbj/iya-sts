@@ -141,7 +141,6 @@
 // verification happens on libuv's thread pool.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
 import pqJose = require('../common/pq_jose');
@@ -694,7 +693,7 @@ class VcDataIntegrity {
         throw new Error('a ' + found.kind + ' Multikey is a ' +
                         (size + 1) + '-byte compressed point.');
       }
-      const key = crypto.createPublicKey({
+      const key = this.deps.stsCrypto.publicKeyOf({
         key: this.ecSpki(found.kind, raw), format: 'der', type: 'spki' });
       const exported: any = key.export({ format: 'jwk' });
       jwk = { kty: 'EC', crv: found.kind, x: exported.x, y: exported.y };
@@ -929,10 +928,8 @@ class VcDataIntegrity {
     }
     const canonicalConfig = await canonize(config);
     const canonicalDocument = await canonize(unsecured);
-    const configHash = crypto.createHash(hash)
-      .update(canonicalConfig, 'utf8').digest();
-    const documentHash = crypto.createHash(hash)
-      .update(canonicalDocument, 'utf8').digest();
+    const configHash = this.deps.stsCrypto.digest(hash, canonicalConfig);
+    const documentHash = this.deps.stsCrypto.digest(hash, canonicalDocument);
     log.debug("Leaving VcDataIntegrity.hashDataAsync(). RDFC.");
     return Buffer.concat([configHash, documentHash]);
   }
@@ -953,10 +950,10 @@ class VcDataIntegrity {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.hashData(). suite=" + suite.id);
     const hash = this.hashName(suite, jwk);
-    const configHash = crypto.createHash(hash)
-      .update(this.jcs(proofConfig), 'utf8').digest();
-    const documentHash = crypto.createHash(hash)
-      .update(this.jcs(unsecured), 'utf8').digest();
+    const configHash = this.deps.stsCrypto.digest(hash,
+                                                  this.jcs(proofConfig));
+    const documentHash = this.deps.stsCrypto.digest(hash,
+                                                    this.jcs(unsecured));
     log.debug("Leaving VcDataIntegrity.hashData().");
     return Buffer.concat([configHash, documentHash]);
   }
@@ -1007,7 +1004,7 @@ class VcDataIntegrity {
       return !!ok;
     }
     const { stsCrypto } = this.deps;
-    const key = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    const key = stsCrypto.publicKeyFromJwk(jwk);
     if (suite.kind === 'ed25519') {
       const ok = await stsCrypto.verifyRawSignature({ family: 'eddsa' }, key,
                                                     data, signature);

@@ -273,7 +273,6 @@ import ssfAuth = require('../ssf/ssf_auth');
 
 // THE KEY PAIRS' OWN REQUIRES, which sat below `module.exports` in the
 // JavaScript — see the TypeScript header above for why they are here now.
-import nodeCrypto = require('crypto');
 // The debugger's own keystore code, vendored. Named `keystore` here because
 // `keyMaterial()` below is this file's REPORT on the keys and this is the
 // thing that EXPORTS them — two different jobs that would otherwise share a
@@ -708,7 +707,6 @@ interface CryptoMetadataDeps {
   scimAuth: typeof scimAuth;
   ssfEvents: typeof ssfEvents;
   ssfAuth: typeof ssfAuth;
-  nodeCrypto: typeof nodeCrypto;
   keystore: typeof keystore;
   pki: typeof pki;
   stsKeystore: typeof stsKeystore;
@@ -811,7 +809,6 @@ class CryptoMetadata {
       scimAuth: scimAuth,
       ssfEvents: ssfEvents,
       ssfAuth: ssfAuth,
-      nodeCrypto: nodeCrypto,
       keystore: keystore,
       pki: pki,
       stsKeystore: stsKeystore,
@@ -2674,13 +2671,13 @@ class CryptoMetadata {
    */
   listenerCertificateSummary(cert: { certPem?: string; chainPem?: string[];
                                      notAfter?: string }): string {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering CryptoMetadata.listenerCertificateSummary().");
     const held = cert || {};
     const validTo = ', valid to ' + String(held.notAfter || '');
-    let read: InstanceType<typeof nodeCrypto.X509Certificate> | null = null;
+    let read: import('crypto').X509Certificate | null = null;
     try {
-      read = new nodeCrypto.X509Certificate(String(held.certPem || ''));
+      read = stsCrypto.parseCertificate(String(held.certPem || ''));
     } catch (e) {
       log.debug("Caught in CryptoMetadata.listenerCertificateSummary(): " +
                 ((e && e.message) || e));
@@ -3855,21 +3852,21 @@ class CryptoMetadata {
   // every key rather than for the two that needed it: a curve key that already
   // arrives as PKCS#8 comes out byte for byte the same.
   private toPkcs8(pem) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering CryptoMetadata.toPkcs8().");
     log.debug("Leaving CryptoMetadata.toPkcs8().");
-    return nodeCrypto.createPrivateKey(pem).export({ type: 'pkcs8',
-                                                     format: 'pem' });
+    return stsCrypto.privateKeyFrom(pem).export({ type: 'pkcs8',
+                                                  format: 'pem' });
   }
 
   private pemsFor(id) {
-    const { log, stsKeysFor, realms, tlsServer, nodeCrypto,
+    const { log, stsKeysFor, realms, tlsServer, stsCrypto,
             stsPki } = this.deps;
     const self = this;
     log.debug("Entering CryptoMetadata.pemsFor(). id=" + id);
     const keys = stsKeysFor();
     if (id === 'sts-rsa') {
-      const pub = nodeCrypto.createPublicKey(keys.privateKeyPem)
+      const pub = stsCrypto.publicKeyOf(keys.privateKeyPem)
         .export({ type: 'spki', format: 'pem' });
       log.debug("Leaving CryptoMetadata.pemsFor(). The signing key.");
       return { privatePem: self.toPkcs8(keys.privateKeyPem), publicPem: pub,
@@ -3880,7 +3877,7 @@ class CryptoMetadata {
     }
     if (id === 'tls-server') {
       const cert = tlsServer.serverCertificate();
-      const pub = nodeCrypto.createPublicKey(cert.privateKeyPem)
+      const pub = stsCrypto.publicKeyOf(cert.privateKeyPem)
         .export({ type: 'spki', format: 'pem' });
       log.debug("Leaving CryptoMetadata.pemsFor(). The TLS key.");
       return { privatePem: self.toPkcs8(cert.privateKeyPem), publicPem: pub,
@@ -3892,7 +3889,7 @@ class CryptoMetadata {
     })[0];
     if (extra) {
       const priv = extra.privateKey.export({ type: 'pkcs8', format: 'pem' });
-      const pub = nodeCrypto.createPublicKey(extra.privateKey)
+      const pub = stsCrypto.publicKeyOf(extra.privateKey)
         .export({ type: 'spki', format: 'pem' });
       // **AND ITS CERTIFICATE, SINCE 2026-09-11.** A curve key had none for as
       // long as it existed, so `certs` was empty and PKCS#12 — which has

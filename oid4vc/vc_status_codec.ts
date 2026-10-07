@@ -58,7 +58,6 @@
 // the issuer, the Verifier and the status module can all require it.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import zlib = require('zlib');
 import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
@@ -814,15 +813,15 @@ class VcStatusCodec {
   }
 
   private nodeParams(spec: any, key: any, isPrivate: boolean): any {
-    const { log } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering VcStatusCodec.nodeParams().");
     const keyObject = (key && (key.type === 'private' ||
                                key.type === 'public'))
       ? key
       : (isPrivate
-          ? nodeCrypto.createPrivateKey(
+          ? stsCrypto.privateKeyFrom(
               (key && key.kty) ? { key: key, format: 'jwk' } : key)
-          : nodeCrypto.createPublicKey(
+          : stsCrypto.publicKeyOf(
               (key && key.kty) ? { key: key, format: 'jwk' } : key));
     const params: any = { key: keyObject };
     if (spec.padding !== undefined) {
@@ -880,15 +879,15 @@ class VcStatusCodec {
    * @returns the COSE_Sign1 bytes
    */
   coseSign1Sign(input: CoseSignInput): Buffer {
-    const { log, pqJose } = this.deps;
+    const { log, pqJose, stsCrypto } = this.deps;
     log.debug("Entering VcStatusCodec.coseSign1Sign(). alg=" + input.alg);
     const setup = this.coseSetup(input);
     const spec = setup.alg.spec;
     const signature = spec.family === 'pq'
       ? Buffer.from(pqJose.sign(setup.alg.name, this.pqPrivate(input.key),
                                 setup.toBeSigned))
-      : nodeCrypto.sign(spec.hash, setup.toBeSigned,
-                        this.nodeParams(spec, input.key, true));
+      : stsCrypto.signBytes(spec.hash, setup.toBeSigned,
+                            this.nodeParams(spec, input.key, true));
     const out = this.coseAssemble(input, setup.protectedBytes, signature);
     log.debug("Leaving VcStatusCodec.coseSign1Sign().");
     return out;
@@ -1000,16 +999,16 @@ class VcStatusCodec {
    */
   coseSign1Verify(buf: Buffer, key: any,
                   opts: { algorithms: string[] }): any {
-    const { log, pqJose } = this.deps;
+    const { log, pqJose, stsCrypto } = this.deps;
     log.debug("Entering VcStatusCodec.coseSign1Verify().");
     const parsed = this.coseParse(buf, opts);
     const spec = parsed.alg.spec;
     const ok = spec.family === 'pq'
       ? !!pqJose.verify(parsed.alg.name, this.pqPublic(key),
                         parsed.toBeSigned, parsed.signature)
-      : nodeCrypto.verify(spec.hash, parsed.toBeSigned,
-                          this.nodeParams(spec, key, false),
-                          parsed.signature);
+      : stsCrypto.signatureValid(spec.hash, parsed.toBeSigned,
+                                 this.nodeParams(spec, key, false),
+                                 parsed.signature);
     const out = this.coseFinish(parsed, ok);
     log.debug("Leaving VcStatusCodec.coseSign1Verify().");
     return out;
