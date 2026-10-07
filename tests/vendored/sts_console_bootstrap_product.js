@@ -420,7 +420,14 @@ function certificateRequest(pki, path, cookie) {
       headers: cookie ? { Cookie: cookie } : {},
       // What is under test is the CLIENT certificate; the server's is not
       // verified here, as in `sts_global_logout.js`.
-      rejectUnauthorized: false
+      rejectUnauthorized: false,
+      // A full handshake every time, never a resumed session (2026-10-07).
+      // The global agent caches TLS sessions, and since #406 a session
+      // resumes on any node with the verdict of its first handshake. A first
+      // try made before the anchor reached the node left an UNVERIFIED
+      // session, every retry resumed it, and the sign-in stayed "presented,
+      // not verified" for the whole 20 s (the cluster mode, 2026-10-07).
+      agent: false
     }, function (res) {
       let body = "";
       res.on("data", function (d) { body += d; });
