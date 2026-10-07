@@ -1292,12 +1292,15 @@ on each TLS listener tab as editable fields. Also, expose HTTP Connection
 Pooling settings on each HTTP/HTTPS listener tab."
 
 * **The session cache is two settings, both runtime.**
-  - `tls.sessionTimeoutS` (60) is how long a session resumes, by ticket or
+  - `tls.sessionTimeoutS` (300 since 2026-10-07, rcbj; 60 until then) is
+    how long a session resumes, by ticket or
     by ID. It replaced `tls.mainSessionTimeoutS`, which was the main port's
     alone; `policyFor()` carries it and `protocolOptions()` hands it to
     OpenSSL as `sessionTimeout`, so a change reaches the next handshake
     through the secure context `reapplyPolicy()` rebuilds.
-  - `tls.sessionCacheSize` (0) is how many TLS 1.2 session IDs a listener
+  - `tls.sessionCacheSize` (2048 since 2026-10-07, rcbj: "so there would
+    actually be TLS connection pooling"; 0 until then) is how many TLS 1.2
+    session IDs a listener
     keeps. **Node has no server-side session cache of its own**: it resumes
     by ticket, and by ID only through the `newSession`/`resumeSession`
     events. `attachSessionCache()` installs those on every listener that
@@ -1614,7 +1617,7 @@ the leaf as it does for a real handshake — harmless, and keyed by the leaf.
 **The main port shares the cluster's session-ticket key** (`tls.mainPortSharedTickets`,
 on by default), keeps an idle HTTP/1.1 connection `http.keepAliveTimeoutS`
 (60, against node's own 5) and lets a TLS session resume for
-`tls.sessionTimeoutS` (60). Both were the main port's own settings
+`tls.sessionTimeoutS` (300; 60 until 2026-10-07). Both were the main port's own settings
 (`global.httpKeepAliveTimeoutS`, `tls.mainSessionTimeoutS`) until #429 made
 them service-wide defaults every listener inherits — see *Per-listener
 session cache and connection pooling*, below. What forced it: the main port asks every full
