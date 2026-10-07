@@ -3259,12 +3259,188 @@ realms.onChange(function () {
 // `resumeSession` events — its documented external cache. This is that cache:
 // a Map per listener, bounded by the listener's sessionCacheSize (the oldest
 // forgotten past it) and its sessionTimeoutS, both read at each event so a
-// change takes effect at once. Size 0 keeps nothing, which is the default:
-// every resumption is a ticket's.
+// change takes effect at once. Size 0 keeps nothing: every resumption is then
+// a ticket's.
+//
+// A SESSION IS RESUMED ONLY UNDER THE SERVER NAME IT WAS MADE UNDER (RFC 6066
+// section 3, 2026-10-07). "A server that implements this extension MUST NOT
+// accept the request to resume the session if the server_name extension
+// contains a different name. Instead, it proceeds with a full handshake to
+// establish a new session." Neither half of the stack does that for us:
+// OpenSSL, given a TLS 1.2 session by ID, resumes it and merely notes that
+// the name differs (tls_parse_ctos_server_name() sets servername_done = 0 on
+// a hit, and parses no name at all, so a malformed one is not refused
+// either), and node's `resumeSession` event hands the listener the session
+// ID and nothing else. tlsfuzzer found it the day the cache went on by
+// default (2048, 2026-10-07): test-invalid-server-name-extension-
+// resumption.py's "session resume with different SNI" and "... malformed
+// SNI" were RESUMED on the debugger's listener, where with the cache at 0
+// they had full handshakes.
+//
+// So the cache keeps the name with the session and compares. The name a
+// ClientHello OFFERS is known to node before OpenSSL sees the hello — its
+// own ClientHello parser hands it to the socket's `onclienthello` as
+// `hello.servername`, the call that then emits `resumeSession` — but only
+// there; `watchClientHello()` wraps that handler (and `onnewsession`, for
+// the full handshake that makes a session) on every server socket of a
+// listener with a cache, and `offeredHello` carries the name to the two
+// listeners for exactly the length of that SYNCHRONOUS call. A resumption
+// whose name differs in any byte — a different name, an added or missing
+// one, a NUL inside it — is answered "nothing to resume", which is the full
+// handshake the RFC asks for; OpenSSL then judges the name as it judges any
+// full handshake's (a malformed one is refused, unrecognized_name).
+//
+// FAILING CLOSED: a name the cache does not know (the hook missing, a node
+// that stopped passing `servername`) refuses the resumption rather than
+// skipping the comparison, so the failure mode is a full handshake.
+// tests/listener_tls_policy.js L5 resumes one, so that state is not silent.
+//
+// Tickets are NOT covered: node resumes a ticket inside OpenSSL with no
+// event, and OpenSSL makes the same TLS 1.2 non-check there. Recorded on
+// tls/CLAUDE.md, *The session cache and the server name*.
 // ---------------------------------------------------------------------------
+
+/**
+ * The server name of the ClientHello whose handler is running, while it
+ * runs: `{ servername }`, or null between hellos.
+ * @type {{servername: (string|null)}|null}
+ */
+let offeredHello = null;
+
+/** The servers whose sockets carry `watchClientHello()`. */
+const helloWatchedServers = new WeakSet();
+
+let clientHelloHookInstalled = false;
+
+/**
+ * The server name a parsed ClientHello offered, '' for none, null if node
+ * did not say.
+ *
+ * @param hello - node's parsed ClientHello
+ * @returns the name, '' or null
+ */
+// A hot path: called for every handshake on a listener with a cache, and no
+// Entering/Leaving pair here would tell a reader anything but would drown
+// the log.
+function offeredServername(hello) {
+  if (hello && typeof hello.servername === 'string') {
+    return hello.servername;
+  }
+  return null;
+}
+
+/**
+ * Wraps one server socket's `onclienthello` and `onnewsession` so that the
+ * session cache's listeners can see the server name its hello offered.
+ *
+ * @param handle - the socket's TLSWrap handle
+ */
+// A hot path: once per connection on every listener with a cache, and no
+// Entering/Leaving pair here would tell a reader anything but would drown
+// the log.
+function watchClientHello(handle) {
+  const onHello = handle.onclienthello;
+  const onNewSession = handle.onnewsession;
+  if (typeof onHello !== 'function' || typeof onNewSession !== 'function') {
+    return;
+  }
+  // The name THIS connection's hello offered, for its newSession, which
+  // comes at the end of the full handshake.
+  let offered = null;
+  handle.onclienthello = function (hello) {
+    offered = offeredServername(hello);
+    const outer = offeredHello;
+    offeredHello = { servername: offered };
+    try {
+      return onHello.apply(this, arguments);
+    } finally {
+      offeredHello = outer;
+    }
+  };
+  handle.onnewsession = function () {
+    const outer = offeredHello;
+    offeredHello = { servername: offered };
+    try {
+      return onNewSession.apply(this, arguments);
+    } finally {
+      offeredHello = outer;
+    }
+  };
+}
+
+/**
+ * Installs, once, the hook through which every server socket of a listener
+ * with a session cache gets `watchClientHello()`. node builds a server's
+ * sockets inside `tls.Server`'s own connection listener and hands the
+ * listener no socket, so the one place a socket can be reached before its
+ * hello arrives is `TLSSocket.prototype._init`, which sets the handlers
+ * this wraps; it is wrapped for the servers in `helloWatchedServers` alone.
+ *
+ * @returns whether the hook is in place
+ */
+function installClientHelloHook() {
+  log.debug('Entering installClientHelloHook().');
+  if (clientHelloHookInstalled) {
+    log.debug('Leaving installClientHelloHook(). Already.');
+    return true;
+  }
+  // `_init`, `_tlsOptions`, `_handle` and `server` are node's own and
+  // undeclared in @types/node, hence the cast.
+  const proto = /** @type {any} */ (tls.TLSSocket &&
+                                     tls.TLSSocket.prototype);
+  const originalInit = proto && proto._init;
+  if (typeof originalInit !== 'function') {
+    // Fails CLOSED: every session-ID resumption is then refused (a full
+    // handshake), never resumed under a name nobody compared.
+    log.error(errorCodes.tag('STS-TLS-0046') +
+              'tls: this node has no TLSSocket.prototype._init, so the TLS ' +
+              'session cache cannot see a ClientHello\'s server name; no ' +
+              'session will be resumed by ID (RFC 6066 section 3).');
+    log.debug('Leaving installClientHelloHook(). No _init.');
+    return false;
+  }
+  // A hot path: every TLS socket in the process is built through it, and
+  // no Entering/Leaving pair here would tell a reader anything but would
+  // drown the log.
+  proto._init = function () {
+    const out = originalInit.apply(this, arguments);
+    const socket = /** @type {any} */ (this);
+    if (socket._tlsOptions && socket._tlsOptions.isServer &&
+        socket._handle && helloWatchedServers.has(socket.server)) {
+      watchClientHello(socket._handle);
+    }
+    return out;
+  };
+  clientHelloHookInstalled = true;
+  log.debug('Leaving installClientHelloHook().');
+  return true;
+}
+
+/**
+ * Whether a held session may be resumed by the hello now offering it: only
+ * under the very server name it was made under (RFC 6066 section 3).
+ *
+ * @param held - the cache's entry
+ * @param offered - `offeredHello`, as the listener found it
+ * @returns true to resume
+ */
+// A hot path: every TLS 1.2 resumption by ID, and no Entering/Leaving pair
+// here would tell a reader anything but would drown the log.
+function sameServerName(held, offered) {
+  if (!held || !offered) {
+    return false;
+  }
+  if (typeof held.servername !== 'string' ||
+      typeof offered.servername !== 'string') {
+    return false;
+  }
+  return held.servername === offered.servername;
+}
+
 /**
  * Attaches a session-ID cache to a TLS server, bounded by the listener's
- * policy.
+ * policy, and resuming a session only under the server name it was made
+ * under.
  *
  * @param server - the TLS server
  * @param kind - the listener's kind, as for `policyFor()`
@@ -3277,6 +3453,8 @@ function attachSessionCache(server, kind, realmId) {
     log.debug('Leaving attachSessionCache(). Not a server.');
     return null;
   }
+  installClientHelloHook();
+  helloWatchedServers.add(server);
   const cache = new Map();
   const bounds = function () {
     const policy = policyFor(kind, realmId);
@@ -3288,7 +3466,9 @@ function attachSessionCache(server, kind, realmId) {
     if (b.size > 0) {
       const key = Buffer.from(id).toString('hex');
       cache.delete(key);
-      cache.set(key, { data: data, at: Date.now() });
+      cache.set(key, { data: data, at: Date.now(),
+                       servername: offeredHello ? offeredHello.servername
+                         : null });
       while (cache.size > b.size) {
         cache.delete(cache.keys().next().value);
       }
@@ -3302,7 +3482,15 @@ function attachSessionCache(server, kind, realmId) {
     const key = Buffer.from(id).toString('hex');
     const held = b.size > 0 ? cache.get(key) : null;
     if (held && Date.now() - held.at <= b.ttlMs) {
-      done(null, held.data);
+      if (sameServerName(held, offeredHello)) {
+        done(null, held.data);
+        return;
+      }
+      // Not resumed, and not forgotten: the session is still good for the
+      // name it was made under. The full handshake makes a new one.
+      log.debug('tls: a ' + kind + ' session ID offered under another ' +
+                'server name is not resumed (RFC 6066 section 3).');
+      done(null, null);
       return;
     }
     cache.delete(key);

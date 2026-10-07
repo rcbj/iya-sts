@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4186** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4187** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 45
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 46
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 46
@@ -3194,6 +3194,7 @@ Raised from: tls/.
 | `STS-TLS-0043` | A write to the listeners' TLS settings was refused because it would leave a listener refusing every client: no TLS 1.3 suite, a TLS 1.3 suite in tls.ciphers, or post-quantum only (tls.pqcOnly, or a realm listener's listener.pqcOnly) with no 256-bit suite or ML-KEM group to use. | 400; nothing is written |
 | `STS-TLS-0044` | The listeners' TLS policy changed and could not be applied to one listener registered as re-keyed by its own module (a SPIFFE gRPC listener, the channel between cells); it keeps the policy it had. | logged; Server configuration -> Listeners shows the policy in force |
 | `STS-TLS-0045` | A TLS listener's own trustAnchorsFile (listener<Id>.trustAnchorsFile, #429) could not be read or holds no certificate, so that listener's client truststore would be empty while configured to be filled. | the service does not start |
+| `STS-TLS-0046` | This node offers no TLSSocket.prototype._init, so the TLS session cache cannot see the server name a ClientHello offers and cannot hold a resumption to the name its session was made under (RFC 6066 section 3). | logged; no TLS 1.2 session is resumed by ID (every such client gets a full handshake); tickets are unaffected |
 
 ## STS-VC
 
