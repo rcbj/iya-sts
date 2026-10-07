@@ -356,8 +356,10 @@ class ListenersAdmin {
     } else {
       log.debug("Leaving ListenersAdmin.listenersAction(). Unknown.");
       return (require('../common/error_codes') as any).mark({ ok: false,
-        errors: ['No such action "' + action + '": set-listeners or ' +
-                 'set-applications.'] }, 'STS-CORE-0153');
+        // The house sentence, which tests/admin_api.js reads to check that
+        // every console action has an operation (rule 7).
+        errors: ['Unknown action "' + action + '". There are two: ' +
+                 'set-listeners and set-applications.'] }, 'STS-CORE-0153');
     }
     const given = body ? body.value : undefined;
     const text = given === undefined || given === null ? ''
