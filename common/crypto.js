@@ -13407,6 +13407,343 @@ function spkiDerOf(key) {
 }
 
 // ===========================================================================
+// SECTION 17 — THE REST OF THE SERVICE'S OPERATIONS (#453, 2026-10-07).
+//
+// rcbj's rule of 2026-10-05 again: "All crypto operations across all
+// protocols and use cases are to be centralized in a common module." Section
+// 15 gave `gnap/` what it needed; #453 moved every other feature module off
+// node's `crypto` — 130 files on the day — and these are the operations they
+// still did directly: a certificate parsed, a private key imported, a key
+// pair generated, an HMAC, a one-shot signature and its check, and the
+// SHA-1 that a handful of specifications still name. `tests/
+// crypto_centralised.js` fails on a `require('crypto')` anywhere else.
+//
+// Each takes its algorithm from a closed list, as section 15's do, so a
+// feature module cannot choose one this file has not written down.
+// ===========================================================================
+
+// SHA-1 is in no list a caller may choose from (section 15's DIGESTS). Where
+// a SPECIFICATION fixes it, the caller names which one, and the purpose is
+// the argument for it. A new purpose is a new row here, and the row says
+// which text requires it.
+/** The purposes SHA-1 is computed for, each the text that fixes it. */
+const SHA1_PURPOSES = Object.freeze({
+  // SAML 2.0 Bindings 3.6.4 and SAML 1.1 Bindings 4.1.1.7: an artifact's
+  // SourceID is the SHA-1 of the issuer's entity id (or its source URL).
+  'saml-artifact-source-id': 'SAML 2.0 Bindings 3.6.4, SAML 1.1 4.1.1.7',
+  // RFC 9562 section 5.5: a name-based UUID, version 5, is SHA-1.
+  'uuid-v5': 'RFC 9562 section 5.5',
+  // RFC 5280 section 4.2.1.2 method (1): a key identifier is the SHA-1 of
+  // the subjectPublicKey BIT STRING.
+  'key-identifier': 'RFC 5280 section 4.2.1.2',
+  // RFC 6960 section 4.1.1: an OCSP CertID's issuerNameHash and
+  // issuerKeyHash under the hash it names; SHA-1 is what every client sends.
+  'ocsp-cert-id': 'RFC 6960 section 4.1.1',
+  // A certificate's SHA-1 fingerprint, DRAWN for an operator comparing it
+  // with what older tooling prints. Never compared by this service.
+  'certificate-fingerprint': 'display only',
+  // SPIRE's agent path for a node attestor, which hashes with SHA-1 so the
+  // SPIFFE ID matches the one SPIRE itself mints for the same node.
+  'spire-agent-path': 'SPIRE server node attestor agent paths'
+});
+
+// HOT PATH: a certificate fingerprint is drawn per row of a console list,
+// so no Entering/Leaving pair. It would drown the log.
+/**
+ * Returns the SHA-1 of a value, for one of the purposes a specification
+ * fixes it for.
+ *
+ * @param purpose - a key of SHA1_PURPOSES
+ * @param data - the bytes, or a string read as UTF-8
+ * @param encoding - `hex`, `base64` or `base64url`; a Buffer when absent
+ * @returns {any} the digest
+ * @throws Error for a purpose not in the list
+ */
+function sha1Digest(purpose, data, encoding) {
+  if (!Object.prototype.hasOwnProperty.call(SHA1_PURPOSES, purpose)) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: sha1Digest() is for ' +
+                    Object.keys(SHA1_PURPOSES).join(', ') +
+                    ', not "' + purpose + '"');
+  }
+  const hash = nodeCrypto.createHash('sha1')
+    .update(typeof data === 'string' ? Buffer.from(data, 'utf8')
+                                     : Buffer.from(data || []));
+  return encoding ? hash.digest(encoding) : hash.digest();
+}
+
+// An HMAC, by name, over the SHA-2 functions. (HOTP's HMAC-SHA-1 is
+// `hotpCode()`'s, and RFC 4226 is its argument.)
+const HMAC_DIGESTS = ['sha256', 'sha384', 'sha512'];
+
+// HOT PATH: a CSRF token is MACed on every form drawn and posted, so no
+// Entering/Leaving pair.
+/**
+ * Returns the HMAC of a value under a key.
+ *
+ * @param algorithm - `sha256`, `sha384` or `sha512`
+ * @param key - the key: bytes, a string, or a secret KeyObject
+ * @param data - the bytes, or a string read as UTF-8
+ * @param encoding - `hex`, `base64` or `base64url`; a Buffer when absent
+ * @returns {any} the MAC
+ * @throws Error for an algorithm outside the list
+ */
+function hmac(algorithm, key, data, encoding) {
+  if (HMAC_DIGESTS.indexOf(algorithm) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: hmac() uses ' + HMAC_DIGESTS.join(', ') +
+                    ', not "' + algorithm + '"');
+  }
+  const mac = nodeCrypto.createHmac(algorithm, key)
+    .update(typeof data === 'string' ? Buffer.from(data, 'utf8')
+                                     : Buffer.from(data || []));
+  return encoding ? mac.digest(encoding) : mac.digest();
+}
+
+// HOT PATH: a presented client certificate is parsed on every request over
+// mutual TLS, and a console page parses one per row, so no Entering/Leaving
+// pair. It throws exactly what node's constructor throws, because every
+// caller already handles that.
+/**
+ * Parses a certificate.
+ *
+ * @param input - PEM text, DER bytes, or an already parsed certificate
+ * @returns the X509Certificate
+ * @throws Error when the input is not a certificate
+ */
+function parseCertificate(input) {
+  if (input instanceof nodeCrypto.X509Certificate) {
+    return input;
+  }
+  return new nodeCrypto.X509Certificate(input);
+}
+
+/**
+ * Answers whether a value is a parsed certificate.
+ *
+ * @param value - anything
+ * @returns true for an X509Certificate
+ */
+function isParsedCertificate(value) {
+  return value instanceof nodeCrypto.X509Certificate;
+}
+
+/**
+ * Imports a private key.
+ *
+ * @param input - anything node's `createPrivateKey()` takes: a PEM, a
+ *   `{ key, format, type }` object, a private JWK as `{ key, format: 'jwk' }`,
+ *   or a private KeyObject (returned as it is)
+ * @returns the private KeyObject
+ * @throws Error when the input is not a private key
+ */
+function privateKeyFrom(input) {
+  log.debug("Entering privateKeyFrom().");
+  const key = input && input.type === 'private' &&
+              input instanceof nodeCrypto.KeyObject
+    ? input
+    : nodeCrypto.createPrivateKey(input);
+  log.debug("Leaving privateKeyFrom().");
+  return key;
+}
+
+/**
+ * Answers whether a value is a key object (public, private or secret).
+ *
+ * @param value - anything
+ * @returns true for a KeyObject
+ */
+function isKeyObject(value) {
+  return value instanceof nodeCrypto.KeyObject;
+}
+
+// The kinds of key pair a caller may generate here. ML-DSA and ML-KEM are
+// `pq_native.js`'s and `generateSigningJwkPair()`'s; DSA and plain DH are
+// not on the list, and PKINIT's groups are section 16's.
+const KEY_PAIR_TYPES = ['rsa', 'rsa-pss', 'ec', 'ed25519', 'ed448',
+                        'x25519', 'x448'];
+
+/**
+ * Refuses a key pair type outside KEY_PAIR_TYPES.
+ *
+ * @param type - the type asked for
+ * @throws Error for a type outside the list
+ */
+function checkKeyPairType(type) {
+  if (KEY_PAIR_TYPES.indexOf(type) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    throw new Error('crypto: a key pair is one of ' +
+                    KEY_PAIR_TYPES.join(', ') + ', not "' + type + '"');
+  }
+}
+
+/**
+ * Generates a key pair synchronously.
+ *
+ * @param type - one of KEY_PAIR_TYPES
+ * @param options - node's options for that type (modulusLength,
+ *   namedCurve, publicKeyEncoding, privateKeyEncoding, ...)
+ * @returns {any} `{ publicKey, privateKey }`, KeyObjects or encoded as the
+ *   options ask
+ */
+function generateKeyPairSync(type, options) {
+  log.debug("Entering generateKeyPairSync(). " + type);
+  checkKeyPairType(type);
+  const pair = nodeCrypto.generateKeyPairSync(
+    /** @type {any} */ (type), /** @type {any} */ (options || {}));
+  log.debug("Leaving generateKeyPairSync().");
+  return pair;
+}
+
+// libuv's thread pool rather than this thread: an RSA key of 3072 bits or
+// more takes long enough to stall every request behind it.
+/**
+ * Generates a key pair on libuv's thread pool.
+ *
+ * @param type - one of KEY_PAIR_TYPES
+ * @param options - as for `generateKeyPairSync()`
+ * @returns {Promise<any>} a promise of `{ publicKey, privateKey }`
+ */
+function generateKeyPairAsync(type, options) {
+  log.debug("Entering generateKeyPairAsync(). " + type);
+  checkKeyPairType(type);
+  log.debug("Leaving generateKeyPairAsync().");
+  return new Promise(function (resolve, reject) {
+    nodeCrypto.generateKeyPair(/** @type {any} */ (type),
+      /** @type {any} */ (options || {}),
+      function (err, publicKey, privateKey) {
+        if (err) {
+          log.debug("Caught in generateKeyPairAsync(): " +
+                    ((err && err.message) || err));
+          reject(err);
+          return;
+        }
+        resolve({ publicKey: publicKey, privateKey: privateKey });
+      });
+  });
+}
+
+// The hashes a one-shot signature is made under (`null` for EdDSA and
+// ML-DSA, whose algorithms fix their own), and the wider list one is
+// CHECKED under: SHA-1 is verified where a peer's protocol still sends it
+// (WebAuthn's RS1, a SCEP client's PKCS#7) and this service never signs
+// with it.
+const SIGN_HASHES = [null, 'sha256', 'sha384', 'sha512'];
+const VERIFY_HASHES = [null, 'sha1', 'sha256', 'sha384', 'sha512'];
+
+/**
+ * Normalises and checks a one-shot signature's hash name.
+ *
+ * @param hash - the name, or null/undefined
+ * @param allowed - the list it must be in
+ * @returns the name, or null
+ * @throws Error for a name outside the list
+ */
+function signatureHash(hash, allowed) {
+  const name = hash === undefined || hash === null || hash === ''
+    ? null
+    : String(hash).toLowerCase().replace(/^sha-/, 'sha');
+  if (allowed.indexOf(name) < 0) {
+    // error-code: none — a programming error; every caller names a constant
+    // or a hash it has already matched against a table of its own
+    throw new Error('crypto: a signature hash is one of ' +
+                    allowed.join(', ') + ', not "' + hash + '"');
+  }
+  return name;
+}
+
+// HOT PATH: signatures are made per token and per response, so no
+// Entering/Leaving pair. It is node's `crypto.sign()` with the hash checked.
+/**
+ * Signs bytes with a private key (node's one-shot `sign()`).
+ *
+ * @param hash - `sha256`, `sha384`, `sha512`, or null for EdDSA and ML-DSA
+ * @param data - the bytes
+ * @param key - a private KeyObject, a PEM, or `{ key, dsaEncoding,
+ *   padding, saltLength }`
+ * @returns the signature
+ * @throws Error for a hash outside the list, or what node throws
+ */
+function signBytes(hash, data, key) {
+  return nodeCrypto.sign(signatureHash(hash, SIGN_HASHES),
+    Buffer.from(data), key);
+}
+
+// HOT PATH, as signBytes(). It throws what node throws for an unusable key,
+// which is what every caller was written against.
+/**
+ * Checks a signature over bytes (node's one-shot `verify()`).
+ *
+ * @param hash - as for signBytes(), and `sha1`
+ * @param data - the bytes signed
+ * @param key - a public KeyObject, a PEM, or `{ key, dsaEncoding,
+ *   padding, saltLength }`
+ * @param signature - the signature
+ * @returns true when it verifies
+ * @throws Error for a hash outside the list, or what node throws
+ */
+function signatureValid(hash, data, key, signature) {
+  return nodeCrypto.verify(signatureHash(hash, VERIFY_HASHES),
+    Buffer.from(data), key, Buffer.from(signature));
+}
+
+/**
+ * Answers whether this build of node computes a named digest.
+ *
+ * @param name - node's name for it
+ * @returns true when it does
+ */
+function digestSupported(name) {
+  log.debug("Entering digestSupported(). " + name);
+  const yes = nodeCrypto.getHashes().indexOf(String(name)) >= 0;
+  log.debug("Leaving digestSupported().");
+  return yes;
+}
+
+/** The OpenSSL option that refuses TLS renegotiation on a server socket. */
+const TLS_NO_RENEGOTIATION = nodeCrypto.constants.SSL_OP_NO_RENEGOTIATION;
+
+// ---------------------------------------------------------------------------
+// #453 SWEEP GROUP REGIONS. Each group of the sweep added what it needed
+// between its own two markers, so the groups merged without touching one
+// another's lines.
+// ---------------------------------------------------------------------------
+
+// --- #453 group A (gnap token libraries): begin ---
+
+// --- #453 group A: end ---
+
+// (separator between group regions)
+
+// --- #453 group B (common, keys and certificates): begin ---
+
+// --- #453 group B: end ---
+
+// (separator between group regions)
+
+// --- #453 group C (common, cluster, persistence, ldap, risk): begin ---
+
+// --- #453 group C: end ---
+
+// (separator between group regions)
+
+// --- #453 group D (oauth-oidc, federation, saml, ssf, portal): begin ---
+
+// --- #453 group D: end ---
+
+// (separator between group regions)
+
+// --- #453 group E (oid4vc, oidfed, authn, admin, pki): begin ---
+
+// --- #453 group E: end ---
+
+// (separator between group regions)
+
+// --- #453 group F (spiffe, scep, est, acme, scim, kerberos, tls): begin ---
+
+// --- #453 group F: end ---
+
+// ===========================================================================
 // SECTION 16 — PKINIT: CMS SIGNED DATA, DIFFIE-HELLMAN AND THE AS REPLY KEY
 // (#179, 2026-10-05).
 //
@@ -14364,6 +14701,40 @@ function pkinitKdf(kdfOid, z, otherInfo, etype) {
  * @namespace
  */
 module.exports = {
+  // --- section 17: the rest of the service's operations (#453) ---
+  SHA1_PURPOSES: SHA1_PURPOSES,
+  sha1Digest: sha1Digest,
+  HMAC_DIGESTS: HMAC_DIGESTS,
+  hmac: hmac,
+  parseCertificate: parseCertificate,
+  isParsedCertificate: isParsedCertificate,
+  privateKeyFrom: privateKeyFrom,
+  isKeyObject: isKeyObject,
+  KEY_PAIR_TYPES: KEY_PAIR_TYPES,
+  generateKeyPairSync: generateKeyPairSync,
+  generateKeyPairAsync: generateKeyPairAsync,
+  signBytes: signBytes,
+  signatureValid: signatureValid,
+  digestSupported: digestSupported,
+  TLS_NO_RENEGOTIATION: TLS_NO_RENEGOTIATION,
+  // --- #453 group A exports: begin ---
+  // --- #453 group A exports: end ---
+  //
+  // --- #453 group B exports: begin ---
+  // --- #453 group B exports: end ---
+  //
+  // --- #453 group C exports: begin ---
+  // --- #453 group C exports: end ---
+  //
+  // --- #453 group D exports: begin ---
+  // --- #453 group D exports: end ---
+  //
+  // --- #453 group E exports: begin ---
+  // --- #453 group E exports: end ---
+  //
+  // --- #453 group F exports: begin ---
+  // --- #453 group F exports: end ---
+  //
   // --- section 16: PKINIT's CMS, key agreement and reply key (#179) ---
   PKINIT_OID: PKINIT_OID,
   PKINIT_CMS_DIGEST_OIDS: PKINIT_CMS_DIGEST_OIDS,
