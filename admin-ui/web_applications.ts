@@ -1706,6 +1706,22 @@ class ApplicationsPage {
       const mine = shown.filter(function (one) {
         return one.group === group.id;
       });
+      // THE SUB-TAB'S TWO VIEWS (#500): the simplified one unless this is a
+      // redraw of this sub-tab's own form posted from the advanced one.
+      const views = kit.hasViews(mine);
+      const advancedRows = mine.filter(function (one) {
+        return !one.simple;
+      });
+      const viewSwitch = !views ? ''
+        : kit.viewSwitch(group.label,
+            !!draft && String(draft.group || '') === group.id &&
+              String(draft.view || '') === 'advanced',
+            advancedRows.length,
+            advancedRows.filter(function (one) {
+              return (values[one.attribute] || []).some(function (v) {
+                return String(v).trim() !== '';
+              });
+            }).length);
       return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
         (group.id === 'did'
           ? ApplicationsPage.applicationDidPanel(ctx, row, carryBack,
@@ -1749,10 +1765,11 @@ class ApplicationsPage {
         // A sub-tab drawn only for a section above has no fields to save.
         (!mine.length ? '' : formOpen(group.id, mine.map(function (one) {
           return one.attribute;
-        })) +
+        })) + viewSwitch +
         kit.fieldGridOf(mine, config.groups, values,
                            { redraw: '/admin/applications/edit',
                              showSet: true, protocols: config.protocols,
+                             views: views,
                              // The lists with a search, and the last
                              // search's results for each (#459).
                              searches: config.fieldSearches || {},
@@ -1769,7 +1786,11 @@ class ApplicationsPage {
       }).join('') + '</nav>';
     return '<h2 id="fields">Its configuration</h2>' +
       kit.note('One tab per protocol, each with its own Save, beside the ' +
-      'families this application is declared for. <strong>Save</strong> ' +
+      'families this application is declared for. A tab of six fields or ' +
+      'more opens on its <strong>simplified view</strong>, the fields an ' +
+      'application usually needs; its <strong>advanced view</strong> shows ' +
+      'every field, and a field the simplified view hides keeps its value ' +
+      'when the tab is saved. <strong>Save</strong> ' +
       'writes what changed on that tab and nothing else: a single value is ' +
       'set, and an empty one is cleared; a list has the values taken out ' +
       'removed and the values put in added. A list shows one box per value, ' +

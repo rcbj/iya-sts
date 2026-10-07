@@ -4741,6 +4741,15 @@ class AdminConsole {
       '.fg-protos{display:flex;flex-wrap:wrap;gap:.3em 1em;margin:.4em 0 1em}' +
       '.fg-proto{font-weight:400;white-space:nowrap}' +
       '.fg-view{align-items:center;gap:.8em}' +
+      // A SUB-TAB'S SIMPLE / ADVANCED SWITCH (#500, `WebKit.viewSwitch()`):
+      // while Simplified is ticked the form's advanced cells, and a headed
+      // section holding only those, are not drawn; they stay in the form,
+      // so a Save posts the values they already hold.
+      'form:has(>.fg-switch input[value=simple]:checked) .fg-adv,' +
+      'form:has(>.fg-switch input[value=simple]:checked) ' +
+      '.fg-section:not(:has(.fg-cell:not(.fg-adv))),' +
+      'form:has(>.fg-switch input[value=advanced]:checked) .fg-simple-only' +
+      '{display:none}' +
       // A LIST WITH A SEARCH (#459): the search box and its results show
       // only while the cell is in use, so the cell grows downwards while
       // somebody works in it and is its old size again when they move to

@@ -6989,9 +6989,26 @@ the existing `:has()` rules hide by.
   untick a family — an absent value cannot otherwise be told from an
   undrawn one.
 * **THE CREATE FORM HAS A SIMPLE AND AN ADVANCED VIEW**: simple draws the
-  declaration fields, the setting overrides and the SAML key fields (what the
-  page drew before), advanced every field. A hidden `view` and a *switch*
-  button carry it across round trips.
+  declaration fields, the setting overrides, the SAML key fields (what the
+  page drew before) and, since #500, every field marked `simple`; advanced
+  every field. A hidden `view` and a *switch* button carry it across round
+  trips.
+* **EACH CONFIGURATION SUB-TAB HAS THE TWO VIEWS TOO (#500, rcbj
+  2026-10-07)** — the tabbed page had lost them. A field is in the simple
+  view when it is in `common/applications.js`'s `SIMPLE_FIELD_ATTRIBUTES`
+  (`applicationFields()`'s `simple`); that file's comment says how the set
+  was chosen — Every protocol and OAuth are exactly what rcbj's two working
+  applications hold, the rest inferred on that model. **A sub-tab of fewer
+  than six fields, or none of one kind, has no switch** (`WebKit.hasViews()`).
+  The switch is two `view` radios INSIDE the sub-tab's form and the
+  stylesheet hides its `fg-adv` cells while Simplified is ticked: no round
+  trip, and a hidden field stays in the form, so a Save posts the value the
+  entry holds and writes nothing for it. `view` is a member no operation
+  declares, so `shapeFields()` drops it before the request; it rides a
+  redraw in the draft, which is how "+", the bin, a search or a refused Save
+  keep the view the reader was in. A person's Attributes sub-tabs do the same
+  from `ldap/person_editor.ts`'s `SIMPLE_FIELDS` (one list with the create
+  form's), a field every person must hold always shown.
 * **THE APPLICATION PAGE'S SAVE POSTS `update-fields` TO
   `/admin/applications/edit`** (Admin Write only), which answers a redraw on a
   refusal and a 303 to `#fields` on success. A save that changed some

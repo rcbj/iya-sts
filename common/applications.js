@@ -5709,6 +5709,58 @@ const FIELD_SECTIONS = [
                  'appMayAct'] }
 ];
 
+// ---------------------------------------------------------------------------
+// THE SIMPLE VIEW (#500, rcbj 2026-10-07): the fields each sub-tab of an
+// application's Configuration tab shows before its advanced view is asked
+// for, and that `/admin/applications/new`'s simplified view offers beside the
+// declarations. A sub-tab of six fields or more has the two views; one of
+// fewer has no advanced view and draws everything.
+//
+// HOW THE TWO SETS WERE CHOSEN, because a reader adding an attribute has to
+// choose again. Every protocol and OAuth 2.0 / OpenID Connect are EXACTLY the
+// fields two working applications on rcbj's own instance hold — a web
+// application that delegates to an API (rcbj0002) and that API (rcbj0003) —
+// so the simple view is what configuring a real client and resource server
+// took, and everything else on those sub-tabs is advanced. The other
+// sub-tabs were inferred on that model: the identifiers and addresses the
+// protocol cannot work without, and the one or two choices nearly every
+// deployment makes, never a tuning knob, a lifetime or a policy override.
+// `appCorsOrigin` and `appRequiredRole` were held too, and are drawn on tabs
+// of their own.
+// ---------------------------------------------------------------------------
+const SIMPLE_FIELD_ATTRIBUTES = [
+  // Every protocol (rcbj0002, rcbj0003).
+  'description', 'appHomePageUrl', 'appAuthnMechanism',
+  'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
+  'appDelegationSubjectGroup', 'appDelegationSemantics',
+  // OAuth 2.0 / OpenID Connect (rcbj0002, rcbj0003).
+  'oauthClientId', 'oauthConfidential', 'oauthTokenEndpointAuthMethod',
+  'oauthRedirectUri', 'oauthPostLogoutRedirectUri', 'oauthGrantType',
+  'oauthResponseType', 'oauthAllowedScope', 'oauthAudience',
+  'oauthPermissionBaseUri', 'oauthPermission', 'oauthDelegatedPermission',
+  'oauthGlobalConsent',
+  // SAML 2.0 and SAML 1.1: who the provider is, where its assertions go and
+  // what it signs and encrypts with.
+  'samlEntityId', 'samlAssertionConsumerService', 'samlSingleLogoutService',
+  'samlSpMetadataUrl', 'samlSigningCertificate', 'samlEncryptionCertificate',
+  'saml2NameIdFormat', 'saml2SignAssertion', 'saml2EncryptAssertion',
+  // WS-Federation, WS-Trust, Kerberos: their identifiers and addresses.
+  'wsfedRealm', 'wsfedReplyUrl', 'wsfedSignOutUri', 'wstrustAppliesTo',
+  'krb5ServicePrincipalName',
+  // Shared Signals: the receiver, where its events go and which.
+  'ssfReceiverId', 'ssfDeliveryEndpoint', 'ssfAllowedEvents',
+  'ssfSigningAlgorithm',
+  // GNAP: the instance and its key, and how it interacts and finishes.
+  'gnapInstanceId', 'gnapKey', 'gnapKeyProof', 'gnapFinishUri',
+  'gnapInteractionStartModes', 'gnapAllowedAccess', 'gnapAccessTokenFormat',
+  // Certificate enrollment: which certificates each protocol may issue.
+  'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
+  'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
+  // A secret push destination: which provider, and where.
+  'secretDestProvider', 'secretDestEndpoint', 'secretDestRegion',
+  'secretDestProject'
+];
+
 /**
  * Says which headed section a field is drawn under, if any.
  *
@@ -5822,6 +5874,8 @@ function applicationFields() {
       families: scope.families,
       everyFamily: scope.everyFamily,
       declaration: declared.indexOf(row.name) >= 0,
+      // Shown by its sub-tab's simple view (#500).
+      simple: SIMPLE_FIELD_ATTRIBUTES.indexOf(row.name) >= 0,
       group: group.id,
       // The headed section inside the group it is drawn under (#463), or
       // none.
@@ -17604,6 +17658,7 @@ module.exports = {
   // families and group each is drawn under.
   applicationFields: applicationFields,
   FIELD_SECTIONS: FIELD_SECTIONS,
+  SIMPLE_FIELD_ATTRIBUTES: SIMPLE_FIELD_ATTRIBUTES,
   PAGE_TAB_ATTRIBUTES: PAGE_TAB_ATTRIBUTES,
   FIELD_GROUPS: FIELD_GROUPS,
   FAMILY_CHOICES: FAMILY_CHOICES,

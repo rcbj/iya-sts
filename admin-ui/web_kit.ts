@@ -1594,7 +1594,9 @@ class WebKit {
    * @param values - the grid's values by attribute
    * @param options - `redraw` (the route "+" and delete post to), `showSet`
    *   (show a cell holding a value whatever is ticked), `generateSecret`,
-   *   and `protocols`, the families a cell's labels are named from
+   *   and `protocols`, the families a cell's labels are named from;
+   *   `views` (#500), the cell is classed `fg-adv` unless `row.simple`, so
+   *   its form's simple / advanced switch (`viewSwitch()`) can hide it
    * @returns the cell as HTML
    */
   static fieldGridCell(row, values, options) {
@@ -1755,7 +1757,8 @@ class WebKit {
       (searchKind && (opts.finds || {})[row.attribute]
         ? ' fg-search-open' : '') +
       (conditional
-        ? ' ' + WebKit.esc(WebKit.familyClasses(row.families)) : '') + '"' +
+        ? ' ' + WebKit.esc(WebKit.familyClasses(row.families)) : '') +
+      (opts.views && !row.simple ? ' fg-adv' : '') + '"' +
       (searchKind ? ' tabindex="-1"' : '') + '>' +
       // A label names one control; a list and a radio group are several, so
       // their name is a heading of the cell rather than a label.
@@ -1966,6 +1969,59 @@ class WebKit {
 
   // A FIELD GRID: the typed rows under their groups' headings (#446). It was
   // the console's `fieldGrid()`, which still types the rows and calls this.
+  // ---------------------------------------------------------------------------
+  // THE SIMPLE / ADVANCED SWITCH OF ONE SUB-TAB (#500, rcbj 2026-10-07): the
+  // fields an operator usually fills in, and every field. Two radio buttons
+  // INSIDE the sub-tab's form, and the stylesheet hides the form's `fg-adv`
+  // cells while Simplified is ticked — so switching is not a round trip, and
+  // a hidden field is still in the form: Save writes only what changed, and a
+  // field the reader cannot see posts the value the entry already holds.
+  // `view` is a member no operation declares, so the runtime leaves it out of
+  // what it sends (`shapeFields()`), and it comes back on a redraw ("+", the
+  // bin, a search, a refused Save) in the draft, which is how the view the
+  // reader was in survives one. A sub-tab with fewer than six fields (rcbj),
+  // or none of either kind, has no switch and shows every field.
+  // ---------------------------------------------------------------------------
+  /**
+   * Whether a sub-tab's fields earn a simple / advanced switch: six or more,
+   * some shown by the simple view and some not.
+   *
+   * @param rows - the fields the sub-tab draws, each with `simple`
+   * @returns true when the switch is drawn
+   */
+  static hasViews(rows) {
+    const simple = rows.filter(function (row) {
+      return !!row.simple;
+    }).length;
+    return rows.length >= 6 && simple > 0 &&
+      simple < rows.length;
+  }
+
+  /**
+   * Draws a sub-tab form's simple / advanced switch.
+   *
+   * @param label - what the switch is for, for its group's name
+   * @param advanced - true to draw it on the advanced view
+   * @param hidden - how many fields the simplified view hides
+   * @param held - how many of those hold a value
+   * @returns the switch as HTML
+   */
+  static viewSwitch(label, advanced, hidden, held) {
+    return '<div class="formrow fg-view fg-switch" role="radiogroup" ' +
+      'aria-label="' + WebKit.esc('Which fields of ' + label) + '">' +
+      '<label class="fg-radio"' + WebKit.tip('The fields usually filled ' +
+        'in. The others keep their values and are saved as they are.') +
+      '><input type="radio" name="view" value="simple"' +
+      (advanced ? '' : ' checked') + '> Simplified view</label>' +
+      '<label class="fg-radio"' + WebKit.tip('Every field this tab has.') +
+      '><input type="radio" name="view" value="advanced"' +
+      (advanced ? ' checked' : '') + '> Advanced view (every field)</label>' +
+      '<span class="sub fg-simple-only">' + hidden + ' more field' +
+      (hidden === 1 ? '' : 's') + ' in the advanced view' +
+      (held ? ', ' + held + ' of ' + (hidden === 1 ? 'it' : 'them') +
+              ' holding a value' : '') + '.</span></div>';
+  }
+
   /**
    * Draws a field grid: each group's cells under its heading.
    *
