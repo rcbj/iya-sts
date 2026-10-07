@@ -869,12 +869,16 @@ const REQUIREMENTS = [
           '`aud` of a token signed by somebody else is a string this service ' +
           'cannot check and was never the audience of anyway, the same ' +
           'judgement made about a foreign cnf. And what counts as "this ' +
-          'resource server" is the PATH rather than the whole URL: every ' +
-          'token minted here carries <base>/resource where the base is ' +
-          'whatever URL the minting request arrived on, so a whole-URL ' +
-          'comparison would refuse a token minted at localhost and presented ' +
-          'at 127.0.0.1 — while what the check is FOR, a token narrowed to ' +
-          'somebody else by `resource`, always has a different path.' },
+          'resource server" is the WHOLE URL (RFC 9068 section 4 step 4): ' +
+          'an `aud` is accepted only when it is, entire, the default ' +
+          'resource indicator <base>/resource of an authorization server ' +
+          'this process publishes at the address the request arrived on — ' +
+          'the default one or a named one under /{id}. So a token minted at ' +
+          'localhost and presented at 127.0.0.1 is refused: an address is ' +
+          'part of an identifier, and global.publicBaseUrl is how a ' +
+          'deployment reached under several names gives this service one. ' +
+          'It compared the PATH until RFC 9068 was applied in every mode, ' +
+          'which accepted a token narrowed to somebody else\'s /resource.' },
 
   { id: 'least-privilege-scope', section: '2.3', level: 'SHOULD',
     appliesTo: 'authorization server and client', enforced: 'detected',
