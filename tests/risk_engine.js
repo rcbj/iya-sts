@@ -123,6 +123,53 @@ async function run(t) {
   t.check(again && again.level === 'LOW' && again.score < 1,
           'C1. the same person from the same network and device scores LOW',
           again && again.score);
+  // THE MODEL ROW EXPLAINS THE WHOLE SCORE (#499): the two features and the
+  // user term multiply to the model's score, the counts the user term is
+  // made of beside them — on the record, so on the API's assessment too —
+  // and Monitoring → Risk draws all three.
+  const row = (again && again.signals[0]) || {};
+  const f = row.factors || {};
+  const t3 = row.terms || {};
+  t.check(typeof f.user === 'number' &&
+          Math.abs(f.ip * f.ua * f.user - row.score) <= 1e-12 * row.score &&
+          t3.users === 1 && t3.userSignIns > 0 &&
+          t3.signIns === t3.userSignIns &&
+          Math.abs(f.user - (1 / t3.users) / (t3.userSignIns / t3.signIns)) <
+            1e-12,
+          'C2. the model row carries ip, ua and the user term, which ' +
+          'multiply to its score, and the counts the user term is made of',
+          JSON.stringify(row));
+  const recorded = (await riskEngine.view(REALM, { subject: ALICE, days: 1 }))
+    .assessments.rows.filter(function (a) {
+      return again && a.id === again.id;
+    })[0] || {};
+  let drawn = '';
+  try {
+    const RiskPage = require('../admin-ui/web_risk');
+    drawn = RiskPage.assessmentsHtml({ query: {}, write: false },
+      JSON.parse(JSON.stringify({
+        assessments: { rows: [recorded], total: 1 }, subjects: [],
+        assessmentsPaging: { page: 1, pages: 1, perPage: 50, firstRow: 1,
+                             lastRow: 1, total: 1,
+                             param: 'assessmentsPage', noun: 'assessments' },
+        subjectsPaging: { page: 1, pages: 1, perPage: 25, firstRow: 0,
+                          lastRow: 0, total: 0, param: 'subjectsPage',
+                          noun: 'people' } })));
+  } catch (e) {
+    drawn = 'threw: ' + (e && e.message);
+  }
+  const rf = (recorded.signals && recorded.signals[0] &&
+              recorded.signals[0].factors) || {};
+  t.check(typeof rf.user === 'number' &&
+          drawn.indexOf('model: ip ×') >= 0 &&
+          drawn.indexOf('user ×' + Number(rf.user).toPrecision(3)) >= 0 &&
+          drawn.indexOf((recorded.signals[0].terms || {}).signIns +
+                        ' sign-ins') >= 0,
+          'C3. the recorded assessment (what GET /admin-api/risk answers) ' +
+          'keeps the user term, and Monitoring → Risk draws the model\'s ' +
+          'three factors from it',
+          drawn.slice(drawn.indexOf('<tbody>'), drawn.indexOf('<tbody>') +
+                      600));
 
   // --- D. the evaluators ----------------------------------------------------
   config.setOverride('risk.datasetShrinkLimitPercent', 100);

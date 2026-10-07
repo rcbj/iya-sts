@@ -78,9 +78,27 @@ something:
 | Where | the address → its network (ASN) → its country |
 | What with | the User-Agent → browser and version → operating system and version → device type |
 
-The score is near or below 1 when a sign-in is as likely to be the person as
-an attacker, and far below 1 for a familiar one. A sign-in from a new network
-on a new device scores well above 1.
+The score is the product of three factors, and each assessment shows all
+three (`model: ip ×… · ua ×… · user ×…` on Monitoring → Risk, and
+`signals[0].factors` in `GET /admin-api/risk`):
+
+- **ip** and **ua**: for each feature, how likely the value is in the realm
+  divided by how likely it is for this person. Below 1 means the value is
+  more typical of this person than of everybody; a value the person has
+  never used scores 4.
+- **user**: the paper's user term, one divided by the number of people who
+  have signed in, over this person's share of the realm's sign-ins
+  (`signals[0].terms`). It is 1 for a person who signs in as often as the
+  average, above 1 for one who signs in less, and the same whatever address
+  or browser they use.
+
+A familiar sign-in usually scores far below 1, because a person's own
+address and browser are rare in the realm. **Where everybody shares one
+address and one browser** — behind a NAT, a VPN or a container bridge — the
+ip and ua factors are near 1, and the score is close to the user term. A
+person who signs in less than the average then scores above 1 from their
+usual context. A sign-in from a new network on a new device scores well
+above the person's usual score.
 
 ### Evaluators
 

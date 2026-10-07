@@ -354,8 +354,33 @@ the network (×3). **They are a first calibration and deliberately visible**:
 every assessment on the page lists its signals, and what they should be is
 read off that record before P3 lets anything be decided by them.
 
+**THE SCORE HAS THREE FACTORS, AND THE RECORD SHOWS ALL THREE (#499,
+2026-10-06).** Freeman et al.'s Eq. (7) is the product of a ratio per feature,
+p(x^k) / p(x^k|u,L), and the USER TERM p(u|A) / p(u|L) — p(u|A) uniform over
+the people who have signed in, p(u|L) this person's share of the realm's
+sign-ins (section II-B). The model's row carries them as `factors.ip`,
+`factors.ua` and `factors.user`, which multiply to its `score`, and `terms`
+holds the user term's three counts (`users`, `signIns`, `userSignIns`); the
+API answers that row and Monitoring → Risk draws it in the Signals column.
+Until #499 `factors` showed the two features only, and a score of 1.49 with
+factors 0.964 and 0.805 looked like a bug in the model. It was the user term
+(1.92): **the user term is the same for every context a person signs in
+from, and above 1 for anybody who signs in less than the realm's average.**
+Where everybody shares one address and one browser — a NAT, a VPN, a
+container bridge, the test stacks — both feature factors are near 1 and the
+score IS the user term, so a person with a stable setup and below-average
+activity is MEDIUM at a threshold of 1 as soon as they are scored. That is
+the paper's score; what it is compared with is the question #499 leaves for
+rcbj — Eq. (4) puts the line at θ = p(L)/p(A), the prior odds of a
+legitimate sign-in, and Eq. (7) drops further p(A) terms "compensated for by
+adjusting the decision threshold θ", which the paper sets on a validation set
+for a chosen false-positive rate (section II after Eq. (4), section IV-C).
+`tests/risk_model.js` holds the decomposition on all 82 notebook scores and
+the shared-network case; `tests/risk_engine.js` C2–C3 the record and the page.
+
 **THE LEVEL** is CAEP's own: LOW, MEDIUM from `risk.mediumScorePercent` (100,
-a score of 1 — the model's even odds), HIGH from `risk.highScorePercent`
+a score of 1 — even odds only if an attack were as likely as a legitimate
+sign-in, which Eq. (4) does not assume; #499), HIGH from `risk.highScorePercent`
 (1000); UNSCORED for a first sign-in with no signal — **and for every
 sign-in before the person has `risk.minimumHistory` (5) earlier ones**
 (2026-09-23, rcbj): with one or two sign-ins the model is mostly the
