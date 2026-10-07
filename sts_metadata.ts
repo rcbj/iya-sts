@@ -4787,19 +4787,33 @@ const ENDPOINTS: EndpointEntry[] = [
               'receiver — and nothing here retries, which is the ' +
               'transmitter\'s side of the same deliberate omission.' },
   { path: '/portal/keys', group: 'User portal',
-    name: 'Your security keys',
+    name: 'Your passkeys',
     specs: ['webauthn'],
-    what: 'NON-SPEC. The security-key list, which was a card on /portal ' +
-          'until 2026-09-06 and is a page of its own now. It draws each ' +
-          'enrolled credential, whether it is a PRIMARY credential or a ' +
-          'SECOND FACTOR, and a Remove button per key that posts to ' +
-          '/portal/remove-key. THERE IS NO ENROL BUTTON and that is a rule ' +
-          'rather than a gap: /authn/webauthn is a STEP IN A SIGN-IN — it ' +
-          'draws the ceremony for a pending authentication record — so a ' +
-          'link to it from here would answer that the sign-in form has ' +
-          'expired, which is exactly the defect this portal\'s account-ready ' +
-          'page shipped with. A key is enrolled during a sign-in or when an ' +
-          'activation link is spent.' },
+    what: 'NON-SPEC. The passkey page (#470), drawn to the passkey ' +
+          'management guidelines: one Passkeys heading over two groups — ' +
+          'passkeys on your devices (backup eligible, or a platform ' +
+          'authenticator) and passkeys on security keys — each row an icon, ' +
+          'a name (the owner\'s, else the provider FIDO MDS names where a ' +
+          'BLOB is loaded, else a short credential-manager table), Created, ' +
+          'Last used, Rename and Remove, and a Details fold with the role, ' +
+          'algorithm, attestation, AAGUID, backup state and transports. Two ' +
+          'calls to action, Create a passkey and Use a security key, begin ' +
+          'a registration ceremony (WebAuthn Level 3 section 7.1) with ' +
+          'hints (section 5.4.8) and excludeCredentials; the new passkey ' +
+          'is offered a nickname afterwards. Where no other realm is ' +
+          'defined the page sends the Signal API\'s accepted credentials ' +
+          'and user details (section 5.1.10).' },
+  { path: '/portal/rename-key', group: 'User portal',
+    name: 'Rename one of your own passkeys',
+    specs: [],
+    effect: 'changes the name of a WebAuthn credential on the person\'s ' +
+            'entry',
+    what: 'NON-SPEC (#470). The credential id comes from the body and the ' +
+          'USERNAME does not, /portal/remove-key\'s rule: the id is looked ' +
+          'up among this person\'s own keys. At most 60 characters and no ' +
+          'control characters; an empty name restores the default (the ' +
+          'provider\'s or the group\'s). Audited; no CAEP event, because a ' +
+          'name says nothing about what the key proves.' },
   { path: '/portal/mfa', group: 'User portal',
     name: 'Your authenticator app',
     specs: ['rfc6238', 'rfc4226'],
@@ -5057,7 +5071,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'on that page**: /logout, at the foot of it, ends every session ' +
           'and credential this identity holds in every protocol.' },
   { path: '/portal/remove-key', group: 'User portal',
-    name: 'Remove one of your own security keys',
+    name: 'Remove one of your own passkeys',
     specs: [],
     effect: 'removes an enrolled WebAuthn credential from the person\'s entry',
     what: 'NON-SPEC. The credential id comes from the body and the USERNAME ' +

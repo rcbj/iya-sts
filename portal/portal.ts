@@ -328,6 +328,30 @@ const COPY_SCRIPT = [
 // like ACTIVATE, and for its reason: the token is the credential.
 const RESET_PASSWORD = BASE + '/reset-password';
 
+// THE PASSKEY PAGE'S THREE ICONS (#470): a passkey beside the heading, a
+// laptop and phone for *passkeys on your devices* and a USB key for *passkeys
+// on security keys* — the commonly understood pictures the guidelines ask
+// for. Inline SVG drawn by the server: markup rather than an image, so the
+// page's `img-src` is untouched, and `currentColor` so they take the text's
+// colour. Generic on purpose (rcbj's decision B on #470): a provider's own
+// logo is a data URI that would need `img-src data:`, argued separately.
+const SVG_OPEN = '<svg class="ico" width="22" height="22" ' +
+  'viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" ' +
+  'aria-hidden="true" focusable="false">';
+const PORTAL_ICONS = {
+  passkey: SVG_OPEN + '<circle cx="8" cy="7.5" r="3.5"/>' +
+    '<path d="M2 20c0-3.6 2.7-6 6-6 1.5 0 2.9.5 4 1.4"/>' +
+    '<circle cx="17.5" cy="11" r="2.5"/><path d="M17.5 13.5V21"/>' +
+    '<path d="M17.5 17.5h2M17.5 20h1.5"/></svg>',
+  devices: SVG_OPEN + '<rect x="2" y="5" width="13" height="9" rx="1"/>' +
+    '<path d="M1 17.5h15"/><rect x="17.5" y="8" width="5" height="11" ' +
+    'rx="1"/><path d="M19.5 16.5h1"/></svg>',
+  securityKey: SVG_OPEN + '<rect x="8" y="2" width="8" height="13" ' +
+    'rx="2"/><circle cx="12" cy="8" r="1.8"/><path d="M9.5 15v6h5v-6"/>' +
+    '<path d="M11 18h2"/></svg>'
+};
+
 const CSS =
   'body{font-family:system-ui,-apple-system,"Segoe ' +
   'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
@@ -395,6 +419,19 @@ const CSS =
   'details summary{cursor:pointer;color:#2c5cc5;font-size:.85em;' +
   'padding:4px 0}' +
   'details table{margin-top:4px}' +
+  // THE PASSKEY LIST (#470): one row per passkey, an icon, a body that
+  // wraps, and the actions at the end; the two calls to action side by side.
+  'svg.ico{vertical-align:-5px;margin-right:6px;color:#2c5cc5}' +
+  'button svg.ico{color:#fff;vertical-align:-6px}' +
+  'h2.pkgroup{margin:22px 0 4px}' +
+  'ul.pk{list-style:none;margin:0;padding:0}' +
+  'ul.pk>li{display:flex;gap:10px;align-items:flex-start;padding:12px 0;' +
+  'border-bottom:1px solid #e6e6ec}' +
+  'ul.pk .body{flex:1;min-width:0}ul.pk .name{font-weight:600}' +
+  'ul.pk .meta{color:#666;font-size:.85em}' +
+  'ul.pk .acts form{margin:0}ul.pk .acts button{margin-top:0;' +
+  'padding:6px 12px}' +
+  '.ctas{display:flex;gap:10px;flex-wrap:wrap}' +
   // THE PEM BLOCK (2026-09-12). A private key is eighteen lines of base64 that
   // must be copied WHOLE and must not be re-wrapped by the browser: a PEM with
   // a line break inserted where the sender did not put one is a PEM openssl
@@ -575,8 +612,10 @@ const NAV = [
     items: [
       { path: BASE + '/password', label: 'Password',
         heading: 'Change your password' },
-      { path: BASE + '/keys', label: 'Security keys',
-        heading: 'Your security keys' },
+      // PASSKEYS (#470): the one heading the passkey guidelines put over
+      // every kind, security keys included; the path is unchanged.
+      { path: BASE + '/keys', label: 'Passkeys',
+        heading: 'Passkeys' },
       // THE AUTHENTICATOR APP (2026-09-10). Its own page beside the keys
       // rather than a card on that one, for the reason this column exists at
       // all: the enrolment is a QR code, a transcribable secret, a code field
@@ -711,7 +750,7 @@ const ACTIVATE_FORM = vz.object({
   // THE SECURITY KEY'S STEP (2026-10-01), `/portal/keys`' three fields and
   // for its reasons — see ENROL_KEY_FORM below: where the key lives, the
   // pending enrolment's id, and the browser's ceremony result as JSON.
-  kind: vt.opt(vt.oneOf(['any', 'platform', 'roaming'])),
+  kind: vt.opt(vt.oneOf(['passkey', 'security-key'])),
   enrolment_id: vt.opt(vt.base64url),
   credential: vz.string().max(validation.CAP.TEXT).optional(),
   csrf_token: vt.opt(vt.token)
@@ -752,6 +791,23 @@ const REMOVE_KEY_FORM = vz.object({
   csrf_token: vt.opt(vt.token)
 });
 
+// RENAMING ONE (#470). `remove-key`'s shape and its A01 rule — the id from the
+// body, looked up among the caller's own keys — and the name, whose rules
+// (at most 60 characters, no control characters, empty restores the
+// default) are `credentials.renameKey()`'s, the one writer.
+const RENAME_KEY_FORM = vz.object({
+  credentialId: vt.opt(vt.base64url),
+  label: vz.string().max(200).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
+// `/portal/keys`' query (#470): PORTAL_QUERY's `done`, and `named`, the
+// passkey just registered, whose nickname form the page opens.
+const KEYS_QUERY = vz.object({
+  done: vz.string().max(200).optional(),
+  named: vt.opt(vt.base64url)
+});
+
 // ENROLLING ONE (2026-09-10). `credential` is the browser's ceremony result as
 // JSON — a `vz.string()` here and parsed in the handler, exactly as
 // `authn.js`'s WEBAUTHN_FORM carries it, because what is inside it is decided
@@ -760,8 +816,10 @@ const REMOVE_KEY_FORM = vz.object({
 const ENROL_KEY_FORM = vz.object({
   action: vt.opt(vt.oneOf(['begin', 'finish', 'cancel'])),
   role: vt.opt(vt.oneOf(['primary', 'mfa'])),
-  kind: vt.opt(vt.oneOf(['any', 'platform', 'roaming'])),
-  label: vz.string().max(60).optional(),
+  // WHICH CALL TO ACTION WAS PRESSED (#470): *Create a passkey* or *Use a
+  // security key*. There is no `label` any more — a passkey takes its
+  // provider's name and is renamed afterwards (RENAME_KEY_FORM).
+  kind: vt.opt(vt.oneOf(['passkey', 'security-key'])),
   enrolment_id: vt.opt(vt.base64url),
   credential: vz.string().max(validation.CAP.TEXT).optional(),
   csrf_token: vt.opt(vt.token)
@@ -1552,25 +1610,23 @@ class Portal {
       'autocomplete="new-password">' +
       self.passwordRulesNote(username) +
       '<p class="note">Leave both empty if you would rather sign in with a ' +
-      'security key alone. You need at least one of the two.</p><h2>2. A ' +
-      'security key</h2><p class="note">A security key can be your ONLY ' +
-      'credential (you sign in with the key and no password) or a SECOND ' +
-      'factor beside a password. This service supports no other second ' +
-      'factor.</p><label class="chk"><input type="radio" name="key_role" ' +
-      'value="none" checked> No security key for now</label><label ' +
-      'class="chk"><input type="radio" name="key_role" value="primary"> Use ' +
-      'a security key instead of a password</label><label class="chk"><input ' +
-      'type="radio" name="key_role" value="mfa"> Use a security key as a ' +
-      'second factor, with the password above</label>' +
-      // WHERE THE KEY LIVES, `/portal/keys`' choice and for its reason
-      // (`kindChoice()`): a passkey built into this device is what most
-      // people mean by one, and Chrome and Edge offer it only when asked.
+      'passkey alone. You need at least one of the two.</p><h2>2. A ' +
+      'passkey</h2><p class="note">A passkey — on this device, your phone ' +
+      'or a security key — can be used INSTEAD of a password or as a ' +
+      'SECOND step after it.</p><label class="chk"><input type="radio" ' +
+      'name="key_role" value="none" checked> No passkey for now</label>' +
+      '<label class="chk"><input type="radio" name="key_role" ' +
+      'value="primary"> Use a passkey instead of a password</label><label ' +
+      'class="chk"><input type="radio" name="key_role" value="mfa"> Use a ' +
+      'passkey as a second step, after the password above</label>' +
+      // WHICH KIND, `/portal/keys`' two calls to action as radios
+      // (`kindChoice()`), because this one form carries a password too.
       (webauthnPolicy.settings().enabled
         ? self.kindChoice(webauthnPolicy.authenticatorKinds())
         : '') +
-      '<p class="note">Choosing a security key takes you to the enrolment ' +
-      'screen after this step, and your account is not set up until the key ' +
-      'is registered.</p>' +
+      '<p class="note">Choosing a passkey takes you to one more screen ' +
+      'after this step, and your account is not set up until the passkey ' +
+      'is created.</p>' +
       // ---------------------------------------------------------------
       // THE AUTHENTICATOR APP (2026-09-10). A CHECKBOX AND NOT A FOURTH
       // RADIO BUTTON, and that is the whole of what it says about itself:
@@ -1701,30 +1757,31 @@ class Portal {
     // THE BASE IS THE ONE THE REQUEST ARRIVED ON, for `enrolBlock()`'s
     // reason: a realm's base carries a path and the RP ID is its host.
     const rpId = authn.rpIdOf(base);
-    const builtIn = pending.kind === 'platform';
+    const securityKey = pending.kind === 'security-key';
     const hidden = '<input type="hidden" name="user" value="' +
       self.esc(username) + '"><input type="hidden" name="token" value="' +
       self.esc(token) + '"><input type="hidden" name="key_role" value="' +
       self.esc(pending.role) + '">' +
       (wantsTotp ? '<input type="hidden" name="totp" value="1">' : '');
     log.debug("Leaving Portal.activationKeyForm().");
-    return self.page('Register your security key',
+    return self.page('Create your passkey',
       '<div class="card">' +
-      '<h1>' + (builtIn ? 'Use this device\'s authenticator'
-                        : 'Register your security key') + '</h1>' +
+      '<h1>' + (securityKey ? 'Use your security key'
+                            : 'Create your passkey') + '</h1>' +
       '<p class="sub">Almost done. <strong>' + self.esc(username) +
-      '</strong> will sign in with this key ' +
+      '</strong> will sign in with this passkey ' +
       (pending.role === 'primary'
-        ? 'and no password.' : 'as a second factor, after the password.') +
+        ? 'and no password.' : 'as a second step, after the password.') +
       '</p>' +
       (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
-      '<p class="note">' + (builtIn
-        ? 'Your browser is about to ask for the authenticator built into ' +
-          'this device — Touch ID, Face ID, Windows Hello or the screen ' +
-          'lock — and save a passkey on it.'
-        : 'Your browser is about to ask for a passkey or a security key.') +
+      '<p class="note">' + (securityKey
+        ? 'Your browser is about to ask for your security key. Insert or ' +
+          'tap it when it asks.'
+        : 'Your browser is about to ask where to save your passkey — this ' +
+          'device (Touch ID, Face ID, Windows Hello or the screen lock), ' +
+          'your password manager, or your phone.') +
       ' Your account is not set up, and this activation link is not used ' +
-      'up, until the key is registered.</p>' +
+      'up, until the passkey is created.</p>' +
       '<div id="wa-data"' +
       ' data-challenge="' + self.esc(pending.challenge) + '"' +
       ' data-rpid="' + self.esc(rpId) + '"' +
@@ -1736,7 +1793,8 @@ class Portal {
         pending.kind))) +
       '"' +
       ' data-mode="create"></div>' +
-      '<button id="wa-go" type="button">Register this key</button>' +
+      '<button id="wa-go" type="button">' + (securityKey
+        ? 'Register security key' : 'Create passkey') + '</button>' +
       '<form method="post" action="' + ACTIVATE + '" id="wa-form">' + hidden +
       '<input type="hidden" name="step" value="key">' +
       '<input type="hidden" name="enrolment_id" value="' +
@@ -1746,7 +1804,7 @@ class Portal {
       // a `key` step with no credential, answered by saying why.
       '<button class="secondary">My browser did not ask &mdash; tell me ' +
       'why</button></form>' +
-      '<p class="note">If you cannot register a key now, open your ' +
+      '<p class="note">If you cannot create a passkey now, open your ' +
       'activation link again and choose differently.</p></div>' +
       '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>');
   }
@@ -2068,16 +2126,17 @@ class Portal {
       // the key would be enrolled at the sign-in screen on first use, which
       // product mode refuses for a key instead of a password.
       (keyRole === 'primary'
-        ? '<p><strong>Your security key is registered and is how you sign ' +
+        ? '<p><strong>Your passkey is ready and is how you sign ' +
           'in.</strong> At the sign-in screen, type your username, tick ' +
-          '<em>Sign in with the security key alone</em> and leave the ' +
-          'password empty. Add a second key on your Security keys page once ' +
-          'you are in, so that losing this one is not a locked account.</p>'
+          '<em>Sign in with a passkey instead of a password</em> and leave ' +
+          'the password empty. Create a second passkey on your Passkeys ' +
+          'page once you are in, so that losing this one is not a locked ' +
+          'account.</p>'
         : '') +
       (keyRole === 'mfa'
-        ? '<p><strong>Your security key is registered as a second ' +
-          'factor.</strong> You will be asked for it every time you sign in, ' +
-          'after your password.</p>'
+        ? '<p><strong>Your passkey is ready as a second step.</strong> ' +
+          'You will be asked for it every time you sign in, after your ' +
+          'password.</p>'
         : '') +
       '<p><a href="' + self.esc(next) + '">Sign in</a></p></div>'));
   }
@@ -2920,82 +2979,275 @@ class Portal {
     return this.esc(text);
   }
 
-  private keysPage(session, message, error, base) {
+  // ===========================================================================
+  // THE PASSKEY PAGE (#470, 2026-10-06), REBUILT TO THE PASSKEY MANAGEMENT
+  // GUIDELINES THE TICKET NAMES.
+  //
+  // What it was: one table headed *security keys* — Key, Role, Kind,
+  // Algorithm, Authenticator, Enrolled — with Remove on each row and nothing
+  // else. Every row said "security key" unless its owner had typed a name in
+  // a box before the ceremony, nothing said when a key was last used though
+  // `noteKeyUsed()` recorded it, and nothing could tell a passkey in a
+  // credential manager from one on a security key, because the backup flags
+  // were checked and dropped.
+  //
+  // What the guidelines ask, and what this draws:
+  //
+  //   * ONE heading, *Passkeys*, with a passkey icon, over every kind — and
+  //     the words a person uses: *passkeys on your devices* and *passkeys on
+  //     security keys*, never "synced" and "device-bound".
+  //     `credentials.keyGroup()` decides which; its header says how.
+  //   * Each row an icon (a laptop and phone, or a USB key), a NAME — the
+  //     owner's, else the provider's (`keyProvider()`: MDS where loaded, else
+  //     the credential-manager table), else the group's — the provider,
+  //     *Created* and *Last used*, and Rename and Remove.
+  //   * TWO calls to action, *Create a passkey* and *Use a security key*
+  //     (`enrolBlock()`), because people do not yet think of a security key
+  //     as a passkey; and a nickname asked for AFTER the ceremony rather than
+  //     a box before it — the success redirect names the new key and this
+  //     page opens its rename form.
+  //   * Concepts introduced gradually: a short paragraph, then a *Learn more*
+  //     fold for what this service adds — the two roles and the backup rule.
+  //
+  // **NOTHING TECHNICAL WAS DROPPED, ONLY FOLDED.** This is a debugging
+  // service and the role, algorithm, attestation, AAGUID, backup state and
+  // transports are what somebody is often here to read; each row carries
+  // them in a *Details* `<details>`, which is markup and needs no script.
+  // Rename is a `<details>` with a form inside for the same reason — this
+  // page runs a script only for the ceremony and the Signal API, and a
+  // rename needs neither.
+  //
+  // **THE SIGNAL API** (WebAuthn Level 3 section 5.1.10, rcbj's decision E on
+  // #470): the list carries a `wa-signal` element the shared script reads,
+  // telling the credential manager which of this person's passkeys this
+  // service still accepts — so a passkey removed here leaves their phone too
+  // — and their name. Only where no other trust realm can share the RP ID
+  // and the user handle (`signalBlock()` says why), and never while a
+  // ceremony is armed.
+  // ===========================================================================
+  private keysPage(session, message, error, base, named?) {
     const self = this;
     const { credentials, log, websecurity } = this.deps;
     log.debug('Entering Portal.keysPage().');
     const mechanisms = credentials.mechanismsFor(session.user.username);
     const csrf = websecurity.field(session.id);
     const keys = mechanisms.keys;
+    const devices = keys.filter(function (one) {
+      return credentials.keyGroup(one) === 'device';
+    });
+    const securityKeys = keys.filter(function (one) {
+      return credentials.keyGroup(one) === 'security-key';
+    });
+    const pending = credentials.pendingKeyEnrolmentFor(session.user.username);
+
+    // THE NICKNAME, ASKED FOR AFTER THE CEREMONY (#470): the success redirect
+    // names the key just registered, and its rename form is drawn open at the
+    // top of the page with the default name in it.
+    const fresh = named ? keys.filter(function (one) {
+      return one.credentialId === String(named);
+    })[0] : null;
+    const nickname = fresh
+      ? '<div class="ok"><strong>' +
+        (credentials.keyGroup(fresh) === 'security-key'
+          ? 'Give your security key a nickname'
+          : 'Give your passkey a nickname') +
+        '</strong> so you know which one this is when you see it here ' +
+        'later.' + self.renameForm(fresh, csrf, true) + '</div>'
+      : '';
+
+    const group = function (title, icon, list) {
+      return list.length
+        ? '<h2 class="pkgroup">' + icon + self.esc(title) + '</h2>' +
+          '<ul class="pk">' + list.map(function (one) {
+            return self.passkeyRow(one, csrf);
+          }).join('') + '</ul>'
+        : '';
+    };
 
     const html = self.shell(BASE + '/keys', session, message, error,
       '<div class="card">' +
-      '<p class="sub">' + (keys.length
-        ? self.esc(String(keys.length)) + ' enrolled. ' +
-          (mechanisms.mfaRequired
-            ? 'One of them is marked as a second factor, so a password alone ' +
-              'will not sign you in.'
-            : 'None of them is marked as a second factor.')
-        : 'You have no security keys enrolled.') + '</p>' +
+      nickname +
+      '<p class="sub">' + PORTAL_ICONS.passkey +
+      'Passkeys can be created and saved on your devices, like your phone ' +
+      'or laptop, or on security keys. A passkey is an encrypted digital ' +
+      'key you unlock with your fingerprint, face or screen lock; most are ' +
+      'saved to your password manager, so you can sign in on your other ' +
+      'devices too. On a security key, the key stays on that one small ' +
+      'device.</p>' +
+      self.learnMore(mechanisms, keys.length) +
       (keys.length
-        ? '<table class="grid"><tr><th>Key</th><th>Role</th>' +
-          '<th>Kind</th><th>Algorithm</th><th>Authenticator</th>' +
-          '<th>Enrolled</th><th></th></tr>' +
-          keys.map(function (one) {
-            // THE SIGNATURE ALGORITHM (2026-10-01): the one this key signs
-            // with, which is the one every sign-in with it is verified with.
-            const algorithm = credentials.keyAlgorithm(one);
-            return '<tr><td>' +
-              self.esc(one.label || 'security key') + '</td>' +
-              '<td>' + self.esc(one.role) + '</td>' +
-              '<td>' + self.esc(credentials.keyKind(one).text) + '</td>' +
-              '<td><code>' + self.esc(algorithm.text) + '</code>' +
-              (algorithm.postQuantum ? ' post-quantum' : '') +
-              (algorithm.insecure ? ' <strong>insecure</strong>' : '') +
-              '</td>' +
-              '<td>' + self.attestationText(one.attestation) + '</td>' +
-              '<td>' +
-              self.esc(new Date(one.enrolledAt || 0).toISOString()
-                .slice(0, 10)) +
-              '</td><td>' +
-              '<form method="post" action="' + BASE + '/remove-key">' + csrf +
-              '<input type="hidden" name="credentialId" value="' +
-              self.esc(one.credentialId) + '">' +
-              '<button class="danger">Remove</button></form></td></tr>';
-          }).join('') + '</table>'
-        : '') +
-      // WHICH KEYS CAN IDENTIFY A DEVICE (2026-09-26): `/portal/devices`
-      // links only a key built into one, and until this the Kind column and
-      // this note were missing, so nothing here said which that was.
-      (keys.some(function (one) {
-        return !credentials.keyKind(one).linkable;
-      })
-        ? '<p class="note">A <strong>roaming</strong> key signs you in on ' +
-          'any device but cannot be linked to one on <a href="' + BASE +
-          '/devices">Devices</a>. To link a phone or computer, add a key ' +
-          'here <strong>on that device</strong> and choose <em>Built into ' +
-          'this device</em>.</p>'
-        : '') +
-      '<p class="note">A security key is either your ONLY credential (you ' +
-      'sign in with the key and no password) or a SECOND factor beside a ' +
-      'password. You cannot remove your last way in — set another one ' +
-      'first.</p>' +
-      (keys.length > 1
-        ? '<p class="note"><strong>You hold ' + self.esc(String(keys.length)) +
-          ' keys, which is the point.</strong> If one is lost, the others ' +
-          'still sign you in — and you can remove the lost one from this ' +
-          'page without asking anybody.</p>'
-        : (keys.length === 1
-            ? '<p class="note"><strong>You hold one key and no ' +
-              'backup.</strong> If it is lost, an operator has to clear it ' +
-              'for you before you can enrol another — there is deliberately ' +
-              'no self-service reset of a credential you cannot produce. Add ' +
-              'a second key now, on a different device, and you never need ' +
-              'that conversation.</p>'
-            : '')) +
+        ? group('Passkeys on your devices', PORTAL_ICONS.devices, devices) +
+          group('Passkeys on security keys', PORTAL_ICONS.securityKey,
+                securityKeys) +
+          '<p class="note">' +
+          (mechanisms.mfaRequired
+            ? 'At least one of these is a second step after your password, ' +
+              'so a password alone will not sign you in.'
+            : 'None of these is a second step after your password.') +
+          ' You cannot remove your last way in — set another one first.</p>'
+        : '<p class="note"><strong>You have no passkeys yet.</strong> ' +
+          'Create one below, on this device or your phone, or use a ' +
+          'security key.</p>') +
       self.enrolBlock(session, mechanisms, base) +
+      (pending ? '' : self.signalBlock(session, keys, base)) +
       '</div>');
     log.debug('Leaving Portal.keysPage(). ' + keys.length + ' key(s).');
+    return html;
+  }
+
+  // ONE ROW OF THE PASSKEY LIST (#470): icon, name, provider, Created, Last
+  // used, Rename and Remove, and a Details fold with everything technical.
+  private passkeyRow(one, csrf) {
+    const self = this;
+    const { credentials, log } = this.deps;
+    log.debug('Entering Portal.passkeyRow().');
+    const securityKey = credentials.keyGroup(one) === 'security-key';
+    const provider = credentials.keyProvider(one);
+    const name = credentials.keyName(one);
+    const algorithm = credentials.keyAlgorithm(one);
+    const day = function (ms) {
+      return new Date(Number(ms) || 0).toISOString().slice(0, 10);
+    };
+    const backup = one.backupEligible === true
+      ? (one.backupState === true ? 'backed up' : 'can be backed up, not yet')
+      : (one.backupEligible === false ? 'cannot be backed up'
+                                      : 'not recorded');
+    const transports = Array.isArray(one.transports) && one.transports.length
+      ? one.transports.join(', ') : 'not reported';
+    const html = '<li><span class="ico">' +
+      (securityKey ? PORTAL_ICONS.securityKey : PORTAL_ICONS.devices) +
+      '</span><div class="body"><div class="name">' + self.esc(name) +
+      '</div><div class="meta">' +
+      (provider && provider !== name ? self.esc(provider) + ' · ' : '') +
+      'Created ' + self.esc(day(one.enrolledAt)) + ' · ' +
+      (one.lastUsedAt ? 'Last used ' + self.esc(day(one.lastUsedAt))
+                      : 'Not used yet') +
+      ' · ' + (one.role === 'primary' ? 'instead of a password'
+                                      : 'second step after your password') +
+      '</div>' +
+      self.renameForm(one, csrf, false) +
+      '<details><summary>Details</summary><table>' +
+      '<tr><th>Used</th><td>' + self.esc(one.role === 'primary'
+        ? 'instead of a password (primary)'
+        : 'as a second step after your password (mfa)') + '</td></tr>' +
+      '<tr><th>Kind</th><td>' + self.esc(credentials.keyKind(one).text) +
+      '</td></tr>' +
+      '<tr><th>Backup</th><td>' + self.esc(backup) + '</td></tr>' +
+      '<tr><th>Transports</th><td>' + self.esc(transports) + '</td></tr>' +
+      '<tr><th>Algorithm</th><td><code>' + self.esc(algorithm.text) +
+      '</code>' + (algorithm.postQuantum ? ' post-quantum' : '') +
+      (algorithm.insecure ? ' <strong>insecure</strong>' : '') +
+      '</td></tr>' +
+      '<tr><th>Authenticator</th><td>' +
+      self.attestationText(one.attestation) + '</td></tr>' +
+      '<tr><th>AAGUID</th><td><code>' +
+      self.esc(String(one.aaguid || 'none')) + '</code></td></tr>' +
+      '</table></details></div><div class="acts">' +
+      '<form method="post" action="' + BASE + '/remove-key">' + csrf +
+      '<input type="hidden" name="credentialId" value="' +
+      self.esc(one.credentialId) + '">' +
+      '<button class="danger" aria-label="Remove ' + self.esc(name) +
+      '">Remove</button></form></div></li>';
+    log.debug('Leaving Portal.passkeyRow().');
+    return html;
+  }
+
+  // RENAME, as a fold with a form in it (#470) — markup, so the page needs no
+  // script for it. `open` draws it unfolded, for the nickname prompt after
+  // an enrolment. An empty name puts the default back
+  // (`credentials.renameKey()`).
+  private renameForm(one, csrf, open) {
+    const self = this;
+    const { credentials, log } = this.deps;
+    log.debug('Entering Portal.renameForm().');
+    const id = 'rn-' + String(one.credentialId).slice(0, 16)
+      .replace(/[^A-Za-z0-9_-]/g, '');
+    const form = '<form method="post" action="' + BASE + '/rename-key">' +
+      csrf + '<input type="hidden" name="credentialId" value="' +
+      self.esc(one.credentialId) + '"><label for="' + id + '">' +
+      (open ? 'Nickname' : 'New name') + '</label>' +
+      '<input type="text" id="' + id + '" name="label" maxlength="60" ' +
+      'value="' + self.esc(credentials.keyName(one)) + '">' +
+      '<button>Save</button></form>';
+    log.debug('Leaving Portal.renameForm().');
+    return open ? form
+                : '<details><summary>Rename</summary>' + form + '</details>';
+  }
+
+  // *LEARN MORE* (#470): the guidelines introduce passkeys gradually — the
+  // benefit first, then a link for anyone who wants the rest. The rest here
+  // is this service's own: the two roles a passkey can have, and the backup
+  // rule, which are what the page's old notes said.
+  private learnMore(mechanisms, held) {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering Portal.learnMore().');
+    log.debug('Leaving Portal.learnMore().');
+    return '<details><summary>Learn more</summary>' +
+      '<p class="note">A passkey here is either <strong>instead of your ' +
+      'password</strong> — it signs you in on its own — or <strong>a ' +
+      'second step after your password</strong>. You choose which when you ' +
+      'create it.</p>' +
+      '<p class="note">A passkey on your devices is usually saved to a ' +
+      'password manager (iCloud Keychain, Google Password Manager, ' +
+      '1Password and others), so it is there on your other devices too. A ' +
+      'passkey on a security key stays on that key, and a certified ' +
+      'security key is the strongest kind of sign-in there is.</p>' +
+      '<p class="note">To link a phone or computer on <a href="' + BASE +
+      '/devices">Devices</a>, create the passkey <strong>on that ' +
+      'device</strong>; a passkey on a security key identifies no device.' +
+      '</p>' +
+      (held > 1
+        ? '<p class="note"><strong>You hold ' + self.esc(String(held)) +
+          ', which is the point.</strong> If one is lost, the others still ' +
+          'sign you in — and you can remove the lost one here without ' +
+          'asking anybody.</p>'
+        : (held === 1
+            ? '<p class="note"><strong>You hold one and no backup.</strong> ' +
+              'If it is lost, an operator has to clear it for you before you ' +
+              'can create another — there is deliberately no self-service ' +
+              'reset of a credential you cannot produce. Create a second ' +
+              'one now, on a different device or a security key.</p>'
+            : '')) +
+      (mechanisms.password ? '' : '<p class="note">You have no password. ' +
+        'A passkey used as a second step needs one.</p>') +
+      '</details>';
+  }
+
+  // THE SIGNAL API'S DATA (#470, WebAuthn Level 3 section 5.1.10): read by
+  // the shared script, which tells the credential manager every credential
+  // id this person may still sign in with and their name.
+  //
+  // **ONLY WHERE NO OTHER TRUST REALM IS DEFINED.** A passkey is filed by
+  // the credential manager under the RP ID and the user handle, and both
+  // are shared between realms today — the RP ID is the host, which every
+  // realm answers on, and the user handle is the username. So the same
+  // username in two realms is one account to the credential manager, and
+  // *these are all the credentials this account accepts* sent from one
+  // realm would hide the other realm's passkeys. That is a property of the
+  // user handle, which #474 (discoverable credentials) owns; until it
+  // changes, a service with realms sends no signal rather than a wrong one.
+  private signalBlock(session, keys, base) {
+    const self = this;
+    const { authn, log, realms } = this.deps;
+    log.debug('Entering Portal.signalBlock().');
+    if (realms.active()) {
+      log.debug('Leaving Portal.signalBlock(). Realms are defined.');
+      return '';
+    }
+    const username = String(session.user.username || '');
+    const html = '<div id="wa-signal" hidden' +
+      ' data-rpid="' + self.esc(authn.rpIdOf(base)) + '"' +
+      ' data-userid="' + self.esc(Buffer.from(username, 'utf8')
+        .toString('base64url')) + '"' +
+      ' data-accepted="' + self.esc(keys.map(function (one) {
+        return one.credentialId;
+      }).join(',')) + '"' +
+      ' data-name="' + self.esc(username) + '"' +
+      ' data-display="' + self.esc(String(session.user.name || username)) +
+      '"></div>' +
+      '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>';
+    log.debug('Leaving Portal.signalBlock().');
     return html;
   }
 
@@ -3050,16 +3302,28 @@ class Portal {
   // **THE BUTTON IS REAL AND IS LABELLED FOR A PERSON**, which every scripted
   // page here does: with the script blocked, pressing it posts a form that
   // answers *your browser did not run the ceremony* rather than doing nothing.
-  // ===========================================================================
-  // WHERE THE KEY LIVES (2026-09-26). The person chooses the authenticator
-  // built into this device — a passkey, which `/portal/devices` can link to
-  // the device — or a security key they carry. Until then the page asked for
-  // "a security key" and the browser chose, and Chrome and Edge, told a
-  // discoverable credential was discouraged, offered a USB key or a phone
-  // and never the device itself, so nothing could ever be linked. Only the
+  // ---------------------------------------------------------------------------
+  // WHERE THE PASSKEY LIVES — two calls to action since #470 (2026-10-06).
+  //
+  // From 2026-09-26 the page asked *where does this key live?* with three
+  // radios (let my browser choose, built into this device, a security key I
+  // carry), because Chrome and Edge, told a discoverable credential was
+  // discouraged, offered a USB key or a phone and never the device itself.
+  // The guidelines #470 follows replace that with two buttons — *Create a
+  // passkey* and *Use a security key* — because people do not yet think of a
+  // security key as a passkey, so it needs its own discoverable control.
+  //
+  // **"CREATE A PASSKEY" SENDS NO ATTACHMENT**, which keeps 2026-09-26's
+  // lesson: a hard `platform` refused outright on a browser with nothing
+  // built in (Linux Firefox). It asks for a discoverable credential and
+  // HINTS `client-device` then `hybrid` (`webauthnPolicy.creationOptions()`),
+  // so a browser leads with the device and can still offer a phone. Only the
   // kinds `webauthn.authenticatorAttachment` allows are drawn
-  // (`authenticatorKinds()`), and with one allowed there is no choice to
-  // draw: the ceremony asks for that one either way.
+  // (`authenticatorKinds()`).
+  //
+  // `/portal/activate` still asks with radios, because its one form carries
+  // a password and a role as well; this is that choice in the same words.
+  // ===========================================================================
   private kindChoice(kinds) {
     const self = this;
     const { log } = this.deps;
@@ -3069,29 +3333,21 @@ class Portal {
       return '';
     }
     const rows = {
-      platform: ['Built into this device',
-                 'Touch ID, Face ID, Windows Hello or the phone\'s screen ' +
-                 'lock, saved as a passkey on this device. Choose this to ' +
-                 'link the device on Devices.'],
-      roaming: ['A security key I carry',
-                'A USB, NFC or Bluetooth key, or a phone you hold up to a ' +
-                'QR code. It signs you in anywhere and is linked to no ' +
-                'device.']
+      'passkey': ['A passkey on this device or your phone',
+                  'Touch ID, Face ID, Windows Hello, the screen lock or your ' +
+                  'password manager. Most passkeys are there on your other ' +
+                  'devices too.'],
+      'security-key': ['A security key',
+                       'A USB, NFC or Bluetooth key you carry. The passkey ' +
+                       'stays on the key.']
     };
     log.debug('Leaving Portal.kindChoice().');
-    // "LET MY BROWSER CHOOSE" IS FIRST AND CHECKED: it is the request as it
-    // was before the choice existed, and the one every browser can answer.
-    // Making "Built into this device" the default broke enrolment outright
-    // on a browser with nothing built in (Linux Firefox), 2026-09-26.
-    return '<p class="sub"><strong>Where does this key live?</strong></p>' +
-      '<label class="chk"><input type="radio" name="kind" value="any" ' +
-      'checked> Let my browser choose <span class="sub">Whatever your ' +
-      'browser offers. To link this device on Devices, choose Built into ' +
-      'this device instead.</span></label>' +
-      kinds.map(function (kind) {
+    return '<p class="sub"><strong>Which kind of passkey?</strong></p>' +
+      kinds.map(function (kind, i) {
         return '<label class="chk"><input type="radio" name="kind" ' +
-          'value="' + self.esc(kind) + '"> ' + self.esc(rows[kind][0]) +
-          ' <span class="sub">' + self.esc(rows[kind][1]) + '</span></label>';
+          'value="' + self.esc(kind) + '"' + (i === 0 ? ' checked' : '') +
+          '> ' + self.esc(rows[kind][0]) + ' <span class="sub">' +
+          self.esc(rows[kind][1]) + '</span></label>';
       }).join('');
   }
 
@@ -3105,17 +3361,17 @@ class Portal {
     const pending = credentials.pendingKeyEnrolmentFor(username);
 
     if (!policy.enabled) {
-      log.debug('Leaving Portal.enrolBlock(). Security keys are switched off.');
-      return '<h2>Add a security key</h2>' +
-        '<p class="note">Security keys are switched off in this service, so ' +
-        'no new one can be enrolled. Any key already on your account goes on ' +
-        'working.</p>';
+      log.debug('Leaving Portal.enrolBlock(). Passkeys are switched off.');
+      return '<h2>Add a passkey</h2>' +
+        '<p class="note">Passkeys are switched off in this service, so no ' +
+        'new one can be created. Any passkey already on your account goes ' +
+        'on working.</p>';
     }
     if (mechanisms.keys.length >= policy.maxKeysPerPerson) {
       log.debug('Leaving Portal.enrolBlock(). At the cap.');
-      return '<h2>Add a security key</h2>' +
+      return '<h2>Add a passkey</h2>' +
         '<p class="note">You hold ' + self.esc(String(mechanisms.keys.length)) +
-        ' security keys, which is the most this service allows. Remove one ' +
+        ' passkeys, which is the most this service allows. Remove one ' +
         'first.</p>';
     }
 
@@ -3132,21 +3388,24 @@ class Portal {
       // REQUEST arrived on.
       const rpId = authn.rpIdOf(base);
       log.debug('Leaving Portal.enrolBlock(). A ceremony is armed.');
-      const builtIn = pending.kind === 'platform';
-      return '<h2>' + (builtIn ? 'Use this device\'s authenticator'
-                               : 'Touch your security key') + '</h2>' +
-        '<p class="note">' + (builtIn
-          ? 'Your browser is about to ask for the authenticator built into ' +
-            'this device — Touch ID, Face ID, Windows Hello or the ' +
-            'screen lock — and save a passkey on it. '
-          : 'Your browser is about to ask for a security key. ') +
+      const securityKey = pending.kind === 'security-key';
+      return '<h2>' + (securityKey ? 'Use your security key'
+                                   : 'Create your passkey') + '</h2>' +
+        '<p class="note">' + (securityKey
+          ? 'Your browser is about to ask for your security key. Insert or ' +
+            'tap it when it asks. '
+          : 'Your browser is about to ask where to save your passkey — this ' +
+            'device (Touch ID, Face ID, Windows Hello or the screen lock), ' +
+            'your password manager, or your phone. ') +
         '<strong>Use a DIFFERENT one from any already on your ' +
         'account</strong> &mdash; the point of a backup is that it is not in ' +
-        'the same place as the original. An authenticator that is already ' +
-        'enrolled will refuse.</p><div id="wa-data"' +
+        'the same place as the original. One that is already registered ' +
+        'will refuse.</p><div id="wa-data"' +
         ' data-challenge="' + self.esc(pending.challenge) + '"' +
         ' data-rpid="' + self.esc(rpId) + '"' +
         ' data-user="' + self.esc(username) + '"' +
+        ' data-display="' + self.esc(String(session.user.name || username)) +
+        '"' +
         ' data-allow=""' +
         ' data-exclude="' + self.esc(pending.exclude.join(',')) + '"' +
         ' data-options="' +
@@ -3154,7 +3413,8 @@ class Portal {
           pending.kind))) +
         '"' +
         ' data-mode="create"></div>' +
-        '<button id="wa-go" type="button">Register this security key</button>' +
+        '<button id="wa-go" type="button">' + (securityKey
+          ? 'Register security key' : 'Create passkey') + '</button>' +
         '<form method="post" action="' + BASE + '/keys" id="wa-form">' + csrf +
         '<input type="hidden" name="action" value="finish">' +
         '<input type="hidden" name="enrolment_id" value="' +
@@ -3169,62 +3429,72 @@ class Portal {
         'action="' + BASE + '/keys">' + csrf +
         '<input type="hidden" name="action" value="cancel">' +
         '<button class="secondary">Cancel</button></form>' +
-        '<p class="sub">Registering as: <strong>' +
-        self.esc(pending.role === 'primary'
-          ? 'your only credential (no password)' : 'a second factor') +
-        '</strong>' +
-        (pending.kind ? ', ' + self.esc(pending.kind === 'platform'
-          ? 'built into this device' : 'a security key you carry') : '') +
-        (pending.label ? ', labelled ' + self.esc(pending.label) : '') +
-        '.</p>' +
+        '<p class="sub">Creating: <strong>' +
+        self.esc(securityKey ? 'a passkey on a security key'
+                             : 'a passkey on your device') +
+        '</strong>, ' + self.esc(pending.role === 'primary'
+          ? 'used instead of your password'
+          : 'used as a second step after your password') + '.</p>' +
         '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>';
     }
 
     // ---------------------------------------------------------------------
     // STEP ONE. The role is chosen HERE and carried on the pending record,
-    // because the ceremony's answer says nothing about what was asked for.
+    // because the ceremony's answer says nothing about what was asked for;
+    // the kind is WHICH BUTTON was pressed (#470), one form, two submits.
     // ---------------------------------------------------------------------
     const roles = [];
     if (policy.mfaAllowed) {
-      roles.push(['mfa', 'A second factor, beside my password',
+      roles.push(['mfa', 'As a second step after my password',
                   mechanisms.password
                     ? 'You will be asked for it every time you sign in.'
-                    : 'You have no password, so this key alone will not sign ' +
-                      'you in — set a password as well.']);
+                    : 'You have no password, so this passkey alone will not ' +
+                      'sign you in — set a password as well.']);
     }
     if (policy.primaryAllowed) {
-      roles.push(['primary', 'My only credential — no password',
-                  'You sign in with the key and nothing else.']);
+      roles.push(['primary', 'Instead of my password',
+                  'You sign in with the passkey and nothing else.']);
     }
     if (!roles.length) {
       log.debug('Leaving Portal.enrolBlock(). No role is allowed.');
-      return '<h2>Add a security key</h2>' +
-        '<p class="note">This service allows a security key in neither role ' +
-        'at the moment, so none can be enrolled.</p>';
+      return '<h2>Add a passkey</h2>' +
+        '<p class="note">This service allows a passkey in neither role at ' +
+        'the moment, so none can be created.</p>';
     }
+    const kinds = webauthnPolicy.authenticatorKinds();
+    const labels = { 'passkey': 'Create a passkey',
+                     'security-key': 'Use a security key' };
 
     log.debug('Leaving Portal.enrolBlock(). The form is drawn.');
-    return '<h2>Add a security key</h2>' +
+    return '<h2>Add a passkey</h2>' +
       (mechanisms.keys.length
-        ? '<p class="note">This registers a NEW authenticator. The ones you ' +
-          'already hold are excluded from the ceremony, so touching a key ' +
-          'that is already enrolled will refuse rather than adding a second ' +
-          'row for the same device.</p>'
+        ? '<p class="note">This adds a NEW passkey. The ones you already ' +
+          'hold are excluded, so choosing one that is already registered ' +
+          'will refuse rather than adding it twice.</p>'
         : '') +
       '<form method="post" action="' + BASE + '/keys">' + csrf +
       '<input type="hidden" name="action" value="begin">' +
-      '<label for="key-label">Name it (optional)</label>' +
-      '<input type="text" id="key-label" name="label" maxlength="60" ' +
-      'placeholder="the one on my keyring">' +
-      self.kindChoice(webauthnPolicy.authenticatorKinds()) +
-      roles.map(function (row) {
-        return '<label class="chk"><input type="radio" name="role" value="' +
-          self.esc(row[0]) + '"' +
-          (row[0] === roles[0][0] ? ' checked' : '') + '> ' +
-          self.esc(row[1]) + ' <span class="sub">' + self.esc(row[2]) +
-          '</span></label>';
-      }).join('') +
-      '<button>Add a security key</button></form>';
+      (roles.length > 1
+        ? '<p class="sub"><strong>How will you use it?</strong></p>' +
+          roles.map(function (row) {
+            return '<label class="chk"><input type="radio" name="role" ' +
+              'value="' + self.esc(row[0]) + '"' +
+              (row[0] === roles[0][0] ? ' checked' : '') + '> ' +
+              self.esc(row[1]) + ' <span class="sub">' + self.esc(row[2]) +
+              '</span></label>';
+          }).join('')
+        : '<input type="hidden" name="role" value="' +
+          self.esc(roles[0][0]) + '"><p class="note">' +
+          self.esc(roles[0][1]) + '. ' + self.esc(roles[0][2]) + '</p>') +
+      // THE TWO CALLS TO ACTION, primary then secondary: two submit buttons
+      // of one form, so the button pressed is the kind — no script.
+      '<div class="ctas">' + kinds.map(function (kind, i) {
+        return '<button name="kind" value="' + self.esc(kind) + '"' +
+          (i > 0 ? ' class="secondary"' : '') + '>' +
+          (kind === 'passkey' ? PORTAL_ICONS.passkey
+                              : PORTAL_ICONS.securityKey) +
+          self.esc(labels[kind]) + '</button>';
+      }).join('') + '</div></form>';
   }
 
   // ===========================================================================
@@ -4984,6 +5254,8 @@ class Portal {
       // the router against its own descriptions, and a route registered and
       // undescribed fails the suite.
       .concat([ACTIVATE, BASE + '/callback', BASE + '/remove-key',
+               // Renaming a passkey (#470).
+               BASE + '/rename-key',
                // The recovery codes' Copy script (#224).
                COPY_SCRIPT_PATH,
                BASE + '/signout', BASE + '/signals/receive',
@@ -5284,7 +5556,7 @@ class Portal {
           errorCodes.mark(res, 'STS-PORTAL-0102');
           return self.send(res, 400, self.activationForm(
             base, username, token, null,
-            'That security key setup expired before it was finished. ' +
+            'That passkey setup expired before it was finished. ' +
             'Nothing was lost — choose again below.'));
         }
         const keyKind = waitingKey.kind || '';
@@ -5305,8 +5577,8 @@ class Portal {
         if (!ceremony) {
           refused = 'Your browser did not run the ceremony, so there is ' +
                     'nothing to register. This step needs JavaScript — a ' +
-                    'security key is created by the browser and no form can ' +
-                    'do it.';
+                    'passkey is created by the browser and no form can do ' +
+                    'it.';
           refusedCode = 'STS-PORTAL-0102';
         } else if (rpRefusal) {
           refused = rpRefusal;
@@ -5322,19 +5594,22 @@ class Portal {
             log.debug('Caught in POST ' + ACTIVATE + ': ' +
                       ((e && e.message) || e));
             done = { ok: false, reason: 'error',
-                     errors: ['The security key could not be registered.'] };
+                     errors: ['The passkey could not be created.'] };
           }
           if (done.ok) {
             enrolled = done;
           } else {
             refused = (done.errors ||
-                       ['The security key could not be registered.'])[0];
+                       ['The passkey could not be created.'])[0];
             refusedCode = self.innerCode(done) || 'STS-PORTAL-0102';
-            if (done.reason === 'browser' && keyKind === 'platform') {
-              refused += ' This browser may have no authenticator built ' +
-                         'into this device. Open your activation link again ' +
-                         'and choose "A security key I carry" or "Let my ' +
-                         'browser choose".';
+            if (done.reason === 'browser') {
+              refused += keyKind === 'security-key'
+                ? ' If you have no security key to hand, open your ' +
+                  'activation link again and choose "A passkey on this ' +
+                  'device or your phone".'
+                : ' You can try again, save it to your phone when the ' +
+                  'browser offers, or open your activation link again and ' +
+                  'choose "A security key".';
             }
           }
         }
@@ -5408,11 +5683,11 @@ class Portal {
         return self.send(res, 400, self.activationForm(
           base, username, token, null,
           keyRole === 'mfa'
-            ? 'A security key used as a SECOND factor needs a password to be ' +
-              'the first one. Set a password as well, or choose to use the ' +
-              'key instead of a password.'
-            : 'Set a password, or choose to use a security key instead of ' +
-              'one. You need at least one way to sign in.'));
+            ? 'A passkey used as a SECOND step needs a password to be the ' +
+              'first one. Set a password as well, or choose to use the ' +
+              'passkey instead of a password.'
+            : 'Set a password, or choose to use a passkey instead of one. ' +
+              'You need at least one way to sign in.'));
       }
       if (password) {
         // Screened against Pwned Passwords first (#62 P6), so the password
@@ -5465,7 +5740,7 @@ class Portal {
           errorCodes.mark(res, 'STS-PORTAL-0101');
           return self.send(res, 400, self.activationForm(
             base, username, token, null,
-            'A security key cannot be set up here: ' + why + ' Set a ' +
+            'A passkey cannot be set up here: ' + why + ' Set a ' +
             'password instead.'));
         }
         log.warn(errorCodes.tag('STS-PORTAL-0100') +
@@ -5474,10 +5749,10 @@ class Portal {
                  'activation goes on without it rather than being refused.');
         return self.activationAfterKey(res, req, base, username, token,
                                        'none', wantsTotp,
-                                       'The security key could NOT be set ' +
-                                       'up: ' + why + ' Everything else is ' +
-                                       'set up, and you can add one on your ' +
-                                       'Security keys page after you sign in.');
+                                       'The passkey could NOT be set up: ' +
+                                       why + ' Everything else is set up, ' +
+                                       'and you can create one on your ' +
+                                       'Passkeys page after you sign in.');
       }
 
       return self.activationAfterKey(res, req, base, username, token, keyRole,
@@ -5911,7 +6186,7 @@ class Portal {
                   '/keys. Not signed in, or not permitted.');
         return undefined;
       }
-      const asked = validation.check(req, 'query', PORTAL_QUERY);
+      const asked = validation.check(req, 'query', KEYS_QUERY);
       if (!asked.ok) {
         errorCodes.mark(res, self.innerCode(asked) || 'STS-PORTAL-0001');
         return self.refuseShape(res, asked);
@@ -5923,7 +6198,7 @@ class Portal {
       // in both of its states. See that function's header.
       return self.sendKeysPage(res, 200, self.keysPage(session,
         asked.value.done ? String(asked.value.done) : null, null,
-        baseUrlOf(req)));
+        baseUrlOf(req), asked.value.named ? String(asked.value.named) : ''));
     });
 
     // -------------------------------------------------------------------------
@@ -6850,8 +7125,7 @@ class Portal {
         // touched their key. `beginKeyEnrolment()` makes every one of those
         // checks.
         const begun = credentials.beginKeyEnrolment(username, {
-          role: String(body.role || 'mfa'), label: String(body.label || ''),
-          kind: String(body.kind || '')
+          role: String(body.role || 'mfa'), kind: String(body.kind || '')
         });
         if (!begun.ok) {
           log.debug('Leaving POST ' + BASE + '/keys. Refused to start.');
@@ -6863,7 +7137,7 @@ class Portal {
         audit.record({
           category: 'authentication', action: 'portal.key.started',
           actor: username, outcome: 'success',
-          summary: username + ' started enrolling a security key',
+          summary: username + ' started creating a passkey',
           detail: { role: begun.role, kind: begun.kind || 'any',
                     excluded: begun.exclude.length,
                     address: websecurity.addressOf(req) }
@@ -6895,9 +7169,9 @@ class Portal {
           return self.sendKeysPage(res, 400, self.keysPage(session, null,
             'Your browser did not run the ceremony, so there is nothing to ' +
             'register. This page needs JavaScript for that one step — a ' +
-            'security key is created by the browser and there is no form ' +
-            'that can do it. The rest of this portal runs no script at ' +
-            'all.', base));
+            'passkey is created by the browser and there is no form that ' +
+            'can do it. The rest of this portal runs no script at all.',
+            base));
         }
         // THE SAME TWO ADDRESS RULES THE SIGN-IN SCREEN APPLIES (2026-09-12):
         // an RP ID that does not fit is refused in product mode rather than
@@ -6943,15 +7217,15 @@ class Portal {
             // abandoned, the form is drawn again, and the sentence says what
             // to try.
             let why = (done.errors ||
-                       ['The security key could not be registered.'])[0];
+                       ['The passkey could not be created.'])[0];
             if (done.reason === 'browser') {
               credentials.abandonKeyEnrolment(username);
-              why += asked === 'platform'
-                ? ' This browser may have no authenticator built into this ' +
-                  'device. Choose "A security key I carry" or "Let my ' +
-                  'browser choose", or open this page in the device\'s own ' +
-                  'browser.'
-                : ' Nothing was registered; you can start again below.';
+              why += asked === 'security-key'
+                ? ' Nothing was registered. If you have no security key to ' +
+                  'hand, choose "Create a passkey" instead.'
+                : ' Nothing was registered. You can try again below, save ' +
+                  'it to your phone when the browser offers, or choose "Use ' +
+                  'a security key".';
             }
             errorCodes.mark(res, self.innerCode(done) || 'STS-PORTAL-0036');
             return self.sendKeysPage(res, 400, self.keysPage(session, null,
@@ -6968,12 +7242,12 @@ class Portal {
             fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
             friendlyName: String((enrolled && enrolled.label) || ''),
             changeType: 'create', initiatingEntity: 'user', via: 'portal',
-            reasonAdmin: username + ' enrolled a security key.',
-            reasonUser: 'You enrolled a security key.' });
+            reasonAdmin: username + ' created a passkey.',
+            reasonUser: 'You created a passkey.' });
           audit.record({
             category: 'authentication', action: 'portal.key.enrolled',
             actor: username, outcome: 'success',
-            summary: username + ' enrolled a security key as a ' + done.role +
+            summary: username + ' created a passkey as a ' + done.role +
                      ' credential',
             detail: { role: done.role, held: done.held,
                       // Its signature algorithm (2026-10-01).
@@ -6981,15 +7255,19 @@ class Portal {
                         .text,
                       address: websecurity.addressOf(req) }
           });
-          log.info('portal: ' + username + ' enrolled a "' + done.role +
-                   '" security key and now holds ' + done.held + '.');
+          log.info('portal: ' + username + ' created a "' + done.role +
+                   '" passkey and now holds ' + done.held + '.');
+          // THE NICKNAME PROMPT (#470): `named` opens the new passkey's
+          // rename form at the top of the page.
           res.status(303).set('Location', BASE + '/keys?done=' +
             encodeURIComponent(done.held > 1
-              ? 'That key is registered. You hold ' + done.held +
+              ? 'Your passkey is ready. You hold ' + done.held +
                 ' — if one is lost the others still sign you in.'
-              : 'That key is registered. Add a second one on a different ' +
-                'device so that losing this one is not a locked ' +
-                'account.')).end();
+              : 'Your passkey is ready. Create a second one on a different ' +
+                'device or a security key, so that losing this one is not a ' +
+                'locked account.') +
+            '&named=' + encodeURIComponent(String(done.credentialId || '')))
+            .end();
           return undefined;
         }).catch(function (e) {
           log.debug('Caught in POST ' + BASE + '/keys: ' +
@@ -6998,7 +7276,7 @@ class Portal {
           // still answer the page.
           errorCodes.mark(res, 'STS-PORTAL-0036');
           self.sendKeysPage(res, 500, self.keysPage(session, null,
-            'The security key could not be registered. Try again.', base));
+            'The passkey could not be created. Try again.', base));
         });
         return undefined;
       }
@@ -7028,8 +7306,8 @@ class Portal {
       if (!csrf.ok) {
         log.debug('Leaving POST ' + BASE + '/remove-key. CSRF.');
         errorCodes.mark(res, self.innerCode(csrf) || 'STS-PORTAL-0017');
-        return self.send(res, 403, self.keysPage(session, null, csrf.detail,
-                                                 baseUrlOf(req)));
+        return self.sendKeysPage(res, 403, self.keysPage(session, null,
+          csrf.detail, baseUrlOf(req)));
       }
       // THE CREDENTIAL ID COMES FROM THE BODY AND THE USERNAME DOES NOT, which
       // is the distinction that keeps this safe: `removeKey()` looks the id up
@@ -7045,8 +7323,8 @@ class Portal {
       if (!removed.ok) {
         log.debug('Leaving POST ' + BASE + '/remove-key. Refused.');
         errorCodes.mark(res, self.innerCode(removed) || 'STS-PORTAL-0037');
-        return self.send(res, 400, self.keysPage(session, null,
-          (removed.errors || ['The key could not be removed.'])[0],
+        return self.sendKeysPage(res, 400, self.keysPage(session, null,
+          (removed.errors || ['The passkey could not be removed.'])[0],
           baseUrlOf(req)));
       }
       self.deps.accountSignals.credentialChanged({ username: username,
@@ -7054,18 +7332,72 @@ class Portal {
         fido2Aaguid: String((going && going.aaguid) || ''),
         friendlyName: String((going && going.label) || ''),
         changeType: 'delete', initiatingEntity: 'user', via: 'portal',
-        reasonAdmin: username + ' removed a security key.',
-        reasonUser: 'You removed a security key.' });
+        reasonAdmin: username + ' removed a passkey.',
+        reasonUser: 'You removed a passkey.' });
       audit.record({
         category: 'authentication', action: 'portal.key.removed',
         actor: username, outcome: 'success',
-        summary: username + ' removed one of their security keys',
+        summary: username + ' removed one of their passkeys',
         detail: { remaining: removed.remaining,
                   address: websecurity.addressOf(req) }
       });
       log.debug('Leaving POST ' + BASE + '/remove-key. Removed.');
       res.status(303).set('Location', BASE + '/keys?done=' +
-        encodeURIComponent('That security key is removed.')).end();
+        encodeURIComponent('That passkey is removed. If it was saved in a ' +
+          'password manager, you can delete it there too.')).end();
+      return undefined;
+    });
+
+    // =========================================================================
+    // RENAMING A PASSKEY (#470, 2026-10-06). `remove-key`'s door in every
+    // respect that matters — signed in with MANAGE_OWN, CSRF, the username
+    // from the SESSION and the credential id looked up among THIS person's
+    // keys by `credentials.renameKey()` — and an audit row, but no CAEP
+    // credential-change: a name says nothing about what the key proves.
+    // =========================================================================
+    app.post(BASE + '/rename-key', function (req, res) {
+      log.debug('Entering POST ' + BASE + '/rename-key.');
+      const session = self.requireSignIn(req, res, BASE + '/keys',
+                                         accessGate.ACTION.MANAGE_OWN);
+      if (!session) {
+        log.debug('Leaving POST ' + BASE + '/rename-key. Not signed in.');
+        return undefined;
+      }
+      const username = session.user.username;
+      const posted = validation.checkParsed(parseBody(req), 'body',
+                                            RENAME_KEY_FORM);
+      if (!posted.ok) {
+        errorCodes.mark(res, self.innerCode(posted) || 'STS-PORTAL-0001');
+        log.debug('Leaving POST ' + BASE + '/rename-key. Shape.');
+        return self.refuseShape(res, posted);
+      }
+      const body = posted.value;
+      const csrf = websecurity.checkCsrf(session.id, body);
+      if (!csrf.ok) {
+        log.debug('Leaving POST ' + BASE + '/rename-key. CSRF.');
+        errorCodes.mark(res, self.innerCode(csrf) || 'STS-PORTAL-0017');
+        return self.sendKeysPage(res, 403, self.keysPage(session, null,
+          csrf.detail, baseUrlOf(req)));
+      }
+      const renamed = credentials.renameKey(username,
+        String(body.credentialId || ''), String(body.label || ''));
+      if (!renamed.ok) {
+        log.debug('Leaving POST ' + BASE + '/rename-key. Refused.');
+        errorCodes.mark(res, self.innerCode(renamed) || 'STS-PORTAL-0245');
+        return self.sendKeysPage(res, 400, self.keysPage(session, null,
+          (renamed.errors || ['The passkey could not be renamed.'])[0],
+          baseUrlOf(req)));
+      }
+      audit.record({
+        category: 'authentication', action: 'portal.key.renamed',
+        actor: username, outcome: 'success',
+        summary: username + ' renamed one of their passkeys',
+        detail: { from: renamed.previous, to: renamed.label,
+                  address: websecurity.addressOf(req) }
+      });
+      log.debug('Leaving POST ' + BASE + '/rename-key. Renamed.');
+      res.status(303).set('Location', BASE + '/keys?done=' +
+        encodeURIComponent('Renamed to "' + renamed.label + '".')).end();
       return undefined;
     });
 

@@ -5848,6 +5848,14 @@ const CODES = [
       '(appAuthnMechanism, #457). The screen is drawn again, naming the ' +
       'mechanisms it allows.',
     spec: 'the sign-in screen, drawn again' },
+  { code: 'STS-AUTHN-0299',
+    summary: 'Renaming a passkey named a credential id that is not ' +
+      'registered for that person (#470).',
+    spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0300',
+    summary: 'Renaming a passkey was refused: the name is longer than 60 ' +
+      'characters or carries a control character (#470).',
+    spec: 'action result with the reason' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -19418,6 +19426,11 @@ const CODES = [
       'level the rights need; the page offers to sign in again with it ' +
       '(#432 phase 6, RFC 9470).',
     spec: 'HTTP 403 page' },
+  { code: 'STS-PORTAL-0245',
+    summary: 'A person\'s rename of one of their passkeys on /portal/keys ' +
+      'was refused: the name was not one, or the id is not one of theirs ' +
+      '(#470).',
+    spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

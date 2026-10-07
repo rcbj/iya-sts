@@ -1039,6 +1039,32 @@ const WEBAUTHN_SCRIPT = [
   'JSON.stringify(payload);',
   '    document.getElementById("wa-form").submit();',
   '  };',
+  // THE SIGNAL API (#470), WebAuthn Level 3 section 5.1.10: where the page
+  // carries a wa-signal element, tell the credential manager which of this
+  // person's passkeys this service still accepts, so one removed here leaves
+  // their phone or password manager too, and what their name is.
+  // Feature-detected and best-effort: a browser without it does nothing, and
+  // no answer is awaited.
+  '  var sg = document.getElementById("wa-signal");',
+  '  if (sg && window.PublicKeyCredential) {',
+  '    var srp = sg.getAttribute("data-rpid");',
+  '    var suid = sg.getAttribute("data-userid");',
+  '    var sids = (sg.getAttribute("data-accepted") || "").split(",")',
+  '      .filter(function (id) { return id; });',
+  '    var quiet = function () {};',
+  '    if (PublicKeyCredential.signalAllAcceptedCredentials) {',
+  '      PublicKeyCredential.signalAllAcceptedCredentials({ rpId: srp,',
+  '        userId: suid, allAcceptedCredentialIds: sids }).catch(quiet);',
+  '    }',
+  '    if (PublicKeyCredential.signalCurrentUserDetails) {',
+  '      PublicKeyCredential.signalCurrentUserDetails({ rpId: srp,',
+  '        userId: suid, name: sg.getAttribute("data-name"),',
+  '        displayName: sg.getAttribute("data-display") }).catch(quiet);',
+  '    }',
+  '  }',
+  // NO CEREMONY ON THIS PAGE (#470): the passkey list carries the signal and
+  // no button, so the script stops here rather than throwing.
+  '  if (!d || !document.getElementById("wa-go")) { return; }',
   '  document.getElementById("wa-go").addEventListener("click", function () {',
   '    var challenge = bytes(d.getAttribute("data-challenge"));',
   '    var rpId = d.getAttribute("data-rpid");',
@@ -1066,7 +1092,7 @@ const WEBAUTHN_SCRIPT = [
   '      p = navigator.credentials.create({ publicKey: {',
   '        rp: o.rp || { name: "IYA STS", id: rpId },',
   '        user: { id: new TextEncoder().encode(user), name: user, ' +
-  'displayName: user },',
+  'displayName: d.getAttribute("data-display") || user },',
   '        challenge: challenge,',
   '        pubKeyCredParams: algs,',
   '        authenticatorSelection: sel,',
@@ -1082,6 +1108,12 @@ const WEBAUTHN_SCRIPT = [
   '          return { type: "public-key", id: bytes(id) };',
   '        }),',
   '        extensions: o.credProps ? { credProps: true } : undefined,',
+  // WHICH AUTHENTICATOR THE PAGE MEANS (#470), WebAuthn Level 3 section
+  // 5.4.8: "Create a passkey" and "Use a security key" are two buttons, and
+  // a hint is how the browser is told which UI to lead with without the
+  // hard `authenticatorAttachment` that broke enrolment on a browser with
+  // nothing built in (2026-09-26).
+  '        hints: o.hints && o.hints.length ? o.hints : undefined,',
   '        attestation: o.attestation || "direct",',
   '        timeout: o.timeout || 60000 } })',
   '        .then(function (c) {',
@@ -1093,6 +1125,10 @@ const WEBAUTHN_SCRIPT = [
   '            authenticatorAttachment: c.authenticatorAttachment || null,',
   '            clientExtensionResults: ext, response: {',
   '            clientDataJSON: b64u(c.response.clientDataJSON),',
+  // THE TRANSPORTS (#470), section 5.2.1, which the passkey list shows and
+  // groups an otherwise unreported key by.
+  '            transports: c.response.getTransports ? ' +
+  'c.response.getTransports() : [],',
   '            attestationObject: b64u(c.response.attestationObject) } }; });',
   '    } else {',
   '      p = navigator.credentials.get({ publicKey: {',
@@ -9745,34 +9781,6 @@ class Authn {
     return (props && typeof props.rk === 'boolean') ? props.rk : null;
   }
 
-  // What a person will see this key called on `/portal/keys` and on their row
-  // under `/admin/users`. Theirs to change; this is only the default, and it
-  // says the one thing that tells two keys apart at the moment they are
-  // enrolled — whether it is built into the machine or something they plugged
-  // in.
-  //
-  // It deliberately does NOT use the AAGUID, which names the MODEL and would be
-  // the better label: resolving one to "YubiKey 5 NFC" needs the FIDO metadata
-  // service, and this service consults none — see `webauthn.attestation`. A
-  // hex string is worse than no label at all.
-  private labelForKey(credential, verdict) {
-    const { log } = this.deps;
-    log.debug("Entering Authn.labelForKey().");
-    const attachment = String((credential &&
-                               credential.authenticatorAttachment) || '');
-    if (attachment === 'platform') {
-      log.debug("Leaving Authn.labelForKey().");
-      return 'this device';
-    }
-    if (attachment === 'cross-platform') {
-      log.debug("Leaving Authn.labelForKey().");
-      return 'security key';
-    }
-    log.debug("Leaving Authn.labelForKey().");
-    return (verdict && verdict.algorithm)
-      ? 'security key (' + verdict.algorithm + ')' : 'security key';
-  }
-
   private webauthnPage(base, mfaId, username, error) {
     const { log, xmlEscape, credentials, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.webauthnPage(). username=" + username);
@@ -12116,7 +12124,9 @@ class Authn {
                 credentialId: verdict.credentialId,
                 publicKeyJwk: verdict.publicKeyJwk,
                 signCount: verdict.signCount,
-                label: this.labelForKey(credential, verdict),
+                // NO LABEL (#470): the key takes its provider's name or its
+                // group's (`credentials.defaultKeyName()`), and its owner
+                // renames it on `/portal/keys`.
                 // WHAT THE BROWSER SAID ABOUT THE AUTHENTICATOR (2026-09-10).
                 // Both are REPORTS and neither is checked:
                 // `authenticatorAttachment` is what answered rather than what
@@ -12131,7 +12141,11 @@ class Authn {
                 userVerified: !!(verdict.flags && verdict.flags.uv),
                 aaguid: verdict.aaguid || null,
                 algorithm: verdict.algorithm || null,
-                coseAlg: verdict.coseAlg || null
+                coseAlg: verdict.coseAlg || null,
+                // #470: what the passkey pages group and describe it by.
+                backupEligible: !!(verdict.flags && verdict.flags.be),
+                backupState: !!(verdict.flags && verdict.flags.bs),
+                transports: credentials.transportsOf(credential)
               }, registration: verdict };
             }
           }
@@ -12212,6 +12226,7 @@ class Authn {
             toSpend = { username: step.username,
                         credentialId: known.credentialId,
                         signCount: verdict.signCount,
+                        flags: verdict.flags,
                         challenge: step.challenge,
                         ttlMs: this.mfaStepTtlMs() };
           }
@@ -12247,9 +12262,15 @@ class Authn {
               return null;
             }
             toRegister.record.attestation = attested.attestation;
-            return credentials.addKeyClaimed(toRegister.username,
-                                             toRegister.record,
-                                             toRegister.role);
+            // Who made or holds it (#470): MDS where a BLOB is loaded.
+            return credentials.keyProviderFor(toRegister.record.aaguid,
+              attested.attestation).then(function (named) {
+              toRegister.record.provider = named.provider;
+              toRegister.record.providerSource = named.providerSource;
+              return credentials.addKeyClaimed(toRegister.username,
+                                               toRegister.record,
+                                               toRegister.role);
+            });
           }).then(function (stored) {
           if (stored === null) {
             // The attestation refused it, above; the verdict says why.
