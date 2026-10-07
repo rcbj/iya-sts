@@ -13711,6 +13711,915 @@ const TLS_NO_RENEGOTIATION = nodeCrypto.constants.SSL_OP_NO_RENEGOTIATION;
 
 // --- #453 group A (gnap token libraries): begin ---
 
+// ===========================================================================
+// GNAP'S THREE TOKEN LIBRARIES, HELD HERE AND NOWHERE ELSE (#453, rcbj's
+// decision of 2026-10-05).
+//
+// The `macaroon`, `biscuit` and `zcap` GNAP token formats each sit on a
+// library that does its format's cryptography: `macaroon` (the HMAC-SHA256
+// caveat chain), `@biscuit-auth/biscuit-wasm` (Ed25519 block signatures,
+// inside WebAssembly) and `jsonld-signatures` with the Digital Bazaar ZCAP
+// and Ed25519 packages. Until #453 `gnap/token_*.ts` required them directly.
+// Now THIS FILE is the only module that requires any of them, and what
+// `gnap/` keeps is the format's grammar — the caveat grammar and the access
+// model of a macaroon, the Datalog of a biscuit, the capability document of
+// a zcap — handed in here as data or as a callback that builds data.
+//
+// **WHAT WRAPPING DOES NOT CHANGE: the macaroon and biscuit computations are
+// still the libraries' own.** The macaroon library has no hook for supplying
+// the HMAC, and the biscuit engine none for an external Ed25519 signer, so
+// both still compute inside the library. What moved is where KEYS are
+// handled (a root key is checked and a KeyObject turned into the library's
+// key object here, so `gnap/` never holds the library's key types), where
+// the algorithms and key sizes are decided (`MACAROON_MIN_ROOT_KEY_BYTES`,
+// Ed25519 for a biscuit), and who may call the library at all. Reimplementing
+// a format's cryptography here stays a later option (most worth it for the
+// macaroon's small HMAC chain).
+//
+// **THE ZCAP COMPATIBILITY SUITE IS THE EXCEPTION, AND THE SIGNATURE IS
+// MADE HERE.** `Ed25519Signature2020` takes a `signer` (`sign({ data })`)
+// and a `verifier` (`verify({ data, signature })`) in place of a key pair —
+// confirmed against the installed `@digitalbazaar/ed25519-signature-2020`
+// 5.4.0, whose `sign()` calls `this.signer.sign({ data: verifyData })` and
+// whose `verifySignature()` uses `this.verifier` when one is set. So the
+// library only canonicalises (URDNA2015) and hashes, and the Ed25519
+// signature over its bytes is `signRawSignature()` / `verifyRawSignature()`
+// here: the private key never reaches the library. Ed25519 is
+// deterministic, so a capability signed this way is BYTE-IDENTICAL to one
+// the library signed with the key pair it used to be handed (probed on
+// 2026-10-07: the same JSON, and the same answers for a good proof, an
+// altered capability and a proof naming another key).
+//
+// The three JCS suites (`eddsa-jcs-2022` and the two post-quantum ones) were
+// already made and checked by `oid4vc/vc_data_integrity.ts` through this
+// file, wrapped by `gnap/token_zcap.ts` in a jsonld-signatures suite object.
+// That stays: REUSING it is the alternative #453 asked to be checked, and it
+// is the one that keeps those tokens byte-compatible, because it IS the
+// implementation that made them. This file may not require it (a leaf), so
+// `token_zcap.ts` builds that suite object and hands it in; jsonld-signatures
+// hands a `-jcs-` proof to the suite untouched, so here it only runs the
+// ZCAP purpose (chain, root, controller) around it.
+//
+// Every library is loaded LAZILY, once, by the first call that needs it —
+// never when this file is required — so a process that never sees a GNAP
+// token pays nothing. A failed load is forgotten so a later call may try
+// again (a file briefly unreadable during a deploy should not disable a
+// format for the life of the process).
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// MACAROONS (`macaroon` 3, libmacaroons v2).
+// ---------------------------------------------------------------------------
+
+/** The shortest macaroon root key accepted, in bytes. */
+const MACAROON_MIN_ROOT_KEY_BYTES = 32;
+
+/** @type {any} */
+let macaroonLibrary = null;
+
+// The npm `macaroon` package, required at the first use.
+function macaroonLib() {
+  log.debug("Entering macaroonLib().");
+  if (!macaroonLibrary) {
+    macaroonLibrary = require('macaroon');
+  }
+  log.debug("Leaving macaroonLib().");
+  return macaroonLibrary;
+}
+
+/**
+ * Answers whether a value is a usable macaroon root key: bytes, at least
+ * `MACAROON_MIN_ROOT_KEY_BYTES` long.
+ *
+ * @param rootKey - the candidate
+ * @returns true when it is usable
+ */
+function macaroonRootKeyUsable(rootKey) {
+  log.debug("Entering macaroonRootKeyUsable().");
+  const ok = rootKey instanceof Uint8Array &&
+    rootKey.length >= MACAROON_MIN_ROOT_KEY_BYTES;
+  log.debug("Leaving macaroonRootKeyUsable(). " + ok);
+  return ok;
+}
+
+// A library macaroon as plain data — what the v2 serialiser in
+// `gnap/token_macaroon.ts` reads — so the library's object never leaves
+// this file. The getters already copy, so nothing here aliases its state.
+function macaroonView(mac) {
+  log.debug("Entering macaroonView().");
+  const view = {
+    location: mac.location,
+    identifier: mac.identifier,
+    caveats: mac.caveats,
+    signature: mac.signature
+  };
+  log.debug("Leaving macaroonView().");
+  return view;
+}
+
+/**
+ * Mints a version 2 macaroon: an identifier and first-party caveats chained
+ * under HMAC-SHA256 from a root key.
+ *
+ * @param rootKey - the root key, at least `MACAROON_MIN_ROOT_KEY_BYTES`
+ * @param identifier - the macaroon's identifier
+ * @param location - its location hint
+ * @param caveats - the first-party caveats, in order
+ * @returns `{ location, identifier, caveats, signature }`
+ * @throws Error for an unusable root key, or what the library throws
+ */
+function macaroonMint(rootKey, identifier, location, caveats) {
+  log.debug("Entering macaroonMint(). " + (caveats || []).length +
+            " caveat(s).");
+  if (!macaroonRootKeyUsable(rootKey)) {
+    log.debug("Leaving macaroonMint(). Root key unusable.");
+    // error-code: none — the caller checks macaroonRootKeyUsable() first
+    // and refuses with its own code; this is the backstop
+    throw new Error('a macaroon root key must be at least ' +
+                    MACAROON_MIN_ROOT_KEY_BYTES + ' bytes');
+  }
+  const mac = macaroonLib().newMacaroon({
+    identifier: identifier,
+    location: location,
+    rootKey: rootKey,
+    version: 2
+  });
+  (caveats || []).forEach(function (c) {
+    mac.addFirstPartyCaveat(c);
+  });
+  const view = macaroonView(mac);
+  log.debug("Leaving macaroonMint().");
+  return view;
+}
+
+/**
+ * Reads a libmacaroons v2 binary macaroon WITHOUT verifying it.
+ *
+ * @param bytes - the serialised macaroon
+ * @returns `{ location, identifier, caveats, signature }`
+ * @throws Error when the bytes are not a v2 macaroon (the library's text)
+ */
+function macaroonImport(bytes) {
+  log.debug("Entering macaroonImport().");
+  const view = macaroonView(
+      macaroonLib().importMacaroon(new Uint8Array(bytes)));
+  log.debug("Leaving macaroonImport().");
+  return view;
+}
+
+/**
+ * Verifies a macaroon's HMAC chain under its root key. Every first-party
+ * caveat is accepted while the chain is walked: what a caveat MEANS is the
+ * caller's grammar, read once the chain is known to be good.
+ *
+ * @param bytes - the serialised macaroon
+ * @param rootKey - the root key
+ * @returns true when the chain verifies
+ */
+function macaroonVerify(bytes, rootKey) {
+  log.debug("Entering macaroonVerify().");
+  if (!macaroonRootKeyUsable(rootKey)) {
+    log.debug("Leaving macaroonVerify(). Root key unusable.");
+    return false;
+  }
+  try {
+    macaroonLib().importMacaroon(new Uint8Array(bytes))
+      .verify(rootKey, function () {
+        return null;
+      }, []);
+  } catch (e) {
+    log.debug("Caught in macaroonVerify(): " + ((e && e.message) || e));
+    log.debug("Leaving macaroonVerify(). The chain does not verify.");
+    return false;
+  }
+  log.debug("Leaving macaroonVerify(). Verified.");
+  return true;
+}
+
+/**
+ * Appends first-party caveats to a macaroon: the attenuation anybody holding
+ * one can make, keyed by its current signature and needing no root key.
+ *
+ * @param bytes - the serialised macaroon
+ * @param caveats - the caveats to append, in order
+ * @returns `{ location, identifier, caveats, signature }` of the result
+ * @throws Error when the bytes are not a v2 macaroon, or what the library
+ *   throws
+ */
+function macaroonAttenuate(bytes, caveats) {
+  log.debug("Entering macaroonAttenuate(). " + (caveats || []).length +
+            " caveat(s).");
+  const mac = macaroonLib().importMacaroon(new Uint8Array(bytes)).clone();
+  (caveats || []).forEach(function (c) {
+    mac.addFirstPartyCaveat(c);
+  });
+  const view = macaroonView(mac);
+  log.debug("Leaving macaroonAttenuate().");
+  return view;
+}
+
+// ---------------------------------------------------------------------------
+// ZCAP-LD DELEGATIONS (`@digitalbazaar/zcap`, `jsonld-signatures`, and the
+// Ed25519 2020 suite and key class). The ZCAP and Ed25519 packages are ES
+// modules, loaded by dynamic import; `import()` stays a real dynamic import
+// in this CommonJS file.
+// ---------------------------------------------------------------------------
+
+/** The compatibility proof suite, signed and verified here. */
+const ZCAP_LEGACY_SUITE = 'Ed25519Signature2020';
+const ZCAP_SUITE_CONTEXT_URL =
+  'https://w3id.org/security/suites/ed25519-2020/v1';
+const ZCAP_SECURITY_V2_URL = 'https://w3id.org/security/v2';
+
+/** @type {Promise<any> | null} */
+let zcapLoading = null;
+
+// The libraries, once. A failure clears the promise so a later call may try
+// again.
+function zcapLibraries() {
+  log.debug("Entering zcapLibraries().");
+  if (!zcapLoading) {
+    zcapLoading = Promise.all([
+      import('@digitalbazaar/zcap'),
+      import('@digitalbazaar/ed25519-signature-2020'),
+      import('@digitalbazaar/ed25519-verification-key-2020')
+    ]).then(function (/** @type {any[]} */ mods) {
+      const security = require('@digitalbazaar/security-context');
+      return {
+        jsigs: require('jsonld-signatures'),
+        zcap: mods[0],
+        Ed25519Signature2020: mods[1].Ed25519Signature2020,
+        suiteContext: mods[1].suiteContext,
+        Ed25519VerificationKey2020: mods[2].Ed25519VerificationKey2020,
+        securityContexts: security.contexts
+      };
+    }).catch(function (e) {
+      log.debug("Caught in zcapLibraries(): " + ((e && e.message) || e));
+      zcapLoading = null;
+      throw e;
+    });
+  }
+  log.debug("Leaving zcapLibraries().");
+  return zcapLoading;
+}
+
+/**
+ * Loads the ZCAP libraries, once, so a caller can refuse a load failure in
+ * its own words before it does anything else.
+ *
+ * @returns a promise that rejects with the load's error
+ */
+async function zcapReady() {
+  log.debug("Entering zcapReady().");
+  await zcapLibraries();
+  log.debug("Leaving zcapReady().");
+}
+
+// An Ed25519VerificationKey2020 for a public KeyObject — the library's key
+// class, built from the key's JWK `x` and never leaving this file.
+async function zcapPublicPair(lib, keyId, controller, publicKey) {
+  log.debug("Entering zcapPublicPair().");
+  const jwk = publicKey.export({ format: 'jwk' });
+  const pair = await lib.Ed25519VerificationKey2020.fromJsonWebKey({
+    id: keyId, controller: controller, type: 'JsonWebKey',
+    publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }
+  });
+  log.debug("Leaving zcapPublicPair().");
+  return pair;
+}
+
+/**
+ * The Ed25519VerificationKey2020 verification method a compatibility-suite
+ * controller document lists for a key.
+ *
+ * @param keyId - the method's id, `<controller>#<fragment>`
+ * @param controller - the controller document's URL
+ * @param publicKey - an Ed25519 public KeyObject
+ * @returns the method, without a `@context`
+ */
+async function zcapVerificationMethod(keyId, controller, publicKey) {
+  log.debug("Entering zcapVerificationMethod().");
+  const lib = await zcapLibraries();
+  const pair = await zcapPublicPair(lib, keyId, controller, publicKey);
+  const method = pair.export({ publicKey: true, includeContext: false });
+  log.debug("Leaving zcapVerificationMethod().");
+  return method;
+}
+
+// THE SIGNER AND THE VERIFIER THE COMPATIBILITY SUITE IS HANDED (see the
+// header): the library canonicalises, this file signs and checks.
+function zcapEd25519Signer(keyId, privateKey) {
+  log.debug("Entering zcapEd25519Signer().");
+  log.debug("Leaving zcapEd25519Signer().");
+  return {
+    id: keyId,
+    algorithm: 'Ed25519',
+    sign: async function sign(/** @type {any} */ options) {
+      log.debug("Entering sign().");
+      const out = signRawSignature({ family: 'eddsa' }, privateKey,
+                                   options.data);
+      log.debug("Leaving sign().");
+      return new Uint8Array(out);
+    }
+  };
+}
+
+function zcapEd25519Verifier(keyId, publicKey) {
+  log.debug("Entering zcapEd25519Verifier().");
+  log.debug("Leaving zcapEd25519Verifier().");
+  return {
+    id: keyId,
+    algorithm: 'Ed25519',
+    verify: async function verify(/** @type {any} */ options) {
+      log.debug("Entering verify().");
+      const ok = await verifyRawSignature({ family: 'eddsa' }, publicKey,
+                                          options.data, options.signature);
+      log.debug("Leaving verify(). " + ok);
+      return ok;
+    }
+  };
+}
+
+// THE OFFLINE DOCUMENT LOADER. Nothing is fetched: it serves the ONE root
+// capability `rootTarget` derives, the ZCAP context (the zcap package's own
+// loader) and — for the compatibility suite only — that suite's context,
+// security v2 (jsonld-signatures FRAMES a non-DID controller document with
+// it), the controller document and the one verification method. Any other
+// URL throws, so a proof naming another key or a chain to another root is a
+// load failure and so a verification failure. A JCS suite needs none of the
+// compatibility documents: its signature is not over JSON-LD and its
+// controller document is handed to the purpose.
+function zcapLoader(lib, rootController, rootTarget, legacy) {
+  log.debug("Entering zcapLoader().");
+  const root = lib.zcap.createRootCapability({
+    controller: rootController, invocationTarget: rootTarget });
+  function answer(documentUrl, document) {
+    log.debug("Entering answer().");
+    log.debug("Leaving answer().");
+    return { contextUrl: null, documentUrl: documentUrl, document: document,
+             tag: 'static' };
+  }
+  log.debug("Leaving zcapLoader().");
+  return lib.zcap.extendDocumentLoader(async function offlineLoader(
+      /** @type {string} */ documentUrl) {
+    log.debug("Entering offlineLoader().");
+    if (legacy) {
+      if (documentUrl === ZCAP_SUITE_CONTEXT_URL) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl,
+                      lib.suiteContext.contexts.get(ZCAP_SUITE_CONTEXT_URL));
+      }
+      if (documentUrl === ZCAP_SECURITY_V2_URL) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl,
+                      lib.securityContexts.get(ZCAP_SECURITY_V2_URL));
+      }
+      if (documentUrl === legacy.controller) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl, legacy.controllerDocument);
+      }
+      if (documentUrl === legacy.keyId) {
+        log.debug("Leaving offlineLoader().");
+        return answer(documentUrl,
+                      legacy.pair.export({ publicKey: true,
+                                           includeContext: true }));
+      }
+    }
+    if (documentUrl === root.id) {
+      log.debug("Leaving offlineLoader().");
+      return answer(documentUrl, root);
+    }
+    log.debug("Leaving offlineLoader().");
+    throw new Error('the offline ZCAP document loader serves no document ' +
+                    'at ' + documentUrl);
+  });
+}
+
+/**
+ * Signs a capability as ONE ZCAP delegation from the root capability its
+ * `invocationTarget` derives, which `controller` controls.
+ *
+ * `options`: `cryptosuite`; `controller` and `keyId`; and either, for
+ * `Ed25519Signature2020`, `privateKey` (an Ed25519 KeyObject), `date` and
+ * `controllerDocument` (served by the offline loader), or, for a JCS suite,
+ * `suite` — the caller's jsonld-signatures suite object, which makes the
+ * proof through `oid4vc/vc_data_integrity.ts`.
+ *
+ * @param capability - the unsigned capability
+ * @param options - as above
+ * @returns a promise of the signed capability
+ * @throws Error (rejects) with the libraries' reason when they refuse
+ */
+async function zcapDelegate(capability, options) {
+  const o = options || {};
+  log.debug("Entering zcapDelegate(). " + o.cryptosuite);
+  const lib = await zcapLibraries();
+  let suite;
+  let legacy = null;
+  if (o.cryptosuite === ZCAP_LEGACY_SUITE) {
+    legacy = {
+      controller: o.controller, keyId: o.keyId,
+      controllerDocument: o.controllerDocument,
+      pair: await zcapPublicPair(lib, o.keyId, o.controller,
+                                 nodeCrypto.createPublicKey(o.privateKey))
+    };
+    suite = new lib.Ed25519Signature2020({
+      signer: zcapEd25519Signer(o.keyId, o.privateKey), date: o.date });
+  } else {
+    suite = o.suite;
+  }
+  const signed = await lib.jsigs.sign(capability, {
+    suite: suite,
+    purpose: new lib.zcap.CapabilityDelegation(
+        { parentCapability: capability.parentCapability }),
+    documentLoader: zcapLoader(lib, o.controller,
+                               capability.invocationTarget, legacy)
+  });
+  log.debug("Leaving zcapDelegate().");
+  return signed;
+}
+
+/**
+ * Verifies a capability's delegation proof: one link from the root
+ * capability `rootTarget` derives, controlled by `controller`.
+ *
+ * `options`: `cryptosuite`; `controller`, `keyId`, `controllerDocument`;
+ * `rootTarget`, `expectedRootCapability`, `date`; and `publicKey` (an
+ * Ed25519 KeyObject) for `Ed25519Signature2020`, or `suite` for a JCS suite.
+ * The compatibility suite's controller document is LOADED (from the offline
+ * loader); a JCS suite's is handed to the purpose.
+ *
+ * @param doc - the capability
+ * @param options - as above
+ * @returns a promise of jsonld-signatures' `{ verified, error }`; a throw
+ *   is answered as `{ verified: false, error }`
+ */
+async function zcapVerifyDelegation(doc, options) {
+  const o = options || {};
+  log.debug("Entering zcapVerifyDelegation(). " + o.cryptosuite);
+  let result;
+  try {
+    const lib = await zcapLibraries();
+    let verifyOptions;
+    if (o.cryptosuite === ZCAP_LEGACY_SUITE) {
+      const legacy = {
+        controller: o.controller, keyId: o.keyId,
+        controllerDocument: o.controllerDocument,
+        pair: await zcapPublicPair(lib, o.keyId, o.controller, o.publicKey)
+      };
+      verifyOptions = {
+        suite: new lib.Ed25519Signature2020({
+          verifier: zcapEd25519Verifier(o.keyId, o.publicKey) }),
+        purpose: new lib.zcap.CapabilityDelegation({
+          expectedRootCapability: o.expectedRootCapability,
+          allowTargetAttenuation: true,
+          date: o.date
+        }),
+        documentLoader: zcapLoader(lib, o.controller, o.rootTarget, legacy)
+      };
+    } else {
+      verifyOptions = {
+        suite: o.suite,
+        purpose: new lib.zcap.CapabilityDelegation({
+          expectedRootCapability: o.expectedRootCapability,
+          allowTargetAttenuation: true,
+          date: o.date,
+          controller: o.controllerDocument
+        }),
+        documentLoader: zcapLoader(lib, o.controller, o.rootTarget, null)
+      };
+    }
+    result = await lib.jsigs.verify(doc, verifyOptions);
+  } catch (e) {
+    log.debug("Caught in zcapVerifyDelegation(): " + ((e && e.message) || e));
+    // jsigs reports through `result`; a throw is malformed input it could
+    // not even start on, which is the same answer for the caller.
+    result = { verified: false, error: e };
+  }
+  log.debug("Leaving zcapVerifyDelegation(). " +
+            !!(result && result.verified));
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// BISCUITS (`@biscuit-auth/biscuit-wasm`, Biscuit v3).
+//
+// THE LOADER, AND WHY IT IS NOT `require()`. The package is built with
+// wasm-pack's `bundler` target: its entry point is `import * as wasm from
+// "./biscuit_bg.wasm"`, which only a bundler resolves, and its exports map
+// has an `import` condition and nothing else, so `require()` and `import()`
+// of the package both fail in node. `biscuitInstantiate()` does what a
+// bundler would: compile `module/biscuit_bg.wasm`, build the import object
+// by importing every module `WebAssembly.Module.imports()` names (relative
+// to `module/`), instantiate, hand the instance to the glue with
+// `__wbg_set_wasm()` and call `__wbindgen_start()`. The package directory is
+// found by walking this file's own `module.paths`, as `require` would,
+// because the exports map hides `package.json` from `require.resolve`; from
+// `common/` that reaches the package root's `node_modules`.
+//
+// WHY THE WHOLE LOADER MOVED HERE rather than only the key handling: the
+// handle the loader produces IS the library — the key classes, the token
+// parser and the builders are all members of it — so a loader left in
+// `gnap/` would be a second holder of the library and a second place keys
+// could be turned into its key objects. What stays in `gnap/token_biscuit.ts`
+// is everything that is not the library: the Datalog it writes and the
+// queries it reads the model back with, handed in as source, parameters and
+// rule text. The library's objects (tokens, authorizers, builders) are made,
+// used and FREED here, inside one call each.
+//
+// `__wbindgen_start()` prints "biscuit-wasm loading" through `console.log`.
+// It is synchronous, so `console.log` is replaced for exactly that call and
+// put back in a `finally`; the line goes to the debug log instead of stdout.
+//
+// **Load the module once per process**: a second instance in the same
+// process is not supported, which is one more reason there is one holder.
+// ---------------------------------------------------------------------------
+
+const BISCUIT_PACKAGE = '@biscuit-auth/biscuit-wasm';
+
+// The run limits of the priming evaluation below — `gnap/token_biscuit.ts`'s
+// LIMITS, the bound on every real evaluation, which it passes on each call.
+// The prime's answer is discarded, so these only bound its cost.
+const BISCUIT_PRIME_LIMITS = { max_facts: 10000, max_iterations: 100,
+                               max_time_micro: 250000 };
+
+/** @type {Promise<any> | null} */
+let biscuitLoading = null;
+
+// Where the package is installed, walking the directories `require` would.
+function biscuitPackageDir() {
+  log.debug("Entering biscuitPackageDir().");
+  const fs = require('fs');
+  const path = require('path');
+  // `module` is typed as this file's exports by the checker; its `paths`
+  // are node's, the node_modules directories `require` walks from here.
+  const dirs = /** @type {any} */ (module).paths || [];
+  for (let i = 0; i < dirs.length; i++) {
+    const candidate = path.join(dirs[i], BISCUIT_PACKAGE);
+    if (fs.existsSync(path.join(candidate, 'package.json'))) {
+      log.debug("Leaving biscuitPackageDir().");
+      return candidate;
+    }
+  }
+  log.debug("Leaving biscuitPackageDir(). Not installed.");
+  return null;
+}
+
+// THE FIRST RULE-APPLYING EVALUATION AFTER LOAD, ABSORBED HERE (#432,
+// 2026-10-03). The library's first evaluation that applies a rule can be
+// refused on its run limits whatever the budget; later ones measure
+// correctly. So the load runs ONE throwaway evaluation that applies a rule,
+// before any token is judged, and discards its answer. The limits are not
+// raised: no budget changes the first answer, and every later evaluation is
+// bounded as before, so the bound on a hostile block stands.
+function biscuitPrime(bg) {
+  log.debug("Entering biscuitPrime().");
+  /** @type {any} */
+  let authorizer = null;
+  try {
+    const builder = new bg.AuthorizerBuilder();
+    builder.addCode('prime(1); primed($x) <- prime($x); allow if true;');
+    authorizer = builder.buildUnauthenticated();
+    authorizer.authorizeWithLimits(BISCUIT_PRIME_LIMITS);
+    log.debug("Leaving biscuitPrime(). It did not time out this time.");
+  } catch (e) {
+    // Expected: the first evaluation may be refused (see above). Anything
+    // else is logged and left — the evaluations that matter report their
+    // own refusals.
+    log.debug("Caught in biscuitPrime(): " + biscuitErrorText(e));
+    log.debug("Leaving biscuitPrime(). Primed.");
+  } finally {
+    if (authorizer) {
+      authorizer.free();
+    }
+  }
+}
+
+// The library's errors are plain objects; a string for the debug log.
+function biscuitErrorText(e) {
+  log.debug("Entering biscuitErrorText().");
+  if (e instanceof Error) {
+    log.debug("Leaving biscuitErrorText().");
+    return e.message;
+  }
+  try {
+    log.debug("Leaving biscuitErrorText().");
+    return JSON.stringify(e);
+  } catch (err) {
+    log.debug("Caught in biscuitErrorText(): " +
+              ((err && err.message) || err));
+    log.debug("Leaving biscuitErrorText().");
+    // A cyclic or exotic value: String() is the best available description.
+    return String(e);
+  }
+}
+
+async function biscuitInstantiate() {
+  log.debug("Entering biscuitInstantiate().");
+  const fs = require('fs');
+  const path = require('path');
+  const url = require('url');
+  const dir = biscuitPackageDir();
+  if (!dir) {
+    log.debug("Leaving biscuitInstantiate(). Package not installed.");
+    throw new Error(BISCUIT_PACKAGE + ' is not installed');
+  }
+  const moduleDir = path.join(dir, 'module');
+  /** @type {any} */
+  const wasmBytes = fs.readFileSync(path.join(moduleDir, 'biscuit_bg.wasm'));
+  const compiled = await WebAssembly.compile(wasmBytes);
+  /** @type {Record<string, any>} */
+  const imports = {};
+  const wanted = WebAssembly.Module.imports(compiled);
+  for (let i = 0; i < wanted.length; i++) {
+    const name = wanted[i].module;
+    if (!imports[name]) {
+      imports[name] = await import(url.pathToFileURL(
+          path.join(moduleDir, name)).href);
+    }
+  }
+  const bg = imports['./biscuit_bg.js'];
+  if (!bg || typeof bg.__wbg_set_wasm !== 'function') {
+    log.debug("Leaving biscuitInstantiate(). Glue module not found.");
+    throw new Error('the biscuit glue module ./biscuit_bg.js was not ' +
+                    'among the WASM imports');
+  }
+  const instance = await WebAssembly.instantiate(compiled, imports);
+  /** @type {any} */
+  const exported = instance.exports;
+  bg.__wbg_set_wasm(exported);
+  if (typeof exported.__wbindgen_start === 'function') {
+    const original = console.log;
+    console.log = function () {
+      log.debug('biscuit-wasm: ' + Array.prototype.join.call(arguments, ' '));
+    };
+    try {
+      exported.__wbindgen_start();
+    } finally {
+      console.log = original;
+    }
+  }
+  biscuitPrime(bg);
+  log.debug("Leaving biscuitInstantiate(). Loaded.");
+  return bg;
+}
+
+// The one lazy load, shared by every call; a failure allows a new attempt.
+function biscuitLibrary() {
+  log.debug("Entering biscuitLibrary().");
+  if (!biscuitLoading) {
+    biscuitLoading = biscuitInstantiate().catch(function (e) {
+      log.debug("Caught in biscuitLibrary(): " + ((e && e.message) || e));
+      biscuitLoading = null;
+      throw e;
+    });
+  }
+  log.debug("Leaving biscuitLibrary().");
+  return biscuitLoading;
+}
+
+/**
+ * Loads the biscuit WebAssembly library, once, so a caller can refuse a
+ * load failure in its own words before it does anything else.
+ *
+ * @returns a promise that rejects with the load's error
+ */
+async function biscuitReady() {
+  log.debug("Entering biscuitReady().");
+  await biscuitLibrary();
+  log.debug("Leaving biscuitReady().");
+}
+
+// An Ed25519 KeyObject's raw `d` (private) or `x` (public), or null: the
+// one key kind a biscuit root key is here.
+function biscuitRawKey(keyObject, member) {
+  log.debug("Entering biscuitRawKey().");
+  if (!keyObject || typeof keyObject.export !== 'function' ||
+      keyObject.asymmetricKeyType !== 'ed25519') {
+    log.debug("Leaving biscuitRawKey().");
+    return null;
+  }
+  const jwk = keyObject.export({ format: 'jwk' });
+  log.debug("Leaving biscuitRawKey().");
+  return jwk[member] ? Buffer.from(jwk[member], 'base64url') : null;
+}
+
+// The token, verified under the root public key; `{ ok:false, stage }` for
+// a key that is not an Ed25519 public KeyObject ('key') or a token that does
+// not parse or verify ('parse'). The caller frees `token`.
+function biscuitParse(bg, value, publicKey) {
+  log.debug("Entering biscuitParse().");
+  const x = biscuitRawKey(publicKey, 'x');
+  if (!x) {
+    log.debug("Leaving biscuitParse(). Public key unusable.");
+    return { ok: false, stage: 'key', error: null };
+  }
+  try {
+    const root = bg.PublicKey.fromBytes(new Uint8Array(x),
+                                        bg.SignatureAlgorithm.Ed25519);
+    const token = bg.Biscuit.fromBase64(value, root);
+    log.debug("Leaving biscuitParse(). Parsed.");
+    return { ok: true, token: token };
+  } catch (e) {
+    log.debug("Caught in biscuitParse(): " + biscuitErrorText(e));
+    log.debug("Leaving biscuitParse(). Refused.");
+    return { ok: false, stage: 'parse', error: e };
+  }
+}
+
+/**
+ * Mints a biscuit whose authority block is the caller's Datalog, sealed
+ * with an Ed25519 root key.
+ *
+ * `prepare()` builds the block (`{ source, params }`); it is called inside
+ * the library step, so a throw from it is answered as the library's.
+ *
+ * @param privateKey - an Ed25519 private KeyObject
+ * @param prepare - builds `{ source, params }`
+ * @returns a promise of `{ ok: true, value, revocationIds }`, or
+ *   `{ ok: false, stage, error }` — stage `key` (not an Ed25519 private
+ *   KeyObject), `load` (the library could not be loaded) or `library`
+ */
+async function biscuitMint(privateKey, prepare) {
+  log.debug("Entering biscuitMint().");
+  const d = biscuitRawKey(privateKey, 'd');
+  if (!d) {
+    log.debug("Leaving biscuitMint(). Private key unusable.");
+    return { ok: false, stage: 'key', error: null };
+  }
+  let bg;
+  try {
+    bg = await biscuitLibrary();
+  } catch (e) {
+    log.debug("Caught in biscuitMint(): " + ((e && e.message) || e));
+    log.debug("Leaving biscuitMint(). Library unavailable.");
+    return { ok: false, stage: 'load', error: e };
+  }
+  try {
+    const root = bg.PrivateKey.fromBytes(new Uint8Array(d),
+                                         bg.SignatureAlgorithm.Ed25519);
+    const p = prepare();
+    const builder = bg.Biscuit.builder();
+    builder.addCodeWithParameters(p.source, p.params, {});
+    const token = builder.build(root);
+    const value = token.toBase64();
+    // One revocation identifier per block, the authority block's first.
+    const revocationIds = [].concat(token.getRevocationIdentifiers() || [])
+      .map(function (/** @type {unknown} */ one) {
+        return String(one);
+      });
+    token.free();
+    log.debug("Leaving biscuitMint(). Minted.");
+    return { ok: true, value: value, revocationIds: revocationIds };
+  } catch (e) {
+    log.debug("Caught in biscuitMint(): " + biscuitErrorText(e));
+    log.debug("Leaving biscuitMint(). Library failure.");
+    return { ok: false, stage: 'library', error: e };
+  }
+}
+
+/**
+ * Verifies a biscuit under its root public key and runs an authorizer over
+ * it: the caller's Datalog facts and policies, then each query in order,
+ * then the authorization itself, every evaluation bounded by `limits`.
+ *
+ * A query that throws stops the run (the queries after it and the
+ * authorization are not run). The library's errors come back as they were
+ * thrown, for the caller to read (`RunLimit`, `FailedLogic`).
+ *
+ * @param value - the token, URL-safe base64
+ * @param publicKey - an Ed25519 public KeyObject
+ * @param run - `{ authorizer, queries, limits }`: `authorizer()` builds
+ *   `{ source, params }` (called inside the build step), `queries` the
+ *   rule texts, `limits` the run limits
+ * @returns a promise of `{ ok: false, stage, error }` — stage `key`,
+ *   `load`, `parse` or `build` — or `{ ok: true, rows, queryError,
+ *   authorizeError, blocks }`: `rows[i]` the terms of each fact query `i`
+ *   produced; `authorizeError` undefined when authorization was not run,
+ *   null when it passed
+ */
+async function biscuitAuthorize(value, publicKey, run) {
+  log.debug("Entering biscuitAuthorize().");
+  let bg;
+  try {
+    bg = await biscuitLibrary();
+  } catch (e) {
+    log.debug("Caught in biscuitAuthorize(): " + ((e && e.message) || e));
+    log.debug("Leaving biscuitAuthorize(). Library unavailable.");
+    return { ok: false, stage: 'load', error: e };
+  }
+  const parsed = biscuitParse(bg, value, publicKey);
+  if (!parsed.ok) {
+    log.debug("Leaving biscuitAuthorize(). " + parsed.stage);
+    return parsed;
+  }
+  const token = parsed.token;
+  /** @type {any} */
+  let authorizer = null;
+  try {
+    try {
+      const p = run.authorizer();
+      const builder = new bg.AuthorizerBuilder();
+      builder.addCodeWithParameters(p.source, p.params, {});
+      authorizer = builder.buildAuthenticated(token);
+    } catch (e) {
+      log.debug("Caught in biscuitAuthorize(): " + biscuitErrorText(e));
+      log.debug("Leaving biscuitAuthorize(). Authorizer not built.");
+      return { ok: false, stage: 'build', error: e };
+    }
+    const rows = [];
+    let queryError = null;
+    const queries = run.queries || [];
+    for (let i = 0; i < queries.length; i++) {
+      try {
+        rows.push(authorizer.queryWithLimits(bg.Rule.fromString(queries[i]),
+                                             run.limits)
+          .map(function (/** @type {any} */ f) {
+            return f.terms();
+          }));
+      } catch (e) {
+        log.debug("Caught in biscuitAuthorize(): " + biscuitErrorText(e));
+        queryError = e;
+        break;
+      }
+    }
+    let authorizeError;
+    if (!queryError) {
+      try {
+        authorizer.authorizeWithLimits(run.limits);
+        authorizeError = null;
+      } catch (e) {
+        log.debug("Caught in biscuitAuthorize(): " + biscuitErrorText(e));
+        authorizeError = e;
+      }
+    }
+    const blocks = token.countBlocks();
+    log.debug("Leaving biscuitAuthorize(). blocks=" + blocks);
+    return { ok: true, rows: rows, queryError: queryError,
+             authorizeError: authorizeError, blocks: blocks };
+  } finally {
+    if (authorizer) {
+      authorizer.free();
+    }
+    token.free();
+  }
+}
+
+/**
+ * Appends a block to a biscuit — the attenuation a resource server makes
+ * without the authorization server. The token is verified first: the
+ * library will not open one it has not verified.
+ *
+ * `prepare()` is called once the token has parsed, and answers the block
+ * (`{ source, params }`) or `{ refusal }`, which is passed back untouched.
+ *
+ * @param value - the token, URL-safe base64
+ * @param publicKey - an Ed25519 public KeyObject
+ * @param prepare - builds the block, or refuses
+ * @returns a promise of `{ ok: true, value }`, or `{ ok: false, stage,
+ *   error }` — stage `key`, `load`, `parse` or `library` — or
+ *   `{ ok: false, stage: 'prepare', refusal }`
+ */
+async function biscuitAttenuate(value, publicKey, prepare) {
+  log.debug("Entering biscuitAttenuate().");
+  let bg;
+  try {
+    bg = await biscuitLibrary();
+  } catch (e) {
+    log.debug("Caught in biscuitAttenuate(): " + ((e && e.message) || e));
+    log.debug("Leaving biscuitAttenuate(). Library unavailable.");
+    return { ok: false, stage: 'load', error: e };
+  }
+  const parsed = biscuitParse(bg, value, publicKey);
+  if (!parsed.ok) {
+    log.debug("Leaving biscuitAttenuate(). " + parsed.stage);
+    return parsed;
+  }
+  try {
+    const block = prepare();
+    if (block.refusal) {
+      log.debug("Leaving biscuitAttenuate(). Refused by the caller.");
+      return { ok: false, stage: 'prepare', refusal: block.refusal };
+    }
+    let out;
+    try {
+      const builder = bg.Biscuit.block_builder();
+      builder.addCodeWithParameters(block.source, block.params, {});
+      const next = parsed.token.appendBlock(builder);
+      out = next.toBase64();
+      next.free();
+    } catch (e) {
+      log.debug("Caught in biscuitAttenuate(): " + biscuitErrorText(e));
+      log.debug("Leaving biscuitAttenuate(). Library refused.");
+      return { ok: false, stage: 'library', error: e };
+    }
+    log.debug("Leaving biscuitAttenuate(). Appended.");
+    return { ok: true, value: out };
+  } finally {
+    parsed.token.free();
+  }
+}
+
 // --- #453 group A: end ---
 
 // (separator between group regions)
@@ -14746,6 +15655,22 @@ module.exports = {
   digestSupported: digestSupported,
   TLS_NO_RENEGOTIATION: TLS_NO_RENEGOTIATION,
   // --- #453 group A exports: begin ---
+  // GNAP's three token libraries, held here and nowhere else (#453).
+  MACAROON_MIN_ROOT_KEY_BYTES: MACAROON_MIN_ROOT_KEY_BYTES,
+  macaroonRootKeyUsable: macaroonRootKeyUsable,
+  macaroonMint: macaroonMint,
+  macaroonImport: macaroonImport,
+  macaroonVerify: macaroonVerify,
+  macaroonAttenuate: macaroonAttenuate,
+  ZCAP_LEGACY_SUITE: ZCAP_LEGACY_SUITE,
+  zcapReady: zcapReady,
+  zcapVerificationMethod: zcapVerificationMethod,
+  zcapDelegate: zcapDelegate,
+  zcapVerifyDelegation: zcapVerifyDelegation,
+  biscuitReady: biscuitReady,
+  biscuitMint: biscuitMint,
+  biscuitAuthorize: biscuitAuthorize,
+  biscuitAttenuate: biscuitAttenuate,
   // --- #453 group A exports: end ---
   //
   // --- #453 group B exports: begin ---

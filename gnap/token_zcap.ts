@@ -11,11 +11,22 @@
 // INTEGRITY `eddsa-jcs-2022` PROOF BY DEFAULT SINCE 2026-09-22 (#43).
 //
 // A route-free library: it registers nothing and requires `common/helpers.js`,
-// `common/error_codes.js`, `gnap/gnap_access.ts` and
-// `oid4vc/vc_data_integrity.ts` (a library, rule 3). The Digital Bazaar ZCAP
-// and Ed25519 packages are ES modules, and they and `jsonld-signatures` (which
-// pulls in the whole of jsonld) are loaded LAZILY, once, by the first call that
-// needs them — never at require time.
+// `common/error_codes.js`, `common/crypto.js`, `gnap/gnap_access.ts` and
+// `oid4vc/vc_data_integrity.ts` (a library, rule 3).
+//
+// **IT NEVER HOLDS THE ZCAP LIBRARIES (#453, rcbj's decision of
+// 2026-10-05).** The Digital Bazaar ZCAP and Ed25519 packages and
+// `jsonld-signatures` are required by `common/crypto.js` alone, LAZILY, once,
+// by the first call that needs them (`zcapReady()`): it runs the delegation
+// (`zcapDelegate()`), checks one (`zcapVerifyDelegation()`), builds the
+// offline document loader, and turns the realm's key into the library's key
+// class (`zcapVerificationMethod()`). For `Ed25519Signature2020` it also
+// SIGNS — the suite is handed a signer and a verifier backed by
+// `signRawSignature()` / `verifyRawSignature()`, so the library only
+// canonicalises and the private key never reaches it. What stays here is
+// the capability document, its pinned context and member list, the
+// controller documents, the model it is read back into, and the JCS suite
+// object below. `crypto.js`'s group A header argues the split.
 //
 // ---------------------------------------------------------------------------
 // THE PROOF SUITE, AND WHY THE DEFAULT CHANGED (#43).
@@ -51,7 +62,11 @@
 // one implementation of those suites here, the OpenID4VP Verifier's — wrapped
 // in a jsonld-signatures suite object (`jcsSuite()`) so that
 // `@digitalbazaar/zcap`'s CapabilityDelegation purpose still does the ZCAP
-// half: the capability chain, the root, the controller, attenuation.
+// half: the capability chain, the root, the controller, attenuation. That is
+// why #453 left those suites where they were rather than giving them a
+// signer in `crypto.js` as well: `vc_data_integrity.ts` already signs and
+// verifies through `crypto.js`, and it IS what made every JCS token issued so
+// far, so reusing it keeps them byte-compatible by construction.
 //
 // **A REALM VERIFIES ONLY THE SUITE IT IS SET TO**, refused as STS-GNAP-0336
 // before any signature is checked: a realm on the default must not accept a
@@ -140,16 +155,18 @@
 // JSON-LD processing dereferences URLs — every context, the verification
 // method, its controller document, the root capability — and a verifier that
 // fetched them would be a verifier whose answer depends on the network and
-// whose inputs somebody else chooses. `documentLoaderFor()` serves exactly:
+// whose inputs somebody else chooses. The offline loader (`common/crypto.js`'s
+// `zcapLoader()` since #453) serves exactly:
 // the ZCAP context (from the zcap package's own loader), the Ed25519 2020 suite
 // context, the security v2 context (jsonld-signatures FRAMES a non-DID
 // controller document with it), the controller document and verification
-// method built from `keys`, and the ONE root capability the presented token's
+// method built from `keys` (the controller document handed to it from
+// here), and the ONE root capability the presented token's
 // target derives. **Any other URL throws.** A proof naming another key, a
 // capability chaining to another root, a context from elsewhere — each is a
 // load failure and so a verification failure.
 //
-// **A JCS suite needs less of it** (`jcsLoader()`): the root capability and
+// **A JCS suite needs less of it** (the same loader): the root capability and
 // the ZCAP context only. Its signature is not over JSON-LD, the key is
 // resolved from what this module holds (`jcsSuite()`'s resolver), and the
 // controller document is handed to the purpose instead of framed.
@@ -180,11 +197,9 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `TokenZcap` takes the logger, the clock, the error-code table, the
-// access model (`gnap_access`), node's `crypto` and an IMPORTER for the ZCAP
-// libraries through its constructor. The importer is what keeps the ES modules
-// lazy: the class calls it once, on the first call that needs them, and
-// `import()` stays a real dynamic import in the compiled CommonJS (module
-// `nodenext` preserves it). The module still exports its old names as FACADES
+// access model (`gnap_access`), `common/crypto.js` (which holds the ZCAP
+// libraries and loads them lazily, #453) and `oid4vc/vc_data_integrity.ts`
+// through its constructor. The module still exports its old names as FACADES
 // forwarding to the instance the composition root builds (#50, R2), for the
 // unconverted modules and the tests that require it. A process that loads this
 // module without the root builds a default instance when the module loads.
@@ -207,11 +222,17 @@ interface TokenZcapDeps {
   errorCodes: { tag(code: string): string };
   // `gnap_access`: the model, its refusals and its presentation checks.
   access: any;
-  stsCrypto: { publicKeyOf(key: any): any };
+  // `common/crypto.js`: the only holder of the ZCAP libraries (#453).
+  stsCrypto: {
+    publicKeyOf(key: any): any;
+    zcapReady(): Promise<void>;
+    zcapVerificationMethod(keyId: string, controller: string,
+                           publicKey: any): Promise<any>;
+    zcapDelegate(capability: any, options: any): Promise<any>;
+    zcapVerifyDelegation(doc: any, options: any): Promise<any>;
+  };
   // `oid4vc/vc_data_integrity`: the JCS cryptosuites (see the header).
   dataIntegrity: any;
-  // Loads the ZCAP libraries; called once, lazily (see the header).
-  importLibraries(): Promise<any>;
 }
 
 const FORMAT = 'zcap';
@@ -299,8 +320,8 @@ const RS_TARGET_PREFIX = 'urn:gnap:rs:';
  * capability signed by the authorization server, with an `eddsa-jcs-2022` Data
  * Integrity proof by default.
  *
- * A route-free library; the ES-module packages it uses are loaded lazily, once,
- * by the first call that needs them.
+ * A route-free library; the ZCAP libraries are `common/crypto.js`'s, loaded
+ * lazily, once, by the first call that needs them.
  */
 class TokenZcap {
   /**
@@ -329,9 +350,6 @@ class TokenZcap {
    */
   static readonly LEGACY_SUITE = LEGACY_SUITE;
 
-  // The one load of the ES modules, shared by every call.
-  private loading: Promise<any> | null = null;
-
   /**
    * Builds the format from the modules it reads.
    *
@@ -350,30 +368,16 @@ class TokenZcap {
   }
 
   // -------------------------------------------------------------------------
-  // The lazy load of the ES modules. A failure clears the promise so a later
-  // call may try again (the biscuit loader's reasoning).
+  // The libraries, loaded by `common/crypto.js` (once, lazily; a failure is
+  // retried by the next call). A load failure is this format's refusal.
   // -------------------------------------------------------------------------
-  private loadLibraries(): Promise<any> {
-    const { log, importLibraries } = this.deps;
-    log.debug("Entering TokenZcap.loadLibraries().");
-    if (!this.loading) {
-      this.loading = importLibraries().catch((e) => {
-        log.debug("Caught in TokenZcap.loadLibraries(): " +
-                  ((e && e.message) || e));
-        this.loading = null;
-        throw e;
-      });
-    }
-    log.debug("Leaving TokenZcap.loadLibraries().");
-    return this.loading;
-  }
-
   private async libraries(): Promise<any> {
-    const { log, errorCodes } = this.deps;
+    const { log, errorCodes, stsCrypto } = this.deps;
     log.debug("Entering TokenZcap.libraries().");
     try {
+      await stsCrypto.zcapReady();
       log.debug("Leaving TokenZcap.libraries().");
-      return { ok: true, lib: await this.loadLibraries() };
+      return { ok: true };
     } catch (e) {
       log.debug("Caught in TokenZcap.libraries(): " +
                 ((e && e.message) || e));
@@ -442,7 +446,7 @@ class TokenZcap {
 
   // -------------------------------------------------------------------------
   // THE KEYS OF A JCS SUITE: the controller URL and the keyId under it (the
-  // same rule as `keyPairOf()`), and a public JWK of the kind the suite
+  // same rule as `legacyKeysOf()`), and a public JWK of the kind the suite
   // signs with — Ed25519 for eddsa-jcs-2022, an AKP ML-DSA-44 or
   // SLH-DSA-SHA2-128s key for the other two. `wantPrivate` asks for the
   // signing half as well: a node KeyObject for Ed25519, the key bytes for
@@ -539,34 +543,6 @@ class TokenZcap {
     log.debug("Leaving TokenZcap.jcsControllerDocument(). " +
               document.verificationMethod.length + " method(s).");
     return { ok: true, document: document };
-  }
-
-  // -------------------------------------------------------------------------
-  // THE OFFLINE LOADER OF A JCS SUITE: the ONE root capability the token's
-  // target derives, and the ZCAP context (from the zcap package's own
-  // loader). Nothing else — no key, no controller document, no proof
-  // context — because nothing else is dereferenced: the signature is
-  // checked over JCS, and the controller is the document handed to the
-  // purpose.
-  // -------------------------------------------------------------------------
-  private jcsLoader(lib: any, controller: string, rootTarget: string): any {
-    const { log } = this.deps;
-    log.debug("Entering TokenZcap.jcsLoader().");
-    const root = lib.zcap.createRootCapability({
-      controller: controller, invocationTarget: rootTarget });
-    log.debug("Leaving TokenZcap.jcsLoader().");
-    return lib.zcap.extendDocumentLoader(async function jcsOfflineLoader(
-        documentUrl) {
-      log.debug("Entering jcsOfflineLoader().");
-      if (documentUrl === root.id) {
-        log.debug("Leaving jcsOfflineLoader().");
-        return { contextUrl: null, documentUrl: documentUrl, document: root,
-                 tag: 'static' };
-      }
-      log.debug("Leaving jcsOfflineLoader().");
-      throw new Error('the offline ZCAP document loader serves no document ' +
-                      'at ' + documentUrl);
-    });
   }
 
   // -------------------------------------------------------------------------
@@ -675,18 +651,20 @@ class TokenZcap {
   }
 
   // -------------------------------------------------------------------------
-  // The keys, validated and turned into Ed25519VerificationKey2020 instances.
-  // `wantPrivate` asks for the signing half.
+  // The compatibility suite's keys, validated: the controller URL and the
+  // keyId under it, and an Ed25519 KeyObject — the private half when
+  // `wantPrivate`. Turning it into the library's key class is
+  // `common/crypto.js`'s (#453).
   // -------------------------------------------------------------------------
-  private async keyPairOf(lib: any, keys: any,
-                          wantPrivate: boolean): Promise<any> {
+  private legacyKeysOf(keys: any, wantPrivate: boolean): any {
     const { log } = this.deps;
-    log.debug("Entering TokenZcap.keyPairOf(). wantPrivate=" + wantPrivate);
+    log.debug("Entering TokenZcap.legacyKeysOf(). wantPrivate=" +
+              wantPrivate);
     const k = keys || {};
     if (!this.isAbsoluteUrl(k.controller) || typeof k.keyId !== 'string' ||
         k.keyId.indexOf(k.controller + '#') !== 0 ||
         k.keyId.length === k.controller.length + 1) {
-      log.debug("Leaving TokenZcap.keyPairOf(). controller / keyId " +
+      log.debug("Leaving TokenZcap.legacyKeysOf(). controller / keyId " +
                 "unusable.");
       return this.refusal('STS-GNAP-0330', 'ZCAP keys need an absolute ' +
                           'controller URL and a keyId of ' +
@@ -695,42 +673,32 @@ class TokenZcap {
     const keyObject = wantPrivate ? k.privateKey : k.publicKey;
     if (!keyObject || typeof keyObject.export !== 'function' ||
         keyObject.asymmetricKeyType !== 'ed25519') {
-      log.debug("Leaving TokenZcap.keyPairOf(). Not an Ed25519 KeyObject.");
+      log.debug("Leaving TokenZcap.legacyKeysOf(). Not an Ed25519 " +
+                "KeyObject.");
       return this.refusal('STS-GNAP-0330',
                           'a ZCAP token is ' + (wantPrivate ? 'signed ' +
                               'with an Ed25519 private' :
                           'verified with an Ed25519 public') + ' KeyObject.');
     }
-    const jwk = keyObject.export({ format: 'jwk' });
-    let pair;
-    if (wantPrivate) {
-      // The seed IS the private key: generating from it reproduces the node
-      // key.
-      pair = await lib.Ed25519VerificationKey2020.generate({
-        seed: new Uint8Array(Buffer.from(jwk.d, 'base64url')), id: k.keyId,
-        controller: k.controller
-      });
-    } else {
-      pair = await lib.Ed25519VerificationKey2020.fromJsonWebKey({
-        id: k.keyId, controller: k.controller, type: 'JsonWebKey',
-        publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }
-      });
-    }
-    log.debug("Leaving TokenZcap.keyPairOf(). Ready.");
-    return { ok: true, pair: pair };
+    log.debug("Leaving TokenZcap.legacyKeysOf(). Ready.");
+    return { ok: true, controller: k.controller, keyId: k.keyId,
+             key: keyObject };
   }
 
-  private controllerDocumentFor(lib: any, keys: any, publicPair: any) {
+  // The compatibility suite's controller document: `methods` are
+  // Ed25519VerificationKey2020 verification methods
+  // (`crypto.zcapVerificationMethod()`), the first the current key's.
+  private legacyControllerDocument(controller: string, keyIds: string[],
+                                   methods: any[]) {
     const { log } = this.deps;
-    log.debug("Entering TokenZcap.controllerDocumentFor().");
-    log.debug("Leaving TokenZcap.controllerDocumentFor().");
+    log.debug("Entering TokenZcap.legacyControllerDocument().");
+    log.debug("Leaving TokenZcap.legacyControllerDocument().");
     return {
       '@context': [SECURITY_V2_URL, SUITE_CONTEXT_URL],
-      id: keys.controller,
-      verificationMethod: [publicPair.export({ publicKey: true,
-                                               includeContext: false })],
-      assertionMethod: [keys.keyId],
-      capabilityDelegation: [keys.keyId]
+      id: controller,
+      verificationMethod: methods,
+      assertionMethod: keyIds.slice(),
+      capabilityDelegation: keyIds.slice()
     };
   }
 
@@ -768,32 +736,33 @@ class TokenZcap {
     if (!publicKeys.publicKey && publicKeys.privateKey) {
       publicKeys.publicKey = stsCrypto.publicKeyOf(publicKeys.privateKey);
     }
-    const pair = await this.keyPairOf(libs.lib, publicKeys, false);
-    if (!pair.ok) {
+    const current = this.legacyKeysOf(publicKeys, false);
+    if (!current.ok) {
       log.debug("Leaving TokenZcap.controllerDocument(). Keys unusable.");
-      return pair;
+      return current;
     }
-    const document = this.controllerDocumentFor(libs.lib, publicKeys,
-                                                pair.pair);
+    const keyIds = [current.keyId];
+    const methods = [await stsCrypto.zcapVerificationMethod(
+        current.keyId, current.controller, current.key)];
     // THE OTHER GENERATIONS OF THE KEY (#49 P5, D6): the next key and the
     // retired ones still verifying, each a verification method of its own,
     // so a capability signed before a rotation still resolves here. The
     // current one stays first.
     const others = Array.isArray(publicKeys.others) ? publicKeys.others : [];
     for (let i = 0; i < others.length; i++) {
-      const one = Object.assign({ controller: publicKeys.controller },
-                                others[i]);
-      const extra = await this.keyPairOf(libs.lib, one, false);
-      if (!extra.ok) {
+      const one = this.legacyKeysOf(
+          Object.assign({ controller: publicKeys.controller }, others[i]),
+          false);
+      if (!one.ok) {
         continue;
       }
-      document.verificationMethod.push(extra.pair.export({
-        publicKey: true, includeContext: false }));
-      document.assertionMethod.push(one.keyId);
-      document.capabilityDelegation.push(one.keyId);
+      keyIds.push(one.keyId);
+      methods.push(await stsCrypto.zcapVerificationMethod(
+          one.keyId, one.controller, one.key));
     }
     log.debug("Leaving TokenZcap.controllerDocument().");
-    return document;
+    return this.legacyControllerDocument(current.controller, keyIds,
+                                         methods);
   }
 
   private rootIdFor(target: string): string {
@@ -801,57 +770,6 @@ class TokenZcap {
     log.debug("Entering TokenZcap.rootIdFor().");
     log.debug("Leaving TokenZcap.rootIdFor().");
     return ROOT_PREFIX + encodeURIComponent(target);
-  }
-
-  // -------------------------------------------------------------------------
-  // The offline document loader (see the header). `rootTarget` is the one
-  // invocation target whose root capability may load.
-  // -------------------------------------------------------------------------
-  private documentLoaderFor(lib: any, keys: any, publicPair: any,
-                            rootTarget: string): any {
-    const { log } = this.deps;
-    log.debug("Entering TokenZcap.documentLoaderFor().");
-    const controllerDoc = this.controllerDocumentFor(lib, keys, publicPair);
-    const root = lib.zcap.createRootCapability({
-      controller: keys.controller,
-      invocationTarget: rootTarget });
-    function answer(documentUrl, document) {
-      log.debug("Entering answer().");
-      log.debug("Leaving answer().");
-      return { contextUrl: null, documentUrl: documentUrl, document: document,
-               tag: 'static' };
-    }
-    log.debug("Leaving TokenZcap.documentLoaderFor().");
-    return lib.zcap.extendDocumentLoader(async function offlineLoader(
-        documentUrl) {
-      log.debug("Entering offlineLoader().");
-      if (documentUrl === SUITE_CONTEXT_URL) {
-        log.debug("Leaving offlineLoader().");
-        return answer(documentUrl,
-                      lib.suiteContext.contexts.get(SUITE_CONTEXT_URL));
-      }
-      if (documentUrl === SECURITY_V2_URL) {
-        log.debug("Leaving offlineLoader().");
-        return answer(documentUrl, lib.securityContexts.get(SECURITY_V2_URL));
-      }
-      if (documentUrl === keys.controller) {
-        log.debug("Leaving offlineLoader().");
-        return answer(documentUrl, controllerDoc);
-      }
-      if (documentUrl === keys.keyId) {
-        log.debug("Leaving offlineLoader().");
-        return answer(documentUrl,
-                      publicPair.export({ publicKey: true,
-                                          includeContext: true }));
-      }
-      if (documentUrl === root.id) {
-        log.debug("Leaving offlineLoader().");
-        return answer(documentUrl, root);
-      }
-      log.debug("Leaving offlineLoader().");
-      throw new Error('the offline ZCAP document loader serves no document ' +
-                      'at ' + documentUrl);
-    });
   }
 
   /**
@@ -995,43 +913,43 @@ class TokenZcap {
       log.debug("Leaving TokenZcap.mint(). Libraries unavailable.");
       return libs;
     }
-    const lib = libs.lib;
     const cap = this.capabilityFor(valid.model, chosen.suite);
-    let suiteObject;
-    let documentLoader;
+    let options: any;
     if (chosen.suite === LEGACY_SUITE) {
-      const signing = await this.keyPairOf(lib, keys, true);
+      const signing = this.legacyKeysOf(keys, true);
       if (!signing.ok) {
         log.debug("Leaving TokenZcap.mint(). Signing key unusable.");
         return signing;
       }
-      const publicKeys = Object.assign({}, keys,
-                                       { publicKey: stsCrypto.publicKeyOf(
-                                           keys.privateKey) });
-      const verifying = await this.keyPairOf(lib, publicKeys, false);
-      suiteObject = new lib.Ed25519Signature2020({
-        key: signing.pair, date: new Date(valid.model.iat * 1000) });
-      documentLoader = this.documentLoaderFor(lib, publicKeys,
-                                              verifying.pair, target);
+      // The controller document the offline loader serves while signing:
+      // this one key, as `controllerDocument()` would list it first.
+      const publicKey = stsCrypto.publicKeyOf(keys.privateKey);
+      const method = await stsCrypto.zcapVerificationMethod(
+          signing.keyId, signing.controller, publicKey);
+      options = {
+        cryptosuite: chosen.suite, controller: signing.controller,
+        keyId: signing.keyId, privateKey: signing.key,
+        date: new Date(valid.model.iat * 1000),
+        controllerDocument: this.legacyControllerDocument(
+            signing.controller, [signing.keyId], [method])
+      };
     } else {
       const signingKeys = this.jcsKeysOf(keys, chosen.suite, true);
       if (!signingKeys.ok) {
         log.debug("Leaving TokenZcap.mint(). Signing key unusable.");
         return signingKeys;
       }
-      suiteObject = this.jcsSuite(chosen.suite, signingKeys,
-                                  this.isoSeconds(valid.model.iat),
-                                  valid.model.iat * 1000);
-      documentLoader = this.jcsLoader(lib, signingKeys.controller, target);
+      options = {
+        cryptosuite: chosen.suite, controller: signingKeys.controller,
+        keyId: signingKeys.keyId,
+        suite: this.jcsSuite(chosen.suite, signingKeys,
+                             this.isoSeconds(valid.model.iat),
+                             valid.model.iat * 1000)
+      };
     }
     let signed;
     try {
-      signed = await lib.jsigs.sign(cap, {
-        suite: suiteObject,
-        purpose: new lib.zcap.CapabilityDelegation(
-            { parentCapability: cap.parentCapability }),
-        documentLoader: documentLoader
-      });
+      signed = await stsCrypto.zcapDelegate(cap, options);
     } catch (e) {
       log.debug("Caught in TokenZcap.mint(): " + ((e && e.message) || e));
       log.warn(errorCodes.tag('STS-GNAP-0335') + 'ZCAP signing failed in ' +
@@ -1205,7 +1123,7 @@ class TokenZcap {
    * @returns `{ ok: true, model }`, or a refusal
    */
   async verify(value: unknown, keys: any, context?: any): Promise<any> {
-    const { log, access, nowSec } = this.deps;
+    const { log, access, nowSec, stsCrypto } = this.deps;
     log.debug("Entering TokenZcap.verify().");
     const chosen = this.suiteOf(keys);
     if (!chosen.ok) {
@@ -1230,23 +1148,22 @@ class TokenZcap {
       log.debug("Leaving TokenZcap.verify(). Libraries unavailable.");
       return libs;
     }
-    const lib = libs.lib;
-    let options;
+    let options: any;
     if (chosen.suite === LEGACY_SUITE) {
-      const verifying = await this.keyPairOf(lib, keys, false);
+      const verifying = this.legacyKeysOf(keys, false);
       if (!verifying.ok) {
         log.debug("Leaving TokenZcap.verify(). Verification key unusable.");
         return verifying;
       }
+      // The controller document the offline loader serves: THIS generation
+      // of the key alone.
+      const method = await stsCrypto.zcapVerificationMethod(
+          verifying.keyId, verifying.controller, verifying.key);
       options = {
-        suite: new lib.Ed25519Signature2020(),
-        purpose: new lib.zcap.CapabilityDelegation({
-          expectedRootCapability: this.rootIdFor(doc.invocationTarget),
-          allowTargetAttenuation: true,
-          date: new Date(now * 1000)
-        }),
-        documentLoader: this.documentLoaderFor(lib, keys, verifying.pair,
-                                               doc.invocationTarget)
+        cryptosuite: chosen.suite, controller: verifying.controller,
+        keyId: verifying.keyId, publicKey: verifying.key,
+        controllerDocument: this.legacyControllerDocument(
+            verifying.controller, [verifying.keyId], [method])
       };
     } else {
       const verifyingKeys = this.jcsKeysOf(keys, chosen.suite, false);
@@ -1264,26 +1181,16 @@ class TokenZcap {
             keyId: verifyingKeys.keyId, publicJwk: verifyingKeys.publicJwk },
           chosen.suite);
       options = {
-        suite: this.jcsSuite(chosen.suite, verifyingKeys, '', now * 1000),
-        purpose: new lib.zcap.CapabilityDelegation({
-          expectedRootCapability: this.rootIdFor(doc.invocationTarget),
-          allowTargetAttenuation: true,
-          date: new Date(now * 1000),
-          controller: controllerDoc.document
-        }),
-        documentLoader: this.jcsLoader(lib, verifyingKeys.controller,
-                                       doc.invocationTarget)
+        cryptosuite: chosen.suite, controller: verifyingKeys.controller,
+        keyId: verifyingKeys.keyId,
+        controllerDocument: controllerDoc.document,
+        suite: this.jcsSuite(chosen.suite, verifyingKeys, '', now * 1000)
       };
     }
-    let result;
-    try {
-      result = await lib.jsigs.verify(doc, options);
-    } catch (e) {
-      log.debug("Caught in TokenZcap.verify(): " + ((e && e.message) || e));
-      // jsigs reports through `result`; a throw is malformed input it could
-      // not even start on, which is the same answer for the caller.
-      result = { verified: false, error: e };
-    }
+    options.rootTarget = doc.invocationTarget;
+    options.expectedRootCapability = this.rootIdFor(doc.invocationTarget);
+    options.date = new Date(now * 1000);
+    const result = await stsCrypto.zcapVerifyDelegation(doc, options);
     if (!result || !result.verified) {
       const errors = result && result.error ?
                      (result.error.errors || [result.error]) : [];
@@ -1356,12 +1263,11 @@ class TokenZcap {
   }
 
   // What the composition root passes (#50, R2): the real modules, as the
-  // module built its own instance from before. The importer is the old
-  // module-level load, unchanged: three ES modules by dynamic import and two
-  // CommonJS packages by require, all at the first call that needs them.
+  // module built its own instance from before. The libraries' lazy load is
+  // `common/crypto.js`'s since #453.
   /**
-   * Returns the real modules and the lazy importer the instance was built from
-   * before the composition root (#50, R2) passed them.
+   * Returns the real modules the instance was built from before the
+   * composition root (#50, R2) passed them.
    *
    * @returns the default dependencies
    */
@@ -1376,24 +1282,7 @@ class TokenZcap {
       errorCodes: errorCodes,
       access: gnapAccess,
       stsCrypto: stsCrypto,
-      dataIntegrity: dataIntegrity,
-      importLibraries: function () {
-        return Promise.all([
-          import('@digitalbazaar/zcap'),
-          import('@digitalbazaar/ed25519-signature-2020'),
-          import('@digitalbazaar/ed25519-verification-key-2020')
-        ]).then(function (mods: any[]) {
-          const security = require('@digitalbazaar/security-context');
-          return {
-            jsigs: require('jsonld-signatures'),
-            zcap: mods[0],
-            Ed25519Signature2020: mods[1].Ed25519Signature2020,
-            suiteContext: mods[1].suiteContext,
-            Ed25519VerificationKey2020: mods[2].Ed25519VerificationKey2020,
-            securityContexts: security.contexts
-          };
-        });
-      }
+      dataIntegrity: dataIntegrity
     };
   }
 }
