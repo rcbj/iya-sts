@@ -806,13 +806,15 @@ reason; `tests/protocol_endpoints.js` fails otherwise.
 
 **AND A CARD IS NOT ALWAYS A PROTOCOL, WHICH IS WHY THE COUNT IN THE OVERVIEW
 AND THE COUNT ON THAT PAGE ARE DIFFERENT NUMBERS.** Two cards carry
-`notAProtocol` — the User portal, which is an APPLICATION, and **Recovery codes
-(2026-09-10), which is a credential mechanism with an endpoint, a verifier and a
-store, and simply has no document**: nobody ever wrote a specification for a
-recovery code. The marker says which of those two situations a reader is looking
-at, and `tests/vendored/sts_metadata.js` asserts that every other card names a
-specification — so the marker is what keeps that rule strict for everything it
-was written for. A card still costs all three things above whether or not it is
+`notAProtocol` — the User portal, which is an APPLICATION, and **Email codes and
+links (#64), a credential mechanism that a guideline says is not an
+authenticator at all** (it names NIST SP 800-63B-4 and RFC 8176 anyway).
+**Recovery codes carried it until #283 (2026-10-07)** on the claim that nobody
+wrote a specification for a recovery code; NIST SP 800-63B-4 section 3.1.2's
+*look-up secrets* are one, and the card now names it.
+`tests/vendored/sts_metadata.js` asserts that every card without the marker
+names a specification — so the marker is what keeps that rule strict for
+everything it was written for. A card still costs all three things above whether or not it is
 a protocol, because the rule the page enforces is *no endpoint group without a
 card*, and paying it here is cheaper than making the rule conditional.
 
