@@ -80,10 +80,13 @@
 //     MATCHES the first one's entry instead of inventing another.
 //
 //   * **`spiffe.autoCreateEntries` off is still the interesting setting.** With
-//     it off, a caller matching no entry is answered with an EMPTY SVID list —
-//     which is what a real agent does for an unregistered workload, and is the
-//     only way to exercise a client's "I have no identity" path. That path is
-//     the one most client libraries have and almost nobody runs.
+//     it off, a caller matching no entry is refused PERMISSION_DENIED at all
+//     four fetch methods — what sections 5.2.1, 5.2.2, 6.2.1 and 6.2.2 say a
+//     server SHOULD answer a client not entitled to anything, and what SPIRE's
+//     agent answers ("no identity issued"). It was an EMPTY SVID list until
+//     #274 (2026-10-07), described here as what a real agent does, which it
+//     is not. It is the only way to exercise a client's "I have no identity"
+//     path, the one most client libraries have and almost nobody runs.
 //
 // ---------------------------------------------------------------------------
 // THE STREAMS ARE STREAMS, AND THAT IS THE SECOND THING TO GET RIGHT
@@ -296,18 +299,17 @@ class SpiffeWorkload {
     // ---------------------------------------------------------------------
     const settingSays = config.value('spiffe.autoCreateEntries');
     if (!settingSays || !mode.autoCreates()) {
-      // The interesting answer. A real agent says exactly this to an
-      // unregistered workload, and a client that has never seen it has never
-      // run its own "I have no identity" path.
+      // The interesting answer. The caller refuses it PERMISSION_DENIED, as
+      // a real agent does an unregistered workload, and a client that has
+      // never seen it has never run its own "I have no identity" path.
       log.info('spiffe: a workload asked for an SVID, no registration entry ' +
                (narrow ? 'matched its selectors' : 'exists') +
                (settingSays
                  ? ', and this realm is in product mode (global.mode), which ' +
                    'never invents one whatever spiffe.autoCreateEntries says'
                  : ', and spiffe.autoCreateEntries is off') +
-               ' — so it is being answered with an empty SVID list, which is ' +
-               'what a real agent does for an ' +
-               'unregistered workload. Register ' +
+               ' — so it is refused PERMISSION_DENIED (SPIFFE Workload API ' +
+               'sections 5.2.1 and 6.2.1). Register ' +
                'it on /admin/spiffe/entries or through the SPIRE Server API.');
       log.debug('Leaving SpiffeWorkload.entitledEntries(). None, and none ' +
                 'will be invented.');
@@ -346,6 +348,102 @@ class SpiffeWorkload {
     }
     log.debug('Leaving SpiffeWorkload.entitledEntries(). One was invented.');
     return [created.entry];
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CALLER ENTITLED TO NOTHING IS REFUSED, AT ALL FOUR FETCH METHODS (#274).
+  //
+  // Sections 5.2.1, 5.2.2, 6.2.1 and 6.2.2: a client not entitled to any
+  // SVID (or bundle) SHOULD get PERMISSION_DENIED, and FetchJWTSVID's client
+  // not authorized for the `spiffe_id` it asked for too. SPIRE's agent
+  // answers "no identity issued". A bundle is not an identity, but the
+  // section asks the same of it, and SPIRE decides it the same way: a caller
+  // with no entry gets no bundle either.
+  //
+  // `entitledToAny()` answers that for the BUNDLE methods without minting
+  // anything — and without inventing an entry, which `entitledEntries()`
+  // would do in development for a caller that only wanted to verify peers.
+  // A caller that WOULD be given an invented entry is entitled, so the
+  // bundle methods and the SVID methods cannot disagree about one caller.
+  // The Broker API's own refusal (STS-SPIFFE-0138) is its own; this is the
+  // Workload API's.
+  // ---------------------------------------------------------------------------
+  /**
+   * Tells whether a Workload API caller is entitled to anything — an entry
+   * matches it, or one would be invented for it — without inventing one.
+   *
+   * @param caller - the attested caller
+   * @returns true when it is
+   */
+  entitledToAny(caller) {
+    const { log, registry, auth, config, mode } = this.deps;
+    log.debug('Entering SpiffeWorkload.entitledToAny().');
+    const selectors = (caller && caller.selectors) || null;
+    const narrow = !!(selectors && auth.attestWorkloads());
+    const matched = registry.allEntries().some(function (entry) {
+      return !entry.expired &&
+             (!narrow || registry.selectorsMatch(entry.selectors,
+                                                 selectors)) &&
+             (!caller || registry.answersWorkloads(entry));
+    });
+    const invents = !!config.value('spiffe.autoCreateEntries') &&
+                    mode.autoCreates();
+    log.debug('Leaving SpiffeWorkload.entitledToAny(). matched=' + matched +
+              ' invents=' + invents);
+    return matched || invents;
+  }
+
+  /**
+   * Returns the PERMISSION_DENIED refusal for a Workload API caller entitled
+   * to nothing it asked for (#274), marked on the call.
+   *
+   * @param call - the gRPC call
+   * @param method - the method, for the message
+   * @param what - what it is not entitled to
+   * @returns the status error
+   */
+  notEntitled(call, method, what) {
+    const { log, rpc, errorCodes } = this.deps;
+    log.debug('Entering SpiffeWorkload.notEntitled(). ' + method);
+    errorCodes.mark(call, 'STS-SPIFFE-0146');
+    log.debug('Leaving SpiffeWorkload.notEntitled().');
+    return rpc.permissionDenied('no identity issued: ' + method + ' — the ' +
+                                'caller is not entitled to ' + what + ' ' +
+                                '(no registration entry matches it). ' +
+                                'Register one on /admin/spiffe/entries or ' +
+                                'through the SPIRE Server API.');
+  }
+
+  // A stream's later message, or its end: a caller that lost every entry
+  // while its stream was open is told so PERMISSION_DENIED and the stream
+  // ends, as SPIRE's agent ends it — never a message with nothing in it.
+  /**
+   * Wraps a stream's builder so that a caller no longer entitled ends the
+   * stream PERMISSION_DENIED instead of being sent an empty message.
+   *
+   * @param call - the gRPC call
+   * @param end - ends the stream with a status
+   * @param method - the method
+   * @param what - what the caller is no longer entitled to
+   * @param build - builds the next message, or null when not entitled
+   * @returns the wrapped builder
+   */
+  endWhenNotEntitled(call, end, method, what, build) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug('Entering SpiffeWorkload.endWhenNotEntitled().');
+    log.debug('Leaving SpiffeWorkload.endWhenNotEntitled().');
+    return async function resend() {
+      log.debug('Entering resend().');
+      const message = await build();
+      if (!message) {
+        end(self.notEntitled(call, method, what));
+        log.debug('Leaving resend(). Not entitled any more.');
+        return null;
+      }
+      log.debug('Leaving resend().');
+      return message;
+    };
   }
 
   // The federated bundles a holder of these entries should be given: the union
@@ -644,7 +742,7 @@ class SpiffeWorkload {
     const self = this;
     log.debug("Entering SpiffeWorkload.buildFetchX509Svid().");
     const fetchX509Svid = rpc.serverStream('workload', 'FetchX509SVID',
-      async function (call, push) {
+      async function (call, push, end) {
         await ca.ready();
         // The caller is captured ONCE and closed over, rather than read again
         // inside the timer. The stream outlives the call that opened it and the
@@ -659,9 +757,17 @@ class SpiffeWorkload {
         // rather than the service default.
         const observed = { shortest: 0 };
         const first = await self.buildX509Response(caller, observed);
+        if (!first.svids.length) {
+          throw self.notEntitled(call, 'FetchX509SVID', 'any X509-SVID');
+        }
         self.pushOnRotation(push,
-                            function () { return self.buildX509Response(caller,
-                                observed); },
+                            self.endWhenNotEntitled(call, end,
+                              'FetchX509SVID', 'any X509-SVID',
+                              async function () {
+                                const next = await self.buildX509Response(
+                                  caller, observed);
+                                return next.svids.length ? next : null;
+                              }),
                             'FetchX509SVID',
                             function () { return observed.shortest; });
         return first;
@@ -721,9 +827,20 @@ class SpiffeWorkload {
     const self = this;
     log.debug("Entering SpiffeWorkload.buildFetchX509Bundles().");
     const fetchX509Bundles = rpc.serverStream('workload', 'FetchX509Bundles',
-      async function (call, push) {
+      async function (call, push, end) {
         await ca.ready();
-        self.pushOnRotation(push, self.buildX509BundlesResponse.bind(self),
+        const caller = call.spiffeCaller;
+        if (!self.entitledToAny(caller)) {
+          throw self.notEntitled(call, 'FetchX509Bundles', 'any X.509 bundle');
+        }
+        self.pushOnRotation(push,
+                            self.endWhenNotEntitled(call, end,
+                              'FetchX509Bundles', 'any X.509 bundle',
+                              async function () {
+                                return self.entitledToAny(caller)
+                                  ? await self.buildX509BundlesResponse()
+                                  : null;
+                              }),
                             'FetchX509Bundles');
         return await self.buildX509BundlesResponse();
       });
@@ -744,13 +861,15 @@ class SpiffeWorkload {
   // report.
   //
   // `spiffe_id` is optional. Given, it narrows to that identity — and if the
-  // caller is not entitled to it, the answer is an empty list rather than an
-  // error, which is what SPIRE does: "you may not have that" and "there is no
-  // such entry" are not distinguishable to a workload and should not be.
+  // caller is not entitled to it, or to anything, the answer is
+  // PERMISSION_DENIED (section 6.2.1, #274; an empty list until then). "You
+  // may not have that" and "there is no such entry" are still the same
+  // answer, and should be: a workload cannot tell them apart.
   // ---------------------------------------------------------------------------
   /**
    * Builds the FetchJWTSVID unary handler: an audience is required, and a
-   * `spiffe_id` the caller is not entitled to answers an empty list.
+   * caller entitled to nothing, or not to the `spiffe_id` it named, is
+   * refused PERMISSION_DENIED.
    *
    * @returns the handler
    */
@@ -787,6 +906,10 @@ class SpiffeWorkload {
         entries = entries.filter(function (entry) {
           return entry.spiffeId === parsed.id;
         });
+      }
+      if (!entries.length) {
+        throw self.notEntitled(call, 'FetchJWTSVID',
+                               wanted ? wanted : 'any JWT-SVID');
       }
       return { svids: await self.issueJwtSvids(entries, audiences,
                                                call.spiffeCaller) };
@@ -909,9 +1032,20 @@ class SpiffeWorkload {
     const self = this;
     log.debug("Entering SpiffeWorkload.buildFetchJwtBundles().");
     const fetchJwtBundles = rpc.serverStream('workload', 'FetchJWTBundles',
-      async function (call, push) {
+      async function (call, push, end) {
         await ca.ready();
-        self.pushOnRotation(push, self.buildJwtBundlesResponse.bind(self),
+        const caller = call.spiffeCaller;
+        if (!self.entitledToAny(caller)) {
+          throw self.notEntitled(call, 'FetchJWTBundles', 'any JWT bundle');
+        }
+        self.pushOnRotation(push,
+                            self.endWhenNotEntitled(call, end,
+                              'FetchJWTBundles', 'any JWT bundle',
+                              async function () {
+                                return self.entitledToAny(caller)
+                                  ? await self.buildJwtBundlesResponse()
+                                  : null;
+                              }),
                             'FetchJWTBundles');
         return await self.buildJwtBundlesResponse();
       });

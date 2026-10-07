@@ -13328,8 +13328,8 @@ const CODES = [
       'selects nothing identifying a workload answered no Workload API ' +
       'caller, because its realm is in product mode; said once per entry ' +
       'per process (#166).',
-    spec: 'the entry is left out of the answer; the caller may get an empty ' +
-      'SVID list' },
+    spec: 'the entry is left out of the answer; a caller left with no ' +
+      'entry is refused PERMISSION_DENIED (STS-SPIFFE-0146)' },
   { code: 'STS-SPIFFE-0124',
     summary: 'The systemd workload attestor is named in ' +
       'spiffe.workloadAttestors and the optional D-Bus client ' +
@@ -13454,6 +13454,14 @@ const CODES = [
       'or the operation threw); it is not run again in the front process, ' +
       'because the worker may already have minted (2026-10-07).',
     spec: 'gRPC UNAVAILABLE' },
+  { code: 'STS-SPIFFE-0146',
+    summary: 'A Workload API caller is entitled to nothing it asked for: no ' +
+      'registration entry matches it (and none is invented), or ' +
+      'FetchJWTSVID named a spiffe_id it is not entitled to. Refused at ' +
+      'FetchX509SVID, FetchX509Bundles, FetchJWTSVID and FetchJWTBundles, ' +
+      'and a stream whose caller lost every entry ends so (SPIFFE Workload ' +
+      'API sections 5.2.1, 5.2.2, 6.2.1, 6.2.2; #274).',
+    spec: 'gRPC PERMISSION_DENIED' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +

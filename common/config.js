@@ -15039,9 +15039,10 @@ const SETTINGS = [
                  'registration entry gets one created for it and is issued ' +
                  'an SVID anyway — no attestation, no selectors, nothing ' +
                  'checked — which is the same permissive posture every other ' +
-                 'family here has. Off, an unregistered workload is answered ' +
-                 'with an empty SVID list, which is what a real SPIRE agent ' +
-                 'does and is the ONLY way to exercise a client\'s "I have ' +
+                 'family here has. Off, an unregistered workload is refused ' +
+                 'PERMISSION_DENIED, which is what the Workload API says and ' +
+                 'a real SPIRE agent does, and is the ONLY way to exercise a ' +
+                 'client\'s "I have ' +
                  'no identity" path. Both answers are worth having; neither ' +
                  'is the safe one.' },
 

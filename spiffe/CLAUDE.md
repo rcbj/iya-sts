@@ -288,9 +288,13 @@ that up silently.
 
    **`spiffe.autoCreateEntries` OFF IS THE INTERESTING SETTING**, and it is the
    one thing here that must not be quietly removed: with it off, a caller
-   matching no entry gets an EMPTY SVID LIST, which is what a real agent does
-   for an unregistered workload and the only way to run a client's "I have no
-   identity" path.
+   matching no entry is refused PERMISSION_DENIED (`STS-SPIFFE-0146`) at all
+   four fetch methods, which is what the Workload API sections 5.2.1, 5.2.2,
+   6.2.1 and 6.2.2 say and what SPIRE's agent answers ("no identity issued"),
+   and the only way to run a client's "I have no identity" path. A stream
+   whose caller loses every entry ENDS so, as the Broker API's does. It was
+   an EMPTY SVID LIST until #274 (2026-10-07), recorded here as what a real
+   agent does, which it is not.
 
    **THE STREAMS STAY OPEN.** Four Workload API methods are server streams and a
    real client holds `FetchX509SVID` for the life of the process. `serverStream()`

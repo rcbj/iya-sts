@@ -81,8 +81,9 @@
 //        bundle endpoint;
 //     4. FetchJWTSVID: no audience is INVALID_ARGUMENT, a malformed
 //        `spiffe_id` is INVALID_ARGUMENT, an identity the caller is not
-//        entitled to (N) is an EMPTY list, and W's token carries W as `sub`,
-//        the audience asked for, a lifetime within W's `jwtSvidTtl`, and a
+//        entitled to (N) is PERMISSION_DENIED (#274), and W's token
+//        carries W as `sub`, the audience asked for, a lifetime within W's
+//        `jwtSvidTtl`, and a
 //        signature THIS FILE verifies against FetchJWTBundles' key;
 //     5. FetchJWTBundles: the `jwt-svid` keys of the HTTPS bundle, and only
 //        those;
@@ -1062,9 +1063,9 @@ async function test() {
                       { audience: [AUDIENCE], spiffe_id: N },
                       workloadMetadata(true));
       check("FetchJWTSVID for an identity the caller is not entitled to (N) " +
-            "is an EMPTY list, not an error", function () {
-        assert.ok(!a.error, describe(a));
-        assert.deepStrictEqual(a.value.svids, []);
+            "is PERMISSION_DENIED (Workload API section 6.2.1, #274)",
+            function () {
+        assert.ok(codeIs(grpc.status.PERMISSION_DENIED)(a), describe(a));
       });
     }
     a = await eventually("FetchJWTSVID for W", function () {

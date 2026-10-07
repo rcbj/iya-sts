@@ -161,9 +161,13 @@ whose selectors are a **subset** of the caller's selectors, as SPIRE matches
 them (`spiffe.attestWorkloads`; turning it off, which hands every caller every
 entry, is development only). The entry's selectors must be a **subset** of the
 caller's — not equal to them, and not merely intersecting. A caller that matches
-no entry gets an **empty SVID list**, which is what a real agent answers an
-unregistered workload, and is the only way to exercise a client's "I have no
-identity" path — one most client libraries have and almost nobody runs. In
+no entry is refused **`PERMISSION_DENIED`** at `FetchX509SVID`,
+`FetchX509Bundles`, `FetchJWTSVID` and `FetchJWTBundles`, as the Workload API
+(sections 5.2.1, 5.2.2, 6.2.1 and 6.2.2) says and a real agent answers ("no
+identity issued"). So is a `FetchJWTSVID` naming a `spiffe_id` the caller is not
+entitled to, and a stream whose caller loses every entry ends with that status.
+It is the only way to exercise a client's "I have no identity" path — one most
+client libraries have and almost nobody runs. In
 development, `spiffe.autoCreateEntries` instead creates an entry for the caller
 and issues it an SVID. The invented entry carries the caller's *stable*
 selectors — transport and endpoint, never the peer, whose port is ephemeral — so
@@ -735,7 +739,7 @@ are reconciled, which happens whenever one of the realm's settings changes.
 |---|---|---|---|---|
 | `spiffe.requireSecurityHeader` | `STS_SPIFFE_REQUIRE_SECURITY_HEADER` | `true` | yes | Refuse a call without `workload.spiffe.io: true`, as the specification requires. Off is development mode only: product always requires the header and refuses turning it off (#181). |
 | `spiffe.attestWorkloads` | `STS_SPIFFE_ATTEST_WORKLOADS` | `true` | yes | Answer a caller only with the entries its selectors match; off answers every caller with every entry, in development only. |
-| `spiffe.autoCreateEntries` | `STS_SPIFFE_AUTOCREATE_ENTRIES` | `true` | yes | In development, create an entry for a caller that matches none; off gives it an empty SVID list. |
+| `spiffe.autoCreateEntries` | `STS_SPIFFE_AUTOCREATE_ENTRIES` | `true` | yes | In development, create an entry for a caller that matches none; off refuses it `PERMISSION_DENIED`. |
 | `spiffe.acceptAssertedSelectors` | `STS_SPIFFE_ACCEPT_ASSERTED_SELECTORS` | `false` | yes | In development, believe selectors a caller sends in `x-sts-workload-selector`. Nothing verifies them. Refused in product. |
 | `spiffe.maxEntries` | `STS_SPIFFE_MAX_ENTRIES` | `500` | yes | How many registration entries may live under `ou=spiffe`; past it a new one is refused. |
 
@@ -916,10 +920,10 @@ See [Configuration](configuration.md) for how a value is resolved.
   `spiffeCredentialStatus` records who can no longer be issued an SVID. Short
   lifetimes and rotation are the mechanism. The streams re-send at half the
   lifetime, so clients exercise rotation.
-* **An unregistered workload gets an empty SVID list** in product mode, and in
-  development with `spiffe.autoCreateEntries` off, because that is what a real
-  agent answers. It is the only way to test a client's "I have no identity"
-  path.
+* **An unregistered workload is refused `PERMISSION_DENIED`** in product mode,
+  and in development with `spiffe.autoCreateEntries` off, as the Workload API
+  says and a real agent answers. It is the only way to test a client's "I have
+  no identity" path.
 * **A join token is stored only as a digest**, and its selector is
   `token-sha256:`, so neither the store nor the directory holds a usable token.
 * **X.509 is EC P-256 by default**, which is what SPIRE issues and what the
