@@ -22133,6 +22133,30 @@ class AdminApi {
     });
   }
 
+  // WHETHER A TARGET NAMES THIS API (#505): the audiences a token here may
+  // carry, as `audienceAccepted()` and a realm's own `realmAudienceAccepted()`
+  // read them, asked of one string. `common/registered_targets.ts` asks it,
+  // so that an RFC 8707 resource naming the management API is one of this
+  // service's own resource servers in product — read from the check a token
+  // meets here, not from a second copy of it.
+  /**
+   * Says whether a target (an RFC 8707 resource, a GNAP location) names this
+   * API: an audience a token here is accepted with.
+   *
+   * @param target - the target
+   * @param req - the request it arrived on
+   * @returns whether it does
+   */
+  namesThisApi(target, req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.namesThisApi().");
+    const claims = { aud: String(target == null ? '' : target) };
+    const named = !!claims.aud && (this.audienceAccepted(claims, req) ||
+                                   this.realmAudienceAccepted(claims, req));
+    log.debug("Leaving AdminApi.namesThisApi(). " + named);
+    return named;
+  }
+
   // ---------------------------------------------------------------------------
   // RFC 9068 SECTION 4 STEP 3 — WHO ISSUED IT (2026-09-13).
   //
@@ -23651,6 +23675,11 @@ export = {
    * Forwards to `AdminApi.operationSummaries()` on the installed instance.
    */
   operationSummaries: slot.forward('operationSummaries'),
+  /**
+   * Forwards to `AdminApi.namesThisApi()` on the installed instance: whether
+   * a target names this API (#505, `common/registered_targets.ts`).
+   */
+  namesThisApi: slot.forward('namesThisApi'),
   /**
    * Forwards to `AdminApi.checkRequestBody()` on the installed instance: a
    * test asks it what a body sent to an operation would be refused for.

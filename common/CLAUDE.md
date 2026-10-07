@@ -11116,3 +11116,33 @@ in-process test fakes all four; `tests/vendored/sts_secret_destinations.js`
 drives the register over HTTP and the `file` destination only); the sealing
 in product mode, which needs a persistent key-encryption key in process.
 
+
+## `registered_targets.ts`: WHAT A TOKEN MAY BE ADDRESSED TO, IN PRODUCT (#505, 2026-10-06)
+
+#496 made product refuse an application nobody registered at every door that
+names one by a client identifier. Two doors name the party a token is FOR by
+an ADDRESS instead — an RFC 8707 `resource` outside a token exchange, and a
+GNAP access right's `locations` — and rcbj's follow-up (#505) holds both, in
+product, to one definition, this file's:
+
+* **one of this service's own resource servers**, found by asking the code
+  that checks an `aud` rather than from a list: the default resource
+  indicator of a hosted authorization server
+  (`jwt_access_token.isOwnResourceAudience()`), the management API
+  (`mgmt-api/admin_api`'s `namesThisApi()`), and the GNAP demonstration
+  resource server while `gnap.demoResourceServer` is on;
+* **or a registered application** (`appRegisteredBy`) by `oauthAudience`,
+  client_id, identifier or permission base URI — the embedded debugger's api
+  is one, seeded registered.
+
+`unregistered()` answers the targets that are neither — none in development,
+behind #496's `mode.issuesToUnregisteredApplications()` and the
+`unregistered-resource-targets` REQUIREMENTS row. A STATIC UTILITY CLASS like
+`issuer_names.ts`: the registry, the access-token profile and the management
+API are reached lazily, at request time only, and a converted module is
+ASKED, NEVER BUILT (an uninstalled instance answers nothing), so neither a
+require of this file nor a load-time call can build a default instance ahead
+of the composition root. RFC 8693's `resolveTarget()` is deliberately NOT
+this definition: it must answer an application to read relationships from.
+The two doors are argued in `oauth-oidc/CLAUDE.md` and `gnap/CLAUDE.md`;
+`tests/registered_targets.js` holds it in both modes.

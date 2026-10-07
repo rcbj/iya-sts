@@ -5216,11 +5216,57 @@ row on `/admin/mode`. Development is unchanged.
   (`invalid_target`, `STS-OAUTH-0793`); and
   `ExchangeAssertions.applicationNamed()` holds an exchanged assertion's
   audience to a registered application under `any-declared-relying-party`.
-* **NOT DONE: RFC 8707 `resource` outside an exchange.** A resource value
-  is shape-checked and becomes the token's `aud`, registered or not. Whether
-  a resource indicator names an "application" is open on #496: this
-  service's own resource servers (`/admin-api`, `/scim/v2`, Shared Signals,
-  UserInfo, the debugger's api) are not all application entries, so refusing
-  every resource no registered application declares needs that list first.
+* **RFC 8707 `resource` outside an exchange** was left open here and is
+  #505's, below.
 
 `tests/unregistered_applications.js` (O1–O3) holds it in both modes.
+
+## AN RFC 8707 RESOURCE NAMES A REGISTERED TARGET, IN PRODUCT (#505, 2026-10-06)
+
+rcbj's follow-up to #496, a ticket of its own: a `resource` value became the
+access token's `aud` whatever it named, so in product a client could address
+a token to any URI at all — the OAuth gap #496's audit left. Now, in product,
+every `resource` at the authorization endpoint, PAR and the token endpoint
+must name a **registered target**, and `common/registered_targets.ts` is the
+one definition of that phrase, shared with GNAP's locations
+(`gnap/CLAUDE.md`):
+
+* **one of this service's own resource servers**, read from the checks a
+  token meets rather than listed: the default resource indicator of an
+  authorization server published at the request's base (`<base>/resource`,
+  or a named one's — `jwt_access_token.ts`'s `isOwnResourceAudience()`,
+  which UserInfo, SCIM, Shared Signals, OpenID4VCI, Grant Management and the
+  VC-API endpoints all read through `dpop.presentedAccessToken()`); the
+  management API, by what `mgmt-api/admin_api.ts` accepts as an audience
+  (its new `namesThisApi()` facade over `audienceAccepted()` and
+  `realmAudienceAccepted()`); and the GNAP demonstration resource server;
+* **or a registered application** (`appRegisteredBy`), found by its
+  `oauthAudience`, client_id, identifier — `resolveTarget()`'s lookups — or
+  permission base URI (normalised), the four names
+  `applications.audienceNamesEntry()` reads. The embedded debugger's api is
+  one: `sts-debugger-api`, seeded registered while the debugger is embedded,
+  under `urn:sts:debugger-api:`.
+
+Every target is compared whole, because it becomes an `aud` and every
+resource server here compares an `aud` whole (RFC 9068 section 4).
+
+* **The authorization endpoint and PAR**: in `vetAuthorizationRequest()`,
+  after the client and its redirect_uri are vetted and above the session
+  check, so nobody signs in for a request that was going to be refused —
+  `invalid_target` (RFC 8707 section 2), REDIRECTED from the authorization
+  endpoint and a 400 at PAR, `STS-OAUTH-0950`. A malformed resource is left
+  to the shape check that answers it after sign-in (`STS-OAUTH-0154`).
+* **The token endpoint**: once above every grant but the token exchange, and
+  before anything a grant spends — 400 `invalid_target`, `STS-OAUTH-0951`.
+* **The token exchange is not asked**: its `resource` and `audience` are RFC
+  8693's targets, which the delegation policy resolves and refuses
+  (`unregistered-target`, `STS-OAUTH-0793`) as #496 left it. **The
+  definition is not shared with `resolveTarget()`**, deliberately: that
+  lookup must answer an APPLICATION to read relationships from, and an own
+  resource server has none, so folding the two would change the exchange's
+  decisions, which #505 does not ask for.
+
+Behind #496's `mode.issuesToUnregisteredApplications()` — the question is the
+same, whether a token is issued FOR something nobody registered — with a row
+of its own, `unregistered-resource-targets`, on `/admin/mode`. Development is
+unchanged. `tests/registered_targets.js` (T1–T4) holds it in both modes.

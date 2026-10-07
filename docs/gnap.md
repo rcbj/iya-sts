@@ -242,6 +242,17 @@ is a key, or an instance identifier, belonging to an entry development
 created that way: an entry made on first sight is not a registration (#496,
 `STS-GNAP-0902`). Register the client through the console or `/admin-api`.
 
+**A right's locations must name a registered resource server in product
+mode** (#505). Each location of each access right must be at or under the
+`gnapResourceServerUri` of a registered resource server, be one of this
+service's own resource servers (the demonstration resource server at
+`/gnap/rs/resource`, the default resource indicator, `/admin-api`), or name
+a registered application by its audience, permission base URI, `client_id`
+or identifier. Otherwise the request is refused `invalid_request` (400,
+`STS-GNAP-0903`) at creation, modification and derivation alike — the right
+is not quietly left out of the token's audience, as it is in development
+mode.
+
 The two sealed attributes are encrypted under the process key-encryption key
 whenever keys persist — see [encryption at rest](encryption-at-rest.md).
 

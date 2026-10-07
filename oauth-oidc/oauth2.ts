@@ -407,6 +407,10 @@ import clientJwks = require('./client_jwks');
 // A library: what "registered" means for an application (#494, #496). It
 // reaches the registry lazily, so this require closes no cycle.
 import IssuerNames = require('../common/issuer_names');
+// A library: what an RFC 8707 resource may name in product (#505). It reaches
+// the registry, the access-token profile and the management API lazily, at
+// request time, so this require closes no cycle.
+import RegisteredTargets = require('../common/registered_targets');
 
 // A loose JSON-shaped object: the tokens, records, requests and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -9941,6 +9945,29 @@ class OAuth2Server {
         : redirectable(fapiCheck.errorCode, fapiCheck.error,
                        fapiCheck.description);
     }
+    // RFC 8707 IN PRODUCT: A RESOURCE NAMES A REGISTERED TARGET (#505). An
+    // authorization request's or a pushed request's `resource` becomes the
+    // `aud` of every access token the grant yields, and until #505 product
+    // accepted any absolute URI there — #496's audit's remaining OAuth gap.
+    // `common/registered_targets.ts` is the one definition: this service's
+    // own resource servers, or an application registered ahead of time.
+    // RFC 8707 section 2's `invalid_target`, redirected — the client and its
+    // redirect_uri were vetted above — and asked here, ABOVE the session
+    // check, so nobody is sent to sign in for a request that was going to be
+    // refused. A malformed resource is left for the shape check after
+    // sign-in (STS-OAUTH-0154), which answers it as it always did. The token
+    // exchange's own targets are `resolveTarget()`'s. Development is
+    // unchanged.
+    const askedResources = self.parseResourceIndicators(q.resource);
+    const unregisteredResources = askedResources.error ? []
+      : RegisteredTargets.unregistered(askedResources.resources, req);
+    if (unregisteredResources.length) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A resource " +
+                "names no registered target.");
+      return redirectable('STS-OAUTH-0950', 'invalid_target',
+        'RFC 8707 section 2: the resource ' +
+        RegisteredTargets.describe(unregisteredResources));
+    }
     log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). Vetted.");
     return { ok: true, q: q, types: types, registeredClient: registeredClient,
              redirectUri: redirectUri, relaxed: relaxed };
@@ -13239,6 +13266,27 @@ class OAuth2Server {
     if (requestedResources.length) {
       logArtifact('RFC 8707 resource indicators', 'on the Token Request',
                   requestedResources);
+    }
+    // RFC 8707 IN PRODUCT: A RESOURCE NAMES A REGISTERED TARGET (#505), on
+    // every grant but the token exchange — whose `resource` and `audience`
+    // are RFC 8693's targets, resolved and refused (`unregistered-target`,
+    // STS-OAUTH-0793) by the delegation policy in its branch — and BEFORE
+    // anything a grant spends: a code redeemed, a refresh token rotated. The
+    // authorization endpoint asked the same of a code's resources; this is
+    // the door every direct grant comes through. `vetAuthorizationRequest()`
+    // above argues the rest. Development is unchanged.
+    if (grant !== 'urn:ietf:params:oauth:grant-type:token-exchange') {
+      const unregisteredResources = RegisteredTargets.unregistered(
+        requestedResources, req);
+      if (unregisteredResources.length) {
+        log.debug("Leaving the token endpoint. A resource names no " +
+                  "registered target.");
+        errorCodes.mark(res, 'STS-OAUTH-0951');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, 'invalid_target',
+          'RFC 8707 section 2: the resource ' +
+          RegisteredTargets.describe(unregisteredResources));
+      }
     }
 
     // RFC 9396 SECTION 6, once above every grant for the reason the block above
