@@ -913,10 +913,9 @@ const JOBS = [
   { file: 'sts_portal_backup_keys.js',   browser: false, local: true },
   // PASSKEYS AS DISCOVERABLE CREDENTIALS (#474): a passkey registered
   // through an activation link under a minted user handle, then signed in
-  // with and no username while `webauthn.usernameless` is on for the length
-  // of the job (reset in a `finally`). `local: true`: this repository's own
-  // sign-in screen and API. After the two above, which assert the screen
-  // with the setting at its default.
+  // with and no username — all in a throwaway realm of its own, whose
+  // `webauthn.usernameless` changes no screen another lane loads.
+  // `local: true`: this repository's own sign-in screen and API.
   { file: 'sts_passkey_usernameless.js', browser: false, local: true },
   // A SECURITY KEY'S ATTESTATION, VERIFIED (#105): keys enrolled at
   // /portal/keys in a throwaway realm with statements this job makes — an

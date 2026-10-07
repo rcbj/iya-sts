@@ -14,8 +14,15 @@
 // through an activation link (`/portal/activate`), never at the sign-in
 // screen — by a software authenticator that keeps the user handle it was
 // created under and hands it back on every assertion, as a discoverable
-// credential does. Then, with `webauthn.usernameless` on for the length of
-// the job and reset after it:
+// credential does.
+//
+// **ALL OF IT IN A THROWAWAY REALM OF ITS OWN**, because the suite runs jobs
+// side by side (the main, bulk and conformance lanes): `webauthn.usernameless`
+// changes what `/authn/login` draws, and turned on in the DEFAULT realm it
+// would be on for every job loading that screen meanwhile. A realm's setting
+// is its own. The realm is left behind afterwards, as every job's is.
+//
+// The setting is off at first (G), then on for the rest:
 //
 //   A. the page created the credential under a minted 64-byte handle, never
 //      the username's bytes, and the person's key list says it signs in with
@@ -27,7 +34,8 @@
 //   D. one without user verification is refused;
 //   E. one under a handle nobody holds is refused;
 //   F. the real button with the script blocked is told it needs JavaScript;
-//   G. with the setting back off, nothing is drawn and the door refuses.
+//   G. with the setting at its default, off, nothing is drawn and the door
+//      refuses — asserted first.
 // ===========================================================================
 
 const assert = require("assert");
@@ -59,9 +67,15 @@ log.info("Log initialized. logLevel=" + log.level());
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/, "");
 base = String(base).replace(/\/+$/, "");
+// THE REALM (see the header): every request below goes to it.
+var REALM = usernameFor("pknouser").replace(/[^a-z0-9-]/g, "").slice(0, 30);
+var DOMAIN = REALM + ".example.net";
+var serviceApi = base + "/admin-api";
+base = base + "/realm/" + REALM;
 var api = base + "/admin-api";
 
-// The origin and RP ID from the service's own base, for
+// The origin and RP ID from the service's own base (the realm's is on the
+// same host), for
 // `sts_webauthn_second_factor.js`'s reason: both are compared byte for byte.
 var ORIGIN = new URL(base).origin;
 var RP_ID = new URL(base).hostname;
@@ -238,8 +252,11 @@ function form(o) {
 function absolute(location) {
   log.debug("Entering absolute().");
   log.debug("Leaving absolute().");
-  return /^https?:\/\//i.test(String(location || ""))
-    ? String(location) : base + String(location || "");
+  // A path this job writes is the realm's ("/authn/login"); a Location the
+  // service answers already carries the realm's prefix ("/realm/<id>/...").
+  const text = String(location || "");
+  return /^https?:\/\//i.test(text) ? text
+    : (/^\/realm\//.test(text) ? ORIGIN + text : base + text);
 }
 
 function browser() {
@@ -288,18 +305,6 @@ async function call(method, path, payload) {
   }
   log.debug("Leaving call().");
   return { status: r.status, body: body, raw: raw };
-}
-
-// Put the setting back, and NEVER throw doing it: this runs in a `finally`
-// (`sts_second_factor_pages.js`'s `resetQuietly()`).
-async function resetQuietly(key) {
-  log.debug("Entering resetQuietly().");
-  const r = await call("POST", "/config/reset", { key: key });
-  if (r.status !== 200) {
-    log.warn("  – " + key + " was not reset (" + r.status + "). That is " +
-             "the expected answer where nothing overrode it.");
-  }
-  log.debug("Leaving resetQuietly().");
 }
 
 function attr(html, name, within) {
@@ -378,8 +383,11 @@ async function registerThePasskey(authenticator) {
     String(created.raw).slice(0, 300));
   const issued = await call("POST", "/users/issue-activation",
                             { username: PERSON });
-  const url = (issued.body && (issued.body.activationUrl ||
-                               issued.body.url)) || "";
+  // The absolute link carries the realm's prefix; the bare path does not.
+  const url = (issued.body && (issued.body.activationLink ||
+                               (issued.body.activationUrl
+                                 ? base + issued.body.activationUrl : ""))) ||
+              "";
   assert.ok(issued.status === 200 && url,
     "issuing an activation link answered " + issued.status + " " +
     String(issued.raw).slice(0, 300));
@@ -432,8 +440,10 @@ async function signingInWithNoUsername(authenticator) {
       "no passkey button: " + String(s.screen.text).slice(0, 400));
     assert.ok(/autocomplete="username webauthn"/.test(s.screen.text),
       "the username field offers no passkeys.");
-    assert.ok(/<script src="\/authn\/webauthn\.js">/.test(s.screen.text),
-      "the ceremony script is not loaded.");
+    // Under the realm's prefix: the service rewrites every root-relative
+    // src on a realm's page as it is sent (`app.js`'s withRealmLinks()).
+    assert.ok(/<script src="(\/realm\/[^/"]+)?\/authn\/webauthn\.js">/
+      .test(s.screen.text), "the ceremony script is not loaded.");
     assert.ok(/script-src 'self'/.test(s.screen.csp) &&
               /frame-ancestors/.test(s.screen.csp), s.screen.csp);
     assert.strictEqual(JSON.parse(attr(s.screen.text, "options",
@@ -491,9 +501,9 @@ async function signingInWithNoUsername(authenticator) {
 // ---------------------------------------------------------------------------
 // G. OFF, which is the default.
 // ---------------------------------------------------------------------------
-async function offAgain(authenticator) {
-  log.debug("Entering offAgain().");
-  log.info("=== webauthn.usernameless off ===");
+async function offByDefault(authenticator) {
+  log.debug("Entering offByDefault().");
+  log.info("=== webauthn.usernameless off, its default ===");
   const s = await theSignInScreen();
   const r = await withoutAUsername(s, authenticator.assert(
     attr(s.screen.text, "challenge") || "none"));
@@ -505,25 +515,28 @@ async function offAgain(authenticator) {
     assert.ok(/webauthn\.usernameless/.test(r.text),
       String(r.text).slice(0, 300));
   });
-  log.debug("Leaving offAgain().");
+  log.debug("Leaving offByDefault().");
 }
 
 async function test() {
   log.debug("Entering test().");
+  const made = await fetch(serviceApi + "/realms/create", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: REALM, domain: DOMAIN,
+                           name: "usernameless passkeys (#474)" }) });
+  assert.strictEqual(made.status, 200, "creating the realm " + REALM +
+    " answered " + made.status + " " + (await made.text()).slice(0, 300));
   await fixtures.publicClient(api, CLIENT, [REDIRECT]);
   const authenticator = makeAuthenticator();
   await registerThePasskey(authenticator);
-  try {
-    const set = await call("POST", "/config/set-many",
-                           { "webauthn.usernameless": true });
-    assert.ok(set.status === 200 && set.body && set.body.ok !== false,
-      "turning webauthn.usernameless on answered " + set.status + " " +
-      String(set.raw).slice(0, 300));
-    await signingInWithNoUsername(authenticator);
-  } finally {
-    await resetQuietly("webauthn.usernameless");
-  }
-  await offAgain(authenticator);
+  // OFF FIRST, which is the default; then on, in this realm alone.
+  await offByDefault(authenticator);
+  const set = await call("POST", "/config/set-many",
+                         { "webauthn.usernameless": true });
+  assert.ok(set.status === 200 && set.body && set.body.ok !== false,
+    "turning webauthn.usernameless on in " + REALM + " answered " +
+    set.status + " " + String(set.raw).slice(0, 300));
+  await signingInWithNoUsername(authenticator);
   assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");
