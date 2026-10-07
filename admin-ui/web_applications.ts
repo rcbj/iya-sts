@@ -363,8 +363,8 @@ class ApplicationsPage {
   // /admin/applications/new. The flag itself is unchanged: it is what RFC
   // 9700 mode and RFC 7592 turn on (see appRegisteredBy's schema row).
   /**
-   * Draws the Registered cell: yes and by whom (an administrator, RFC 7591
-   * or startup), or no for an identifier that merely turned up.
+   * Draws the Registered cell: yes and by whom (an administrator, RFC 7591,
+   * an LDAP add or startup), or no for an identifier that merely turned up.
    *
    * @param row - the application's registry view
    * @returns the cell's HTML
@@ -377,6 +377,8 @@ class ApplicationsPage {
     const how = by === 'administrator' ? 'by an administrator'
       : by === 'rfc7591' ? 'RFC 7591'
       : by === 'startup' ? 'at startup'
+      : by === 'ldap' ? 'by an LDAP add'
+      : by.indexOf('ldap:') === 0 ? 'by an LDAP add (' + by.slice(5) + ')'
       : by;
     return '<span class="state-valid">yes</span><div class="sub">' +
            kit.esc(how) + '</div>';
