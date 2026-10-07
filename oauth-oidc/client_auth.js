@@ -86,7 +86,6 @@
 // is a replayed credential, and RFC 7523 section 3 says so.
 // ===========================================================================
 
-const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
@@ -852,7 +851,7 @@ function subjectRfc4514(cert) {
   let text = '';
   try {
     text = certificateSubject.subjectOf(
-      new crypto.X509Certificate(cert.raw)).text;
+      stsCrypto.parseCertificate(cert.raw)).text;
   } catch (e) {
     log.debug("Caught in subjectRfc4514(): " + ((e && e.message) || e));
     text = '';
@@ -1100,8 +1099,7 @@ function verifiedOnce(request, parts, run) {
     held = new Map();
     request[VERIFIED_ON_REQUEST] = held;
   }
-  const key = crypto.createHash('sha256').update(parts.join('\n'))
-    .digest('base64url');
+  const key = stsCrypto.digest('sha256', parts.join('\n'), 'base64url');
   if (held.has(key)) {
     log.debug("Leaving verifiedOnce(). Answered already on this request.");
     return held.get(key);

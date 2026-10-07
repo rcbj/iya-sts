@@ -114,7 +114,6 @@
 // `common/protocol_stack.ts` and requires nothing that registers any.
 // ===========================================================================
 
-import crypto = require('crypto');
 import zlib = require('zlib');
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
@@ -1295,7 +1294,7 @@ class FederationSlo {
                             subStatus, message) {
     const { fedSp, iso, xmlEscape, log, logArtifact } = this.deps;
     log.debug("Entering FederationSlo.logoutResponseXml().");
-    const id = '_' + crypto.randomBytes(16).toString('hex');
+    const id = '_' + stsCrypto.randomBytes(16).toString('hex');
     const xml = '<samlp:LogoutResponse xmlns:samlp="' + NS_SAMLP + '" ' +
       'xmlns:saml="' + NS_SAML + '" ID="' + id + '" Version="2.0" ' +
       'IssueInstant="' + iso(0) + '" Destination="' + xmlEscape(destination) +
@@ -1987,7 +1986,7 @@ class FederationSlo {
     const label = record.fedName || record.fedId;
     const username = (session.user && session.user.username) || '';
     if (record.fedProtocol === 'saml2') {
-      const id = '_' + crypto.randomBytes(16).toString('hex');
+      const id = '_' + stsCrypto.randomBytes(16).toString('hex');
       const destination = String(record.fedSloUrl).trim();
       const until = new Date(Date.now() + Number(config.value(
         'federation.requestTtlMin')) * 60 * 1000).toISOString()

@@ -13729,6 +13729,34 @@ const TLS_NO_RENEGOTIATION = nodeCrypto.constants.SSL_OP_NO_RENEGOTIATION;
 
 // --- #453 group D (oauth-oidc, federation, saml, ssf, portal): begin ---
 
+// A SAML ARTIFACT'S SourceID (SAML 2.0 Bindings 3.6.4, SAML 1.1 Bindings
+// 4.1.1.7): the SHA-1 of the issuer's identifier — the entityID in 2.0, the
+// providerID in 1.1 — read as UTF-8. It is an INDEX, not a security hash: it
+// lets a party holding artifacts from several identity providers tell whose
+// one it holds without asking anybody.
+//
+// It is one function rather than a sha1Digest() call at each site because
+// four sites compute it — `saml/saml2_sso.ts` and `saml/saml11_sso.ts` each
+// MINT an artifact with it and then CHECK a presented artifact against it
+// (#160) — and the mint and the check must agree to the byte or every
+// artifact this service issued reads as foreign. One definition is what makes
+// that agreement structural rather than a matter of four call sites being
+// spelled alike. The two versions differ in where the 20 bytes sit in the
+// artifact, never in how they are computed, so that stays with each caller.
+//
+// HOT PATH: computed for every artifact minted and every one resolved, so no
+// Entering/Leaving pair. It would drown the log.
+/**
+ * Returns a SAML artifact's SourceID: the SHA-1 of the issuer's entityID
+ * (2.0) or providerID (1.1), as UTF-8.
+ *
+ * @param issuerId - the entityID or providerID
+ * @returns the 20 bytes
+ */
+function samlArtifactSourceId(issuerId) {
+  return sha1Digest('saml-artifact-source-id', String(issuerId));
+}
+
 // --- #453 group D: end ---
 
 // (separator between group regions)
@@ -14727,6 +14755,7 @@ module.exports = {
   // --- #453 group C exports: end ---
   //
   // --- #453 group D exports: begin ---
+  samlArtifactSourceId: samlArtifactSourceId,
   // --- #453 group D exports: end ---
   //
   // --- #453 group E exports: begin ---

@@ -142,7 +142,6 @@
 // assertion grant may arrive from a public client with no credential.
 // ===========================================================================
 
-const nodeCrypto = require('crypto');
 const stsCrypto = require('../common/crypto');
 const pki = require('../common/pki');
 // A LEAF that requires nothing: the code a chain refusal carries is read off
@@ -297,8 +296,7 @@ function keysFrom(jwksText) {
         continue;
       }
       keys.push({ kid: jwk.kid ? String(jwk.kid) : '', jwk: jwk,
-                  key: nodeCrypto.createPublicKey(
-                      { key: jwk, format: 'jwk' }) });
+                  key: stsCrypto.publicKeyFromJwk(jwk) });
     } catch (e) {
       // One unreadable key does not spoil the set: a JWKS commonly carries a
       // key this version of node cannot build beside ones it can, and refusing
@@ -818,7 +816,7 @@ async function keyFromChain(header) {
   }
   let key;
   try {
-    key = new nodeCrypto.X509Certificate(leafPem).publicKey;
+    key = stsCrypto.parseCertificate(leafPem).publicKey;
   } catch (e) {
     log.debug("Leaving keyFromChain().");
     return { errorCode: 'STS-OAUTH-0036', error: 'the certificate in this ' +
@@ -842,7 +840,7 @@ async function keyFromChain(header) {
   // answer nobody holding a PEM file can get to. Node's own parse hands the
   // SAN over as a comma-separated string of `URI:…` members.
   // ---------------------------------------------------------------------
-  const leaf = new nodeCrypto.X509Certificate(leafPem);
+  const leaf = stsCrypto.parseCertificate(leafPem);
   const sans = String(leaf.subjectAltName || '').split(',')
     .map(function (one) { return one.trim(); });
   let subjectKind = '';

@@ -56,7 +56,7 @@
 //     `PortalCertificates` is exported beside it for that root.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import core = require('../common/cert_enrollment');
@@ -100,7 +100,7 @@ interface PortalCertificatesDeps {
   log: { debug(message: string): void };
   core: Json;
   monitor: Json;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
 }
 
 // The one-time secret a POST just made.
@@ -454,7 +454,7 @@ class PortalCertificatesPage {
   private async postPage(req: Req, res: Res): Promise<unknown> {
     const ctx = this.ctx;
     const { log } = ctx;
-    const { core, monitor, nodeCrypto } = this.deps;
+    const { core, monitor, stsCrypto } = this.deps;
     const PATH = this.PATH;
     log.debug('Entering POST ' + PATH + '.');
     const session = ctx.requireSignIn(req, res, PATH,
@@ -550,9 +550,10 @@ class PortalCertificatesPage {
                                             : core.scepChallengesOf(entry))
         .some(function (one) {
           const held = String(one.kid || one.id || '');
-          return held.length === id.length && id.length > 0 &&
-                 nodeCrypto.timingSafeEqual(Buffer.from(held),
-                                            Buffer.from(id));
+          // constantTimeEquals() answers false for two of different
+          // lengths, where node's compare threw for two strings of one
+          // length and different UTF-8 lengths.
+          return id.length > 0 && stsCrypto.constantTimeEquals(held, id);
         });
       if (!mine) {
         log.debug('Leaving POST ' + PATH + '. Not theirs.');
@@ -660,7 +661,7 @@ class PortalCertificates {
       log: helpers.log,
       core: core,
       monitor: monitor,
-      nodeCrypto: nodeCrypto
+      stsCrypto: stsCrypto
     };
   }
 

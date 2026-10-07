@@ -100,7 +100,6 @@
 // load.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import stsCrypto = require('../common/crypto');
 import pki = require('../common/pki');
 import errorCodes = require('../common/error_codes');
@@ -119,7 +118,6 @@ import jwtAccessToken = require('./jwt_access_token');
 type Json = any;
 
 interface SoftwareStatementDeps {
-  nodeCrypto: typeof nodeCrypto;
   stsCrypto: typeof stsCrypto;
   pki: typeof pki;
   errorCodes: typeof errorCodes;
@@ -202,7 +200,6 @@ class SoftwareStatement {
     helpers.log.debug("Entering SoftwareStatement.defaultDeps().");
     helpers.log.debug("Leaving SoftwareStatement.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
       stsCrypto: stsCrypto,
       pki: pki,
       errorCodes: errorCodes,
@@ -1040,7 +1037,7 @@ class SoftwareStatement {
    * @returns the description
    */
   describe(statement: Json): Json {
-    const { nodeCrypto, stsCrypto, log, STS } = this.deps;
+    const { stsCrypto, log, STS } = this.deps;
     const self = this;
     log.debug("Entering SoftwareStatement.describe().");
     if (!statement) {
@@ -1071,8 +1068,8 @@ class SoftwareStatement {
              issuedAt: claims.iat ? Number(claims.iat) * 1000 : 0,
              expiresAt: claims.exp ? Number(claims.exp) * 1000 : 0,
              metadata: self.metadataFrom(claims),
-             thumbprint: nodeCrypto.createHash('sha256')
-               .update(String(statement)).digest('base64url').slice(0, 16) };
+             thumbprint: stsCrypto.digest('sha256', String(statement),
+                                          'base64url').slice(0, 16) };
   }
 }
 

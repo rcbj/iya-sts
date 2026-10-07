@@ -100,7 +100,6 @@
 // default instance at load, as loading it always did.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle, and it registers no route, so its position is not a position at all.
@@ -429,7 +428,6 @@ type Res = any;
 // method takes what it reads with one destructuring line and its body reads
 // as it did.
 interface OAuth2ServerDeps {
-  crypto: typeof crypto;
   realms: typeof realms;
   forge: typeof forge;
   jwt: typeof jwt;
@@ -1640,7 +1638,6 @@ class OAuth2Server {
     helpers.log.debug("Entering OAuth2Server.defaultDeps().");
     helpers.log.debug("Leaving OAuth2Server.defaultDeps().");
     return {
-      crypto: crypto,
       realms: realms,
       forge: forge,
       jwt: jwt,
@@ -3439,7 +3436,7 @@ class OAuth2Server {
             .filter(function (one: any): boolean {
               return one.role !== 'current';
             }).map(function (one: any): Json {
-              const jwk: any = crypto.createPublicKey(one.certPem)
+              const jwk: any = stsCrypto.publicKeyOf(one.certPem)
                 .export({ format: 'jwk' });
               return { kty: 'RSA', use: 'sig', kid: one.kid, n: jwk.n,
                        e: jwk.e,
@@ -5947,8 +5944,7 @@ class OAuth2Server {
                  'must carry a DPoP proof (OpenID Connect Key Binding ' +
                  'section 2).' };
     }
-    const expected = crypto.createHash('sha256').update(code)
-      .digest('base64url');
+    const expected = stsCrypto.digest('sha256', code, 'base64url');
     if (String((proof.claims || {}).c_s256 || '') !== expected) {
       log.debug("Leaving OAuth2Server.boundKeyProofRefusal(). c_s256.");
       return { code: 'STS-OAUTH-0703', error: 'invalid_dpop_proof',
@@ -12825,7 +12821,7 @@ class OAuth2Server {
   }
 
   private async tokenGrant(req: Req, res: Res): Promise<Json> {
-    const { crypto, stsCrypto, log, logArtifact, STS, b64u, jsonFromB64u,
+    const { stsCrypto, log, logArtifact, STS, b64u, jsonFromB64u,
             parseBody, bodyValues, userFor, dpop, mtls, assertionGrant,
             samlAssertionGrant, mode, authorizationServers, stats, VCI_SCOPE,
             deferredAccessTokens, preAuthorizedCodes, checkTxCode,
@@ -13955,10 +13951,9 @@ class OAuth2Server {
           credential_configuration_id: d.credential_configuration_id,
           credential_identifiers: [
             d.credential_configuration_id + ':' +
-            b64u(crypto.createHash('sha256')
-              .update(String((user && user.sub) || 'anonymous') + ':' +
-                      d.credential_configuration_id)
-              .digest()).slice(0, 16)
+            b64u(stsCrypto.digest('sha256',
+              String((user && user.sub) || 'anonymous') + ':' +
+              d.credential_configuration_id)).slice(0, 16)
           ]
         };
         // Echoed back, and it has to be: this is what the credential endpoint
@@ -14085,7 +14080,8 @@ class OAuth2Server {
             'PKCE was used, so code_verifier is required.');
         }
         const computed = record.code_challenge_method === 'S256'
-          ? b64u(crypto.createHash('sha256').update(verifier, 'ascii').digest())
+          // The 'ascii' reading the hash was always fed, kept (#453).
+          ? b64u(stsCrypto.digest('sha256', Buffer.from(verifier, 'ascii')))
           : verifier;
         if (computed !== record.code_challenge) {
           log.debug("Leaving the token endpoint. The grant was refused.");
@@ -19820,7 +19816,7 @@ class OAuth2Server {
    */
   registerRoutes(app: any): void {
     const self = this;
-    const { crypto, realms, forge, jwt, stsCrypto, log, logArtifact, STS,
+    const { realms, forge, jwt, stsCrypto, log, logArtifact, STS,
             baseUrlOf, b64u, jsonFromB64u, nowSec, randomId, xmlEscape,
             parseBody, bodyValues, plainOauthError, signJwt, signJwtAs,
             allSigningKeys, allSigningKeysAsync, signJwtAsAsync, userFor,
@@ -19943,7 +19939,7 @@ class OAuth2Server {
       const sent = String(req.headers['x-fapi-interaction-id'] || '');
       res.set('x-fapi-interaction-id',
               /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-                .test(sent) ? sent : crypto.randomUUID());
+                .test(sent) ? sent : stsCrypto.randomUuid());
       log.debug("Leaving the x-fapi-interaction-id middleware.");
       next();
     });
