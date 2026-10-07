@@ -106,7 +106,6 @@
 // ===========================================================================
 
 import bunyan = require('bunyan');
-import nodeCrypto = require('crypto');
 import config = require('./config');
 
 const log = bunyan.createLogger({
@@ -115,6 +114,8 @@ const log = bunyan.createLogger({
 });
 
 import pki = require('./pki');
+// This service's one cryptographic module (#453), for the random object ids.
+import stsCrypto = require('./crypto');
 // The error-code registry (a leaf). A grammar refusal is thrown with its code
 // marked non-enumerably on the Error, so `issue()` can say WHICH grammar; a
 // refusal returned to a caller carries its code the same way.
@@ -382,7 +383,7 @@ interface PkiAuthoringDeps {
   errorCodes: typeof errorCodes;
   x509: typeof x509;
   keyMaterial: typeof keyMaterial;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
 }
 
 /**
@@ -424,7 +425,7 @@ class PkiAuthoring {
    * Builds an instance over its dependencies.
    *
    * @param deps - the logger, settings, the certificate authority, error
-   *   codes, the X.509 encoder, the key-material module and node's crypto
+   *   codes, the X.509 encoder, the key-material module and `crypto.js`
    */
   constructor(private readonly deps: PkiAuthoringDeps) {
     deps.log.debug("Entering PkiAuthoring.constructor().");
@@ -448,7 +449,7 @@ class PkiAuthoring {
       errorCodes: errorCodes,
       x509: x509,
       keyMaterial: keyMaterial,
-      nodeCrypto: nodeCrypto
+      stsCrypto: stsCrypto
     };
   }
 
@@ -1893,10 +1894,10 @@ class PkiAuthoring {
   // into form values and into `/admin-api` replies, and a counter would make
   // one realm's third object and another's the same string.
   private newObjectId(prefix: string): string {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering PkiAuthoring.newObjectId().");
     log.debug("Leaving PkiAuthoring.newObjectId().");
-    return prefix + '-' + nodeCrypto.randomBytes(8).toString('hex');
+    return prefix + '-' + stsCrypto.randomBytes(8).toString('hex');
   }
 
   // ---------------------------------------------------------------------------

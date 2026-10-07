@@ -57,7 +57,6 @@ require('./config_file').resolveConfigFile();
 // It is BELOW this module in the dependency graph and requires nothing from
 // here, which is what keeps the graph a tree (rule 3).
 const config = require('./config');
-const crypto = require('crypto');
 const forge = require('node-forge');
 const jwt = require('jsonwebtoken');
 const bunyan = require("bunyan");
@@ -493,8 +492,8 @@ const VCI_REQUEST_ENC_ALG = 'RSA-OAEP-256';
  */
 function requestEncryptionJwkOf(privateKey) {
   log.debug("Entering requestEncryptionJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving requestEncryptionJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -511,7 +510,7 @@ function makeRequestEncryptionKey(made) {
   log.debug("Entering makeRequestEncryptionKey().");
   const bits = rsaBitsFor('oid4vci.requestEncryptionKeyBits');
   const pair = made ||
-               crypto.generateKeyPairSync('rsa', { modulusLength: bits });
+               stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
   const out = { privateKey: pair.privateKey,
                 publicJwk: requestEncryptionJwkOf(pair.privateKey) };
   log.debug("Leaving makeRequestEncryptionKey(). " + bits + " bits, kid=" +
@@ -562,8 +561,8 @@ const REFRESH_TOKEN_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
 
 function refreshTokenJwkOf(privateKey, kind) {
   log.debug("Entering refreshTokenJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving refreshTokenJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -588,9 +587,9 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
   const curve = REFRESH_TOKEN_CURVES[curveName] ||
                 REFRESH_TOKEN_CURVES['P-256'];
   const rsa = madeRsa ||
-              crypto.generateKeyPairSync('rsa', { modulusLength: bits });
-  const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
-  const secret = crypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
+              stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const ec = stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
+  const secret = stsCrypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
   const out = {
     rsa: { privateKey: rsa.privateKey,
            publicJwk: refreshTokenJwkOf(rsa.privateKey, 'rsa') },
@@ -601,10 +600,7 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
     // names which realm's secret opened it. A hash of 64 random bytes reveals
     // nothing usable about them, and it is never published anyway.
     secretKid: 'sts-rt-secret-' +
-      crypto.createHash('sha256')
-            .update(secret)
-            .digest('base64url')
-            .slice(0, 16)
+      stsCrypto.digest('sha256', secret, 'base64url').slice(0, 16)
   };
   log.debug("Leaving makeRefreshTokenEncryptionKeys(). rsa " + bits +
             " bits, " +
@@ -638,8 +634,8 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
 // ---------------------------------------------------------------------------
 function requestObjectJwkOf(privateKey, kind) {
   log.debug("Entering requestObjectJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving requestObjectJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -656,8 +652,8 @@ function makeRequestObjectEncryptionKeys(madeRsa) {
   const curve = REFRESH_TOKEN_CURVES[curveName] ||
                 REFRESH_TOKEN_CURVES['P-256'];
   const rsa = madeRsa ||
-              crypto.generateKeyPairSync('rsa', { modulusLength: bits });
-  const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
+              stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const ec = stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
   const out = {
     rsa: { privateKey: rsa.privateKey,
            publicJwk: requestObjectJwkOf(rsa.privateKey, 'rsa') },
@@ -684,8 +680,8 @@ function makeRequestObjectEncryptionKeys(madeRsa) {
 // ---------------------------------------------------------------------------
 function browserDeviceJwkOf(privateKey, use) {
   log.debug("Entering browserDeviceJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving browserDeviceJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -697,8 +693,10 @@ function browserDeviceJwkOf(privateKey, use) {
 
 function makeBrowserDeviceKeys() {
   log.debug("Entering makeBrowserDeviceKeys().");
-  const sign = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-  const enc = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const sign = stsCrypto.generateKeyPairSync('ec',
+                                             { namedCurve: 'prime256v1' });
+  const enc = stsCrypto.generateKeyPairSync('ec',
+                                            { namedCurve: 'prime256v1' });
   const out = {
     sign: { privateKey: sign.privateKey,
             publicJwk: browserDeviceJwkOf(sign.privateKey, 'sig') },
@@ -871,11 +869,7 @@ function makeStsKeys(made) {
   // reasoning about kid collisions above holds per key rather than per service.
   // -------------------------------------------------------------------------
   const extraKeys = CURVE_KEY_SPECS.map(function (spec) {
-    // `any`: the key type is a table value, and the overloads want literals.
-    const generate = /** @type {any} */ (crypto.generateKeyPairSync);
-    const pair = spec.gen[1]
-      ? generate(spec.gen[0], spec.gen[1])
-      : generate(spec.gen[0]);
+    const pair = stsCrypto.generateKeyPairSync(spec.gen[0], spec.gen[1]);
     return curveKeyFrom(spec, pair);
   });
 
@@ -969,7 +963,7 @@ function plainKeySet(realmId, stored) {
   certifiedView(set, realmId, stored);
   // The parsed RSA key, for makeStsKeys()'s measured reason: parsing the PEM
   // per signature was 21% of non-idle CPU.
-  set.privateKey = crypto.createPrivateKey(set.privateKeyPem);
+  set.privateKey = stsCrypto.privateKeyFrom(set.privateKeyPem);
   // The post-quantum half, where the sibling had already made it. Absent means
   // "not warmed yet"; this process will make and republish them.
   if (stored.pqKeys) {
@@ -1324,7 +1318,7 @@ function xmlKeyView(realmId, stored, privateOf) {
   } else {
     view.privateKeyPem = stored.privateKeyPem;
     view.privateKey = stored.privateKey ||
-                      crypto.createPrivateKey(stored.privateKeyPem);
+                      stsCrypto.privateKeyFrom(stored.privateKeyPem);
   }
   log.debug("Leaving xmlKeyView(). kid=" + kid);
   return view;
@@ -1362,7 +1356,7 @@ function generationsView(realmId, stored, privateOf) {
     });
     if (entry.kind === 'rsa' && !entry.publicJwk && entry.certPem) {
       entry.publicJwk = Object.assign(
-        crypto.createPublicKey(entry.certPem).export({ format: 'jwk' }),
+        stsCrypto.publicKeyOf(entry.certPem).export({ format: 'jwk' }),
         { kid: entry.kid, use: 'sig', alg: 'RS256' });
     }
     const kid = entry.kid;
@@ -2282,7 +2276,7 @@ const stsKeysFor = realms.keyed(function (realm) {
   // It is derived rather than stored: there is exactly one private key per
   // realm and this is the same one, so the two cannot drift apart.
   // ---------------------------------------------------------------------
-  keys.privateKey = crypto.createPrivateKey(keys.privateKeyPem);
+  keys.privateKey = stsCrypto.privateKeyFrom(keys.privateKeyPem);
   keys.realm = realm.id;
   // **AND THE CERTIFICATE VIEW, WHICH THIS PATH NEEDS MOST.** The two branches
   // above build their sets through `lazyKeySet()` and `plainKeySet()` and get
@@ -2435,6 +2429,7 @@ function keySetNeedsMaking(realmId) {
   return true;
 }
 
+// On libuv's thread pool, through `crypto.js`'s generateKeyPairAsync() (#453).
 function generateRsaPairAsync(bits, asPem) {
   log.debug("Entering generateRsaPairAsync(). bits=" + bits);
   const options = { modulusLength: bits };
@@ -2443,16 +2438,7 @@ function generateRsaPairAsync(bits, asPem) {
     options.publicKeyEncoding = { type: 'pkcs1', format: 'pem' };
   }
   log.debug("Leaving generateRsaPairAsync().");
-  return new Promise(function (resolve, reject) {
-    crypto.generateKeyPair('rsa', options, function (err, publicKey,
-                                                     privateKey) {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve({ publicKey: publicKey, privateKey: privateKey });
-    });
-  });
+  return stsCrypto.generateKeyPairAsync('rsa', options);
 }
 
 // Resolves once the realm's key set is held by this process (or there was
@@ -3993,7 +3979,7 @@ function ownSignerFor(alg) {
 function ownPublicKeyFor(alg) {
   log.debug("Entering ownPublicKeyFor(). alg=" + alg);
   const signer = ownSignerFor(alg);
-  const publicKeyPem = String(crypto.createPublicKey(signer.key)
+  const publicKeyPem = String(stsCrypto.publicKeyOf(signer.key)
     .export({ type: 'spki', format: 'pem' }));
   log.debug("Leaving ownPublicKeyFor().");
   return { kid: signer.kid, publicKeyPem: publicKeyPem };
@@ -4024,8 +4010,7 @@ function ownCandidatesFor(alg) {
   // ones, so a token a group key signed verifies here — found by its kid.
   const groupCandidates = groupVerifiersFor(alg).map(function (one) {
     return { kid: one.publicJwk.kid, role: 'current',
-             certPem: crypto.createPublicKey({ key: one.publicJwk,
-                                               format: 'jwk' })
+             certPem: stsCrypto.publicKeyFromJwk(one.publicJwk)
                .export({ type: 'spki', format: 'pem' }) };
   });
   if (spec.family === 'rsa') {
@@ -4036,8 +4021,7 @@ function ownCandidatesFor(alg) {
   const now = Date.now();
   const out = [];
   classicalKeysFor(alg).forEach(function (one) {
-    const pem = crypto.createPublicKey({ key: one.publicJwk,
-                                         format: 'jwk' })
+    const pem = stsCrypto.publicKeyFromJwk(one.publicJwk)
       .export({ type: 'spki', format: 'pem' });
     out.push({ kid: one.publicJwk.kid, certPem: pem, role: 'current' });
     standbyOf(keys, 'jose:' + certificateSlotOf(one)).filter(function (sb) {
@@ -4552,22 +4536,9 @@ function curveSpecFor(unitRow) {
 function generateCurvePairAsync(spec) {
   log.debug("Entering generateCurvePairAsync(). alg=" + spec.alg);
   log.debug("Leaving generateCurvePairAsync().");
-  return new Promise(function (resolve, reject) {
-    const done = function (err, publicKey, privateKey) {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve({ publicKey: publicKey, privateKey: privateKey });
-    };
-    // `any`: the key type is a table value, and the overloads want literals.
-    const generate = /** @type {any} */ (crypto.generateKeyPair);
-    if (spec.gen[1]) {
-      generate(spec.gen[0], spec.gen[1], done);
-    } else {
-      generate(spec.gen[0], done);
-    }
-  });
+  // On libuv's thread pool, through `crypto.js` (#453). An absent options
+  // object is `{}` there, which is what node made of the two-argument call.
+  return stsCrypto.generateKeyPairAsync(spec.gen[0], spec.gen[1]);
 }
 
 async function mintStandbyKey(unitRow, role) {
@@ -4584,10 +4555,10 @@ async function mintStandbyKey(unitRow, role) {
     log.debug("Leaving mintStandbyKey(). RSA " + kid);
     return Object.assign(base, {
       kid: kid, privateKeyPem: made.privateKeyPem,
-      privateKey: crypto.createPrivateKey(made.privateKeyPem),
+      privateKey: stsCrypto.privateKeyFrom(made.privateKeyPem),
       certPem: made.certPem, certB64: made.certB64,
       publicJwk: Object.assign(
-        crypto.createPublicKey(made.certPem).export({ format: 'jwk' }),
+        stsCrypto.publicKeyOf(made.certPem).export({ format: 'jwk' }),
         { kid: kid, use: 'sig', alg: 'RS256' })
     });
   }
@@ -4967,7 +4938,7 @@ async function promoteGenerations(realmId, options) {
     if (row.unit === 'jose:RS256') {
       Object.assign(retiredFrom, {
         privateKeyPem: copy.privateKeyPem,
-        privateKey: crypto.createPrivateKey(copy.privateKeyPem),
+        privateKey: stsCrypto.privateKeyFrom(copy.privateKeyPem),
         certPem: copy.selfSignedCertPem, certB64: copy.selfSignedCertB64,
         createdAt: copy.createdAt });
       copy.privateKeyPem = nextEntry.privateKeyPem;
@@ -4976,7 +4947,7 @@ async function promoteGenerations(realmId, options) {
     } else if (row.unit === 'xml:RS256') {
       Object.assign(retiredFrom, {
         privateKeyPem: copy.xmlKey.privateKeyPem,
-        privateKey: crypto.createPrivateKey(copy.xmlKey.privateKeyPem),
+        privateKey: stsCrypto.privateKeyFrom(copy.xmlKey.privateKeyPem),
         certPem: copy.xmlKey.selfSignedCertPem,
         certB64: copy.xmlKey.selfSignedCertB64 });
       copy.xmlKey = { privateKeyPem: nextEntry.privateKeyPem,
@@ -5035,7 +5006,7 @@ async function promoteGenerations(realmId, options) {
     }
     if (retiredFrom.kind === 'rsa' && retiredFrom.certPem) {
       retiredFrom.publicJwk = Object.assign(
-        crypto.createPublicKey(retiredFrom.certPem).export({ format: 'jwk' }),
+        stsCrypto.publicKeyOf(retiredFrom.certPem).export({ format: 'jwk' }),
         { kid: retiredFrom.kid, use: 'sig', alg: 'RS256' });
     }
     if (o.emergency) {
@@ -5380,7 +5351,7 @@ function nowSec() { return Math.floor(Date.now() / 1000); }
 function randomId(bytes) {
   log.debug("Entering randomId().");
   log.debug("Leaving randomId().");
-  return b64u(crypto.randomBytes(bytes || 24));
+  return b64u(stsCrypto.randomBytes(bytes || 24));
 }
 
 // ---------------------------------------------------------------------------
@@ -5415,8 +5386,8 @@ const BBS_UNIT = 'bbs:BBS';
 function bbsKidOf(publicKey) {
   log.debug("Entering bbsKidOf().");
   log.debug("Leaving bbsKidOf().");
-  return 'bbs-' + crypto.createHash('sha256')
-    .update(Buffer.from(publicKey)).digest('base64url').slice(0, 22);
+  return 'bbs-' + stsCrypto.digest('sha256', Buffer.from(publicKey),
+                                   'base64url').slice(0, 22);
 }
 
 function bbsKeyFor(keys) {
@@ -6563,8 +6534,8 @@ function certificateHeaderFor(useCaseId, alg, kid) {
       spkiPem: function () {
         log.debug("Entering spkiPem().");
         log.debug("Leaving spkiPem().");
-        return crypto.createPublicKey(keys.selfSignedCertPem || keys.certPem)
-                     .export({ type: 'spki', format: 'pem' });
+        return stsCrypto.publicKeyOf(keys.selfSignedCertPem || keys.certPem)
+          .export({ type: 'spki', format: 'pem' });
       }
     };
   } else {
@@ -6593,8 +6564,8 @@ function certificateHeaderFor(useCaseId, alg, kid) {
             return require('./pki').pqSubjectPublicKeyPem(entryAlg, publicJwk);
           }
           log.debug("Leaving spkiPem().");
-          return crypto.createPublicKey({ key: publicJwk, format: 'jwk' })
-                       .export({ type: 'spki', format: 'pem' });
+          return stsCrypto.publicKeyFromJwk(publicJwk)
+                          .export({ type: 'spki', format: 'pem' });
         }
       };
     }
@@ -6639,8 +6610,8 @@ function publicJwkOfKid(kid) {
   log.debug("Entering publicJwkOfKid().");
   const keys = stsKeysFor();
   if (kid && kid === keys.kid) {
-    const jwk = crypto.createPublicKey(keys.selfSignedCertPem || keys.certPem)
-                      .export({ format: 'jwk' });
+    const jwk = stsCrypto.publicKeyOf(keys.selfSignedCertPem || keys.certPem)
+      .export({ format: 'jwk' });
     log.debug("Leaving publicJwkOfKid(). The RSA key.");
     return jwk;
   }
@@ -6649,8 +6620,8 @@ function publicJwkOfKid(kid) {
   const xml = keys.xmlKey;
   if (kid && xml && kid === xml.kid) {
     log.debug("Leaving publicJwkOfKid(). The XML key.");
-    return crypto.createPublicKey(xml.selfSignedCertPem || xml.certPem)
-                 .export({ format: 'jwk' });
+    return stsCrypto.publicKeyOf(xml.selfSignedCertPem || xml.certPem)
+                    .export({ format: 'jwk' });
   }
   const entry = (keys.extraKeys || []).concat(keys.pqKeys || [])
     .concat(standbyOf(keys)).concat(groupMembersOf(keys))

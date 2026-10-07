@@ -111,11 +111,10 @@ const log = bunyan.createLogger({
   name: 'keystore',
   level: config.value('global.logLevel')
 });
+// This service's ONE cryptographic module (#453): the key-encryption key,
+// the data keys, and the private-key import every stored set is parsed with
+// (`privateKeyFrom()`). Node's own `crypto` is not required here any more.
 const crypto = require('./crypto');
-// Node's own, for `createPrivateKey()`. `./crypto` is this service's ONE
-// signing module and does not export it; the two names one letter apart are
-// worth the care, and this file is the only place both are in scope.
-const nodeCrypto = require('crypto');
 const mode = require('./mode');
 // FOR onRemove() ALONE — see the handler at the bottom of this file. A plain
 // require in the ordinary direction: `realms.js` requires `config` and
@@ -513,7 +512,7 @@ function serialiseRefreshTokenKeys(held) {
   };
 }
 
-function deserialiseRefreshTokenKeys(blob, nodeCryptoModule) {
+function deserialiseRefreshTokenKeys(blob) {
   log.debug("Entering deserialiseRefreshTokenKeys().");
   if (!blob || !blob.rsa || !blob.ec || !blob.secret ||
       !blob.rsa.privateKeyPem || !blob.ec.privateKeyPem) {
@@ -522,10 +521,10 @@ function deserialiseRefreshTokenKeys(blob, nodeCryptoModule) {
   }
   log.debug("Leaving deserialiseRefreshTokenKeys().");
   return {
-    rsa: { privateKey: nodeCryptoModule.createPrivateKey(
+    rsa: { privateKey: crypto.privateKeyFrom(
         blob.rsa.privateKeyPem),
            publicJwk: blob.rsa.publicJwk },
-    ec: { privateKey: nodeCryptoModule.createPrivateKey(blob.ec.privateKeyPem),
+    ec: { privateKey: crypto.privateKeyFrom(blob.ec.privateKeyPem),
           publicJwk: blob.ec.publicJwk },
     secret: Buffer.from(String(blob.secret), 'base64'),
     secretKid: blob.secretKid
@@ -553,7 +552,7 @@ function serialiseRequestObjectKeys(held) {
   };
 }
 
-function deserialiseRequestObjectKeys(blob, nodeCryptoModule) {
+function deserialiseRequestObjectKeys(blob) {
   log.debug("Entering deserialiseRequestObjectKeys().");
   if (!blob || !blob.rsa || !blob.ec || !blob.rsa.privateKeyPem ||
       !blob.ec.privateKeyPem) {
@@ -562,10 +561,10 @@ function deserialiseRequestObjectKeys(blob, nodeCryptoModule) {
   }
   log.debug("Leaving deserialiseRequestObjectKeys().");
   return {
-    rsa: { privateKey: nodeCryptoModule.createPrivateKey(
+    rsa: { privateKey: crypto.privateKeyFrom(
         blob.rsa.privateKeyPem),
            publicJwk: blob.rsa.publicJwk },
-    ec: { privateKey: nodeCryptoModule.createPrivateKey(blob.ec.privateKeyPem),
+    ec: { privateKey: crypto.privateKeyFrom(blob.ec.privateKeyPem),
           publicJwk: blob.ec.publicJwk }
   };
 }
@@ -622,7 +621,7 @@ function serialiseBrowserDeviceKeys(held) {
   };
 }
 
-function deserialiseBrowserDeviceKeys(blob, nodeCryptoModule) {
+function deserialiseBrowserDeviceKeys(blob) {
   log.debug("Entering deserialiseBrowserDeviceKeys().");
   if (!blob || !blob.sign || !blob.enc || !blob.sign.privateKeyPem ||
       !blob.enc.privateKeyPem) {
@@ -631,10 +630,10 @@ function deserialiseBrowserDeviceKeys(blob, nodeCryptoModule) {
   }
   log.debug("Leaving deserialiseBrowserDeviceKeys().");
   return {
-    sign: { privateKey: nodeCryptoModule.createPrivateKey(
+    sign: { privateKey: crypto.privateKeyFrom(
         blob.sign.privateKeyPem),
             publicJwk: blob.sign.publicJwk },
-    enc: { privateKey: nodeCryptoModule.createPrivateKey(
+    enc: { privateKey: crypto.privateKeyFrom(
         blob.enc.privateKeyPem),
            publicJwk: blob.enc.publicJwk }
   };
@@ -735,10 +734,9 @@ function serialiseSignerGroups(members) {
  * Rebuilds signer-group keys from their stored rows.
  *
  * @param rows - the stored rows
- * @param nodeCryptoModule - node's crypto module, to parse the keys with
  * @returns the members, or null when there are none
  */
-function deserialiseSignerGroups(rows, nodeCryptoModule) {
+function deserialiseSignerGroups(rows) {
   log.debug("Entering deserialiseSignerGroups().");
   if (!rows || !rows.length) {
     log.debug("Leaving deserialiseSignerGroups(). None.");
@@ -753,12 +751,12 @@ function deserialiseSignerGroups(rows, nodeCryptoModule) {
         ? (Buffer.isBuffer(one.privateKey)
             ? one.privateKey
             : Buffer.from(String(one.privateKey), 'base64'))
-        : nodeCryptoModule.createPrivateKey(one.privateKeyPem)
+        : crypto.privateKeyFrom(one.privateKeyPem)
     };
   });
 }
 
-function deserialiseXmlKey(blob, nodeCryptoModule) {
+function deserialiseXmlKey(blob) {
   log.debug("Entering deserialiseXmlKey().");
   if (!blob || !blob.privateKeyPem || !blob.certB64) {
     log.debug("Leaving deserialiseXmlKey(). None.");
@@ -767,7 +765,7 @@ function deserialiseXmlKey(blob, nodeCryptoModule) {
   log.debug("Leaving deserialiseXmlKey().");
   return {
     privateKeyPem: blob.privateKeyPem,
-    privateKey: nodeCryptoModule.createPrivateKey(blob.privateKeyPem),
+    privateKey: crypto.privateKeyFrom(blob.privateKeyPem),
     certPem: blob.certPem,
     certB64: blob.certB64
   };
@@ -844,7 +842,7 @@ function serialiseGenerations(held) {
   return out;
 }
 
-function deserialiseStandbyEntry(row, nodeCryptoModule) {
+function deserialiseStandbyEntry(row) {
   log.debug("Entering deserialiseStandbyEntry().");
   const one = {};
   STANDBY_META.forEach(function (k) {
@@ -856,7 +854,7 @@ function deserialiseStandbyEntry(row, nodeCryptoModule) {
     one.privateKey = Buffer.isBuffer(row.privateKey) ? row.privateKey
       : Buffer.from(String(row.privateKey), 'base64');
   } else {
-    one.privateKey = nodeCryptoModule.createPrivateKey(row.privateKeyPem);
+    one.privateKey = crypto.privateKeyFrom(row.privateKeyPem);
     if (row.kind === 'rsa') {
       one.privateKeyPem = row.privateKeyPem;
     }
@@ -865,7 +863,7 @@ function deserialiseStandbyEntry(row, nodeCryptoModule) {
   return one;
 }
 
-function deserialiseGenerations(blob, nodeCryptoModule) {
+function deserialiseGenerations(blob) {
   log.debug("Entering deserialiseGenerations().");
   if (!blob) {
     log.debug("Leaving deserialiseGenerations(). None.");
@@ -876,12 +874,12 @@ function deserialiseGenerations(blob, nodeCryptoModule) {
     generation: Number(blob.generation) || 0,
     rotated: Object.assign({}, blob.rotated || {}),
     standby: (blob.standby || []).map(function (row) {
-      return deserialiseStandbyEntry(row, nodeCryptoModule);
+      return deserialiseStandbyEntry(row);
     }),
     retiredRefresh: (blob.retiredRefresh || []).map(function (row) {
       return { kid: row.kid, retiredAt: row.retiredAt,
                retiredUntil: row.retiredUntil,
-               keys: deserialiseRefreshTokenKeys(row.keys, nodeCryptoModule) };
+               keys: deserialiseRefreshTokenKeys(row.keys) };
     }).filter(function (one) {
       return !!one.keys;
     })
@@ -1033,10 +1031,9 @@ function serialise(keys) {
  * again.
  *
  * @param blob - the stored blob
- * @param nodeCrypto - node's crypto module, to parse the keys with
  * @returns the key set
  */
-function deserialise(blob, nodeCrypto) {
+function deserialise(blob) {
   log.debug('Entering deserialise().');
   const out = {
     createdAt: blob.createdAt || 0,
@@ -1058,7 +1055,7 @@ function deserialise(blob, nodeCrypto) {
     extraKeys: (blob.extraKeys || []).map(function (one) {
       return {
         alg: one.alg,
-        privateKey: nodeCrypto.createPrivateKey(one.privateKeyPem),
+        privateKey: crypto.privateKeyFrom(one.privateKeyPem),
         publicJwk: one.publicJwk
       };
     }),
@@ -1067,22 +1064,20 @@ function deserialise(blob, nodeCrypto) {
     vciRequestEncKey: (blob.vciRequestEncKey &&
                        blob.vciRequestEncKey.privateKeyPem)
       ? {
-          privateKey: nodeCrypto.createPrivateKey(
+          privateKey: crypto.privateKeyFrom(
               blob.vciRequestEncKey.privateKeyPem),
           publicJwk: blob.vciRequestEncKey.publicJwk
         }
       : null,
-    refreshTokenEncKeys: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys,
-                                                     nodeCrypto),
+    refreshTokenEncKeys: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys),
     requestObjectEncKeys: deserialiseRequestObjectKeys(
-        blob.requestObjectEncKeys, nodeCrypto),
-    browserDeviceKeys: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys,
-                                                    nodeCrypto),
+        blob.requestObjectEncKeys),
+    browserDeviceKeys: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys),
     kemEncKeys: deserialiseKemEncKeys(blob.kemEncKeys),
-    xmlKey: deserialiseXmlKey(blob.xmlKey, nodeCrypto),
+    xmlKey: deserialiseXmlKey(blob.xmlKey),
     bbsKey: deserialiseBbsKey(blob.bbsKey),
-    signerGroups: deserialiseSignerGroups(blob.signerGroups, nodeCrypto),
-    generations: deserialiseGenerations(blob.generations, nodeCrypto)
+    signerGroups: deserialiseSignerGroups(blob.signerGroups),
+    generations: deserialiseGenerations(blob.generations)
   };
   log.debug('Leaving deserialise(). ' + out.extraKeys.length +
             ' extra key(s).');
@@ -1425,10 +1420,9 @@ function onAdopt(fn) {
  * mode.
  *
  * @param realmId - the realm
- * @param nodeCryptoModule - node's crypto module, to parse the keys with
  * @returns the key set, or null
  */
-function sharedFor(realmId, nodeCryptoModule) {
+function sharedFor(realmId) {
   log.debug("Entering sharedFor().");
   // -------------------------------------------------------------------------
   // **THIS ANSWERED `null` WHENEVER THE KEYSTORE PERSISTED UNTIL 2026-09-09,
@@ -1470,7 +1464,7 @@ function sharedFor(realmId, nodeCryptoModule) {
     return null;
   }
   log.debug("Leaving sharedFor().");
-  return deserialise(blob, nodeCryptoModule || nodeCrypto);
+  return deserialise(blob);
 }
 
 // A blob that arrived from another process. Recorded whatever this process may
@@ -1751,7 +1745,7 @@ function requestEncryptionKeyHeldFor(realmId) {
     return null;
   }
   log.debug("Leaving requestEncryptionKeyHeldFor().");
-  return { privateKey: nodeCrypto.createPrivateKey(member.privateKeyPem),
+  return { privateKey: crypto.privateKeyFrom(member.privateKeyPem),
            publicJwk: member.publicJwk };
 }
 
@@ -1776,8 +1770,7 @@ function refreshTokenKeysHeldFor(realmId) {
     ? fromStore
     : shared.get(id);
   log.debug("Leaving refreshTokenKeysHeldFor().");
-  return deserialiseRefreshTokenKeys(blob && blob.refreshTokenEncKeys,
-                                     nodeCrypto);
+  return deserialiseRefreshTokenKeys(blob && blob.refreshTokenEncKeys);
 }
 
 // ---------------------------------------------------------------------------
@@ -1800,8 +1793,7 @@ function requestObjectKeysHeldFor(realmId) {
     ? fromStore
     : shared.get(id);
   log.debug("Leaving requestObjectKeysHeldFor().");
-  return deserialiseRequestObjectKeys(blob && blob.requestObjectEncKeys,
-                                      nodeCrypto);
+  return deserialiseRequestObjectKeys(blob && blob.requestObjectEncKeys);
 }
 
 // The KEM decryption keys some process of this service already made for this
@@ -1843,8 +1835,7 @@ function browserDeviceKeysHeldFor(realmId) {
     ? fromStore
     : shared.get(id);
   log.debug("Leaving browserDeviceKeysHeldFor().");
-  return deserialiseBrowserDeviceKeys(blob && blob.browserDeviceKeys,
-                                      nodeCrypto);
+  return deserialiseBrowserDeviceKeys(blob && blob.browserDeviceKeys);
 }
 
 // The XML signing key some process of this service already made for this
@@ -1863,7 +1854,7 @@ function xmlKeyHeldFor(realmId) {
   const fromStore = storedFor(id);
   const blob = (fromStore && fromStore.xmlKey) ? fromStore : shared.get(id);
   log.debug("Leaving xmlKeyHeldFor().");
-  return deserialiseXmlKey(blob && blob.xmlKey, nodeCrypto);
+  return deserialiseXmlKey(blob && blob.xmlKey);
 }
 
 // The BBS key some process of this service already made for this realm
@@ -2111,7 +2102,7 @@ function privateMaterialFor(realmId) {
   }
   const parsed = {
     privateKeyPem: blob.privateKeyPem,
-    privateKey: nodeCrypto.createPrivateKey(blob.privateKeyPem),
+    privateKey: crypto.privateKeyFrom(blob.privateKeyPem),
     extra: new Map(),
     // ---------------------------------------------------------------------
     // **THE POST-QUANTUM SET, WHICH THIS FUNCTION DID NOT CARRY UNTIL
@@ -2162,18 +2153,18 @@ function privateMaterialFor(realmId) {
     // through a getter; the PUBLIC JWK is kept on the set and never comes
     // through here, so publishing the issuer metadata decrypts nothing.
     vci: (blob.vciRequestEncKey && blob.vciRequestEncKey.privateKeyPem)
-      ? nodeCrypto.createPrivateKey(blob.vciRequestEncKey.privateKeyPem)
+      ? crypto.privateKeyFrom(blob.vciRequestEncKey.privateKeyPem)
       : null,
     // THE REFRESH-TOKEN ENCRYPTION KEYS — both private keys AND the secret,
     // parsed and purged on this record's timer. The secret is private material
     // exactly as a private key is: anybody holding it opens every refresh token
     // encrypted under a symmetric algorithm.
-    rt: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys, nodeCrypto),
+    rt: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys),
     // THE REQUEST OBJECT ENCRYPTION KEYS — both private keys, parsed and
     // purged on this record's timer. The public halves stay on the set.
-    ro: deserialiseRequestObjectKeys(blob.requestObjectEncKeys, nodeCrypto),
+    ro: deserialiseRequestObjectKeys(blob.requestObjectEncKeys),
     // THE BROWSER DEVICE KEYS (#265), both private halves, on this timer too.
-    bd: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys, nodeCrypto),
+    bd: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys),
     // THE KEM DECRYPTION KEYS (#82), private JWKs by kid, on this timer too.
     kem: new Map((deserialiseKemEncKeys(blob.kemEncKeys) || []).map(
       function (one) {
@@ -2183,31 +2174,30 @@ function privateMaterialFor(realmId) {
     // purged on this record's timer like the rest. A standby key is keyed by
     // its kid: a `next` key signs nothing until it is promoted, and a retired
     // one only decrypts.
-    xml: deserialiseXmlKey(blob.xmlKey, nodeCrypto),
+    xml: deserialiseXmlKey(blob.xmlKey),
     bbs: deserialiseBbsKey(blob.bbsKey),
     // THE SIGNER GROUPS' PRIVATE HALVES (#68), by kid, on this record's
     // timer like every other private key here.
     groups: new Map(),
     standby: new Map()
   };
-  (deserialiseSignerGroups(blob.signerGroups, nodeCrypto) || []).forEach(
+  (deserialiseSignerGroups(blob.signerGroups) || []).forEach(
     function (one) {
       parsed.groups.set(one.publicJwk && one.publicJwk.kid, one.privateKey);
     });
   ((blob.generations && blob.generations.standby) || []).forEach(
     function (row) {
-      parsed.standby.set(row.kid, deserialiseStandbyEntry(row, nodeCrypto));
+      parsed.standby.set(row.kid, deserialiseStandbyEntry(row));
     });
   parsed.retiredRefresh = new Map();
   ((blob.generations && blob.generations.retiredRefresh) || []).forEach(
     function (row) {
       parsed.retiredRefresh.set(row.kid,
-                                deserialiseRefreshTokenKeys(row.keys,
-                                                            nodeCrypto));
+                                deserialiseRefreshTokenKeys(row.keys));
     });
   (blob.extraKeys || []).forEach(function (one) {
     parsed.extra.set(one.publicJwk && one.publicJwk.kid,
-                     nodeCrypto.createPrivateKey(one.privateKeyPem));
+                     crypto.privateKeyFrom(one.privateKeyPem));
   });
   entry.parsed = parsed;
   log.debug('privateMaterialFor(): the "' + id + '" realm\'s ' +
@@ -4297,7 +4287,6 @@ function keyedDigest(label, text) {
     log.debug("Leaving keyedDigest(). No key-encryption key.");
     return null;
   }
-  const nodeCrypto = require('crypto');
   let ikm = null;
   if (deksStored()) {
     // The stored digest key, so a rotated KEK changes no digest (#391 P2).
@@ -4313,11 +4302,9 @@ function keyedDigest(label, text) {
     log.debug("Leaving keyedDigest(). A KMS key and nothing stored.");
     return null;
   }
-  const derived = Buffer.from(nodeCrypto.hkdfSync('sha256',
-    ikm, Buffer.alloc(0),
-    Buffer.from('sts-keyed-digest:' + String(label), 'utf8'), 32));
-  const out = nodeCrypto.createHmac('sha256', derived)
-    .update(String(text), 'utf8').digest('base64url');
+  const derived = crypto.hkdf('sha256', ikm, Buffer.alloc(0),
+                              'sts-keyed-digest:' + String(label), 32);
+  const out = crypto.hmac('sha256', derived, String(text), 'base64url');
   log.debug("Leaving keyedDigest().");
   return out;
 }

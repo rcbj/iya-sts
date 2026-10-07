@@ -116,13 +116,16 @@ const path = require('path');
 // function (rule 2). `crypto.js` and `config.js` make their own for the same
 // reason.
 const bunyan = require('bunyan');
-// NODE'S OWN `crypto`, and not this repository's `common/crypto.js`. It is
-// here for `X509Certificate` alone — the client certificate this service
-// presents to a secret store is reported as facts rather than as a PEM — and
-// requiring the module beside this one would close a cycle, because that one
-// is where the signing keys are built.
-const nodeCrypto = require('crypto');
 const config = require('./config');
+// THIS REPOSITORY'S `common/crypto.js` (#453), and no longer node's own: the
+// client certificate this service presents to a secret store is parsed and
+// reported as facts rather than as a PEM, and Key Vault's AAD binding is a
+// digest compared in constant time. It was node's until #453 on the belief
+// that the module beside this one would close a cycle; it would not —
+// `crypto.js` is a LEAF requiring `config`, `error_codes`, `mode` and
+// libraries of its own, none of which requires this file, and the signing
+// keys are built in `helpers.js`, which this file does not require.
+const crypto = require('./crypto');
 // THE MODE, for the one destination that exists in development only (#221
 // P3). A LEAF requiring `config` and `error_codes`, both already here.
 const mode = require('./mode');
@@ -1635,8 +1638,7 @@ const azureKeysProvider = {
     function aadDigest(aad) {
       log.debug('Entering azureKeysProvider.aadDigest().');
       log.debug('Leaving azureKeysProvider.aadDigest().');
-      return nodeCrypto.createHash('sha256').update(String(aad), 'utf8')
-        .digest();
+      return crypto.digest('sha256', String(aad));
     }
     const handle = {
       remote: true, provider: 'azure-keys', keyRef: keyRef,
@@ -1708,7 +1710,7 @@ const azureKeysProvider = {
         const dek = out.subarray(0, Math.max(0, out.length - want.length));
         const got = out.subarray(dek.length);
         if ((dek.length !== 32 && dek.length !== 64) ||
-            !nodeCrypto.timingSafeEqual(got, want)) {
+            !crypto.bytesEqualConstantTime(got, want)) {
           throw errorCodes.mark(new Error('the wrapped data key unwrapped ' +
             'under "' + keyRef + '" but is bound to another data key\'s id, ' +
             'scope, realm or class: it was moved onto this row'),
@@ -2443,7 +2445,7 @@ async function runProbe(id, what, fn) {
 function certificateFacts(pemPath) {
   log.debug('Entering certificateFacts(). path=' + pemPath);
   const pem = fs.readFileSync(pemPath);
-  const x509 = new nodeCrypto.X509Certificate(pem);
+  const x509 = crypto.parseCertificate(pem);
   const notAfter = new Date(x509.validTo);
   const days = Math.floor((notAfter.getTime() - Date.now()) / 86400000);
   log.debug('Leaving certificateFacts().');

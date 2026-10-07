@@ -380,8 +380,7 @@ function run(t) {
                blob.refreshTokenEncKeys.secret),
             'the serialised set carries the refresh-token keys, secret ' +
             'included');
-    const restored = keystore.deserialise(JSON.parse(JSON.stringify(blob)),
-                                          require('crypto'));
+    const restored = keystore.deserialise(JSON.parse(JSON.stringify(blob)));
     t.check(!!restored.refreshTokenEncKeys &&
             restored.refreshTokenEncKeys.rsa.publicJwk.kid === kA.rsa.publicJwk.kid &&
             Buffer.from(restored.refreshTokenEncKeys.secret)
