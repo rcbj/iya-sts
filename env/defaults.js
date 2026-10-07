@@ -1075,7 +1075,7 @@ var config = {
     mdsStaleGraceDays: 7,                                  // FIDO metadata grace after its nextUpdate (days)
     rescoreEveryS: 300,                                    // Re-check live sessions every (seconds)
     standingCacheSize: 20000,                              // People whose standing each process holds
-    mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
+    mediumScorePercent: 300,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
     minimumHistory: 5,                                     // Earlier sign-ins before a person is scored
     geoMinimumCount: 3,                                    // Fewest people a place is numbered with on the map

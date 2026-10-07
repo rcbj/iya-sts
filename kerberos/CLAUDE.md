@@ -1891,3 +1891,31 @@ and `tests/vendored/sts_kerberos_pac_claims.js`
 `create-service` keytabs). The codec's own tests are in the parent's
 `tests/krb5_pac_layout.js`.
 
+---
+
+## THE AS-REQ'S RISK, DECIDED AT THE DOOR (#499, 2026-10-06)
+
+rcbj's decision on #499: the KDC assesses the sign-in being made and decides
+on that assessment, rather than issuing every TGT and leaving the TGS to
+decide on whatever standing another door left. Once an AS-REQ's
+pre-authentication verified (and after the password-alone refusal),
+`krb5_kdc.js` asks `principals.decideSignIn(cname, realm, { indicators,
+pkinit, hardware, method })`; the principal database forwards to the key
+source's `decideSignIn()` (`krb5_person_keys.ts`), which calls
+`authn.assessSignIn()` — the address is the KDC's ambient audit source, the
+same one its `authentication` row names — RECORDS the assessment, which is
+then the person's standing for the TGS-REQs that follow, and asks the issuance
+gate with no application (`KERBEROS_TICKET`), so only a Deny about risk can
+refuse. A refusal is `KDC_ERR_POLICY` (12) with `STS-RISK-0017` for a step-up
+(the eText says to use FAST with OTP or PKINIT) or `STS-RISK-0016`; an OTP
+meets a second-factor step-up (`acr` `mfa`), a hardware PKINIT key a
+security-key one (`amr` `hwk`). Development observes, as everywhere.
+
+**NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_kdc.js` gained
+one call through `principals`, and `krb5_principals.js` one forwarder over the
+key source it already holds; `authn`, the risk engine and the gate are
+required LAZILY from `krb5_person_keys.ts`, which is outside the closure. A
+database with no key source — the parent project's in-process jobs — refuses
+nobody, so **nothing is owed to the parent project**.
+`tests/risk_decisions.js` M3 holds it over an in-process AS exchange.
+

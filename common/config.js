@@ -13152,12 +13152,19 @@ const SETTINGS = [
 
   { key: 'risk.mediumScorePercent', group: 'Risk',
     label: 'MEDIUM from (percent of a score of 1)',
-    env: 'STS_RISK_MEDIUM_SCORE_PERCENT', type: 'int', dflt: 100, min: 1,
+    env: 'STS_RISK_MEDIUM_SCORE_PERCENT', type: 'int', dflt: 300, min: 1,
     max: 1000000, runtime: true,
     description: 'The score, in hundredths, at which a sign-in is MEDIUM ' +
-                 'risk: 100 is a score of 1, where the Freeman et al. model ' +
-                 'says the sign-in is as likely an attacker\'s as the ' +
-                 'person\'s. Familiar sign-ins score far below it.' },
+                 'risk: 300 is a score of 3. It is Freeman et al.\'s ' +
+                 'threshold theta (Eq. (4)), which the paper sets for a ' +
+                 'chosen false-positive rate rather than at 1: the score ' +
+                 'includes a user term that is above 1 for anybody who signs ' +
+                 'in less than the realm\'s average, whatever their context, ' +
+                 'and where everybody shares one address and browser that ' +
+                 'term is most of the score (#499; the largest seen on a ' +
+                 'test stack was 1.98). Lowering it is stricter. Tune it per ' +
+                 'realm from Monitoring → Risk Scoring\'s calibration ' +
+                 '(risk.calibrationMediumPercent).' },
 
   { key: 'risk.highScorePercent', group: 'Risk',
     label: 'HIGH from (percent of a score of 1)',

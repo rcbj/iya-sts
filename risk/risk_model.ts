@@ -44,10 +44,25 @@
 //   THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 // ---------------------------------------------------------------------------
-// WHAT THE SCORE IS.
+// WHAT THE SCORE IS — Freeman et al.'s Eq. (7), g_u(x), with p(A|x^k)
+// taken as 1 (no per-value attack data):
 //
 //   risk = Π over features f of  p_global(f) / p_user(f)
 //          × (1 / number of users) / (user's sign-ins / all sign-ins)
+//
+// The last line is the USER TERM, p(u|A) / p(u|L) (section II-B): the same
+// for every context, and above 1 for a person who signs in less often than
+// the realm's average. `factors` carries it as `user` beside `ip` and `ua`,
+// so the three multiply to the score (#499).
+//
+// THE SCORE IS NOT A PROBABILITY AND 1 IS NOT ITS NATURAL LINE. Eq. (4)
+// decides A when g_u(x) > θ = p(L) / p(A) — the prior odds of a legitimate
+// sign-in, which are far above 1 — and Eq. (7) drops further p(A) terms,
+// "compensated for by adjusting the decision threshold θ", which the paper
+// sets on a validation set for a chosen false-positive rate (section II,
+// after Eq. (4); section IV-C). Where every person shares one address and
+// one browser, both feature factors are near 1 and the score is the user
+// term alone (#499).
 //
 // A feature is a HIERARCHY: the address, then the network it is in (ASN),
 // then the country; the browser's User-Agent, then its browser and version,
@@ -262,9 +277,9 @@ class RiskModel {
   // -------------------------------------------------------------------------
   // score(attempt, user, population) — the notebook's freeman_rba_score().
   // `attempt` maps each level name to this sign-in's value. Answers
-  // { score, factors } — each feature's population/person ratio, for the
-  // assessment's record — or { score: null, why } for a sign-in that cannot
-  // be scored.
+  // { score, factors, terms } — each feature's population/person ratio and
+  // the user term, which multiply to the score, for the assessment's
+  // record — or { score: null, why } for a sign-in that cannot be scored.
   // -------------------------------------------------------------------------
   /**
    * Scores one sign-in: the notebook's freeman_rba_score().
@@ -272,8 +287,10 @@ class RiskModel {
    * @param attempt - this sign-in's value per level name
    * @param user - the person's history
    * @param population - everybody's history
-   * @returns `{ score, factors }`, each factor a feature's population/person
-   *   ratio, or `{ score: null, why }` for a sign-in that cannot be scored
+   * @returns `{ score, factors, terms }` — each factor a feature's
+   *   population/person ratio, and `user` the user term, the three
+   *   multiplying to the score; `terms` the counts the user term is made
+   *   of — or `{ score: null, why }` for a sign-in that cannot be scored
    */
   static score(attempt: Json, user: History, population: History): Json {
     log.debug("Entering RiskModel.score().");
@@ -300,11 +317,24 @@ class RiskModel {
       factors[feature.name] = ratio;
       risk *= ratio;
     });
+    // THE USER TERM, p(u|A) / p(u|L): Freeman et al., Eq. (7)'s last
+    // factor (section II-A), estimated as section II-B says — p(u|A)
+    // uniform over the users, p(u|L) the person's share of the realm's
+    // sign-ins. It is the same for every context the person signs in from:
+    // it says how much of the person's own traffic an attack spread evenly
+    // over the users would be, and it is above 1 for anybody who signs in
+    // less than the realm's average (#499). It is a FACTOR like the two
+    // features, so `factors` multiplies to the score and the record
+    // explains all of it; `terms` carries the three counts it is made of.
     const userLoginLikelihood = user.n / population.n;
     const attackLikelihood = 1 / population.users;
-    risk = risk * (attackLikelihood / userLoginLikelihood);
+    const userTerm = attackLikelihood / userLoginLikelihood;
+    factors.user = userTerm;
+    risk = risk * userTerm;
     log.debug("Leaving RiskModel.score(). " + risk);
-    return { score: risk, factors: factors };
+    return { score: risk, factors: factors,
+             terms: { users: population.users, signIns: population.n,
+                      userSignIns: user.n } };
   }
 
   // -------------------------------------------------------------------------

@@ -231,6 +231,7 @@ async function run(t) {
   const attempts = ROWS.map(attemptOf);
   let worst = 0;
   let wrong = [];
+  const unexplained = [];
   EXPECTED.forEach(function (pair) {
     const i = pair[0];
     const before = attempts.slice(0, i);
@@ -242,6 +243,12 @@ async function run(t) {
       riskModel.historyOf(before, function (a) {
         return a.user;
       }));
+    // THE FACTORS EXPLAIN THE WHOLE SCORE (#499): the two features and the
+    // user term multiply to it.
+    const product = got.factors.ip * got.factors.ua * got.factors.user;
+    if (!(Math.abs(product - got.score) <= 1e-12 * Math.abs(got.score))) {
+      unexplained.push(i + ': ' + product + ' vs ' + got.score);
+    }
     const error = Math.abs(got.score - pair[1]) / Math.abs(pair[1]);
     worst = Math.max(worst, error);
     if (!(error < 1e-9)) {
@@ -252,6 +259,9 @@ async function run(t) {
           'every one of the notebook\'s ' + EXPECTED.length + ' scores on ' +
           'the synthetic history is reproduced (worst relative error ' +
           worst.toExponential(2) + ')', wrong.slice(0, 5).join('; '));
+  t.check(unexplained.length === 0,
+          'on every one of them the factors — ip, ua and the user term — ' +
+          'multiply to the score (#499)', unexplained.slice(0, 5).join('; '));
   const first = riskModel.score(attempts[0], riskModel.historyOf([]),
     riskModel.historyOf(attempts.slice(1), function (a) {
       return a.user;
@@ -280,7 +290,77 @@ async function run(t) {
   t.check(low.score < 1 && high.score > 1 && high.score > low.score * 100,
           'a familiar sign-in scores below 1, one from a new network and a ' +
           'new device above it', low.score + ' vs ' + high.score);
+  sharedNetwork(t);
   log.debug("Leaving run().");
+}
+
+// ---------------------------------------------------------------------------
+// ONE SHARED NETWORK (#499): every person behind one address with one
+// browser — a NAT, a VPN, a container bridge — as the WS-Trust chain jobs
+// are on a test stack. The features then say almost nothing (both factors
+// at or near 1), and the model's score is the USER TERM, p(u|A)/p(u|L):
+// Freeman et al.'s Eq. (7), section II-B. A person with the realm's average
+// share of sign-ins has a user term of 1; one with half of it, 2 — in the
+// same context. And a genuinely new address or browser still raises the
+// score above the known one.
+// ---------------------------------------------------------------------------
+function sharedNetwork(t) {
+  log.debug("Entering sharedNetwork().");
+  const ctx = { ip: '192.0.2.10', asn: '64496', country: 'AU', ua: 'ua-s',
+                browser: 'Chrome 140', os: 'Linux', device: 'desktop' };
+  const rowsOf = function (user, n, over) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      out.push(Object.assign({ user: user }, ctx, over || {}));
+    }
+    return out;
+  };
+  const userOf = function (a) {
+    return a.user;
+  };
+  // Four people: `heavy` signs in 25 times, the other three 5 each — 40
+  // sign-ins over 4 people, an average of 10.
+  const population = rowsOf('heavy', 25).concat(rowsOf('p1', 5),
+    rowsOf('p2', 5), rowsOf('p3', 5));
+  const mine = riskModel.historyOf(rowsOf('p1', 5));
+  const pop = riskModel.historyOf(population, userOf);
+  const known = riskModel.score(Object.assign({ user: 'p1' }, ctx), mine,
+                                pop);
+  const f = known.factors;
+  t.check(f.ip <= 1 && f.ua <= 1 && f.ip > 0.9 && f.ua > 0.9 &&
+          Math.abs(f.user - 2) < 1e-12 &&
+          Math.abs(known.score - f.ip * f.ua * f.user) < 1e-12 &&
+          known.terms.users === 4 && known.terms.signIns === 40 &&
+          known.terms.userSignIns === 5,
+          'one shared network: a known, identical context has both feature ' +
+          'factors at or below 1, and the score is the user term — 2 for ' +
+          'a person with half the average share of sign-ins (Eq. (7))',
+          JSON.stringify(known));
+  const average = riskModel.score(Object.assign({ user: 'p1' }, ctx),
+    riskModel.historyOf(rowsOf('p1', 10)),
+    riskModel.historyOf(rowsOf('heavy', 20).concat(rowsOf('p1', 10),
+      rowsOf('p2', 5), rowsOf('p3', 5)), userOf));
+  t.check(Math.abs(average.factors.user - 1) < 1e-12,
+          'a person with the realm\'s average share of sign-ins has a user ' +
+          'term of 1', JSON.stringify(average.factors));
+  const newAddress = riskModel.score(Object.assign({ user: 'p1' }, ctx,
+    { ip: '203.0.113.9', asn: '64511', country: 'NZ' }), mine, pop);
+  const newBrowser = riskModel.score(Object.assign({ user: 'p1' }, ctx,
+    { ua: 'ua-new', browser: 'Opera 1', os: 'Haiku', device: 'tv' }), mine,
+    pop);
+  // A value the person never used at any level is the notebook's edge
+  // case: the person's likelihood is a quarter of the population's, so the
+  // feature's factor is 4 — whatever else the realm has seen.
+  t.check(newAddress.score > known.score * 3 &&
+          newBrowser.score > known.score * 3 &&
+          newAddress.factors.ip === 4 && newBrowser.factors.ua === 4 &&
+          newAddress.factors.user === known.factors.user &&
+          newBrowser.factors.user === known.factors.user,
+          'a genuinely new address, or a new browser, still raises the ' +
+          'score above the known context\'s, by its feature factor (4) — ' +
+          'the user term is the same for both',
+          known.score + ' / ' + newAddress.score + ' / ' + newBrowser.score);
+  log.debug("Leaving sharedNetwork().");
 }
 
 module.exports = {

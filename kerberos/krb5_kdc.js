@@ -2725,6 +2725,33 @@ async function answerAsReq(request, fast) {
     });
   }
 
+  // THE SIGN-IN'S RISK, ASSESSED AT THE DOOR (#499), now that the
+  // pre-authentication verified and before a ticket exists: the principal
+  // database asks its key source (krb5_principals.js's decideSignIn()), so
+  // this file gains no require. The assessment is recorded there, which makes
+  // it the person's standing for the TGS-REQs that follow; a refusal on risk
+  // is KDC_ERR_POLICY (12), the code the TGS already answers a policy
+  // refusal with. A database without the function refuses nobody.
+  if (typeof principals.decideSignIn === 'function') {
+    const riskRefusal = await principals.decideSignIn(body.cname.name, asRealm,
+      { indicators: preauth ? preauth.indicators : [],
+        pkinit: !!(preauth && preauth.pkinit),
+        hardware: !!(preauth && preauth.pkinit && preauth.pkinit.hardware),
+        method: preauth ? preauth.method : '' });
+    if (riskRefusal) {
+      log.info('krb5: ' + body.cname.name.join('/') + '@' + asRealm +
+               ' authenticated, and the issuance policy refused the sign-in ' +
+               'on risk. KDC_ERR_POLICY.');
+      log.debug("Leaving answerAsReq(). Refused on risk.");
+      return errorReply(12, {
+        // error-code: none — the code is the policy's own (STS-RISK-0016 or 0017), chosen in krb5_person_keys.ts
+        errorCode: riskRefusal.errorCode,
+        crealm: body.realm, cname: body.cname, sname: body.sname,
+        eText: riskRefusal.eText
+      });
+    }
+  }
+
   // Issue. The session key is fresh per ticket; both copies of it — the one in
   // the ticket for the service and the one in the enc-part for the client —
   // must be the same bytes, which is the whole mechanism.

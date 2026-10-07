@@ -354,8 +354,38 @@ the network (×3). **They are a first calibration and deliberately visible**:
 every assessment on the page lists its signals, and what they should be is
 read off that record before P3 lets anything be decided by them.
 
-**THE LEVEL** is CAEP's own: LOW, MEDIUM from `risk.mediumScorePercent` (100,
-a score of 1 — the model's even odds), HIGH from `risk.highScorePercent`
+**THE SCORE HAS THREE FACTORS, AND THE RECORD SHOWS ALL THREE (#499,
+2026-10-06).** Freeman et al.'s Eq. (7) is the product of a ratio per feature,
+p(x^k) / p(x^k|u,L), and the USER TERM p(u|A) / p(u|L) — p(u|A) uniform over
+the people who have signed in, p(u|L) this person's share of the realm's
+sign-ins (section II-B). The model's row carries them as `factors.ip`,
+`factors.ua` and `factors.user`, which multiply to its `score`, and `terms`
+holds the user term's three counts (`users`, `signIns`, `userSignIns`); the
+API answers that row and Monitoring → Risk draws it in the Signals column.
+Until #499 `factors` showed the two features only, and a score of 1.49 with
+factors 0.964 and 0.805 looked like a bug in the model. It was the user term
+(1.92): **the user term is the same for every context a person signs in
+from, and above 1 for anybody who signs in less than the realm's average.**
+Where everybody shares one address and one browser — a NAT, a VPN, a
+container bridge, the test stacks — both feature factors are near 1 and the
+score IS the user term, so a person with a stable setup and below-average
+activity is MEDIUM at a threshold of 1 as soon as they are scored. That is
+the paper's score, and what was wrong was the line it was compared with:
+Eq. (4) puts it at θ = p(L)/p(A), the prior odds of a legitimate sign-in,
+and Eq. (7) drops further p(A) terms "compensated for by adjusting the
+decision threshold θ", which the paper sets on a validation set for a chosen
+false-positive rate (section II after Eq. (4), section IV-C). **rcbj's
+decision (2026-10-06, option A): `risk.mediumScorePercent` defaults to 300,
+θ = 3** — a calibrated line rather than 1, above the largest user term seen
+on a shared-network stack (1.98); `risk.calibrationMediumPercent` is how a
+realm tunes it. HIGH stays at 10 (`risk.highScorePercent` 1000); what that
+does to the evaluators is in `docs/risk-scoring.md`, *Levels*.
+`tests/risk_model.js` holds the decomposition on all 82 notebook scores and
+the shared-network case; `tests/risk_engine.js` C2–C3 the record and the page.
+
+**THE LEVEL** is CAEP's own: LOW, MEDIUM from `risk.mediumScorePercent` (300,
+a score of 3 — Eq. (4)'s θ calibrated, not the even odds a line at 1 would
+assume; #499), HIGH from `risk.highScorePercent`
 (1000); UNSCORED for a first sign-in with no signal — **and for every
 sign-in before the person has `risk.minimumHistory` (5) earlier ones**
 (2026-09-23, rcbj): with one or two sign-ins the model is mostly the
@@ -482,10 +512,39 @@ sign-in established, with the session's own `amr`/`acr` — the authorization
 endpoint, the token endpoint by the grant's `sid`, SAML 2.0 and 1.1,
 WS-Federation, GNAP); otherwise the person's STANDING held in this process
 (`risk.standingValidMinutes`, `/admin/caches`' `risk.standings`) — which is
-all a Kerberos service ticket has, because the KDC is the parent's locked code
-and asks synchronously, and what WS-Trust reads from the store before it asks.
+all a Kerberos SERVICE ticket has, because the TGS asks synchronously, and
+what a delegated WS-Trust hop reads from the store before it asks (the
+requester's and, since #499, the `OnBehalfOf` / `ActAs` subject's).
 **A standing held per process is a known gap**: a node that did not see the
 sign-in or read the store holds none, and decides that ticket on roles.
+
+**WS-TRUST AND THE KDC DECIDE AT THE DOOR (#499, rcbj's decision 2,
+2026-10-06).** Until then both decided on the STANDING an earlier sign-in
+left — WS-Trust read it from the store, then assessed the sign-in after its
+session — so a refused attempt started no session, was never assessed, and
+the person stayed at MEDIUM for `risk.standingValidMinutes` (720) however
+their score would have moved. Now:
+
+* **WS-Trust** (`wstrust.ts`'s `doorAssessment()`): an Issue or a Renew that
+  delegates nothing is AUTHENTICATED by the route before the exchange, then
+  `authn.assessSignIn()`, and `handleRst()` is handed the authentication
+  (never verified twice: a refused password would count twice) and asks the
+  gate with that assessment's facts; the decision is written onto the
+  assessment, and the session takes it as `detail.risk`. A delegated request,
+  a Validate and a Cancel are as they were.
+* **The KDC**: once an AS-REQ's pre-authentication verified,
+  `principals.decideSignIn()` asks the key source (`krb5_person_keys.ts`'s
+  `decideSignIn()`), which assesses the sign-in (the address is the KDC's
+  ambient audit source), RECORDS it — so the TGS-REQs after it decide on it
+  — and asks the gate with no application, so only a Deny about risk
+  refuses: `KDC_ERR_POLICY` with `STS-RISK-0016` / `0017`. An OTP meets a
+  second-factor step-up, a hardware PKINIT key a security-key one. No new
+  require reaches the parent project's COPY set (`kerberos/CLAUDE.md`).
+
+The evidence signals refuse exactly as before: they are in the assessment the
+door now decides on. `tests/risk_decisions.js` M1–M3 hold both doors: a
+MEDIUM attempt refused and the next one ASSESSED AGAIN, and the person let
+through at the default line.
 
 **THE GATE'S TWO SHORTCUTS WAIVE THE ROLE QUESTION ONLY.** No application
 named, or `roles.enforceIssuance` off, used to answer "allowed" without

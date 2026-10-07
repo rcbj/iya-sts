@@ -1413,8 +1413,12 @@ class RiskEngine {
                                 ? { 'fido.mds3': authenticator.version } : {},
                               { stale: found.stale,
                                 attributions: found.attributions }),
+      // THE MODEL'S FACTORS EXPLAIN ITS WHOLE SCORE (#499): `ip`, `ua`
+      // and `user` (the user term, p(u|A)/p(u|L)) multiply to `score`, and
+      // `terms` holds the counts the user term is made of.
       signals: [{ signal: 'model', score: modelled.score,
                   factors: modelled.factors || null,
+                  terms: modelled.terms || null,
                   why: modelled.why || '',
                   knownContext: knownContext,
                   capped: capped ? capped.why : '',

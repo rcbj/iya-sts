@@ -78,9 +78,27 @@ something:
 | Where | the address → its network (ASN) → its country |
 | What with | the User-Agent → browser and version → operating system and version → device type |
 
-The score is near or below 1 when a sign-in is as likely to be the person as
-an attacker, and far below 1 for a familiar one. A sign-in from a new network
-on a new device scores well above 1.
+The score is the product of three factors, and each assessment shows all
+three (`model: ip ×… · ua ×… · user ×…` on Monitoring → Risk, and
+`signals[0].factors` in `GET /admin-api/risk`):
+
+- **ip** and **ua**: for each feature, how likely the value is in the realm
+  divided by how likely it is for this person. Below 1 means the value is
+  more typical of this person than of everybody; a value the person has
+  never used scores 4.
+- **user**: the paper's user term, one divided by the number of people who
+  have signed in, over this person's share of the realm's sign-ins
+  (`signals[0].terms`). It is 1 for a person who signs in as often as the
+  average, above 1 for one who signs in less, and the same whatever address
+  or browser they use.
+
+A familiar sign-in usually scores far below 1, because a person's own
+address and browser are rare in the realm. **Where everybody shares one
+address and one browser** — behind a NAT, a VPN or a container bridge — the
+ip and ua factors are near 1, and the score is close to the user term. A
+person who signs in less than the average then scores above 1 from their
+usual context. A sign-in from a new network on a new device scores well
+above the person's usual score.
 
 ### Evaluators
 
@@ -153,10 +171,33 @@ check, not a measurement.
 
 | Level | Score |
 |---|---|
-| LOW | below `risk.mediumScorePercent` ÷ 100 (1 by default) |
+| LOW | below `risk.mediumScorePercent` ÷ 100 (3 by default) |
 | MEDIUM | from `risk.mediumScorePercent` ÷ 100 |
 | HIGH | from `risk.highScorePercent` ÷ 100 (10 by default) |
 | UNSCORED | a first sign-in with no evaluator signal |
+
+**Why MEDIUM starts at 3, not 1.** The score is a likelihood ratio: how much
+likelier this sign-in is from an attacker than from the person. Freeman et
+al. (Eq. (4)) compare it with a threshold θ, the odds that a sign-in with
+the right password is the person's. Those odds are far above 1, and the
+paper sets θ for a chosen false-positive rate. A line at 1 would assume
+that half of all correct-password sign-ins are attacks. It would also make
+MEDIUM anybody who signs in less often than average from a shared network,
+because the user factor alone is then above 1. On a test stack, where
+everybody shares one address and one browser, the largest user factor seen
+was 1.98. So the default is 3.
+
+A lower line is stricter. To tune it for a realm, use the **Calibration**
+section above: `risk.calibrationMediumPercent` sets the share of sign-ins
+the suggested MEDIUM line puts at MEDIUM or worse.
+
+With MEDIUM at 3, a single evaluator raises a sign-in to MEDIUM only when
+the model already scored it above 3 ÷ the factor. For example, `tor-exit`
+(×5) needs a model score of at least 0.6. A sign-in from the person's own
+address and browser on an unshared network usually scores far lower, so the
+Tor signal alone leaves it LOW. HIGH is unchanged at 10, so `operator-deny`
+(×20) still makes HIGH any sign-in that scored 0.5 or more, unless it comes
+from a known context, which caps address evidence at MEDIUM.
 
 ## How a score decides
 
@@ -236,6 +277,16 @@ the door could not ask for).
 on it is decided on that risk. An issuance with no session, such as a Kerberos
 service ticket, uses the person's last assessed risk held by that node, for
 `risk.standingValidMinutes`.
+
+**WS-Trust and the Kerberos KDC assess the sign-in being made.** Each WS-Trust
+Issue or Renew that signs its requester in, and each Kerberos AS-REQ whose
+pre-authentication verified, is assessed and recorded before anything is
+issued. The decision is made on that assessment, not on an earlier one. A
+person refused at MEDIUM is assessed again on their next attempt, and is let
+through as soon as that attempt scores lower. The KDC refuses a ticket on risk
+with `KDC_ERR_POLICY` (12). The service tickets that follow a ticket-granting
+ticket, and a WS-Trust request that delegates (`OnBehalfOf`, `ActAs`), are
+decided on the person's last assessment, which is the sign-in's.
 
 ### Changing the rules
 
@@ -794,7 +845,7 @@ kept in step with `common/config.js`.
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | The policy asked what happens when a person's risk changes. |
 | `risk.standingValidMinutes` | `STS_RISK_STANDING_VALID_MINUTES` | `720` | How long a person's last assessed risk stands in for an issuance with no session. |
 | `risk.standingCacheSize` | `STS_RISK_STANDING_CACHE_SIZE` | `20000` | How many people's standing each process holds. |
-| `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | The score, in hundredths, from which a sign-in is MEDIUM. |
+| `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `300` | The score, in hundredths, from which a sign-in is MEDIUM. |
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | The score, in hundredths, from which a sign-in is HIGH. |
 | `risk.signalFactors` | `STS_RISK_SIGNAL_FACTORS` | *(empty)* | Factors over the built-in ones, as `signal=factor`, comma-separated. |
 | `risk.listsMatchSpecialPurpose` | `STS_RISK_LISTS_MATCH_SPECIAL_PURPOSE` | `true` | Let the Tor, reputation and deny lists match loopback, private and reserved addresses. Turn off for a service on one machine, or behind a private bridge, NAT or proxy. |

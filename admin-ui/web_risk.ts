@@ -698,6 +698,7 @@ class RiskPage {
       const modelRow = (a.signals || []).filter(function (x: Json) {
         return x.signal === 'model';
       })[0] || {};
+      const model = RiskPage.modelCell(modelRow);
       const dev = modelRow.device;
       const deviceCell = dev ? '<br>registered device <a href="' +
         esc('/admin/devices?device=' + encodeURIComponent(dev.id)) +
@@ -718,7 +719,8 @@ class RiskPage {
         (a.bot ? ' (automated)' : '') + '<br>' + esc(a.credentialKind) +
         deviceCell + '</small></td><td class="num">' +
         esc(Number(a.score).toPrecision(3)) + '</td><td><strong>' +
-        esc(a.level) + '</strong></td><td><small>' + (signals || '—') +
+        esc(a.level) + '</strong></td><td><small>' + model +
+        (model && signals ? '<br>' : '') + (signals || (model ? '' : '—')) +
         '</small></td><td>' + esc(a.decision) +
         // What the person said about it on /portal/sign-ins (#62 P6).
         (a.feedback ? '<br><small>' + (a.feedback === 'denied'
@@ -755,6 +757,32 @@ class RiskPage {
       '<th>Level</th><th>Score</th><th>Why</th><th>Updated</th></tr>' +
       '</thead><tbody>' + (people || '<tr><td colspan="5">None yet.</td>' +
                           '</tr>') + '</tbody></table>' + subjectsNav.foot;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE MODEL'S FACTORS (#499), from the assessment's model row: each
+  // feature's population/person ratio and the USER TERM, p(u|A)/p(u|L) —
+  // Freeman et al.'s Eq. (7) — which multiply to the model's score, so the
+  // cell explains all of it. The user term's counts follow it: the person's
+  // sign-ins, the realm's, and how many people signed in. Empty for a
+  // sign-in the model did not score, or an assessment written before the
+  // user term was recorded (it then shows the two features only).
+  // ---------------------------------------------------------------------------
+  static modelCell(row: Json): string {
+    const f = row && row.factors;
+    if (!f || typeof f !== 'object') {
+      return '';
+    }
+    const parts = ['ip', 'ua', 'user'].filter(function (k: string): boolean {
+      return typeof f[k] === 'number';
+    }).map(function (k: string): string {
+      return kit.esc(k) + ' ×' + kit.esc(Number(f[k]).toPrecision(3));
+    });
+    const t = row.terms;
+    const counts = t && typeof t === 'object' && typeof f.user === 'number'
+      ? ' (' + kit.esc(t.userSignIns) + ' of ' + kit.esc(t.signIns) +
+        ' sign-ins, ' + kit.esc(t.users) + ' people)' : '';
+    return parts.length ? 'model: ' + parts.join(' · ') + counts : '';
   }
 
   // A provider's credit as its licence asks (`risk_terms.attributionOf()`):
