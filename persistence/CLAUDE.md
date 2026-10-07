@@ -864,6 +864,18 @@ with a page read before a row committed, which `cluster_foundation.js` section 2
 recorded it could not time. The driver keeps `latestBlockingChangeSeq()`;
 nothing in the barrier calls it.
 
+**A pull in flight is waited out only until the barrier's deadline
+(2026-10-07).** Until then the barrier waited for the running pull to
+finish and checked its deadline (`SYNC_DEADLINE_MS`, 4.6 s) only after
+that. A pull applying a burst of rows therefore held every reader for as
+long as it ran. In the `cluster` mode the leader rotated the signing keys of
+dozens of realms at once, and the other node's pull took about 17 s. A
+Kerberos AS-REQ waiting on that barrier was answered 20 s late, after its
+client had given up (`sts_kerberos_rc4`). The barrier now waits for whichever
+comes first, the pull or the deadline. At the deadline it answers from what
+the process has (`STS-STORE-0039`), and the pull goes on.
+`tests/replication.js` section 8c covers it.
+
 **`audit.events` IS STORED IN SEGMENTS OF 32** (`realms.arr({ segment })`,
 `common/CLAUDE.md`): a whole-array `merge: 'own'` row was 2.3 MB sealed and
 written per flush and read back by every other process. Another origin's

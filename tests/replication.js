@@ -459,6 +459,46 @@ async function run(t) {
           'skipped', seen.join(','));
 
   // -------------------------------------------------------------------------
+  // 8c. A SLOW PULL DOES NOT HOLD A READER PAST THE DEADLINE (2026-10-07).
+  //
+  // The barrier waited for a pull in flight to finish and read its deadline
+  // only afterwards, so a pull applying a burst of rows held every reader for
+  // as long as it ran. In the `cluster` mode a Kerberos AS-REQ waited 20s on
+  // one and its client gave up at 10s (`sts_kerberos_rc4`). An applier that
+  // takes longer than the deadline stands in for that pull here.
+  // -------------------------------------------------------------------------
+  t.log.info('=== a slow pull does not hold a reader past the deadline ===');
+  replication.reset();
+  const slow = fakeDriver('me');
+  let slowApplied = false;
+  await replication.start(slow, {
+    directory: function () {
+      log.debug("Entering directory().");
+      log.debug("Leaving directory().");
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          slowApplied = true;
+          resolve();
+        }, 7000);
+      });
+    }
+  });
+  slow.write('them', 'directory', '', 'cn=slow');
+  const inFlight = replication.pull();
+  const slowStarted = Date.now();
+  const slowBarrier = await replication.syncNow();
+  const slowTook = Date.now() - slowStarted;
+  t.check(slowBarrier.caughtUp === false && slowTook < 5500,
+          'THE BARRIER GAVE UP AT ITS DEADLINE WHILE THE PULL WAS STILL ' +
+          'RUNNING — it used to wait the whole pull out',
+          JSON.stringify(slowBarrier) + ' after ' + slowTook + 'ms');
+  t.check(slowApplied === false,
+          'and the pull was still running when the reader was released',
+          'applied=' + slowApplied);
+  await inFlight;
+  t.check(slowApplied === true, 'and the pull finished afterwards');
+
+  // -------------------------------------------------------------------------
   // 9. THE ldif STORE CANNOT COORDINATE AND SAYS SO.
   // -------------------------------------------------------------------------
   t.log.info('=== a driver that cannot coordinate ===');
