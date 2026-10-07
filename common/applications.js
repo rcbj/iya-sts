@@ -3888,7 +3888,51 @@ const SCHEMA = {
             'krb5.spnegoAuthentication is off, `wallet` while oid4vp.signIn ' +
             'is off — is reported on the screen and cannot be offered.\n\n' +
             'It is WRITTEN BY NOBODY: no protocol presents it, so it is ' +
-            'editable and starts empty.' }
+            'editable and starts empty.' },
+
+    // ---------------------------------------------------------------------
+    // `appMfaMechanism` (#475, rcbj 2026-10-07) — THE SECOND FACTORS THIS
+    // APPLICATION ALLOWS, `appAuthnMechanism`'s companion and drawn beside it
+    // on the Every protocol sub-tab. Its vocabulary is the authentication
+    // policy's second-factor mechanisms (`common/mfa_mechanisms.ts`, held to
+    // `common/authn_policy.ts` by its test). rcbj's four rules, argued in
+    // that module's header:
+    //
+    //   * **Narrow only**: the realm's policy is asked first, and a factor it
+    //     has switched off stays off; none ticked leaves the realm's list.
+    //   * **Options only**: WHICH second factors, never WHETHER one is
+    //     needed.
+    //   * **A re-prompt, as #457**: every BROWSER issuance to the
+    //     application is put to the issuance policy with the second factors
+    //     the session gave, and its `mfa-mechanism` rule sends the person to
+    //     sign in again when it gave some and none is allowed.
+    //   * **None held, enrol one** — after proving a factor they hold, if
+    //     they hold any.
+    //
+    // Checked at the write (CHOICES_CHECKED_HERE) for `appAuthnMechanism`'s
+    // reason: enforced, a misspelt factor would allow nothing.
+    // ---------------------------------------------------------------------
+    { name: 'appMfaMechanism', kind: 'multi',
+      from: 'the console, the management API, or by hand',
+      what: 'THE SECOND FACTORS THIS APPLICATION\'S PEOPLE MAY USE: ' +
+            'password, securityKey, totp, recoveryCode, emailCode, ' +
+            'emailLink, wallet. NONE TICKED LEAVES THE REALM\'S ' +
+            'AUTHENTICATION POLICY AS IT IS.\n\nIt only NARROWS that ' +
+            'policy (Directory > Policies): a second factor the realm has ' +
+            'switched off stays off here, and an emailed one is still never ' +
+            'offered while the realm cannot send mail. It says WHICH second ' +
+            'factors, never WHETHER one is needed — that is still the ' +
+            'realm\'s, the account\'s and risk\'s.\n\nThe sign-in screen ' +
+            'asks only for a second factor listed here. A person who holds ' +
+            'none of them is offered one to set up (a security key or an ' +
+            'authenticator app, where listed) — after giving the second ' +
+            'factor they do hold, if they hold one.\n\nENFORCED at every ' +
+            'browser sign-in to the application, in both modes: a person ' +
+            'whose session gave a second factor not listed here is sent to ' +
+            'sign in again. Non-browser doors (the password grant, ' +
+            'WS-Trust, an LDAP bind) are not covered.\n\nIt is WRITTEN BY ' +
+            'NOBODY: no protocol presents it, so it is editable and starts ' +
+            'empty.' }
   ]
 };
 
@@ -4131,6 +4175,9 @@ const EDITABLE = {
   // written here it cannot be written at all. `multi` since #457: it is the
   // list of mechanisms the application ALLOWS, one checkbox each.
   appAuthnMechanism: 'multi',
+  // The second factors it allows (#475), one checkbox each, for the same
+  // reason: nothing can observe it.
+  appMfaMechanism: 'multi',
   // The home page, `set` for its row's reason: an application has one. It is
   // editable AND written by register() from RFC 7591 `client_uri`, which is the
   // same arrangement oauthRedirectUri has — a registration states it, and an
@@ -5097,6 +5144,9 @@ const ATTRIBUTE_CHOICES = {
   appAuthnMechanism: function () {
     return require('../federation/federation').MECHANISM_IDS.slice(0);
   },
+  appMfaMechanism: function () {
+    return require('./mfa_mechanisms').IDS.slice(0);
+  },
   acmeAllowedProfiles: function () {
     return enrollmentProfileChoices(false);
   },
@@ -5127,7 +5177,8 @@ const ATTRIBUTE_CHOICES = {
 // The closed sets nothing checked at a console or API write until 2026-10-01
 // (the others have a validator of their own, which says more). A value
 // outside one is refused (STS-REG-0203). `appAuthnMechanism` joined them
-// with #457: enforced, a misspelt mechanism would allow nothing.
+// with #457, and `appMfaMechanism` with #475: enforced, a misspelt mechanism
+// would allow nothing.
 // The certificate profiles an enrollment family issues, from the module that
 // defines them (lazily: it is loaded after this one); `device` over EST and
 // SCEP only, as `cert_enrollment.ts` has it.
@@ -5144,7 +5195,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'gnapSymmetricAlg', 'gnapInteractionStartModes', 'gnapAccessTokenFormat',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
   'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
-  'secretDestProvider', 'secretDestPayload', 'appAuthnMechanism'];
+  'secretDestProvider', 'secretDestPayload', 'appAuthnMechanism',
+  'appMfaMechanism'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),

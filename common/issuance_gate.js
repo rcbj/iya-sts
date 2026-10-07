@@ -335,8 +335,11 @@ function check(request) {
   // past both shortcuts: its `authn-mechanism` rule holds in both modes and
   // is not about roles.
   const mechanisms = mechanismFactsOf(asked);
+  // AND THE SECOND FACTORS (#475), the same way and for the same reason:
+  // the `mfa-mechanism` rule holds in both modes and is not about roles.
+  const mfa = mfaFactsOf(asked);
   if (!enforceRoles && !risk && !deviceMatters && !protocolMatters &&
-      !mechanisms) {
+      !mechanisms && !mfa) {
     log.debug('Leaving check(). Enforcement is switched off.');
     return allow('roles.enforceIssuance is off, so the decision was not ' +
                  'asked for.');
@@ -356,6 +359,8 @@ function check(request) {
     mode: mode ? mode.current() : '',
     authnMechanisms: mechanisms ? mechanisms.satisfied : null,
     allowedAuthnMechanisms: mechanisms ? mechanisms.allowed : null,
+    mfaMechanisms: mfa ? mfa.satisfied : null,
+    allowedMfaMechanisms: mfa ? mfa.allowed : null,
     rolesWaived: asked.rolesWaived === true || !enforceRoles ||
                  !asked.application
   });
@@ -444,6 +449,62 @@ function mechanismFactsOf(asked) {
                           : mechanisms.satisfiedBy(session);
   log.debug('Leaving mechanismFactsOf(). Allowed ' + allowed.join(', ') +
             '; satisfied ' + (satisfied.join(', ') || 'none') + '.');
+  return { allowed: allowed, satisfied: satisfied };
+}
+
+// ---------------------------------------------------------------------------
+// THE SECOND-FACTOR FACTS OF A BROWSER ISSUANCE (#475): the second factors
+// the named application allows (`appMfaMechanism`) and those the person's
+// authentication gave, or null when there is nothing to compare — for
+// mechanismFactsOf()'s reasons, on the same four browser kinds, and also
+// when the authentication gave no second factor at all: the list says which
+// second factors, never whether one is needed (rcbj), so a session on one
+// factor is not this rule's to deny. Never throws: a registry that cannot
+// be read allows whatever the realm allows.
+// ---------------------------------------------------------------------------
+/**
+ * The second-factor facts of a browser issuance (#475).
+ *
+ * @param asked - the issuance request
+ * @returns `{ allowed, satisfied }`, or null when there is nothing to compare
+ */
+function mfaFactsOf(asked) {
+  log.debug('Entering mfaFactsOf().');
+  const name = String(asked.application || '').trim();
+  const event = asked.authenticationEvent || null;
+  const session = asked.session || null;
+  if (!name || asked.browser === false ||
+      BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
+      (!event && !session) ||
+      (String(asked.kind) === ISSUANCE.SESSION && !event)) {
+    log.debug('Leaving mfaFactsOf(). Not a browser sign-in.');
+    return null;
+  }
+  const factors = require('./mfa_mechanisms');
+  const satisfied = event ? factors.ofEvent(event)
+                          : factors.satisfiedBy(session);
+  if (!satisfied.length) {
+    log.debug('Leaving mfaFactsOf(). No second factor was given.');
+    return null;
+  }
+  let allowed = [];
+  try {
+    const entry = require('./applications').get(name);
+    allowed = factors.allowedOf(entry ? entry.fields : null);
+  } catch (e) {
+    log.debug('Caught in mfaFactsOf(): ' + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-XACML-0172') + 'issuance_gate: the ' +
+              'application registry could not be read for "' + name +
+              '"\'s second factors, so none was required: ' +
+              ((e && e.message) || e));
+    allowed = [];
+  }
+  if (!allowed.length) {
+    log.debug('Leaving mfaFactsOf(). The realm\'s second factors apply.');
+    return null;
+  }
+  log.debug('Leaving mfaFactsOf(). Allowed ' + allowed.join(', ') +
+            '; gave ' + satisfied.join(', ') + '.');
   return { allowed: allowed, satisfied: satisfied };
 }
 

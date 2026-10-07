@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4196** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4209** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -63,11 +63,11 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 264
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 706
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 105
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 267
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 708
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 31
-* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 21
+* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 205
@@ -84,7 +84,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 351
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 92
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 94
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 229
 * [Management API (`STS-API`)](#sts-api) — 81
@@ -1420,6 +1420,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0302` | A passkey sign-in with no username named no account: the authenticator returned no user handle, or one nobody in this realm holds (#474). Where only one realm and one cell exist, the page asks the browser to forget the credential (signalUnknownCredential). | none — the sign-in screen is drawn again |
 | `STS-AUTHN-0303` | A passkey assertion's user handle is not the one its key was registered under — WebAuthn Level 3 section 7.2 step 6 (#474). | none — the sign-in screen or the passkey step is drawn again |
 | `STS-AUTHN-0304` | A passkey registered before #474 — under the username's bytes as its user handle — was used to sign in with no username. It works only where the username is typed; registering it again makes it usable without one. | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0305` | A sign-in was refused at the sign-in door because its second factor is one the application being signed in to does not allow (appMfaMechanism, #475). The screen is drawn again, naming the second factors it allows. | the sign-in screen, drawn again |
+| `STS-AUTHN-0306` | A second factor was needed of a person who holds none the application allows (appMfaMechanism, #475), and none of the allowed ones (a security key, an authenticator app) can be set up at sign-in in this realm; refused rather than signed in on one factor. | the sign-in screen, drawn again |
+| `STS-AUTHN-0307` | A second factor was DEMANDED — a security key by the relying party or on risk, or a second factor on risk — and the second factors the application allows (appMfaMechanism, #475) leave the person none that answers it. A step-up never enrols one. | the sign-in screen, drawn again |
 
 ## STS-OAUTH
 
@@ -2135,6 +2138,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0949` | Product mode: a token request named a client that is no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the client was counted or recorded (#496). | invalid_client (HTTP 401, RFC 6749 section 5.2) |
 | `STS-OAUTH-0950` | Product mode: an authorization request or a pushed authorization request named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application (no appRegisteredBy) by its oauthAudience, permission base URI, client_id or identifier (#505). | invalid_target (RFC 8707 section 2), redirected; HTTP 400 at PAR |
 | `STS-OAUTH-0951` | Product mode: a token request (any grant but the token exchange) named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application — and was refused before anything was spent (#505). | invalid_target (HTTP 400, RFC 8707 section 2) |
+| `STS-OAUTH-0952` | An authorization request reached a session whose second factor the client does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does. | HTTP 302 to the sign-in screen |
+| `STS-OAUTH-0953` | An authorization request with prompt=none reached a session whose second factor the client does not allow (appMfaMechanism, #475), and prompt=none forbids asking. | login_required (OIDC Core 3.1.2.6) |
 
 ## STS-SAML
 
@@ -2249,6 +2254,10 @@ Raised from: saml/.
 | `STS-SAML-0103` | Product mode: an AuthnRequest named an Issuer that is no registered SAML 2.0 service provider (no appRegisteredBy; an entry a sighting filed is not a registration), or none, and was refused before its signature was checked or anything recorded (#496). | HTTP 403 page (no Response to an unregistered ACS) |
 | `STS-SAML-0104` | Product mode: a LogoutRequest named an Issuer that is no registered SAML 2.0 service provider, or none; no session was ended (#496). | HTTP 403 page |
 | `STS-SAML-0105` | Product mode: a SAML 1.1 browser flow named (or let this service infer) a relying party that is not registered, and was refused before its addresses were read (#496). | HTTP 403 page |
+| `STS-SAML-0106` | A SAML 2.0 sign-in reached a session whose second factor the service provider does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-SAML-0107` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a second factor the service provider does not allow (appMfaMechanism, #475). | Responder / RequestDenied |
+| `STS-SAML-0108` | A SAML 1.1 sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-SAML-0109` | A SAML 1.1 flow back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
 
 ## STS-WSTRUST
 
@@ -2319,6 +2328,8 @@ Raised from: ws-federation/.
 | `STS-WSFED-0019` | /wsfed/metadata/{rp} named no registered relying party, which has no metadata of its own: an unregistered wtrealm is issued under the shared entityID (#494). | HTTP 404, text/plain |
 | `STS-WSFED-0020` | A WS-Federation sign-in or metadata document had no name to issue or publish under: product mode, saml2.entityId empty and saml.issuer or wsfed.entityId unset (#494). | HTTP 503 page or text/plain |
 | `STS-WSFED-0021` | Product mode: a wsignin1.0 named a wtrealm that is no registered relying party (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the sign-in screen and before anything was issued or recorded (#496). | HTTP 404 error page (the profile defines no error response) |
+| `STS-WSFED-0022` | A WS-Federation sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-WSFED-0023` | A WS-Federation request back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
 
 ## STS-FED
 
@@ -4113,6 +4124,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0168` | No issuance policy, not even the built-in one, could answer the per-right GNAP question (issue-gnap-right); the right was refused (#432). | — |
 | `STS-XACML-0169` | The application registry could not be read for the sign-in mechanisms an application allows (appAuthnMechanism, #457), so the issuance gate required none for that issuance. | — |
 | `STS-XACML-0170` | The issuance policy denied a browser issuance on the sign-in mechanism (#457): the application allows only some mechanisms (appAuthnMechanism) and the person's authentication used none of them. The door re-prompts for an allowed one. | — |
+| `STS-XACML-0171` | The issuance policy denied a browser issuance on the second factor (#475): the application allows only some second factors (appMfaMechanism) and the person's authentication gave another. The door re-prompts for an allowed one. | — |
+| `STS-XACML-0172` | The application registry could not be read for the second factors an application allows (appMfaMechanism, #475), so the issuance gate required none for that issuance. | — |
 
 ## STS-XPEP
 

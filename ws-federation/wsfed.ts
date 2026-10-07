@@ -1346,7 +1346,10 @@ class WsFederation {
         String(params[MECHANISM_MARKER] || '') !== '1' &&
         session.authenticated !== false) {
       const back = this.requeryString(params, ['wfresh', MECHANISM_MARKER]);
-      errorCodes.mark(res, 'STS-WSFED-0017');
+      // A second factor the relying party does not allow (#475) is its
+      // own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-WSFED-0022' : 'STS-WSFED-0017');
       log.info('wsfed: "' + realm + '" allows signing in with ' +
                roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
                'of "' + String((session.user || {}).username) + '" used ' +
@@ -1378,7 +1381,10 @@ class WsFederation {
       // A sign-in mechanism still not allowed after the one trip (#457) is
       // its own.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-        : (roleAnswer.mechanism ? 'STS-WSFED-0018' : 'STS-WSFED-0011'));
+        : (roleAnswer.mechanism
+          ? (roleAnswer.mechanism.secondFactor ? 'STS-WSFED-0023'
+                                               : 'STS-WSFED-0018')
+          : 'STS-WSFED-0011'));
       log.debug("Leaving WsFederation.issueSignInResponse().");
       return this.wsfedError(res, 403, 'Refused by policy', roleAnswer.why,
         '<p>The person is signed in. The XACML issuance policy would not let ' +

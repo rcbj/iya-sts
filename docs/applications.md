@@ -740,6 +740,60 @@ from the application's page, `POST /admin-api/applications/update-fields`, or
 `add` / `remove` with `attribute: appAuthnMechanism`. A value that is not a
 mechanism is refused (`STS-REG-0203`).
 
+### Second factors: which ones its people may use
+
+**`appMfaMechanism`** is the list of second factors an application's people
+may use. It is a checkbox per factor on the application's Configuration tab
+(*Every protocol*), beside the sign-in mechanisms:
+
+| Second factor | A session gave it when |
+|---|---|
+| `securityKey` | a security key (WebAuthn) answered after a first factor |
+| `totp` | an authenticator app's one-time code was checked |
+| `recoveryCode` | one of the person's recovery codes was spent |
+| `emailCode` | an emailed six-digit code was checked |
+| `emailLink` | an emailed sign-in link was followed |
+| `password` | the person's password was checked after a wallet sign-in |
+| `wallet` | a wallet presentation was checked after a password |
+
+**None ticked leaves the realm's authentication policy as it is.** With some
+ticked:
+
+* **It only narrows.** The realm's policy (Directory > Policies) is asked
+  first. A second factor the realm has switched off stays off for every
+  application, and an emailed one is never offered while the realm cannot
+  send mail.
+* **It says which second factors, never whether one is needed.** That is
+  still the realm's, the account's and risk's. A person signed in on one
+  factor is not asked for a second because of this list.
+* **The sign-in screen asks only for an allowed second factor.** A person who
+  holds several is asked for one the application allows, and the links to
+  the others are not drawn.
+* **A person who holds none of the allowed ones is offered one to set up** (a
+  security key or an authenticator app, where ticked). If they hold some
+  other second factor, they give it first, and only then are offered the
+  set-up. Offering it before would let anybody who knows the password skip
+  the factor the account already has. If neither a security key nor an
+  authenticator app is ticked, or the realm allows neither to be set up, the
+  sign-in is refused (`STS-AUTHN-0306`).
+* **A second factor demanded and not allowed is refused.** A security key
+  the relying party demanded (`acr_values`, `wauth`), or a step-up on risk,
+  that the list leaves the person nothing to answer with is refused
+  (`STS-AUTHN-0307`): a step-up never enrols one.
+* **A session that gave a second factor not allowed is re-prompted**, in
+  both modes, at every browser sign-in to the application, exactly as for
+  sign-in mechanisms: OAuth's authorization endpoint (`STS-OAUTH-0952`;
+  `prompt=none` is `login_required`, `STS-OAUTH-0953`), SAML 2.0
+  (`STS-SAML-0106`, then `STS-SAML-0107`), SAML 1.1 (`STS-SAML-0108`, then
+  `STS-SAML-0109`) and WS-Federation (`STS-WSFED-0022`, then
+  `STS-WSFED-0023`). The issuance policy's `mfa-mechanism` rule decides it
+  (`decideMfaMechanisms` on the `role-issuance` template).
+
+Browser authentication only, as for sign-in mechanisms. Set it from the
+application's page, `POST /admin-api/applications/update-fields`, or `add` /
+`remove` with `attribute: appMfaMechanism`. A value that is not a second
+factor is refused (`STS-REG-0203`).
+
 ## Development and product mode
 
 | | Development | Product |
