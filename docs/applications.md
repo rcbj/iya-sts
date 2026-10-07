@@ -35,8 +35,9 @@ publishes the schema; `?format=json` is the machine-readable form.
 An entry appears the first time an identifier is **accepted**:
 
 * a `client_id` at the authorization or token endpoint;
-* a `wtrealm` on a `wsignin1.0` response;
-* an `AppliesTo` on an issued WS-Trust token;
+* a `wtrealm` on a `wsignin1.0` response (in development: product signs in
+  only a registered relying party);
+* an `AppliesTo` on an issued WS-Trust token (likewise);
 * a Kerberos service principal name on a TGS-REP, **and again when a ticket
   for it is accepted**;
 * the OpenID4VP Verifier's own `client_id`.
@@ -742,6 +743,7 @@ mechanism is refused (`STS-REG-0203`).
 | RFC 9728 import from a URL | internal addresses and a mismatched `resource` are reported, then imported | refused |
 | Credential attributes over LDAP | readable by a search | never returned by a search, filter or compare |
 | SAML 2.0 per-SP paths for an unregistered SP | answered | refused |
+| A WS-Trust `AppliesTo` or a WS-Federation `wtrealm` nobody registered, or no `AppliesTo` | a token is issued, and an entry is recorded | refused before anything is issued or recorded (#496); an entry a development sighting recorded is not a registration |
 | CORS | the allowlist | the allowlist |
 
 See [What is not checked](what-is-not-checked.md) for the full picture.

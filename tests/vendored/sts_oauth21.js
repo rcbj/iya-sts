@@ -324,8 +324,12 @@ async function theAuthorizationEndpoint() {
   log.debug("Entering theAuthorizationEndpoint().");
   log.info("=== 2. the authorization endpoint ===");
   const p = pkce();
+  // A REGISTERED client with no redirect URI of its own (#496): in product a
+  // client nobody registered is refused before its redirect URI is looked
+  // at, below, so section 2.3.1's refusal is asked of LOCKED, which this job
+  // created with none.
   const unregistered = await send(base + PREFIX + "/oauth2/authorize?" + form({
-    response_type: "code", client_id: "o21-never-" + REALM,
+    response_type: "code", client_id: LOCKED,
     redirect_uri: REDIRECT, code_challenge: p.challenge,
     code_challenge_method: "S256" }));
   check("A CLIENT WITH NO REDIRECT URI OF ITS OWN IS REFUSED ON THIS " +
@@ -341,6 +345,18 @@ async function theAuthorizationEndpoint() {
                     "the error_description is within section 3.2.4's " +
                     "grammar: " + unregistered.body.error_description);
         });
+  if (await facts.isProduct(base + PREFIX + "/admin-api")) {
+    const never = await send(base + PREFIX + "/oauth2/authorize?" + form({
+      response_type: "code", client_id: "o21-never-" + REALM,
+      redirect_uri: REDIRECT, code_challenge: p.challenge,
+      code_challenge_method: "S256" }));
+    check("PRODUCT: A CLIENT NOBODY REGISTERED IS REFUSED ON THIS SERVER — " +
+          "400 invalid_client, nothing redirected (#496)", function () {
+            assert.strictEqual(never.status, 400, never.raw.slice(0, 300));
+            assert.strictEqual(never.location, "");
+            assert.strictEqual(never.body.error, "invalid_client");
+          });
+  }
   const ambiguous = await send(base + PREFIX + "/oauth2/authorize?" + form({
     response_type: "code", client_id: TWO_URIS, code_challenge: p.challenge,
     code_challenge_method: "S256" }));

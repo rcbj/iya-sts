@@ -237,7 +237,10 @@ kinds: `gnap-client` or `gnap-resource-server`. The attributes:
 | `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri` | what the approval page shows |
 
 **An unknown key** is given an entry on first sight in development mode. In
-product mode it is refused `invalid_client` until it is registered.
+product mode it is refused `invalid_client` until it is registered — and so
+is a key, or an instance identifier, belonging to an entry development
+created that way: an entry made on first sight is not a registration (#496,
+`STS-GNAP-0902`). Register the client through the console or `/admin-api`.
 
 The two sealed attributes are encrypted under the process key-encryption key
 whenever keys persist — see [encryption at rest](encryption-at-rest.md).

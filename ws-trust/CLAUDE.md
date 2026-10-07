@@ -112,7 +112,11 @@ is what the policy reads (`partyFacts()` asks the registry first).
 **BOTH ELEMENTS IN ONE REQUEST ARE REFUSED IN EVERY MODE** —
 `wst:InvalidRequest`, `STS-WSTRUST-0025`: they ask for opposite semantics.
 **No `AppliesTo` is refused unless the act is a self one** (the policy's
-`no-target`).
+`no-target`) — in development, where that refusal is not enforced. **In
+product an RST with no `AppliesTo`, or one nobody registered, is refused
+before the policy is asked** (#496, *An application nobody registered*,
+below), so `no-target` and `unregistered-target` (`STS-WSTRUST-0024`) are not
+reached from WS-Trust there; they still decide RFC 8693's exchange.
 
 **A REFUSAL IS WS-TRUST 1.4 SECTION 11's `wst:RequestFailed`** ("The specified
 request failed") — see *Every refusal names its section 11 fault code*, below,
@@ -171,7 +175,8 @@ fault. Each refusal names its code at the place it refuses:
 
 | Code | Refusals | Why that one |
 |---|---|---|
-| `InvalidRequest` | `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025` | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
+| `InvalidScope` | `0030` (#496: product, an `AppliesTo` that resolves to no registered application) | 1.3 section 4.1 calls `wsp:AppliesTo` "the scope for which this security token is desired", so an AppliesTo this STS serves nobody under is section 11's "The request scope is invalid" — the exact sentence, where InvalidRequest would have been true and said less |
+| `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025` | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
 | `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007`, `0009`, `0010` | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
 | `ExpiredData` | `0006`, in either seat, and a delegated JWT's `0027` (#477) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
 | `RequestFailed` | `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell) | the request was understood and authenticated, and could not be done |
@@ -181,11 +186,12 @@ revoked" in 1.4's table, and nothing here checks revocation of a presented
 token; `AuthenticationBadElements` is about digest elements, and request
 signatures are not verified (`docs/ws-trust.md`, *Not implemented*);
 `InvalidTimeRange` would refuse a `wst:Lifetime`, which is CLAMPED instead
-(section 4.1 makes it a request the STS decides); `BadRequest`, `InvalidScope`,
+(section 4.1 makes it a request the STS decides); `BadRequest`,
 `RenewNeeded` and `UnableToRenew` have no refusal here that they describe
-better than the codes above — an unknown RequestType is issued, an `AppliesTo`
-nobody registered is the policy's to refuse, and a Renew re-issues whatever
-token it is handed.
+better than the codes above — an unknown RequestType is issued, and a Renew
+re-issues whatever token it is handed. (`InvalidScope` was on this list until
+#496, when an `AppliesTo` nobody registered stopped being issued for in
+product.)
 
 **`0015` IS NOT A REFUSAL**, and it is not a section 11 code: every one of
 those is a Sender fault. An exception in the endpoint is `receiverFault()`'s
@@ -548,6 +554,45 @@ request. Until #494 any entry counted, which is that bug, in product.
 
 `wstrust.issuer` and `wsfed.entityId`'s shared form have no per-application
 reading on GET /sts: the STS has one name.
+
+## An application nobody registered gets nothing, in product (#496, 2026-10-06)
+
+rcbj, on #496: in product an application that is not registered gets nothing
+but its protocol's own "unknown application" error — and **an RST with no
+`AppliesTo` at all is refused too**. `unregisteredApplication()` asks it,
+behind `mode.issuesToUnregisteredApplications()` (the
+`unregistered-applications` row on `/admin/mode`):
+
+* **"Registered" is the #494 word above**: `appRegisteredBy` on the entry
+  `appliesToApplication()` resolves the AppliesTo to, through
+  `IssuerNames.registeredApplication()`. So the application refused and the
+  one whose entityID an issued assertion would carry are one; an entry a
+  development `seen()` filed is a sighting and is refused like no entry, so a
+  realm switched from development keeps nothing development learnt.
+* **`wst:InvalidScope`, `STS-WSTRUST-0030`** for an unregistered AppliesTo;
+  **`wst:InvalidRequest`, `STS-WSTRUST-0031`** for none or an empty one (the
+  fault table above argues both). HTTP 500, as every other Fault.
+* **ABOVE `authenticate()`**, which is where the requester's
+  `recordAuthentication()` row is written: a refused request leaves no
+  `/admin/users` row, no `seen()` sighting, no delegation act and no token.
+  The cost is that an unregistered AppliesTo with a bad credential is
+  answered `InvalidScope` rather than `FailedAuthentication`; the request is
+  unanswerable whoever sent it, and answering it first is what keeps the
+  caller out of every register.
+* **Every token type (SAML 2.0, SAML 1.1, JWT) and `OnBehalfOf` / `ActAs`**:
+  it is asked before the token type or the delegation is read. **Issue and
+  Renew** — every operation that mints; Validate and Cancel issue nothing and
+  are not asked.
+* **Development is unchanged**: a token for any AppliesTo or none, under the
+  shared name, and `seen()` files the AppliesTo.
+* **An entry an LDAP add made is not registered either**: the add writes no
+  `appRegisteredBy` (the registry writes it, for the console, `/admin-api`,
+  RFC 7591, an OpenID Federation and the seeds), so #494's definition reads
+  it as one that turned up. Whether an LDAP add should count is open on
+  #496; until it is decided, register through the console or `/admin-api`.
+
+`tests/unregistered_applications.js` holds it in both modes, with the
+nothing-recorded checks; `tests/wstrust_fault_codes.js` holds both faults.
 
 **A JWT's `iss` is not one of these.** It is the realm's OAuth issuer
 (#476's exceptions, above; rcbj kept it on #494).

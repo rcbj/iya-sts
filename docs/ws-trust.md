@@ -172,10 +172,18 @@ does not state in the assertion that a middle tier acted.
 
 The `AppliesTo` address is the token's audience, and it is resolved through the
 application registry (`wstrustAppliesTo`, then `samlEntityId`) so that the
-console names an application rather than a URL. That is a lookup, not a
-permission: an unregistered address is still answered. The issuance policy —
-XACML, where it is configured — can refuse a token for a subject and audience
-with a SOAP Fault.
+console names an application rather than a URL. In **development** that is a
+lookup, not a permission: an unregistered address, and a request with no
+`AppliesTo` at all, are still answered, and the address is filed in the
+register. In **product** a token is issued only for a **registered**
+application — one an administrator, RFC 7591, an OpenID Federation or this
+service's own seeding put in the register; an address the register merely
+recorded from an earlier request is not one. An `AppliesTo` that resolves to
+no registered application is refused with `wst:InvalidScope`, and a request
+with no `AppliesTo` with `wst:InvalidRequest`, for every token type and for
+`OnBehalfOf` / `ActAs`, before the requester is authenticated or anything is
+recorded (#496). The issuance policy — XACML, where it is configured — can
+refuse a token for a subject and audience with a SOAP Fault.
 
 ### Encryption, as a test control
 
@@ -202,6 +210,8 @@ codes, in the request's own trust namespace: on SOAP 1.1 it is the
 | Refusal | Fault code |
 |---|---|
 | The body is not well-formed XML | `wst:InvalidRequest` |
+| An `AppliesTo` that resolves to no registered application (product) | `wst:InvalidScope` |
+| No `AppliesTo`, or an empty one, on a request that issues (product) | `wst:InvalidRequest` |
 | The requester's credential is incomplete, wrong, or an assertion that does not verify, is not yet valid or names nobody; no credential at all (product); a delegation with no requester credential (product) | `wst:FailedAuthentication` |
 | An assertion, as the credential or inside `OnBehalfOf` / `ActAs`, that has expired, or an expired JWT inside either | `wst:ExpiredData` |
 | The token inside `OnBehalfOf` / `ActAs` is not an assertion or a JWT this STS issued, or does not verify, is not yet valid or names nobody (product) | `wst:InvalidRequest` |
@@ -218,6 +228,7 @@ in [Error codes](error-codes.md).
 
 | | Development | Product |
 |---|---|---|
+| The `AppliesTo` | any address, or none; the address is filed in the register | a registered application only, or a `wst:InvalidScope` fault; none is a `wst:InvalidRequest` fault |
 | A request with no credential | a token for the literal subject `anonymous` (a Renew for whoever its `RenewTarget` names) | refused, with a SOAP Fault naming what to present |
 | A UsernameToken password | any password but `invalid` | verified against the person's stored `userPassword`; a person who holds or must hold a second factor is refused their own password with the same fault a wrong one gets, and presents an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `wstrust` |
 | A SAML assertion as the credential | believed | must verify against this realm's own signing certificate (`/sts/cert`) and be inside its `Conditions` |

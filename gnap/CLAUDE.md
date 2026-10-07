@@ -1095,3 +1095,28 @@ its reference is written into grant requests that may reach any cell.
   than the peer's private name, and the body's exact bytes
   (`cell_placement.ts` `serialisedBody()` prefers `req.rawBody`). See
   `common/cell_channel.ts`'s `relay()`.
+
+## A CLIENT NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496, 2026-10-06)
+
+rcbj, widening #496: in product an unregistered application gets nothing but
+its protocol's own "unknown application" error. The unknown-key refusal
+(`STS-GNAP-0082`) asked only whether ANY entry held the key, and an entry
+development created on first sight of a proved key holds it
+(`gnapKeyIdentity`) with no `appRegisteredBy` — so a realm switched to
+product went on accepting that key, and its instance identifier, as though
+an administrator had provisioned them. `unregisteredCaller()` asks #494's
+question of the application a key or an instance resolves to, behind
+`mode.issuesToUnregisteredApplications()` (the `unregistered-gnap-clients`
+row on `/admin/mode`): 401 `invalid_client` / `invalid_resource_server`,
+`STS-GNAP-0902`, before the entry is sighted again or anything is issued.
+For an instance identifier it is asked before the key is even described; for
+a key, once the proof has said whose key it is.
+
+**NOT DONE: an access right whose `locations` name no registered resource
+server** is still issued with no audience for that location
+(`resourceServersFor()`), as RFC 8707's `resource` outside an exchange is in
+`oauth-oidc/` — whether a bare location names an "application" is open on
+#496.
+
+`tests/unregistered_applications.js` (G1) holds it, the proof stubbed: what
+is held is whose key it is, which is decided after the proof verifies.

@@ -45,6 +45,7 @@
 import helpers = require('../common/helpers');
 import config = require('../common/config');
 import applications = require('../common/applications');
+import mode = require('../common/mode');
 import assertionGrant = require('./assertion_grant');
 import samlAssertionGrant = require('./saml_assertion_grant');
 
@@ -86,6 +87,15 @@ class ExchangeAssertions {
     const found = applications.forAudience(value) ||
       applications.forClientId(value) || applications.forAppliesTo(value) ||
       applications.get(value) || null;
+    // In product only a REGISTERED one (#496): an entry a development
+    // sighting filed is not "an application registered in this realm", the
+    // sentence the audience rule states.
+    if (found && !mode.issuesToUnregisteredApplications() &&
+        !String(found.registeredBy || '')) {
+      log.debug("Leaving ExchangeAssertions.applicationNamed(). " +
+                found.identifier + " is not registered.");
+      return '';
+    }
     log.debug("Leaving ExchangeAssertions.applicationNamed().");
     return found ? String(found.identifier) : '';
   }

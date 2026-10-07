@@ -1526,8 +1526,9 @@ class SpMetadata {
   // a responder returns, and draft-young-md-query-saml-25 section 4.1 makes a
   // signature embedded in the document the RECOMMENDED mechanism; an
   // unsigned answer to a lookup an unauthenticated request started is
-  // exactly what neither asks anybody to trust. An entry that ALREADY EXISTS
-  // is refreshed from MDQ as before, in both modes: somebody registered it.
+  // exactly what neither asks anybody to trust. An entry somebody REGISTERED
+  // is refreshed from MDQ as before, in both modes; one a development
+  // sighting filed is not registered and is gated like none (#496).
   /**
    * Imports one service provider from the Metadata Query responder by entityID,
    * creating the entry only once the answer parses for that entity.
@@ -1554,7 +1555,13 @@ class SpMetadata {
         'saml2.mdqBaseUrl is not set in this realm, so there is no Metadata ' +
         'Query responder to ask.'] }, 'STS-SAML-0075'));
     }
-    const known = !!applications.get(entityId);
+    // KNOWN MEANS REGISTERED (#496): an entry somebody registered
+    // (`appRegisteredBy`, #494's word). An entry a development sighting
+    // filed existed, so a lookup a request started was not gated, and with
+    // no anchor an unsigned answer installed its keys and addresses in
+    // product.
+    const entry: any = applications.get(entityId);
+    const known = !!entry && !!String(entry.registeredBy || '');
     const realmAnchors = this.trustAnchorsFor({});
     const vouched = mode.registersFromMetadataQuery();
     if (origin === 'operator' && !vouched && !realmAnchors.length &&
@@ -1692,8 +1699,10 @@ class SpMetadata {
       log.debug("Leaving SpMetadata.queueMdqLookup(). Nothing to ask.");
       return false;
     }
+    const entry: any = applications.get(entityId);
     if (!mode.registersFromMetadataQuery() &&
-        !applications.get(entityId) && !this.trustAnchorsFor({}).length) {
+        !(entry && String(entry.registeredBy || '')) &&
+        !this.trustAnchorsFor({}).length) {
       this.recordMdqRefusal(entityId, 'STS-SAML-0080', 'no ' +
                             'saml2.metadataTrustAnchors in this realm; ' +
                             'nothing was fetched');

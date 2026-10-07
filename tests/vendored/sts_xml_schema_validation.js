@@ -1290,13 +1290,15 @@ async function wsTrust(w) {
       password: PASSWORD, appliesTo: w.wsRp,
       inner: "<wst:OnBehalfOf>" + issued + "</wst:OnBehalfOf>" });
   }
-  // The faults.
+  // The faults. Each names the registered relying party, because product
+  // refuses an Issue naming none before the password is read (#496), and
+  // the fault these are about is the authentication one.
   await sts(w, "fault: a wrong password over SOAP 1.1", {
     trustNs: NS.wst13, soap: "1.1", op: "Issue", username: w.person,
-    password: "invalid" });
+    password: "invalid", appliesTo: w.wsRp });
   await sts(w, "fault: a wrong password over SOAP 1.2", {
     trustNs: NS.wst13, soap: "1.2", op: "Issue", username: w.person,
-    password: "invalid" });
+    password: "invalid", appliesTo: w.wsRp });
   for (const soap of ["1.1", "1.2"]) {
     const r = await hop(null, w.rb + "/sts", {
       method: "POST", body: "<a><b></a>",

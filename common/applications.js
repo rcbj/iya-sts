@@ -1040,7 +1040,10 @@ const SCHEMA = {
             'the management API), "rfc7591" (POST /oauth2/register) or ' +
             '"startup" (one of this service\'s own seeded clients). Absent ' +
             'on an application that simply turned up. Written by this ' +
-            'registry and not editable; it grants and refuses nothing.' },
+            'registry and not editable. IN PRODUCT IT IS WHAT MAKES AN ' +
+            'APPLICATION SERVED (#496): an entry without it — one a ' +
+            'development sighting filed, or an LDAP add — is answered as ' +
+            'no application at every protocol door.' },
     // REGISTERED THROUGH AN OPENID FEDERATION (#134, 2026-09-23): an
     // application that became a client because its Trust Chain ended at one
     // of this realm's Trust Anchors (OpenID Federation for OpenID Connect
@@ -2214,8 +2217,9 @@ const SCHEMA = {
             'AudienceRestriction of the assertion issued for it are one ' +
             'string, so an application that registered it here rather than ' +
             'on `wstrustAppliesTo` still gets its own box on the delegation ' +
-            'map. The same lookup and the same non-permission — nothing here ' +
-            'is ever refused for being unregistered.' },
+            'map. The same lookup, and since #496 the AppliesTo it resolves ' +
+            'is refused in product when the application it names is not ' +
+            'registered (appRegisteredBy).' },
     { name: 'samlAssertionConsumerService', kind: 'multi', from: 'SAML 2.0 / ' +
         'SAML 1.1',
       what: 'THE ASSERTION CONSUMER SERVICE URL — where a SAML response is ' +
@@ -3013,10 +3017,10 @@ const SCHEMA = {
             '/admin/delegation against the APPLICATION that registered that ' +
             'address, so a chain of delegated hops draws as one picture ' +
             'rather than as boxes named after URLs that nothing else in it ' +
-            'mentions. A LOOKUP and not a permission — an AppliesTo nobody ' +
-            'registered is issued for exactly as before and recorded ' +
-            'verbatim. See forAppliesTo(), which asks this attribute first ' +
-            'and `samlEntityId` behind it.' },
+            'mentions. In development a LOOKUP and not a permission — an ' +
+            'AppliesTo nobody registered is issued for and recorded ' +
+            'verbatim; in product it is refused (#496). See forAppliesTo(), ' +
+            'which asks this attribute first and `samlEntityId` behind it.' },
     // #485: the OAuth 2.0 scopes a WS-Trust JWT for this application
     // carries, judged as an access token's are.
     { name: 'wstrustJwtScope', kind: 'multi', from: 'by hand',

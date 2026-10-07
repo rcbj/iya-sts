@@ -902,6 +902,31 @@ class WsFederation {
         'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>');
     }
 
+    // A RELYING PARTY NOBODY REGISTERED GETS NOTHING IN PRODUCT (#496).
+    // rcbj, 2026-10-06: an unregistered application gets a 404 or its
+    // protocol's own "unknown application" error, and this profile has no
+    // error response of its own (section 13), so the answer is a 404 page —
+    // asked HERE, before the wreply is resolved, before the person is sent
+    // to the sign-in screen, and before issueSignInResponse()'s `seen()`.
+    // "Registered" is #494's: `appRegisteredBy` on the wtrealm's own entry
+    // (`IssuerNames.registeredApplication()`), so an entry a development
+    // sighting filed is refused like no entry. Development issues under the
+    // shared entityID and files the realm, as it always did.
+    if (!mode.issuesToUnregisteredApplications() &&
+        !IssuerNames.registeredApplication(realm)) {
+      log.info('wsfed: refused a wsignin1.0 in product mode — the wtrealm "' +
+               realm + '" is not a registered relying party.');
+      errorCodes.mark(res, 'STS-WSFED-0021');
+      log.debug("Leaving WsFederation.signIn(). The wtrealm is not " +
+                "registered.");
+      return this.wsfedError(res, 404, 'That relying party is not registered',
+        'wtrealm is "' + realm + '", and no relying party is registered ' +
+        'under that name in this realm. In product mode this identity ' +
+        'provider issues a token only to a relying party registered ahead ' +
+        'of time (the console or /admin-api); one that was ' +
+        'only seen is not registered.');
+    }
+
     // wreply is optional (13.2.1). With none, the response goes to this
     // service's own mock relying party rather than nowhere: a real IdP would
     // post to the endpoint registered for wtrealm, and there is no registration

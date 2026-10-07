@@ -598,6 +598,81 @@ class WsTrust {
     return found ? String(found.identifier) : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // THE APPLICATION A TOKEN IS FOR MUST BE A REGISTERED ONE, IN PRODUCT (#496).
+  //
+  // rcbj, 2026-10-06: in product an application nobody registered gets
+  // nothing but its protocol's own "unknown application" error. "Registered"
+  // is #494's word, `IssuerNames.registeredApplication()`: `appRegisteredBy`
+  // set on the entry the AppliesTo resolves to — found the way the token
+  // will be named, appliesToApplication(), so the application this refuses
+  // and the one whose entityID an issued assertion would carry are one. An
+  // entry `seen()` filed in development is a sighting, not a registration,
+  // and is refused like no entry at all; a realm switched from development
+  // keeps none of what development learnt.
+  //
+  // AN RST WITH NO AppliesTo IS REFUSED TOO (rcbj's decision on #496). It
+  // names no application, and the token it would be answered with carries
+  // no audience restriction — one any relying party would be entitled to
+  // accept.
+  //
+  // THE FAULTS ARE WS-TRUST 1.4 SECTION 11's. An AppliesTo is, in 1.3's
+  // section 4.1, "the scope for which this security token is desired", so
+  // an AppliesTo this STS serves nobody under is `wst:InvalidScope` ("The
+  // request scope is invalid") — the exact sentence, where
+  // `wst:InvalidRequest` would also have been true and said less. A request
+  // with no AppliesTo LACKS what it needs to be answered, which is the
+  // table's InvalidRequest row.
+  //
+  // Every token type (SAML 2.0, SAML 1.1, JWT) and OnBehalfOf / ActAs alike:
+  // the question is asked before the token type or the delegation is read.
+  // The delegation policy's own `unregistered-target` / `no-target` refusal
+  // (STS-WSTRUST-0024) is therefore not reached for a delegation in product;
+  // it still decides the targets a REGISTERED AppliesTo allows, and still
+  // writes development's "would have refused" note.
+  //
+  // Development answers null: the token is issued under the shared name and
+  // `seen()` files the application, as it always was.
+  // ---------------------------------------------------------------------------
+  private unregisteredApplication(op: string, audience: string,
+                                  stated: boolean) {
+    const { mode, log } = this.deps;
+    log.debug("Entering WsTrust.unregisteredApplication(). op=" + op);
+    if (op === 'validate' || op === 'cancel') {
+      log.debug("Leaving WsTrust.unregisteredApplication(). " +
+                "Issues nothing.");
+      return null;
+    }
+    if (mode.issuesToUnregisteredApplications()) {
+      log.debug("Leaving WsTrust.unregisteredApplication(). Development.");
+      return null;
+    }
+    const wanted = String(audience || '').trim();
+    if (!wanted) {
+      log.debug("Leaving WsTrust.unregisteredApplication(). No AppliesTo.");
+      return {
+        errorCode: 'STS-WSTRUST-0031', trustFault: 'InvalidRequest',
+        why: 'The request carries ' + (stated ? 'an empty' : 'no') +
+             ' <wsp:AppliesTo>, so it names no application a token could ' +
+             'be issued for. In product mode a token is issued only for a ' +
+             'registered application, and never without an audience.'
+      };
+    }
+    if (IssuerNames.registeredApplication(
+      this.appliesToApplication(wanted))) {
+      log.debug("Leaving WsTrust.unregisteredApplication(). Registered.");
+      return null;
+    }
+    log.debug("Leaving WsTrust.unregisteredApplication(). Not registered.");
+    return {
+      errorCode: 'STS-WSTRUST-0030', trustFault: 'InvalidScope',
+      why: 'The AppliesTo "' + wanted + '" is not a registered application ' +
+           'in this realm. In product mode a token is issued only for an ' +
+           'application registered ahead of time (the console or ' +
+           '/admin-api); one that was only seen is not registered.'
+    };
+  }
+
   // WHAT THE ISSUED TOKEN SAYS ABOUT WHO ACTED, for the act's note (#478).
   // It said, until #478, that nothing in an ActAs token carried the
   // composite fact, "a gap in the mock" — true until #186 and wrong since:
@@ -1921,6 +1996,25 @@ class WsTrust {
       }
     }
 
+    // AN APPLICATION NOBODY REGISTERED GETS NOTHING IN PRODUCT (#496). Asked
+    // ABOVE authenticate(), because that is where the requester's
+    // `recordAuthentication()` row is written, and rcbj's rule is that a
+    // refused request leaves no trace of the caller: no /admin/users row, no
+    // `seen()` sighting, nothing issued. Validate and Cancel issue nothing
+    // and are not asked. See unregisteredApplication().
+    const unregistered = this.unregisteredApplication(op, audience,
+                                                      !!appliesToEl);
+    if (unregistered) {
+      log.info('wstrust: refused an RST in product mode — ' +
+               unregistered.why);
+      log.debug("Leaving WsTrust.handleRst(). No registered application.");
+      return { status: 500, version: version,
+               errorCode: unregistered.errorCode,
+               // error-code: none — decided in unregisteredApplication(), carried on errorCode above
+               body: this.soapFault(version, unregistered.why,
+                                    unregistered.trustFault, trustNs) };
+    }
+
     // EVERY operation authenticates, and it happens here — above the four
     // branches rather than inside two of them.
     //
@@ -2136,11 +2230,13 @@ class WsTrust {
     // THE ROLE GATE, and this is the one issuance site here where the
     // application may be ABSENT and that is not an error. AppliesTo is optional
     // in an RST, and a token with no audience restriction is a state this
-    // service deliberately allows — so there is no application to have a
-    // requirement, and `issuance_gate.check()` answers "allowed" for a call
-    // that names none. Its header says why that is the honest answer rather
-    // than a hole: this service issues nothing to nobody, so a call with no
-    // application is a caller that does not know who it is serving.
+    // service deliberately allows IN DEVELOPMENT (product refused it above,
+    // #496, with an AppliesTo nobody registered) — so there is no
+    // application to have a requirement, and `issuance_gate.check()` answers
+    // "allowed" for a call that names none. Its header says why that is the
+    // honest answer rather than a hole: this service issues nothing to
+    // nobody, so a call with no application is a caller that does not know
+    // who it is serving.
     //
     // THE SUBJECT MAY BE `anonymous`, which is this protocol's own word and not
     // a missing value — a Renew with no credential is renewing somebody else's
@@ -2314,8 +2410,10 @@ class WsTrust {
     // THE RELYING PARTY. AppliesTo is WS-Trust's name for the service a token
     // is being issued FOR, and this is where one is about to be. It is optional
     // in an RST — a token with no AppliesTo has no audience restriction, which
-    // is a state this service deliberately allows — so an absent one records
-    // nothing rather than an empty application.
+    // is a state this service deliberately allows in development — so an
+    // absent one records nothing rather than an empty application. In product
+    // only a REGISTERED AppliesTo reaches here (#496), and a sighting of an
+    // entry that does not exist creates nothing there anyway.
     //
     // The SECOND kind is the mirror of wsfed.ts's: where the token issued is a
     // SAML 2.0 assertion, this AppliesTo is also its audience, which is exactly

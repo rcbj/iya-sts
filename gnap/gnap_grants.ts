@@ -625,6 +625,32 @@ class GnapGrants {
     })[0] || null;
   }
 
+  // AN APPLICATION NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496). An
+  // entry development created on first sight of a proved key carries the
+  // key (`gnapKey`, `gnapKeyIdentity`) and no `appRegisteredBy`, so the same
+  // key was accepted in product as though an administrator had provisioned
+  // it — the unknown-key refusal (`STS-GNAP-0082`) only asked whether ANY
+  // entry held it. "Registered" is #494's word. The refusal is the one an
+  // unknown key gets, in section 2.3.3's terms, and comes before the entry
+  // is sighted again or anything is issued. Development is unchanged.
+  private unregisteredCaller(app, kind) {
+    const { log, mode } = this.deps;
+    log.debug("Entering GnapGrants.unregisteredCaller().");
+    if (mode.issuesToUnregisteredApplications() ||
+        String((app && app.registeredBy) || '')) {
+      log.debug("Leaving GnapGrants.unregisteredCaller(). Served.");
+      return null;
+    }
+    log.debug("Leaving GnapGrants.unregisteredCaller(). Not registered.");
+    return this.refusal('STS-GNAP-0902', 'the application "' +
+        String(app && app.identifier) + '" this key or instance belongs to ' +
+        'is not registered with this authorization server; in product mode ' +
+        'an application must be provisioned before it can make requests, ' +
+        'and one created on first sight is not (RFC 9635 section 2.3.3).',
+                        kind === KIND_RS ? 'invalid_resource_server' :
+                        'invalid_client', 401);
+  }
+
   private appByInstanceId(instanceId) {
     const { log, applications, store } = this.deps;
     log.debug("Entering GnapGrants.appByInstanceId().");
@@ -876,6 +902,12 @@ class GnapGrants {
                             'invalid_client', 401);
       }
       app = found.app;
+      const unregisteredInstance = this.unregisteredCaller(app, kind);
+      if (unregisteredInstance) {
+        log.debug("Leaving GnapGrants.identifyCaller(). The instance's " +
+                  "application is not registered.");
+        return unregisteredInstance;
+      }
       instanceId = member.reference;
       if (found.key) {
         descriptor = keys.describe(found.key,
@@ -935,6 +967,12 @@ class GnapGrants {
     }
     if (!app) {
       app = this.appByKeyIdentity(descriptor.identity);
+    }
+    const unregisteredKey = app ? this.unregisteredCaller(app, kind) : null;
+    if (unregisteredKey) {
+      log.debug("Leaving GnapGrants.identifyCaller(). The key's application " +
+                "is not registered.");
+      return unregisteredKey;
     }
     if (mtlsTrust === 'pki') {
       const unbound = this.bindMtlsCaller(req, app, descriptor);

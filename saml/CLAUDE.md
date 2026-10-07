@@ -1277,6 +1277,47 @@ one declared for the family in `appAllowedProtocol` — not any application whos
 slug matches: an OAuth client's name is not somebody this identity provider
 has agreed to publish itself to, and a SAML 2.0 service provider is not a SAML
 1.1 relying party.
+**And, since #496, one somebody REGISTERED** (`appRegisteredBy`, #494's
+word): a development sighting writes the kind onto an entry, so the kind
+alone let an entry development had merely seen through every per-SP path in
+product. Both helpers add it in product only.
+
+## A SERVICE PROVIDER NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496, 2026-10-06)
+
+rcbj, widening #496: in product an unregistered application gets nothing but
+a 404 or its protocol's own "unknown application" error, and nothing is
+learnt from it. #112 closed the per-provider paths; the GENERIC doors still
+answered any Issuer, refused only later by the signature or the return
+address rule — after the signature check had written its audit row, and, on
+a signature refusal, after `recordServiceProvider()` had filed a sighting on
+whatever entry the Issuer named. Behind `mode.issuesToUnregisteredApplications()`
+(the `unregistered-saml-providers` row on `/admin/mode`):
+
+* **`/saml2/sso`**: an AuthnRequest whose Issuer (or path segment) is no
+  registered service provider is a **403 page, `STS-SAML-0103`**, on its
+  first arrival, before the signature check. A page and not a SAML
+  Response: no Response may go to an AssertionConsumerService nobody
+  registered, which is the signature refusal's reason too. **The one thing
+  still started is an MDQ lookup for an entityID with NO entry**, through
+  `queueMdqLookup()` and its trust-anchor rule above — the operator's
+  responder is consulted and nothing is taken from the request, and a
+  verified answer is a registration (`createApplication()` stamps it). So
+  `sts_saml_unregistered`'s request-started lookup keeps its shape.
+* **`/saml2/slo`**: a LogoutRequest from an unregistered Issuer ends
+  nothing, **403 page, `STS-SAML-0104`**, before the signature check and the
+  session lookup. With signed requests not required, an unsigned one from an
+  Issuer nobody registered ended the browser's session.
+* **`/saml11/sso`**: a browser flow for a relying party that is not
+  registered (named by `providerId`, the segment, or inferred) is a **403
+  page, `STS-SAML-0105`**, before its addresses are read.
+* **`sp_metadata.ts`**: "known" is "registered" for `mdqImport()` and
+  `queueMdqLookup()`, so a lookup a request starts for an entityID only a
+  sighting filed is gated as for an unknown one (`STS-SAML-0080` with no
+  anchor). Such an entry stays unregistered after a verified refresh — the
+  refresh updates it and does not create it — and is registered by an
+  operator.
+
+`tests/unregistered_applications.js` (S1–S5) holds it in both modes.
 
 **The parent project's paired SAML jobs** (decision 2 above) run against a
 development service, where nothing changed. `tests/vendored/sts_saml11.js` (a

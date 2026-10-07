@@ -9079,6 +9079,22 @@ const CODES = [
       'whose sign-in mechanism the client does not allow ' +
       '(appAuthnMechanism, #457), and prompt=none forbids asking.',
     spec: 'login_required (OIDC Core 3.1.2.6)' },
+  { code: 'STS-OAUTH-0947',
+    summary: 'Product mode: an authorization request (or a pushed one) ' +
+      'named a client_id that is no registered application (no ' +
+      'appRegisteredBy; an entry a sighting filed is not a registration), ' +
+      'and was refused before anything was decided or recorded (#496).',
+    spec: 'invalid_client (HTTP 400, not redirected, RFC 6749 4.1.2.1)' },
+  { code: 'STS-OAUTH-0948',
+    summary: 'Product mode: an authorization request named no client_id, ' +
+      'so there is no registered client to serve (#496).',
+    spec: 'invalid_request (HTTP 400, not redirected, RFC 6749 4.1.2.1)' },
+  { code: 'STS-OAUTH-0949',
+    summary: 'Product mode: a token request named a client that is no ' +
+      'registered application (no appRegisteredBy; an entry a sighting ' +
+      'filed is not a registration), and was refused before the client ' +
+      'was counted or recorded (#496).',
+    spec: 'invalid_client (HTTP 401, RFC 6749 section 5.2)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -9590,6 +9606,22 @@ const CODES = [
       'on a sign-in mechanism the relying party does not allow ' +
       '(appAuthnMechanism, #457).',
     spec: 'HTTP 403 page' },
+  { code: 'STS-SAML-0103',
+    summary: 'Product mode: an AuthnRequest named an Issuer that is no ' +
+      'registered SAML 2.0 service provider (no appRegisteredBy; an entry ' +
+      'a sighting filed is not a registration), or none, and was refused ' +
+      'before its signature was checked or anything recorded (#496).',
+    spec: 'HTTP 403 page (no Response to an unregistered ACS)' },
+  { code: 'STS-SAML-0104',
+    summary: 'Product mode: a LogoutRequest named an Issuer that is no ' +
+      'registered SAML 2.0 service provider, or none; no session was ' +
+      'ended (#496).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-SAML-0105',
+    summary: 'Product mode: a SAML 1.1 browser flow named (or let this ' +
+      'service infer) a relying party that is not registered, and was ' +
+      'refused before its addresses were read (#496).',
+    spec: 'HTTP 403 page' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -9748,6 +9780,18 @@ const CODES = [
       'product mode, saml2.entityId empty and saml.issuer unset (#494).',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section ' +
       '11' },
+  { code: 'STS-WSTRUST-0030',
+    summary: 'Product mode: an RST asked for a token for an AppliesTo that ' +
+      'resolves to no registered application (no appRegisteredBy; an entry ' +
+      'a sighting filed is not a registration), and was refused before ' +
+      'anything was issued or recorded (#496).',
+    spec: 'SOAP Fault wst:InvalidScope (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0031',
+    summary: 'Product mode: an RST asked for a token and carried no ' +
+      'AppliesTo, so it names no application a token could be for; refused ' +
+      'before anything was issued or recorded (#496).',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -9837,6 +9881,12 @@ const CODES = [
       'issue or publish under: product mode, saml2.entityId empty and ' +
       'saml.issuer or wsfed.entityId unset (#494).',
     spec: 'HTTP 503 page or text/plain' },
+  { code: 'STS-WSFED-0021',
+    summary: 'Product mode: a wsignin1.0 named a wtrealm that is no ' +
+      'registered relying party (no appRegisteredBy; an entry a sighting ' +
+      'filed is not a registration), and was refused before the sign-in ' +
+      'screen and before anything was issued or recorded (#496).',
+    spec: 'HTTP 404 error page (the profile defines no error response)' },
   // ===== FED ===============================================================
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +
@@ -16717,6 +16767,13 @@ const CODES = [
     summary: 'A GNAP grant could not wait for its resource owner: the user ' +
       'the request names is not a person the directory holds (#432 phase 6).',
     spec: 'RFC 9635 section 2.4 (unknown_user, HTTP 400)' },
+  { code: 'STS-GNAP-0902',
+    summary: 'Product mode: a GNAP request was proved with a key, or named ' +
+      'an instance identifier, belonging to an application nobody ' +
+      'registered (no appRegisteredBy; an entry created on first sight in ' +
+      'development is not a registration) (#496).',
+    spec: 'invalid_client or invalid_resource_server (HTTP 401, RFC 9635 ' +
+      'section 2.3.3)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +

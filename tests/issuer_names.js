@@ -22,9 +22,10 @@
 //   I5. the mode predicate and its requirement row are gone (no shim);
 //   I6. WS-Trust, both modes: a SAML 2.0 and a SAML 1.1 assertion for a
 //       registered AppliesTo carry the application's own entityID; a JWT's
-//       `iss` is still the realm's OAuth issuer; an AppliesTo nobody
-//       registered gets the shared name, on the first request and on the
-//       second, after `seen()` has filed an entry for it;
+//       `iss` is still the realm's OAuth issuer; in development an
+//       AppliesTo nobody registered gets the shared name, on the first
+//       request and on the second, after `seen()` has filed an entry for
+//       it, and in product it is refused (#496, STS-WSTRUST-0030);
 //   I7. WS-Federation, both modes: the assertion for a registered wtrealm
 //       carries the application's own entityID, and the mock relying
 //       party's issuer check holds it to that name; an unregistered wtrealm
@@ -315,10 +316,18 @@ function wstrustIssuers(t, n) {
               jwt.iss !== n.own,
               'I6b. ' + m + ': a WS-Trust JWT\'s iss is still the realm\'s ' +
               'OAuth issuer', JSON.stringify(jwt));
-      t.check(first.status === 200 && first.issuer === n.shared &&
-              second.status === 200 && second.issuer === n.shared,
+      // #496: only DEVELOPMENT issues for an AppliesTo nobody registered.
+      // Product refuses it — and development, which runs first, has filed
+      // an entry for it by then, so product's refusal is of a seen-only one.
+      t.check(m === 'development'
+        ? first.status === 200 && first.issuer === n.shared &&
+          second.status === 200 && second.issuer === n.shared
+        : first.status === 500 && first.errorCode === 'STS-WSTRUST-0030' &&
+          second.status === 500 && second.errorCode === 'STS-WSTRUST-0030',
               'I6c. ' + m + ': an AppliesTo nobody registered gets the ' +
-              'shared name, before and after seen() files it',
+              (m === 'development'
+                ? 'shared name, before and after seen() files it'
+                : 'refusal STS-WSTRUST-0030 even after a sighting (#496)'),
               JSON.stringify([first, second]));
     });
   });

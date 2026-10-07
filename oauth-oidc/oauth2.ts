@@ -404,6 +404,9 @@ import capabilities = require('../cluster/cluster_capabilities');
 import sessionManagement = require('./session_management');
 // A leaf: a client's registered `jwks_uri`, fetched and cached (#120).
 import clientJwks = require('./client_jwks');
+// A library: what "registered" means for an application (#494, #496). It
+// reaches the registry lazily, so this require closes no cycle.
+import IssuerNames = require('../common/issuer_names');
 
 // A loose JSON-shaped object: the tokens, records, requests and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -9268,6 +9271,43 @@ class OAuth2Server {
     }];
   }
 
+  // THE PRODUCT QUESTION FOR A CLIENT A REQUEST NAMES (#496): null where it
+  // may be served — development, or a REGISTERED application — and the
+  // refusal otherwise: `invalid_request` for a request naming no client,
+  // `invalid_client` for one nobody registered. The authorization endpoint
+  // and the token endpoint ask it; each answers in its own way.
+  private unregisteredClientRefusal(clientId: Json): Json {
+    const { log, mode } = this.deps;
+    log.debug("Entering OAuth2Server.unregisteredClientRefusal().");
+    if (mode.issuesToUnregisteredApplications()) {
+      log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). " +
+                "Development.");
+      return null;
+    }
+    const id = String(clientId == null ? '' : clientId).trim();
+    if (!id) {
+      log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). No " +
+                "client_id.");
+      return { code: 'STS-OAUTH-0948', error: 'invalid_request',
+               description: 'The request names no client_id. In product ' +
+                 'mode this authorization server serves only a client ' +
+                 'registered ahead of time.' };
+    }
+    if (IssuerNames.registeredApplication(id)) {
+      log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). " +
+                "Registered.");
+      return null;
+    }
+    log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). Not " +
+              "registered.");
+    return { code: 'STS-OAUTH-0947', error: 'invalid_client',
+             description: 'The client "' + id + '" is not registered in ' +
+               'this realm. In product mode this authorization server ' +
+               'serves only a client registered ahead of time (the ' +
+               'console, /admin-api, RFC 7591 or an OpenID Federation); ' +
+               'one that was only seen is not registered.' };
+  }
+
   // ---------------------------------------------------------------------------
   // THE REQUEST-LEVEL CHECKS OF AN AUTHORIZATION REQUEST, AS ONE FUNCTION
   // (2026-09-13).
@@ -9339,6 +9379,30 @@ class OAuth2Server {
       return refuse('STS-OAUTH-0159', 'invalid_request', asked.detail);
     }
     const q = asked.value;
+
+    // --- AN APPLICATION NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496) ---
+    //
+    // rcbj, 2026-10-06: in product an application that is not registered
+    // gets nothing but its protocol's own "unknown application" error.
+    // Until #496 the authorization endpoint had no client check at all: an
+    // unknown client_id was refused only by the redirect URI rule (a 400,
+    // `STS-OAUTH-0121`), and ACCEPTED where an operator had set the
+    // service-wide `oauth2.redirectUris`. "Registered" is #494's word,
+    // `appRegisteredBy` on the entry (`IssuerNames.registeredApplication()`),
+    // so an entry a development sighting filed — redirect URIs observed and
+    // all — is refused like none. Answered HERE, as a 400 on this server and
+    // never redirected: RFC 6749 section 4.1.2.1 says a missing or invalid
+    // client identifier MUST NOT be redirected, and nothing about this
+    // client's addresses has been decided. A federation client registered
+    // automatically (OpenID Federation 12.1) was registered above, before
+    // this ran. Development is unchanged.
+    const unknownClient = self.unregisteredClientRefusal(q.client_id);
+    if (unknownClient) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). The " +
+                "client is not registered.");
+      return refuse(unknownClient.code, unknownClient.error,
+                    unknownClient.description);
+    }
 
     // --- OAUTH 2.1: THE CLIENT FIRST, AND A DEFAULT redirect_uri -------------
     //
@@ -12783,6 +12847,31 @@ class OAuth2Server {
                   ((e && e.message) || e));
       }
       registeredClient = applications.clientConfigOf(client.client_id);
+    }
+
+    // AN APPLICATION NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496): the
+    // client this request names, before anything about it is counted or
+    // recorded — the `seen()` below wrote an unregistered entry's grant type
+    // and scope onto it, and the failed-secret counter would count it. An
+    // unknown client was already refused by the client authentication
+    // below (`STS-OAUTH-0193`), and one a development sighting filed only
+    // because a sighting writes no credential (`STS-OAUTH-0553`); this says
+    // what is wrong in both cases, and holds for an entry that carries a
+    // credential nobody registered through the registry. A grant with no
+    // client (the clientless assertion and pre-authorized code grants) names
+    // none and is not asked. `invalid_client`, RFC 6749 section 5.2's code
+    // for an unknown client.
+    const unknownClient = client.client_id
+      ? self.unregisteredClientRefusal(client.client_id) : null;
+    if (unknownClient) {
+      if (presented.basic) {
+        res.set('WWW-Authenticate', self.basicChallenge());
+      }
+      log.debug("Leaving the token endpoint. The client is not registered.");
+      errorCodes.mark(res, 'STS-OAUTH-0949');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 401, 'invalid_client',
+                             unknownClient.description);
     }
 
     // FAPI (#138): one client, however many ways the request names it.

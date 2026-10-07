@@ -754,11 +754,16 @@ class Saml11Sso {
   // IS THE SEGMENT A REGISTERED SAML 1.1 RELYING PARTY (#112)? An entry of
   // the kind, or one DECLARED for the SAML 1.1 family — not any application
   // whose slug happens to match.
+  //
+  // AND, IN PRODUCT, ONE SOMEBODY REGISTERED (#496): `appRegisteredBy`, so
+  // an entry a development sighting filed — kind and all — is not one.
   private isRegisteredRelyingParty(id): boolean {
-    const { applications, log } = this.deps;
+    const { applications, log, mode } = this.deps;
     log.debug("Entering Saml11Sso.isRegisteredRelyingParty().");
     const record: any = id ? applications.get(id) : null;
     const answer = !!record &&
+      (mode.issuesToUnregisteredApplications() ||
+       !!String(record.registeredBy || '')) &&
       ((record.kinds || []).indexOf(RP_KIND) >= 0 ||
        applications.declaredFamiliesOf(record).indexOf('saml11') >= 0);
     log.debug("Leaving Saml11Sso.isRegisteredRelyingParty(). " + answer);
@@ -1756,6 +1761,29 @@ class Saml11Sso {
     if (!mode.acceptsUnregisteredAddresses()) {
       const early = this.relyingPartyFor(carried, scoped,
                                          String(carried.shire || ''));
+      // A RELYING PARTY NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496):
+      // before its addresses are read, on a page, as the shire refusal
+      // below is one. "Registered" is #494's word (`appRegisteredBy`), so an
+      // entry a development sighting filed is refused like none.
+      const earlyEntry: any = early.id ? applications.get(early.id) : null;
+      if (!mode.issuesToUnregisteredApplications() &&
+          (!earlyEntry || !String(earlyEntry.registeredBy || ''))) {
+        log.info('saml11: refused a browser flow in product mode for "' +
+                 (early.id || '(none)') + '": not a registered relying ' +
+                 'party.');
+        errorCodes.mark(res, 'STS-SAML-0105');
+        log.debug("Leaving Saml11Sso.interSiteTransfer(). The relying " +
+                  "party is not registered.");
+        return this.samlError(res, 403, 'That relying party is not ' +
+                                        'registered',
+          (early.id ? 'The relying party is "' + early.id + '" (' +
+                      early.from + '), and no '
+                    : 'Nothing in the request names a relying party, so no ') +
+          'SAML 1.1 relying party is registered under it in this realm. In ' +
+          'product mode this identity provider answers only a relying ' +
+          'party registered ahead of time (the console or /admin-api); one ' +
+          'that was only seen is not registered.');
+      }
       // Which of the entry's addresses count is
       // `applications.returnAddressesOf()`'s to say (2026-09-12): one a
       // development-mode request recorded is withheld here until it is

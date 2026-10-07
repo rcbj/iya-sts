@@ -1673,6 +1673,37 @@ function publishesMetadataForUnregisteredProviders() {
   return !isProduct();
 }
 
+// Does this service ISSUE a token to an application nobody registered
+// (#496, rcbj 2026-10-06)? A WS-Trust AppliesTo and a WS-Federation wtrealm
+// name the relying party a token is FOR. Development answers yes: a token is
+// issued for any of them under the shared entityID, and the protocol's
+// `seen()` files the application, which is how a relying party can be pointed
+// here before anything is provisioned. Product answers no: an application
+// nobody registered (no `appRegisteredBy` — an entry `seen()` filed in
+// development is not a registration) is refused before anything is issued or
+// recorded, in that protocol's own vocabulary, and an RST naming no AppliesTo
+// at all is refused with it, because a token with no audience is one every
+// relying party would be entitled to accept. The rule is rcbj's on #496: in
+// product an unregistered application gets nothing but a 404 or its
+// protocol's own "unknown application" error.
+// The same question is asked of every door where a request names an
+// application (#496, widened by rcbj the same day): an OAuth 2.0 client and
+// an RFC 8693 target, a SAML service provider or relying party, a GNAP
+// client — each refusing in its own protocol's words, each with its own row
+// in REQUIREMENTS below.
+/**
+ * Tells whether a token may be issued for an application nobody registered
+ * (a WS-Trust AppliesTo, a WS-Federation wtrealm, an OAuth client, a SAML
+ * service provider, a GNAP client), or for no application.
+ *
+ * @returns true in development mode
+ */
+function issuesToUnregisteredApplications() {
+  log.debug("Entering issuesToUnregisteredApplications().");
+  log.debug("Leaving issuesToUnregisteredApplications().");
+  return !isProduct();
+}
+
 // Does this process embed the identity protocol debugger (2026-09-13)?
 // `debugger.enabled` decides where it says `on` or `off`; its default, `auto`,
 // is this predicate's own answer: yes in development, where the debugger is
@@ -2830,6 +2861,73 @@ const REQUIREMENTS = [
              '1.1 relying party (STS-SAML-0083). The unscoped documents are ' +
              'unchanged.',
     where: 'saml/saml2_sso.ts, saml/saml11_sso.ts' },
+  { id: 'unregistered-applications',
+    what: 'A token is issued only for a registered application (#496)',
+    development: 'A WS-Trust RST is answered for any AppliesTo, and for none ' +
+                 '(a token with no audience restriction); a WS-Federation ' +
+                 'wsignin1.0 for any wtrealm. Each is issued under the ' +
+                 'shared entityID, and the application is filed in the ' +
+                 'register by its first sighting.',
+    product: 'An RST whose AppliesTo resolves to no registered application ' +
+             '(appRegisteredBy unset — a sighting is not a registration) is ' +
+             'refused with wst:InvalidScope (STS-WSTRUST-0030), and one with ' +
+             'no AppliesTo with wst:InvalidRequest (STS-WSTRUST-0031), for ' +
+             'every token type and OnBehalfOf / ActAs, before the requester ' +
+             'is authenticated or anything is recorded. A wsignin1.0 whose ' +
+             'wtrealm names no registered relying party is refused with a ' +
+             '404 page (STS-WSFED-0021) before the sign-in screen.',
+    where: 'ws-trust/wstrust.ts, ws-federation/wsfed.ts' },
+  { id: 'unregistered-oauth-clients',
+    what: 'An OAuth 2.0 client is served only when registered (#496)',
+    development: 'The authorization endpoint asks nothing about the ' +
+                 'client_id beyond its redirect URIs, and the token ' +
+                 'endpoint files a client it has seen before refusing it. ' +
+                 'An RFC 8693 audience a sighting filed is a target, and an ' +
+                 'assertion\'s audience naming one is a relying party.',
+    product: 'An authorization request or PAR naming a client_id nobody ' +
+             'registered (appRegisteredBy unset — a sighting is not a ' +
+             'registration) is a 400 on this server, never redirected ' +
+             '(STS-OAUTH-0947; none named: STS-OAUTH-0948); a token request ' +
+             'naming one is 401 invalid_client (STS-OAUTH-0949) before it ' +
+             'is counted or recorded. An RFC 8693 audience or resource ' +
+             'naming an unregistered application is the policy\'s ' +
+             'unregistered-target (invalid_target, STS-OAUTH-0793), and an ' +
+             'exchanged assertion\'s audience must be a registered ' +
+             'application under any-declared-relying-party.',
+    where: 'oauth-oidc/oauth2.ts, common/delegation_policy.ts, ' +
+           'oauth-oidc/exchange_assertions.ts' },
+  { id: 'unregistered-saml-providers',
+    what: 'A SAML service provider or relying party is answered only when ' +
+          'registered (#496)',
+    development: 'An AuthnRequest, a LogoutRequest and a SAML 1.1 browser ' +
+                 'flow are answered for any Issuer; the signature check ' +
+                 'records it, and an entry a sighting filed counts as a ' +
+                 'service provider on the per-SP paths.',
+    product: 'An AuthnRequest whose Issuer is no registered SAML 2.0 ' +
+             'service provider (appRegisteredBy unset — a sighting is not ' +
+             'a registration) is a 403 page before its signature is ' +
+             'checked (STS-SAML-0103; only a Metadata Query lookup for an ' +
+             'unknown entityID is still queued, under the trust-anchor ' +
+             'rule); a LogoutRequest from one ends nothing (STS-SAML-0104); ' +
+             'a SAML 1.1 flow for an unregistered relying party is a 403 ' +
+             'page (STS-SAML-0105). The per-SP paths, the attribute ' +
+             'authority and the SAML 1.1 responder count only a registered ' +
+             'entry, and an MDQ lookup treats an unregistered entry as ' +
+             'unknown.',
+    where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, saml/sp_metadata.ts' },
+  { id: 'unregistered-gnap-clients',
+    what: 'A GNAP client or resource server is served only when ' +
+          'registered (#496)',
+    development: 'An unknown proved key is made an application entry on ' +
+                 'first sight, and that entry\'s key and instance ' +
+                 'identifier are accepted from then on.',
+    product: 'An unknown key is refused (STS-GNAP-0082), and so is a key or ' +
+             'an instance identifier belonging to an entry nobody ' +
+             'registered (appRegisteredBy unset — one created on first ' +
+             'sight is not a registration): 401 invalid_client or ' +
+             'invalid_resource_server (STS-GNAP-0902), before the entry is ' +
+             'sighted again or anything is issued.',
+    where: 'gnap/gnap_grants.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +
@@ -3767,6 +3865,7 @@ module.exports = {
   registersFromMetadataQuery: registersFromMetadataQuery,
   publishesMetadataForUnregisteredProviders:
     publishesMetadataForUnregisteredProviders,
+  issuesToUnregisteredApplications: issuesToUnregisteredApplications,
   embedsProtocolDebugger: embedsProtocolDebugger,
   limitsDebuggerDestinations: limitsDebuggerDestinations,
   dialsInternalAddresses: dialsInternalAddresses,
