@@ -519,7 +519,7 @@ function policyFor(kind, realmId) {
     // THE TLS SESSION CACHE (#429): how long a session resumes, and how many
     // session IDs this listener keeps (`attachSessionCache()`).
     sessionTimeoutS: Math.max(1, Number(pick('sessionTimeoutS',
-                                             'tls.sessionTimeoutS')) || 60),
+                                             'tls.sessionTimeoutS')) || 300),
     sessionCacheSize: Math.max(0, Number(pick('sessionCacheSize',
                                               'tls.sessionCacheSize')) || 0),
     clientAuth: clientAuth

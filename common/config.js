@@ -9618,7 +9618,7 @@ const SETTINGS = [
   // `tls.mainSessionTimeoutS` (#406), which was the main port's alone.
   { key: 'tls.sessionTimeoutS', group: 'Listeners',
     label: 'TLS session lifetime (s)',
-    env: 'STS_TLS_SESSION_TIMEOUT_S', type: 'int', dflt: 60,
+    env: 'STS_TLS_SESSION_TIMEOUT_S', type: 'int', dflt: 300,
     min: 1, max: 86400, runtime: true, perProcess: true,
     description: 'How long, in seconds, a TLS session may be resumed: the ' +
                  'lifetime of a session ticket (TLS 1.3 and 1.2) and of an ' +
@@ -9631,14 +9631,16 @@ const SETTINGS = [
                  'it. Applied at the next handshake.' },
   { key: 'tls.sessionCacheSize', group: 'Listeners',
     label: 'TLS session cache size (sessions)',
-    env: 'STS_TLS_SESSION_CACHE_SIZE', type: 'int', dflt: 0,
+    env: 'STS_TLS_SESSION_CACHE_SIZE', type: 'int', dflt: 2048,
     min: 0, max: 1000000, runtime: true, perProcess: true,
     description: 'How many TLS sessions a listener keeps in memory to ' +
                  'resume by SESSION ID — a TLS 1.2 client resuming without ' +
-                 'a ticket; past it the oldest is forgotten. 0, the default, ' +
-                 'keeps none: node keeps no session cache of its own and ' +
-                 'resumes by tickets, which TLS 1.3 always uses and which ' +
-                 'need no server memory. The cache is per process, so ' +
+                 'a ticket; past it the oldest is forgotten. 2048 by ' +
+                 'default (rcbj, 2026-10-07), so a TLS 1.2 client that ' +
+                 'does not use tickets resumes too; 0 keeps none, and node ' +
+                 'keeps no session cache of its own, resuming by tickets ' +
+                 'only, which TLS 1.3 always uses and which need no server ' +
+                 'memory. The cache is per process, so ' +
                  'behind a balancer a session ID resumes only on the node ' +
                  'that made it (a ticket resumes anywhere, under the shared ' +
                  'key). Not on the SPIFFE gRPC listeners, whose server ' +

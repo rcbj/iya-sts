@@ -572,16 +572,16 @@ function childMain() {
     await settle();
     let a = await lifetime(mainPort, 'l1m');
     let b = await lifetime(dbgPort, 'l1d');
-    note(a === 60 && b === 60, 'L1. default: a session on either listener ' +
-         'may be resumed for tls.sessionTimeoutS, 60 seconds',
+    note(a === 300 && b === 300, 'L1. default: a session on either ' +
+         'listener may be resumed for tls.sessionTimeoutS, 300 seconds',
          a + ' / ' + b);
     w = config.setOverride('listenerMain.sessionTimeoutS', '123');
     await settle();
     a = await lifetime(mainPort, 'l2m');
     b = await lifetime(dbgPort, 'l2d');
-    note(w.ok && a === 123 && b === 60, 'L2. listenerMain.sessionTimeoutS ' +
-         '123: the main port\'s sessions carry 123 at the next handshake, ' +
-         'the debugger\'s still 60', a + ' / ' + b);
+    note(w.ok && a === 123 && b === 300, 'L2. listenerMain.' +
+         'sessionTimeoutS 123: the main port\'s sessions carry 123 at the ' +
+         'next handshake, the debugger\'s still 300', a + ' / ' + b);
     w = config.setOverride('tls.sessionTimeoutS', '77');
     await settle();
     a = await lifetime(mainPort, 'l3m');
@@ -596,10 +596,17 @@ function childMain() {
          String(a));
     config.clearOverride('tls.sessionTimeoutS');
     let res = await resumesById(mainPort, 'l5');
+    note(res.first.accepted && res.again.accepted && res.again.reused,
+         'L5. tls.sessionCacheSize 2048 (the default since 2026-10-07): a ' +
+         'TLS 1.2 session ID is resumed', tail(res.again));
+    // From here the service-wide cache is OFF, so L6 can show a listener's
+    // own size against one that inherits none.
+    config.setOverride('tls.sessionCacheSize', '0');
+    await settle();
+    res = await resumesById(mainPort, 'l5b');
     note(res.first.accepted && res.again.accepted && !res.again.reused,
-         'L5. tls.sessionCacheSize 0 (the default): a TLS 1.2 session ID is ' +
-         'not resumed — the full handshake again',
-         tail(res.again));
+         'L5b. tls.sessionCacheSize 0: a TLS 1.2 session ID is not resumed ' +
+         '— the full handshake again', tail(res.again));
     w = config.setOverride('listenerMain.sessionCacheSize', '10');
     await settle();
     res = await resumesById(mainPort, 'l6');
@@ -638,6 +645,7 @@ function childMain() {
          tail(res.again));
     config.setOverride('listenerMain.sessionTimeoutS', '-1');
     config.setOverride('listenerMain.sessionCacheSize', '-1');
+    config.clearOverride('tls.sessionCacheSize');
     config.clearOverride('tls.disableTls12');
     await settle();
     const rowOf = function (key) {
