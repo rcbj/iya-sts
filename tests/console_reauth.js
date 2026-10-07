@@ -198,7 +198,13 @@ function onAPage(tokenSub, forms) {
  */
 async function until(fn) {
   log.debug("Entering until().");
-  for (let i = 0; i < 200 && !fn(); i++) {
+  // A TIME BOUND, NOT A COUNT OF TURNS (2026-10-07). The runtime's PKCE and
+  // DPoP work is WebCrypto, which runs on libuv's thread pool; under the
+  // suite's parallel unit pool 200 turns passed before it finished, and the
+  // bar was asked for before it was drawn (memory mode, 200ac246's second
+  // run). Ten seconds, a turn at a time, is generous and still ends.
+  const deadline = Date.now() + 10000;
+  while (!fn() && Date.now() < deadline) {
     await new Promise(function (resolve) { setImmediate(resolve); });
   }
   log.debug("Leaving until().");
