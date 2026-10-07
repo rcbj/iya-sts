@@ -73,6 +73,17 @@ const SCOPE = 'openid admin:read admin:write admin:console';
 const SIGNIN_KEY = 'sts-console-signin';
 // How long before an access token's expiry it is refreshed, in seconds.
 const REFRESH_EARLY = 30;
+// A SIGN-IN AGAIN WITHOUT LEAVING THE PAGE (#508): a popup's sign-in is
+// told apart at the callback by its state's prefix, and hands its answer
+// back to the page that opened it over this channel.
+const POPUP_STATE_PREFIX = 'popup.';
+const POPUP_CHANNEL = 'sts-console-signin';
+// What a page held when a sign-in had to leave it (#508), kept across the
+// redirect and put back after, for at most RESTORE_MAX_AGE_MS.
+const RESTORE_KEY = 'sts-console-restore';
+const RESTORE_MAX_AGE_MS = 30 * 60 * 1000;
+// What `sendOnce()` answers when the request needs a sign-in first.
+const NEEDS_SIGN_IN = { needsSignIn: true };
 
 /**
  * The static console's runtime: sign-in, DPoP, routing and forms.
@@ -100,6 +111,17 @@ class ConsoleRuntime {
   // realm prefix included, from the shell's `data-sts-*` attributes; '' where
   // they are here, which is every service without a custom listener.
   private elsewhere: Json;
+  // WHO SIGNED IN (#508): the ID Token's `sub`, so a sign-in again in a
+  // popup is known to be the same person before a request waiting on it is
+  // sent for them.
+  private subject: string;
+  // The sign-in again in progress, while the session that ended is replaced
+  // (#508): its one-use values, the requests waiting on it and the channel
+  // the popup answers on. Null when none is.
+  private reauth: Json;
+  // The form being sent, so a sign-in that has to leave the page knows
+  // which one was pressed (#508).
+  private submitting: Json;
 
   /**
    * Makes the runtime.
@@ -125,6 +147,9 @@ class ConsoleRuntime {
     this.view = null;
     this.drawnAt = '';
     this.spec = null;
+    this.subject = '';
+    this.reauth = null;
+    this.submitting = null;
     const root = env.document && env.document.documentElement;
     const read = function (name: string): string {
       return root && typeof root.getAttribute === 'function'
@@ -335,14 +360,7 @@ class ConsoleRuntime {
     this.env.sessionStorage.setItem(SIGNIN_KEY, JSON.stringify({
       verifier: verifier, state: state, returnTo: returnTo,
       prefix: this.prefix }));
-    const params = new URLSearchParams({
-      response_type: 'code', client_id: CLIENT_ID,
-      redirect_uri: this.url('/admin/callback'), scope: SCOPE,
-      state: state, code_challenge: await this.sha256(verifier),
-      code_challenge_method: 'S256', resource: this.resource()
-    });
-    this.env.location.assign(this.url('/oauth2/authorize') + '?' +
-                             params.toString());
+    this.env.location.assign(await this.authorizeUrl(state, verifier));
   }
 
   // A token endpoint answer with `error: use_dpop_nonce` is retried once
@@ -390,6 +408,34 @@ class ConsoleRuntime {
       this.refreshToken = String(json.refresh_token);
     }
     this.expiresAt = now + (Number(json.expires_in) || 300) * 1000;
+    // WHO IT IS FOR (#508), from the ID Token the token endpoint answered
+    // this page directly. Read, not verified: it is compared with the one
+    // this page signed in with, never trusted for anything the API decides.
+    const subject = ConsoleRuntime.subjectOf(json.id_token);
+    if (subject) {
+      this.subject = subject;
+    }
+  }
+
+  /**
+   * The `sub` of an ID Token, read without verifying it.
+   *
+   * @param idToken - the compact JWT, or nothing
+   * @returns the subject, or ''
+   */
+  static subjectOf(idToken: Json): string {
+    const parts = String(idToken || '').split('.');
+    if (parts.length !== 3) {
+      return '';
+    }
+    try {
+      const text = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+      return String(JSON.parse(text).sub || '');
+    } catch (e) {
+      // Not a JWT this page can read: no subject, which a sign-in again
+      // then treats as a different person.
+      return '';
+    }
   }
 
   /**
@@ -414,6 +460,12 @@ class ConsoleRuntime {
    */
   async finishSignIn(): Promise<void> {
     const query = ConsoleRuntime.queryOf(this.env.location.search);
+    // A POPUP'S SIGN-IN (#508) is the opener's to redeem: it holds the
+    // verifier and the key, and this window hands the answer back.
+    if (String(query.state || '').indexOf(POPUP_STATE_PREFIX) === 0) {
+      this.handBackFromPopup(query);
+      return;
+    }
     let saved: Json = null;
     try {
       saved = JSON.parse(this.env.sessionStorage.getItem(SIGNIN_KEY) || 'null');
@@ -450,6 +502,8 @@ class ConsoleRuntime {
     const to = String(saved.returnTo || '/admin');
     this.env.history.replaceState(null, '', this.prefix + to);
     await this.route();
+    // What the page held when the sign-in had to leave it (#508).
+    this.restorePageState();
   }
 
   /**
@@ -471,6 +525,514 @@ class ConsoleRuntime {
     }
     this.keepTokens(answer.json);
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // SIGNING IN AGAIN WITHOUT LOSING THE PAGE (#508, rcbj 2026-10-07).
+  //
+  // A sign-on session is absolute (`authn.sessionLifetimeS`), so the refresh
+  // grant stops working when it ends, and until this the console sent the
+  // whole window to sign in: the page came back from its path alone, without
+  // its tab, what had been typed or the act that was pressed.
+  //
+  // **THE CENTRAL SIGN-IN IS STILL THE ONLY WAY BACK** (rcbj: every other
+  // gate depends on it). Nothing here authenticates anybody, extends a
+  // session or keeps one alive: the popup and the redirect both go to the
+  // realm's `/oauth2/authorize`, the sign-in service asks for whatever it
+  // asks for, and this page only redeems the code it was issued, with its
+  // own PKCE verifier and its own DPoP key.
+  //
+  // TWO WAYS, the first preferred:
+  //   * IN A POPUP. The page stays as it is under a bar that says the
+  //     session ended. Its button opens the sign-in in a window of its own
+  //     (a click, so no blocker stops it, which is why it is not opened by
+  //     itself); that window's callback hands the code back over a
+  //     BroadcastChannel and closes, and this page redeems it. Every request
+  //     that was waiting — the Save that met the ended session among them —
+  //     is then sent, once. A different `sub` coming back sends none of them
+  //     and draws the page again for whoever it is.
+  //   * ON THIS PAGE, when the reader asks, or the popup cannot work. The
+  //     forms' values, the page's address with its tab and which form was
+  //     being sent are kept in sessionStorage across the redirect, and put
+  //     back after it for the same realm, page and person, with a note that
+  //     NOTHING WAS SENT: after a full reload the reader presses Save again,
+  //     rather than an act going out that they last saw half an hour ago.
+  //     A password, a file, a hidden field and anything named for a secret
+  //     are never kept (`keepsField()`).
+  // ---------------------------------------------------------------------------
+  /**
+   * The page's path and query with its fragment, which is the tab it is on.
+   *
+   * @returns `/admin/...?...#...`
+   */
+  hereWithFragment(): string {
+    return this.here() + String(this.env.location.hash || '');
+  }
+
+  /**
+   * Keeps what the page holds and sends the window to sign in.
+   *
+   * @returns nothing
+   */
+  async leaveToSignIn(): Promise<void> {
+    this.savePageState();
+    await this.beginSignIn(this.hereWithFragment());
+  }
+
+  /**
+   * Waits for the person to sign in again, keeping the page.
+   *
+   * @returns true when the same person is signed in again and a waiting
+   *   request may be sent; false when the window left to sign in or a
+   *   different person came back
+   */
+  signInAgain(): Promise<boolean> {
+    const self = this;
+    // NO PAGE TO KEEP, or no way to open a window: the sign-in leaves, and
+    // what the page held goes with it in sessionStorage.
+    if (!this.view || !this.subject || !this.env.window ||
+        typeof this.env.window.open !== 'function') {
+      return this.leaveToSignIn().then(function () {
+        return false;
+      });
+    }
+    if (!this.reauth) {
+      const BC = this.env.window.BroadcastChannel;
+      this.reauth = { waiting: [], verifier: '', state: '', url: '',
+                      message: '', popup: null,
+                      channel: typeof BC === 'function'
+                        ? new BC(POPUP_CHANNEL) : null };
+      if (this.reauth.channel) {
+        this.reauth.channel.onmessage = function (event: Json) {
+          self.onPopupAnswer(event && event.data);
+        };
+      }
+      this.prepareReauth().then(function () {
+        self.drawReauthBar(self.reauth && self.reauth.channel ? ''
+          : 'This browser cannot hand a sign-in back from another ' +
+            'window, so sign in on this page.');
+      }, function () {
+        // NO VERIFIER COULD BE MADE: the popup cannot be offered, and the
+        // way that is left is the one every browser has.
+        self.leaveToSignIn();
+      });
+    }
+    return new Promise(function (resolve) {
+      self.reauth.waiting.push(resolve);
+    });
+  }
+
+  /**
+   * Makes the popup's one-use values and its address: a fresh verifier and
+   * a state marked as a popup's, for the realm's own authorization request.
+   *
+   * @returns nothing
+   */
+  async prepareReauth(): Promise<void> {
+    const r = this.reauth;
+    if (!r) {
+      return;
+    }
+    r.verifier = this.random(32);
+    r.state = POPUP_STATE_PREFIX + this.random(16);
+    r.url = await this.authorizeUrl(r.state, r.verifier);
+  }
+
+  /**
+   * The realm's authorization request for this client.
+   *
+   * @param state - the state
+   * @param verifier - the PKCE verifier
+   * @returns the URL
+   */
+  async authorizeUrl(state: string, verifier: string): Promise<string> {
+    const params = new URLSearchParams({
+      response_type: 'code', client_id: CLIENT_ID,
+      redirect_uri: this.url('/admin/callback'), scope: SCOPE,
+      state: state, code_challenge: await this.sha256(verifier),
+      code_challenge_method: 'S256', resource: this.resource()
+    });
+    return this.url('/oauth2/authorize') + '?' + params.toString();
+  }
+
+  /**
+   * Draws the bar that says the session ended, over the page and leaving it
+   * as it is.
+   *
+   * @param message - what the last attempt came to, or ''
+   * @returns nothing
+   */
+  drawReauthBar(message: string): void {
+    const r = this.reauth;
+    const doc = this.env.document;
+    if (!r || !doc || typeof doc.createElement !== 'function' ||
+        !doc.body) {
+      return;
+    }
+    r.message = message;
+    let bar = doc.getElementById ? doc.getElementById('reauth-bar') : null;
+    if (!bar) {
+      bar = doc.createElement('div');
+      bar.id = 'reauth-bar';
+      bar.className = 'reauth';
+      bar.setAttribute('role', 'alertdialog');
+      bar.setAttribute('aria-labelledby', 'reauth-title');
+      doc.body.appendChild(bar);
+    }
+    bar.innerHTML = '<strong id="reauth-title">Your session has ended.' +
+      '</strong> <span>Sign in again to carry on. This page and what you ' +
+      'typed stay as they are, and what you pressed is sent once you are ' +
+      'back.</span> ' +
+      (r.channel && r.url
+        ? '<button type="button" data-reauth="popup">Sign in again</button> '
+        : '') +
+      '<button type="button" data-reauth="page">Sign in on this page' +
+      (r.channel ? ' instead' : '') + '</button>' +
+      (message ? ' <span class="reauth-note">' + kit.esc(message) +
+                 '</span>' : '');
+  }
+
+  /**
+   * Takes the bar away.
+   *
+   * @returns nothing
+   */
+  removeReauthBar(): void {
+    const doc = this.env.document;
+    const bar = doc && doc.getElementById
+      ? doc.getElementById('reauth-bar') : null;
+    if (bar && bar.parentNode) {
+      bar.parentNode.removeChild(bar);
+    }
+  }
+
+  // CALLED FROM THE CLICK ITSELF, with nothing awaited before `open()`: a
+  // browser lets a window open only in the task of the press that asked.
+  /**
+   * Opens the sign-in in a window of its own.
+   *
+   * @returns nothing
+   */
+  openReauthPopup(): void {
+    const r = this.reauth;
+    if (!r || !r.url) {
+      return;
+    }
+    const popup = this.env.window.open(r.url, POPUP_CHANNEL,
+                                       'popup,width=560,height=760');
+    if (!popup) {
+      this.drawReauthBar('The sign-in window was blocked. Allow pop-ups ' +
+                         'for this site, or sign in on this page.');
+      return;
+    }
+    r.popup = popup;
+    this.drawReauthBar('Finish signing in in the window that opened.');
+  }
+
+  /**
+   * Redeems the code a popup's callback handed back, and lets the waiting
+   * requests go — or not, for a different person.
+   *
+   * @param data - `{ state, code, error, error_description }`
+   * @returns nothing
+   */
+  async onPopupAnswer(data: Json): Promise<void> {
+    const r = this.reauth;
+    if (!r || !data || String(data.state || '') !== r.state || !r.state) {
+      return;
+    }
+    // ONE ANSWER PER STATE: a second message for it is somebody else's.
+    r.state = '';
+    if (data.error) {
+      await this.prepareReauth();
+      this.drawReauthBar('Signing in was refused: ' +
+        String(data.error_description || data.error) + '. Try again.');
+      return;
+    }
+    const answer = await this.tokenRequest({
+      grant_type: 'authorization_code', code: String(data.code || ''),
+      redirect_uri: this.url('/admin/callback'), client_id: CLIENT_ID,
+      code_verifier: r.verifier, resource: this.resource()
+    });
+    if (answer.status !== 200 || !answer.json.access_token) {
+      await this.prepareReauth();
+      this.drawReauthBar('Signing in failed: ' +
+        String(answer.json.error_description || answer.json.error ||
+               'the token endpoint answered ' + answer.status) +
+        '. Try again.');
+      return;
+    }
+    const before = this.subject;
+    const after = ConsoleRuntime.subjectOf(answer.json.id_token);
+    this.keepTokens(answer.json);
+    const same = !!before && before === after;
+    this.reauth = null;
+    if (r.channel) {
+      r.channel.close();
+    }
+    this.removeReauthBar();
+    r.waiting.forEach(function (resolve) {
+      resolve(same);
+    });
+    if (!same) {
+      // A DIFFERENT PERSON: nothing waiting is sent for them, and the page
+      // is drawn again with what they may see.
+      this.subject = after;
+      this.shell = null;
+      this.me = null;
+      await this.route();
+      this.noteOnPage(kit.warn('A different person signed in, so what was ' +
+        'waiting on this page was not sent.'));
+    }
+  }
+
+  /**
+   * At the callback in a popup: hands the answer to the page that opened
+   * it and closes.
+   *
+   * @param query - the callback's query
+   * @returns nothing
+   */
+  handBackFromPopup(query: Json): void {
+    const BC = this.env.window && this.env.window.BroadcastChannel;
+    if (this.env.history) {
+      // The code leaves the address bar at once.
+      this.env.history.replaceState(null, '', this.prefix + '/admin/callback');
+    }
+    if (typeof BC !== 'function') {
+      this.drawProblem('This sign-in cannot be handed back',
+        'Close this window and choose Sign in on this page in the console.');
+      return;
+    }
+    const channel = new BC(POPUP_CHANNEL);
+    channel.postMessage({ state: String(query.state || ''),
+                          code: String(query.code || ''),
+                          error: String(query.error || ''),
+                          error_description:
+                            String(query.error_description || '') });
+    channel.close();
+    this.drawProblem('Signed in again',
+      'The console carries on where you were. This window can be closed.');
+    if (this.env.window && typeof this.env.window.close === 'function') {
+      this.env.window.close();
+    }
+  }
+
+  /**
+   * Puts a message at the head of the page drawn.
+   *
+   * @param html - the message
+   * @returns nothing
+   */
+  noteOnPage(html: string): void {
+    const doc = this.env.document;
+    const main = doc && doc.querySelector ? doc.querySelector('.main') : null;
+    if (main && typeof main.insertAdjacentHTML === 'function') {
+      main.insertAdjacentHTML('afterbegin', kit.flash(html));
+    }
+  }
+
+  // --- what the page held, across a redirect (#508) ------------------------
+
+  /**
+   * Whether a form control's value may be kept across a sign-in: never a
+   * password, a file, a hidden field, a button, or a control named or
+   * marked for a secret.
+   *
+   * @param el - the control
+   * @returns true when it is kept
+   */
+  static keepsField(el: Json): boolean {
+    const name = String((el && el.name) || '');
+    const type = String((el && el.type) || '').toLowerCase();
+    if (!name || el.disabled) {
+      return false;
+    }
+    if (['password', 'file', 'hidden', 'submit', 'button', 'reset',
+         'image'].indexOf(type) >= 0) {
+      return false;
+    }
+    const auto = el.getAttribute
+      ? String(el.getAttribute('autocomplete') || '') : '';
+    if (/new-password|current-password|one-time-code/.test(auto) ||
+        (el.getAttribute && el.getAttribute('data-sensitive') !== null &&
+         el.getAttribute('data-sensitive') !== undefined)) {
+      return false;
+    }
+    return !/secret|passw|private|credential|token|otp/i.test(name);
+  }
+
+  /**
+   * What one form holds, as kept across a sign-in.
+   *
+   * @param form - the form
+   * @param pending - whether it is the form being sent
+   * @returns `{ action, pending, fields }`
+   */
+  static formSnapshot(form: Json, pending: boolean): Json {
+    const fields: Json[] = [];
+    const els = (form && form.elements) || [];
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i];
+      if (!ConsoleRuntime.keepsField(el)) {
+        continue;
+      }
+      const type = String(el.type || '').toLowerCase();
+      if (type === 'checkbox' || type === 'radio') {
+        fields.push({ name: el.name, value: String(el.value),
+                      checked: !!el.checked });
+      } else if (el.multiple && el.options) {
+        const values: string[] = [];
+        for (let j = 0; j < el.options.length; j++) {
+          if (el.options[j].selected) {
+            values.push(String(el.options[j].value));
+          }
+        }
+        fields.push({ name: el.name, values: values });
+      } else {
+        fields.push({ name: el.name, value: String(el.value || '') });
+      }
+    }
+    return { action: String((form.getAttribute &&
+                             form.getAttribute('action')) || ''),
+             pending: !!pending, fields: fields };
+  }
+
+  /**
+   * Puts kept values back into the forms drawn: the same form by its place
+   * and its address, the same control by its name and order.
+   *
+   * @param forms - the forms drawn, in document order
+   * @param saved - `formSnapshot()`'s answers, in the same order
+   * @returns `{ restored, unplaced }`, counts of values
+   */
+  static restoreForms(forms: Json[], saved: Json[]): Json {
+    let restored = 0;
+    let unplaced = 0;
+    (saved || []).forEach(function (kept, i) {
+      const form = forms[i];
+      const action = form && form.getAttribute
+        ? String(form.getAttribute('action') || '') : '';
+      if (!form || action !== String(kept.action || '')) {
+        unplaced += (kept.fields || []).length;
+        return;
+      }
+      const byName: Json = {};
+      const els = form.elements || [];
+      for (let j = 0; j < els.length; j++) {
+        if (ConsoleRuntime.keepsField(els[j])) {
+          (byName[els[j].name] = byName[els[j].name] || []).push(els[j]);
+        }
+      }
+      const used: Json = {};
+      (kept.fields || []).forEach(function (field) {
+        const named = byName[field.name] || [];
+        if (field.checked !== undefined) {
+          const box = named.filter(function (el) {
+            return String(el.value) === String(field.value);
+          })[0];
+          if (!box) {
+            unplaced++;
+            return;
+          }
+          box.checked = !!field.checked;
+          restored++;
+          return;
+        }
+        const at = used[field.name] || 0;
+        used[field.name] = at + 1;
+        const el = named[at];
+        if (!el) {
+          unplaced++;
+          return;
+        }
+        if (field.values && el.options) {
+          for (let k = 0; k < el.options.length; k++) {
+            el.options[k].selected =
+              field.values.indexOf(String(el.options[k].value)) >= 0;
+          }
+        } else {
+          el.value = String(field.value || '');
+        }
+        restored++;
+      });
+    });
+    return { restored: restored, unplaced: unplaced };
+  }
+
+  /**
+   * Keeps what the page holds in sessionStorage, for after a redirect.
+   *
+   * @returns nothing
+   */
+  savePageState(): void {
+    const doc = this.env.document;
+    if (!this.view || !this.subject || !doc || !doc.querySelectorAll) {
+      return;
+    }
+    const forms = doc.querySelectorAll('form');
+    const kept: Json[] = [];
+    for (let i = 0; i < forms.length; i++) {
+      kept.push(ConsoleRuntime.formSnapshot(forms[i],
+                                            forms[i] === this.submitting));
+    }
+    try {
+      this.env.sessionStorage.setItem(RESTORE_KEY, JSON.stringify({
+        prefix: this.prefix, path: this.here(), subject: this.subject,
+        at: this.env.now ? this.env.now() : Date.now(), forms: kept }));
+    } catch (e) {
+      // NO ROOM, or storage refused: the sign-in still goes, and the page
+      // comes back without what was typed, as it did before #508.
+      return;
+    }
+  }
+
+  /**
+   * After a sign-in that left the page: puts back what it held, for the
+   * same realm, page and person, and says nothing was sent.
+   *
+   * @returns nothing
+   */
+  restorePageState(): void {
+    let saved: Json = null;
+    try {
+      saved = JSON.parse(this.env.sessionStorage.getItem(RESTORE_KEY) ||
+                         'null');
+    } catch (e) {
+      // Not JSON: nothing this page kept, and nothing to put back.
+      saved = null;
+    }
+    this.env.sessionStorage.removeItem(RESTORE_KEY);
+    const now = this.env.now ? this.env.now() : Date.now();
+    if (!saved || saved.prefix !== this.prefix ||
+        saved.path !== this.here() ||
+        now - Number(saved.at || 0) > RESTORE_MAX_AGE_MS) {
+      return;
+    }
+    if (!saved.subject || saved.subject !== this.subject) {
+      this.noteOnPage(kit.warn('A different person signed in, so what was ' +
+        'typed on this page before was not put back.'));
+      return;
+    }
+    const doc = this.env.document;
+    const forms = doc && doc.querySelectorAll ? doc.querySelectorAll('form')
+                                              : [];
+    const list: Json[] = [];
+    for (let i = 0; i < forms.length; i++) {
+      list.push(forms[i]);
+    }
+    const done = ConsoleRuntime.restoreForms(list, saved.forms);
+    if (!done.restored && !done.unplaced) {
+      return;
+    }
+    this.noteOnPage('<div class="ok">You are signed in again. What you had ' +
+      'typed on this page was put back, and nothing was sent: press the ' +
+      'button again to send it.' +
+      (done.unplaced
+        ? ' ' + done.unplaced + ' value' + (done.unplaced === 1 ? '' : 's') +
+          ' could not be put back, because the page no longer has a place ' +
+          'for ' + (done.unplaced === 1 ? 'it' : 'them') + '.'
+        : '') + '</div>');
   }
 
   // --- the management API --------------------------------------------------
@@ -502,13 +1064,42 @@ class ConsoleRuntime {
    * @returns the response, or null when a sign-in began
    */
   async send(method: string, target: string, body?: Json): Promise<Json> {
+    // A REQUEST THAT NEEDS A SIGN-IN WAITS FOR ONE (#508) and is then sent,
+    // once: the sign-in again (`signInAgain()`) leaves the page as it is,
+    // and the act the reader pressed completes when they are back. A false
+    // answer is a sign-in that left the page, or a different person.
+    const first = await this.sendOnce(method, target, body);
+    if (first !== NEEDS_SIGN_IN) {
+      return first;
+    }
+    if (!await this.signInAgain()) {
+      return null;
+    }
+    const second = await this.sendOnce(method, target, body);
+    if (second !== NEEDS_SIGN_IN) {
+      return second;
+    }
+    this.accessToken = '';
+    await this.leaveToSignIn();
+    return null;
+  }
+
+  /**
+   * Sends one request with the tokens in hand, refreshing them where they
+   * have run out.
+   *
+   * @param method - the method
+   * @param target - the absolute URL
+   * @param body - as `send()` takes it
+   * @returns the response, or NEEDS_SIGN_IN when no token will do
+   */
+  async sendOnce(method: string, target: string, body?: Json): Promise<Json> {
     const now = this.env.now ? this.env.now() : Date.now();
     if (this.accessToken && now > this.expiresAt - REFRESH_EARLY * 1000) {
       await this.refresh();
     }
     if (!this.accessToken) {
-      await this.beginSignIn(this.here());
-      return null;
+      return NEEDS_SIGN_IN;
     }
     for (let attempt = 0; attempt < 3; attempt++) {
       const headers: Json = {
@@ -551,8 +1142,7 @@ class ConsoleRuntime {
       break;
     }
     this.accessToken = '';
-    await this.beginSignIn(this.here());
-    return null;
+    return NEEDS_SIGN_IN;
   }
 
   /**
@@ -654,6 +1244,11 @@ class ConsoleRuntime {
     // the target again (targetFragment()), and what was drawn is recorded
     // so the `popstate` that causes is known for a fragment's.
     this.drawnAt = this.env.location.pathname + this.env.location.search;
+    // A SIGN-IN AGAIN IN PROGRESS (#508) keeps its bar over whatever is
+    // drawn while it waits.
+    if (this.reauth) {
+      this.drawReauthBar(this.reauth.message || '');
+    }
     this.targetFragment();
     this.wireCopyButtons();
     this.loadPageScripts();
@@ -734,7 +1329,7 @@ class ConsoleRuntime {
       return;
     }
     if (!this.accessToken) {
-      await this.beginSignIn(this.here());
+      await this.beginSignIn(this.hereWithFragment());
       return;
     }
     if (!await this.ensureShell()) {
@@ -1500,6 +2095,19 @@ class ConsoleRuntime {
         event.ctrlKey || event.shiftKey || event.altKey) {
       return;
     }
+    // THE SESSION-ENDED BAR'S TWO BUTTONS (#508). The popup is opened here,
+    // in the click's own task, or a browser blocks it.
+    const pressed = event.target && event.target.getAttribute
+      ? event.target.getAttribute('data-reauth') : null;
+    if (pressed && this.reauth) {
+      event.preventDefault();
+      if (pressed === 'popup') {
+        this.openReauthPopup();
+      } else {
+        this.leaveToSignIn();
+      }
+      return;
+    }
     let el = event.target;
     while (el && el.tagName !== 'A') {
       el = el.parentElement;
@@ -1627,7 +2235,19 @@ class ConsoleRuntime {
       this.go(page + (qs ? '?' + qs : '') + target.hash);
       return;
     }
-    this.submit(form, event.submitter || null);
+    // WHICH FORM WAS PRESSED, for a sign-in that has to leave the page
+    // while it is being sent (#508).
+    const self = this;
+    this.submitting = form;
+    const done = function () {
+      if (self.submitting === form) {
+        self.submitting = null;
+      }
+    };
+    this.submit(form, event.submitter || null).then(done, function (e) {
+      done();
+      throw e;
+    });
   }
 
   // SIGNING OUT ends the tokens here and the sign-on session they came from:
