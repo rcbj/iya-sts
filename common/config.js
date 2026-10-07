@@ -769,140 +769,89 @@ const SETTINGS = [
                  'and what it makes of one a client presents, are the tls.* ' +
                  'settings, which the console draws on its own TLS page.' },
 
-  // A TRUST REALM'S OWN FRONT-END LISTENER (#99, 2026-10-02). A realm may be
-  // reached at a host of its own — `https://acme.example.com/realm/acme/...`,
-  // the path prefix still saying which realm — on a port of its own on every
-  // node, so that each realm can sit behind a load balancer of its own. The
-  // load balancer and the DNS records are the deployment's (Terraform here);
-  // the service binds the port and builds every URL of the realm on its base.
-  // `realmOnly`: these are read from the REALM'S OWN overrides and never from
-  // the process's environment or appconfig, because a value set for the
-  // process would otherwise be every realm's. common/realms.js's
-  // `listenerOverrideProblem()` holds the rules a set of them must meet.
-  { key: 'listener.port', group: 'Realm listener',
-    label: 'The realm\'s own HTTPS port',
-    type: 'int', dflt: 0, min: 0, max: 65535, runtime: false,
-    realmRuntime: true, realmOnly: true,
+  // CUSTOM LISTENERS, AND WHICH HOSTED APPLICATION IS ON WHICH (#472,
+  // 2026-10-07; #99's realm listener folded in, rcbj's D1). Each value is
+  // JSON, kept as text the way `spiffe.brokers` keeps its list, and drawn on
+  // Server configuration -> Listeners, which shows what it means beside it;
+  // `common/listener_map.js` reads, validates and judges every write of them
+  // (STS-CORE-0153 to 0156), and `tls/listeners.js` binds what they say.
+  { key: 'listeners.custom', group: 'Custom listeners',
+    label: 'The service\'s custom listeners',
+    env: 'STS_LISTENERS_CUSTOM', type: 'string', dflt: '', runtime: true,
+    perProcess: true,
+    description: 'HTTPS listeners beside the main port, bound on every node, ' +
+                 'that answer every realm under its prefix: a JSON array of ' +
+                 '{ "id", "port", "publicBaseUrl", "hostnames", ' +
+                 '"certificateFile", "privateKeyFile", "clientAuth", "tls" }. ' +
+                 'id is lower-case letters, digits and hyphens; ' +
+                 'publicBaseUrl the https origin its load balancer answers ' +
+                 'under, which the URLs of every application advertised on ' +
+                 'it are built on; hostnames the DNS names an issued ' +
+                 'certificate carries (the host of publicBaseUrl when left ' +
+                 'out); certificateFile and privateKeyFile an operator\'s ' +
+                 'certificate (both or neither — without them the default ' +
+                 'realm\'s certificate authority issues one and renews it); ' +
+                 'clientAuth none, optional (the default) or required, which ' +
+                 'refuses a handshake without a client certificate chaining ' +
+                 'to the truststore; tls the per-listener TLS settings by ' +
+                 'their short names (minVersion, disableTls12, ' +
+                 'tls13CipherSuites, pqcOnly, sessionTimeoutS, ...), each ' +
+                 'inheriting the service-wide one where left out. Empty, the ' +
+                 'default, means none: the main port answers everything. A ' +
+                 'listener that listeners.applications names cannot be ' +
+                 'removed. Example: [{"id":"admin","port":9443,' +
+                 '"publicBaseUrl":"https://admin.example.com:9443",' +
+                 '"clientAuth":"required"}].' },
+  { key: 'listeners.realm', group: 'Custom listeners',
+    label: 'This realm\'s own listeners',
+    type: 'string', dflt: '', runtime: false, realmRuntime: true,
+    realmOnly: true,
     restartReason: 'it is a property of one trust realm and is set on that ' +
-                   'realm, where the listener is bound and closed at once',
-    description: 'A port on every node on which this realm is served by a ' +
-                 'listener of its own, so that it can sit behind a load ' +
-                 'balancer of its own. Requests on it are still told apart ' +
-                 'by the /realm/<id> path prefix, and only this realm\'s ' +
-                 'paths are answered there. 0, the default, means none: the ' +
-                 'realm is served on the main port only. Needs ' +
-                 'listener.publicBaseUrl. It may not be a port another realm ' +
-                 'or any of this service\'s own listeners uses.' },
-
-  { key: 'listener.publicBaseUrl', group: 'Realm listener',
-    label: 'The realm\'s public base URL',
-    type: 'string', dflt: '', runtime: false,
-    realmRuntime: true, realmOnly: true,
-    restartReason: 'it is a property of one trust realm and is set on that ' +
-                   'realm',
-    description: 'The scheme, host and port this realm is reached at — ' +
-                 'https://acme.example.com, with no path — which is what the ' +
-                 'realm\'s load balancer answers under. When set, every ' +
-                 'issuer, metadata URL, redirect and link the realm builds is ' +
-                 'on this base, with the /realm/<id> prefix after it, ' +
-                 'whichever listener a request arrived on. CHANGING IT ' +
-                 'CHANGES THE REALM\'S ISSUER: every client\'s discovery ' +
-                 'and every token it holds name the old one.' },
-
-  { key: 'listener.hostnames', group: 'Realm listener',
-    label: 'DNS names on the realm listener\'s certificate',
-    type: 'csv', dflt: '', runtime: false,
-    realmRuntime: true, realmOnly: true,
-    restartReason: 'it is a property of one trust realm and is set on that ' +
-                   'realm',
-    description: 'The DNS names the certificate on the realm\'s own ' +
-                 'listener carries, comma-separated. Empty means the host of ' +
-                 'listener.publicBaseUrl. Ignored when ' +
-                 'listener.certificateFile names a certificate.' },
-
-  { key: 'listener.certificateFile', group: 'Realm listener',
-    label: 'The realm listener\'s certificate file',
-    type: 'string', dflt: '', runtime: false,
-    realmRuntime: true, realmOnly: true,
-    restartReason: 'it is a property of one trust realm and is set on that ' +
-                   'realm',
-    description: 'A PEM file of the certificate, and the chain after it, ' +
-                 'the realm\'s listener presents — one from a public CA, ' +
-                 'which a browser trusts. Empty, the default, means a ' +
-                 'certificate this realm\'s own certificate authority issues ' +
-                 'for listener.hostnames and renews, which only a client ' +
-                 'trusting this service\'s Root accepts. Needs ' +
-                 'listener.privateKeyFile.' },
-
-  { key: 'listener.privateKeyFile', group: 'Realm listener',
-    label: 'The realm listener\'s private key file',
-    type: 'string', dflt: '', runtime: false,
-    realmRuntime: true, realmOnly: true,
-    restartReason: 'it is a property of one trust realm and is set on that ' +
-                   'realm',
-    description: 'A PEM file of the private key of ' +
-                 'listener.certificateFile. Both or neither.' },
-
-  // THE REALM LISTENER'S TLS POLICY AND CLIENT AUTHENTICATION (#423): what
-  // the Listeners rows above are for the process's listeners, for this
-  // realm's own. The policy rows INHERIT the process's unless set; the
-  // client-authentication pair is the listener's own, as the main port's is.
-  // Applied in place at the next handshake — the listener is not rebound.
-  { key: 'listener.disableTls12', group: 'Realm listener',
-    label: 'The realm listener: disable TLS 1.2',
-    type: 'enum', enumValues: ['inherit', 'on', 'off'], dflt: 'inherit',
-    runtime: false, realmRuntime: true, realmOnly: true,
-    restartReason: 'it is a property of one trust realm and is set on that ' +
-                   'realm',
-    description: 'Whether the realm\'s own listener negotiates TLS 1.3 ' +
-                 'only. inherit, the default, follows tls.disableTls12; on ' +
-                 'and off decide for this listener alone. Applied at the ' +
-                 'next handshake.' },
-  { key: 'listener.tls13CipherSuites', group: 'Realm listener',
-    label: 'The realm listener\'s TLS 1.3 cipher suites',
-    type: 'csv', dflt: '',
-    csvValues: ['TLS_AES_256_GCM_SHA384', 'TLS_CHACHA20_POLY1305_SHA256',
-                'TLS_AES_128_GCM_SHA256', 'TLS_AES_128_CCM_SHA256',
-                'TLS_AES_128_CCM_8_SHA256'],
-    ordered: true,
-    runtime: false, realmRuntime: true, realmOnly: true,
-    restartReason: 'it is a property of one trust realm and is set on that ' +
-                   'realm',
-    description: 'The TLS 1.3 cipher suites the realm\'s own listener ' +
-                 'accepts, in order of preference. Empty, the default, ' +
-                 'follows tls.tls13CipherSuites; reset it to go back. ' +
-                 'Applied at the next handshake.' },
-  { key: 'listener.pqcOnly', group: 'Realm listener',
-    label: 'The realm listener: post-quantum safe only',
-    type: 'enum', enumValues: ['inherit', 'on', 'off'], dflt: 'inherit',
-    runtime: false, realmRuntime: true, realmOnly: true,
-    restartReason: 'it is a property of one trust realm and is set on that ' +
-                   'realm',
-    description: 'Whether the realm\'s own listener accepts only TLS 1.3, ' +
-                 'the 256-bit suites and the ML-KEM groups — tls.pqcOnly, ' +
-                 'for this listener. inherit, the default, follows ' +
-                 'tls.pqcOnly. Applied at the next handshake.' },
-  { key: 'listener.disableOptionalClientCertificate',
-    group: 'Realm listener',
-    label: 'The realm listener: do not ask for a client certificate',
-    type: 'bool', dflt: false,
-    runtime: false, realmRuntime: true, realmOnly: true,
-    restartReason: 'it is a property of one trust realm and is set on that ' +
-                   'realm',
-    description: 'The realm\'s own listener sends no CertificateRequest. ' +
-                 'Off by default: it asks and requires none, as the main ' +
-                 'port does, so certificate-bound tokens and GET ' +
-                 '/tls/sign-in work there.' },
-  { key: 'listener.requireClientCertificate', group: 'Realm listener',
-    label: 'The realm listener: require a client certificate',
-    type: 'bool', dflt: false,
-    runtime: false, realmRuntime: true, realmOnly: true,
-    restartReason: 'it is a property of one trust realm and is set on that ' +
-                   'realm',
-    description: 'The realm\'s own listener refuses, at the handshake, every ' +
-                 'connection without a client certificate chaining to the ' +
-                 'client truststore. Wins over the toggle above. Off by ' +
-                 'default.' },
+                   'realm, where its listeners are bound and closed at once',
+    description: 'HTTPS listeners that belong to this realm and answer its ' +
+                 'paths alone (another realm\'s path, or the default ' +
+                 'realm\'s, is a 404 there): the same JSON array as ' +
+                 'listeners.custom, with this realm\'s certificate authority ' +
+                 'issuing a certificate where no files are named. This is ' +
+                 'what a realm\'s own listener (#99) became: to serve the ' +
+                 'whole realm on one, map * to it in this realm\'s ' +
+                 'listeners.applications. The default realm\'s listeners are ' +
+                 'listeners.custom.' },
+  { key: 'listeners.applications', group: 'Custom listeners',
+    label: 'Which application is on which listener',
+    env: 'STS_LISTENERS_APPLICATIONS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A JSON object from an application id — home, authn, ' +
+                 'portal, admin-console, management-api, oauth-oidc, saml2, ' +
+                 'saml11, ws-trust, ws-federation, federation, oidfed, ' +
+                 'oid4vc, scim, ssf, gnap, xacml, acme, est, scep, pki, ' +
+                 'kerberos, spiffe, tls, devices — or * for every one not ' +
+                 'named, to { "listeners": [...], "advertised": "..." }: the ' +
+                 'listeners that answer it (main is the main port), and the ' +
+                 'one its URLs are built on (the first, when left out). A ' +
+                 'path of an application is a 404 on a listener it is not ' +
+                 'on. An application not named is on main alone. A realm\'s ' +
+                 'own value is read entry by entry before the service\'s, so ' +
+                 'a realm says only what differs. CHANGING WHERE AN ' +
+                 'APPLICATION IS ADVERTISED CHANGES ITS URLS — for oauth-oidc ' +
+                 'its issuer, which every token and client names. A change ' +
+                 'that takes management-api off the listener it was sent on ' +
+                 'is refused unless PUT /admin-api/listeners/applications ' +
+                 'says "confirm": true. Example: {"admin-console":' +
+                 '{"listeners":["admin"]},"management-api":' +
+                 '{"listeners":["admin"]}}.' },
+  { key: 'listeners.adminOnMain', group: 'Custom listeners',
+    label: 'Rescue: the console and the API on the main port',
+    env: 'STS_LISTENERS_ADMIN_ON_MAIN', type: 'bool', dflt: false,
+    runtime: false, perProcess: true,
+    restartReason: 'it is the way back in when a mapping has shut the ' +
+                   'administrator out, so no write may turn it off; set it ' +
+                   'in the environment or the appconfig file and restart',
+    description: 'Puts the admin console and the management API back on ' +
+                 'the main port, and advertises them there, in every realm, ' +
+                 'whatever listeners.applications says. Off by default. For ' +
+                 'the day a mapping moved them to a listener nobody can ' +
+                 'reach.' },
 
   // ---------------------------------------------------------------------
   // The scheme the port above answers on, and it is DERIVED (`derived: true`,
@@ -1867,6 +1816,29 @@ const SETTINGS = [
                  'presented, and ended at that moment, but nobody is told of ' +
                  'one that is never presented again. It was a fixed thirty ' +
                  'seconds in every process until 2026-09-22 (#49).' },
+
+  // THE SIGN-ON SESSION'S COOKIE DOMAIN (#472, rcbj's D3). The cookie is
+  // host-only until this is set, which is the stronger default: it goes to
+  // the one host that set it and nowhere else. A mapping that puts the
+  // applications reading it on listeners with different host names needs it
+  // — `common/listener_map.js` refuses one that does not (STS-CORE-0155) —
+  // and it is the price of that mapping, said in the description.
+  { key: 'authn.cookieDomain', group: 'Web security',
+    label: 'Sign-on session cookie domain',
+    env: 'STS_AUTHN_COOKIE_DOMAIN', type: 'string', dflt: '', runtime: true,
+    description: 'The Domain the sign-on session\'s cookies are written ' +
+                 'with — the session itself, the OP browser state, the ' +
+                 'device cookie and the sign-in steps\' cookies — so that ' +
+                 'applications on listeners with different host names under ' +
+                 'one domain (auth.example.com, portal.example.com) share ' +
+                 'one sign-on. Empty, the default, writes them host-only, ' +
+                 'which a mapping keeping those applications on one host ' +
+                 'name needs. WARNING: set, every host under the domain is ' +
+                 'sent the session cookie, including any this service does ' +
+                 'not run — set it to the narrowest domain your listeners ' +
+                 'share, never to a domain other parties host under. Set ' +
+                 'webauthn.rpId to the same domain, or a passkey registered ' +
+                 'on one host is not usable on another.' },
 
   { key: 'authn.sessionLifetimeS', group: 'Web security',
     label: 'Session lifetime (seconds)',
@@ -9412,8 +9384,9 @@ const SETTINGS = [
   // administrator chooses these on Server configuration -> Listeners, and
   // `tls/tls_server.js` re-applies them to every listener it knows the moment
   // one changes (`config.onOverridesChanged()`), at the next handshake. Per
-  // process, because a listener belongs to no realm; a realm's own listener
-  // has the `listener.*` rows below. tls/CLAUDE.md, "THE LISTENERS' POLICY".
+  // process, because the main port belongs to no realm; a custom listener
+  // (#472), a realm's own included, carries them in its definition's `tls`
+  // block. tls/CLAUDE.md, "THE LISTENERS' POLICY".
   // ---------------------------------------------------------------------
   { key: 'tls.disableTls12', group: 'Listeners',
     label: 'Disable TLS 1.2',
@@ -9431,8 +9404,8 @@ const SETTINGS = [
                  'off lets a client negotiate TLS 1.2, which FAPI 2.0 and ' +
                  'BCP 195 still allow but which has no post-quantum key ' +
                  'exchange. ' +
-                 'A realm\'s own listener follows this unless its ' +
-                 'listener.disableTls12 says otherwise. Applied at the next ' +
+                 'A custom listener follows this unless its definition\'s ' +
+                 'tls.disableTls12 says otherwise. Applied at the next ' +
                  'handshake.' },
 
   { key: 'tls.tls13CipherSuites', group: 'Listeners',
@@ -16855,10 +16828,12 @@ const SETTINGS = [
 // What a listener does NOT get, and why: the cell channel is TLS 1.3 always,
 // so no floor, TLS 1.2 switch or TLS 1.2 cipher list; the SPIFFE listeners and
 // the cell channel verify clients against their own trust bundles (SPIFFE's,
-// the cells' Root), so no client truststore. A realm's own listener has its
-// rows as `listener.*` (realmOnly), above and below. The one TLS setting no
-// listener has is `tls.sessionTicketRotationS`: the rotation of the cluster's
-// shared ticket key is a scheduled job, not a property of a listener.
+// the cells' Root), so no client truststore. A custom listener (#472) carries
+// the main port's names in its definition's `tls` block
+// (`common/listener_map.js`), with these rows' inherit values. The one TLS
+// setting no listener has is `tls.sessionTicketRotationS`: the rotation of
+// the cluster's shared ticket key is a scheduled job, not a property of a
+// listener.
 // ---------------------------------------------------------------------------
 const TLS_LISTENERS = [
   { id: 'main', label: 'Main port' },
@@ -16871,52 +16846,50 @@ const TLS_LISTENERS = [
   { id: 'revocation', label: 'Revocation (plain HTTP)' }
 ];
 
-// name → the service-wide row, and the listeners (and the realm's own) that
-// carry it.
+// name → the service-wide row, and the listeners that carry it.
 const PER_LISTENER_SETTINGS = [
-  { name: 'minVersion', base: 'tls.minVersion', realm: true,
+  { name: 'minVersion', base: 'tls.minVersion',
     listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
-  { name: 'disableTls12', base: 'tls.disableTls12', realm: false,
+  { name: 'disableTls12', base: 'tls.disableTls12',
     listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
-  { name: 'ciphers', base: 'tls.ciphers', realm: true,
+  { name: 'ciphers', base: 'tls.ciphers',
     listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
-  { name: 'tls13CipherSuites', base: 'tls.tls13CipherSuites', realm: false,
+  { name: 'tls13CipherSuites', base: 'tls.tls13CipherSuites',
     listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
                 'cell'] },
-  { name: 'pqcOnly', base: 'tls.pqcOnly', realm: false,
+  { name: 'pqcOnly', base: 'tls.pqcOnly',
     listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
                 'cell'] },
-  { name: 'groups', base: 'tls.groups', realm: true,
+  { name: 'groups', base: 'tls.groups',
     listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
                 'cell'] },
-  { name: 'signatureAlgorithms', base: 'tls.signatureAlgorithms', realm: true,
+  { name: 'signatureAlgorithms', base: 'tls.signatureAlgorithms',
     listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
                 'cell'] },
-  { name: 'trustAnchorsFile', base: 'tls.trustAnchorsFile', realm: true,
+  { name: 'trustAnchorsFile', base: 'tls.trustAnchorsFile',
     listeners: ['main', 'ldaps', 'debugger'] },
   { name: 'trustIssuedClientCertificates',
-    base: 'tls.trustIssuedClientCertificates', realm: true,
+    base: 'tls.trustIssuedClientCertificates',
     listeners: ['main', 'ldaps', 'debugger'] },
   // The TLS session cache: the lifetime on every TLS listener, the size
   // where this service holds the server object to attach the cache to.
-  { name: 'sessionTimeoutS', base: 'tls.sessionTimeoutS', realm: true,
+  { name: 'sessionTimeoutS', base: 'tls.sessionTimeoutS',
     listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
                 'cell'] },
-  { name: 'sessionCacheSize', base: 'tls.sessionCacheSize', realm: true,
+  { name: 'sessionCacheSize', base: 'tls.sessionCacheSize',
     listeners: ['main', 'ldaps', 'debugger', 'cell'] },
   // HTTP connection pooling, on every HTTP listener.
-  { name: 'keepAliveTimeoutS', base: 'http.keepAliveTimeoutS', realm: true,
+  { name: 'keepAliveTimeoutS', base: 'http.keepAliveTimeoutS',
     listeners: ['main', 'debugger', 'revocation'] },
-  { name: 'headersTimeoutS', base: 'http.headersTimeoutS', realm: true,
+  { name: 'headersTimeoutS', base: 'http.headersTimeoutS',
     listeners: ['main', 'debugger', 'revocation'] },
   { name: 'maxRequestsPerSocket', base: 'http.maxRequestsPerSocket',
-    realm: true, listeners: ['main', 'debugger', 'revocation'] },
-  { name: 'maxConnections', base: 'http.maxConnections', realm: true,
+    listeners: ['main', 'debugger', 'revocation'] },
+  { name: 'maxConnections', base: 'http.maxConnections',
     listeners: ['main', 'debugger', 'revocation'] }
 ];
 
-// One generated row. `owner` is a TLS_LISTENERS entry, or null for a realm's
-// own listener.
+// One generated row. `owner` is a TLS_LISTENERS entry.
 function perListenerRow(spec, owner) {
   const base = SETTINGS.filter(function (row) {
     return row.key === spec.base;
@@ -16927,16 +16900,14 @@ function perListenerRow(spec, owner) {
   }
   // `listener<Id>.<name>`: two segments, as every key here has (the
   // appconfig files nest one level), so `listenerMain.minVersion`.
-  const key = owner ? 'listener' + owner.id.charAt(0).toUpperCase() +
-                        owner.id.slice(1) + '.' + spec.name
-                    : 'listener.' + spec.name;
-  const label = (owner ? owner.label : 'The realm listener') + ': ' +
+  const key = 'listener' + owner.id.charAt(0).toUpperCase() +
+              owner.id.slice(1) + '.' + spec.name;
+  const label = owner.label + ': ' +
     String(base.label || spec.name).replace(/^./, function (c) {
       return c.toLowerCase();
     });
   /** @type {any} */
-  const row = { key: key, group: owner ? 'Listener: ' + owner.label
-                                       : 'Realm listener',
+  const row = { key: key, group: 'Listener: ' + owner.label,
                 label: label, runtime: base.runtime };
   if (base.type === 'bool') {
     row.type = 'enum';
@@ -16962,27 +16933,18 @@ function perListenerRow(spec, owner) {
       }
     });
   }
-  if (owner) {
-    row.perProcess = true;
-    row.env = 'STS_LISTENER_' +
-      owner.id.replace(/[A-Z]/g, function (c) { return '_' + c; })
-        .toUpperCase() + '_' +
-      spec.name.replace(/[A-Z]/g, function (c) { return '_' + c; })
-        .toUpperCase();
-    if (!base.runtime) {
-      row.restartReason = base.restartReason ||
-        'the TLS contexts are built when the listeners are created';
-    }
-  } else {
-    row.runtime = false;
-    row.realmRuntime = true;
-    row.realmOnly = true;
-    row.restartReason = 'it is a property of one trust realm and is set on ' +
-                        'that realm';
+  row.perProcess = true;
+  row.env = 'STS_LISTENER_' +
+    owner.id.replace(/[A-Z]/g, function (c) { return '_' + c; })
+      .toUpperCase() + '_' +
+    spec.name.replace(/[A-Z]/g, function (c) { return '_' + c; })
+      .toUpperCase();
+  if (!base.runtime) {
+    row.restartReason = base.restartReason ||
+      'the TLS contexts are built when the listeners are created';
   }
-  row.description = 'For ' + (owner ? 'the ' + owner.label + ' listener'
-                                    : 'the realm\'s own listener') +
-    ' alone: ' + base.key + '. ' +
+  row.description = 'For the ' + owner.label + ' listener alone: ' +
+    base.key + '. ' +
     (row.type === 'enum' ? 'inherit, the default, follows ' + base.key
       : row.type === 'int' ? '-1, the default, follows ' + base.key
                            : 'Empty, the default, follows ' + base.key) +
@@ -16997,9 +16959,6 @@ PER_LISTENER_SETTINGS.forEach(function (spec) {
       SETTINGS.push(perListenerRow(spec, owner));
     }
   });
-  if (spec.realm) {
-    SETTINGS.push(perListenerRow(spec, null));
-  }
 });
 
 // Indexed once. A linear scan per read would be invisible on a mock and the
@@ -17030,11 +16989,65 @@ SETTINGS.forEach(function (setting) {
 // unknown key is (STS-CORE-0008), with the replacement named, and left in
 // the store.
 // ---------------------------------------------------------------------------
+// What every one of #99's `listener.*` rows says when it is still named.
+const REALM_LISTENER_REPLACED = ' It was removed on 2026-10-07 (#472): a ' +
+  'realm\'s own listener is a definition in the realm\'s listeners.realm ' +
+  '(port, publicBaseUrl, hostnames, the certificate files, clientAuth and a ' +
+  'tls block of the per-listener settings), and the realm is served on it ' +
+  'where its listeners.applications maps * (or an application) to it.';
+
 /**
  * The settings that were replaced, and what replaced them; one still named
  * anywhere stops the service starting.
  */
 const REPLACED_SETTINGS = [
+  // #472 (2026-10-07): a realm's own listener (#99) is a listener in the
+  // realm's listeners.realm now, its settings members of that definition,
+  // and what it serves is the realm's listeners.applications.
+  { key: 'listener.port', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.publicBaseUrl', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.hostnames', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.certificateFile', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.privateKeyFile', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.disableTls12', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.tls13CipherSuites', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.pqcOnly', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.disableOptionalClientCertificate', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.requireClientCertificate', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.minVersion', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.ciphers', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.groups', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.signatureAlgorithms', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.trustAnchorsFile', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.trustIssuedClientCertificates', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.sessionTimeoutS', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.sessionCacheSize', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.keepAliveTimeoutS', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.headersTimeoutS', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.maxRequestsPerSocket', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.maxConnections', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
   // #429 (2026-10-02): the main port's two pooling rows became service-wide
   // defaults every listener inherits, and editable. The keep-alive kept its
   // environment variable, so only the old KEY is refused for it.
@@ -17753,7 +17766,19 @@ function processValue(key) {
  */
 function managementApiBaseUrl() {
   log.debug("Entering managementApiBaseUrl().");
-  const pinned = String(processValue('global.publicBaseUrl') || '').trim()
+  // WHERE THE MANAGEMENT API IS ADVERTISED (#472): a custom listener's
+  // `publicBaseUrl` when one is, `global.publicBaseUrl` otherwise. Required
+  // lazily — `listener_map.js` requires this file — and by the time the
+  // audience is asked for, both are loaded.
+  let advertised = '';
+  try {
+    advertised = String(require('./listener_map')
+      .advertisedBase('management-api') || '');
+  } catch (e) {
+    log.debug("Caught in managementApiBaseUrl(): " + ((e && e.message) || e));
+  }
+  const pinned = (advertised ||
+                  String(processValue('global.publicBaseUrl') || '')).trim()
     .replace(/\/+$/, '');
   if (pinned) {
     log.debug("Leaving managementApiBaseUrl().");
@@ -17926,7 +17951,8 @@ function checkOverride(key, raw, forRealm) {
     log.debug("Leaving checkOverride().");
     return '"' + key + '" ' + problem + '.';
   }
-  const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting));
+  const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting),
+                                 inRealm);
   log.debug("Leaving checkOverride().");
   return ruled ? ruled.problem : null;
 }
@@ -17949,7 +17975,9 @@ const writeRules = [];
 /**
  * Adds a rule every override is checked against.
  *
- * @param fn - `(key, parsed)` answering `{ problem, code }` or null
+ * @param fn - `(key, parsed, inRealm)` answering `{ problem, code }` or
+ *   null; `inRealm` is true for a write that lands in a realm's overrides
+ *   (#472: a rule over the process's settings leaves those to realms.js)
  */
 function addWriteRule(fn) {
   log.debug("Entering addWriteRule().");
@@ -17960,12 +17988,12 @@ function addWriteRule(fn) {
 }
 
 // The first rule's refusal, or null. A rule that throws refuses nothing.
-function writeRuleProblem(key, parsed) {
+function writeRuleProblem(key, parsed, inRealm) {
   log.debug("Entering writeRuleProblem(). key=" + key);
   for (const rule of writeRules) {
     let answer = null;
     try {
-      answer = rule(key, parsed);
+      answer = rule(key, parsed, !!inRealm);
     } catch (e) {
       log.warn(errorCodes.tag('STS-CORE-0149') + 'config: a rule between ' +
                'settings failed on ' + key + ' (' +
@@ -18010,7 +18038,8 @@ function checkOverrideCode(key, raw, forRealm) {
     log.debug("Leaving checkOverrideCode().");
     return 'STS-CORE-0006';
   }
-  const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting));
+  const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting),
+                                 inRealm);
   log.debug("Leaving checkOverrideCode().");
   return ruled ? ruled.code : '';
 }
@@ -18975,8 +19004,8 @@ module.exports = {
   setOverride: setOverride,
   setDelivered: setDelivered,
   clearOverride: clearOverride,
-  // What a setting is for the PROCESS, the realm layer set aside (#99: a
-  // realm listener's port is checked against the process's own listeners).
+  // What a setting is for the PROCESS, the realm layer set aside (#99, #472:
+  // a custom listener's port is checked against the process's own listeners).
   processValue: processValue,
   clearAllOverrides: clearAllOverrides,
   setOverrideStore: setOverrideStore,

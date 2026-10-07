@@ -936,6 +936,16 @@ class RequestWorker {
       // it sets is what this answer said already.
       // -------------------------------------------------------------------
       lingeringClose.arm(req, res);
+      // WHICH LISTENER IT ARRIVED ON (#472), as the front process saw it —
+      // `request_pool.js`'s LISTENER_HEADER, set there after the client's
+      // own was stripped — put on the request for `app.js`'s
+      // `enterListener()` and `helpers.baseUrlOf()`, and stripped before the
+      // app sees the headers.
+      const listener = req.headers['x-sts-listener'];
+      if (listener) {
+        (req as any).stsListener = String(listener);
+        delete req.headers['x-sts-listener'];
+      }
       // THE CLIENT'S JA4 FINGERPRINT (#62 P0), forwarded beside the
       // certificate and put on the REQUEST, for the keep-alive reason above.
       // Stripped whether or not it is well formed; see

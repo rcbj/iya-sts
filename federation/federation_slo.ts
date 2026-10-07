@@ -566,7 +566,9 @@ class FederationSlo {
     log.debug("Entering FederationSlo.endSessions(). " + sessions.length);
     const logout = this.deps.logout();
     const by = 'the federation partner "' + record.fedId + '" (' + how + ')';
-    const issuer = base ? this.deps.issuerOf(base) : '';
+    // The OpenID provider's issuer, where `oauth-oidc` is advertised (#472).
+    const issuer = base
+      ? this.deps.issuerOf(helpers.rebaseTo(base, 'oauth-oidc')) : '';
     const results = sessions.map(function (session) {
       return logout.endPartnerSession(session, {
         by: by, issuer: issuer, channel: browser ? 'http' : 'back-channel',

@@ -970,22 +970,23 @@ const CODES = [
       '(STS-CORE-0142) instead of being answered with a 500.',
     spec: 'none — logged at start' },
   { code: 'STS-CORE-0145',
-    summary: 'A listener.* setting was given to the default realm, which ' +
-      'has no listener of its own: it is served on the main port under ' +
-      'global.publicBaseUrl (#99).',
+    summary: 'listeners.realm was given to the default realm, whose ' +
+      'listeners are the service\'s (listeners.custom); a realm\'s own ' +
+      'listeners are set on that realm (#99, #472).',
     spec: 'the write is refused; nothing is changed' },
   { code: 'STS-CORE-0146',
-    summary: 'A realm\'s listener.publicBaseUrl is not an https origin ' +
-      'with no path, query or user, or listener.port was set without it.',
+    summary: 'A custom listener\'s publicBaseUrl (listeners.custom or ' +
+      'listeners.realm, #472) is not an https origin with no path, query ' +
+      'or user, or is missing.',
     spec: 'the write is refused; nothing is changed' },
   { code: 'STS-CORE-0147',
-    summary: 'A realm\'s listener.port is already another realm\'s or one ' +
-      'of this process\'s own listeners\' (every node binds every realm ' +
-      'port, so each must be its own).',
+    summary: 'A custom listener\'s port (#472) is already another ' +
+      'listener\'s or one of this process\'s own sockets\' (every node ' +
+      'binds every listener, so each must be its own).',
     spec: 'the write is refused; nothing is changed' },
   { code: 'STS-CORE-0148',
-    summary: 'A realm listener (listener.port) was asked for while this ' +
-      'service runs as several cells, which #99 does not support yet.',
+    summary: 'A custom listener (#99, #472) was asked for while this ' +
+      'service runs as several cells, which is not supported yet.',
     spec: 'the write is refused; nothing is changed' },
   { code: 'STS-CORE-0149',
     summary: 'A module told of changed settings (config.onOverridesChanged()) ' +
@@ -1007,6 +1008,46 @@ const CODES = [
       'read and could not be deleted afterwards, so it is still readable ' +
       'where it was delivered. The service starts with it.',
     spec: 'none — logged' },
+  { code: 'STS-CORE-0153',
+    summary: 'A custom listener definition (listeners.custom or ' +
+      'listeners.realm, #472) is not well formed: not a JSON array of ' +
+      'objects, an id that is malformed, reserved or used twice, a port ' +
+      'out of range, a member or tls setting no listener takes, half of a ' +
+      'certificate pair, or a clientAuth that is not none, optional or ' +
+      'required.',
+    spec: 'the write is refused; nothing is changed (400 at the management ' +
+      'API)' },
+  { code: 'STS-CORE-0154',
+    summary: 'A mapping of hosted applications to listeners ' +
+      '(listeners.applications, #472) is not well formed or names what is ' +
+      'not there: an unknown application, a listener not defined or ' +
+      'another realm\'s, an advertised listener the application is not ' +
+      'on, the removal of a listener a mapping names, or oidfed off the ' +
+      'listener oauth-oidc is advertised on (the Entity Configuration is ' +
+      'fetched at the issuer).',
+    spec: 'the write is refused; nothing is changed (400 at the management ' +
+      'API)' },
+  { code: 'STS-CORE-0155',
+    summary: 'A write would put the applications that read the sign-on ' +
+      'session on listeners whose host names its cookie cannot reach: ' +
+      'several host names with authn.cookieDomain empty (the cookie is ' +
+      'host-only), a host name not under authn.cookieDomain, or an ' +
+      'authn.cookieDomain that is not a DNS name (#472).',
+    spec: 'the write is refused; nothing is changed' },
+  { code: 'STS-CORE-0156',
+    summary: 'A write would take the management API off the listener the ' +
+      'request making it arrived on, with no confirmation: nothing on that ' +
+      'listener would answer the next one. PUT ' +
+      '/admin-api/listeners/applications with confirm, or ' +
+      'listeners.adminOnMain at the next start (#472).',
+    spec: 'the write is refused; nothing is changed' },
+  { code: 'STS-CORE-0157',
+    summary: 'The custom listeners and their mapping this process was ' +
+      'started with (the environment, an appconfig file, or the store) ' +
+      'break a rule a write of them would be refused for, or could not be ' +
+      'read (#472).',
+    spec: 'the service does not start; logged when the listeners cannot be ' +
+      'reconciled' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -13517,16 +13558,16 @@ const CODES = [
     spec: 'the request is answered; under hard-fail a certificate whose ' +
       'issuer this node does not hold is refused' },
   { code: 'STS-TLS-0039',
-    summary: 'A trust realm\'s own listener (listener.port, #99) could not ' +
-      'be bound on this node — the port in use, or not permitted — or ' +
-      'failed after binding. The realm is still served on the main port ' +
-      'under its prefix.',
-    spec: 'the listener is absent on this node and shown as failed on the ' +
-      'realm\'s page and GET /admin-api/realms' },
+    summary: 'A custom listener (#472; a realm\'s own, #99, among them) ' +
+      'could not be bound on this node — the port in use, or not ' +
+      'permitted — or failed after binding. Its applications are still ' +
+      'answered on the other listeners they are on.',
+    spec: 'the listener is absent on this node and shown as failed on ' +
+      'Server configuration -> Listeners and GET /admin-api/listeners' },
   { code: 'STS-TLS-0040',
-    summary: 'A trust realm\'s own listener has no certificate to present: ' +
-      'its listener.certificateFile or privateKeyFile could not be read or ' +
-      'do not match, it has no DNS name to issue one for, or the realm\'s ' +
+    summary: 'A custom listener has no certificate to present: its ' +
+      'certificateFile or privateKeyFile could not be read or do not ' +
+      'match, it has no DNS name to issue one for, or its owning realm\'s ' +
       'certificate authority did not issue one.',
     spec: 'the listener is not bound (or keeps the certificate it has, on a ' +
       'renewal)' },
@@ -13534,6 +13575,13 @@ const CODES = [
     summary: 'A request on a trust realm\'s own listener asked for a path ' +
       'outside that realm\'s prefix — another realm\'s, or the default ' +
       'realm\'s; a realm\'s listener serves that realm alone.',
+    spec: '404' },
+  { code: 'STS-TLS-0046',
+    summary: 'A request asked a listener for a path of a hosted application ' +
+      'that is not mapped to it (listeners.applications, #472): the ' +
+      'console on a listener it was moved off, the management API on one ' +
+      'that answers only the sign-in service. The answer names where the ' +
+      'application is.',
     spec: '404' },
   { code: 'STS-TLS-0042',
     summary: 'The listeners\' TLS settings this process started with leave a ' +

@@ -1793,11 +1793,20 @@ class Authn {
   // reason the header above `methodPhraseFor()` gives: a second copy that
   // disagreed about Path or SameSite would be two sessions that never saw each
   // other.
+  //
+  // THE SIGN-ON COOKIE CARRIES `authn.cookieDomain` WHEN IT IS SET (#472,
+  // rcbj's D3), so that the applications reading it may sit on listeners with
+  // different host names under one domain; a hosted surface's own cookie
+  // (the portal's, the console's until #446) is read by that surface alone
+  // and stays host-only. The clear below carries the same Domain, or it
+  // would clear nothing.
   private sessionCookieLine(name, value) {
-    const { log, config } = this.deps;
+    const { log, config, helpers } = this.deps;
     log.debug("Entering Authn.sessionCookieLine(). name=" + name);
     log.debug("Leaving Authn.sessionCookieLine().");
     return String(name) + '=' + value + '; Path=/; HttpOnly; SameSite=Lax' +
+           (String(name) === SESSION_COOKIE
+             ? helpers.cookieDomainAttribute() : '') +
            (config.value('global.https') ? '; Secure' : '');
   }
 
@@ -6210,10 +6219,12 @@ class Authn {
    * @param cookieName - the cookie; the sign-on cookie by default
    */
   clearSessionCookie(res, cookieName?) {
-    const { log, config } = this.deps;
+    const { log, config, helpers } = this.deps;
     log.debug("Entering Authn.clearSessionCookie().");
     const value = String(cookieName || SESSION_COOKIE) +
                   '=; Path=/; Max-Age=0' +
+                  (String(cookieName || SESSION_COOKIE) === SESSION_COOKIE
+                    ? helpers.cookieDomainAttribute() : '') +
                   (config.value('global.https') ? '; Secure' : '');
     // THE SIGN-ON SESSION's OP BROWSER STATE GOES WITH IT (#121), so a
     // relying party's OP iframe answers `changed` after any sign-out door.

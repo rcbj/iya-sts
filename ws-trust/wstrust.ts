@@ -2737,6 +2737,8 @@ class WsTrust {
         .replace(/\/admin-api$/, '') +
         String(require('../common/realms').currentPrefix() || '');
     }
+    // Where `oauth-oidc` is advertised (#472), whichever base asked.
+    at = helpers.rebaseTo(at, 'oauth-oidc');
     let out = at;
     try {
       out = String(require('../oauth-oidc/oauth2').issuerOf(at) || at);

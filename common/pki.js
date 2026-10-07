@@ -351,19 +351,23 @@ const USE_CASES = [
           'Issued to a REGISTERED PEP from /admin/xacml/peps or POST ' +
           '/admin-api/xacml/issue-pep-certificate; the private key is ' +
           'handed over once and this service keeps no copy.' },
-  // **A TRUST REALM'S OWN FRONT-END LISTENER (#99, 2026-10-02).** REALM-scoped
-  // for `pep-tls`'s reason: the listener answers one realm, so the authority
-  // vouching for its front door is that realm's. Issued by
-  // `tls/realm_listeners.js` through `issueTlsServerKeyPair()`, one slot per
-  // node — each node presents a key of its own, and a slot per node keeps one
-  // node's issuance from superseding (and revoking) another's.
-  { id: 'realm-tls', scope: 'realm', label: 'Realm listeners',
+  // **A CUSTOM LISTENER'S CERTIFICATE (#99 2026-10-02, #472 2026-10-07).**
+  // REALM-scoped for `pep-tls`'s reason: the authority vouching for a
+  // listener's front door is that of the realm that owns it — a realm's own
+  // listener its realm's, a service listener (`listeners.custom`) the default
+  // realm's. Issued by `tls/listeners.js` through `issueTlsServerKeyPair()`,
+  // one slot per listener per node — each node presents a key of its own,
+  // and a slot per node keeps one node's issuance from superseding (and
+  // revoking) another's.
+  { id: 'realm-tls', scope: 'realm', label: 'Custom listeners',
     cn: 'Realm Listener TLS Issuing CA',
-    what: 'The certificates a trust realm\'s own HTTPS listener presents ' +
-          '(listener.port) when no operator certificate is configured, for ' +
-          'listener.hostnames. REALM-scoped because the listener answers ' +
-          'that realm alone. One per node; the private key never leaves ' +
-          'the node that serves it.' },
+    what: 'The certificates a custom HTTPS listener presents (#472: ' +
+          'listeners.custom for the service\'s, listeners.realm for a ' +
+          'realm\'s own) when its definition names no certificate files, ' +
+          'for its hostnames. REALM-scoped because a listener belongs to ' +
+          'one realm — the default realm, for the service\'s. One per ' +
+          'listener per node; the private key never leaves the node that ' +
+          'serves it.' },
   // **THE REALM'S KDC, FOR PKINIT (#179, 2026-10-05).** A PKINIT reply is a
   // CMS SignedData the client verifies against this service's Root, and RFC
   // 4556 section 3.2.4 has it require that the KDC's certificate name the

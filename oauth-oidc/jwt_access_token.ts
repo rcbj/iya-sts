@@ -76,6 +76,10 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
+// Where the authorization server is advertised when a resource server is on
+// another listener (#472), and the realm prefix after it. LEAVES.
+import listenerMap = require('../common/listener_map');
+import realms = require('../common/realms');
 // The registry of error codes: a leaf. A refusal carries its code under the
 // Symbol `mark()` sets, so a caller that answers it can mark the response
 // without the code ever being serialised.
@@ -379,15 +383,51 @@ class JwtAccessTokens {
       log.debug("Leaving JwtAccessTokens.isHostedIssuer(). No issuer.");
       return false;
     }
-    if (text === this.issuerFor(base)) {
-      log.debug("Leaving JwtAccessTokens.isHostedIssuer(). The default " +
-                "authorization server.");
-      return true;
-    }
-    const asBase = this.hostedBaseOf(text, base);
-    const hosted = !!asBase && this.issuerFor(asBase) === text;
+    // THE AUTHORIZATION SERVER MAY BE ON ANOTHER LISTENER THAN THE RESOURCE
+    // SERVER ASKING (#472): `/admin-api` on one, `oauth-oidc` advertised on
+    // another, so the issuer at the resource server's own base is not the
+    // only one this process publishes for the realm. The base `oauth-oidc`
+    // is advertised on is the other.
+    const self = this;
+    const hosted = [base].concat(this.authorizationServerBase(base))
+      .some(function (one: string): boolean {
+        if (text === self.issuerFor(one)) {
+          return true;
+        }
+        const asBase = self.hostedBaseOf(text, one);
+        return !!asBase && self.issuerFor(asBase) === text;
+      });
     log.debug("Leaving JwtAccessTokens.isHostedIssuer(). hosted=" + hosted);
     return hosted;
+  }
+
+  // Where `oauth-oidc` is advertised in the ambient realm when that is not
+  // the base a resource server was asked at (#472): its custom listener's
+  // `publicBaseUrl`, or, where it is the main port and nothing pins that,
+  // the main port on the asking base's host name. Empty when it is the same.
+  private authorizationServerBase(base: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering JwtAccessTokens.authorizationServerBase().");
+    if (listenerMap.isTrivial()) {
+      log.debug("Leaving JwtAccessTokens.authorizationServerBase(). Same.");
+      return [];
+    }
+    let found = helpers.pinnedBaseUrl('oauth-oidc');
+    if (!found) {
+      try {
+        const asked = new URL(String(base || ''));
+        found = (config.value('global.https') === true ? 'https' : 'http') +
+          '://' + asked.host.replace(/:\d+$/, '') + ':' +
+          Number(config.value('global.port'));
+      } catch (e) {
+        log.debug("Caught in JwtAccessTokens.authorizationServerBase(): " +
+                  ((e && e.message) || e));
+        found = '';
+      }
+    }
+    const out = found ? found + realms.currentPrefix() : '';
+    log.debug("Leaving JwtAccessTokens.authorizationServerBase().");
+    return out && out !== base ? [out] : [];
   }
 
   // SECTION 4 STEP 4: the aud claim "contains a resource indicator value

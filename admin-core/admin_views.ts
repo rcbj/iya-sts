@@ -123,6 +123,8 @@ import serviceAccountPolicy = require('../common/service_account_policy');
 // wherever this file is legitimately loaded.
 import authn = require('../authn/authn');
 import config = require('../common/config');
+// A realm's own listeners and its advertised base (#472). A LEAF.
+import listenerMap = require('../common/listener_map');
 // The store's own status, for what a page says about whether its state
 // survives a restart (#446). A library, required in the ordinary direction.
 import persistence = require('../persistence/persistence');
@@ -2633,22 +2635,19 @@ class AdminViews {
     const { log, stsKeysFor, realms, config } = this.deps;
     log.debug("Entering AdminViews.realmJson().");
     const prefix = realms.prefixOf(realm);
-    // A REALM WITH A LISTENER OF ITS OWN (#99) is reached on its own base,
+    // A REALM WITH LISTENERS OF ITS OWN (#99, #472) is reached on the base
+    // its applications are advertised on — `*`'s, for the realm as a whole —
     // whichever listener this page was read on.
-    const own = realms.run(realm, function () {
-      return {
-        port: Number(config.value('listener.port')) || 0,
-        publicBaseUrl: String(config.value('listener.publicBaseUrl') || '')
-          .trim().replace(/\/+$/, ''),
-        hostnames: [].concat(config.value('listener.hostnames') || []),
-        certificateFile: String(config.value('listener.certificateFile') ||
-                                '')
-      };
+    const advertised = realms.run(realm, function () {
+      return listenerMap.advertisedBase(null);
     });
-    const base = (own.publicBaseUrl || this.realmRootUrl(req)) + prefix;
+    const base = (advertised || this.realmRootUrl(req)) + prefix;
+    const own = listenerMap.allListeners().filter(function (one: any) {
+      return one.owner === realm.id;
+    });
     let bound: any[] = [];
     try {
-      bound = require('../tls/realm_listeners').status(realm.id);
+      bound = require('../tls/listeners').status(realm.id);
     } catch (e) {
       log.debug("Caught in AdminViews.realmJson(): " +
                 ((e && e.message) || e));
@@ -2670,18 +2669,20 @@ class AdminViews {
       retiring: realms.retiringState(realm),
       pathPrefix: prefix,
       baseUrl: base,
-      // ITS OWN LISTENER (#99): what the realm configured, and what THIS
-      // process holds — the listener is the front process's, so a page drawn
-      // by a request worker reports the configuration and no socket.
-      listener: {
-        configured: own.port > 0,
-        port: own.port,
-        publicBaseUrl: own.publicBaseUrl,
-        hostnames: own.hostnames,
-        certificateSource: own.port > 0
-          ? (own.certificateFile ? 'file' : 'issued') : '',
-        here: bound[0] || null
-      },
+      // ITS OWN LISTENERS (#99, #472: `listeners.realm`): what the realm
+      // configured, and what THIS process holds — a listener is the front
+      // process's, so a page drawn by a request worker reports the
+      // configuration and no socket.
+      listeners: own.map(function (one: any): any {
+        return {
+          id: one.id, port: one.port, publicBaseUrl: one.publicBaseUrl,
+          hostnames: one.hostnames, clientAuth: one.clientAuth,
+          certificateSource: one.certificateFile ? 'file' : 'issued',
+          here: bound.filter(function (b: any): boolean {
+            return b.id === one.id;
+          })[0] || null
+        };
+      }),
       // The kid of the realm's signing key. It is the one fact on this page
       // that PROVES the realms are separate rather than asserting it — two
       // realms showing one kid would be two names for one authorization server.

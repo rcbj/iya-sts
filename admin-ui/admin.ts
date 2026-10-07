@@ -8974,10 +8974,10 @@ const SETTING_HOMES = [
   // Service-wide defaults tab beside the TLS ones.
   { group: 'HTTP connections', pages: ['/admin/listeners'] },
   { group: 'TLS', pages: ['/admin/listeners'] },
-  // A trust realm's own listener (#99): realm-only settings, edited on the
-  // Listeners page read inside a realm (#423); the default realm refuses
-  // them (STS-CORE-0145).
-  { group: 'Realm listener', pages: ['/admin/listeners'] },
+  // The custom listeners and which hosted application is on which (#472,
+  // which folded #99's realm listener in): on the Listeners page's
+  // Applications tab, beside the forms that edit them.
+  { group: 'Custom listeners', pages: ['/admin/listeners'] },
   { group: 'OID4VCI', pages: ['/admin/oid4vci'] },
   { group: 'OID4VP', pages: ['/admin/oid4vp'] },
   { group: 'Kerberos', pages: ['/admin/kerberos'] },

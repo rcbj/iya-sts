@@ -237,6 +237,10 @@ const identityAssurance = require('../common/identity_assurance');
 // the ambient realm. A LEAF this module's closure already holds (`app.js` and
 // `helpers.js` both require it).
 const realms = require('../common/realms');
+// THE CUSTOM LISTENERS' DEFINITIONS (#472): a custom listener's TLS policy and
+// client authentication are members of its definition. A LEAF (it requires
+// the settings, the realms and the catalogue of applications).
+const listenerMap = require('../common/listener_map');
 // WHICH CELL SIGNS A CERTIFICATE'S HOLDER IN (#98): the cell map and the
 // placement helper. Libraries that register nothing; their own requires of
 // the channel and the routing index are lazy.
@@ -353,10 +357,11 @@ const CLIENT_AUTH_SETTINGS = {
   ldaps: ['ldap.ldapsDisableOptionalClientCertificate',
           'ldap.ldapsRequireClientCertificate'],
   debugger: ['debugger.disableOptionalClientCertificate',
-             'debugger.requireClientCertificate'],
-  realm: ['listener.disableOptionalClientCertificate',
-          'listener.requireClientCertificate']
+             'debugger.requireClientCertificate']
 };
+// A CUSTOM LISTENER (#472; a realm's own since #99 is one) carries its client
+// authentication in its definition — `clientAuth`, none / optional /
+// required — rather than in a pair of settings: `customClientAuth()`.
 
 // A list setting as an array of trimmed, non-empty entries.
 function listOf(raw) {
@@ -415,11 +420,13 @@ function clientAuthFrom(disableOptional, require) {
 // EVERY SETTING PER LISTENER, INHERITING THE SERVICE'S (#429, 2026-10-02).
 //
 // A listener's own row is `listener<Id>.<name>` (generated in common/config.js
-// from `PER_LISTENER_SETTINGS`), and a realm's own listener's is
-// `listener.<name>` read inside the realm. `own()` answers that row's value,
-// or undefined where the row says inherit — `inherit` in an enum, the empty
-// string otherwise — or the listener has no such row; `pick()` falls back to
-// the service-wide row.
+// from `PER_LISTENER_SETTINGS`), and a custom listener's (#472, a realm's own
+// among them) is the same name in its definition's `tls` block
+// (`common/listener_map.js`), kind `custom` and the listener's id where a
+// realm id was. `own()` answers that value, or undefined where it says
+// inherit — `inherit` in an enum, the empty string otherwise, -1 for a number
+// — or the listener has no such value; `pick()` falls back to the
+// service-wide row.
 // ---------------------------------------------------------------------------
 const LISTENER_KINDS = ['main', 'ldaps', 'debugger', 'spiffeServer',
                         'spiffeBroker', 'cell', 'revocation'];
@@ -429,11 +436,10 @@ function ownValue(kind, realmId, name) {
   log.debug("Entering ownValue(). " + kind + " " + name);
   let raw;
   try {
-    if (kind === 'realm') {
-      const realm = realms.get(String(realmId || ''));
-      raw = realm ? realms.run(realm, function () {
-        return config.value('listener.' + name);
-      }) : undefined;
+    if (kind === 'custom') {
+      const one = listenerMap.listenerById(String(realmId || ''));
+      raw = one && Object.prototype.hasOwnProperty.call(one.tls, name)
+        ? one.tls[name] : undefined;
     } else if (LISTENER_KINDS.indexOf(String(kind)) >= 0) {
       raw = config.value('listener' + String(kind).charAt(0).toUpperCase() +
                          String(kind).slice(1) + '.' + name);
@@ -454,13 +460,24 @@ function ownValue(kind, realmId, name) {
   return raw === 'on' ? true : raw === 'off' ? false : raw;
 }
 
+// A custom listener's client authentication, from its definition: `none`,
+// `optional` (the default, as the main port's) or `required`. A listener
+// that has gone since it registered answers optional; it is about to be
+// forgotten.
+function customClientAuth(id) {
+  log.debug("Entering customClientAuth(). " + id);
+  const one = listenerMap.listenerById(id);
+  log.debug("Leaving customClientAuth().");
+  return one && one.clientAuth ? one.clientAuth : 'optional';
+}
+
 /**
  * The policy one listener is held to: each of its own settings where it has
  * one, the service-wide setting where it inherits.
  *
  * @param kind - `main`, `ldaps`, `debugger`, `spiffeServer`, `spiffeBroker`,
- *   `cell` or `realm`; omitted, the service-wide policy
- * @param realmId - for `realm`, the realm whose own listener it is
+ *   `cell` or `custom`; omitted, the service-wide policy
+ * @param realmId - for `custom`, the listener's id (#472)
  * @returns `{ kind, realm, minVersion, disableTls12, pqcOnly, tls13Suites,
  *   ciphers12, groups, sigalgs, trustAnchorsFile, trustIssued, clientAuth }`;
  *   `clientAuth` is null for a kind whose protocol decides it
@@ -477,12 +494,8 @@ function policyFor(kind, realmId) {
   let suites = listOf(pick('tls13CipherSuites', 'tls.tls13CipherSuites'));
   let clientAuth = null;
   const pair = CLIENT_AUTH_SETTINGS[String(k || '')];
-  if (k === 'realm') {
-    const realm = realms.get(String(realmId || ''));
-    clientAuth = realm ? realms.run(realm, function () {
-      return clientAuthFrom(config.value(pair[0]) === true,
-                            config.value(pair[1]) === true);
-    }) : 'optional';
+  if (k === 'custom') {
+    clientAuth = customClientAuth(String(realmId || ''));
   } else if (pair) {
     clientAuth = clientAuthFrom(config.value(pair[0]) === true,
                                 config.value(pair[1]) === true);
@@ -3032,9 +3045,10 @@ function refuseNonNistCurveCertificatesOn(server, label) {
  * @param server - the TLS listener
  * @param label - its name, for the log
  * @param certificateOf - optional; for a listener that presents a certificate
- *   of its own rather than this module's (a realm's listener, #99), answers
+ *   of its own rather than this module's (a custom listener, #472), answers
  *   `{ key, cert }` each time the truststore is applied
- * @param which - optional `{ kind, realm }` naming the listener's policy
+ * @param which - optional `{ kind, realm }` naming the listener's policy;
+ *   for kind `custom`, `realm` is the listener's id
  *   (`policyFor()`, #423); omitted, the main port's
  * @returns true when it was registered; false (logged) when `server` is not a
  * TLS server
@@ -3084,8 +3098,8 @@ function trustClientCertificatesOn(server, label, certificateOf, which) {
 
 
 /**
- * Stops applying the truststore to a listener that has closed — a realm's
- * listener taken away or rebound (#99) — so the list does not keep it.
+ * Stops applying the truststore to a listener that has closed — a custom
+ * listener taken away or rebound (#99, #472) — so the list does not keep it.
  *
  * @param server - the listener given to `trustClientCertificatesOn()`
  * @returns true when it was registered
@@ -3117,10 +3131,10 @@ function applyAnchors() {
   // EVERY listener is an external one since 2026-09-16: this module creates
   // none of its own any more, so the list that was "our two, plus theirs" is
   // now just theirs — the main HTTPS port and the debugger's.
-  // A REALM'S LISTENER PRESENTS A CERTIFICATE OF ITS OWN (#99): it said so
-  // when it registered, and its own key and chain replace this module's in the
-  // context it is given, so a truststore change never swaps its certificate
-  // for the main port's.
+  // A CUSTOM LISTENER PRESENTS A CERTIFICATE OF ITS OWN (#99, #472): it said
+  // so when it registered, and its own key and chain replace this module's in
+  // the context it is given, so a truststore change never swaps its
+  // certificate for the main port's.
   externalServers.forEach(function (one) {
     const server = one.server;
     try {
@@ -3173,7 +3187,7 @@ const policyAppliers = [];
  * @param label - its name, for the log and the Listeners page
  * @param kind - as for `policyFor()`
  * @param apply - re-keys the listener with a policy
- * @param realm - for a realm's own listener, its id
+ * @param realm - for a custom listener, its id (#472)
  * @returns a function that unregisters it
  */
 function registerPolicyApplier(label, kind, apply, realm) {
@@ -3268,7 +3282,7 @@ realms.onChange(function () {
  *
  * @param server - the TLS server
  * @param kind - the listener's kind, as for `policyFor()`
- * @param realmId - for a realm's own listener, its id
+ * @param realmId - for a custom listener, its id (#472)
  * @returns the cache, for its report
  */
 function attachSessionCache(server, kind, realmId) {
@@ -3331,8 +3345,8 @@ const httpListeners = [];
  * The connection-pooling values one HTTP listener is held to: its own where
  * set, the service's otherwise.
  *
- * @param kind - `main`, `debugger`, `revocation` or `realm`
- * @param realmId - for `realm`, the realm
+ * @param kind - `main`, `debugger`, `revocation` or `custom`
+ * @param realmId - for `custom`, the listener's id
  * @returns `{ keepAliveTimeoutS, headersTimeoutS, maxRequestsPerSocket,
  *   maxConnections }`, the header timeout resolved
  */
@@ -3379,8 +3393,8 @@ function applyHttpPolicy(entry) {
  * listener's settings, now and whenever they change.
  *
  * @param server - the http or https server
- * @param kind - `main`, `debugger`, `revocation` or `realm`
- * @param realmId - for `realm`, the realm
+ * @param kind - `main`, `debugger`, `revocation` or `custom`
+ * @param realmId - for `custom`, the listener's id
  * @returns a function that unregisters it
  */
 function registerHttpListener(server, kind, realmId) {
@@ -5727,7 +5741,7 @@ module.exports = {
   trustClientCertificatesOn: trustClientCertificatesOn,
   forgetListener: forgetListener,
   // Applies the truststore again to every registered listener — and so each
-  // listener's own certificate, after a realm listener's is renewed (#99).
+  // listener's own certificate, after a custom listener's is renewed (#99, #472).
   reapplyTruststore: applyAnchors,
   // #212: the guard, for a TLS listener that does not register above.
   refuseNonNistCurveCertificatesOn: refuseNonNistCurveCertificatesOn,

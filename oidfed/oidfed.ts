@@ -172,7 +172,7 @@ interface OidfedDeps {
   config: typeof config;
   realms: typeof realms;
   errorCodes: typeof errorCodes;
-  baseUrlOf: (req: Req) => string;
+  baseUrlOf: (req: Req, app?: string) => string;
   store: typeof OidfedStore;
   keys: typeof federationKeys;
   // Lazily, each: the authorization server, the verifier, the outbound
@@ -297,7 +297,9 @@ class Oidfed {
   entityId(req: Req): string {
     const { log, oauth2, baseUrlOf } = this.deps;
     log.debug("Entering Oidfed.entityId().");
-    const out = String(oauth2().issuerOf(baseUrlOf(req)));
+    // The OpenID Provider's issuer (#132), on the base `oauth-oidc` is
+    // advertised on (#472) whichever application's request asks.
+    const out = String(oauth2().issuerOf(baseUrlOf(req, 'oauth-oidc')));
     log.debug("Leaving Oidfed.entityId(). " + out);
     return out;
   }

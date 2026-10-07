@@ -471,6 +471,22 @@ class GnapGrants {
     return baseUrlOf(req);
   }
 
+  // The OAuth authorization server's base (#472): the issuer a subject
+  // identifier names is the realm's OpenID provider, which may be advertised
+  // on another listener than GNAP.
+  /**
+   * Returns the realm's OAuth authorization server's base URL.
+   *
+   * @param req - the request
+   * @returns the base URL
+   */
+  oauthBase(req) {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering GnapGrants.oauthBase().");
+    log.debug("Leaving GnapGrants.oauthBase().");
+    return baseUrlOf(req, 'oauth-oidc');
+  }
+
   /**
    * Returns the discovery document's members (section 9) as the settings make
    * them, before an authorization server profile changes any.
@@ -1695,7 +1711,7 @@ class GnapGrants {
       return null;
     }
     const oauth2 = this.deps.loadOauth2();
-    const issuer = oauth2.issuerOf(this.realmBase(req));
+    const issuer = oauth2.issuerOf(this.oauthBase(req));
     const formats = grant.request.subject.subIdFormats.filter((format) => {
       return this.allows(this.capabilityList(req, grant.as,
                                              'sub_id_formats_supported'),
@@ -2078,8 +2094,8 @@ class GnapGrants {
     }
     const oauth2 = this.deps.loadOauth2();
     const resolved = subject.resolveUser(asked.user, {
-      issuer: oauth2.issuerOf(this.realmBase(req)),
-      oauthIssuer: oauth2.issuerOf(this.realmBase(req)),
+      issuer: oauth2.issuerOf(this.oauthBase(req)),
+      oauthIssuer: oauth2.issuerOf(this.oauthBase(req)),
       // A user reference resolves only for the client it was issued to
       // (#432 phase 7, gnap_subject.ts).
       client: identifier,
