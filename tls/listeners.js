@@ -104,8 +104,8 @@ function nodeSlot(id) {
 // The realm a listener belongs to, as a realm object `realms.run()` takes.
 function ownerRealm(desired) {
   log.debug("Entering ownerRealm(). " + desired.owner);
-  const realm = desired.owner === realms.DEFAULT_ID ? null
-                                                     : realms.get(desired.owner);
+  const realm = desired.owner === realms.DEFAULT_ID
+    ? null : realms.get(desired.owner);
   log.debug("Leaving ownerRealm().");
   return realm;
 }

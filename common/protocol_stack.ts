@@ -1193,11 +1193,11 @@ class ProtocolStack {
     this.register(app, require('../admin-ui/mode_admin'),
                   'admin-ui/mode_admin');
     // 18k-iii. LISTENERS (#423, 2026-10-02). `/admin/listeners` — every
-    // socket, the TLS policy and client authentication each is held to, a
-    // realm's own listener, and the Listeners, TLS and Realm listener
+    // socket, the TLS policy and client authentication each is held to, the
+    // custom listeners (#472), and the Listeners, TLS and Custom listeners
     // settings. 18a's placement and 18a's reason: the console's shell and
     // libraries already loaded, `tls/tls_server` (20) and
-    // `tls/realm_listeners` reached lazily when the page is drawn, and
+    // `tls/listeners` reached lazily when the page is drawn, and
     // `mgmt-api/admin_api` requires it. Its paths are in NEVER_DISPATCHED.
     require('../admin-ui/listeners_admin');
     this.build('admin-ui/listeners_admin',

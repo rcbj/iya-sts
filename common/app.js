@@ -359,6 +359,9 @@ function enterListener(req, res, next) {
   }
   // Whether this listener answers an application, asked once per application
   // per response: a console page carries hundreds of links to a handful.
+  // `answers()` and `away()` are a HOT PATH — called for every link of every
+  // page — so neither has an Entering/Leaving pair, which would drown the
+  // log around a table lookup; `enterListener()` brackets them.
   const here = {};
   const answers = function (target) {
     if (!Object.prototype.hasOwnProperty.call(here, target)) {

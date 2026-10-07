@@ -1525,7 +1525,7 @@ class GnapGrants {
           (config.value('gnap.demoResourceServer') !== false)) {
         // A token for nobody in particular is valid at the demonstration RS,
         // which is how a client can present one somewhere at all.
-        audience.push(base + '/gnap/rs/resource');
+        audience.push(helpers.rebaseTo(base, 'gnap') + '/gnap/rs/resource');
       }
       const model = {
         jti: store.handle(16),
@@ -1607,7 +1607,8 @@ class GnapGrants {
       if (config.value('gnap.tokenManagement') !== false) {
         const manageValue = store.issueManagement(record);
         store.saveToken(record);
-        response.manage = { uri: base + '/gnap/token/' + record.manageHandle,
+        response.manage = { uri: helpers.rebaseTo(base, 'gnap') +
+                                 '/gnap/token/' + record.manageHandle,
                             access_token: { value: manageValue } };
       }
       grant.tokens = (grant.tokens || []).concat([record.jti]);
@@ -1907,7 +1908,8 @@ class GnapGrants {
         const id = store.handle(18);
         interaction.modes[mode] = { id: id, used: false };
         store.putInteraction(mode + ':' + id, grant.id);
-        out[mode] = base + '/gnap/' + (mode === 'redirect' ? 'interact' :
+        out[mode] = helpers.rebaseTo(base, 'gnap') +
+                    '/gnap/' + (mode === 'redirect' ? 'interact' :
                                        'app') + '/' + id;
       } else if (mode === 'user_code' || mode === 'user_code_uri') {
         const code = interaction.modes.user_code ?
@@ -1917,7 +1919,8 @@ class GnapGrants {
         interaction.modes[mode] = { code: code, used: false };
         store.putUserCode(code, grant.id);
         out[mode] = mode === 'user_code' ? code :
-                    { code: code, uri: base + '/gnap/code' };
+                    { code: code, uri: helpers.rebaseTo(base, 'gnap') +
+                                       '/gnap/code' };
       }
     });
     if (finish) {

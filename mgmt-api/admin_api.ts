@@ -2440,8 +2440,9 @@ class AdminApi {
             // where the explorer IS rather than which path space it is in.
             // It moved when this API began requiring a token a browser has
             // no way to carry.
-            docs: base + '/admin/api-explorer',
-            console: base + '/admin',
+            docs: helpers.rebaseTo(base, 'admin-console') +
+                  '/admin/api-explorer',
+            console: helpers.rebaseTo(base, 'admin-console') + '/admin',
             operations: self.operationSummaries()
           });
           log.debug("Leaving the management API index.");
@@ -3047,7 +3048,8 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                value: { description: 'The listeners: a JSON array, as ' +
+                value: { oneOf: [{ type: 'string' }, { type: 'array' }],
+                         description: 'The listeners: a JSON array, as ' +
                                       'text or as the array.' }
               },
               required: ['value'],
@@ -3077,9 +3079,14 @@ class AdminApi {
             requestBody: {
               type: 'object',
               properties: {
-                value: { description: 'The mapping: a JSON object, as text ' +
+                value: { oneOf: [{ type: 'string' }, { type: 'object' }],
+                         description: 'The mapping: a JSON object, as text ' +
                                       'or as the object.' },
-                confirm: { type: 'boolean',
+                // `true` from a script, `true` or `on` from the console's
+                // checkbox (#472).
+                confirm: { oneOf: [{ type: 'boolean' },
+                                   { type: 'string',
+                                     enum: ['true', 'false', 'on'] }],
                            description: 'Take the management API off the ' +
                                         'listener this call arrived on.' }
               },

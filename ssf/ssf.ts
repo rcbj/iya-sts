@@ -2046,7 +2046,7 @@ class SharedSignals {
       spec_version: '1_0',
       issuer: this.issuerFor(req),
       // baseUrlOf() carries the realm prefix already; see issuerFor().
-      jwks_uri: baseUrlOf(req) + '/oauth2/jwks',
+      jwks_uri: baseUrlOf(req, 'oauth-oidc') + '/oauth2/jwks',
       delivery_methods_supported: streams.offeredDeliveryMethods(),
       configuration_endpoint: base + '/stream',
       status_endpoint: base + '/status',
@@ -3905,8 +3905,10 @@ class SharedSignals {
       rotated: (n.rotated || []).map(function (r: Json): string {
         return r.unit + ' ' + r.from + ' -> ' + r.to;
       }).join(', '),
-      jwks_uri: base ? base + '/oauth2/jwks' : '',
-      crypto_metadata_uri: base ? base + '/crypto/metadata.json' : ''
+      jwks_uri: base ? helpers.rebaseTo(base, 'oauth-oidc') +
+                       '/oauth2/jwks' : '',
+      crypto_metadata_uri: base ? helpers.rebaseTo(base, 'pki') +
+                                  '/crypto/metadata.json' : ''
     });
     const candidates = streams.listStreams().filter((record: Json) => {
       return streams.deliversEvent(record, uri);

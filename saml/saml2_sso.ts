@@ -158,6 +158,8 @@ import zlib = require('zlib');
 // config.js and error_codes.js here, so it cannot join a cycle and it
 // registers no route, so its position is not a position at all.
 import realms = require('../common/realms');
+// The other listeners SAML 2.0 is on, for its metadata (#472). A LEAF.
+import listenerMap = require('../common/listener_map');
 import crypto = require('crypto');
 import xmldom = require('@xmldom/xmldom');
 // Every signature and every cipher in this service is in one module since
@@ -5360,6 +5362,32 @@ class Saml2Sso {
              xmlEscape(location) + '"' +
         (extra || '') + '/>';
     };
+    // THE OTHER LISTENERS SAML 2.0 IS ON (#472, rcbj's D4: "advertise
+    // services on multiple listeners"). An endpoint element is a list in the
+    // metadata schema, so the same binding may be offered at a second
+    // Location; the advertised listener's comes first, which is the one a
+    // service provider picking the first of a binding takes. Single sign-on
+    // and single logout only: the artifact resolution service is indexed,
+    // and one is what a service provider resolves at.
+    const elsewhere = listenerMap.alternatives('saml2')
+      .filter(function (one: any): boolean {
+        return !!one.base;
+      }).map(function (one: any): string {
+        return one.base + realms.currentPrefix();
+      });
+    const alsoAt = function (element, location): string {
+      log.debug("Entering alsoAt(). " + element);
+      const at = String(location || '');
+      const out = elsewhere.map(function (to: string): string {
+        const moved = at.indexOf(base) === 0 ? to + at.slice(base.length)
+                                             : at;
+        return service(element, BINDING_REDIRECT, moved) +
+               service(element, BINDING_POST, moved) +
+               service(element, BINDING_SIMPLESIGN, moved);
+      }).join('');
+      log.debug("Leaving alsoAt().");
+      return out;
+    };
     const xml =
       '<?xml version="1.0" encoding="UTF-8"?>' +
       '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ID="' + id + '"' +
@@ -5370,7 +5398,7 @@ class Saml2Sso {
         // prepended ds:Signature and before the role, as the schema orders.
         '<md:Extensions><cm:CryptoMetadataLocation xmlns:cm="' +
           'urn:iya:sts:crypto-metadata:1">' +
-          xmlEscape(base + '/crypto/metadata.xml') +
+          xmlEscape(helpers.rebaseTo(base, 'pki') + '/crypto/metadata.xml') +
           '</cm:CryptoMetadataLocation></md:Extensions>' +
         '<md:IDPSSODescriptor' +
           // WantAuthnRequestsSigned FOLLOWS WHAT IS ENFORCED (#37). It was the
@@ -5412,12 +5440,14 @@ class Saml2Sso {
           service('SingleLogoutService', BINDING_REDIRECT, where.slo) +
           service('SingleLogoutService', BINDING_POST, where.slo) +
           service('SingleLogoutService', BINDING_SIMPLESIGN, where.slo) +
+          alsoAt('SingleLogoutService', where.slo) +
           NAMEID_FORMATS.map(function (format) {
             return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
           }).join('') +
           service('SingleSignOnService', BINDING_REDIRECT, where.sso) +
           service('SingleSignOnService', BINDING_POST, where.sso) +
           service('SingleSignOnService', BINDING_SIMPLESIGN, where.sso) +
+          alsoAt('SingleSignOnService', where.sso) +
           // NO HTTP-Artifact SingleSignOnService (#191). A SingleSignOnService
           // names a binding an AuthnRequest may ARRIVE on, and HTTP-Artifact
           // as a request binding means an artifact this service would resolve

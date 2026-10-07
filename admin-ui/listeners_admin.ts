@@ -19,7 +19,7 @@
 //     a client certificate, requires one, or neither — `tls_server.js`'s
 //     `policyFor()`, the same function the listener was keyed from;
 //   * the settings that decide all of it, drawn here (SETTING_HOMES sends the
-//     Listeners, TLS and Realm listener groups to this page).
+//     Listeners, TLS and Custom listeners groups to this page).
 //
 // **AND THE CUSTOM LISTENERS, AND WHICH APPLICATION IS ON WHICH (#472,
 // 2026-10-07).** The listeners an administrator defined — the service's
@@ -287,11 +287,14 @@ class ListenersAdmin {
     })();
     const health = listenerMap.health();
     const raw = function (key: string, own: boolean): string {
+      log.debug("Entering raw(). " + key);
       if (own) {
         const o = (realm && realm.overrides) || {};
+        log.debug("Leaving raw(). The realm's own.");
         return Object.prototype.hasOwnProperty.call(o, key)
           ? String(o[key] || '') : '';
       }
+      log.debug("Leaving raw(). The process's.");
       return String((config as any).processValue(key) || '');
     };
     const view = {

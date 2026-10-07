@@ -993,7 +993,7 @@ class VcIssuer {
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify({
       issuer: base,
-      jwks_uri: base + '/oauth2/jwks',
+      jwks_uri: helpers.rebaseTo(base, 'oauth-oidc') + '/oauth2/jwks',
       issuer_did: stsDid(req)
     }, null, 2));
     log.debug("Leaving VcIssuer.sendJwtVcIssuerMetadata().");

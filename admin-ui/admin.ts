@@ -149,6 +149,9 @@
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+// Which listener answers the console's authorization server and API (#472).
+// A LEAF.
+import listenerMap = require('../common/listener_map');
 const { log, xmlEscape, baseUrlOf, parseBody, userFor,
         // The parts of an upload, for the RFC 9728 import's file field: the
         // one place this console needs a FILENAME, which parseBody() does not
@@ -4861,13 +4864,26 @@ class AdminConsole {
    *
    * @param registered - `oidcRp.ensureConsoleCallback()`'s answer: when it
    *   refused the callback address, the shell says why instead of loading
+   * @param elsewhere - optional (#472): `{ oauth, api }`, the authorization
+   *   server's and the management API's bases where either is on another
+   *   listener than the console, for the runtime to call
    * @returns the document
    */
-  shellDocument(registered: any): string {
+  shellDocument(registered: any, elsewhere?: any): string {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.shellDocument().");
     const refused = registered && registered.ok === false;
-    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    // WHERE THE CONSOLE'S TWO SERVERS ARE (#472): on the html element, read by
+    // `web_runtime.ts`, only where one is not this listener — so a service
+    // with no custom listener draws the shell it always did.
+    const there = elsewhere || {};
+    const data = (there.oauth ? ' data-sts-oauth="' + this.esc(there.oauth) +
+                                '"' : '') +
+                 (there.api ? ' data-sts-api="' + this.esc(there.api) + '"'
+                            : '') +
+                 (there.authn ? ' data-sts-authn="' + this.esc(there.authn) +
+                                '"' : '');
+    const html = '<!DOCTYPE html>\n<html lang="en"' + data + '><head><meta ' +
       'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
       'initial-scale=1"><title>IYA STS admin</title>' +
       '<link rel="stylesheet" href="/admin/console.css">' +
@@ -4886,6 +4902,41 @@ class AdminConsole {
       '</div></div></div></body></html>\n';
     log.debug("Leaving AdminConsole.shellDocument().");
     return html;
+  }
+
+  // WHERE THE CONSOLE CALLS, WHEN IT IS NOT HERE (#472). The console signs
+  // in at `/oauth2/authorize` and `/oauth2/token` and draws every page from
+  // `/admin-api`; until custom listeners those were on the console's own
+  // origin. Each is answered by its own listener now, so a base is handed
+  // over only where this listener does not answer that application —
+  // `{ oauth, api }`, each '' where it does.
+  /**
+   * Answers the authorization server's and the management API's bases where
+   * the listener this request arrived on does not answer them.
+   *
+   * @param req - the request for the shell
+   * @returns `{ oauth, api, authn }`, each a base with the realm prefix or
+   *   ''
+   */
+  consoleServersElsewhere(req: any): any {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.consoleServersElsewhere().");
+    const out = { oauth: '', api: '', authn: '' };
+    if (!listenerMap.isTrivial()) {
+      const at = listenerMap.listenerOf(req);
+      if (!listenerMap.admits(at, 'oauth-oidc')) {
+        out.oauth = helpers.baseUrlOf(req, 'oauth-oidc');
+      }
+      if (!listenerMap.admits(at, 'management-api')) {
+        out.api = helpers.baseUrlOf(req, 'management-api');
+      }
+      // The sign-out, `/logout`, is the sign-in service's.
+      if (!listenerMap.admits(at, 'authn')) {
+        out.authn = helpers.baseUrlOf(req, 'authn');
+      }
+    }
+    log.debug("Leaving AdminConsole.consoleServersElsewhere().");
+    return out;
   }
 
   // The runtime's bundle, built by `build-typescript.sh` beside this module;
@@ -8751,13 +8802,24 @@ class AdminConsole {
       // the console's client entry the way the relying party registered it,
       // in the realm the request is under.
       const registered = oidcRp.ensureConsoleCallback(req);
+      // THE AUTHORIZATION SERVER AND THE API ON OTHER LISTENERS (#472): the
+      // runtime is told their bases, and `connect-src` names their origins,
+      // since the token request and every API call are `fetch()`es there.
+      const elsewhere = self.consoleServersElsewhere(req);
+      const origins = [elsewhere.oauth, elsewhere.api].filter(Boolean)
+        .map(function (one: string): string {
+          return new URL(one).origin;
+        }).filter(function (one: string, at: number, all: string[]): boolean {
+          return all.indexOf(one) === at;
+        });
       res.set('Content-Security-Policy', app.contentSecurityPolicy({
         'script-src': "'self'",
-        'connect-src': "'self'",
+        'connect-src': ["'self'"].concat(origins).join(' '),
         'style-src': "'self' 'unsafe-inline'"
       }));
       res.status(200).type('text/html').set('Cache-Control', 'no-store');
-      self.sendConsoleFile(req, res, self.shellDocument(registered), null,
+      self.sendConsoleFile(req, res,
+                           self.shellDocument(registered, elsewhere), null,
         function (html) {
           return app.withRealmLinks(html, realms.currentPrefix());
         });

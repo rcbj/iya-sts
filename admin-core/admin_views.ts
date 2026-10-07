@@ -2696,11 +2696,12 @@ class AdminViews {
       settings: this.realmSettingRows(realm),
       // The four a client asks for first, in this realm.
       endpoints: {
-        openidConfiguration: base + '/.well-known/openid-configuration',
+        openidConfiguration: helpers.rebaseTo(base, 'oauth-oidc') +
+                             '/.well-known/openid-configuration',
         authorizationServerMetadata: base +
                                      '/.well-known/oauth-authorization-server',
-        jwks: base + '/oauth2/jwks',
-        samlMetadata: base + '/saml2/metadata'
+        jwks: helpers.rebaseTo(base, 'oauth-oidc') + '/oauth2/jwks',
+        samlMetadata: helpers.rebaseTo(base, 'saml2') + '/saml2/metadata'
       }
     };
   }
@@ -9234,7 +9235,8 @@ class AdminViews {
                   multiAll: editable('multi', false) },
       did: {
         did: did,
-        url: base + '/applications/' + encodeURIComponent(row.identifier) +
+        url: helpers.rebaseTo(base, 'oid4vc') +
+             '/applications/' + encodeURIComponent(row.identifier) +
              '/did.json',
         ok: !!document.ok, why: document.why || '',
         methods: document.ok ? document.document.verificationMethod

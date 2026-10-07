@@ -95,6 +95,11 @@ class ConsoleRuntime {
   // neither is a fragment's, which the browser has already answered.
   private drawnAt: string;
   private spec: Json;
+  // WHERE THE AUTHORIZATION SERVER, THE API AND THE SIGN-IN SERVICE ARE when
+  // they are not on the console's own listener (#472): their bases, the
+  // realm prefix included, from the shell's `data-sts-*` attributes; '' where
+  // they are here, which is every service without a custom listener.
+  private elsewhere: Json;
 
   /**
    * Makes the runtime.
@@ -120,6 +125,14 @@ class ConsoleRuntime {
     this.view = null;
     this.drawnAt = '';
     this.spec = null;
+    const root = env.document && env.document.documentElement;
+    const read = function (name: string): string {
+      return root && typeof root.getAttribute === 'function'
+        ? String(root.getAttribute(name) || '').replace(/\/+$/, '') : '';
+    };
+    this.elsewhere = { '/oauth2': read('data-sts-oauth'),
+                       '/admin-api': read('data-sts-api'),
+                       '/logout': read('data-sts-authn') };
   }
 
   // --- paths ---------------------------------------------------------------
@@ -279,7 +292,23 @@ class ConsoleRuntime {
    * @returns the absolute URL
    */
   url(path: string): string {
+    const elsewhere = this.elsewhere || {};
+    const first = '/' + String(path || '').split(/[/?#]/)[1];
+    if (elsewhere[first]) {
+      return elsewhere[first] + path;
+    }
     return this.env.location.origin + this.prefix + path;
+  }
+
+  /**
+   * The origin the management API answers on: this page's, or the API's
+   * listener's where it is on another (#472).
+   *
+   * @returns the origin
+   */
+  apiOrigin(): string {
+    const api = (this.elsewhere || {})['/admin-api'];
+    return api ? new URL(api).origin : this.env.location.origin;
   }
 
   // The resource this console's tokens are for: the management API of the
@@ -1696,7 +1725,7 @@ class ConsoleRuntime {
       // runtime's token and a proof by its key, for a path on this origin.
       this.env.window.stsConsoleFetch = function (method, path, body) {
         return self.send(String(method || 'GET'),
-                         self.env.location.origin + String(path), body);
+                         self.apiOrigin() + String(path), body);
       };
       this.env.window.addEventListener('popstate', function () {
         // A FRAGMENT'S OWN NAVIGATION — a tab pressed, or targetFragment() —

@@ -128,6 +128,8 @@ config.PER_LISTENER_SETTINGS.forEach(function (spec) {
 });
 
 const ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+// A DNS name of two labels or more, no leading dot: `authn.cookieDomain`.
+const DOMAIN_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
 const CLIENT_AUTH = ['none', 'optional', 'required'];
 
 function problem(code, message) {
@@ -314,6 +316,31 @@ function parseListeners(raw, owner) {
       out.problem = tlsBad;
       break;
     }
+    // ITS OWN POST-QUANTUM ONLY (#423) needs a 256-bit TLS 1.3 suite in the
+    // list it will use — its own, or the service's it inherits — or the
+    // listener would refuse every client. tls/tls_server.js holds the same
+    // rule for the service's settings.
+    if (tls.pqcOnly === true || tls.pqcOnly === 'on') {
+      const own = tls.tls13CipherSuites;
+      const suites = (Array.isArray(own) ? own : String(own || '')
+        .split(',')).map(function (one) {
+        return String(one).trim();
+      }).filter(Boolean);
+      const used = suites.length ? suites : String(config.processValue(
+        'tls.tls13CipherSuites') || '').split(',').map(function (one) {
+        return one.trim();
+      });
+      if (used.indexOf('TLS_AES_256_GCM_SHA384') < 0 &&
+          used.indexOf('TLS_CHACHA20_POLY1305_SHA256') < 0) {
+        out.problem = problem('STS-TLS-0043', where + '\'s tls.pqcOnly ' +
+          'needs a 256-bit TLS 1.3 suite (TLS_AES_256_GCM_SHA384 or ' +
+          'TLS_CHACHA20_POLY1305_SHA256) in ' + (suites.length
+            ? 'its tls.tls13CipherSuites'
+            : 'tls.tls13CipherSuites, which it inherits') +
+          ', and there is none.');
+        break;
+      }
+    }
     let host = '';
     try {
       host = new URL(String(one.publicBaseUrl)).hostname;
@@ -476,6 +503,8 @@ function resolveState(state) {
   log.debug("Entering resolveState().");
   const out = { byId: {}, all: [], problem: null, processMap: {},
                 realmMaps: {}, state: state };
+  // Inline, once per listener of one read: no Entering/Leaving pair, which
+  // would drown `resolveState()`'s own around a push.
   const add = function (one) {
     if (out.byId[one.id] && !out.problem) {
       out.problem = problem('STS-CORE-0153', 'The listener id "' + one.id +
@@ -582,11 +611,13 @@ function stateProblem(state, options) {
   }
   // THE MAPPINGS NAME LISTENERS OF THEIR OWN SCOPE.
   const scopeProblem = function (map, realmId, where) {
+    log.debug("Entering scopeProblem(). " + where);
     const apps = Object.keys(map);
     for (const app of apps) {
       for (const id of map[app].listeners) {
         const one = resolved.byId[id];
         if (!one) {
+          log.debug("Leaving scopeProblem(). Not defined.");
           return problem('STS-CORE-0154', where + ' puts "' + app + '" on ' +
             'the listener "' + id + '", which is not defined. The ' +
             'listeners are ' + resolved.all.map(function (l) {
@@ -594,12 +625,14 @@ function stateProblem(state, options) {
             }).join(', ') + '.');
         }
         if (one.owner !== realms.DEFAULT_ID && one.owner !== realmId) {
+          log.debug("Leaving scopeProblem(). Another realm's.");
           return problem('STS-CORE-0154', where + ' puts "' + app + '" on ' +
             'the listener "' + id + '", which belongs to realm "' +
             one.owner + '" and answers that realm alone.');
         }
       }
     }
+    log.debug("Leaving scopeProblem().");
     return null;
   };
   const procBad = scopeProblem(resolved.processMap, realms.DEFAULT_ID,
@@ -637,7 +670,7 @@ function stateProblem(state, options) {
   }
   for (const realmId of scopes) {
     const cookie = cookieDomainIn(state, realmId);
-    if (cookie && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(cookie)) {
+    if (cookie && !DOMAIN_PATTERN.test(cookie)) {
       log.debug("Leaving stateProblem(). A bad cookie domain.");
       return problem('STS-CORE-0155', COOKIE_SETTING + ' "' + cookie +
         '" is not a DNS name of two labels or more with no leading dot ' +

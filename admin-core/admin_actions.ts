@@ -5122,7 +5122,7 @@ class AdminActions {
         ok: true,
         did: did, kid: pair.kid, algorithm: pair.alg,
         verificationMethod: did + '#' + pair.kid,
-        documentUrl: base + '/applications/' +
+        documentUrl: helpers.rebaseTo(base, 'oid4vc') + '/applications/' +
                      encodeURIComponent(identifier) + '/did.json',
         publicJwk: pair.publicJwk, privateJwk: pair.privateJwk,
         privateKeyPem: pair.privateKeyPem, replaced: replace,

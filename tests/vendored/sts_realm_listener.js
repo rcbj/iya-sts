@@ -4,16 +4,21 @@
 // File: sts_realm_listener.js
 //
 // ===========================================================================
-// A TRUST REALM ON A LISTENER OF ITS OWN, OVER THE WIRE (#99, 2026-10-02).
+// A TRUST REALM ON A LISTENER OF ITS OWN, OVER THE WIRE (#99, 2026-10-02;
+// since #472 a custom listener the realm defines, and a mapping of its
+// applications to it).
 //
-// A realm given `listener.port` and `listener.publicBaseUrl` through
-// `/admin-api/realms/set` is served on that port by every node, with every URL
-// it builds on that base and its `/realm/<id>` prefix kept. This job, in every
-// local mode:
+// A realm given a listener through `POST /realm/<id>/admin-api/listeners/
+// set-listeners`, and every application advertised on it through
+// `set-applications` (`*`), is served on that port by every node, with every
+// URL it builds on that base and its `/realm/<id>` prefix kept. This job, in
+// every local mode:
 //
 //   1. frees the port from any realm an earlier run on this stack left on it
-//      (no job removes a realm), creates a realm, and gives it the port and a
-//      base on the host this job reaches the service by;
+//      (no job removes a realm), creates a realm, and gives it a listener on
+//      the port with a base on the host this job reaches the service by — the
+//      main port refused as that listener's — and maps `*` to it, beside the
+//      main port, and SCIM to it alone;
 //   2. waits for the listener (each node binds it when the realm's change
 //      reaches it), then reads the realm's discovery document THERE: its
 //      issuer is the realm's base and prefix, and the certificate the listener
@@ -23,8 +28,12 @@
 //      STS-TLS-0041);
 //   4. the realm read on the MAIN port names the same issuer, on its own
 //      base, so its URLs are the same whichever listener answered;
-//   5. `GET /admin-api/realms` reports the listener;
-//   6. in the cluster mode, both nodes answer on the realm's port (the stack's
+//   5. `GET /admin-api/realms` and the realm's `GET /admin-api/listeners`
+//      report the listener and the mapping;
+//   6. SCIM, mapped to the realm's listener alone, is refused on the main
+//      port with a 404 that names where it is (STS-TLS-0046), and answered
+//      on the realm's;
+//   7. in the cluster mode, both nodes answer on the realm's port (the stack's
 //      HAProxy balances 8099 like the main port).
 //
 // The port is `STS_TEST_REALM_LISTENER_PORT` (8099). The realm is left
@@ -63,6 +72,8 @@ var EXPECTED_NODES = Number(process.env.STS_TEST_CLUSTER_NODES || 1);
 var STAMP = Date.now().toString(36);
 var REALM = "rlis-" + STAMP;
 var OWN_BASE = "https://" + HOST + ":" + PORT;
+// A listener id: lower-case letters, digits and hyphens, from a letter.
+var LISTENER = "rl-" + STAMP;
 
 var checks = 0;
 function check(what, fn) {
@@ -143,31 +154,38 @@ function realmRows(json) {
 
 async function main() {
   log.debug("Entering main().");
-  log.info("== 1. A realm given its own port and base");
+  log.info("== 1. A realm given a listener of its own");
   const listed = await ok("GET", base + "/admin-api/realms", undefined,
                           "listing the realms");
   for (const row of realmRows(listed.json)) {
-    if (row.listener && Number(row.listener.port) === PORT &&
-        row.id !== REALM) {
-      await ok("POST", base + "/admin-api/realms/unset",
-               { id: row.id, key: "listener.port" },
+    const holds = (row.listeners || []).some(function (one) {
+      return Number(one.port) === PORT;
+    });
+    if (holds && row.id !== REALM) {
+      const at = base + "/realm/" + row.id + "/admin-api/listeners/";
+      await ok("POST", at + "set-applications", { value: "" },
+               "unmapping realm " + row.id + "'s applications");
+      await ok("POST", at + "set-listeners", { value: "" },
                "freeing port " + PORT + " from realm " + row.id);
     }
   }
   await ok("POST", base + "/admin-api/realms/create",
            { id: REALM, name: "Realm listener " + STAMP }, "made the realm");
-  await ok("POST", base + "/admin-api/realms/set",
-           { id: REALM, key: "listener.publicBaseUrl", value: OWN_BASE },
-           "gave it its own base");
-  const refused = await request("POST", base + "/admin-api/realms/set",
-                                { id: REALM, key: "listener.port",
-                                  value: String(new URL(base).port || 443) });
-  check("the main port is refused as the realm's port", function () {
+  const realmApi = base + "/realm/" + REALM + "/admin-api/listeners/";
+  const refused = await request("POST", realmApi + "set-listeners",
+    { value: [{ id: LISTENER, port: Number(new URL(base).port || 443),
+                publicBaseUrl: OWN_BASE }] });
+  check("the main port is refused as the realm's listener's", function () {
     assert.notStrictEqual(refused.status, 200, refused.text.slice(0, 200));
   });
-  await ok("POST", base + "/admin-api/realms/set",
-           { id: REALM, key: "listener.port", value: String(PORT) },
-           "gave it port " + PORT);
+  await ok("POST", realmApi + "set-listeners",
+           { value: [{ id: LISTENER, port: PORT, publicBaseUrl: OWN_BASE }] },
+           "gave it a listener on port " + PORT);
+  await ok("POST", realmApi + "set-applications",
+           { value: { "*": { listeners: ["main", LISTENER],
+                             advertised: LISTENER },
+                      scim: { listeners: [LISTENER] } } },
+           "advertised the realm on it, and put SCIM there alone");
 
   log.info("== 2. The realm on its own port");
   const discovery = OWN_BASE + "/realm/" + REALM +
@@ -207,21 +225,55 @@ async function main() {
     assert.strictEqual(main1.json.issuer, OWN_BASE + "/realm/" + REALM);
   });
 
-  log.info("== 5. GET /admin-api/realms");
+  log.info("== 5. GET /admin-api/realms and the realm's listeners");
   const after = await ok("GET", base + "/admin-api/realms", undefined,
                          "listing the realms again");
   const mine = realmRows(after.json).filter(function (row) {
     return row.id === REALM;
   })[0];
   check("the realm reports its listener and its base", function () {
-    assert.ok(mine && mine.listener, JSON.stringify(mine).slice(0, 300));
-    assert.strictEqual(mine.listener.configured, true);
-    assert.strictEqual(mine.listener.port, PORT);
+    const own = mine && (mine.listeners || [])[0];
+    assert.ok(own, JSON.stringify(mine).slice(0, 300));
+    assert.strictEqual(own.id, LISTENER);
+    assert.strictEqual(own.port, PORT);
     assert.strictEqual(mine.baseUrl, OWN_BASE + "/realm/" + REALM);
+  });
+  const view = await ok("GET", base + "/realm/" + REALM +
+                        "/admin-api/listeners", undefined,
+                        "reading the realm's listeners");
+  check("the realm's listeners view names the listener and puts SCIM on " +
+        "it alone", function () {
+    const custom = (view.json.custom || []).filter(function (one) {
+      return one.id === LISTENER;
+    })[0];
+    assert.ok(custom, JSON.stringify(view.json.custom).slice(0, 300));
+    const scim = (view.json.applications || []).filter(function (row) {
+      return row.application === "scim";
+    })[0];
+    assert.ok(scim, "no scim row");
+    assert.deepStrictEqual(scim.listeners, [LISTENER]);
+    assert.strictEqual(scim.decidedBy, "realm");
+  });
+
+  log.info("== 6. An application on the realm's listener alone");
+  const scimPath = "/realm/" + REALM + "/scim/v2/ServiceProviderConfig";
+  const onMain = await request("GET", base + scimPath);
+  check("SCIM is refused on the main port, and the answer says where it " +
+        "is (STS-TLS-0046)", function () {
+    assert.strictEqual(onMain.status, 404, onMain.status + " " +
+                       onMain.text.slice(0, 200));
+    assert.ok(/not served on this listener/.test(onMain.text) &&
+              onMain.text.indexOf(OWN_BASE) >= 0, onMain.text.slice(0, 300));
+  });
+  const onOwn = await request("GET", OWN_BASE + scimPath);
+  check("SCIM is answered on the realm's listener", function () {
+    assert.ok(onOwn.status !== 0 &&
+              !/not served on this listener/.test(onOwn.text),
+              (onOwn.status || onOwn.error) + " " + onOwn.text.slice(0, 200));
   });
 
   if (EXPECTED_NODES > 1) {
-    log.info("== 6. Both nodes answer on the realm's port");
+    log.info("== 7. Both nodes answer on the realm's port");
     // The other node binds the realm's port when replication tells it of the
     // listener, and the balancer sends it nothing until its next health
     // check passes, so the job asks for up to 20 s. Sixteen asks 20 ms apart

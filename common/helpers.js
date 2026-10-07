@@ -7265,9 +7265,39 @@ function baseUrlOf(req, app) {
  */
 function rebaseTo(base, app) {
   log.debug("Entering rebaseTo(). " + app);
+  if (listenerMap.isTrivial()) {
+    log.debug("Leaving rebaseTo(). No custom listener.");
+    return base;
+  }
   const own = listenerMap.advertisedBase(app);
-  log.debug("Leaving rebaseTo().");
-  return own ? own + realms.currentPrefix() : base;
+  if (own) {
+    log.debug("Leaving rebaseTo(). On its listener.");
+    return own + realms.currentPrefix();
+  }
+  // ADVERTISED ON THE MAIN PORT, AND THE BASE IS A CUSTOM LISTENER'S: the
+  // main port's pinned base, or that host name on the main port.
+  let origin = '';
+  let host = '';
+  try {
+    const parsed = new URL(String(base || ''));
+    origin = parsed.origin;
+    host = parsed.hostname;
+  } catch (e) {
+    log.debug("Caught in rebaseTo(): " + ((e && e.message) || e));
+    log.debug("Leaving rebaseTo(). Not a URL.");
+    return base;
+  }
+  const custom = listenerMap.ownOrigins().indexOf(origin) >= 0;
+  if (!custom) {
+    log.debug("Leaving rebaseTo(). Already the main port's.");
+    return base;
+  }
+  const main = String(config.value('global.publicBaseUrl') || '').trim()
+    .replace(/\/+$/, '') ||
+    (config.value('global.https') === true ? 'https' : 'http') + '://' +
+    hostForUrl(host) + ':' + PORT;
+  log.debug("Leaving rebaseTo(). The main port.");
+  return main + String(base).slice(origin.length);
 }
 
 /**

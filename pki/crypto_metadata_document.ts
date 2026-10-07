@@ -418,9 +418,10 @@ class CryptoMetadataDocument {
       units: this.unitsOf(realmId),
       algorithms: this.algorithms(),
       links: {
-        jwks_uri: base + '/oauth2/jwks',
-        openid_configuration: base + '/.well-known/openid-configuration',
-        saml2_metadata: base + '/saml2/metadata',
+        jwks_uri: helpers.rebaseTo(base, 'oauth-oidc') + '/oauth2/jwks',
+        openid_configuration: helpers.rebaseTo(base, 'oauth-oidc') +
+                              '/.well-known/openid-configuration',
+        saml2_metadata: helpers.rebaseTo(base, 'saml2') + '/saml2/metadata',
         wsfed_metadata: base +
                         '/FederationMetadata/2007-06/FederationMetadata.xml',
         json: base + BASE + '.json',

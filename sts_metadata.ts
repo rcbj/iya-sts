@@ -6612,10 +6612,21 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/listeners', group: 'Management API',
     name: 'Listeners',
     specs: ['openapi'],
-    what: 'NON-SPEC (#423). GET /admin/listeners over JSON: every listener ' +
-          'of the realm the call is in, or the realm\'s own, with its TLS ' +
-          'policy and client authentication, the process\'s policy and the ' +
-          'TLS listeners live on this node. It changes nothing.' },
+    what: 'NON-SPEC (#423, #472). GET /admin/listeners over JSON: the ' +
+          'built-in listeners, the custom listeners the realm sees (the ' +
+          'service\'s and its own), each hosted application with the ' +
+          'listeners it is on and the one it is advertised on, what is ' +
+          'wrong, and each listener\'s TLS policy and client ' +
+          'authentication. It changes nothing.' },
+  { path: '/admin-api/listeners/:action', group: 'Management API',
+    name: 'Define custom listeners, or map applications to them',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#472). set-listeners replaces the custom listeners ' +
+          'of the realm the call is in (listeners.custom in the default ' +
+          'realm, listeners.realm in another); set-applications replaces ' +
+          'its mapping of hosted applications to listeners ' +
+          '(listeners.applications), and needs confirm to take the ' +
+          'management API off the listener the call arrived on.' },
   { path: '/admin-api/mode', group: 'Management API', name: 'Mode',
     specs: ['openapi'],
     what: 'NON-SPEC (#181). GET /admin/mode over JSON: the realm\'s mode, ' +

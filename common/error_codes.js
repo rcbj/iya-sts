@@ -13576,13 +13576,6 @@ const CODES = [
       'outside that realm\'s prefix — another realm\'s, or the default ' +
       'realm\'s; a realm\'s listener serves that realm alone.',
     spec: '404' },
-  { code: 'STS-TLS-0046',
-    summary: 'A request asked a listener for a path of a hosted application ' +
-      'that is not mapped to it (listeners.applications, #472): the ' +
-      'console on a listener it was moved off, the management API on one ' +
-      'that answers only the sign-in service. The answer names where the ' +
-      'application is.',
-    spec: '404' },
   { code: 'STS-TLS-0042',
     summary: 'The listeners\' TLS settings this process started with leave a ' +
       'listener refusing every client, or are in the old shape: an empty ' +
@@ -13610,6 +13603,13 @@ const CODES = [
       'so that listener\'s client truststore would be empty while ' +
       'configured to be filled.',
     spec: 'the service does not start' },
+  { code: 'STS-TLS-0046',
+    summary: 'A request asked a listener for a path of a hosted application ' +
+      'that is not mapped to it (listeners.applications, #472): the ' +
+      'console on a listener it was moved off, the management API on one ' +
+      'that answers only the sign-in service. The answer names where the ' +
+      'application is.',
+    spec: '404' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

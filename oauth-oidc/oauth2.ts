@@ -1970,7 +1970,8 @@ class OAuth2Server {
       // policy — at the realm's own base, since keys are the realm's and not
       // a named authorization server's. A member no specification defines,
       // which RFC 8414 section 2 lets a client ignore.
-      crypto_metadata_uri: base + '/crypto/metadata.json',
+      crypto_metadata_uri: helpers.rebaseTo(base, 'pki') +
+                           '/crypto/metadata.json',
       registration_endpoint: at + '/oauth2/register',
       // `address` and `phone` were listed here and are gone: OIDC Core section
       // 5.4 makes each of these scopes a request for a NAMED set of claims, and
@@ -2112,7 +2113,7 @@ class OAuth2Server {
       // it did.
       token_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
-      service_documentation: base + '/docs',
+      service_documentation: helpers.rebaseTo(base, 'home') + '/docs',
       // One locale, because there is one: the login screen is the only UI this
       // server renders and it is written in English. A request's ui_locales
       // is accepted and answered in English, which section 3.1.2.1 permits
@@ -2120,8 +2121,8 @@ class OAuth2Server {
       // are not supported"). The list used to name four, which a client is
       // entitled to read as "ask for fr-CA and you will get it".
       ui_locales_supported: ['en-US'],
-      op_policy_uri: base + '/policy',
-      op_tos_uri: base + '/tos',
+      op_policy_uri: helpers.rebaseTo(base, 'home') + '/policy',
+      op_tos_uri: helpers.rebaseTo(base, 'home') + '/tos',
       revocation_endpoint: at + '/oauth2/revoke',
       // THE METHODS THE REVOCATION ENDPOINT CAN VERIFY, which since #102
       // (2026-09-22) is introspection's list for introspection's reason: the
@@ -18141,7 +18142,7 @@ class OAuth2Server {
     const made = deviceAuthorization.create(clientId,
       String(registration.client_name || clientId), scope, dpopJkt);
     const base = self.asBaseOf(req);
-    const verification = base + '/portal/device';
+    const verification = helpers.rebaseTo(base, 'portal') + '/portal/device';
     log.debug("Leaving OAuth2Server.deviceAuthorizationRequest().");
     res.status(200).type('application/json').send(JSON.stringify({
       device_code: made.deviceCode,
