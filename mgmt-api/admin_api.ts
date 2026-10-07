@@ -3091,10 +3091,15 @@ class AdminApi {
                                         'listener this call arrived on.' }
               },
               required: ['value'],
+              // The console moved to the `admin` listener and the API kept
+              // on `main` as well: an example that took the management API
+              // off the listener the caller is on would lock its own caller
+              // out (sts_admin_api_operations replays every example and
+              // reads the resource back through the same port).
               examples: [{ value: {
                 'admin-console': { listeners: ['admin'] },
-                'management-api': { listeners: ['admin'] } },
-                confirm: true }],
+                'management-api': { listeners: ['main', 'admin'],
+                                    advertised: 'main' } } }],
               additionalProperties: false
             },
             responseDescription: 'That it is set.' }
