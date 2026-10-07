@@ -3282,7 +3282,10 @@ class UsersPage {
               (row.multi ? '' : ' It holds one value.'),
         example: row.example,
         forText: row.label + (row.must ? ' · required' : ''),
-        families: [], everyFamily: true
+        families: [], everyFamily: true,
+        // Shown by the sub-tab's simple view (#500); a field every person
+        // must hold is always shown.
+        simple: !!row.simple || !!row.must
       };
     };
     const mailForm = gate.write
@@ -3329,9 +3332,28 @@ class UsersPage {
                   : '<span class="state-none">none</span>') + '</td></tr>';
             }).join('') + '</table>' };
       }
-      const cells = mine.map(function (row) {
-        return kit.fieldGridCell(gridRow(row), values,
-                                  { redraw: '/admin/users/edit' });
+      // THE SUB-TAB'S TWO VIEWS (#500), the application page's: the
+      // simplified one unless this is a redraw of this sub-tab's own form
+      // posted from the advanced one.
+      const rows = mine.map(gridRow);
+      const views = kit.hasViews(rows);
+      const advancedRows = rows.filter(function (row) {
+        return !row.simple;
+      });
+      const viewSwitch = !views ? ''
+        : kit.viewSwitch(group.label,
+            !!draft && String(draft.group || '') === group.id &&
+              String(draft.view || '') === 'advanced',
+            advancedRows.length,
+            advancedRows.filter(function (row) {
+              return (values[row.attribute] || []).some(function (v) {
+                return String(v).trim() !== '';
+              });
+            }).length);
+      const cells = rows.map(function (row) {
+        return kit.fieldGridCell(row, values,
+                                  { redraw: '/admin/users/edit',
+                                    views: views });
       }).join('');
       return { id: 'ufg-' + group.id, label: group.label,
         html: contact + kit.note(kit.esc(group.what)) +
@@ -3349,7 +3371,7 @@ class UsersPage {
           // THE DEFAULT BUTTON, first in the form: Enter in a box presses
           // the first submit button, which would otherwise be a "+" or a bin.
           '<button type="submit" class="default-submit" tabindex="-1" ' +
-          'aria-hidden="true">Save</button>' +
+          'aria-hidden="true">Save</button>' + viewSwitch +
           '<div class="fg">' + cells + '</div>' +
           '<div class="formrow"><button type="submit"' +
           kit.tip('Write this tab to the person\'s entry. Nothing on the ' +
@@ -3372,8 +3394,12 @@ class UsersPage {
       'empty one is cleared; a list has the values put in added and the ' +
       'values taken out removed. A list shows one box per value, with + to ' +
       'add one and the bin to delete one; every box that is there must ' +
-      'hold a value. An identity verification covers a value only while the ' +
-      'entry still holds it, so changing a verified value lets that ' +
+      'hold a value. A tab of six fields or more opens on its simplified ' +
+      'view, the attributes usually filled in; its advanced view shows ' +
+      'every one, and an attribute the simplified view hides keeps its ' +
+      'value when the tab is saved. An identity verification covers a ' +
+      'value only while the entry still holds it, so changing a verified ' +
+      'value lets that ' +
       'verification lapse for it.') +
       (naming.length
         ? kit.note('<strong>Not on these tabs:</strong> ' +
