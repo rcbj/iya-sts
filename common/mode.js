@@ -2810,8 +2810,11 @@ const REQUIREMENTS = [
     product: 'A value comes from the person\'s directory entry or is ' +
              'omitted; `verified_claims` are released only from a ' +
              'verification recorded on the entry, and email_verified is ' +
-             'true only for an address the person verified through a ' +
-             'mailed link (#63).',
+             'true only for a verified address: one the person proved ' +
+             'through a mailed link (#63), or one a trusted source wrote — ' +
+             'an administrator (the console, /admin-api, or an LDAP write ' +
+             'holding Admin Write), SCIM, or a federation partner that did ' +
+             'not say email_verified false (#64).',
     where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
            'ssf/ssf_subjects.js, ssf/risc.ts, ' +
            'common/identity_assurance.js' },
