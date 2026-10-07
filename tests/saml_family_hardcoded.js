@@ -167,8 +167,17 @@ function rst(inner, security) {
     'xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">' +
     '<wst:RequestType>' +
     'http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType>' +
+    // #496: a REGISTERED AppliesTo (registered in run()), because product
+    // refuses an RST naming none, or one nobody registered, before anything
+    // these checks are about is read.
+    '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/' +
+    'policy"><wsa:EndpointReference xmlns:wsa="http://www.w3.org/2005/08/' +
+    'addressing"><wsa:Address>' + SFH_APPLIES_TO + '</wsa:Address>' +
+    '</wsa:EndpointReference></wsp:AppliesTo>' +
     inner + '</wst:RequestSecurityToken></s:Body></s:Envelope>';
 }
+
+const SFH_APPLIES_TO = 'https://sfh-rp-' + process.pid + '.example';
 
 function run(t) {
   log.debug("Entering run().");
@@ -368,6 +377,11 @@ function run(t) {
   // -------------------------------------------------------------------------
   t.log.info('E. WS-Trust');
   // -------------------------------------------------------------------------
+  const sfhApp = require('../common/applications').createApplication({
+    identifier: 'sfh-rp-' + process.pid, protocols: ['wstrust'],
+    fields: { wstrustAppliesTo: [SFH_APPLIES_TO] } });
+  t.check(sfhApp && sfhApp.ok, 'precondition: the AppliesTo is registered ' +
+          '(#496)', JSON.stringify(sfhApp));
   const devAnon = withMode(config, 'development', function () {
     return wstrust.handleRst(rst(''), 'application/soap+xml');
   });
@@ -688,6 +702,12 @@ function run(t) {
     return callWsfed('urn:dev:rp:' + stamp);
   }).statusCode, 303, 'development: an unregistered wreply goes on to the ' +
                       'sign-in screen');
+  // #496: a REGISTERED relying party with no wreply registered — product
+  // refuses a wtrealm nobody registered before the wreply is read.
+  const prodRp = require('../common/applications').createApplication({
+    identifier: 'urn:prod:rp:' + stamp, protocols: ['wsfed'], fields: {} });
+  t.check(prodRp && prodRp.ok, 'precondition: the wtrealm is registered',
+          JSON.stringify(prodRp));
   const prodWsfed = withMode(config, 'product', function () {
     return callWsfed('urn:prod:rp:' + stamp);
   });

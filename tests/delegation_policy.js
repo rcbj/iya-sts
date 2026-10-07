@@ -624,9 +624,13 @@ function wsTrust(t) {
           /InvalidRequest/.test(r.body), 'L9. both elements in one ' +
           'request: wst:InvalidRequest, in development too (STS-WSTRUST-0025)',
           r.errorCode + ' ' + r.body.slice(0, 400));
+  // #496: product refuses an RST with no AppliesTo before the delegation
+  // policy is asked — wst:InvalidRequest, STS-WSTRUST-0031 — so the
+  // policy's own no-target refusal (STS-WSTRUST-0024) is not reached.
   r = ask('product', 'dp-mid', actAs(as('dp-alice', 'dp-front')), '');
-  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0024',
-          'L10. no AppliesTo, the requester not S (STS-WSTRUST-0024)',
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0031' &&
+          /InvalidRequest/.test(r.body),
+          'L10. no AppliesTo: refused before the policy (STS-WSTRUST-0031)',
           r.errorCode + ' ' + r.body.slice(0, 400));
   r = ask('development', 'dp-front', onBehalfOf(as('dp-alice', 'dp-front')),
           'dp-back');

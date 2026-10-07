@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4164** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4167** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -66,8 +66,8 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 258
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 701
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 102
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 29
-* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 20
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 31
+* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 21
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 203
@@ -2268,6 +2268,8 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0027` | Product mode: a JWT inside OnBehalfOf/ActAs has expired (#477). | SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0028` | Product mode: a JWT inside OnBehalfOf/ActAs names, in its sub, nobody this directory holds (#477). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0029` | A SAML token was asked for with no name to sign it under: product mode, saml2.entityId empty and saml.issuer unset (#494). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0030` | Product mode: an RST asked for a token for an AppliesTo that resolves to no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidScope (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0031` | Product mode: an RST asked for a token and carried no AppliesTo, so it names no application a token could be for; refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 
@@ -2297,6 +2299,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0018` | A WS-Federation request back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
 | `STS-WSFED-0019` | /wsfed/metadata/{rp} named no registered relying party, which has no metadata of its own: an unregistered wtrealm is issued under the shared entityID (#494). | HTTP 404, text/plain |
 | `STS-WSFED-0020` | A WS-Federation sign-in or metadata document had no name to issue or publish under: product mode, saml2.entityId empty and saml.issuer or wsfed.entityId unset (#494). | HTTP 503 page or text/plain |
+| `STS-WSFED-0021` | Product mode: a wsignin1.0 named a wtrealm that is no registered relying party (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the sign-in screen and before anything was issued or recorded (#496). | HTTP 404 error page (the profile defines no error response) |
 
 ## STS-FED
 

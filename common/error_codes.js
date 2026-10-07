@@ -9740,6 +9740,18 @@ const CODES = [
       'product mode, saml2.entityId empty and saml.issuer unset (#494).',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section ' +
       '11' },
+  { code: 'STS-WSTRUST-0030',
+    summary: 'Product mode: an RST asked for a token for an AppliesTo that ' +
+      'resolves to no registered application (no appRegisteredBy; an entry ' +
+      'a sighting filed is not a registration), and was refused before ' +
+      'anything was issued or recorded (#496).',
+    spec: 'SOAP Fault wst:InvalidScope (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0031',
+    summary: 'Product mode: an RST asked for a token and carried no ' +
+      'AppliesTo, so it names no application a token could be for; refused ' +
+      'before anything was issued or recorded (#496).',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -9829,6 +9841,12 @@ const CODES = [
       'issue or publish under: product mode, saml2.entityId empty and ' +
       'saml.issuer or wsfed.entityId unset (#494).',
     spec: 'HTTP 503 page or text/plain' },
+  { code: 'STS-WSFED-0021',
+    summary: 'Product mode: a wsignin1.0 named a wtrealm that is no ' +
+      'registered relying party (no appRegisteredBy; an entry a sighting ' +
+      'filed is not a registration), and was refused before the sign-in ' +
+      'screen and before anything was issued or recorded (#496).',
+    spec: 'HTTP 404 error page (the profile defines no error response)' },
   // ===== FED ===============================================================
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +

@@ -3577,12 +3577,23 @@ async function mintTokens(username, client) {
 }
 
 // A SAML ASSERTION IN THIS REALM, through WS-Trust, so that the set doors have
-// something unrevocable to be refused about. The RST carries no AppliesTo — an
-// audience restriction is optional there and this job needs the assertion, not
-// the audience — and the username is a UsernameToken, which development mode
-// does not check any more than it checks a password anywhere else.
+// something unrevocable to be refused about. The RST names a relying party
+// this job REGISTERS first: an AppliesTo is optional in an RST and this job
+// needs the assertion, not the audience, but product issues a token only for
+// a registered application and never with no audience (#496). The username
+// is a UsernameToken, which development mode does not check any more than it
+// checks a password anywhere else.
+let mintRelyingParty = "";
 async function mintAssertion(username) {
   log.debug("Entering mintAssertion(). username=" + username);
+  if (!mintRelyingParty) {
+    const identifier = "sets-rp-" + REALM;
+    await ok("/applications/create", {
+      identifier: identifier, protocols: ["wstrust"],
+      fields: { wstrustAppliesTo: ["https://" + identifier + ".example"] }
+    }, "registered the relying party the assertion is minted for");
+    mintRelyingParty = "https://" + identifier + ".example";
+  }
   const rst = '<?xml version="1.0" encoding="UTF-8"?>' +
     '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">' +
     '<soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/' +
@@ -3594,6 +3605,10 @@ async function mintAssertion(username) {
     'xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">' +
     '<wst:RequestType>' +
     'http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType>' +
+    '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/' +
+    'policy"><wsa:EndpointReference xmlns:wsa="http://www.w3.org/2005/08/' +
+    'addressing"><wsa:Address>' + mintRelyingParty + '</wsa:Address>' +
+    '</wsa:EndpointReference></wsp:AppliesTo>' +
     '</wst:RequestSecurityToken></soap:Body></soap:Envelope>';
   const reply = await common.httpJson(base + "/realm/" + REALM + "/sts", {
     method: "POST",
@@ -3601,9 +3616,9 @@ async function mintAssertion(username) {
     body: rst
   });
   assert.strictEqual(reply.status, 200,
-    "the realm's WS-Trust endpoint should issue an assertion with no " +
-    "AppliesTo — that is optional in an RST and this service allows it. It " +
-    "answered " + reply.status + " " + String(reply.raw).slice(0, 200));
+    "the realm's WS-Trust endpoint should issue an assertion for the " +
+    "registered relying party " + mintRelyingParty + ". It answered " +
+    reply.status + " " + String(reply.raw).slice(0, 200));
   log.debug("Leaving mintAssertion().");
   return reply;
 }

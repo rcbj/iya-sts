@@ -261,6 +261,29 @@ async function wsRefused(r, type, subcode) {
   log.debug("Leaving wsRefused().");
 }
 
+// #496: in product an RST naming no AppliesTo, or one no application
+// registers, is refused BEFORE the delegation policy is asked — the
+// Subcode `subcode`, and no act on the register, since nothing was decided.
+// Development is wsRefused()'s: issued, the act saying it would have been
+// refused.
+async function wsRefusedUnregistered(r, type, subcode, before) {
+  log.debug("Entering wsRefusedUnregistered().");
+  if (!PRODUCT) {
+    await wsRefused(r, type);
+    log.debug("Leaving wsRefusedUnregistered().");
+    return;
+  }
+  assert.strictEqual(r.status, 500, r.text.slice(0, 400));
+  assert.ok(new RegExp('<soap:Subcode><soap:Value xmlns:wst="[^"]+">' +
+                       'wst:' + subcode + '<').test(r.text),
+            "the fault's Subcode: " + r.text.slice(0, 600));
+  const act = await newestAct(type);
+  assert.strictEqual(JSON.stringify(act), JSON.stringify(before),
+                     "no act was recorded for a refusal the policy was " +
+                     "never asked about");
+  log.debug("Leaving wsRefusedUnregistered().");
+}
+
 const SAYS = function () {
   log.debug("Entering SAYS().");
   log.debug("Leaving SAYS().");
@@ -320,14 +343,19 @@ async function wsTrust() {
   r = await delegate(ESB, "ActAs", forBob);
   await wsRefused(r, "wstrust-actas");
   check("W6. a subject carrying stsNotDelegated is " + SAYS(), function () {});
+  let before = await newestAct("wstrust-actas");
   r = await delegate(ESB, "ActAs", forEsb, NOWHERE);
-  await wsRefused(r, "wstrust-actas");
-  check("W7. an AppliesTo no application registers is " + SAYS(),
-        function () {});
+  await wsRefusedUnregistered(r, "wstrust-actas", "InvalidScope", before);
+  check("W7. an AppliesTo no application registers is " +
+        (PRODUCT ? "wst:InvalidScope before the policy is asked (#496)"
+                 : SAYS()), function () {});
   const forMid = await tokenAbout(ALICE, MID);
+  before = await newestAct("wstrust-actas");
   r = await delegate(ESB, "ActAs", forMid, "");
-  await wsRefused(r, "wstrust-actas");
-  check("W8. no AppliesTo, the requester not S, is " + SAYS(), function () {});
+  await wsRefusedUnregistered(r, "wstrust-actas", "InvalidRequest", before);
+  check("W8. no AppliesTo, the requester not S, is " +
+        (PRODUCT ? "wst:InvalidRequest before the policy is asked (#496)"
+                 : SAYS()), function () {});
   r = await delegate(ESB, "both", forEsb);
   check("W9. ActAs and OnBehalfOf in one request: wst:InvalidRequest, in " +
         "every mode", function () {

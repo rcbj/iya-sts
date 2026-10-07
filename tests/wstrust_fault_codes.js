@@ -62,6 +62,7 @@ const log = require('bunyan').createLogger({ name: 'wstrust_fault_codes',
 const WST = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
 const WST_2004_04 = 'http://schemas.xmlsoap.org/ws/2004/04/trust';
 const BACK = 'https://wf-back.example';
+const OTHER = 'https://wf-other.example';
 const DELEGATED_METHOD = 'OnBehalfOf / ActAs (delegated)';
 
 function inMode(m, fn) {
@@ -169,6 +170,7 @@ function fixtures(t) {
   };
   const made = [
     app('wf-back', { wstrustAppliesTo: [BACK] }),
+    app('wf-other', { wstrustAppliesTo: [OTHER] }),
     app('wf-front', { appAllowedToDelegateTo: ['wf-back'] }),
     app('wf-mid', {}),
     app('wf-gated', { appRequiredRole: ['wf-gated-role'] }),
@@ -252,28 +254,28 @@ function everyRefusal(t) {
      { security: usernameToken('wf-alice', 'invalid') },
      'STS-WSTRUST-0003', 'FailedAuthentication'],
     ['an unsigned assertion as the credential', 'product',
-     { security: unsigned('wf-front') },
+     { security: unsigned('wf-front'), appliesTo: BACK },
      'STS-WSTRUST-0004', 'FailedAuthentication'],
     ['an unsigned assertion inside ActAs', 'product',
      { security: signed('wf-front'), body: actAs(unsigned('wf-alice')),
        appliesTo: BACK },
      'STS-WSTRUST-0004', 'InvalidRequest'],
     ['a credential not yet valid', 'product',
-     { security: future('wf-front') },
+     { security: future('wf-front'), appliesTo: BACK },
      'STS-WSTRUST-0005', 'FailedAuthentication'],
     ['a token inside ActAs not yet valid', 'product',
      { security: signed('wf-front'), body: actAs(future('wf-alice')),
        appliesTo: BACK },
      'STS-WSTRUST-0005', 'InvalidRequest'],
     ['an expired credential', 'product',
-     { security: expired('wf-front') },
+     { security: expired('wf-front'), appliesTo: BACK },
      'STS-WSTRUST-0006', 'ExpiredData'],
     ['an expired token inside ActAs', 'product',
      { security: signed('wf-front'), body: actAs(expired('wf-alice')),
        appliesTo: BACK },
      'STS-WSTRUST-0006', 'ExpiredData'],
     ['a credential naming nobody', 'product',
-     { security: nameless() },
+     { security: nameless(), appliesTo: BACK },
      'STS-WSTRUST-0007', 'FailedAuthentication'],
     ['a token inside ActAs naming nobody', 'product',
      { security: signed('wf-front'), body: actAs(nameless()),
@@ -286,16 +288,16 @@ function everyRefusal(t) {
     ['a delegation with no requester credential', 'product',
      { body: actAs(signed('wf-alice', 'wf-front')), appliesTo: BACK },
      'STS-WSTRUST-0009', 'FailedAuthentication'],
-    ['no credential at all', 'product', {},
+    ['no credential at all', 'product', { appliesTo: BACK },
      'STS-WSTRUST-0010', 'FailedAuthentication'],
     ['the role gate', 'development',
      { security: usernameToken('wf-alice', 'x'), appliesTo: 'wf-gated' },
      'STS-WSTRUST-0011', 'RequestFailed'],
     ['?encrypt=1 with no recipient certificate', 'product',
-     { security: stripCertificates(signed('wf-alice')) },
+     { security: stripCertificates(signed('wf-alice')), appliesTo: BACK },
      'STS-WSTRUST-0012', 'InvalidRequest', { encrypt: true }],
     ['?encrypt=1 to a certificate that is not one', 'product',
-     { security: badCertificate + signed('wf-alice') },
+     { security: badCertificate + signed('wf-alice'), appliesTo: BACK },
      'STS-WSTRUST-0013', 'RequestFailed', { encrypt: true }],
     ['a JWT about somebody the directory does not hold', 'development',
      { security: usernameToken('wf-ghost-' + process.pid, 'x'),
@@ -318,10 +320,23 @@ function everyRefusal(t) {
      { security: signed('wf-payroll'), body: actAs(signed('wf-alice',
        'wf-payroll')), appliesTo: BACK },
      'STS-WSTRUST-0023', 'RequestFailed'],
-    ['no AppliesTo, the requester not S', 'product',
-     { security: signed('wf-mid'), body: actAs(signed('wf-alice',
-       'wf-front')) },
-     'STS-WSTRUST-0024', 'RequestFailed'],
+    // #496: STS-WSTRUST-0024 (the policy's no-target and
+    // unregistered-target) is no longer reachable here in product: an RST
+    // with no AppliesTo, or one nobody registered, is refused before the
+    // policy is asked (STS-WSTRUST-0031 / 0030, below), and development
+    // does not enforce the policy's target refusals. A target the
+    // intermediary may not reach is the policy's default code.
+    ['a target the intermediary may not reach', 'product',
+     { security: signed('wf-front'), body: actAs(signed('wf-alice',
+       'wf-front')), appliesTo: OTHER },
+     'STS-WSTRUST-0018', 'RequestFailed'],
+    ['an AppliesTo nobody registered (#496)', 'product',
+     { security: signed('wf-front'),
+       appliesTo: 'https://wf-nobody.example' },
+     'STS-WSTRUST-0030', 'InvalidScope'],
+    ['no AppliesTo (#496)', 'product',
+     { security: signed('wf-front') },
+     'STS-WSTRUST-0031', 'InvalidRequest'],
     ['Cancel in WS-Trust 2004/04', 'development',
      { security: usernameToken('wf-alice', 'x'), op: 'Cancel',
        trustNs: WST_2004_04 },

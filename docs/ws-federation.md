@@ -55,7 +55,7 @@ at `/admin/sts-metadata`.
 
 | Parameter | What is done with it |
 |---|---|
-| `wtrealm` | required; the relying party's identifier and the assertion's audience |
+| `wtrealm` | required; the relying party's identifier and the assertion's audience — in product, a registered relying party (see [the mode table](#development-and-product-mode)) |
 | `wreply` | where the response is POSTed — see [the mode table](#development-and-product-mode) |
 | `wctx` | echoed back **byte for byte** and never interpreted |
 | `wct` | the request timestamp; its skew is recorded, not enforced |
@@ -237,6 +237,7 @@ nothing more). `wreqptr` is refused by design.
 
 | | Development | Product |
 |---|---|---|
+| `wtrealm` | any relying party; it is filed in the register | a **registered** relying party only — one an administrator, dynamic registration, an OpenID Federation or this service's seeding put there, not one the register merely recorded from an earlier sign-in. Any other is a 404 page (`STS-WSFED-0021`) before the sign-in screen, and nothing is recorded (#496) |
 | `wreply` | used as it stands; with none, the mock relying party | must be one of the `wsfedReplyUrl` values on the `wtrealm`'s application entry, exact match; with none, the registered one; no mock fallback. An address development merely observed is refused until an operator confirms it |
 | Password at the sign-in screen | any password but `invalid` | verified |
 | Given name, surname, mail, display name, UPN | invented, and described that way in the metadata | read off the directory entry, or omitted — and the signed metadata describes them that way |

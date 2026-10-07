@@ -1673,6 +1673,31 @@ function publishesMetadataForUnregisteredProviders() {
   return !isProduct();
 }
 
+// Does this service ISSUE a token to an application nobody registered
+// (#496, rcbj 2026-10-06)? A WS-Trust AppliesTo and a WS-Federation wtrealm
+// name the relying party a token is FOR. Development answers yes: a token is
+// issued for any of them under the shared entityID, and the protocol's
+// `seen()` files the application, which is how a relying party can be pointed
+// here before anything is provisioned. Product answers no: an application
+// nobody registered (no `appRegisteredBy` — an entry `seen()` filed in
+// development is not a registration) is refused before anything is issued or
+// recorded, in that protocol's own vocabulary, and an RST naming no AppliesTo
+// at all is refused with it, because a token with no audience is one every
+// relying party would be entitled to accept. The rule is rcbj's on #496: in
+// product an unregistered application gets nothing but a 404 or its
+// protocol's own "unknown application" error.
+/**
+ * Tells whether a token may be issued for an application nobody registered
+ * (a WS-Trust AppliesTo, a WS-Federation wtrealm), or for no application.
+ *
+ * @returns true in development mode
+ */
+function issuesToUnregisteredApplications() {
+  log.debug("Entering issuesToUnregisteredApplications().");
+  log.debug("Leaving issuesToUnregisteredApplications().");
+  return !isProduct();
+}
+
 // Does this process embed the identity protocol debugger (2026-09-13)?
 // `debugger.enabled` decides where it says `on` or `off`; its default, `auto`,
 // is this predicate's own answer: yes in development, where the debugger is
@@ -2830,6 +2855,22 @@ const REQUIREMENTS = [
              '1.1 relying party (STS-SAML-0083). The unscoped documents are ' +
              'unchanged.',
     where: 'saml/saml2_sso.ts, saml/saml11_sso.ts' },
+  { id: 'unregistered-applications',
+    what: 'A token is issued only for a registered application (#496)',
+    development: 'A WS-Trust RST is answered for any AppliesTo, and for none ' +
+                 '(a token with no audience restriction); a WS-Federation ' +
+                 'wsignin1.0 for any wtrealm. Each is issued under the ' +
+                 'shared entityID, and the application is filed in the ' +
+                 'register by its first sighting.',
+    product: 'An RST whose AppliesTo resolves to no registered application ' +
+             '(appRegisteredBy unset — a sighting is not a registration) is ' +
+             'refused with wst:InvalidScope (STS-WSTRUST-0030), and one with ' +
+             'no AppliesTo with wst:InvalidRequest (STS-WSTRUST-0031), for ' +
+             'every token type and OnBehalfOf / ActAs, before the requester ' +
+             'is authenticated or anything is recorded. A wsignin1.0 whose ' +
+             'wtrealm names no registered relying party is refused with a ' +
+             '404 page (STS-WSFED-0021) before the sign-in screen.',
+    where: 'ws-trust/wstrust.ts, ws-federation/wsfed.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +
@@ -3767,6 +3808,7 @@ module.exports = {
   registersFromMetadataQuery: registersFromMetadataQuery,
   publishesMetadataForUnregisteredProviders:
     publishesMetadataForUnregisteredProviders,
+  issuesToUnregisteredApplications: issuesToUnregisteredApplications,
   embedsProtocolDebugger: embedsProtocolDebugger,
   limitsDebuggerDestinations: limitsDebuggerDestinations,
   dialsInternalAddresses: dialsInternalAddresses,
