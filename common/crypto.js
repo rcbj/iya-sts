@@ -13439,6 +13439,9 @@ const SHA1_PURPOSES = Object.freeze({
   // RFC 6960 section 4.1.1: an OCSP CertID's issuerNameHash and
   // issuerKeyHash under the hash it names; SHA-1 is what every client sends.
   'ocsp-cert-id': 'RFC 6960 section 4.1.1',
+  // RFC 5019 section 6.2 RECOMMENDS an OCSP response's ETag be the hex
+  // SHA-1 of the response. Opaque to the client, which only compares it.
+  'ocsp-etag': 'RFC 5019 section 6.2',
   // A certificate's SHA-1 fingerprint, DRAWN for an operator comparing it
   // with what older tooling prints. Never compared by this service.
   'certificate-fingerprint': 'display only',

@@ -330,10 +330,9 @@ class PkiService {
   // no-store" header in authoritative OCSP responses*, and asks for `max-age`
   // no later than
   // `nextUpdate`, `Last-Modified` at `thisUpdate`, `Expires` at `nextUpdate`
-  // and an `ETag` of the response — the hex SHA-1 of it, section 6.2
-  // RECOMMENDS, and the SHA-256 here since #453: an ETag is opaque to the
-  // client (RFC 9110 section 8.8.3), which compares it and never recomputes
-  // it, and SHA-1 is in no list a caller here may choose from. What a person
+  // and an `ETag` of the response — the hex SHA-1 of it, which section 6.2
+  // RECOMMENDS and which is therefore one of `crypto.js`'s SHA1_PURPOSES
+  // (`ocsp-etag`, #453). What a person
   // revoking something needs is served anyway: a client asking with a nonce
   // gets an answer no cache may hand to anybody else, and `nextUpdate` is
   // `pki.crlLifetimeMinutes` away.
@@ -371,7 +370,8 @@ class PkiService {
          : 'max-age=' + maxAge + ', public, no-transform, must-revalidate')
        .set('Last-Modified', new Date(made.thisUpdate).toUTCString())
        .set('Expires', new Date(nextMs).toUTCString())
-       .set('ETag', '"' + stsCrypto.digest('sha256', made.der, 'hex') + '"')
+       .set('ETag', '"' +
+         stsCrypto.sha1Digest('ocsp-etag', made.der, 'hex') + '"')
        .send(made.der);
     log.debug("Leaving PkiService.sendOcsp(). Authoritative.");
   }
