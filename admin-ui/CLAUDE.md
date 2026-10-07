@@ -6997,8 +6997,9 @@ the existing `:has()` rules hide by.
   2026-10-07)** — the tabbed page had lost them. A field is in the simple
   view when it is in `common/applications.js`'s `SIMPLE_FIELD_ATTRIBUTES`
   (`applicationFields()`'s `simple`); that file's comment says how the set
-  was chosen — Every protocol and OAuth are exactly what rcbj's two working
-  applications hold, the rest inferred on that model. **A sub-tab of fewer
+  was chosen — Every protocol and OAuth are what rcbj's two working
+  applications hold (and `appMfaMechanism` on Every protocol, rcbj's
+  addition), the rest inferred on that model. **A sub-tab of fewer
   than six fields, or none of one kind, has no switch** (`WebKit.hasViews()`).
   The switch is two `view` radios INSIDE the sub-tab's form and the
   stylesheet hides its `fg-adv` cells while Simplified is ticked: no round

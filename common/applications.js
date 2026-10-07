@@ -5717,8 +5717,9 @@ const FIELD_SECTIONS = [
 // fewer has no advanced view and draws everything.
 //
 // HOW THE TWO SETS WERE CHOSEN, because a reader adding an attribute has to
-// choose again. Every protocol and OAuth 2.0 / OpenID Connect are EXACTLY the
-// fields two working applications on rcbj's own instance hold — a web
+// choose again. Every protocol and OAuth 2.0 / OpenID Connect are the
+// fields two working applications on rcbj's own instance hold (and, on Every
+// protocol, `appMfaMechanism`, which rcbj asked for beside them) — a web
 // application that delegates to an API (rcbj0002) and that API (rcbj0003) —
 // so the simple view is what configuring a real client and resource server
 // took, and everything else on those sub-tabs is advanced. The other
@@ -5729,8 +5730,9 @@ const FIELD_SECTIONS = [
 // of their own.
 // ---------------------------------------------------------------------------
 const SIMPLE_FIELD_ATTRIBUTES = [
-  // Every protocol (rcbj0002, rcbj0003).
-  'description', 'appHomePageUrl', 'appAuthnMechanism',
+  // Every protocol (rcbj0002, rcbj0003), and the second factors an
+  // application allows (#475), which rcbj added on 2026-10-07.
+  'description', 'appHomePageUrl', 'appAuthnMechanism', 'appMfaMechanism',
   'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
   'appDelegationSubjectGroup', 'appDelegationSemantics',
   // OAuth 2.0 / OpenID Connect (rcbj0002, rcbj0003).
