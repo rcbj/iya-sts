@@ -1310,6 +1310,26 @@ Pooling settings on each HTTP/HTTPS listener tab."
     service did before.
   - **Not on the SPIFFE listeners**, which have only the timeout: grpc-js
     offers no session-ID events.
+  - **The session cache and the server name (RFC 6066 section 3,
+    2026-10-07).** A session ID is resumed only under the server name it
+    was made under; a different name, none, or a malformed one gets the full
+    handshake the RFC asks for. Neither OpenSSL (on a TLS 1.2 hit it parses
+    no name and only notes a mismatch) nor node's `resumeSession` event (it
+    passes the ID alone) does it, so tlsfuzzer's
+    `test-invalid-server-name-extension-resumption.py` failed on the
+    debugger's listener the day the size went to 2048. The name a hello
+    offers is known only to node's `onclienthello` handler, so
+    `installClientHelloHook()` wraps `TLSSocket.prototype._init` once and,
+    for the servers `attachSessionCache()` registered, wraps each socket's
+    `onclienthello` and `onnewsession` (`watchClientHello()`); the cache keeps
+    the name with the session and compares it byte for byte. It FAILS
+    CLOSED: a name it cannot see refuses the resumption, and a node with no
+    `_init` is logged as STS-TLS-0046 and resumes nothing by ID.
+    `tests/listener_tls_policy.js` L5c holds it. **TLS 1.2 TICKETS are not
+    covered**: node resumes a ticket inside OpenSSL with no event, and
+    OpenSSL resumes a ticket offered under another name (shown by hand
+    against a bare node server, 2026-10-07); that is unchanged by this and
+    open.
 * **Connection pooling is four settings, all runtime, on the HTTP
   listeners only** (main, the debugger, the plain-HTTP revocation listener,
   and a realm's own): `http.keepAliveTimeoutS` (60; it replaced

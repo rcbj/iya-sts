@@ -13562,6 +13562,13 @@ const CODES = [
       'so that listener\'s client truststore would be empty while ' +
       'configured to be filled.',
     spec: 'the service does not start' },
+  { code: 'STS-TLS-0046',
+    summary: 'This node offers no TLSSocket.prototype._init, so the TLS ' +
+      'session cache cannot see the server name a ClientHello offers and ' +
+      'cannot hold a resumption to the name its session was made under ' +
+      '(RFC 6066 section 3).',
+    spec: 'logged; no TLS 1.2 session is resumed by ID (every such client ' +
+      'gets a full handshake); tickets are unaffected' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

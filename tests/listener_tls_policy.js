@@ -43,7 +43,10 @@
 //   J. EVERY SETTING PER LISTENER (#429): one listener's own TLS 1.2 switch,
 //      TLS 1.3 suites and post-quantum toggle decide for it alone, inherit
 //      returns it to the service's, its write rule, its restart-only rows;
-//   K. a listener's own client truststore (its anchors file).
+//   K. a listener's own client truststore (its anchors file);
+//   L. the TLS session cache per listener (#429), and a session ID resumed
+//      only under the server name it was made under (L5c, RFC 6066
+//      section 3).
 // And TLS 1.3 by default (#429): A1 asserts TLS 1.2 refused untouched.
 // ===========================================================================
 
@@ -79,7 +82,13 @@ function childMain() {
   function probe(port, opts) {
     const o = opts || {};
     const args = ['s_client', '-connect', '127.0.0.1:' + port,
-                  '-servername', 'localhost', '-msg', '-ign_eof'];
+                  '-msg', '-ign_eof'];
+    // The server name offered: localhost unless asked, none for ''.
+    if (o.servername === '') {
+      args.push('-noservername');
+    } else {
+      args.push('-servername', o.servername || 'localhost');
+    }
     if (o.version === '1.2') {
       args.push('-tls1_2');
     }
@@ -599,6 +608,31 @@ function childMain() {
     note(res.first.accepted && res.again.accepted && res.again.reused,
          'L5. tls.sessionCacheSize 2048 (the default since 2026-10-07): a ' +
          'TLS 1.2 session ID is resumed', tail(res.again));
+    // RFC 6066 section 3 (2026-10-07): a session ID made under one server
+    // name is NOT resumed under another or under none — a full handshake
+    // each time — and the session is still resumed under its own name
+    // afterwards. OpenSSL alone resumes both (it parses no name on a hit),
+    // and so did the cache before the name was kept with the session:
+    // tlsfuzzer's test-invalid-server-name-extension-resumption.py found it
+    // on the debugger's listener, and covers the malformed name s_client
+    // cannot send.
+    const sniOut = sessFile('l5c');
+    const madeUnder = await probe(mainPort, { version: '1.2',
+      noTicket: true, sessOut: sniOut });
+    const underOther = await probe(mainPort, { version: '1.2',
+      noTicket: true, sessIn: sniOut, servername: 'other.localhost' });
+    const underNone = await probe(mainPort, { version: '1.2', noTicket: true,
+                                              sessIn: sniOut,
+                                              servername: '' });
+    const underOwn = await probe(mainPort, { version: '1.2', noTicket: true,
+                                             sessIn: sniOut });
+    note(madeUnder.accepted && underOther.accepted && !underOther.reused &&
+         underNone.accepted && !underNone.reused && underOwn.reused,
+         'L5c. a TLS 1.2 session ID made under "localhost" is not resumed ' +
+         'under "other.localhost" or under no server name (RFC 6066 ' +
+         'section 3: a full handshake instead), and is still resumed under ' +
+         '"localhost"', tail(underOther) + ' | ' + tail(underNone) + ' | ' +
+         tail(underOwn));
     // From here the service-wide cache is OFF, so L6 can show a listener's
     // own size against one that inherits none.
     config.setOverride('tls.sessionCacheSize', '0');
