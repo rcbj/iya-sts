@@ -279,6 +279,39 @@ const HOUR_MS = 3600 * 1000;
 // The population's subject in `sts_risk_feature_counts`.
 const POPULATION = '*';
 
+// ---------------------------------------------------------------------------
+// THE HISTORY'S OWN FEATURES, outside the model (#506, 2026-10-07). Beside
+// the model's levels (`risk_model.ts`'s FEATURES) the person's history
+// counts three things the evaluators ask about: the TLS stack (`ja4`), the
+// credential (`credential`), and WHICH DEVICE — the person's own registered
+// device as `registered:<id>`, or the browser fingerprint (#62 P6) — which
+// is `device-id`.
+//
+// Until #506 that last one was counted as `device`, which is ALSO the name
+// of the model's device-type level (the third level of the User-Agent
+// hierarchy, Freeman et al.'s "device type": desktop, mobile, tablet). A
+// feature key is a name in `sts_risk_feature_counts` and nothing else, so
+// the two shared one history per person: a fingerprint counted as a device
+// type, and a device type as a fingerprint already seen — `new-device`
+// asked "has this person signed in from `desktop`" whenever a fingerprint
+// happened to read so. The model keeps the paper's name; this one moved.
+//
+// NO MIGRATION (rcbj's rule): rows counted as `device` before #506 are a
+// mix of the two, and the model reads only the device-type values it asks
+// for by value. They stop moving, and `risk.historyRetentionDays` (180 days
+// since last use) ages out whatever no sign-in touches again. Until then a
+// person's first sign-in after the upgrade with a fingerprint is new to
+// `device-id` — at most one `new-device` (×2) per fingerprint, once.
+//
+// A name here must never be a level of the model's; `tests/risk_engine.js`
+// J holds that.
+// ---------------------------------------------------------------------------
+const DEVICE_ID_FEATURE = 'device-id';
+const TLS_STACK_FEATURE = 'ja4';
+const CREDENTIAL_FEATURE = 'credential';
+const HISTORY_FEATURES = [DEVICE_ID_FEATURE, TLS_STACK_FEATURE,
+                          CREDENTIAL_FEATURE];
+
 interface RiskEngineDeps {
   log: { debug(m: string): void; info(m: string): void; warn(m: string): void };
   config: { value(key: string): any };
@@ -1294,19 +1327,20 @@ class RiskEngine {
                                                 : 'compliant-device',
           String(registered.id));
     }
-    // THE DEVICE FEATURE: the person's own registered device where one
-    // proved the sign-in — its register id, which no browser update or
-    // cleared fingerprint changes — and the browser fingerprint (#62 P6)
-    // otherwise. A registered device of the person's own is NEVER a
-    // `new-device`: its key was proven to be theirs at enrolment, which is
-    // stronger than any history, so the first sign-in from a phone they
-    // just registered is not doubted for being the first. The history still
-    // records it under its id.
+    // THE DEVICE FEATURE (`device-id`, DEVICE_ID_FEATURE above — not the
+    // model's `device`, which is the device type; #506): the person's own
+    // registered device where one proved the sign-in — its register id,
+    // which no browser update or cleared fingerprint changes — and the
+    // browser fingerprint (#62 P6) otherwise. A registered device of the
+    // person's own is NEVER a `new-device`: its key was proven to be theirs
+    // at enrolment, which is stronger than any history, so the first
+    // sign-in from a phone they just registered is not doubted for being the
+    // first. The history still records it under its id.
     const deviceFeature = own ? 'registered:' + String(registered.id)
                               : String(context.device || '');
     if (!own && context.device && enough) {
       const seenDevice = await store.featureCounts(realm, subject,
-        [{ feature: 'device', value: deviceFeature }], sealing);
+        [{ feature: DEVICE_ID_FEATURE, value: deviceFeature }], sealing);
       if (!seenDevice.length) {
         add('new-device', deviceFeature.slice(0, 12));
       }
@@ -1316,7 +1350,7 @@ class RiskEngine {
     const tlsStack = String(context.tlsStack || context.ja4 || '');
     if (tlsStack && enough) {
       const seen = await store.featureCounts(realm, subject,
-        [{ feature: 'ja4', value: tlsStack }], sealing);
+        [{ feature: TLS_STACK_FEATURE, value: tlsStack }], sealing);
       if (!seen.length) {
         add('new-tls-stack', tlsStack);
       }
@@ -1490,13 +1524,15 @@ class RiskEngine {
     });
     move(POPULATION, 'user', subject);
     if (context.tlsStack || context.ja4) {
-      move(subject, 'ja4', String(context.tlsStack || context.ja4));
+      move(subject, TLS_STACK_FEATURE,
+           String(context.tlsStack || context.ja4));
     }
     if (deviceFeature) {
-      move(subject, 'device', deviceFeature);
+      move(subject, DEVICE_ID_FEATURE, deviceFeature);
     }
     if (credential.fingerprint || credential.kind) {
-      move(subject, 'credential', String(credential.kind || '') + ':' +
+      move(subject, CREDENTIAL_FEATURE,
+           String(credential.kind || '') + ':' +
            String(credential.fingerprint || ''));
     }
     if (counting) {
@@ -2610,6 +2646,11 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   SIGNALS: RiskEngine.SIGNALS,
+  /** The history's feature for which device: a registered id or a
+   *  browser fingerprint (#506). */
+  DEVICE_ID_FEATURE: DEVICE_ID_FEATURE,
+  /** The history's features outside the model's levels (#506). */
+  HISTORY_FEATURES: HISTORY_FEATURES,
   deviceOf: RiskEngine.deviceOf,
   satisfiedBy: RiskEngine.satisfiedBy,
   familyOf: RiskEngine.familyOf,

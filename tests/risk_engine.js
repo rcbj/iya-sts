@@ -35,6 +35,11 @@
 //      container bridge. Repeated sign-ins stay LOW; a new address with no
 //      ASN and no country is new, and the record says which levels were
 //      unknown.
+//   J. The device feature is `device-id`, not the model's `device` (#506):
+//      the history's own feature names are none of the model's levels, a
+//      fingerprint and a device type are counted apart, neither makes the
+//      other "seen", and the model's factors are the same with fingerprints
+//      as without them.
 //
 // Every address is a documentation one (RFC 5737), every list synthetic.
 // ===========================================================================
@@ -70,7 +75,8 @@ function signIn(address, userAgent, extra) {
       'session-' + require('crypto').randomBytes(8).toString('hex'),
     door: 'the sign-in screen', clientId: 'a-client',
     context: { address: address, uaFingerprint: 'fp-' + userAgent.length,
-               ja4: e.ja4 || '', credential: { kind: 'password' } },
+               ja4: e.ja4 || '', device: e.device || '',
+               credential: { kind: 'password' } },
     userAgent: userAgent });
 }
 
@@ -279,6 +285,7 @@ async function run(t) {
   config.clearOverride('risk.minimumHistory');
   await sharedNetwork(t);
   await unmappedNetwork(t);
+  await deviceFeature(t);
   log.debug("Leaving run().");
 }
 
@@ -462,12 +469,127 @@ async function unmappedNetwork(t) {
   log.debug("Leaving unmappedNetwork().");
 }
 
+// ---------------------------------------------------------------------------
+// J. THE DEVICE FEATURE HAS A NAME OF ITS OWN (#506). Until #506 the browser
+// fingerprint / registered device was counted under `device`, the name of
+// the model's device-type level (desktop, mobile), so the two shared one
+// history per person. The fingerprints below are chosen to COLLIDE with the
+// device types — a fingerprint reading `desktop`, then `mobile` — which is
+// what shows a shared key: a fingerprint would count as a device type, and a
+// device type would make a fingerprint "seen" (no `new-device`). The last
+// check runs the same sign-ins twice, with and without fingerprints, and
+// asks for the same model factors every time.
+// ---------------------------------------------------------------------------
+async function deviceFeature(t) {
+  log.debug("Entering deviceFeature().");
+  const levels = [];
+  require('../risk/risk_model').FEATURES.forEach(function (f) {
+    f.levels.forEach(function (l) {
+      levels.push(l[0]);
+    });
+  });
+  const own = riskEngine.HISTORY_FEATURES || [];
+  t.check(riskEngine.DEVICE_ID_FEATURE === 'device-id' &&
+          own.indexOf('device-id') >= 0 && levels.indexOf('device') >= 0 &&
+          !own.some(function (name) {
+            return levels.indexOf(name) >= 0 || name === 'user' ||
+              name === '_total' || name.indexOf('>') >= 0;
+          }),
+          'J1. the history\'s own features (' + own.join(', ') + ') are ' +
+          'none of the model\'s levels (' + levels.join(', ') + '), whose ' +
+          'device type keeps the paper\'s name',
+          JSON.stringify({ own: own, levels: levels }));
+
+  const PERSON = 'urn:uuid:00000000-0000-4000-8000-0000000000d1';
+  const ADDRESS = '192.0.2.77';
+  // The sequence: enough history from one desktop browser with one
+  // fingerprint, then a phone whose fingerprint reads `desktop`, a phone
+  // whose fingerprint reads `mobile`, the desktop with that one, and the
+  // phone with none.
+  const steps = [];
+  for (let i = 0; i < 6; i++) {
+    steps.push({ ua: CHROME, device: 'fp-a' });
+  }
+  steps.push({ ua: CHROME, device: 'fp-a' });
+  steps.push({ ua: SAFARI, device: 'desktop' });
+  steps.push({ ua: SAFARI, device: 'mobile' });
+  steps.push({ ua: CHROME, device: 'mobile' });
+  steps.push({ ua: SAFARI, device: '' });
+  const play = async function (fingerprints) {
+    log.debug("Entering play(). " + fingerprints);
+    riskStore.reset();
+    riskDatasets.forget();
+    const out = [];
+    for (const s of steps) {
+      out.push(await signIn(ADDRESS, s.ua, { subject: PERSON,
+        device: fingerprints ? s.device : '' }));
+    }
+    log.debug("Leaving play().");
+    return out;
+  };
+  const newDevice = function (a) {
+    return !!a && a.signals.some(function (s) {
+      return s.signal === 'new-device';
+    });
+  };
+  const count = async function (feature, value) {
+    log.debug("Entering count(). " + feature);
+    const rows = await riskStore.featureCounts(REALM, PERSON,
+      [{ feature: feature, value: value }], false);
+    log.debug("Leaving count().");
+    return rows.length ? rows[0].count : 0;
+  };
+  const withPrints = await play(true);
+  const counted = {
+    'device-id fp-a': await count('device-id', 'fp-a'),
+    'device fp-a': await count('device', 'fp-a'),
+    'device desktop': await count('device', 'desktop'),
+    'device mobile': await count('device', 'mobile'),
+    'device-id desktop': await count('device-id', 'desktop'),
+    'device-id mobile': await count('device-id', 'mobile')
+  };
+  t.check(counted['device-id fp-a'] === 7 && counted['device fp-a'] === 0 &&
+          counted['device desktop'] === 8 && counted['device mobile'] === 3 &&
+          counted['device-id desktop'] === 1 &&
+          counted['device-id mobile'] === 2,
+          'J2. a fingerprint is counted under device-id and a device type ' +
+          'under device, each once per sign-in, neither in the other\'s ' +
+          'history', JSON.stringify(counted));
+  t.check(!newDevice(withPrints[6]) && newDevice(withPrints[7]) &&
+          newDevice(withPrints[8]),
+          'J3. a fingerprint already seen is not new-device; one reading ' +
+          '"desktop" or "mobile" is, although this person has signed in ' +
+          'from a desktop (and, by then, a mobile) — the device type does ' +
+          'not make a fingerprint seen',
+          JSON.stringify(withPrints.slice(6, 9).map(function (a) {
+            return a && a.signals.map(function (s) {
+              return s.signal;
+            });
+          })));
+  const factorsOf = function (list) {
+    return JSON.stringify(list.map(function (a) {
+      return a && a.signals[0].factors;
+    }));
+  };
+  const without = await play(false);
+  const scored = without.filter(function (a) {
+    return a && a.signals[0].factors;
+  }).length;
+  t.check(scored >= 5 && factorsOf(withPrints) === factorsOf(without),
+          'J4. and the model\'s factors are the same, sign-in by sign-in, ' +
+          'with those fingerprints as without any: a fingerprint does not ' +
+          'move the device-type level (' + scored + ' scored)',
+          factorsOf(withPrints) + ' vs ' + factorsOf(without));
+  log.debug("Leaving deviceFeature().");
+}
+
 module.exports = {
   name: 'risk_engine',
   describe: 'assessing a sign-in (#62 P2): the device a User-Agent names, a ' +
             'first sign-in unscored, the same person LOW, the evaluators ' +
             'taking a sign-in to HIGH, no address kept in the clear, the ' +
-            'person\'s standing and the session\'s context kept, and never ' +
-            'a rejection',
+            'person\'s standing and the session\'s context kept, never ' +
+            'a rejection, and the device feature apart from the device ' +
+            'type (#506)',
   run: run
 };

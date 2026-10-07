@@ -306,7 +306,7 @@ function childMain() {
            'assessment records the device', JSON.stringify([
              signalsOf(fingerprinted), signalsOf(plainNew), model.device]));
       const counted = await require(ROOT + '/risk/risk_store').featureCounts(
-        REALM, subOf(ALICE), [{ feature: 'device', value: 'registered:' +
+        REALM, subOf(ALICE), [{ feature: 'device-id', value: 'registered:' +
                                                            id }], false);
       note(counted.length === 1 && counted[0].count >= 1,
            'E2. the history counts it under registered:<id>',

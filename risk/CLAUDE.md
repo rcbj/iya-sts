@@ -348,6 +348,28 @@ distinct count the smoothing needs, and a `user` row per person for the
 number of users. It is read BEFORE the sign-in is counted — the notebook's
 order — and moved with one statement, so two nodes never lose a count.
 
+**THE HISTORY ALSO HOLDS THREE FEATURES OF THE ENGINE'S OWN, outside the
+model, for the person only**: `ja4` (the TLS stack, `new-tls-stack`),
+`credential`, and **`device-id`** — which device: `registered:<id>` for the
+person's own registered device, the browser fingerprint otherwise
+(`new-device`). `risk_engine.ts`'s `HISTORY_FEATURES` names them.
+**`device-id` WAS `device` UNTIL #506 (2026-10-07)**, the name of the model's
+device-type level, and a feature key is just a name in
+`sts_risk_feature_counts`: the two shared one history per person, so a
+fingerprint was counted as a device type and a device type made a
+fingerprint "seen" — a fingerprint reading `desktop` was never `new-device`
+for a person who had signed in from a desktop, and moved the model's
+`device` count beside the device type's. The model keeps Freeman et al.'s
+name; the engine's feature moved. **No migration (rcbj's rule)**: rows
+counted as `device` before #506 stop moving where they were fingerprints,
+the model asks for its device types by value only, and
+`risk.historyRetentionDays` (180 days since last use) ages out the rest. The
+cost is one `new-device` (×2) per fingerprint already seen, the first time
+it signs in after the upgrade. **No name of the engine's may be a level of
+the model's**: `tests/risk_engine.js` J1 holds that, J2–J3 that the two are
+counted apart and neither makes the other seen, and J4 that the model's
+factors are the same with colliding fingerprints as with none.
+
 **THE EVALUATORS** are factors on the score, in `SIGNALS`: a Tor exit (×5),
 the reputation list (×5), the operator's deny list (×20; ×50 until #226) and allow list
 (×0.2), an automated client (×10), a JA4 this person never signed in with
@@ -815,8 +837,8 @@ an UNSCORED sign-in scored (`LOWERING_ONLY`), and a compromised device is
 never "compliant".
 
 **THE DEVICE FEATURE.** Where the person's own registered device proved the
-sign-in, the history's `device` feature is `registered:<id>` rather than the
-browser fingerprint (P6), and it is never `new-device`: its key was proven
+sign-in, the history's `device-id` feature (`device` until #506, above) is
+`registered:<id>` rather than the browser fingerprint (P6), and it is never `new-device`: its key was proven
 theirs at enrolment, which is stronger than any history. `riskOf()` carries
 the id as `device.registered`. Somebody else's device changes nothing about
 the fingerprint path.
