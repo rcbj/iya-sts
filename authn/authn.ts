@@ -7095,8 +7095,8 @@ class Authn {
              'where the sign-in demands a security key; refused.');
     errorCodes.mark(res, 'STS-AUTHN-0204');
     oauthError(res, 400, 'invalid_request',
-      'This sign-in demands a security key, and ' + what + ' does not ' +
-      'answer that. Use the security key on the previous screen.');
+      'This sign-in demands a passkey, and ' + what + ' does not answer ' +
+      'that. Use your passkey on the previous screen.');
     log.debug("Leaving Authn.keyDemandRefuses(). Refused.");
     return true;
   }
@@ -7357,8 +7357,8 @@ class Authn {
       log.debug("Leaving Authn.finishWithWallet(). A wallet twice.");
       return { refused: 'same-factor', why: 'The first factor of this ' +
                'sign-in was already a wallet, and one key proved twice is ' +
-               'one factor. Use your authenticator app, your security key or ' +
-               'your password.' };
+               'one factor. Use your authenticator app, your passkey or your ' +
+               'password.' };
     }
     const stepSub = String((userFor(step.username) || {}).sub || '');
     if (outcome.username !== step.username ||
@@ -8107,7 +8107,7 @@ class Authn {
       log.debug("Leaving Authn.integratedOptionHtml(). Withheld: a security " +
                 "key was demanded.");
       return '<div class="fed"><p>Integrated Kerberos sign-in is not offered ' +
-        'for this request: it demands a security key.</p></div>';
+        'for this request: it demands a passkey.</p></div>';
     }
     if (record.forceMfa) {
       log.debug("Leaving Authn.integratedOptionHtml(). Withheld: two factors " +
@@ -8305,30 +8305,30 @@ class Authn {
       (keyPolicy.enabled
         ? ''
         : '<label class="chk"><input type="checkbox" disabled> ' +
-          'Security keys are switched off in this realm ' +
-          '(<code>webauthn.enabled</code>), so neither WebAuthn option is ' +
-          'offered. An already-enrolled key still works.</label>') +
+          'Passkeys are switched off in this realm ' +
+          '(<code>webauthn.enabled</code>), so neither passkey option is ' +
+          'offered. A passkey already registered still works.</label>') +
       (keyPolicy.enabled && keyPolicy.mfaAllowed
         ? '<label class="chk"><input type="checkbox" id="use_webauthn" ' +
           'name="use_webauthn" value="1"' +
           (record.forceMfa || record.forceKey ? ' checked disabled' : '') +
           (record.forcePasswordless ? ' disabled' : '') +
-          '> Use a security key (WebAuthn) as a second factor' +
+          '> Use a passkey as a second step (WebAuthn)' +
           (record.forcePasswordless
              ? ' — not available: this partner is configured for a ' +
-               'passwordless key'
+               'passkey instead of a password'
              : '') +
           (record.forceKey
              ? ' — required after a password: this request demands a ' +
-               'security key' + (record.forceMfa ? ' as the second factor'
-                                                 : ', alone or as the ' +
-                                                   'second factor')
+               'passkey' + (record.forceMfa ? ' as the second factor'
+                                            : ', alone or as the ' +
+                                              'second factor')
              : '') + '</label>' +
           (record.forceMfa || record.forceKey ?
            '<input type="hidden" name="use_webauthn" value="1">' : '')
         : (keyPolicy.enabled
             ? '<label class="chk"><input type="checkbox" disabled> ' +
-              'A security key as a second factor is switched off here ' +
+              'A passkey as a second step is switched off here ' +
               '(<code>webauthn.mfaAllowed</code>).</label>'
             : '')) +
       (keyPolicy.enabled && keyPolicy.primaryAllowed && !locked
@@ -8336,24 +8336,24 @@ class Authn {
           'name="webauthn_only" value="1"' +
           (record.forceMfa ? ' disabled' : '') +
           (record.forcePasswordless ? ' checked disabled' : '') +
-          '> Sign in with the security key alone (passwordless — ' +
-          'no password step, and the tokens will say one factor)' +
+          '> Sign in with a passkey instead of a password (no password ' +
+          'step, and the tokens will say one factor)' +
           (record.forceKey && !record.forceMfa
-             ? ' — accepted: this request demands a security key' : '') +
+             ? ' — accepted: this request demands a passkey' : '') +
           (record.forceMfa ?
            ' — not available: this request demands two factors' : '') +
           (record.forcePasswordless
              ? (record.mechanismVia
                ? ' — required: the federation relationship "' +
                  xmlEscape(record.mechanismVia) + '" configures this'
-               : ' — required: the application allows a security key ' +
+               : ' — required: the application allows a passkey ' +
                  'alone on this screen')
              : '') + '</label>' +
           (record.forcePasswordless
              ? '<input type="hidden" name="webauthn_only" value="1">' : '')
         : (keyPolicy.enabled
             ? '<label class="chk"><input type="checkbox" disabled> ' +
-              'A passwordless security key is switched off here ' +
+              'A passkey instead of a password is switched off here ' +
               '(<code>webauthn.primaryAllowed</code>).' +
               (record.forcePasswordless
                 ? ' <strong>This sign-in cannot complete</strong>: the ' +
@@ -8473,14 +8473,15 @@ class Authn {
       (mode.verifiesCredentials()
         ? '<div class="meta"><div>Your password is checked against your ' +
           'account.</div><div>Passwordless: the password field is not read, ' +
-          'and a security key you registered for signing in is the only ' +
-          'factor. A key is added at /portal/keys after signing in, never ' +
-          'here.</div><div>Signing in for: '
+          'and a passkey you registered for signing in is the only ' +
+          'factor. A passkey is added at /portal/keys after signing in, ' +
+          'never here.</div><div>Signing in for: '
         : '<div class="meta"><div>No password is checked. The username you ' +
           'enter is the identity the issued tokens describe.</div>' +
           '<div>Passwordless: the password field is not read at all, and the ' +
-          'security key becomes the only factor — a key is enrolled for this ' +
-          'username on first use, so the first person to claim a name here ' +
+          'passkey becomes the only factor — a passkey is registered for ' +
+          'this username on first use, so the first person to claim a name ' +
+          'here ' +
           'gets it. This service authenticates nobody; that is the same ' +
           'statement as the line above and not a weaker one.</div>' +
           '<div>Signing in for: ') +
@@ -9105,8 +9106,8 @@ class Authn {
       errorCodes.mark(res, 'STS-AUTHN-0204');
       log.debug("Leaving Authn.finishPasswordSignIn(). No key to present.");
       return this.sendLoginPage(res, this.loginPage(base, record,
-        'This request needs a security key, and this account holds none. ' +
-        'Add one at /portal/keys and sign in again.'));
+        'This request needs a passkey, and this account holds none. Add ' +
+        'one at /portal/keys and sign in again.'));
     }
     let factor = passwordless || record.forceKey ||
                  riskFactor === 'security-key'
@@ -9597,9 +9598,9 @@ class Authn {
           button('totp', 'Set up an authenticator app')
         : '') +
       (offered.webauthn
-        ? '<h2>A security key</h2><p>A hardware key or a passkey on this ' +
-          'device, used after your password.</p>' +
-          button('webauthn', 'Set up a security key')
+        ? '<h2>A passkey</h2><p>A passkey on this device, your phone or ' +
+          'a security key, used after your password.</p>' +
+          button('webauthn', 'Set up a passkey')
         : '') +
       (optional
         ? '<h2>Not now</h2><p>Sign in with your password alone.</p>' +
@@ -9817,7 +9818,7 @@ class Authn {
     const rpId = this.rpIdOf(base);
     const options = webauthnPolicy.settings();
     const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-      'charset="utf-8"><title>Security key — mock authentication ' +
+      'charset="utf-8"><title>Passkey — mock authentication ' +
       'service</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
       'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
@@ -9827,30 +9828,41 @@ class Authn {
       '4px}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
       '18px}button{padding:9px 12px;border-radius:5px;border:1px solid ' +
       '#12107c;background:#12107c;color:#fff;font-size:.95em;cursor:pointer;' +
-      'width:100%}.err{background:#fdecea;border:1px solid ' +
+      'width:100%}button.secondary{margin-top:10px;background:#5a5a68;' +
+      'border-color:#5a5a68}details summary{cursor:pointer;color:#12107c}' +
+      '.links div{margin:6px 0;font-size:.85em}' +
+      '.err{background:#fdecea;border:1px solid ' +
       '#f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
       'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;' +
       'padding-top:14px;border-top:1px solid ' +
       '#eee;font-size:.75em;color:#777;word-break:break-all}.meta ' +
       'div{margin:2px 0}code{font-family:ui-monospace,SFMono-Regular,Menlo,' +
       'monospace}</style></head><body><div ' +
-      'class="card"><h1>' + (mode === 'create' ? 'Enrol a security key' :
-                             'Use ' +
-          'your security key') + '</h1><p ' +
-      'class="sub">' + (passwordless
-        ? 'Passwordless sign-in as <code>' + xmlEscape(username) + '</code> ' +
-            '— the key is the only factor'
-        : 'Second factor for <code>' + xmlEscape(username) + '</code>') +
+      // PASSKEY, IN A PERSON'S WORDS (#470): "passkey" covers one on this
+      // device, in a password manager, on a phone or on a security key, so
+      // the page no longer says "security key" for all four.
+      'class="card"><h1>' + (mode === 'create' ? 'Create a passkey'
+                                               : 'Sign in with your passkey') +
+      '</h1><p class="sub">' + (passwordless
+        ? 'Signing in as <code>' + xmlEscape(username) + '</code> with a ' +
+          'passkey instead of a password'
+        : 'Second step for <code>' + xmlEscape(username) + '</code>: use ' +
+          'your passkey') +
         '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       '<button id="wa-go" type="button">' +
-      (mode === 'create' ? 'Enrol security key' :
-       'Authenticate with security key') + '</button><form ' +
+      (mode === 'create' ? 'Create passkey' : 'Use passkey') +
+      '</button><form ' +
       'method="post" action="' + WEBAUTHN_PATH + '" id="wa-form">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
       '<input type="hidden" name="mode" value="' + mode + '">' +
       '<input type="hidden" name="credential" id="wa-credential">' +
-      '</form>' +
+      // THE REAL BUTTON (#470), which every scripted page here carries but
+      // this one did not (the root CLAUDE.md's rule): with the script blocked
+      // it posts the step with no credential, and the endpoint answers that
+      // the browser ran no ceremony rather than the page doing nothing.
+      '<button class="secondary">My browser did not ask &mdash; tell me ' +
+      'why</button></form>' +
       // The ceremony's parameters travel as data attributes and the script is a
       // separate resource, so this page needs no inline script. That is not
       // fastidiousness: this service sets `script-src 'none'` on everything by
@@ -9889,7 +9901,10 @@ class Authn {
           mode === 'create' ? webauthnPolicy.creationOptions(rpId)
                             : webauthnPolicy.requestOptions(rpId))) + '"' +
       ' data-mode="' + mode + '"></div>' +
-      '<div class="meta">' +
+      // THE TECHNICAL LINES FOLDED (#470): a person signing in reads the
+      // heading, the button and the ways out; somebody debugging opens the
+      // fold. A `<details>` is markup and needs no script.
+      '<details class="meta"><summary>Technical details</summary>' +
       '<div>RP ID: <code>' + xmlEscape(rpId) + '</code> — the ceremony is ' +
                                                'bound to this origin' +
       (options.rpId
@@ -9917,9 +9932,10 @@ class Authn {
           ? ', ' + options.authenticatorAttachment + ' authenticators only'
           : '')) + '</div>' +
       '<div>' + (mode === 'create'
-        ? 'No key is enrolled for this user yet, so this step registers one.'
-        : 'A key is already enrolled for this user, so this step is an ' +
-          'assertion.') + '</div><div>' + (passwordless
+        ? 'No passkey is registered for this user yet, so this step ' +
+          'registers one.'
+        : 'A passkey is already registered for this user, so this step is ' +
+          'an assertion.') + '</div><div>' + (passwordless
         ? 'No password was presented. On success the session records amr ' +
           '["hwk"] and acr "1" — ONE factor — and this counts as an ' +
           'authentication in its own right, so it appears on /admin/users ' +
@@ -9928,7 +9944,7 @@ class Authn {
           'records amr ["pwd","hwk"] and acr "mfa", and the directory entry ' +
           'for ' + xmlEscape(username) + ' ' +
           'is flagged as having authenticated with more than one ' +
-          'factor.') + '</div>' +
+          'factor.') + '</div></details><div class="links">' +
       // THE OTHER SECOND FACTOR, WHERE THIS PERSON HOLDS ONE (2026-09-10). The
       // step's `alternate` is resolved when the step is MINTED and not here, so
       // this link cannot offer a mechanism the person has not enrolled — see
@@ -9947,8 +9963,8 @@ class Authn {
       // finite and issued once.
       (step && step.backup
         ? '<div><a href="' + BACKUP_CODE_PATH + '?mfa=' +
-          encodeURIComponent(mfaId) + '">I do not have my security key — use ' +
-          'a recovery code</a></div>'
+          encodeURIComponent(mfaId) + '">I do not have my passkey — use a ' +
+          'recovery code</a></div>'
         : '') +
       '</div></div>' +
       '<script src="' + WEBAUTHN_SCRIPT_PATH + '"></script></body></html>\n';
@@ -10438,7 +10454,7 @@ class Authn {
       'you have just signed in, wait for the next one.</div>' +
       (alternate
         ? '<div><a href="/authn/webauthn?mfa=' + encodeURIComponent(mfaId) +
-          '">Use your security key instead</a></div>'
+          '">Use your passkey instead</a></div>'
         : '') +
       this.walletFactorLinksHtml(mfaId, step) +
       // THE WAY OUT (2026-09-10), drawn only where the step says this person
@@ -10581,7 +10597,7 @@ class Authn {
     // WHICH MECHANISM THEY ARE STANDING IN FOR, so the page can say what this
     // is instead of. It is the step's, because that is what was asked for.
     const insteadOf = step && step.factor === 'webauthn'
-      ? 'your security key'
+      ? 'your passkey'
       : (step && String(step.factor).indexOf('email-') === 0
         ? 'the emailed ' + (step.factor === 'email-code' ? 'code' : 'link')
         : 'your authenticator app');
@@ -11253,10 +11269,9 @@ class Authn {
                   "is shown again.");
         errorCodes.mark(res, 'STS-AUTHN-0007');
         return this.sendLoginPage(res, this.loginPage(base, record,
-          'This request asked for a second factor, so a security key on its ' +
-          'own ' +
+          'This request asked for a second factor, so a passkey on its own ' +
           'cannot answer it — one factor is one factor. Sign in with a ' +
-          'password and the key together.'));
+          'password and the passkey together.'));
       }
 
       // ---------------------------------------------------------------------
@@ -11285,8 +11300,8 @@ class Authn {
                   "sign in with, and product mode enrols none here.");
         errorCodes.mark(res, 'STS-AUTHN-0206');
         return this.sendLoginPage(res, this.loginPage(base, record,
-          'There is no security key registered for signing in to this ' +
-          'account. Sign in with your password, then add a key at ' +
+          'There is no passkey registered for signing in to this account. ' +
+          'Sign in with your password, then add a passkey at ' +
           '/portal/keys.'));
       }
 
@@ -11895,7 +11910,7 @@ class Authn {
                   "enrolled.");
         errorCodes.mark(res, 'STS-AUTHN-0025');
         return oauthError(res, 400, 'invalid_request',
-          'No security key is enrolled as a second factor for that account.');
+          'No passkey is registered as a second factor for that account.');
       }
       log.debug("Leaving the WebAuthn second-factor screen. Drawn for " +
                 step.username + ".");
@@ -11927,7 +11942,7 @@ class Authn {
         log.debug("Leaving the WebAuthn endpoint. The step had expired.");
         errorCodes.mark(res, 'STS-AUTHN-0019');
         return oauthError(res, 400, 'invalid_request',
-          'This security-key step has expired. Start the request again from ' +
+          'This passkey step has expired. Start the request again from ' +
           'the application that sent you here.');
       }
 
@@ -11945,6 +11960,21 @@ class Authn {
                              step.authn && String(body.mfa_id), step.username,
                              'The browser returned something this server ' +
                              'could not read.'));
+      }
+      if (!credential.error && !credential.response) {
+        // THE REAL BUTTON UNDER THE SCRIPT (#470): pressed with the script
+        // blocked, it posts the step with no credential. Answered as the
+        // portal answers it, rather than as a registration that "could not
+        // be checked".
+        log.debug("Leaving the WebAuthn endpoint. No ceremony ran.");
+        errorCodes.mark(res, 'STS-AUTHN-0022');
+        return this.sendWebauthnPage(res,
+                                     this.webauthnPage(base,
+                                                       String(body.mfa_id),
+            step.username,
+            'Your browser did not run the ceremony. This step needs ' +
+            'JavaScript — a passkey is used by the browser and no form can ' +
+            'do it. Allow scripts for this page and try again.'));
       }
       if (credential.error) {
         // The browser refused the ceremony. Its error is deliberately ambiguous
@@ -12008,10 +12038,9 @@ class Authn {
             return this.sendWebauthnPage(res, this.webauthnPage(base,
                 String(body.mfa_id),
               step.username,
-              'Security keys are switched off in this realm ' +
-              '(webauthn.enabled), ' +
-              'so a new one cannot be enrolled here. A key already enrolled ' +
-              'goes on working.'));
+              'Passkeys are switched off in this realm (webauthn.enabled), ' +
+              'so a new one cannot be registered here. A passkey already ' +
+              'registered goes on working.'));
           }
           verdict = webauthnVerifier.verifyRegistration({
             attestationObject: credential.response.attestationObject,
@@ -12066,9 +12095,9 @@ class Authn {
                        'sign-in screen.');
               verdict = errorCodes.mark({ ok: false,
                           why: 'This service is in product mode, where a ' +
-                               'security key that signs in on its own is ' +
-                               'added at /portal/keys after signing in, ' +
-                               'never at the sign-in screen.' },
+                               'passkey that signs in on its own is added ' +
+                               'at /portal/keys after signing in, never at ' +
+                               'the sign-in screen.' },
                           'STS-AUTHN-0206');
             } else if (!mode.autoCreates() &&
                        !stats.knownUser(step.username)) {
@@ -12078,7 +12107,7 @@ class Authn {
                        'one.');
               verdict = errorCodes.mark({ ok: false,
                           why: 'This service is in product mode, where a ' +
-                               'security key can only be enrolled for ' +
+                               'passkey can only be registered for ' +
                                'somebody who already exists. Create the ' +
                                'person first.' }, 'STS-AUTHN-0024');
             } else {
@@ -12320,7 +12349,7 @@ class Authn {
           self.sendWebauthnPage(res, self.webauthnPage(base,
                                                        String(body.mfa_id),
             step.username,
-            'The security key could not be recorded. Try again.'));
+            'The passkey could not be recorded. Try again.'));
         });
         log.debug("Leaving the WebAuthn endpoint. Writing the registration.");
         return undefined;

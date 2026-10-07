@@ -1648,7 +1648,7 @@ class Portal {
           'six-digit code from Google Authenticator, Microsoft ' +
           'Authenticator, Authy, 1Password, Bitwarden, Aegis, FreeOTP or any ' +
           'other app that implements RFC 6238. <strong>It is a SECOND ' +
-          'factor</strong> — it works beside the password or security key ' +
+          'factor</strong> — it works beside the password or passkey ' +
           'above and never instead of one. Ticking this shows you a QR code ' +
           'on the next step; your account is not set up until you type a ' +
           'code back from it.</p>'
@@ -2853,10 +2853,10 @@ class Portal {
       '<tr><th>Password</th><td>' +
         (mechanisms.password ? 'set' : '<em>none set</em>') +
         ' — <a href="' + self.esc(BASE + '/password') + '">change ' +
-      'it</a></td></tr><tr><th>Security keys</th><td>' +
+      'it</a></td></tr><tr><th>Passkeys</th><td>' +
         (mechanisms.keys.length
-          ? self.esc(String(mechanisms.keys.length)) + ' enrolled'
-          : '<em>none enrolled</em>') +
+          ? self.esc(String(mechanisms.keys.length)) + ' registered'
+          : '<em>none yet</em>') +
         ' — <a href="' + self.esc(BASE + '/keys') + '">see them</a></td></tr>' +
       '<tr><th>Authenticator app</th><td>' +
         (mechanisms.totp
@@ -2883,7 +2883,7 @@ class Portal {
           ? self.esc('required — a password alone will not sign you in. You ' +
                 'will be asked for ' +
                 (mechanisms.secondFactor === 'webauthn'
-                  ? 'your security key' + (mechanisms.totp
+                  ? 'your passkey' + (mechanisms.totp
                       ? ', with a one-time code offered as the alternative'
                       : '')
                   : 'a code from your authenticator app') + '.')
@@ -3625,7 +3625,7 @@ class Portal {
       'service offers.</strong> Anybody who can read your mailbox — with ' +
       'your email password alone, often — can finish signing in as you, ' +
       'which is why NIST SP 800-63B-4 does not count email as an ' +
-      'authenticator. An authenticator app or a security key is better where ' +
+      'authenticator. An authenticator app or a passkey is better where ' +
       'you have one; you are asked for those first.</p></div>';
     log.debug('Leaving Portal.emailFactorCard().');
     return out;
@@ -4206,7 +4206,7 @@ class Portal {
         'certificate stays valid and still chains to this service&rsquo;s ' +
         'root; what changes is that this service stops accepting what the ' +
         'key signs, because the key is no longer registered against you. ' +
-        'Your other signing key, your password, your security keys and your ' +
+        'Your other signing key, your password, your passkeys and your ' +
         'authenticator app are untouched — this is not a way you sign in.</p>'
       : '';
     log.debug("Leaving Portal.profileCard().");
