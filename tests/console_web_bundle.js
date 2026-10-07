@@ -740,10 +740,11 @@ function childMain() {
     // browser after, and its CSRF token. The static console needs none.
     const CONSOLE_ONLY = ['back', 'from', 'csrf_token', 'where', 'anchor'];
     // And per operation: the tab a field grid's Save came back to, and the
-    // view a create form was drawn in, which only a redraw reads.
+    // view a create form or a sub-tab (#500, `WebKit.viewSwitch()`) was
+    // drawn in, which only a redraw reads.
     const CONSOLE_ONLY_AT = {
-      '/admin-api/users/update-fields': ['group'],
-      '/admin-api/applications/update-fields': ['group'],
+      '/admin-api/users/update-fields': ['group', 'view'],
+      '/admin-api/applications/update-fields': ['group', 'view'],
       '/admin-api/users/create': ['view'],
       '/admin-api/applications/create': ['view']
     };
