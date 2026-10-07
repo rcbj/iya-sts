@@ -651,6 +651,16 @@ class DeviceEnrolment {
         (credential.response ? 'a different security key from the one ' +
           'you chose' : 'no assertion — it ran no ceremony') + '.');
     }
+    // WEBAUTHN LEVEL 3 SECTION 7.2 STEP 6 (#474): a returned `userHandle`
+    // must be the one this key was created under.
+    const handled = credentials.userHandleRefusal(username, key,
+      String(credential.response.userHandle || ''), false);
+    if (!handled.ok) {
+      challenges.delete(challenge);
+      log.debug("Leaving DeviceEnrolment.finishLink(). User handle.");
+      return this.refuse('STS-DEVICE-0022', 'The security key\'s assertion ' +
+        'does not belong to this account: ' + handled.why + '.');
+    }
     let verdict: Json = null;
     try {
       verdict = webauthnVerifier.verifyAssertion({

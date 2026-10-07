@@ -8009,7 +8009,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'records amr ["pwd","hwk"] and acr "mfa", a passwordless sign-in ' +
           'records amr ["hwk"] and acr "1" — ONE factor, since this ceremony ' +
           'asks for user verification as preferred rather than required — ' +
-          'and a password-only sign-in records amr ["pwd"] and acr "1". Both ' +
+          'and a password-only sign-in records amr ["pwd"] and acr "1". A ' +
+          'returned userHandle must be the one the key was created under ' +
+          '(Level 3 section 7.2 step 6) — 64 random bytes per person since ' +
+          '#474, never the username. Where webauthn.usernameless is on, the ' +
+          'sign-in screen itself (POST /authn/login, action=passkey) takes a ' +
+          'discoverable credential with no username: the handle names the ' +
+          'account, user verification is required, and the session records ' +
+          'amr ["hwk","user"] and acr "mfa". Both ' +
           'key paths are authentications in their own right, so both appear ' +
           'on /admin/users and seed a directory entry; the second factor ' +
           'additionally flags that entry mfaAuthenticated TRUE. The RP ID is ' +

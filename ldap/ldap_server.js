@@ -2355,6 +2355,12 @@ const OWN_NAMES = [
   // `common/credentials.ts` argues all of it.
   'stsWebauthnCredential', 'stsActivationToken', 'stsActivationExpires',
   'stsTotpCredential',
+  // THE WEBAUTHN USER HANDLE (#474): 64 random bytes, base64url, one per
+  // person, that every passkey they register is created under and that a
+  // discoverable credential hands back to say whose it is. Not a secret —
+  // an authenticator stores it in the clear — and not the username, which
+  // it was until #474. `common/credentials.ts` argues it.
+  'stsWebauthnUserHandle',
 
   // THE BOOTSTRAP ADMINISTRATOR'S FLAGS (2026-09-13) — see readPersonFlags().
   // `pwdReset` is draft-behera-ldap-password-policy's name, spelt as that draft
@@ -9515,6 +9521,10 @@ function operationalWriteRefusal(req, operation, dn, types) {
 const CREDENTIAL_ATTRIBUTE_DOORS = {
   stswebauthncredential: '/portal/keys, the sign-in ' +
     'screen, or /admin/users (remove)',
+  // The handle every passkey is created under (#474): rewritten by hand it
+  // would sign the person in as nobody, or as somebody else.
+  stswebauthnuserhandle: 'the first passkey registered at /portal/keys or ' +
+    'the sign-in screen, which mints it',
   ststotpcredential: '/portal/mfa, or /admin/users (clear)',
   stsbackupcodes: '/portal/mfa, or /admin/users (clear)',
   stsapppassword: '/portal/app-passwords, or /admin/users',
@@ -9767,6 +9777,76 @@ function replaceWebauthnValues(key, values) {
   log.debug('Leaving replaceWebauthnValues(). ' +
             ((values || []).length) + ' key(s) left.');
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// THE WEBAUTHN USER HANDLE (#474), on the same entry: single-valued, minted
+// once by `common/credentials.ts` and never rewritten by it, and the only
+// value a usernameless sign-in finds a person by.
+//
+// FOUND THROUGH AN INDEX THAT IS CHECKED RATHER THAN KEPT. A hit is read
+// back from the entry it names, so an entry that changed since is a miss,
+// never a wrong answer; a miss rebuilds the index only when the directory has
+// been written since it was built, so an unknown handle presented twice costs
+// one walk. A walk is over the holders of the attribute (`eachHolderOfAny()`),
+// which in #349's window is the store's answer rather than a resident scan.
+// ---------------------------------------------------------------------------
+const userHandleIndexes = realms.keyed(function () {
+  return { index: null, version: -1 };
+});
+
+function readWebauthnUserHandle(key) {
+  log.debug('Entering readWebauthnUserHandle(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  const value = stored
+    ? String((stored.attributes.stswebauthnuserhandle || [])[0] || '') : '';
+  log.debug('Leaving readWebauthnUserHandle(). ' + (value ? 'Held.' : 'None.'));
+  return value;
+}
+
+function writeWebauthnUserHandle(key, value) {
+  log.debug('Entering writeWebauthnUserHandle(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored || !isPersonEntry(stored)) {
+    log.debug('Leaving writeWebauthnUserHandle(). No person entry.');
+    return false;
+  }
+  stored.attributes.stswebauthnuserhandle = [String(value)];
+  touchDirectory(stored.dn);
+  log.debug('Leaving writeWebauthnUserHandle(). Written to ' + stored.dn +
+            '.');
+  return true;
+}
+
+// The username of the PERSON whose entry holds `handle`, or ''.
+function webauthnUserHandleOwner(handle) {
+  log.debug('Entering webauthnUserHandleOwner().');
+  const wanted = String(handle || '');
+  const cache = userHandleIndexes();
+  const ownerAt = function (key) {
+    const stored = key ? getEntry(key) : null;
+    return stored && isPersonEntry(stored) &&
+      String((stored.attributes.stswebauthnuserhandle || [])[0] || '') ===
+        wanted
+      ? String((stored.attributes.uid || [])[0] || usernameOfEntry(stored))
+      : '';
+  };
+  let owner = wanted && cache.index ? ownerAt(cache.index.get(wanted)) : '';
+  if (!owner && wanted && cache.version !== directoryVersion) {
+    const index = new Map();
+    eachHolderOfAny(['stswebauthnuserhandle'], function (stored) {
+      const value = String((stored.attributes.stswebauthnuserhandle ||
+                            [])[0] || '');
+      if (value && isPersonEntry(stored) && !index.has(value)) {
+        index.set(value, stored.dn);
+      }
+    });
+    cache.index = index;
+    cache.version = directoryVersion;
+    owner = ownerAt(index.get(wanted));
+  }
+  log.debug('Leaving webauthnUserHandleOwner(). ' + (owner || 'nobody'));
+  return owner;
 }
 
 // ---------------------------------------------------------------------------
@@ -10796,6 +10876,10 @@ if (typeof credentials.setDirectory === 'function') {
     readWebauthn: readWebauthnValues,
     writeWebauthn: writeWebauthnValue,
     replaceWebauthn: replaceWebauthnValues,
+    // The WebAuthn user handle (#474), checked where it is used.
+    readWebauthnUserHandle: readWebauthnUserHandle,
+    writeWebauthnUserHandle: writeWebauthnUserHandle,
+    webauthnUserHandleOwner: webauthnUserHandleOwner,
     readActivation: readActivation,
     writeActivation: writeActivation,
     // The authenticator app (2026-09-10). Checked WHERE THEY ARE USED rather

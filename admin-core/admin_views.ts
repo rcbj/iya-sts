@@ -12233,7 +12233,9 @@ class AdminViews {
                  transports: Array.isArray(one.transports) ? one.transports
                                                            : [],
                  discoverable: typeof one.discoverable === 'boolean'
-                   ? one.discoverable : null };
+                   ? one.discoverable : null,
+                 // WHETHER IT SIGNS IN WITH NO USERNAME (#474), and why not.
+                 withoutUsername: credentials.withoutUsername(one) };
       }),
       primaryKeys: mech.primaryKeys,
       mfaKeys: mech.mfaKeys,

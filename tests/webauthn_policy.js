@@ -296,12 +296,13 @@ function run(t) {
       t.check(!Object.prototype.hasOwnProperty
                 .call(passkey.authenticatorSelection,
                       'authenticatorAttachment') &&
-              passkey.authenticatorSelection.residentKey === 'preferred' &&
-              passkey.authenticatorSelection.requireResidentKey === false &&
+              passkey.authenticatorSelection.residentKey === 'required' &&
+              passkey.authenticatorSelection.requireResidentKey === true &&
               JSON.stringify(passkey.hints) === '["client-device","hybrid"]',
-        'CREATE A PASSKEY asks for no attachment, a discoverable credential ' +
-        '(preferred, because "discouraged" is what sends Chrome and Edge to ' +
-        'a USB key and never the device) and hints the device then hybrid',
+        'CREATE A PASSKEY asks for no attachment, REQUIRES a discoverable ' +
+        'credential whatever webauthn.residentKey says (#474: a passkey is ' +
+        'one the usernameless sign-in can find) and hints the device then ' +
+        'hybrid',
         JSON.stringify(passkey));
       t.check(key.authenticatorSelection.authenticatorAttachment ===
                 'cross-platform' &&

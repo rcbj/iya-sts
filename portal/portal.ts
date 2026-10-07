@@ -1786,6 +1786,7 @@ class Portal {
       ' data-challenge="' + self.esc(pending.challenge) + '"' +
       ' data-rpid="' + self.esc(rpId) + '"' +
       ' data-user="' + self.esc(username) + '"' +
+      ' data-userid="' + self.esc(pending.userHandle || '') + '"' +
       ' data-allow=""' +
       ' data-exclude="' + self.esc((pending.exclude || []).join(',')) + '"' +
       ' data-options="' +
@@ -3021,9 +3022,8 @@ class Portal {
   // #470): the list carries a `wa-signal` element the shared script reads,
   // telling the credential manager which of this person's passkeys this
   // service still accepts — so a passkey removed here leaves their phone too
-  // — and their name. Only where no other trust realm can share the RP ID
-  // and the user handle (`signalBlock()` says why), and never while a
-  // ceremony is armed.
+  // — and their name. Only for a person holding a user handle this service
+  // minted (`signalBlock()` says why), and never while a ceremony is armed.
   // ===========================================================================
   private keysPage(session, message, error, base, named?) {
     const self = this;
@@ -3134,6 +3134,11 @@ class Portal {
       '</td></tr>' +
       '<tr><th>Backup</th><td>' + self.esc(backup) + '</td></tr>' +
       '<tr><th>Transports</th><td>' + self.esc(transports) + '</td></tr>' +
+      // WHETHER IT SIGNS IN WITH NO USERNAME (#474): a key from before the
+      // user handle, a second-step key and one not stored on the
+      // authenticator do not, and the person is told which.
+      '<tr><th>Without a username</th><td>' +
+      self.esc(credentials.withoutUsername(one).text) + '</td></tr>' +
       '<tr><th>Algorithm</th><td><code>' + self.esc(algorithm.text) +
       '</code>' + (algorithm.postQuantum ? ' post-quantum' : '') +
       (algorithm.insecure ? ' <strong>insecure</strong>' : '') +
@@ -3218,28 +3223,31 @@ class Portal {
   // the shared script, which tells the credential manager every credential
   // id this person may still sign in with and their name.
   //
-  // **ONLY WHERE NO OTHER TRUST REALM IS DEFINED.** A passkey is filed by
-  // the credential manager under the RP ID and the user handle, and both
-  // are shared between realms today — the RP ID is the host, which every
-  // realm answers on, and the user handle is the username. So the same
-  // username in two realms is one account to the credential manager, and
-  // *these are all the credentials this account accepts* sent from one
-  // realm would hide the other realm's passkeys. That is a property of the
-  // user handle, which #474 (discoverable credentials) owns; until it
-  // changes, a service with realms sends no signal rather than a wrong one.
+  // **ONLY UNDER A USER HANDLE THIS SERVICE MINTED (#474).** A passkey is
+  // filed by the credential manager under the RP ID and the user handle.
+  // The RP ID is the host, which every realm answers on, and until #474 the
+  // handle was the username — so the same username in two realms was one
+  // account to the credential manager, and *these are all the credentials
+  // this account accepts* sent from one realm would have hidden the other
+  // realm's passkeys, which is why this sent nothing wherever realms were
+  // defined. The handle is 64 random bytes per person now, unique to one
+  // entry in one realm, so the signal names exactly this person's
+  // credentials wherever they are. A person who holds no handle (only keys
+  // registered before #474, under their name) is sent no signal: the old
+  // handle is still the shared one.
   private signalBlock(session, keys, base) {
     const self = this;
-    const { authn, log, realms } = this.deps;
+    const { authn, credentials, log } = this.deps;
     log.debug('Entering Portal.signalBlock().');
-    if (realms.active()) {
-      log.debug('Leaving Portal.signalBlock(). Realms are defined.');
+    const username = String(session.user.username || '');
+    const handle = credentials.userHandleOf(username);
+    if (!handle) {
+      log.debug('Leaving Portal.signalBlock(). No user handle is held.');
       return '';
     }
-    const username = String(session.user.username || '');
     const html = '<div id="wa-signal" hidden' +
       ' data-rpid="' + self.esc(authn.rpIdOf(base)) + '"' +
-      ' data-userid="' + self.esc(Buffer.from(username, 'utf8')
-        .toString('base64url')) + '"' +
+      ' data-userid="' + self.esc(handle) + '"' +
       ' data-accepted="' + self.esc(keys.map(function (one) {
         return one.credentialId;
       }).join(',')) + '"' +
@@ -3404,6 +3412,7 @@ class Portal {
         ' data-challenge="' + self.esc(pending.challenge) + '"' +
         ' data-rpid="' + self.esc(rpId) + '"' +
         ' data-user="' + self.esc(username) + '"' +
+        ' data-userid="' + self.esc(pending.userHandle || '') + '"' +
         ' data-display="' + self.esc(String(session.user.name || username)) +
         '"' +
         ' data-allow=""' +

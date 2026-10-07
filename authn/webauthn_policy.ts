@@ -301,6 +301,8 @@ class WebauthnPolicy {
                          'discouraged'),
       credProps: config.value('webauthn.credProps') !== false,
       primaryAllowed: config.value('webauthn.primaryAllowed') !== false,
+      // A SIGN-IN WITH NO USERNAME (#474): off unless set, rcbj's decision.
+      usernameless: config.value('webauthn.usernameless') === true,
       mfaAllowed: config.value('webauthn.mfaAllowed') !== false,
       // The two algorithm flags (2026-10-01).
       insecureAlgorithms: this.insecureAlgorithmsAllowed(),
@@ -699,8 +701,10 @@ class WebauthnPolicy {
   // ("Create a passkey") or `security-key` ("Use a security key"), the two
   // `authenticatorKinds()` offers.
   //
-  //   * `passkey` asks for a discoverable credential (`preferred`, unless
-  //     the setting says `required`) and HINTS `client-device` then `hybrid`
+  //   * `passkey` REQUIRES a discoverable credential (#474, rcbj's decision:
+  //     a passkey is one that can be found without a username, so one that
+  //     cannot is not made under that name) and HINTS `client-device` then
+  //     `hybrid`
   //     (WebAuthn Level 3 section 5.4.8) — and sends NO attachment, which is
   //     the lesson of 2026-09-26: a hard `platform` refused outright on a
   //     browser with nothing built in (Linux Firefox), where a hint lets the
@@ -734,9 +738,7 @@ class WebauthnPolicy {
     const wanted = String(kind || '');
     const asked = live.authenticatorAttachment === 'any' &&
                   wanted === 'security-key' ? 'cross-platform' : '';
-    const residentKey = wanted === 'passkey' &&
-                        live.residentKey !== 'required'
-      ? 'preferred' : live.residentKey;
+    const residentKey = wanted === 'passkey' ? 'required' : live.residentKey;
     const hints = wanted === 'passkey' ? ['client-device', 'hybrid']
       : (wanted === 'security-key' ? ['security-key'] : []);
     // A POLICY THAT NEEDS A STATEMENT ASKS FOR ONE (#105). `none` and
@@ -818,6 +820,63 @@ class WebauthnPolicy {
     };
     log.debug('Leaving WebauthnPolicy.requestOptions(). uv=' +
               out.userVerification);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE USERNAMELESS SIGN-IN (#474): a passkey the browser finds by itself —
+  // a discoverable credential, `allowCredentials` empty — from the button on
+  // the sign-in screen or the username field's autofill.
+  //
+  // **OFFERED ONLY WHERE A PRIMARY KEY IS**: `webauthn.enabled`,
+  // `webauthn.primaryAllowed` and `webauthn.usernameless`, which is OFF by
+  // default. **USER VERIFICATION IS REQUIRED AND CHECKED**, whatever
+  // `webauthn.userVerification` says (rcbj's decision): the sign-in is then
+  // a key the person possesses and a PIN or biometric that verified them on
+  // it, two factors on one device, recorded `amr ["hwk","user"]` and `acr
+  // "mfa"`. Without the flag it would be possession alone of a credential
+  // that names its own account, which no setting should be able to allow.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a usernameless passkey sign-in is offered in this realm.
+   *
+   * @returns `{ ok: true }`, or `{ ok: false, why }` naming the setting
+   */
+  usernamelessOffered() {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering WebauthnPolicy.usernamelessOffered().");
+    const live = this.settings();
+    const why = !live.enabled
+      ? 'Passkeys are switched off in this realm (webauthn.enabled).'
+      : (!live.primaryAllowed
+        ? 'A passkey may not sign anybody in on its own in this realm ' +
+          '(webauthn.primaryAllowed).'
+        : (!live.usernameless
+          ? 'Signing in with a passkey and no username is switched off in ' +
+            'this realm (webauthn.usernameless).'
+          : ''));
+    log.debug("Leaving WebauthnPolicy.usernamelessOffered(). " +
+              (why ? 'No.' : 'Yes.'));
+    return why ? errorCodes.mark({ ok: false, why: why }, 'STS-AUTHN-0301')
+               : { ok: true };
+  }
+
+  /**
+   * Builds the authentication options of a usernameless ceremony: no
+   * `allowCredentials`, and user verification required.
+   *
+   * @param rpId - the relying party id
+   * @returns the RP id, `userVerification: required` and the timeout
+   */
+  discoverableRequestOptions(rpId) {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.discoverableRequestOptions().');
+    const out = {
+      rpId: rpId,
+      userVerification: 'required',
+      timeout: this.settings().timeoutMs
+    };
+    log.debug('Leaving WebauthnPolicy.discoverableRequestOptions().');
     return out;
   }
 
@@ -907,6 +966,7 @@ class WebauthnPolicy {
       credProps: live.credProps,
       primaryAllowed: live.primaryAllowed,
       mfaAllowed: live.mfaAllowed,
+      usernameless: live.usernameless,
       maxKeysPerPerson: live.maxKeysPerPerson,
       signatureCounter: 'checked — an authenticator\'s counter only ever ' +
                         'goes up, so one that went backwards is a cloned key.',
@@ -960,6 +1020,8 @@ export = {
   creationOptions: slot.forward('creationOptions'),
   authenticatorKinds: slot.forward('authenticatorKinds'),
   requestOptions: slot.forward('requestOptions'),
+  usernamelessOffered: slot.forward('usernamelessOffered'),
+  discoverableRequestOptions: slot.forward('discoverableRequestOptions'),
   requireUserVerification: slot.forward('requireUserVerification'),
   attestationSettings: slot.forward('attestationSettings'),
   ATTESTATION_FORMATS: ATTESTATION_FORMATS,

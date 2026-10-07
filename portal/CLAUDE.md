@@ -466,16 +466,15 @@ What that changed, and why each piece is the way it is:
   credential change.
 * **The Signal API** (WebAuthn Level 3 section 5.1.10) runs in the same
   shared script, which reads a `wa-signal` element: all accepted credential
-  ids, plus the display name. `signalBlock()` draws the element only when NO
-  OTHER REALM IS DEFINED:
-  - the RP ID is the host every realm shares, and the user handle is the
-    username;
-  - so the same username in two realms is one account to a credential
-    manager;
-  - and "these are all the credentials" sent from one realm would hide the
-    other realm's passkeys.
-
-  The user handle is #474's to change. The element is never drawn while a
+  ids, plus the display name, under the person's USER HANDLE (#474) — 64
+  random bytes on their entry, unique to one entry in one realm. Until
+  #474 the handle was the username, so the same username in two realms
+  was one account to a credential manager and the element was drawn only
+  where no other realm was defined. Now `signalBlock()` draws it for
+  anybody holding a minted handle, and for nobody else: a person whose
+  keys all predate #474 shares the old name handle across realms still.
+  Every ceremony on this page creates the credential under the handle
+  (`data-userid`, from the pending enrolment). The element is never drawn while a
   ceremony is armed, so the page loads one script tag. Every response of
   both handlers and of `remove-key` and `rename-key` goes through
   `sendKeysPage()`, so the script is allowed wherever the element is drawn.

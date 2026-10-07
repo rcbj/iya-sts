@@ -263,17 +263,44 @@ The name is a label for the owner, and nothing this service decides reads it.
 **Creating one:**
 
 * There are two buttons. *Create a passkey* hints `client-device`, then
-  `hybrid`, and prefers a discoverable credential. *Use a security key* asks
-  for `cross-platform` and hints `security-key`.
+  `hybrid`, and REQUIRES a discoverable credential (`residentKey:
+  required`), so the passkey can sign in with no username. *Use a security
+  key* asks for `cross-platform` and hints `security-key`.
+* Every passkey a person registers is created under their **user handle**:
+  64 random bytes stored on their entry, never their username (WebAuthn
+  Level 3 section 5.4.3). A passkey's authenticator hands it back, and an
+  assertion whose handle is not the one its key was created under is
+  refused (section 7.2, step 6).
 * The new passkey is offered a nickname straight after it is created.
 * A person renames one with `POST /portal/rename-key`, an operator with
   `POST /admin-api/users/rename-key`. An empty name restores the default.
 
-**Where no other trust realm is defined**, the page also uses the WebAuthn
-Signal API. It tells the person's credential manager which passkeys are still
-accepted, so one removed here disappears there too, and gives it their display
-name. With realms defined it sends nothing, because every realm shares the RP
-ID and the user handle.
+The page also uses the WebAuthn Signal API, under the person's user handle.
+It tells their credential manager which passkeys are still accepted, so one
+removed here disappears there too, and gives it their display name. A person
+whose passkeys were all registered before the user handle existed (when it
+was the username, which every realm shares) is sent nothing.
+
+**Signing in with a passkey and no username** (`webauthn.usernameless`, off
+by default). Where it is on, the sign-in screen draws *Sign in with a
+passkey*, and the username field offers passkeys as autofill in browsers that
+support conditional mediation. The browser is asked for any passkey of this
+service, the user handle it returns names the account, and:
+
+* **user verification is required** — a PIN or biometric on the
+  authenticator — whatever `webauthn.userVerification` says, so the session
+  records `amr ["hwk","user"]` and `acr "mfa"`;
+* only a passkey registered for **signing in** (not one used as a second
+  step after a password) answers it;
+* a passkey registered before this existed was created under the username,
+  and still works only where the username is typed — register it again to
+  use it without one;
+* nothing is enrolled at the sign-in screen this way;
+* a passkey this service holds for nobody is reported to the browser
+  (`signalUnknownCredential`), where only one trust realm is defined.
+
+The button is a real submit button; without JavaScript it explains that a
+passkey needs it, and the password form works as before.
 
 ### TOTP MFA
 
@@ -585,9 +612,10 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | Attestation conveyance asked for; no statement is verified. |
 | `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` hint handed to the browser. |
 | `webauthn.authenticatorAttachment` | `STS_WEBAUTHN_ATTACHMENT` | `any` | yes | `platform`, `cross-platform` or `any`; a filter in the browser. |
-| `webauthn.residentKey` | `STS_WEBAUTHN_RESIDENT_KEY` | `discouraged` | yes | Whether the credential should be discoverable on the authenticator. |
+| `webauthn.residentKey` | `STS_WEBAUTHN_RESIDENT_KEY` | `discouraged` | yes | Whether the credential should be discoverable on the authenticator, for the sign-in screen's ceremony and *Use a security key*; *Create a passkey* always asks `required`. |
 | `webauthn.credProps` | `STS_WEBAUTHN_CRED_PROPS` | `true` | yes | Ask the browser to report whether the credential is discoverable. |
 | `webauthn.primaryAllowed` | `STS_WEBAUTHN_PRIMARY_ALLOWED` | `true` | yes | Allow a key to be the only credential (passwordless). |
+| `webauthn.usernameless` | `STS_WEBAUTHN_USERNAMELESS` | `false` | yes | Offer a passkey sign-in with no username: a button and autofill on the sign-in screen; user verification required, `acr "mfa"`. |
 | `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` | yes | Allow a key to be enrolled as a second factor. |
 | `webauthn.maxKeysPerPerson` | `STS_WEBAUTHN_MAX_KEYS` | `10` | yes | How many keys one person may hold; refuses the enrolment, never a sign-in. |
 

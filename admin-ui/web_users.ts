@@ -1904,7 +1904,11 @@ class UsersPage {
           ? '<span class="state-valid" title="' +
             kit.esc('Signs them in on its own — this is a way IN rather ' +
                      'than a second factor.') + '">primary</span>'
-          : 'second factor') + '</td>' +
+          : 'second factor') +
+        // WHETHER IT SIGNS IN WITH NO USERNAME (#474), from the view.
+        (one.role === 'primary' && one.withoutUsername
+          ? '<div class="note">' + kit.esc('without a username: ' +
+              one.withoutUsername.text) + '</div>' : '') + '</td>' +
         // `kit.shortened()` EMITS ITS OWN `<code title=…>` AND ESCAPES THE
         // TEXT, so there is neither a kit.esc() nor a wrapper here. The first
         // version had both, and the cell rendered the literal characters

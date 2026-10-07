@@ -910,8 +910,10 @@ const LOGIN_FORM = vz.object({
   // whether a credential is issued, refused or issued to nobody in particular.
   // `email-code` and `email-link` (#64): a first factor mailed to the
   // person, asked for with the username alone.
+  // `passkey` (#474): a passkey and no username, from the screen's button or
+  // its autofill, with the assertion in `passkey_credential`.
   action: vt.opt(vt.oneOf(['login', 'cancel', 'anonymous', 'email-code',
-                           'email-link'])),
+                           'email-link', 'passkey'])),
   username: vt.opt(vt.name),
   password: vz.string().max(1024).optional(),
   // THE BROWSER FINGERPRINT (#62 P6), where `risk.fingerprinting` put the
@@ -923,6 +925,9 @@ const LOGIN_FORM = vz.object({
   // "REMEMBER THIS BROWSER" (#265): a device known by a signed and encrypted
   // cookie, registered when the session starts (`common/browser_devices.ts`).
   remember_browser: vt.opt(vt.flag),
+  // The usernameless ceremony's result (#474), bounded and parsed downstream
+  // as `WEBAUTHN_FORM`'s `credential` is.
+  passkey_credential: vz.string().max(validation.CAP.TEXT).optional(),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -1062,6 +1067,74 @@ const WEBAUTHN_SCRIPT = [
   '        displayName: sg.getAttribute("data-display") }).catch(quiet);',
   '    }',
   '  }',
+  // A PASSKEY AND NO USERNAME (#474), where the sign-in screen carries a
+  // wa-passkey element: the button runs a ceremony with no allowCredentials
+  // and user verification required, and where the browser supports
+  // conditional mediation the username field offers the same passkeys as it
+  // loads (WebAuthn Level 3 section 5.1.4, mediation "conditional"). Both
+  // post through the screen's own form, with action=passkey. The pending
+  // autofill request is aborted before the button's own ceremony, which a
+  // browser refuses to run beside it. And a credential the last attempt
+  // named that this realm holds for nobody is reported to the credential
+  // manager (section 5.1.10, signalUnknownCredential), where the page says
+  // so.
+  '  var pk = document.getElementById("wa-passkey");',
+  '  var pkGo = document.getElementById("wa-passkey-go");',
+  '  if (pk && pkGo && window.PublicKeyCredential && navigator.credentials) {',
+  '    var pkRp = pk.getAttribute("data-rpid");',
+  '    var pkUnknown = pk.getAttribute("data-unknown");',
+  '    if (pkUnknown && PublicKeyCredential.signalUnknownCredential) {',
+  '      PublicKeyCredential.signalUnknownCredential({ rpId: pkRp,',
+  '        credentialId: pkUnknown }).catch(function () {});',
+  '    }',
+  '    var po = {};',
+  '    try { po = JSON.parse(pk.getAttribute("data-options") || "{}") || {}; }',
+  '    catch (e) { po = {}; }',
+  '    var pkOptions = function () {',
+  '      return { challenge: bytes(pk.getAttribute("data-challenge")),',
+  '        rpId: po.rpId || pkRp, allowCredentials: [],',
+  '        userVerification: "required", timeout: po.timeout || 60000 };',
+  '    };',
+  '    var pkSend = function (payload) {',
+  '      document.getElementById("wa-passkey-credential").value = ' +
+  'JSON.stringify(payload);',
+  '      document.getElementById("wa-passkey-action").disabled = false;',
+  '      pkGo.form.submit();',
+  '    };',
+  '    var pkAssertion = function (a) {',
+  '      return { id: a.id, rawId: b64u(a.rawId), type: a.type,',
+  '        authenticatorAttachment: a.authenticatorAttachment || null,',
+  '        response: {',
+  '          clientDataJSON: b64u(a.response.clientDataJSON),',
+  '          authenticatorData: b64u(a.response.authenticatorData),',
+  '          signature: b64u(a.response.signature),',
+  '          userHandle: a.response.userHandle ? ' +
+  'b64u(a.response.userHandle) : null } };',
+  '    };',
+  '    var pkAbort = null;',
+  '    if (PublicKeyCredential.isConditionalMediationAvailable &&',
+  '        window.AbortController) {',
+  '      PublicKeyCredential.isConditionalMediationAvailable()',
+  '        .then(function (yes) {',
+  '          if (!yes) { return null; }',
+  '          pkAbort = new AbortController();',
+  '          return navigator.credentials.get({ mediation: "conditional",',
+  '            signal: pkAbort.signal, publicKey: pkOptions() })',
+  '            .then(function (a) { if (a) { pkSend(pkAssertion(a)); } });',
+  '        })',
+  // Aborted by the button, or declined: the page goes on as a form.
+  '        .catch(function () {});',
+  '    }',
+  '    pkGo.addEventListener("click", function (ev) {',
+  '      ev.preventDefault();',
+  '      if (pkAbort) { pkAbort.abort(); pkAbort = null; }',
+  '      navigator.credentials.get({ publicKey: pkOptions() })',
+  '        .then(function (a) { pkSend(pkAssertion(a)); })',
+  '        .catch(function (e) {',
+  '          pkSend({ error: e.name, message: e.message });',
+  '        });',
+  '    });',
+  '  }',
   // NO CEREMONY ON THIS PAGE (#470): the passkey list carries the signal and
   // no button, so the script stops here rather than throwing.
   '  if (!d || !document.getElementById("wa-go")) { return; }',
@@ -1091,8 +1164,10 @@ const WEBAUTHN_SCRIPT = [
   '    if (d.getAttribute("data-mode") === "create") {',
   '      p = navigator.credentials.create({ publicKey: {',
   '        rp: o.rp || { name: "IYA STS", id: rpId },',
-  '        user: { id: new TextEncoder().encode(user), name: user, ' +
-  'displayName: d.getAttribute("data-display") || user },',
+  // THE USER HANDLE (#474): 64 random bytes the page names, never the
+  // username — WebAuthn Level 3 section 5.4.3.
+  '        user: { id: bytes(d.getAttribute("data-userid") || ""), ' +
+  'name: user, displayName: d.getAttribute("data-display") || user },',
   '        challenge: challenge,',
   '        pubKeyCredParams: algs,',
   '        authenticatorSelection: sel,',
@@ -4636,8 +4711,13 @@ class Authn {
       mechanism = 'emailCode';
     } else if (kind === 'email-link') {
       mechanism = 'emailLink';
-    } else if (kind === 'webauthn' && role === 'primary') {
+    } else if (kind === 'webauthn' && factors.indexOf('pwd') < 0) {
+      // A PASSKEY AS THE FIRST FACTOR, alone (`["hwk"]`) or with the
+      // verification the authenticator performed (`["hwk","user"]`, #474):
+      // either way no other first factor was presented, and a passkey is
+      // what the policy is asked about.
       mechanism = 'passkey';
+      role = 'primary';
     }
     // A held second factor is never refused here (see the caller).
     const refused = mechanism && !authnPolicy.allows(mechanism, role);
@@ -8202,7 +8282,8 @@ class Authn {
     return offered;
   }
 
-  private loginPage(base, record, error) {
+  private loginPage(base, record, error, extra?: { unknownCredential?:
+                                                    string }) {
     const { log, xmlEscape, config, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.loginPage(). protocol=" + record.protocol +
               (error ? ", showing an error" : ""));
@@ -8235,6 +8316,12 @@ class Authn {
       offers('webauthn');
     const passwordFirst = policy.allows('password', 'primary') &&
       (offers('password') || offers('password-mfa'));
+    // A PASSKEY AND NO USERNAME (#474), where `passkeyOffered()` says so: a
+    // button, the username field's autofill, and the ceremony's data. Its
+    // challenge is armed on the record now, because conditional mediation
+    // starts the ceremony as the page loads.
+    const passkey = this.passkeyOffered(record).ok;
+    const passkeyRpId = passkey ? this.rpIdOf(base) : '';
     const emailFirst = locked || record.forceKey || record.forcePasswordless ||
       restricted.length
       ? { code: false, link: false }
@@ -8264,7 +8351,11 @@ class Authn {
         ? '<input type="hidden" name="device_fp" id="device-fp" value="">'
         : '') + '<label ' +
       'for="username">Username</label><input type="text" id="username" ' +
-      'name="username" autocomplete="username" ' +
+      // `webauthn` LAST in the token list (HTML's autofill detail tokens):
+      // the field offers this realm's passkeys where the browser supports
+      // conditional mediation, and is an ordinary username field elsewhere.
+      'name="username" autocomplete="username' + (passkey ? ' webauthn' : '') +
+      '" ' +
       (locked ? 'readonly ' : 'autofocus ') +
       'value="' + xmlEscape(record.hint) + '">' +
       (passwordFirst
@@ -8401,6 +8492,30 @@ class Authn {
          : '') +
       '<button type="submit" id="kc-cancel" name="action" value="cancel" ' +
       'class="secondary">Cancel</button></div>' +
+      // A PASSKEY AND NO USERNAME (#474). A REAL SUBMIT BUTTON (the root
+      // CLAUDE.md's rule for a scripted page): with the script it runs the
+      // ceremony and posts its result through the two hidden inputs; with
+      // the script blocked it posts `action=passkey` and nothing else, and
+      // the handler says the ceremony needs JavaScript. After Sign In, so
+      // Enter in the username field still means Sign In.
+      (passkey
+        ? '<div class="row"><button type="submit" id="wa-passkey-go" ' +
+          'name="action" value="passkey" class="secondary">Sign in with a ' +
+          'passkey</button></div>' +
+          '<input type="hidden" name="passkey_credential" ' +
+          'id="wa-passkey-credential" value="">' +
+          '<input type="hidden" name="action" id="wa-passkey-action" ' +
+          'value="passkey" disabled>' +
+          '<div id="wa-passkey" hidden' +
+          ' data-challenge="' + xmlEscape(this.passkeyChallengeFor(record)) +
+          '"' +
+          ' data-rpid="' + xmlEscape(passkeyRpId) + '"' +
+          ' data-options="' + xmlEscape(JSON.stringify(
+            webauthnPolicy.discoverableRequestOptions(passkeyRpId))) + '"' +
+          ' data-unknown="' +
+          xmlEscape(String((extra && extra.unknownCredential) || '')) +
+          '"></div>'
+        : '') +
       // THE EMAILED FIRST FACTORS (#64): submit buttons of THIS form, so the
       // username above goes with them and no script is needed. The handler
       // decides again whether they are allowed; the page only shows.
@@ -8486,6 +8601,12 @@ class Authn {
           'statement as the line above and not a weaker one.</div>' +
           '<div>Signing in for: ') +
       '<code>' + xmlEscape(record.protocol) + '</code></div>' +
+      (passkey
+        ? '<div>Sign in with a passkey: no username — the passkey names ' +
+          'your account, and it must verify you with its PIN or biometric, ' +
+          'so the tokens say two factors (amr ["hwk","user"], acr ' +
+          '"mfa").</div>'
+        : '') +
       record.details.map(function (d) {
         return '<div>' + xmlEscape(d.label) + ': <code>' +
                xmlEscape(d.value == null ? '' : d.value) +
@@ -8494,6 +8615,8 @@ class Authn {
       }).join('') +
       '</div></div>' + (this.fingerprinting()
         ? '<script src="' + FINGERPRINT_SCRIPT_PATH + '"></script>' : '') +
+      (passkey && screenOffered
+        ? '<script src="' + WEBAUTHN_SCRIPT_PATH + '"></script>' : '') +
       '</body></html>\n';
     log.debug("Leaving Authn.loginPage().");
     return page;
@@ -8735,7 +8858,13 @@ class Authn {
     // and nothing else, through the builder so the framing clauses stay.
     // The form still works with the script blocked — the fingerprint is an
     // extra field, and an empty one decides nothing.
-    if (this.fingerprinting()) {
+    // AND WHILE THE SCREEN OFFERS A PASSKEY WITH NO USERNAME (#474), for
+    // `/authn/webauthn.js`: read off the markup this function is handed, so
+    // the page and its policy cannot disagree about whether it runs a
+    // script.
+    if (this.fingerprinting() ||
+        String(html).indexOf('<script src="' + WEBAUTHN_SCRIPT_PATH +
+                             '"') >= 0) {
       res.set('Content-Security-Policy',
               app.contentSecurityPolicy({ 'script-src': "'self'" }));
     }
@@ -9811,6 +9940,16 @@ class Authn {
       return one.role === wantedRole;
     });
     const mode = known.length ? 'get' : 'create';
+    // THE USER HANDLE THE CREDENTIAL IS CREATED UNDER (#474), on the step so
+    // the registration branch records the one the browser was given. The
+    // person's own where their entry holds or can hold one; a fresh one for
+    // a name with no entry yet (development's first use), adopted when the
+    // key is written.
+    if (mode === 'create' && step && !step.userHandle) {
+      step.userHandle = credentials.userHandleOf(username, { mint: true }) ||
+                        credentials.newUserHandle();
+      pendingMfa.set(mfaId, step);
+    }
     // Read ONCE and used by the data attribute, the RP ID line and the line
     // that says what is being asked for. rpIdOf() logs when it refuses a
     // configured value, and calling it three times would print that warning
@@ -9873,6 +10012,7 @@ class Authn {
       ' data-challenge="' + xmlEscape(step ? step.challenge : '') + '"' +
       ' data-rpid="' + xmlEscape(rpId) + '"' +
       ' data-user="' + xmlEscape(username) + '"' +
+      ' data-userid="' + xmlEscape(step && step.userHandle || '') + '"' +
       // EVERY key of this role, comma-separated, because a person may hold
       // several and the authenticator picks. Empty on the enrolment path, where
       // there is nothing to allow.
@@ -10258,6 +10398,311 @@ class Authn {
     log.debug("Leaving Authn.rpIdOf(). " + host +
               " (the configured value was refused).");
     return host;
+  }
+
+  // ===========================================================================
+  // A PASSKEY AND NO USERNAME (#474): the sign-in screen's *Sign in with a
+  // passkey* button and the username field's autofill.
+  //
+  // **THE ACCOUNT IS NAMED BY THE PASSKEY.** The browser is asked for any
+  // discoverable credential of this RP (`allowCredentials` empty, WebAuthn
+  // Level 3 section 5.4), and the authenticator answers with the credential
+  // id and the `userHandle` it was created under. The handle is looked up
+  // (`credentials.ownerOfUserHandle()`), and from there it is the ordinary
+  // assertion: the key the credential id names among that person's PRIMARY
+  // keys, section 7.2 step 6 (the handle must be the key's), the signature,
+  // the challenge spent across the cluster, the counter.
+  //
+  // **WHAT IT DOES NOT DO, and each is a decision:**
+  //
+  //   * **It enrols nothing.** There is no name to enrol under; a passkey is
+  //     added at `/portal/keys` or by an activation link.
+  //   * **It accepts no key registered before #474.** Those were created
+  //     under the username's bytes, which identify nobody here (rcbj's
+  //     decision): the person is told to type their username, where that key
+  //     still works, or to register it again.
+  //   * **It takes no step of the pending record.** The challenge is minted
+  //     on the RECORD when the screen is drawn (`passkeyChallengeFor()`),
+  //     because conditional mediation starts the ceremony as the page loads,
+  //     before anybody presses anything; it is single-use, taken off the
+  //     record by the POST whatever the outcome, and a redrawn screen mints
+  //     the next.
+  //
+  // **USER VERIFICATION IS REQUIRED** (`discoverableRequestOptions()`), so
+  // the session is `amr ["hwk","user"]`, `acr "mfa"` — rcbj's decision on
+  // #474; `webauthn_policy.ts`'s `usernamelessOffered()` argues it. Every
+  // other decision about the session — the issuance policy, risk, the
+  // device, the application's mechanisms, a disabled account — is
+  // `startSession()`'s, ungated, which is what the passkey step after a typed
+  // username already relies on.
+  //
+  // **A REFUSAL SAYS ONE THING** whatever failed before the account is
+  // known, so the screen cannot be used to learn which handles exist; the
+  // reason is in the log and the code on the response.
+  // ===========================================================================
+  /**
+   * Says whether this sign-in screen offers a passkey sign-in with no
+   * username, and why not.
+   *
+   * @param record - the pending sign-in
+   * @returns `{ ok: true }`, or `{ ok: false, why }` marked with its code
+   */
+  private passkeyOffered(record) {
+    const { log, webauthnPolicy, errorCodes } = this.deps;
+    log.debug("Entering Authn.passkeyOffered().");
+    const offered = webauthnPolicy.usernamelessOffered();
+    if (!offered.ok) {
+      log.debug("Leaving Authn.passkeyOffered(). The realm's settings.");
+      return offered;
+    }
+    const restricted: string[] = Array.isArray(record.allowedMechanisms)
+      ? record.allowedMechanisms : [];
+    const why = record.lockedUsername
+      ? 'Linking an account signs in with its password, so a passkey on ' +
+        'its own is not offered here.'
+      : (!this.deps.authnPolicy.allows('passkey', 'primary')
+        ? 'This realm\'s authentication policy does not accept a passkey ' +
+          'as a first factor.'
+        : (restricted.length && restricted.indexOf('webauthn') < 0
+          ? 'This application does not allow a passkey sign-in.' : ''));
+    log.debug("Leaving Authn.passkeyOffered(). " + (why ? 'No.' : 'Yes.'));
+    return why ? errorCodes.mark({ ok: false, why: why }, 'STS-AUTHN-0301')
+               : { ok: true };
+  }
+
+  // The challenge the screen's passkey ceremony is armed with: minted on the
+  // pending record when the screen is drawn and kept there until a POST
+  // takes it. Persisted with the record, so any node answers the POST.
+  private passkeyChallengeFor(record) {
+    const { log, crypto } = this.deps;
+    log.debug("Entering Authn.passkeyChallengeFor().");
+    if (!record.passkeyChallenge) {
+      record.passkeyChallenge = crypto.randomBytes(32).toString('base64url');
+      if (record.id && pending.has(record.id)) {
+        pending.set(record.id, record);
+      }
+    }
+    log.debug("Leaving Authn.passkeyChallengeFor().");
+    return record.passkeyChallenge;
+  }
+
+  // The screen again, with the passkey refusal on it. `unknownId` is a
+  // credential this realm holds for nobody, which the page tells the
+  // credential manager about (`signalUnknownCredential()`, section 5.1.10).
+  private passkeyRefused(res, base, record, code, logged, shown,
+                         unknownId?) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.passkeyRefused(). " + code);
+    log.info('authn: a passkey sign-in with no username was refused (' +
+             code + '): ' + logged);
+    if (record && record.id && !pending.has(record.id) &&
+        !(record.expires < Date.now())) {
+      pending.set(record.id, record);
+    }
+    errorCodes.mark(res, code);
+    this.sendLoginPage(res, this.loginPage(base, record, shown,
+                                           { unknownCredential:
+                                               unknownId || '' }));
+    log.debug("Leaving Authn.passkeyRefused().");
+  }
+
+  // A credential id this realm may tell the browser it does not know.
+  // **ONLY WITH ONE TRUST REALM AND ONE CELL**: every realm answers on the
+  // same host and so the same RP ID, and a credential this realm cannot
+  // place may be another realm's — or, across cells, a person homed
+  // elsewhere — and the signal would hide it from the person's credential
+  // manager for good.
+  private signalsUnknown(credentialId) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.signalsUnknown().");
+    const ok = !!credentialId && /^[A-Za-z0-9_-]{1,1400}$/.test(credentialId) &&
+               !realms.active() && !cells.isMulti();
+    log.debug("Leaving Authn.signalsUnknown(). " + ok);
+    return ok ? credentialId : '';
+  }
+
+  /**
+   * Signs a person in with a passkey and no username: the screen's button or
+   * its autofill posted a discoverable credential's assertion.
+   *
+   * @param req - the sign-in POST
+   * @param res - the response
+   * @param base - the base URL
+   * @param record - the pending sign-in
+   * @param body - the posted form
+   * @returns a promise settled when the answer is sent
+   */
+  private async passkeySignIn(req, res, base, record, body): Promise<void> {
+    const { log, credentials, webauthnPolicy, errorCodes,
+      webauthnVerifier } = this.deps;
+    log.debug("Entering Authn.passkeySignIn().");
+    const SAID = 'That passkey could not sign you in.';
+    const offered = this.passkeyOffered(record);
+    if (!offered.ok) {
+      log.debug("Leaving Authn.passkeySignIn(). Not offered.");
+      return this.passkeyRefused(res, base, record,
+        errorCodes.codeOf(offered) || 'STS-AUTHN-0301', offered.why,
+        offered.why);
+    }
+    // THE CHALLENGE IS TAKEN NOW, whatever follows: single-use, and the
+    // screen drawn next arms a new one.
+    const challenge = String(record.passkeyChallenge || '');
+    delete record.passkeyChallenge;
+    pending.set(record.id, record);
+    let credential: any = {};
+    try {
+      credential = JSON.parse(String(body.passkey_credential || '{}')) || {};
+    } catch (e) {
+      log.debug("Caught in Authn.passkeySignIn(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Authn.passkeySignIn(). Not JSON.");
+      return this.passkeyRefused(res, base, record, 'STS-AUTHN-0021',
+        'the posted credential was not JSON',
+        'The browser returned something this server could not read.');
+    }
+    if (credential.error || !credential.response) {
+      // THE REAL BUTTON (the root CLAUDE.md's rule): pressed with the script
+      // blocked it posts no credential, and is told why.
+      log.debug("Leaving Authn.passkeySignIn(). No ceremony ran.");
+      return this.passkeyRefused(res, base, record, 'STS-AUTHN-0022',
+        credential.error ? 'the browser refused: ' + credential.error
+                         : 'the browser ran no ceremony',
+        credential.error
+          ? 'Your browser did not use a passkey (' + credential.error + ').'
+          : 'Your browser did not run the ceremony. Signing in with a ' +
+            'passkey needs JavaScript — a passkey is used by the browser and ' +
+            'no form can do it. Allow scripts for this page, or type your ' +
+            'username.');
+    }
+    if (!challenge) {
+      log.debug("Leaving Authn.passkeySignIn(). No challenge was armed.");
+      return this.passkeyRefused(res, base, record, 'STS-AUTHN-0019',
+        'the screen armed no challenge, or it was spent',
+        'That passkey request has expired. Try again.');
+    }
+    const rpRefusal = this.rpIdProblem(base);
+    if (rpRefusal) {
+      log.debug("Leaving Authn.passkeySignIn(). The RP ID does not fit.");
+      return this.passkeyRefused(res, base, record, 'STS-AUTHN-0023',
+                                 rpRefusal, rpRefusal);
+    }
+    const credentialId = String(credential.rawId || credential.id || '');
+    const handle = String(credential.response.userHandle || '');
+    // WHOSE IS IT. A handle this service minted, held by a person's entry.
+    const owner = credentials.ownerOfUserHandle(handle);
+    if (!owner) {
+      // A KEY REGISTERED BEFORE #474 hands back the username's bytes. Told
+      // apart from a credential nobody holds, so its holder is told to type
+      // their name rather than that it is unknown — and so the credential
+      // manager is not told to forget it.
+      const legacyName = handle && !credentials.isUserHandle(handle)
+        ? Buffer.from(handle, 'base64url').toString('utf8') : '';
+      const legacy = legacyName && credentials.keysOf(legacyName)
+        .some(function (one) {
+          return String(one.credentialId) === credentialId && !one.userHandle;
+        });
+      if (legacy) {
+        log.debug("Leaving Authn.passkeySignIn(). A key from before #474.");
+        return this.passkeyRefused(res, base, record, 'STS-AUTHN-0304',
+          'a key registered before #474 under the username',
+          'This passkey was registered before passkeys could sign in ' +
+          'without a username. Type your username to use it, or register ' +
+          'it again at /portal/keys.');
+      }
+      log.debug("Leaving Authn.passkeySignIn(). The handle names nobody.");
+      return this.passkeyRefused(res, base, record, 'STS-AUTHN-0302',
+        handle ? 'the user handle is held by nobody in this realm'
+               : 'the authenticator returned no user handle', SAID,
+        handle ? this.signalsUnknown(credentialId) : '');
+    }
+    const picked = this.keyForAssertion(owner, 'primary', credentialId);
+    if (!picked.key) {
+      log.debug("Leaving Authn.passkeySignIn(). Not a primary key of theirs.");
+      return this.passkeyRefused(res, base, record,
+        errorCodes.codeOf(picked) || 'STS-AUTHN-0026', picked.why, SAID);
+    }
+    const known = picked.key;
+    const handled = credentials.userHandleRefusal(owner, known, handle, true);
+    if (!handled.ok) {
+      log.debug("Leaving Authn.passkeySignIn(). Section 7.2 step 6.");
+      return this.passkeyRefused(res, base, record,
+        errorCodes.codeOf(handled) || 'STS-AUTHN-0303', handled.why,
+        errorCodes.codeOf(handled) === 'STS-AUTHN-0304'
+          ? 'This passkey was registered before passkeys could sign in ' +
+            'without a username. Type your username to use it, or ' +
+            'register it again at /portal/keys.'
+          : SAID);
+    }
+    let verdict;
+    try {
+      verdict = webauthnVerifier.verifyAssertion({
+        authenticatorData: credential.response.authenticatorData,
+        clientDataJSON: credential.response.clientDataJSON,
+        signature: credential.response.signature,
+        publicKeyJwk: known.publicKeyJwk,
+        expectedChallenge: challenge,
+        expectedOrigin: this.expectedOriginFor(base, credential),
+        expectedRpId: this.rpIdOf(base),
+        // REQUIRED HERE WHATEVER THE SETTING (#474): see the header.
+        requireUserVerification: true,
+        previousSignCount: known.signCount,
+        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
+      });
+    } catch (e) {
+      log.debug("Leaving Authn.passkeySignIn(). Verification threw.");
+      return this.passkeyRefused(res, base, record,
+        errorCodes.codeOf(e) || 'STS-AUTHN-0027',
+        'verification threw: ' + ((e && e.message) || e), SAID);
+    }
+    if (credentials.Credentials.clonedKeyVerdict(verdict)) {
+      credentials.noteKeyCloned(owner, known.credentialId,
+        'signature counter ' + verdict.signCount + ', last recorded ' +
+        known.signCount);
+    }
+    if (!verdict.ok) {
+      log.debug("Leaving Authn.passkeySignIn(). The assertion did not " +
+                "verify.");
+      return this.passkeyRefused(res, base, record,
+        webauthnPolicy.failureCodeFor(verdict),
+        'the assertion did not verify — ' +
+        (verdict.failed || []).join('; '), SAID);
+    }
+    const spent = await credentials.spendAssertion({
+      username: owner, credentialId: known.credentialId,
+      signCount: verdict.signCount, flags: verdict.flags,
+      challenge: challenge, ttlMs: this.mfaStepTtlMs() });
+    if (!spent.ok) {
+      log.debug("Leaving Authn.passkeySignIn(). Not spent.");
+      return this.passkeyRefused(res, base, record,
+        errorCodes.codeOf(spent) || 'STS-AUTHN-0182',
+        String(spent.detail || spent.reason), SAID);
+    }
+    const flags = verdict.flags || {};
+    const said = { request: req, application: String(record.application ||
+                                                       ''),
+      risk: await this.assessSignIn(req, owner, record.protocol,
+        { application: String(record.application || ''),
+          credential: { kind: 'webauthn' } }),
+      credential: {
+        kind: 'webauthn', id: known.credentialId,
+        aaguid: known.aaguid
+          ? credentials.Credentials.aaguidString(known.aaguid) : '',
+        backupEligible: typeof flags.be === 'boolean' ? flags.be : undefined,
+        backupState: typeof flags.bs === 'boolean' ? flags.bs : undefined,
+        algorithm: String(verdict.algorithm || ''),
+        coseAlg: Number(verdict.coseAlg) || undefined } };
+    pending.delete(record.id);
+    // `hwk` the key and `user` the authenticator's verification of the
+    // person (RFC 8176), and acr `mfa`, because those are two factors.
+    const started = this.startSession(res, owner, ['hwk', 'user'], 'mfa',
+                                      record.protocol, said);
+    if (this.refusedSession(res, base, record, owner, started, said)) {
+      log.debug("Leaving Authn.passkeySignIn(). The session was refused.");
+      return;
+    }
+    this.returnToCaller(res, record, null, null);
+    log.debug("Leaving Authn.passkeySignIn(). " + owner + " signed in with " +
+              "a passkey and no username.");
   }
 
   // The rest of the WebAuthn door, split out so the asynchronous spend above
@@ -11137,6 +11582,13 @@ class Authn {
       // record so that whichever step finishes the sign-in — this one or a
       // second factor's — registers the browser (refusedSession()).
       record.rememberBrowser = String(body.remember_browser || '') === '1';
+      // A PASSKEY AND NO USERNAME (#474), before a username is asked for:
+      // the passkey names the account. See passkeySignIn().
+      if (String(body.action || '') === 'passkey') {
+        log.debug("Leaving the authentication endpoint. A passkey with no " +
+                  "username.");
+        return this.passkeySignIn(req, res, base, record, body);
+      }
       // A LOCKED RECORD'S NAME IS THE RECORD'S (#109): see
       // beginAuthentication(). Whatever was typed is not read.
       const username = record.lockedUsername ||
@@ -12167,6 +12619,8 @@ class Authn {
                 // not.
                 attachment: credential.authenticatorAttachment || null,
                 discoverable: this.discoverableFrom(credential),
+                // The handle the page created it under (#474).
+                userHandle: step.userHandle || undefined,
                 userVerified: !!(verdict.flags && verdict.flags.uv),
                 aaguid: verdict.aaguid || null,
                 algorithm: verdict.algorithm || null,
@@ -12207,6 +12661,15 @@ class Authn {
                                   errorCodes.codeOf(picked));
           }
           const known = picked.key;
+          // WEBAUTHN LEVEL 3 SECTION 7.2 STEP 6 (#474): a `userHandle` the
+          // authenticator returned must be the one this key was created
+          // under. The username was typed, so its absence is allowed.
+          const handled = credentials.userHandleRefusal(step.username, known,
+            String((credential.response || {}).userHandle || ''), false);
+          if (!handled.ok) {
+            throw errorCodes.mark(new Error(handled.why),
+                                  errorCodes.codeOf(handled));
+          }
           verdict = webauthnVerifier.verifyAssertion({
             authenticatorData: credential.response.authenticatorData,
             clientDataJSON: credential.response.clientDataJSON,

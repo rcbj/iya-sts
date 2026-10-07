@@ -1765,6 +1765,70 @@ provider's or its group's name (`credentials.defaultKeyName()`), the
 provider decided the way `/portal/keys` decides it, and BE, BS and the
 transports are kept as there.
 
+## A PASSKEY AND NO USERNAME, AND THE USER HANDLE (#474, 2026-10-06)
+
+**The user handle was the username's bytes**, at every door that created a
+credential and in the Signal API's `userId`. WebAuthn Level 3 section 5.4.3
+says it must carry no personal data and should be 64 random bytes, and it is
+the one thing a discoverable credential identifies the account by. It is now
+`stsWebauthnUserHandle` on the person's entry, minted once
+(`credentials.userHandleOf(name, { mint: true })`), never rewritten, and each
+key row records the handle it was created under (`userHandle`). A ceremony for
+a name with no entry yet (development's first use) uses a fresh handle that
+`addKey()` adopts onto the entry.
+
+**Section 7.2 step 6 is checked at every assertion** — the passkey step after
+a typed username, the device link, and the usernameless sign-in — by
+`credentials.userHandleRefusal()`: a returned handle must be the KEY's. A key
+from before #474 has no handle on its row and was created under the name; it
+still answers where the username is typed (its handle must then be the
+name's bytes), and never where it is not (`STS-AUTHN-0304`, rcbj's decision:
+no migration — the person registers it again).
+
+**The usernameless sign-in** (`webauthn.usernameless`, off by default) is
+`passkeySignIn()`, reached from `POST /authn/login` with `action=passkey`
+before a username is read:
+
+* **The challenge is on the PENDING RECORD**, minted when the screen is drawn
+  (`passkeyChallengeFor()`), because conditional mediation starts the
+  ceremony as the page loads; the POST takes it whatever happens, and the
+  next drawing mints another. Single-use across the cluster through
+  `spendAssertion()`, like every assertion.
+* **Who it is comes from the handle** (`credentials.ownerOfUserHandle()`, an
+  index in `ldap_server.js` that is checked on a hit and rebuilt on a miss
+  after a write), then the credential id among that person's PRIMARY keys,
+  then step 6, then the signature with **user verification required**
+  whatever `webauthn.userVerification` says. The session is `amr
+  ["hwk","user"]`, `acr "mfa"` — the key and the PIN or biometric that
+  unlocked it (rcbj's decision). `authnPolicyRefusal()` asks the
+  authentication policy about it as a `passkey` FIRST factor, as it asks
+  about `["hwk"]`.
+* **Everything else is `startSession()`'s, ungated** — the issuance policy,
+  risk (assessed once the owner is known), the device, the application's
+  mechanisms, a disabled account — which is what the passkey step after a
+  typed username already relies on.
+* **It enrols nothing**, and refuses a linking sign-in, a realm whose
+  authentication policy refuses a passkey first factor and an application
+  whose mechanisms leave out `webauthn` (`STS-AUTHN-0301`).
+* **Refusals before the account is known say one sentence** (`STS-AUTHN-0302`
+  for a handle nobody holds). A credential nobody holds is reported back for
+  `signalUnknownCredential` ONLY with one trust realm and one cell: every
+  realm answers on the same RP ID, and a credential this realm cannot place
+  may be another realm's, or a person homed in another cell — and the
+  signal would hide it from their credential manager for good.
+* **The screen runs `/authn/webauthn.js` while it is offered** — the root
+  CLAUDE.md's scripted-page row. *Sign in with a passkey* is a real submit
+  button, after Sign In so Enter still means Sign In; the script posts the
+  assertion through two hidden inputs (`passkey_credential`, and an
+  `action=passkey` input it enables). `sendLoginPage()` reads whether to
+  relax `script-src` off the markup.
+* **Across cells** the handle never leaves home (`cell_sessions.ts`'s
+  credential pattern covers `webauthn`), so a usernameless sign-in answers
+  only people homed in the cell that drew the screen; anybody else types
+  their username, which restarts them at home.
+
+`tests/passkey_discoverable.js` holds it with a real ceremony.
+
 ## THE WEBAUTHN ADDRESS RULES (2026-09-12)
 
 Two changes to what a ceremony is held to, both about the address a request
