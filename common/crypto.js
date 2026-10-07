@@ -14672,6 +14672,36 @@ function samlArtifactSourceId(issuerId) {
 
 // --- #453 group E (oid4vc, oidfed, authn, admin, pki): begin ---
 
+// WebAuthn's TPM attestation (Level 3 section 8.3) asks that certInfo's
+// extraData be the hash of attToBeSigned "using the hash algorithm employed
+// in alg" — the statement's own COSE algorithm, whose signature was checked
+// a step before. So the hash is not the caller's choice: it is the one
+// COSE_SIGNATURE_ALGS (section 10) names for that algorithm, SHA-1 for RS1
+// among them, which `verifyCoseSignature()` has already refused unless the
+// realm allowed insecure algorithms. An algorithm that fixes no separate
+// hash (EdDSA, ML-DSA) answers null, and the caller reports the mismatch.
+/**
+ * Returns the digest of bytes under the hash a COSE signature algorithm
+ * names (WebAuthn TPM attestation's extraData).
+ *
+ * @param coseAlg - the COSE algorithm identifier
+ * @param data - the bytes
+ * @returns {Buffer|null} the digest, or null when the algorithm is not in
+ *   COSE_SIGNATURE_ALGS or names no hash of its own
+ */
+function coseAlgorithmDigest(coseAlg, data) {
+  log.debug("Entering coseAlgorithmDigest(). alg=" + coseAlg);
+  const spec = COSE_SIGNATURE_ALGS[String(coseAlg)];
+  if (!spec || !spec.hash) {
+    log.debug("Leaving coseAlgorithmDigest(). No hash of its own.");
+    return null;
+  }
+  const out = nodeCrypto.createHash(spec.hash).update(Buffer.from(data))
+    .digest();
+  log.debug("Leaving coseAlgorithmDigest(). " + spec.hash);
+  return out;
+}
+
 // --- #453 group E: end ---
 
 // (separator between group regions)
@@ -15684,6 +15714,7 @@ module.exports = {
   // --- #453 group D exports: end ---
   //
   // --- #453 group E exports: begin ---
+  coseAlgorithmDigest,
   // --- #453 group E exports: end ---
   //
   // --- #453 group F exports: begin ---

@@ -69,7 +69,6 @@
 // of which requires anything in this directory.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import config = require('../common/config');
@@ -500,7 +499,7 @@ class VcStatus {
     log.debug("Entering VcStatus.allocate(). format=" + opts.format);
     const expiresAt = Number(opts.expiresAt) || (now() + 365 * 86400000);
     for (let attempt = 0; attempt < 32; attempt++) {
-      const idx = crypto.randomInt(0, LIST_SIZE);
+      const idx = stsCrypto.randomInt(0, LIST_SIZE);
       const held = entries.get(String(idx));
       if (held && (!held.expiresAt || held.expiresAt > now())) {
         continue;
@@ -739,7 +738,7 @@ class VcStatus {
     const { log, realms, now } = this.deps;
     log.debug("Entering VcStatus.reuse(). " + kind);
     const key = realms.currentId() + '|' + kind;
-    const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+    const digest = stsCrypto.digest('sha256', bytes, 'hex');
     const held = signedTokens.get(key);
     if (held && held.digest === digest &&
         now() - held.signedAt < held.ttlMs / 2) {

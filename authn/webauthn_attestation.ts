@@ -101,7 +101,6 @@
 // `pki.js`'s (rcbj's rule of 2026-09-21).
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
@@ -706,10 +705,8 @@ class WebauthnAttestation {
                        'certificate\'s key with alg ' + st.alg);
     }
     const spec = crypto.coseSignatureAlg(st.alg);
-    const expected = spec && spec.hash
-      ? nodeCrypto.createHash(spec.hash).update(
-          Buffer.concat([ctx.authData, ctx.clientDataHash])).digest()
-      : null;
+    const expected = crypto.coseAlgorithmDigest(st.alg,
+      Buffer.concat([ctx.authData, ctx.clientDataHash]));
     let why = '';
     if (attest.magic !== crypto.TPM_GENERATED_VALUE) {
       why = 'certInfo\'s magic is not TPM_GENERATED_VALUE';
@@ -904,8 +901,8 @@ class WebauthnAttestation {
                        'response\'s signature does not verify: ' +
                        ((e && e.message) || e));
     }
-    const nonce = nodeCrypto.createHash('sha256').update(
-      Buffer.concat([ctx.authData, ctx.clientDataHash])).digest('base64');
+    const nonce = crypto.digest('sha256',
+      Buffer.concat([ctx.authData, ctx.clientDataHash]), 'base64');
     const at = Number(claims && claims.timestampMs);
     const now = this.deps.now();
     let why = '';
@@ -997,8 +994,8 @@ class WebauthnAttestation {
     const facts = pki.attestationCertificateFacts(st.x5c[0]);
     const ext = facts ? facts.extensions[OID.appleNonce] : null;
     const nonce = ext ? crypto.appleAttestationNonce(ext.value) : null;
-    const expected = nodeCrypto.createHash('sha256').update(
-      Buffer.concat([ctx.authData, ctx.clientDataHash])).digest();
+    const expected = crypto.digest('sha256',
+      Buffer.concat([ctx.authData, ctx.clientDataHash]));
     if (!nonce || !nonce.equals(expected)) {
       log.debug("Leaving WebauthnAttestation.apple(). Nonce.");
       return this.fail('STS-AUTHN-0234', 'apple', nonce

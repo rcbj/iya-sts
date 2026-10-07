@@ -67,7 +67,7 @@
 // verifier, whose libraries it reads. It requires only libraries.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import mode = require('../common/mode');
@@ -542,7 +542,7 @@ class VcApi {
       options.credentialStatus.type === 'BitstringStatusListEntry';
     if (wantsStatus && document.credentialStatus === undefined) {
       if (document.id === undefined) {
-        document.id = 'urn:uuid:' + crypto.randomUUID();
+        document.id = 'urn:uuid:' + crypto.randomUuid();
       }
       const until = Date.parse(document.validUntil || '') || 0;
       const allocated = await status.allocate({ base: baseUrlOf(req),
