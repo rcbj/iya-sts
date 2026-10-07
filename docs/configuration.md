@@ -1146,13 +1146,22 @@ does not fit the setting's type.
 The change applies to the next token, assertion, ticket or search; nothing
 already issued changes, because a token is a signed document.
 
-**Whether it survives a restart is `persistence.appconfig`.** In the default
-`persistence.mode=memory` it does not — the override is in memory and is gone
-with the process. With a store
-turned on it is written down and applied again at the next start, through the
-same `setOverride()` a caller uses, so nothing about the layering changes: it is
+**Whether it survives a restart is `persistence.appconfig`.** With a
+persistent store turned on (`persistence.mode=ldif` or `postgres`) it is
+written down and applied again at the next start, through the same
+`setOverride()` a caller uses, so nothing about the layering changes: it is
 still a runtime override sitting above the environment and the appconfig file,
-and a *reset* is written down too.
+and a *reset* is written down too. Only in `persistence.mode=memory` — the
+default — is the override in memory and gone with the process.
+
+**A change made inside a trust realm** (`/realm/<id>/admin-api/config/set`, or
+a console Save on a realm's page) lands on that realm, not on the process, and
+is written down with the realm's row in the realm registry — so there
+`persistence.realms` decides it, with the same store under it. The reply's
+`message` says which case applied: *written to the postgres store and kept
+across restarts*, or *in memory and gone on restart*. The same is true of the
+Token lifetimes and SAML assertions pages, which write through the same
+function.
 
 **Nothing writes to the appconfig FILE in either mode**, deliberately, because a
 service that edited a file checked into a repository would leave a test's

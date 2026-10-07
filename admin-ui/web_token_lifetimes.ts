@@ -71,10 +71,8 @@ class TokenLifetimesPage {
       'hands cannot be shortened or extended afterwards by anything on ' +
       'this page. That is a property of a signed statement rather than a ' +
       'limitation here — to take an issued token out of circulation, ' +
-      'revoke it on <a href="/admin/tokens">the tokens page</a>. Changes ' +
-      'are in memory and are gone on restart; to make one stick, put it in ' +
-      '<code>' +
-      kit.esc((json.context || {}).configFile || 'env/local.js') + '</code>.') +
+      'revoke it on <a href="/admin/tokens">the tokens page</a>. ' +
+      SettingsForms.durability(json.context)) +
 
       TokenLifetimesPage.tokenLifetimeWarningsFor(
         json.lifetimes.accessTokenTtlS, json.lifetimes.refreshTokenTtlS,
@@ -116,7 +114,8 @@ class TokenLifetimesPage {
           kit.esc(String(settings.filter(function (s) {
             return s.overridden;
           }).length)) +
-          ' of the four are set here, in memory only. <form method="post" ' +
+          ' of the four are set here, ' +
+          SettingsForms.overrideKept(json.context) + '. <form method="post" ' +
           'action="/admin/token-lifetimes" class="inline"><input ' +
           'type="hidden" name="action" value="defaults"><button ' +
           'class="secondary">Put these four back</button></form> It clears ' +

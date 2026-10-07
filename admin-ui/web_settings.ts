@@ -83,7 +83,7 @@ class SettingsForms {
    */
   static sourceNote(setting, context) {
     if (setting.source === 'override') {
-      return 'set here, in memory only';
+      return 'set here, ' + SettingsForms.overrideKept(context);
     }
     if (setting.source === 'env') {
       return 'from ' + setting.env;
@@ -98,6 +98,49 @@ class SettingsForms {
       return 'from ' + context.defaultsFile + ' (the default appconfig file)';
     }
     return 'derived from another setting';
+  }
+
+  // WHERE AN OVERRIDE SET HERE IS HELD, IN TWO WORDS AND IN ONE SENTENCE
+  // (rcbj, 2026-10-07). The Source column said "in memory only" and the
+  // shorter settings pages — Token lifetimes, SAML assertions, Configuration
+  // — said "Changes are in memory and are gone on restart" unconditionally,
+  // which has been wrong on every persistent store since 2026-08-27. Both
+  // are worded from the same `context.persistsAppconfig` the block's own
+  // lead note below branches on, so no page can say one thing while that
+  // note says the other.
+  /**
+   * Words where a runtime override set on these pages is held.
+   *
+   * @param context - the settings block's `context`
+   * @returns `kept in the store` or `in memory only`
+   */
+  static overrideKept(context) {
+    return (context || {}).persistsAppconfig ? 'kept in the store'
+      : 'in memory only';
+  }
+
+  /**
+   * Says, in a sentence for a page's notes, whether a change made on it is
+   * kept across a restart, and how to keep it when it is not.
+   *
+   * @param context - the settings block's `context`: the appconfig file,
+   *   `persistsAppconfig` and `persistenceMode`
+   * @returns the sentence as HTML
+   */
+  static durability(context) {
+    const ctx = context || {};
+    const file = '<code>' + kit.esc(ctx.configFile || 'env/local.js') +
+                 '</code>';
+    if (ctx.persistsAppconfig) {
+      return 'A change is written to the <code>persistence.mode=' +
+             kit.esc(String(ctx.persistenceMode)) + '</code> store and ' +
+             'kept across restarts; nothing rewrites ' + file + '. See <a ' +
+             'href="/admin/persistence">Persistence</a>.';
+    }
+    return 'Changes are in memory and are gone on restart; to make one ' +
+           'stick, put it in ' + file + ' or the setting\'s environment ' +
+           'variable, or turn on a persistent store — see <a ' +
+           'href="/admin/persistence">Persistence</a>.';
   }
 
   // ---------------------------------------------------------------------------

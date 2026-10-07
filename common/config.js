@@ -25,7 +25,11 @@
 // WHERE A VALUE COMES FROM, highest wins:
 //
 //   1. a RUNTIME OVERRIDE          set through /admin/config or the management
-//                                  API; in memory only, gone on restart
+//                                  API; written to the persistence store and
+//                                  kept across restarts where one persists
+//                                  it (persistence.appconfig, or
+//                                  persistence.realms for a realm's own),
+//                                  gone on restart with persistence.mode=memory
 //   2. the setting's ENV VAR       STS_PORT, KRB5_REALM, ...
 //   3. its LEGACY env var, if any  STS_ISSUER still feeds the three issuers
 //                                  that were carved out of it
