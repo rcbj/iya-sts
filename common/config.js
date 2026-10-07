@@ -2750,10 +2750,12 @@ const SETTINGS = [
                  'consumes one of the small number of slots a roaming ' +
                  'authenticator has and CANNOT ALWAYS BE DELETED FROM IT — a ' +
                  'debugging service should not fill somebody\'s security key ' +
-                 'without being asked. **This service does not offer a ' +
-                 'usernameless flow**, so `required` buys a slot on the key ' +
-                 'and nothing else here; it is worth setting to find out ' +
-                 'what a client does when the browser prompts differently.' },
+                 'without being asked. It decides the sign-in screen\'s ' +
+                 'ceremony and *Use a security key*; **a passkey (*Create a ' +
+                 'passkey*) always asks `required`** (#474), because a ' +
+                 'passkey is a credential that can be found without a ' +
+                 'username, which is what `webauthn.usernameless` signs in ' +
+                 'with.' },
 
   { key: 'webauthn.credProps', group: 'WebAuthn',
     label: 'Ask for the credProps extension',
@@ -2786,6 +2788,26 @@ const SETTINGS = [
                  'would be locked out of their own account by an operator ' +
                  'flipping a switch, which is not a thing a setting should ' +
                  'be able to do.' },
+
+  { key: 'webauthn.usernameless', group: 'WebAuthn',
+    label: 'Sign in with a passkey and no username',
+    path: 'webauthn.usernameless', env: 'STS_WEBAUTHN_USERNAMELESS',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'Offers a passkey sign-in that asks for NO username (#474): ' +
+                 'the sign-in screen\'s *Sign in with a passkey* button and ' +
+                 'the username field\'s autofill ask the browser for any ' +
+                 'discoverable credential of this realm (WebAuthn Level 3 ' +
+                 'section 5.4, `allowCredentials` empty), and the user ' +
+                 'handle it returns names the account. **User verification ' +
+                 'is required and checked** whatever ' +
+                 '`webauthn.userVerification` says, and the session records ' +
+                 '`amr ["hwk","user"]` and `acr "mfa"` — the key and the ' +
+                 'PIN or biometric that unlocked it. Only a PRIMARY key ' +
+                 'registered since #474 answers it; one registered before ' +
+                 'was made under the username and works only where the ' +
+                 'username is typed. Off by default (rcbj\'s decision); it ' +
+                 'also needs `webauthn.enabled` and ' +
+                 '`webauthn.primaryAllowed`.' },
 
   { key: 'webauthn.mfaAllowed', group: 'WebAuthn',
     label: 'Allow a key as a SECOND factor',

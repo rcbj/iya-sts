@@ -313,12 +313,13 @@ class ProtocolSettingsPage {
       '<tr><th>Discoverable credential</th><td><code>' +
       kit.esc(info.residentKey) +
         '</code> — a CTAP2 <em>resident key</em>, stored on the ' +
-        'authenticator itself. That is what a passkey is and what a ' +
-        'usernameless sign-in needs. <strong>This service offers no ' +
-        'usernameless flow</strong>, so <code>required</code> consumes one ' +
-        'of the small number of slots a roaming authenticator has — which ' +
-        'cannot always be freed again — and buys nothing here beyond seeing ' +
-        'what a client does when the browser prompts differently.</td></tr>' +
+        'authenticator itself, for the sign-in screen\'s ceremony and ' +
+        '<em>Use a security key</em>. <strong>A passkey (<em>Create a ' +
+        'passkey</em>) always asks <code>required</code></strong> (#474): ' +
+        'it is what the usernameless sign-in below finds. ' +
+        '<code>required</code> here consumes one of the small number of ' +
+        'slots a roaming authenticator has — which cannot always be freed ' +
+        'again.</td></tr>' +
       '<tr><th>credProps</th><td>' + (info.credProps
         ? 'asked for. It is the only way to find out whether a ' +
           '<code>preferred</code> ceremony actually produced a discoverable ' +
@@ -341,6 +342,19 @@ class ProtocolSettingsPage {
         : '<span class="state-none">not allowed</span> — the passwordless ' +
           'box is off the sign-in screen and the <code>primary</code> choice ' +
           'is off the portal.') + '</td></tr>' +
+      '<tr><th>No username</th><td>' + (info.usernameless &&
+                                         info.primaryAllowed
+        ? '<span class="state-valid">offered</span> — the sign-in screen ' +
+          'draws <em>Sign in with a passkey</em> and its username field ' +
+          'offers passkeys (autofill). The passkey names the account by its ' +
+          'user handle, user verification is <strong>required</strong>, and ' +
+          'the session records <code>amr ["hwk","user"]</code> and <code>acr ' +
+          '"mfa"</code> (#474).'
+        : '<span class="state-none">not offered</span> — ' +
+          '<code>webauthn.usernameless</code> is off' +
+          (info.primaryAllowed ? '' : ', and a primary key is not allowed') +
+          '. A passkey still signs in where the username is typed.') +
+        '</td></tr>' +
       '<tr><th>Second factor</th><td>' + (info.mfaAllowed
         ? '<span class="state-valid">allowed</span> — beside a password. The ' +
           'session then records <code>amr ["pwd","hwk"]</code> and <code>acr ' +

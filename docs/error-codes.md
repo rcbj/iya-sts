@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4179** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4183** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 260
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 264
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 704
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 105
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 31
@@ -1411,6 +1411,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0298` | A sign-in was refused at the sign-in door because it used a mechanism the application being signed in to does not allow (appAuthnMechanism, #457). The screen is drawn again, naming the mechanisms it allows. | the sign-in screen, drawn again |
 | `STS-AUTHN-0299` | Renaming a passkey named a credential id that is not registered for that person (#470). | action result with the reason |
 | `STS-AUTHN-0300` | Renaming a passkey was refused: the name is longer than 60 characters or carries a control character (#470). | action result with the reason |
+| `STS-AUTHN-0301` | A passkey sign-in with no username was asked for where it is not offered: webauthn.usernameless, webauthn.primaryAllowed or webauthn.enabled is off, the authentication policy does not accept a passkey as a first factor, the application does not allow one, or the sign-in is linking an account (#474). | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0302` | A passkey sign-in with no username named no account: the authenticator returned no user handle, or one nobody in this realm holds (#474). Where only one realm and one cell exist, the page asks the browser to forget the credential (signalUnknownCredential). | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0303` | A passkey assertion's user handle is not the one its key was registered under — WebAuthn Level 3 section 7.2 step 6 (#474). | none — the sign-in screen or the passkey step is drawn again |
+| `STS-AUTHN-0304` | A passkey registered before #474 — under the username's bytes as its user handle — was used to sign in with no username. It works only where the username is typed; registering it again makes it usable without one. | none — the sign-in screen is drawn again |
 
 ## STS-OAUTH
 

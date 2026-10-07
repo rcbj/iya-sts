@@ -2699,6 +2699,260 @@ class Credentials {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE USER HANDLE (#474, 2026-10-06): the `user.id` every credential this
+  // person registers is created under, and what a DISCOVERABLE credential
+  // hands back as `userHandle` to say whose it is.
+  //
+  // **IT WAS THE USERNAME'S BYTES**, at every door that registered a key and
+  // in the Signal API's `userId`. WebAuthn Level 3 section 5.4.3 says the
+  // handle MUST NOT carry personally identifying information and SHOULD be 64
+  // random bytes, and it is the ONE thing a usernameless sign-in identifies
+  // the account by: a name as the handle is a name stored on every
+  // authenticator the person ever used, and a handle that stops matching the
+  // day the account is renamed.
+  //
+  // **ONE PER PERSON, KEPT FOR GOOD**, on their entry as
+  // `stsWebauthnUserHandle`: every key they register carries the same one,
+  // so a credential manager groups them as one account, and removing the
+  // last key does not remove it. Minted the first time a ceremony needs one.
+  // Each key also records the handle IT was created under (`userHandle` on
+  // the row), because that is what its authenticator will hand back.
+  //
+  // **A KEY REGISTERED BEFORE THIS HAS NO `userHandle` ON ITS ROW** and was
+  // created under the username's bytes. rcbj's decision on #474: it goes on
+  // working where the username is typed first (it is found by its credential
+  // id, as always), and it NEVER identifies anybody in the usernameless
+  // flow — a name is not a handle this service minted, and accepting one
+  // would make the username the credential's identifier after all. No
+  // migration: the person registers the key again to sign in without a name.
+  // ---------------------------------------------------------------------------
+  /** The attribute that holds a person's WebAuthn user handle. */
+  static readonly WEBAUTHN_USER_HANDLE_ATTRIBUTE = 'stsWebauthnUserHandle';
+
+  // A handle this service minted: 64 bytes (section 5.4.3), base64url, so
+  // exactly 86 characters. Anything else on an entry or a key row is not one.
+  private static readonly USER_HANDLE_SHAPE = /^[A-Za-z0-9_-]{86}$/;
+
+  /**
+   * Mints a WebAuthn user handle: 64 random bytes (WebAuthn Level 3 section
+   * 5.4.3), base64url.
+   *
+   * @returns the handle
+   */
+  newUserHandle() {
+    const { log, crypto } = this.deps;
+    log.debug("Entering Credentials.newUserHandle().");
+    const handle = crypto.randomToken(512);
+    log.debug("Leaving Credentials.newUserHandle().");
+    return handle;
+  }
+
+  /**
+   * Says whether a value is a user handle this service minted.
+   *
+   * @param value - the value
+   * @returns true for 64 bytes of base64url
+   */
+  static isUserHandle(value: unknown): boolean {
+    helpers.log.debug("Entering Credentials.isUserHandle().");
+    helpers.log.debug("Leaving Credentials.isUserHandle().");
+    return typeof value === 'string' &&
+      Credentials.USER_HANDLE_SHAPE.test(value);
+  }
+
+  /**
+   * The handle a key registered before #474 was created under: the
+   * username's UTF-8 bytes, base64url.
+   *
+   * @param username - the person
+   * @returns the handle
+   */
+  static legacyUserHandle(username: string): string {
+    helpers.log.debug("Entering Credentials.legacyUserHandle().");
+    helpers.log.debug("Leaving Credentials.legacyUserHandle().");
+    return Buffer.from(String(username || ''), 'utf8').toString('base64url');
+  }
+
+  // WHETHER A KEY CAN ANSWER THE USERNAMELESS SIGN-IN (#474), for the pages
+  // that list keys: a PRIMARY key created under a minted handle, and not one
+  // the browser said is not discoverable. `null` from credProps is "probably":
+  // nothing signed says, and the setting asks the authenticator for one.
+  /**
+   * Says whether a stored key can sign its owner in with no username, and
+   * why not, in a person's words.
+   *
+   * @param key - the stored key row
+   * @returns `{ ready, text }`
+   */
+  static withoutUsername(key: any): { ready: boolean; text: string } {
+    helpers.log.debug("Entering Credentials.withoutUsername().");
+    const one = key || {};
+    const out = one.role !== 'primary'
+      ? { ready: false, text: 'no — it is a second step after your password' }
+      : (!Credentials.isUserHandle(one.userHandle)
+        ? { ready: false, text: 'no — it was created before passkeys could ' +
+            'sign in without a username; create it again to use it that way' }
+        : (one.discoverable === false
+          ? { ready: false, text: 'no — it is not stored on the ' +
+              'authenticator, so the browser cannot find it by itself' }
+          : { ready: true, text: one.discoverable === true ? 'yes'
+              : 'probably — the browser did not say whether it is stored on ' +
+                'the authenticator' }));
+    helpers.log.debug("Leaving Credentials.withoutUsername(). " + out.ready);
+    return out;
+  }
+
+  /**
+   * Returns a person's WebAuthn user handle, minting and storing one where
+   * `mint` is asked and their entry holds none.
+   *
+   * @param username - the person
+   * @param opts - `mint`: store a new handle on an entry that holds none
+   * @returns the handle, or '' where there is none (no entry, no store, or
+   *   none held and none asked for)
+   */
+  userHandleOf(username, opts?: { mint?: boolean }) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const name = String(username || '').trim();
+    log.debug("Entering Credentials.userHandleOf(). username=" + name);
+    if (!directory || typeof directory.readWebauthnUserHandle !== 'function') {
+      log.debug("Leaving Credentials.userHandleOf(). No store.");
+      return '';
+    }
+    let held = '';
+    try {
+      held = String(directory.readWebauthnUserHandle(name) || '');
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0065') + 'credentials: reading ' +
+                'the WebAuthn user handle of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.userHandleOf(). The read threw.");
+      return '';
+    }
+    if (Credentials.isUserHandle(held)) {
+      log.debug("Leaving Credentials.userHandleOf(). Held.");
+      return held;
+    }
+    if (!opts || !opts.mint ||
+        typeof directory.writeWebauthnUserHandle !== 'function') {
+      log.debug("Leaving Credentials.userHandleOf(). None held.");
+      return '';
+    }
+    const minted = this.newUserHandle();
+    let written = false;
+    try {
+      written = !!directory.writeWebauthnUserHandle(name, minted);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0068') + 'credentials: storing ' +
+                'a WebAuthn user handle for ' + name + ' threw: ' +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving Credentials.userHandleOf(). " +
+              (written ? 'Minted.' : 'No entry to hold one.'));
+    return written ? minted : '';
+  }
+
+  /**
+   * Finds the person whose entry holds a WebAuthn user handle.
+   *
+   * @param handle - the handle an assertion returned, base64url
+   * @returns their username, or '' when nobody holds it (or it is not a
+   *   handle this service mints)
+   */
+  ownerOfUserHandle(handle) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.ownerOfUserHandle().");
+    if (!Credentials.isUserHandle(handle) || !directory ||
+        typeof directory.webauthnUserHandleOwner !== 'function') {
+      log.debug("Leaving Credentials.ownerOfUserHandle(). Not a handle, or " +
+                "no store.");
+      return '';
+    }
+    let owner = '';
+    try {
+      owner = String(directory.webauthnUserHandleOwner(String(handle)) || '');
+    } catch (e) {
+      log.debug("Caught in Credentials.ownerOfUserHandle(): " +
+                ((e && e.message) || e));
+      owner = '';
+    }
+    log.debug("Leaving Credentials.ownerOfUserHandle(). " +
+              (owner ? 'Found.' : 'Nobody.'));
+    return owner;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WEBAUTHN LEVEL 3 SECTION 7.2, STEP 6 (#474): an assertion's `userHandle`
+  // must name the account that owns the credential. The browser has always
+  // sent it; nothing here read it until now.
+  //
+  //   * ABSENT, where the person was named before the ceremony (the username
+  //     was typed): allowed — the specification makes it optional there, and
+  //     a non-discoverable credential has none to send.
+  //   * ABSENT in a usernameless ceremony: refused by the caller, which has
+  //     nobody to check it against (`requireHandle`).
+  //   * PRESENT: it must be the handle the KEY was created under, which for a
+  //     key registered since #474 is the person's own handle and for one
+  //     registered before is the username's bytes. A legacy key's name
+  //     handle is accepted ONLY where the username was typed
+  //     (`requireHandle` false) — the decision in the header above.
+  // ---------------------------------------------------------------------------
+  /**
+   * Checks an assertion's `userHandle` against the key it names (WebAuthn
+   * Level 3 section 7.2 step 6).
+   *
+   * @param username - the person the key is enrolled for
+   * @param key - the stored key row
+   * @param presented - the `userHandle` the browser returned, base64url, or
+   *   empty
+   * @param requireHandle - true in a usernameless ceremony
+   * @returns `{ ok: true }`, or `{ ok: false, why }` marked with its code
+   */
+  userHandleRefusal(username, key, presented, requireHandle) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Credentials.userHandleRefusal().");
+    const given = String(presented || '');
+    const own = String((key && key.userHandle) || '');
+    if (!given) {
+      log.debug("Leaving Credentials.userHandleRefusal(). None presented.");
+      return requireHandle
+        ? errorCodes.mark({ ok: false, why: 'the authenticator returned no ' +
+                            'user handle, so the passkey names no account' },
+                          'STS-AUTHN-0302')
+        : { ok: true };
+    }
+    if (own) {
+      // The KEY's handle, which is the person's own unless two ceremonies
+      // minted one each before either was stored; the owner lookup of a
+      // usernameless sign-in reads the ENTRY's, so such a key is simply not
+      // found there and still works where the username is typed.
+      const ok = given === own;
+      log.debug("Leaving Credentials.userHandleRefusal(). " +
+                (ok ? 'Matched.' : 'Does not match.'));
+      return ok ? { ok: true }
+        : errorCodes.mark({ ok: false, why: 'the user handle the ' +
+                            'authenticator returned is not the one the key ' +
+                            'was registered under' }, 'STS-AUTHN-0303');
+    }
+    if (requireHandle) {
+      log.debug("Leaving Credentials.userHandleRefusal(). A key registered " +
+                "before #474, in a usernameless ceremony.");
+      return errorCodes.mark({ ok: false, why: 'this passkey was registered ' +
+                               'before passkeys could sign in without a ' +
+                               'username' }, 'STS-AUTHN-0304');
+    }
+    const ok = given === Credentials.legacyUserHandle(username);
+    log.debug("Leaving Credentials.userHandleRefusal(). A key registered " +
+              "before #474: " + (ok ? 'matched' : 'does not match') + ".");
+    return ok ? { ok: true }
+      : errorCodes.mark({ ok: false, why: 'the user handle the ' +
+                          'authenticator returned is not the one the key ' +
+                          'was registered under' }, 'STS-AUTHN-0303');
+  }
+
   // Add one. The caller has already verified the registration ceremony — this
   // records what it produced.
   /**
@@ -2854,6 +3108,13 @@ class Credentials {
         ? credential.discoverable : null,
       userVerified: typeof credential.userVerified === 'boolean'
         ? credential.userVerified : null,
+      // THE USER HANDLE IT WAS CREATED UNDER (#474): what its authenticator
+      // hands back, and what `userHandleRefusal()` holds an assertion to.
+      // Only a handle this service mints; a key written without one (before
+      // #474, or by a door that ran no ceremony) was made under the
+      // username's bytes, and the field is absent.
+      userHandle: Credentials.isUserHandle(credential.userHandle)
+        ? String(credential.userHandle) : undefined,
       // Who made or holds it, and which source said so (`keyProvider()`).
       provider: String(credential.provider || '').slice(0, 120),
       providerSource: ['mds', 'table'].indexOf(
@@ -2883,6 +3144,20 @@ class Credentials {
     }
     log.info('credentials: a security key was enrolled for ' + name +
              ' as a ' + role + ' credential.');
+    // THE HANDLE ADOPTED (#474): a ceremony for somebody whose entry did not
+    // exist yet (the sign-in screen's first use, in development) created the
+    // key under a handle nobody stored. It becomes theirs if they hold none.
+    if (record.userHandle && !this.userHandleOf(name) &&
+        typeof directory.writeWebauthnUserHandle === 'function') {
+      try {
+        directory.writeWebauthnUserHandle(name, record.userHandle);
+      } catch (e) {
+        log.warn(errorCodes.tag('STS-AUTHN-0068') + 'credentials: storing ' +
+                 'the WebAuthn user handle of the key just enrolled for ' +
+                 name + ' threw: ' + ((e && e.message) || e) + '. The key ' +
+                 'works where the username is typed.');
+      }
+    }
     // ---------------------------------------------------------------------
     // THE RECOVERY CODES, AND **ONLY FOR AN `mfa` KEY** (2026-09-10).
     //
@@ -7153,6 +7428,13 @@ class Credentials {
       // NO LABEL (#470): the key takes its provider's or its group's name, and
       // the page asks for a nickname once it is registered.
       label: '',
+      // THE PERSON'S USER HANDLE (#474), minted and stored now if they hold
+      // none: the page creates the credential under it and the row records
+      // it. Their entry exists (product refused above otherwise); where it
+      // does not, in development, a fresh handle is used and adopted at the
+      // write.
+      userHandle: this.userHandleOf(name, { mint: true }) ||
+                  this.newUserHandle(),
       // EVERY key they hold and not only the ones of this role: the point is
       // *this authenticator is already registered here*, which is a fact about
       // the device rather than about what the credential is for.
@@ -7168,6 +7450,7 @@ class Credentials {
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
              role: role, kind: kind, exclude: record.exclude.slice(),
+             userHandle: record.userHandle,
              expiresAt: new Date(record.expires).toISOString() };
   }
 
@@ -7344,7 +7627,9 @@ class Credentials {
         backupEligible: !!(verdict.flags && verdict.flags.be),
         backupState: !!(verdict.flags && verdict.flags.bs),
         transports: Credentials.transportsOf(credential),
-        discoverable: Credentials.discoverableOf(credential)
+        discoverable: Credentials.discoverableOf(credential),
+        // The handle the page created it under (#474).
+        userHandle: held.userHandle
       }, held.role).then((stored) => {
         return this.keyEnrolmentWritten(name, held, stored);
       });
@@ -8786,6 +9071,14 @@ export = {
   transportsOf: Credentials.transportsOf,
   discoverableOf: Credentials.discoverableOf,
   keysOf: slot.forward('keysOf'),
+  // The WebAuthn user handle (#474).
+  isUserHandle: Credentials.isUserHandle,
+  withoutUsername: Credentials.withoutUsername,
+  legacyUserHandle: Credentials.legacyUserHandle,
+  newUserHandle: slot.forward('newUserHandle'),
+  userHandleOf: slot.forward('userHandleOf'),
+  ownerOfUserHandle: slot.forward('ownerOfUserHandle'),
+  userHandleRefusal: slot.forward('userHandleRefusal'),
   addKey: slot.forward('addKey'),
   removeKey: slot.forward('removeKey'),
   renameKey: slot.forward('renameKey'),

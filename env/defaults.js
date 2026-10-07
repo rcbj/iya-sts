@@ -268,6 +268,7 @@ var config = {
     residentKey: "discouraged",                                                                                                                        // Discoverable credential (CTAP resident key)
     credProps: true,                                                                                                                                   // Ask for the credProps extension
     primaryAllowed: true,                                                                                                                              // Allow a key as a PRIMARY credential
+    usernameless: false,                                                                                                                               // Sign in with a passkey and no username
     mfaAllowed: true,                                                                                                                                  // Allow a key as a SECOND factor
     maxKeysPerPerson: 10                                                                                                                               // Keys per person
   },

@@ -5856,6 +5856,29 @@ const CODES = [
     summary: 'Renaming a passkey was refused: the name is longer than 60 ' +
       'characters or carries a control character (#470).',
     spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0301',
+    summary: 'A passkey sign-in with no username was asked for where it is ' +
+      'not offered: webauthn.usernameless, webauthn.primaryAllowed or ' +
+      'webauthn.enabled is off, the authentication policy does not accept ' +
+      'a passkey as a first factor, the application does not allow one, or ' +
+      'the sign-in is linking an account (#474).',
+    spec: 'none — the sign-in screen is drawn again' },
+  { code: 'STS-AUTHN-0302',
+    summary: 'A passkey sign-in with no username named no account: the ' +
+      'authenticator returned no user handle, or one nobody in this realm ' +
+      'holds (#474). Where only one realm and one cell exist, the page asks ' +
+      'the browser to forget the credential (signalUnknownCredential).',
+    spec: 'none — the sign-in screen is drawn again' },
+  { code: 'STS-AUTHN-0303',
+    summary: 'A passkey assertion\'s user handle is not the one its key was ' +
+      'registered under — WebAuthn Level 3 section 7.2 step 6 (#474).',
+    spec: 'none — the sign-in screen or the passkey step is drawn again' },
+  { code: 'STS-AUTHN-0304',
+    summary: 'A passkey registered before #474 — under the username\'s ' +
+      'bytes as its user handle — was used to sign in with no username. It ' +
+      'works only where the username is typed; registering it again makes ' +
+      'it usable without one.',
+    spec: 'none — the sign-in screen is drawn again' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
