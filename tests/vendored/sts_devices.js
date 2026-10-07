@@ -514,10 +514,10 @@ async function test() {
   log.info("=== 7. the portal's JSON doors: a key proof ===");
   const signed = await portalSignIn(OWNER, R + "/portal/devices");
   const b = signed.browser;
-  check("the page offers a key proof and a linked security key", function () {
+  check("the page offers a key proof and a linked passkey", function () {
     assert.ok(/Register a device by proving its key/.test(signed.page.text),
               signed.page.text.slice(0, 300));
-    assert.ok(/Link a security key built into a device/
+    assert.ok(/Link a passkey on this device/
       .test(signed.page.text));
   });
   const notJson = await b.go("POST", R + "/portal/devices/challenge",

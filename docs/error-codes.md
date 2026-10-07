@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4164** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4169** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 258
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 260
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 701
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 102
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 29
@@ -86,9 +86,9 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 92
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 227
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 229
 * [Management API (`STS-API`)](#sts-api) — 81
-* [User portal (`STS-PORTAL`)](#sts-portal) — 83
+* [User portal (`STS-PORTAL`)](#sts-portal) — 84
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 156
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -1409,6 +1409,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0296` | A security key's attestation, revoked by Google's Android attestation status list, could not be recorded as untrusted on the person's entry (#256). | none — an error in the log |
 | `STS-AUTHN-0297` | A WebAuthn android-key attestation is untrusted: a certificate of its chain is revoked or suspended in Google's Android attestation status list, or its revocation could not be checked where the realm requires it (#256). At registration a policy demanding trust refuses it; at a recheck a stored key's attestation becomes untrusted. | the registration's own refusal where trust is demanded (STS-AUTHN-0235); none at a recheck |
 | `STS-AUTHN-0298` | A sign-in was refused at the sign-in door because it used a mechanism the application being signed in to does not allow (appAuthnMechanism, #457). The screen is drawn again, naming the mechanisms it allows. | the sign-in screen, drawn again |
+| `STS-AUTHN-0299` | Renaming a passkey named a credential id that is not registered for that person (#470). | action result with the reason |
+| `STS-AUTHN-0300` | Renaming a passkey was refused: the name is longer than 60 characters or carries a control character (#470). | action result with the reason |
 
 ## STS-OAUTH
 
@@ -4363,6 +4365,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0846` | add-conferring-client named a client that already confers the role (#454). | — |
 | `STS-ADMIN-0847` | remove-conferring-client named a client that does not confer the role (#454). | — |
 | `STS-ADMIN-0848` *(retired)* | A directory-attribute catalogue action (attributes, attributes-all, attributes-clear) was asked of the Kerberos PAC claim set, which had no catalogue half (#493). Retired by #498: the set has a ticked catalogue like the other five, and the three actions act on it. | — |
+| `STS-ADMIN-0849` | An operator's rename of a person's passkey named nobody (#470). | HTTP 400 (API) |
+| `STS-ADMIN-0850` | An operator's rename of a person's passkey was refused: the name was not one, or no such key is registered for them (#470). | HTTP 400 (API) |
 
 ## STS-API
 
@@ -4545,6 +4549,7 @@ Raised from: portal/.
 | `STS-PORTAL-0163` | A POST to /portal/gnap named a GNAP grant that is not one the signed-in person approved, or one with nothing live left to revoke (#432). | HTTP 400 page |
 | `STS-PORTAL-0243` | A POST to /portal/ciba answered a GNAP access request that is not waiting for the signed-in person: answered already, run out, or somebody else's (#432 phase 6). | HTTP 400 page |
 | `STS-PORTAL-0244` | A resource owner approved a GNAP access request on /portal/ciba with a session that does not meet the authentication level the rights need; the page offers to sign in again with it (#432 phase 6, RFC 9470). | HTTP 403 page |
+| `STS-PORTAL-0245` | A person's rename of one of their passkeys on /portal/keys was refused: the name was not one, or the id is not one of theirs (#470). | HTTP 400 page |
 
 ## STS-LOGOUT
 

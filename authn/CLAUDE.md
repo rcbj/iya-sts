@@ -1737,6 +1737,34 @@ Four things are load-bearing:
 were "deliberately the same" as two literals, which is how two numbers come
 apart. `tests/session_clocks.js` pins all of it, mutation-tested against ten.
 
+## `/authn/webauthn` SAYS PASSKEY, AND HAS ITS REAL BUTTON (#470, 2026-10-06)
+
+**The wording.** "Passkey" now covers a credential on the device, in a
+password manager, on a phone or on a security key, in the words of the
+passkey guidelines `portal/CLAUDE.md` (*The passkey page*) follows. The page,
+the sign-in screen's two boxes ("Use a passkey as a second step", "Sign in
+with a passkey instead of a password"), `/authn/mfa-setup` and the refusals
+all say so. The settings and error codes keep their names.
+
+**The real button.** The root CLAUDE.md says every scripted page except the
+OP iframe and the console carries a REAL submit button, and this page — the
+first scripted page — did not. Its `wa-form` held only hidden inputs, so with
+the script blocked nothing happened. The form now carries *My browser did
+not ask — tell me why*. The step posted with no credential is answered,
+under STS-AUTHN-0022, that the browser ran no ceremony, and the step and
+its challenge survive.
+
+**The folded lines.** The RP ID, challenge, options and amr/acr lines are
+for somebody debugging, so they fold into a *Technical details*
+`<details>`. The ways out (the authenticator app, the wallet, a recovery
+code) stay in view.
+
+**The default name.** A key registered here is no longer labelled
+"security key" or "this device" (`labelForKey()` is gone). It takes its
+provider's or its group's name (`credentials.defaultKeyName()`), the
+provider decided the way `/portal/keys` decides it, and BE, BS and the
+transports are kept as there.
+
 ## THE WEBAUTHN ADDRESS RULES (2026-09-12)
 
 Two changes to what a ceremony is held to, both about the address a request

@@ -297,7 +297,7 @@ even though nothing reaches the directory until `confirm`. A deployment that
 later lets a helpdesk role READ an account without changing it must not have the
 enrolment door on the read side of that line.
 
-## `/portal/keys`: ENROLLING A SECURITY KEY, AND A BACKUP FOR IT (2026-09-10)
+## `/portal/keys`: ENROLLING A PASSKEY, AND A BACKUP FOR IT (2026-09-10; *Passkeys* since #470)
 
 **THIS PAGE COULD NOT ENROL A KEY UNTIL THIS DAY**, and it said so in a
 paragraph of its own:
@@ -406,6 +406,83 @@ states of one page is a policy nobody can reason about.
 blocked it posts a `finish` with no credential, and the handler answers *your
 browser did not run the ceremony* — naming the one step that needs it and saying
 the rest of the portal runs no script at all.
+
+### The passkey page (#470, 2026-10-06)
+
+rcbj asked for the passkey screens to follow the FIDO Alliance's passkey
+management guidelines (passkeycentral.org, *combining all passkey types*).
+What that changed, and why each piece is the way it is:
+
+* **One heading, *Passkeys*, over two groups, in a person's words.** The
+  groups are *passkeys on your devices* and *passkeys on security keys* —
+  never "synced" and "device-bound". `credentials.keyGroup()` decides which:
+  - **the backup eligibility flag first.** A synced passkey reached over
+    hybrid is reported `cross-platform`, and it belongs with the devices.
+  - **then the attachment.** Windows Hello is device-bound and still a
+    device.
+  - **then, for a key that recorded neither, its transports.**
+
+  BE, BS and the transports were checked by `webauthn.js` and dropped until
+  this change. `addKey()` keeps them now, and `noteKeyUsed()` keeps BS
+  current, because BS can change after enrolment.
+* **Each row shows:**
+  - a server-drawn SVG icon. It is markup, not an image, so `img-src` is
+    untouched;
+  - the name, from `keyName()`: the label, else the default;
+  - the provider;
+  - Created and Last used. `lastUsedAt` was recorded and never drawn;
+  - Rename and Remove;
+  - a *Details* `<details>` with the role, algorithm, attestation, AAGUID,
+    backup state and transports. This is a debugging service, so nothing
+    technical was dropped, only folded.
+
+  Rename is a `<details>` holding a form, so it needs no script.
+* **The provider.**
+  - **When a FIDO MDS BLOB is loaded, MDS alone names it** (rcbj, on the
+    ticket): the description for the key's AAGUID.
+  - Otherwise `authn/passkey_providers.ts`, a short hand-written table of
+    credential managers, names it. The community list carries no licence,
+    so it was not copied.
+  - Which source answered is decided once, at enrolment (`keyProviderFor()`,
+    asynchronous), and kept as `provider` and `providerSource`, because a
+    page is drawn synchronously.
+  - A name proves nothing, and nothing that decides reads it.
+* **The two calls to action** are two submit buttons of one form, so the
+  button pressed is the `kind`, with no script.
+  - *Create a passkey* asks for a discoverable credential and HINTS
+    `client-device`, then `hybrid`, with no attachment. That is how the
+    2026-09-26 lesson (Linux Firefox refused a hard `platform`) survives.
+  - *Use a security key* asks for `cross-platform` and hints `security-key`.
+* **The name comes after the ceremony, not before.**
+  - The box before it is gone.
+  - A key defaults to its provider's name, else "Passkey" or "Security key".
+  - The success redirect carries `named=<credentialId>`, and the page opens
+    that key's rename form at the top.
+* **`POST /portal/rename-key`** follows `remove-key`'s A01 rule: the id comes
+  from the body and is looked up among the session's own keys.
+  `credentials.renameKey()` is the one writer, also used by
+  `POST /admin-api/users/rename-key`. An empty name restores the default.
+  It is audited, and sends no CAEP event, because a name is not a
+  credential change.
+* **The Signal API** (WebAuthn Level 3 section 5.1.10) runs in the same
+  shared script, which reads a `wa-signal` element: all accepted credential
+  ids, plus the display name. `signalBlock()` draws the element only when NO
+  OTHER REALM IS DEFINED:
+  - the RP ID is the host every realm shares, and the user handle is the
+    username;
+  - so the same username in two realms is one account to a credential
+    manager;
+  - and "these are all the credentials" sent from one realm would hide the
+    other realm's passkeys.
+
+  The user handle is #474's to change. The element is never drawn while a
+  ceremony is armed, so the page loads one script tag. Every response of
+  both handlers and of `remove-key` and `rename-key` goes through
+  `sendKeysPage()`, so the script is allowed wherever the element is drawn.
+
+`tests/passkey_management.js` holds the credential layer, and
+`tests/vendored/sts_portal_backup_keys.js` holds the page over HTTP: the two
+buttons, the groups, rename and Last used.
 
 ### It is held to the same two address rules as the sign-in screen (2026-09-12)
 
@@ -1399,6 +1476,11 @@ which were roaming. Both pages now ask `credentials.keyKind()` — one answer fo
 the Kind column on `/portal/keys`, the note under it, the link card's list of
 keys not offered (named with the model a trusted attestation gave) and
 `beginLink()`'s refusal.
+
+**SUPERSEDED BY #470 (2026-10-06)**: the three-way radio described next became
+two calls to action — *Create a passkey* and *Use a security key* — and its
+lesson is kept by sending *Create a passkey* with NO attachment, only hints
+(see *The passkey page*, above). The paragraph is kept for why.
 
 **AND `/portal/keys` ASKS WHERE THE KEY LIVES (2026-09-26).** The page asked for
 "a security key" and let the browser choose, and with `webauthn.residentKey` at

@@ -7494,7 +7494,47 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription:
-              'Whether the key was removed, or why it was not.' }
+              'Whether the key was removed, or why it was not.' },
+
+          // #470 (rcbj's decision D): the console's Rename on a person's
+          // Passkeys table, and the same writer the person's own
+          // `/portal/rename-key` calls.
+          { action: 'rename-key', operationId: 'renameUserPasskey',
+            summary: 'Rename one of somebody\'s passkeys',
+            description: 'Goes through the same `renameKey()` the person\'s ' +
+                         'own portal calls (`POST /portal/rename-key`): a ' +
+                         'name is at most 60 characters with no control ' +
+                         'characters, and an EMPTY name restores the default ' +
+                         '— the provider FIDO MDS names for the key\'s ' +
+                         'AAGUID where a BLOB is loaded, else the ' +
+                         'credential manager\'s, else "Passkey" or ' +
+                         '"Security key". The credential id is the base64url ' +
+                         'one on this person\'s `factors.keys`. Audited; no ' +
+                         'Shared Signals event, because a name says nothing ' +
+                         'about what the key proves.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                credentialId: { type: 'string',
+                                description:
+                                  'base64url, as WebAuthn produced it.' },
+                label: { type: 'string', maxLength: 200,
+                         description: 'The new name; empty restores the ' +
+                                      'default.' }
+              },
+              required: ['user', 'credentialId'],
+              examples: [{ user: 'alice', credentialId: 'q1w2e3r4',
+                           label: 'Work laptop' }],
+              additionalProperties: false
+            },
+            responseDescription:
+              'The name the passkey now has, or why it was not renamed.' }
         ] },
 
       // ---------------------------------------------------------------------

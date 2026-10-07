@@ -196,7 +196,7 @@ function childMain() {
     const ORIGIN = 'http://127.0.0.1:' + port;
     const REDIRECT = 'https://rp.pfu.example/cb';
     const PASSWORD = 'correct-horse-battery-staple-pfu-7!';
-    const REFUSAL = 'There is no security key registered for signing in to ' +
+    const REFUSAL = 'There is no passkey registered for signing in to ' +
                     'this account';
     config.setOverride('oauth2.consentRequired', false);
 

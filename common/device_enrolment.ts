@@ -684,7 +684,7 @@ class DeviceEnrolment {
     }
     const spent = await credentials.spendAssertion({ username: username,
       credentialId: key.credentialId, signCount: verdict.signCount,
-      challenge: challenge, ttlMs: challengeTtlMs() });
+      challenge: challenge, ttlMs: challengeTtlMs(), flags: verdict.flags });
     challenges.delete(challenge);
     if (!spent.ok) {
       log.debug("Leaving DeviceEnrolment.finishLink(). Not spent.");

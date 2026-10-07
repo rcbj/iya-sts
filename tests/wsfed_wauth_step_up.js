@@ -341,7 +341,7 @@ function childMain() {
     note(/id="use_webauthn"[^>]*checked disabled/.test(keyScreen.text) &&
          /id="webauthn_only"/.test(keyScreen.text) &&
          !/id="webauthn_only"[^>]*disabled/.test(keyScreen.text) &&
-         /demands a security key/.test(keyScreen.text),
+         /demands a passkey/.test(keyScreen.text),
          'c2. and the screen offers EXACTLY the two choices that meet it — ' +
          'the key alone (passwordless, not disabled) or the key after a ' +
          'password (checked and disabled) — and says so',
@@ -354,7 +354,7 @@ function childMain() {
     const refusedNoKey = await alice.go('POST', '/authn/login',
                                         { form: keyForm });
     note(refusedNoKey.status === 200 &&
-         /This request needs a security key/.test(refusedNoKey.text),
+         /This request needs a passkey/.test(refusedNoKey.text),
          'c3. a person who holds a SECOND FACTOR and no key is told so ' +
          'rather than walked through a ceremony that would enrol one — the ' +
          'bypass that would be', refusedNoKey.status + ' ' +
@@ -478,7 +478,7 @@ function childMain() {
         code: totp.codeAt(began.secret, Date.now() + 90000) } });
     })();
     note(codeAttempt.status === 400 &&
-         /demands a security key/.test(codeAttempt.text),
+         /demands a passkey/.test(codeAttempt.text),
          'h1. a ONE-TIME CODE posted at the second-factor door while a key ' +
          'is demanded is refused — the link is not drawn, and a link that ' +
          'is not drawn is still a URL',

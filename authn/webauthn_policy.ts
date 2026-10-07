@@ -694,39 +694,51 @@ class WebauthnPolicy {
   // edits this attribute in the developer tools changes what their own browser
   // is asked for and nothing about what this service will accept.
   // ---------------------------------------------------------------------------
-  // `kind` (2026-09-26) is what the PERSON chose on `/portal/keys`: a
-  // `platform` authenticator built into the device, or a `roaming` one they
-  // carry — the two `authenticatorKinds()` offers. It narrows the request
-  // only while `webauthn.authenticatorAttachment` is `any`; a setting that
-  // names one wins, because it is the realm's filter and the choice is only a
-  // preference inside it. A `platform` ceremony also asks for a discoverable
-  // credential — `preferred` unless the setting says `required` — because a
-  // key kept on the device IS a passkey, and `discouraged` is what made Chrome
-  // and Edge offer a security key or a phone and never the device itself.
-  // `webauthn.residentKey`'s reason (the few slots a ROAMING authenticator
-  // has) does not reach an authenticator built in. No `kind`, and the sign-in
-  // screen's ceremony, is the request as it always was.
+  // `kind` is which of `/portal/keys`' two calls to action the PERSON pressed
+  // (#470, 2026-10-06; it was a three-way radio from 2026-09-26): `passkey`
+  // ("Create a passkey") or `security-key` ("Use a security key"), the two
+  // `authenticatorKinds()` offers.
+  //
+  //   * `passkey` asks for a discoverable credential (`preferred`, unless
+  //     the setting says `required`) and HINTS `client-device` then `hybrid`
+  //     (WebAuthn Level 3 section 5.4.8) — and sends NO attachment, which is
+  //     the lesson of 2026-09-26: a hard `platform` refused outright on a
+  //     browser with nothing built in (Linux Firefox), where a hint lets the
+  //     browser offer a phone instead. `discouraged` is what made Chrome and
+  //     Edge offer a security key or a phone and never the device itself.
+  //   * `security-key` asks for `cross-platform` and hints `security-key`;
+  //     `webauthn.residentKey`'s reason — the few slots a roaming
+  //     authenticator has — still decides the resident key.
+  //
+  // A kind narrows nothing beyond the hint while
+  // `webauthn.authenticatorAttachment` names one: that setting is the realm's
+  // filter, and `authenticatorKinds()` then offers only the button it allows.
+  // No `kind`, and the sign-in screen's ceremony, is the request as it always
+  // was, with no hint.
   /**
    * Builds the registration options the browser receives.
    *
-   * A `kind` narrows the authenticator attachment only while the setting is
-   * `any`, and a platform ceremony prefers a discoverable credential. A
-   * policy that demands a trusted statement asks for `direct` attestation.
+   * A `kind` adds hints, prefers a discoverable credential for a passkey and
+   * asks a security key for `cross-platform`, the last only while the
+   * attachment setting is `any`. A policy that demands a trusted statement
+   * asks for `direct` attestation.
    * @param rpId - the relying party id
-   * @param kind - `platform` or `roaming`, as the person chose, if any
+   * @param kind - `passkey` or `security-key`, as the person chose, if any
    * @returns the options: RP, algorithms, attestation, timeout,
-   * authenticator selection and credProps
+   * authenticator selection, hints and credProps
    */
   creationOptions(rpId, kind?) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.creationOptions(). rpId=' + rpId);
     const live = this.settings();
-    const asked = live.authenticatorAttachment === 'any'
-      ? { platform: 'platform', roaming: 'cross-platform' }[String(kind || '')]
-      : '';
-    const residentKey = asked === 'platform' &&
+    const wanted = String(kind || '');
+    const asked = live.authenticatorAttachment === 'any' &&
+                  wanted === 'security-key' ? 'cross-platform' : '';
+    const residentKey = wanted === 'passkey' &&
                         live.residentKey !== 'required'
       ? 'preferred' : live.residentKey;
+    const hints = wanted === 'passkey' ? ['client-device', 'hybrid']
+      : (wanted === 'security-key' ? ['security-key'] : []);
     // A POLICY THAT NEEDS A STATEMENT ASKS FOR ONE (#105). `none` and
     // `indirect` let the browser strip or anonymise the statement, and a
     // realm that requires a trusted one would then refuse every enrolment
@@ -749,7 +761,8 @@ class WebauthnPolicy {
         // ones that would otherwise ignore the modern member entirely.
         requireResidentKey: residentKey === 'required'
       },
-      credProps: live.credProps
+      credProps: live.credProps,
+      hints: hints
     };
     // ABSENT AND NOT `"any"`. The options dictionary has no value meaning "no
     // preference" — the member is simply not there — and sending the string
@@ -765,23 +778,24 @@ class WebauthnPolicy {
     return out;
   }
 
-  // WHICH KINDS OF AUTHENTICATOR A PERSON MAY CHOOSE BETWEEN when enrolling
-  // on `/portal/keys` (2026-09-26): both while
-  // `webauthn.authenticatorAttachment` is `any`, and only the one it names
-  // otherwise — so the page offers no choice the ceremony would ignore.
+  // WHICH OF THE TWO CALLS TO ACTION `/portal/keys` DRAWS (#470): "Create a
+  // passkey" and "Use a security key" while `webauthn.authenticatorAttachment`
+  // is `any`; only the passkey button while it is `platform`, and only the
+  // security key's while it is `cross-platform` — so the page offers no
+  // button the ceremony would contradict.
   /**
-   * Lists the kinds of authenticator a person may choose between on
-   * `/portal/keys`, as the attachment setting allows.
+   * Lists the kinds of passkey a person may create on `/portal/keys`, as the
+   * attachment setting allows.
    *
-   * @returns `platform`, `roaming` or both
+   * @returns `passkey`, `security-key` or both
    */
   authenticatorKinds() {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.authenticatorKinds().');
     const attachment = this.settings().authenticatorAttachment;
-    const out = attachment === 'platform' ? ['platform']
-      : (attachment === 'cross-platform' ? ['roaming']
-                                         : ['platform', 'roaming']);
+    const out = attachment === 'platform' ? ['passkey']
+      : (attachment === 'cross-platform' ? ['security-key']
+                                         : ['passkey', 'security-key']);
     log.debug('Leaving WebauthnPolicy.authenticatorKinds(). ' +
               out.join(','));
     return out;

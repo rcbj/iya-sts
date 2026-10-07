@@ -144,8 +144,9 @@ cluster (`security.rateLimit*`).
 
 ### WebAuthn
 
-Security keys and passkeys, as a WebAuthn Level 3 relying party over FIDO
-CTAP2. A key is enrolled in one of two **roles**:
+Passkeys — on a device, in a password manager, on a phone or on a security
+key — as a WebAuthn Level 3 relying party over FIDO CTAP2. A key is enrolled
+in one of two **roles**:
 
 * **`mfa`** — a second factor after a password: `amr ["pwd","hwk"]`,
   `acr "mfa"`;
@@ -230,6 +231,49 @@ and writes a flag on the entry that already exists (see [LDAP](ldap.md)).
 
 A person removes a key on `/portal/keys`, and an operator on the person's
 `/admin/users` page (`POST /admin-api/users/clear-key`).
+
+**The Passkeys page** (`/portal/keys`, #470) follows the FIDO Alliance's
+passkey management guidelines. It uses *passkey* for every kind and puts them
+under one heading in two groups:
+
+* **Passkeys on your devices** — a credential that may be backed up (the BE
+  flag), or one from an authenticator built into the device.
+* **Passkeys on security keys** — a cross-platform credential that cannot be
+  backed up.
+
+Each row shows:
+
+* an icon;
+* a name — the person's own, otherwise the provider's, otherwise "Passkey"
+  or "Security key";
+* the provider;
+* when it was created and when it was last used;
+* **Rename** and **Remove**;
+* a *Details* section with the role, the algorithm, the attestation, the
+  AAGUID, the backup state and the transports.
+
+**Where the provider's name comes from:**
+
+* When an MDS3 BLOB is loaded, the name is only ever the description FIDO MDS
+  lists for the key's AAGUID.
+* Otherwise a short built-in table of the major credential managers names it.
+
+The name is a label for the owner, and nothing this service decides reads it.
+
+**Creating one:**
+
+* There are two buttons. *Create a passkey* hints `client-device`, then
+  `hybrid`, and prefers a discoverable credential. *Use a security key* asks
+  for `cross-platform` and hints `security-key`.
+* The new passkey is offered a nickname straight after it is created.
+* A person renames one with `POST /portal/rename-key`, an operator with
+  `POST /admin-api/users/rename-key`. An empty name restores the default.
+
+**Where no other trust realm is defined**, the page also uses the WebAuthn
+Signal API. It tells the person's credential manager which passkeys are still
+accepted, so one removed here disappears there too, and gives it their display
+name. With realms defined it sends nothing, because every realm shares the RP
+ID and the user handle.
 
 ### TOTP MFA
 
@@ -664,7 +708,7 @@ be changed with `POST /admin-api/config/set`.
 * **Sessions** (`/admin/sessions`): every live session, with how it was
   established.
 * **The user portal**: `/portal/mfa` (authenticator app, recovery codes),
-  `/portal/keys` (security keys), `/portal/app-passwords` (app passwords for
+  `/portal/keys` (passkeys), `/portal/app-passwords` (app passwords for
   the password-only doors), `/portal/kerberos` (a Kerberos keytab from your own
   password), `/portal/password`, `/portal/activate` and
   `/portal/reset-password`; and `/portal/consents`, where a person withdraws

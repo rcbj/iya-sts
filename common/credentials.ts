@@ -400,6 +400,45 @@ class Credentials {
       hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
   }
 
+  // WHAT THE BROWSER SAID ABOUT A NEW CREDENTIAL (#470), read off the JSON the
+  // ceremony script posts: the transports `getTransports()` reported
+  // (WebAuthn Level 3 section 5.2.1) and whether the credProps extension
+  // says it is discoverable (section 10.1.3). Both are the CLIENT's claims,
+  // unsigned, and used only to describe a key — never to decide anything.
+  /**
+   * Reads the transports a registration response reported.
+   *
+   * @param credential - the posted registration response
+   * @returns the transport names, or []
+   */
+  static transportsOf(credential: any): string[] {
+    helpers.log.debug("Entering Credentials.transportsOf().");
+    const said = credential && credential.response &&
+                 credential.response.transports;
+    const out = Array.isArray(said)
+      ? said.map(String).filter(function (t) {
+        return /^[a-z-]{1,20}$/.test(t);
+      }).slice(0, 8)
+      : [];
+    helpers.log.debug("Leaving Credentials.transportsOf(). " + out.length);
+    return out;
+  }
+
+  /**
+   * Reads whether a registration response's credProps says the credential
+   * is discoverable.
+   *
+   * @param credential - the posted registration response
+   * @returns true or false, or null where the browser did not say
+   */
+  static discoverableOf(credential: any): boolean | null {
+    helpers.log.debug("Entering Credentials.discoverableOf().");
+    const ext = (credential && credential.clientExtensionResults) || {};
+    const rk = ext.credProps && ext.credProps.rk;
+    helpers.log.debug("Leaving Credentials.discoverableOf().");
+    return typeof rk === 'boolean' ? rk : null;
+  }
+
   // WHICH SIGNATURE ALGORITHM ONE STORED KEY USES (2026-10-01, rcbj:
   // "record the algorithm that was actually used ... display it on the
   // passkey list"). The key's own `algorithm` and `coseAlg`, written at
@@ -476,6 +515,198 @@ class Credentials {
     helpers.log.debug("Leaving Credentials.keyKind(). Unreported.");
     return { kind: 'unreported', linkable: true, name: name,
              text: 'not reported by your browser' };
+  }
+
+  // WHICH OF THE TWO GROUPS A PASSKEY IS LISTED UNDER (#470, 2026-10-06).
+  //
+  // The passkey management guidelines #470 follows put every kind of passkey
+  // under one heading and split it in two, in a person's words: *passkeys on
+  // your devices* and *passkeys on security keys* — never "synced" and
+  // "device-bound", which are the specification's words and not a reader's.
+  //
+  // **THE BACKUP ELIGIBILITY FLAG DECIDES FIRST** (WebAuthn Level 3 section
+  // 6.1, BE): a credential that may be backed up lives in a credential
+  // manager, and that is "on your devices" even when it was reached over
+  // hybrid from a phone, which the browser reports as `cross-platform`.
+  // Otherwise the attachment decides — a `platform` credential is on this
+  // device whether or not it syncs (Windows Hello is device-bound, and the
+  // guideline lists it with the devices) — and a `cross-platform` one that
+  // cannot be backed up is a security key. A key enrolled before BE was kept
+  // and whose browser reported no attachment is classified by its transports
+  // when they were kept, and is "on your devices" when nothing says
+  // otherwise: that is the commoner case, and the row still names its
+  // provider and kind.
+  /**
+   * Says which group a stored key is listed under on the passkey pages.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `device` (passkeys on your devices) or `security-key`
+   */
+  static keyGroup(key: any): 'device' | 'security-key' {
+    helpers.log.debug("Entering Credentials.keyGroup().");
+    const k = key || {};
+    if (k.backupEligible === true) {
+      helpers.log.debug("Leaving Credentials.keyGroup(). Backup eligible.");
+      return 'device';
+    }
+    const attachment = String(k.attachment || '');
+    if (attachment === 'platform') {
+      helpers.log.debug("Leaving Credentials.keyGroup(). Platform.");
+      return 'device';
+    }
+    if (attachment === 'cross-platform') {
+      helpers.log.debug("Leaving Credentials.keyGroup(). Roaming.");
+      return 'security-key';
+    }
+    const transports = Array.isArray(k.transports) ? k.transports : [];
+    const roaming = transports.length > 0 &&
+      transports.every(function (t) {
+        return t === 'usb' || t === 'nfc' || t === 'ble' ||
+               t === 'smart-card';
+      });
+    helpers.log.debug("Leaving Credentials.keyGroup(). Unreported, " +
+                      (roaming ? 'roaming transports.' : 'so a device.'));
+    return roaming ? 'security-key' : 'device';
+  }
+
+  // WHO MADE OR HOLDS A PASSKEY, in a person's words (#470).
+  //
+  // **THE FIDO METADATA SERVICE FIRST, AND ALONE WHERE IT IS LOADED** (rcbj,
+  // #470): when the realm holds a usable MDS3 BLOB (`risk/risk_datasets.ts`,
+  // the `fido.mds3` dataset), the name is the description MDS lists for the
+  // key's AAGUID and nothing else — a model MDS does not list is named by its
+  // group. Only where no BLOB is loaded does `authn/passkey_providers.ts`'s
+  // short table of credential managers name it. Which source answered is
+  // decided ONCE, at enrolment (`keyProviderFor()`), and kept on the key as
+  // `provider` and `providerSource`, because a page is drawn synchronously
+  // and an MDS lookup is a query.
+  //
+  // A NAME AND NOT A PROOF: for an attestation that did not chain to an
+  // anchor the AAGUID is the authenticator's say-so, and a name only helps
+  // its owner tell their own passkeys apart — nothing that decides reads it.
+  // A key enrolled before #470 kept neither field, and is named by the model
+  // its attestation recorded (MDS's, looked up at the time), else the table.
+  /**
+   * Names the credential manager or authenticator model behind a stored key.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns the provider's name, or ''
+   */
+  static keyProvider(key: any): string {
+    helpers.log.debug("Entering Credentials.keyProvider().");
+    const k = key || {};
+    if (k.providerSource === 'mds' || k.providerSource === 'table' ||
+        k.providerSource === '') {
+      helpers.log.debug("Leaving Credentials.keyProvider(). Recorded (" +
+                        (k.providerSource || 'none') + ").");
+      return String(k.provider || '');
+    }
+    const att = k.attestation || {};
+    if (att.model) {
+      helpers.log.debug("Leaving Credentials.keyProvider(). By MDS.");
+      return String(att.model);
+    }
+    // LAZILY, so this data module does not join the parent project's
+    // Kerberos COPY closure, which carries this file (`kerberos/CLAUDE.md`).
+    const providers = require('../authn/passkey_providers');
+    const named = providers.nameOf(k.aaguid);
+    helpers.log.debug("Leaving Credentials.keyProvider(). " +
+                      (named ? 'By the table.' : 'Unknown.'));
+    return named;
+  }
+
+  // Which source names a key being enrolled, and what it says: the rule
+  // `keyProvider()` describes, asked once at enrolment by each door that
+  // writes a key. Never refuses — a lookup that fails names nothing.
+  /**
+   * Resolves the provider's name for a key being enrolled: MDS where a
+   * usable BLOB is loaded, else the credential-manager table.
+   *
+   * @param aaguid - the key's AAGUID
+   * @param attestation - what the attestation assessment recorded, if any
+   * @returns a promise of `{ provider, providerSource }`
+   */
+  static async keyProviderFor(aaguid: unknown, attestation: any):
+      Promise<{ provider: string; providerSource: string }> {
+    helpers.log.debug("Entering Credentials.keyProviderFor().");
+    const id = Credentials.aaguidString(aaguid);
+    let mds = null;
+    try {
+      // Lazily: the risk store is no business of this file's load.
+      const datasets = require('../risk/risk_datasets');
+      const state = await datasets.mdsState();
+      if (state && state.active && !state.stale) {
+        mds = datasets;
+      }
+    } catch (e) {
+      helpers.log.debug("Caught in Credentials.keyProviderFor(): " +
+                        ((e && e.message) || e));
+      // No usable BLOB as far as this enrolment can tell; the table names it.
+      mds = null;
+    }
+    if (mds) {
+      let model = String((attestation && attestation.model) || '');
+      if (!model && id) {
+        try {
+          const listed = await mds.lookupAuthenticator(id);
+          model = String((listed && listed.model &&
+                          listed.model.description) || '');
+        } catch (e) {
+          helpers.log.debug("Caught in Credentials.keyProviderFor(): " +
+                            ((e && e.message) || e));
+          // A failed query names nothing; the group names the key.
+          model = '';
+        }
+      }
+      helpers.log.debug("Leaving Credentials.keyProviderFor(). MDS: " +
+                        (model || 'not listed') + ".");
+      return { provider: model, providerSource: 'mds' };
+    }
+    const providers = require('../authn/passkey_providers');
+    const named = providers.nameOf(id);
+    helpers.log.debug("Leaving Credentials.keyProviderFor(). Table: " +
+                      (named || 'not listed') + ".");
+    return { provider: named, providerSource: named ? 'table' : '' };
+  }
+
+  // THE NAME A NEW PASSKEY IS GIVEN until its owner gives it another (#470):
+  // its provider's, else its group's. The guideline asks for a nickname
+  // AFTER enrolment rather than a box before it, so this is what the row
+  // says in the meantime — and what it goes back to when a rename is empty.
+  /**
+   * Answers the name a key is given when nobody named it.
+   *
+   * @param key - the stored WebAuthn key, or what its ceremony produced
+   * @returns the provider's name, "Passkey" or "Security key"
+   */
+  static defaultKeyName(key: any): string {
+    helpers.log.debug("Entering Credentials.defaultKeyName().");
+    const provider = Credentials.keyProvider(key);
+    const name = provider ||
+      (Credentials.keyGroup(key) === 'security-key' ? 'Security key'
+                                                    : 'Passkey');
+    helpers.log.debug("Leaving Credentials.defaultKeyName(). " + name);
+    return name;
+  }
+
+  // A KEY'S NAME AS A PAGE DRAWS IT (#470): the label its owner gave it, and
+  // the default for a key written before labels defaulted to the provider —
+  // every one of those says "security key", or "this device" from the
+  // sign-in screen's enrolment, which named nothing.
+  /**
+   * Answers the name a page draws for a stored key.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns its label, or its default name
+   */
+  static keyName(key: any): string {
+    helpers.log.debug("Entering Credentials.keyName().");
+    const label = String((key && key.label) || '').trim();
+    const legacy = !label || label === 'security key' ||
+                   label === 'this device' ||
+                   /^security key \(.*\)$/.test(label);
+    helpers.log.debug("Leaving Credentials.keyName().");
+    return legacy ? Credentials.defaultKeyName(key) : label;
   }
 
   /**
@@ -2572,8 +2803,9 @@ class Credentials {
       role: String(role),
       enrolledAt: Date.now(),
       // A label so a person with three keys can tell them apart on the portal.
-      // Theirs to set; this is only the default.
-      label: String(credential.label || 'security key'),
+      // Theirs to set (`renameKey()`); the default is the provider's name or
+      // the group's (#470), filled in below once the fields it reads exist.
+      label: String(credential.label || '').trim().slice(0, 60),
       // WHAT KIND OF AUTHENTICATOR (#145, 2026-09-22), kept because CAEP's
       // credential-change names it: the attachment the browser reported
       // (`platform` or `cross-platform`, WebAuthn Level 3 section 5.1), which
@@ -2597,8 +2829,40 @@ class Credentials {
       // record, drawn beside the key on `/portal/keys`, `/admin/users` and
       // `GET /admin-api/users`. A key written by a door that verified nothing
       // (an operator's import, a test) has none, and is shown as claimed.
-      attestation: credential.attestation || null
+      attestation: credential.attestation || null,
+      // WHAT THE PASSKEY PAGES GROUP AND DESCRIBE IT BY (#470, 2026-10-06).
+      // The backup flags (WebAuthn Level 3 section 6.1, BE and BS) were
+      // parsed and checked by `webauthn.js` and then dropped, so no page could
+      // tell a passkey in a credential manager from one on a security key —
+      // which is the one distinction the guideline's two groups draw.
+      // `backupState` can change after enrolment, and `noteKeyUsed()` keeps
+      // it current from each assertion. `transports` is the browser's
+      // `getTransports()` (section 5.2.1), `discoverable` the credProps
+      // extension's `rk` (section 10.1.3) — null where the browser did not
+      // say — and `userVerified` the UV flag at enrolment, which the callers
+      // handed in and this record dropped until now.
+      backupEligible: typeof credential.backupEligible === 'boolean'
+        ? credential.backupEligible : null,
+      backupState: typeof credential.backupState === 'boolean'
+        ? credential.backupState : null,
+      transports: Array.isArray(credential.transports)
+        ? credential.transports.map(String).filter(function (t) {
+          return /^[a-z-]{1,20}$/.test(t);
+        }).slice(0, 8)
+        : [],
+      discoverable: typeof credential.discoverable === 'boolean'
+        ? credential.discoverable : null,
+      userVerified: typeof credential.userVerified === 'boolean'
+        ? credential.userVerified : null,
+      // Who made or holds it, and which source said so (`keyProvider()`).
+      provider: String(credential.provider || '').slice(0, 120),
+      providerSource: ['mds', 'table'].indexOf(
+        String(credential.providerSource || '')) >= 0
+        ? String(credential.providerSource) : ''
     };
+    if (!record.label) {
+      record.label = Credentials.defaultKeyName(record);
+    }
     let written = false;
     try {
       written = directory.writeWebauthn(name, JSON.stringify(record));
@@ -2782,7 +3046,8 @@ class Credentials {
    * once, the signature counter advanced.
    *
    * A refused counter gives the challenge back.
-   * @param spec - `username`, `credentialId`, `challenge` and `signCount`
+   * @param spec - `username`, `credentialId`, `challenge` and `signCount`,
+   *   and optionally `flags` (the assertion's, whose backup state is kept)
    * @returns a promise of `{ ok: true, recorded, advanced }`, or a refusal
    *   (`replay`, `counter`, `store`)
    */
@@ -2852,7 +3117,8 @@ class Credentials {
           return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
             detail: 'the signature counter could not be checked just now' });
         }
-        const recorded = this.noteKeyUsed(name, credentialId, signCount);
+        const recorded = this.noteKeyUsed(name, credentialId, signCount,
+                                          s.flags);
         return { ok: true, recorded: !!recorded, advanced: answer.advanced };
       });
     });
@@ -2961,9 +3227,11 @@ class Credentials {
    * @param username - the person
    * @param credentialId - the key's credential id
    * @param signCount - the counter the assertion carried
+   * @param flags - the assertion's authenticator data flags, when known; its
+   *   backup state is kept (#470)
    * @returns what the directory write answered, or false
    */
-  noteKeyUsed(username, credentialId, signCount) {
+  noteKeyUsed(username, credentialId, signCount, flags?) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
     log.debug('Entering Credentials.noteKeyUsed().');
@@ -2981,6 +3249,17 @@ class Credentials {
     }
     found.signCount = Number(signCount || 0);
     found.lastUsedAt = Date.now();
+    // THE BACKUP STATE CAN CHANGE AFTER ENROLMENT (WebAuthn Level 3 section
+    // 6.1.3: BS "can change over time"), so each assertion's is kept — and BE
+    // for a key enrolled before #470 kept it, since BE never changes and an
+    // assertion carries it too.
+    if (flags && typeof flags.bs === 'boolean') {
+      found.backupState = flags.bs;
+    }
+    if (flags && typeof flags.be === 'boolean' &&
+        typeof found.backupEligible !== 'boolean') {
+      found.backupEligible = flags.be;
+    }
     try {
       log.debug("Leaving Credentials.noteKeyUsed().");
       return directory.replaceWebauthn(String(username || '').trim(),
@@ -3242,6 +3521,80 @@ class Credentials {
     log.info('credentials: a security key was removed for ' + name + '.');
     log.debug("Leaving Credentials.removeKey().");
     return { ok: true, remaining: kept.length };
+  }
+
+  // ---------------------------------------------------------------------------
+  // RENAMING A PASSKEY (#470, 2026-10-06).
+  //
+  // The guideline #470 follows asks for a nickname AFTER enrolment — "Give
+  // your security key a nickname so you know which keys you registered" —
+  // and for a rename on every row; there was neither, only a box before the
+  // ceremony that most people left empty, so most rows said "security key".
+  //
+  // **ONE WRITER FOR BOTH DOORS**: the person on `/portal/keys` and an
+  // administrator through `/admin-api` (rcbj's decision on #470) both come
+  // here, and the id is looked up among THIS person's keys, which is
+  // `removeKey()`'s A01 rule — an id belonging to somebody else matches
+  // nothing.
+  //
+  // **A NAME IS NOT A CREDENTIAL**: nothing about what the key proves
+  // changes, so no CAEP credential-change is sent for it (the caller audits
+  // it). An EMPTY name puts the default back — the provider's or the group's
+  // (`defaultKeyName()`) — rather than being refused, so a person can undo a
+  // nickname. A control character is refused: the name is drawn on pages
+  // and written to the audit, and nothing a person means by a nickname needs
+  // one.
+  // ---------------------------------------------------------------------------
+  /**
+   * Renames one of a person's passkeys; an empty name restores the default.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @param label - the new name, at most 60 characters
+   * @returns `{ ok: true, label, previous }`, or a refusal
+   */
+  renameKey(username, credentialId, label) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug('Entering Credentials.renameKey().');
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug("Leaving Credentials.renameKey(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+          'store is installed.'] });
+    }
+    const wanted = String(label === undefined || label === null ? ''
+                                                                : label)
+      .trim();
+    if (wanted.length > 60 || /[\u0000-\u001f\u007f]/.test(wanted)) {
+      log.debug("Leaving Credentials.renameKey(). Not a name.");
+      return coded('STS-AUTHN-0300', { ok: false, errors: ['A passkey\'s ' +
+          'name is at most 60 characters, with no control characters.'] });
+    }
+    const name = String(username || '').trim();
+    const keys = this.keysOf(name);
+    const found = keys.filter((one) => {
+      return one.credentialId === String(credentialId);
+    })[0];
+    if (!found) {
+      log.debug("Leaving Credentials.renameKey(). Not theirs.");
+      return coded('STS-AUTHN-0299', { ok: false, errors: ['No passkey of ' +
+          'that id is registered for ' + name + '.'] });
+    }
+    const previous = Credentials.keyName(found);
+    found.label = wanted || Credentials.defaultKeyName(found);
+    try {
+      directory.replaceWebauthn(name, keys.map((one) => {
+        return JSON.stringify(one);
+      }));
+    } catch (e) {
+      log.debug("Leaving Credentials.renameKey(). The store threw.");
+      return coded('STS-AUTHN-0068', { ok: false, errors: ['The credential ' +
+          'store refused the write: ' + e.message] });
+    }
+    log.info('credentials: a passkey of ' + name + ' was renamed.');
+    log.debug("Leaving Credentials.renameKey().");
+    return { ok: true, label: found.label, previous: previous };
   }
 
   // ===========================================================================
@@ -6724,7 +7077,7 @@ class Credentials {
    * be, refusing anything knowable before the person touches their key.
    *
    * @param username - the person
-   * @param opts - `role` (`mfa` by default), `kind` and `label`
+   * @param opts - `role` (`mfa` by default) and `kind`
    * @returns `{ ok: true, enrolmentId, challenge, … }`, or a refusal
    */
   beginKeyEnrolment(username, opts?) {
@@ -6779,8 +7132,9 @@ class Credentials {
                         'Remove one first.'] });
     }
     this.sweepPendingKeys();
-    // WHICH KIND OF AUTHENTICATOR WAS ASKED FOR (2026-09-26): `platform` or
-    // `roaming`, from `/portal/keys`' choice, carried like the role so the
+    // WHICH KIND OF AUTHENTICATOR WAS ASKED FOR (2026-09-26): `passkey` or
+    // `security-key` since #470 — which of `/portal/keys`' two calls to
+    // action was pressed — carried like the role so the
     // armed ceremony asks for what was chosen. A kind the policy does not
     // offer is dropped rather than refused — `webauthn.authenticatorAttachment`
     // decides the ceremony either way (`creationOptions()`), so it is a
@@ -6796,7 +7150,9 @@ class Credentials {
       challenge: nodeCrypto().randomBytes(32).toString('base64url'),
       role: role,
       kind: kind,
-      label: String(options.label || '').trim(),
+      // NO LABEL (#470): the key takes its provider's or its group's name, and
+      // the page asks for a nickname once it is registered.
+      label: '',
       // EVERY key they hold and not only the ones of this role: the point is
       // *this authenticator is already registered here*, which is a fact about
       // the device rather than about what the credential is for.
@@ -6969,7 +7325,11 @@ class Credentials {
                      { ok: false, reason: 'attestation',
                        errors: [attested.why] });
       }
+      return Credentials.keyProviderFor(verdict.aaguid,
+        attested.attestation).then((named) => {
       return this.addKeyClaimed(name, {
+        provider: named.provider,
+        providerSource: named.providerSource,
         credentialId: verdict.credentialId,
         publicKeyJwk: verdict.publicKeyJwk,
         signCount: verdict.signCount,
@@ -6979,9 +7339,15 @@ class Credentials {
         aaguid: verdict.aaguid || null,
         algorithm: verdict.algorithm || null,
         coseAlg: verdict.coseAlg || null,
-        attestation: attested.attestation
+        attestation: attested.attestation,
+        // #470: what the passkey pages group and describe the key by.
+        backupEligible: !!(verdict.flags && verdict.flags.be),
+        backupState: !!(verdict.flags && verdict.flags.bs),
+        transports: Credentials.transportsOf(credential),
+        discoverable: Credentials.discoverableOf(credential)
       }, held.role).then((stored) => {
         return this.keyEnrolmentWritten(name, held, stored);
+      });
       });
     });
   }
@@ -8411,9 +8777,18 @@ export = {
   ROLES: Credentials.ROLES,
   keyKind: Credentials.keyKind,
   keyAlgorithm: Credentials.keyAlgorithm,
+  // #470: the passkey pages' group, provider and name for a stored key.
+  keyGroup: Credentials.keyGroup,
+  keyProvider: Credentials.keyProvider,
+  keyName: Credentials.keyName,
+  defaultKeyName: Credentials.defaultKeyName,
+  keyProviderFor: Credentials.keyProviderFor,
+  transportsOf: Credentials.transportsOf,
+  discoverableOf: Credentials.discoverableOf,
   keysOf: slot.forward('keysOf'),
   addKey: slot.forward('addKey'),
   removeKey: slot.forward('removeKey'),
+  renameKey: slot.forward('renameKey'),
   // THE TWO-STEP ENROLMENT (2026-09-10), which is what lets somebody hold a
   // BACKUP key. `/portal/keys` drives all four; the sign-in screen's
   // enrol-on-first-use path does not, because there the ceremony is part of a

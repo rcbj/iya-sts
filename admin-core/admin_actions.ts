@@ -355,6 +355,8 @@ const USER_FIELD_PREFIX = 'field.';
  */
 const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
+                       // A passkey's name (#470, rcbj's decision D).
+                       'rename-key',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
@@ -3436,6 +3438,41 @@ class AdminActions {
       log.debug("Leaving AdminActions.usersAction(). clear-key " +
                 (result.ok ? "ok." : "refused."));
       return this.refusedBy('STS-ADMIN-0522', result);
+    }
+
+    // RENAMING SOMEBODY'S PASSKEY (#470, 2026-10-06; rcbj's decision D on
+    // the ticket). THROUGH `credentials.renameKey()`, the one writer the
+    // person's own `/portal/rename-key` also calls, so the two doors cannot
+    // disagree about what a name may be; an empty name restores the default.
+    // Audited, and no CAEP event: a name says nothing about what the key
+    // proves.
+    if (action === 'rename-key') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0849', { ok: false, errors: ['Name ' +
+          'the person whose passkey is being renamed.'] });
+      }
+      const result = credentials.renameKey(who,
+        String(body.credentialId || ''), String(body.label || ''));
+      auditLog.record({
+        category: 'authentication', action: 'admin.mfa.key.renamed',
+        actor: ctx.actor, target: who,
+        outcome: result.ok ? 'success' : 'failure',
+        summary: (result.ok ? 'renamed' : 'could not rename') +
+                 ' a passkey of ' + who,
+        detail: { username: who, via: ctx.via,
+                  credentialId: String(body.credentialId || ''),
+                  from: result.ok ? result.previous : undefined,
+                  to: result.ok ? result.label : undefined,
+                  errors: result.ok ? undefined : (result.errors || []) }
+      });
+      log.debug("Leaving AdminActions.usersAction(). rename-key " +
+                (result.ok ? "ok." : "refused."));
+      return result.ok
+        ? { ok: true, message: 'The passkey of ' + who + ' is now called "' +
+            result.label + '".', label: result.label }
+        : this.refusedBy('STS-ADMIN-0850', result);
     }
 
     // SET A PASSWORD ON SOMEBODY WHO IS ALREADY HERE (2026-09-06).

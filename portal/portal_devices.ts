@@ -300,13 +300,13 @@ class PortalDevicesPage {
     }
     this.ctx.log.debug("Leaving PortalDevicesPage.passedOver().");
     return '<p class="note" id="devices-roaming">' +
-      (roaming.length === 1 ? 'This key is' : 'These keys are') +
+      (roaming.length === 1 ? 'This passkey is' : 'These passkeys are') +
       ' not offered: ' + roaming.map(function (k: Json) {
         return '<strong>' + esc(credentials.keyKind(k).name) + '</strong>';
-      }).join(', ') + '. ' + (roaming.length === 1 ? 'It is a' : 'Each is a') +
-      ' roaming key — carried between devices (USB, NFC, Bluetooth or ' +
-      'another phone) — so it cannot say which device you are on. It still ' +
-      'signs you in.</p>';
+      }).join(', ') + '. ' + (roaming.length === 1 ? 'It is' : 'Each is') +
+      ' on a security key or reached from another phone (USB, NFC, ' +
+      'Bluetooth or a QR code), so it cannot say which device you are on. ' +
+      'It still signs you in.</p>';
   }
 
   // "REMEMBER THIS BROWSER" (#265): the other way to register the browser
@@ -352,31 +352,31 @@ class PortalDevicesPage {
     const roaming = this.passedOver(enrolled);
     if (!keys.length) {
       this.ctx.log.debug("Leaving PortalDevicesPage.linkBlock(). None.");
-      return '<h2>Link a security key built into a device</h2>' +
+      return '<h2>Link a passkey on this device</h2>' +
         '<p class="note">' + (enrolled.length
-          ? 'None of your security keys can be linked to a device.'
-          : 'You have no security keys enrolled.') + '</p>' + roaming +
+          ? 'None of your passkeys can be linked to a device.'
+          : 'You have no passkeys yet.') + '</p>' + roaming +
         '<p class="note">To link this device, open <a href="' +
-        esc(this.ctx.BASE + '/keys') + '">Security keys</a> <strong>on ' +
-        'this device</strong>, add a key and choose <em>Built into this ' +
-        'device</em> — Touch ID, Face ID, Windows Hello or the phone\'s ' +
+        esc(this.ctx.BASE + '/keys') + '">Passkeys</a> <strong>on this ' +
+        'device</strong>, choose <em>Create a passkey</em> and save it to ' +
+        'this device — Touch ID, Face ID, Windows Hello or the phone\'s ' +
         'screen lock. Then come back here, on the same device, and link ' +
         'it. Or register the device by proving its key, above.</p>';
     }
     this.ctx.log.debug("Leaving PortalDevicesPage.linkBlock(). Form.");
-    return '<h2>Link a security key built into a device</h2>' + roaming +
-      '<p class="sub">You will be asked to use the key once more, on the ' +
-      'device it is built into. A key whose attestation this service ' +
-      'verified and trusted when you enrolled it is recorded attested.</p>' +
+    return '<h2>Link a passkey on this device</h2>' + roaming +
+      '<p class="sub">You will be asked to use the passkey once more, on ' +
+      'the device it is saved on. A passkey whose attestation this service ' +
+      'verified and trusted when you created it is recorded attested.</p>' +
       '<form method="post" action="' + esc(this.PATH) + '">' +
       websecurity.field(session.id) +
       '<input type="hidden" name="action" value="link-begin">' +
-      '<label for="dev-cred">Which security key</label>' +
+      '<label for="dev-cred">Which passkey</label>' +
       '<select id="dev-cred" name="credential_id">' +
       keys.map(function (k: Json) {
         const att = k.attestation || {};
         return '<option value="' + esc(k.credentialId) + '">' +
-          esc(k.label || 'security key') + ' — ' +
+          esc(credentials.keyName(k)) + ' — ' +
           esc(att.verified && att.trusted ? 'attestation trusted'
                                           : 'attestation not trusted') +
           '</option>';
@@ -392,9 +392,9 @@ class PortalDevicesPage {
     const rpId = authn.rpIdOf(base);
     const csrf = websecurity.field(session.id);
     this.ctx.log.debug("Leaving PortalDevicesPage.ceremonyBlock().");
-    return '<h2>Use your security key</h2>' +
-      '<p class="note">Your browser is about to ask for the security key ' +
-      'you chose, on the device it is built into.</p>' +
+    return '<h2>Use your passkey</h2>' +
+      '<p class="note">Your browser is about to ask for the passkey you ' +
+      'chose, on the device it is saved on.</p>' +
       '<div id="wa-data" data-challenge="' + esc(pending.challenge) + '"' +
       ' data-rpid="' + esc(rpId) + '"' +
       ' data-user="' + esc(session.user.username) + '"' +
@@ -403,7 +403,7 @@ class PortalDevicesPage {
       ' data-options="' +
       esc(JSON.stringify(webauthnPolicy.requestOptions(rpId))) + '"' +
       ' data-mode="get"></div>' +
-      '<button id="wa-go" type="button">Use the security key</button>' +
+      '<button id="wa-go" type="button">Use passkey</button>' +
       '<form method="post" action="' + esc(this.PATH) + '" id="wa-form">' +
       csrf + '<input type="hidden" name="action" value="link-finish">' +
       '<input type="hidden" name="challenge" value="' +
@@ -660,8 +660,8 @@ class PortalDevicesPage {
         deviceEnrolment.abandon(session.id, 'webauthn');
         done = ctx.errorCodes.mark({ ok: false, errors: ['Your browser did ' +
           'not run the ceremony, so nothing was linked. This one step ' +
-          'needs JavaScript — a security key signs inside the ' +
-          'authenticator, and no form can do it.'] }, 'STS-DEVICE-0022');
+          'needs JavaScript — a passkey signs inside the authenticator, ' +
+          'and no form can do it.'] }, 'STS-DEVICE-0022');
       } else if (rpRefusal) {
         done = ctx.errorCodes.mark({ ok: false, errors: [rpRefusal] },
                                    'STS-DEVICE-0022');
@@ -678,7 +678,7 @@ class PortalDevicesPage {
         return this.refusedPage(req, res, session, done, 'STS-DEVICE-0022');
       }
       log.debug('Leaving POST ' + PATH + '. Linked.');
-      return this.back(req, res, 'That security key is linked.');
+      return this.back(req, res, 'That passkey is linked.');
     }
     const result = devices.remove(body.id, who, who);
     ctx.audit.record({
