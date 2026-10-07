@@ -31,7 +31,7 @@ The short version:
 | `token-claims-change` | **yes** — a directory change, a role, an identity verification, an address proved, a claims provider unlinked, or a configuration change (permissions, allowed scopes, claim sets, claim settings, a federation release list) that moves a claim of somebody holding live tokens or assertions, and a modified [GNAP](gnap.md) grant |
 | `credential-change` | **yes** — any credential of a person created, changed, revoked or deleted, at every door that changes one |
 | `assurance-level-change` | **yes** — a re-authentication on a held session that moves its `acr`, and an identity verification recorded or removed that moves a person's identity assurance level |
-| `device-compliance-change` | no — by hand only, until [#164](https://github.com/rcbj/iya-sts/issues/164) gives it a source |
+| `device-compliance-change` | **yes** — a registered device's compliance changes: set by an administrator, the MDM feed or development's test control ([#164](https://github.com/rcbj/iya-sts/issues/164), [Devices](devices.md)) |
 | `risk-level-change` | **yes** — when a person's risk level changes and the `risk-response` policy permits announcing it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) |
 
 ## Three gates every event passes, whatever fired it
