@@ -11986,8 +11986,12 @@ class AdminViews {
         storable: true,
         mech: Object.assign({}, mech, {
           keys: (mech.keys || []).map(function (one) {
+            // #470: the name, group and provider the passkey pages show.
             return Object.assign({}, one,
-                                 { algorithm: credentials.keyAlgorithm(one) });
+                                 { algorithm: credentials.keyAlgorithm(one),
+                                   name: credentials.keyName(one),
+                                   group: credentials.keyGroup(one),
+                                   provider: credentials.keyProvider(one) });
           })
         }),
         totp: totp.settings(),
@@ -12190,7 +12194,25 @@ class AdminViews {
                  // ITS SIGNATURE ALGORITHM (2026-10-01): name, COSE id,
                  // and whether it is post-quantum or insecure.
                  algorithm: credentials.keyAlgorithm(one),
-                 attestation: one.attestation || null };
+                 attestation: one.attestation || null,
+                 // WHAT THE PASSKEY PAGES SHOW (#470): the name a page draws
+                 // (the label, else the default), the group — `device` or
+                 // `security-key` — the provider, when it was last used, the
+                 // backup flags (WebAuthn Level 3 section 6.1), the
+                 // transports and whether it is discoverable; null where the
+                 // key was written before they were kept.
+                 name: credentials.keyName(one),
+                 group: credentials.keyGroup(one),
+                 provider: credentials.keyProvider(one) || null,
+                 lastUsedAt: one.lastUsedAt || 0,
+                 backupEligible: typeof one.backupEligible === 'boolean'
+                   ? one.backupEligible : null,
+                 backupState: typeof one.backupState === 'boolean'
+                   ? one.backupState : null,
+                 transports: Array.isArray(one.transports) ? one.transports
+                                                           : [],
+                 discoverable: typeof one.discoverable === 'boolean'
+                   ? one.discoverable : null };
       }),
       primaryKeys: mech.primaryKeys,
       mfaKeys: mech.mfaKeys,

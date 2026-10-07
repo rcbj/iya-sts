@@ -393,35 +393,46 @@ async function signIn(driver, withKey) {
   log.debug("Leaving signIn().");
 }
 
-// ENROLMENT ON /portal/keys: name it, say where it lives, keep the default
-// role (a second factor beside the password), and press Add — then the
-// page's own button, which runs `navigator.credentials.create()`.
+// ENROLMENT ON /portal/keys (#470): press the call to action for the kind —
+// *Create a passkey* (`passkey`) or *Use a security key* (`security-key`),
+// keeping the default role (a second step after the password) — then the
+// page's own button, which runs `navigator.credentials.create()`; then give
+// it a nickname in the form the page opens once it is registered.
 async function enrol(driver, kind, label) {
   log.debug("Entering enrol(). kind=" + kind);
   await driver.get(url("/portal/keys"));
-  const box = await driver.findElement(By.id("key-label"));
-  await box.clear();
-  await box.sendKeys(label);
-  const radios = await driver.findElements(
-    By.css("input[name='kind'][value='" + kind + "']"));
-  assert.ok(radios.length === 1,
-    "/portal/keys offers no \"" + kind + "\" choice of where the key " +
-    "lives, so a person cannot ask for one");
-  await radios[0].click();
-  await pressAction(driver, "begin");
+  const buttons = await driver.findElements(
+    By.css("button[name='kind'][value='" + kind + "']"));
+  assert.ok(buttons.length === 1,
+    "/portal/keys offers no \"" + kind + "\" call to action, so a person " +
+    "cannot ask for one");
+  await buttons[0].click();
   await waitFor(driver, function () {
     return present(driver, "#wa-go");
-  }, "/portal/keys did not arm a ceremony for a " + kind + " key");
+  }, "/portal/keys did not arm a ceremony for a " + kind);
   await driver.findElement(By.id("wa-go")).click();
   await waitFor(driver, async function () {
     return !(await present(driver, "#wa-data"));
-  }, "the " + kind + " key's ceremony never finished: the page still " +
-     "holds the armed ceremony");
+  }, "the " + kind + " ceremony never finished: the page still holds the " +
+     "armed ceremony");
+  // THE NICKNAME PROMPT, open at the top of the page with the default name.
+  const nickname = await driver.findElements(
+    By.css("form[action$='/rename-key'] input[name='label']"));
+  assert.ok(nickname.length >= 1,
+    "no nickname was asked for after the " + kind + " was registered: " +
+    (await bodyText(driver)).slice(0, 400));
+  await nickname[0].clear();
+  await nickname[0].sendKeys(label);
+  await driver.findElement(By.xpath(
+    "(//form[contains(@action,'/rename-key')])[1]//button")).click();
+  await waitFor(driver, async function () {
+    return /Renamed to/.test(await bodyText(driver));
+  }, "the nickname was not saved");
   const key = (await keysOf(PERSON)).filter(function (k) {
     return k.label === label;
   })[0];
   assert.ok(key && key.credentialId,
-    "the " + kind + " key labelled \"" + label + "\" is not on " + PERSON +
+    "the " + kind + " named \"" + label + "\" is not on " + PERSON +
     "'s entry after the ceremony; the page says: " +
     (await bodyText(driver)).slice(0, 400));
   log.debug("Leaving enrol().");
@@ -447,18 +458,26 @@ async function armedResponse(driver) {
     .get("content-security-policy") || ""), text: text };
 }
 
-// THE KIND /portal/keys DRAWS FOR ONE KEY — the third cell of its row,
-// `credentials.keyKind()`'s text, from the attachment the browser reported
-// at enrolment. It is read off the page because `/admin-api/users` does not
-// carry the attachment, and the page is what a person decides by.
+// THE KIND /portal/keys DRAWS FOR ONE KEY — the Kind row of its Details
+// fold, `credentials.keyKind()`'s text, from the attachment the browser
+// reported at enrolment — and the GROUP it is listed under (#470). Read off
+// the page because the page is what a person decides by; `textContent`,
+// because a closed `<details>` hides its text from WebDriver's getText().
 async function kindDrawnFor(driver, label) {
   log.debug("Entering kindDrawnFor().");
   await driver.get(url("/portal/keys"));
   const cells = await driver.findElements(By.xpath(
-    "//tr[td[1][normalize-space()='" + label + "']]/td[3]"));
-  const text = cells.length ? String(await cells[0].getText()) : "";
+    "//li[.//div[@class='name' and normalize-space()='" + label + "']]" +
+    "//tr[th='Kind']/td"));
+  const text = cells.length
+    ? String(await cells[0].getAttribute("textContent")).trim() : "";
+  const groups = await driver.findElements(By.xpath(
+    "//li[.//div[@class='name' and normalize-space()='" + label + "']]" +
+    "/parent::ul/preceding-sibling::h2[1]"));
+  const group = groups.length
+    ? String(await groups[0].getAttribute("textContent")).trim() : "";
   log.debug("Leaving kindDrawnFor().");
-  return text;
+  return { kind: text, group: group };
 }
 
 // ---------------------------------------------------------------------------
@@ -468,12 +487,15 @@ async function aRoamingKeyIsRefused(driver) {
   log.debug("Entering aRoamingKeyIsRefused().");
   log.info("=== 1. a roaming key is passed over, and refused if forced ===");
   await useAuthenticator(driver, Transport.USB);
-  const roaming = await enrol(driver, "roaming", ROAMING_LABEL);
+  const roaming = await enrol(driver, "security-key", ROAMING_LABEL);
   const roamingKind = await kindDrawnFor(driver, ROAMING_LABEL);
   check("the browser reported the USB authenticator as cross-platform, and " +
-        "/portal/keys draws the key as roaming", function () {
-    assert.ok(/^roaming/i.test(roamingKind),
+        "/portal/keys draws the key as roaming, under PASSKEYS ON SECURITY " +
+        "KEYS (#470)", function () {
+    assert.ok(/^roaming/i.test(roamingKind.kind),
       "the roaming key is drawn as " + JSON.stringify(roamingKind));
+    assert.strictEqual(roamingKind.group, "Passkeys on security keys",
+      JSON.stringify(roamingKind));
   });
 
   await driver.get(url("/portal/devices"));
@@ -483,7 +505,7 @@ async function aRoamingKeyIsRefused(driver) {
   check("/portal/devices names the roaming key as passed over and offers " +
         "it nowhere", function () {
     assert.ok(text.indexOf(ROAMING_LABEL) >= 0 &&
-              /roaming key/i.test(text),
+              /on a security key or reached from another phone/i.test(text),
       "the page does not say the roaming key was passed over: " +
       text.slice(0, 500));
     assert.strictEqual(offered.length, 0,
@@ -510,12 +532,14 @@ async function aPlatformKeyIsEnrolled(driver) {
   // fresh one that must ask for a key — and the only one present now is
   // the platform authenticator, which holds no credential yet. So this
   // enrolment happens in the session that already exists.
-  const platform = await enrol(driver, "platform", PLATFORM_LABEL);
+  const platform = await enrol(driver, "passkey", PLATFORM_LABEL);
   const platformKind = await kindDrawnFor(driver, PLATFORM_LABEL);
   check("the browser reported the internal authenticator as platform, and " +
         "/portal/keys draws the key as built into a device", function () {
-    assert.strictEqual(platformKind, "built into a device",
+    assert.strictEqual(platformKind.kind, "built into a device",
       "the platform key is drawn as " + JSON.stringify(platformKind));
+    assert.strictEqual(platformKind.group, "Passkeys on your devices",
+      JSON.stringify(platformKind));
   });
   log.debug("Leaving aPlatformKeyIsEnrolled().");
   return platform;
@@ -636,7 +660,7 @@ async function theLink(driver, platform, product) {
   await driver.findElement(By.id("wa-go")).click();
   await waitFor(driver, async function () {
     const text = await bodyText(driver);
-    return /security key is linked/i.test(text) ||
+    return /passkey is linked/i.test(text) ||
       /only with an attestation/i.test(text) ||
       /refused|could not|not linked/i.test(text);
   }, "pressing the ceremony's button led nowhere.");
@@ -657,7 +681,7 @@ async function theLink(driver, platform, product) {
   }
   check("the script ran the ceremony and the page says the key is linked",
     function () {
-      assert.ok(/security key is linked/i.test(said),
+      assert.ok(/passkey is linked/i.test(said),
         "the page did not say the key was linked: " + said.slice(0, 500));
     });
   log.debug("Leaving theLink(). Linked.");

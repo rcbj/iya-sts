@@ -451,6 +451,30 @@ async function enrollingAKeyAtTheSignInScreen(authenticator) {
         String(page.text).slice(0, 400));
     });
 
+  check("THE PAGE SPEAKS OF A PASSKEY AND CARRIES A REAL BUTTON UNDER ITS " +
+        "SCRIPT (#470): every scripted page here does (the root CLAUDE.md), " +
+        "and this one had only hidden inputs, so with script blocked it did " +
+        "nothing; the technical lines are folded", function () {
+    assert.ok(/Create a passkey/.test(page.text),
+      "the page does not say passkey: " + String(page.text).slice(0, 400));
+    assert.ok(/<form[^>]*id="wa-form"[\s\S]*?<button class="secondary">My browser did not ask/
+      .test(page.text), "the form under the script has no real button");
+    assert.ok(/<summary>Technical details<\/summary>/.test(page.text),
+      "the technical lines are not folded");
+  });
+  const noCeremony = await b.go("POST", "/authn/webauthn",
+    form({ mfa_id: hidden(page.text, "mfa_id"), mode: "create" }));
+  check("pressing that button — the step posted with no credential — is " +
+        "answered that the browser ran no ceremony, and the step survives",
+    function () {
+      assert.strictEqual(noCeremony.status, 200,
+        "it answered " + noCeremony.status);
+      assert.ok(/did not run the ceremony/.test(noCeremony.text),
+        String(noCeremony.text).slice(0, 400));
+      assert.strictEqual(attr(noCeremony.text, "data-mode"), "create",
+        "the ceremony is no longer drawn");
+    });
+
   const done = await completeCeremony(b, page.text, authenticator);
   check("AND THE CEREMONY IS ACCEPTED BY THE REAL VERIFIER — a real P-256 " +
         "signature over the real authenticatorData || " +
@@ -506,6 +530,18 @@ async function theKeyIsInTheStoreEverythingElseReads(authenticator) {
         "be matched to it later", function () {
       assert.strictEqual(factors.keys[0].credentialId, authenticator.idB64,
         "the stored credential id is not the one enrolled.");
+    });
+
+  check("A KEY REGISTERED AT THE SIGN-IN SCREEN IS NAMED BY ITS GROUP " +
+        "(#470), where it was called \"security key\" whatever it was: this " +
+        "one cannot be backed up and is cross-platform, so it is a security " +
+        "key, listed under passkeys on security keys", function () {
+      assert.strictEqual(factors.keys[0].label, "Security key",
+        JSON.stringify(factors.keys[0]));
+      assert.strictEqual(factors.keys[0].group, "security-key",
+        JSON.stringify(factors.keys[0]));
+      assert.strictEqual(factors.keys[0].backupEligible, false,
+        JSON.stringify(factors.keys[0]));
     });
 
   check("AND `mfaRequired` IS TRUE NOW, which is the flag the sign-in screen " +

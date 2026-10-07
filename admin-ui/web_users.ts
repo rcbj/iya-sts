@@ -1871,10 +1871,35 @@ class UsersPage {
             ? kit.note('Clearing needs <strong>Admin Write</strong>.')
             : ''));
 
-    // --- security keys
+    // --- passkeys
     // --------------------------------------------------------
+    // PASSKEYS (#470): the person's own page groups them as *passkeys on
+    // your devices* and *passkeys on security keys*, and this table says
+    // which beside each, with the name the portal draws (the label, else the
+    // provider's or the group's), the provider, when it was last used and
+    // the backup state — and a Rename for Admin Write, through the same
+    // `renameKey()` the person's own Rename calls (rcbj's decision D).
     const keyRow = function (one) {
-      return '<tr><td>' + kit.esc(one.label || 'security key') + '</td>' +
+      const backup = one.backupEligible === true
+        ? (one.backupState === true ? 'backed up' : 'eligible, not backed up')
+        : (one.backupEligible === false ? 'device-bound' : '—');
+      return '<tr><td>' + kit.esc(one.name || one.label || 'Passkey') +
+        (one.provider && one.provider !== one.name
+          ? '<div class="note">' + kit.esc(one.provider) + '</div>' : '') +
+        (state.write
+          ? '<details><summary>Rename</summary>' +
+            '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" value="rename-key">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+            '<input type="hidden" name="credentialId" value="' +
+            kit.esc(one.credentialId || '') + '">' + carryBack +
+            '<input type="text" name="label" maxlength="60" value="' +
+            kit.esc(one.name || one.label || '') + '" aria-label="' +
+            kit.esc('New name for ' + (one.name || 'this passkey')) + '">' +
+            '<button>Save</button></form></details>'
+          : '') + '</td>' +
+        '<td>' + kit.esc(one.group === 'security-key'
+          ? 'on a security key' : 'on their devices') + '</td>' +
         '<td>' + (one.role === 'primary'
           ? '<span class="state-valid" title="' +
             kit.esc('Signs them in on its own — this is a way IN rather ' +
@@ -1891,8 +1916,15 @@ class UsersPage {
         '<td>' + UsersPage.algorithmCell(one.algorithm) + '</td>' +
         '<td>' + UsersPage.attestationCell(one.attestation, one.aaguid) +
         '</td>' +
+        '<td>' + kit.esc(backup) +
+        (Array.isArray(one.transports) && one.transports.length
+          ? '<div class="note">' + kit.esc(one.transports.join(', ')) +
+            '</div>'
+          : '') + '</td>' +
         '<td>' +
         kit.esc(one.enrolledAt ? kit.whenText(one.enrolledAt) : '—') +
+        '</td><td>' +
+        kit.esc(one.lastUsedAt ? kit.whenText(one.lastUsedAt) : 'never') +
         '</td><td>' + (state.write
           ? '<form method="post" action="/admin/users">' +
             '<input type="hidden" name="action" value="clear-key">' +
@@ -1903,38 +1935,40 @@ class UsersPage {
             kit.esc(one.role === 'primary'
               ? 'This may be the only credential on the account. The removal ' +
                      'is REFUSED if it would leave nobody able to sign in.'
-              : 'Removes this key. The account drops to one factor and stays ' +
-                     'reachable.') + '">Remove</button></form>'
+              : 'Removes this passkey. The account drops to one factor and ' +
+                     'stays reachable.') + '">Remove</button></form>'
           : '') + '</td></tr>';
     };
     const allKeys = mfaKeys.concat(primaryKeys);
-    const keysBlock = '<h3>Security keys (WebAuthn)</h3>' +
+    const keysBlock = '<h3>Passkeys (WebAuthn)</h3>' +
       (allKeys.length
-        ? '<table><tr><th>Label</th><th>Role</th><th>Credential id</th>' +
+        ? '<table><tr><th>Name</th><th>Where</th><th>Role</th>' +
+          '<th>Credential id</th>' +
           '<th class="num">Sign count</th><th>Algorithm</th>' +
-          '<th>Attestation</th>' +
-          '<th>Enrolled</th><th></th></tr>' +
+          '<th>Attestation</th><th>Backup</th>' +
+          '<th>Created</th><th>Last used</th><th></th></tr>' +
           allKeys.map(keyRow).join('') + '</table>' +
           kit.note('<strong>The sign count is WebAuthn\'s replay ' +
           'defence</strong>: an authenticator\'s counter only ever goes up, ' +
           'so one that went backwards is a cloned key and the assertion is ' +
           'refused. A counter stuck at zero is an authenticator that does ' +
           'not implement one, which is allowed and is what most platform ' +
-          'authenticators do.')
-        : kit.note('<strong>None enrolled.</strong> ' +
+          'authenticators do — and every synced passkey.')
+        : kit.note('<strong>None registered.</strong> ' +
           (keyLive.enabled
-            ? 'They enrol one themselves at <code>/portal/keys</code>, at ' +
+            ? 'They create one themselves at <code>/portal/keys</code>, at ' +
               'the sign-in screen, or while spending an activation link. ' +
-              'There is no way to enrol one from here and there cannot be: a ' +
-              'WebAuthn ceremony happens in the person\'s own browser ' +
+              'There is no way to create one from here and there cannot be: ' +
+              'a WebAuthn ceremony happens in the person\'s own browser ' +
               'against their own authenticator, and this console is not that ' +
               'browser.'
-            : 'Security keys are switched off in this realm ' +
+            : 'Passkeys are switched off in this realm ' +
               '(<code>webauthn.enabled</code> on <a ' +
-              'href="/admin/webauthn">WebAuthn</a>), so nobody new can enrol ' +
-              'one. A key already enrolled goes on working.'))) +
+              'href="/admin/webauthn">WebAuthn</a>), so nobody new can ' +
+              'create one. A passkey already registered goes on working.'))) +
       (allKeys.length && !state.write
-        ? kit.note('Removing a key needs <strong>Admin Write</strong>.') :
+        ? kit.note('Renaming or removing a passkey needs <strong>Admin ' +
+                   'Write</strong>.') :
           '') +
       kit.note('<strong>What this realm currently allows</strong>: a key ' +
       'may be a primary credential — ' +

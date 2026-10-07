@@ -183,8 +183,13 @@ function clientData(type, challenge) {
   }), "utf8");
 }
 
-function makeAuthenticator(name) {
+// `opts.backup` (#470) makes a passkey in a credential manager: BE and BS set
+// at registration and on every assertion, reached over hybrid — which a
+// browser reports as `cross-platform` — so the page must group it by the
+// backup flag and not by the attachment.
+function makeAuthenticator(name, opts) {
   log.debug("Entering makeAuthenticator().");
+  const backup = !!(opts && opts.backup);
   const pair = nodeCrypto.generateKeyPairSync("ec",
                                               { namedCurve: "prime256v1" });
   const jwk = pair.publicKey.export({ format: "jwk" });
@@ -197,7 +202,7 @@ function makeAuthenticator(name) {
     register: function (challenge) {
       log.debug("Entering register().");
       const authData = authenticatorData({
-        flags: 0x45, signCount: signCount, attested: true,
+        flags: backup ? 0x5d : 0x45, signCount: signCount, attested: true,
         credentialId: credentialId, cose: coseKey(jwk)
       });
       const length = Buffer.alloc(2);
@@ -208,8 +213,9 @@ function makeAuthenticator(name) {
         rawId: credentialId.toString("base64url"),
         type: "public-key",
         authenticatorAttachment: "cross-platform",
-        clientExtensionResults: { credProps: { rk: false } },
+        clientExtensionResults: { credProps: { rk: backup } },
         response: {
+          transports: backup ? ["hybrid", "internal"] : ["usb", "nfc"],
           attestationObject: Buffer.concat([
             cborMapHeader(3),
             cborText("fmt"), cborText("none"),
@@ -225,7 +231,8 @@ function makeAuthenticator(name) {
     assert: function (challenge) {
       log.debug("Entering assert().");
       signCount += 1;
-      const authData = authenticatorData({ flags: 0x05, signCount: signCount });
+      const authData = authenticatorData({ flags: backup ? 0x1d : 0x05,
+                                           signCount: signCount });
       const cdj = clientData("webauthn.get", challenge);
       log.debug("Leaving assert().");
       return {
@@ -483,11 +490,14 @@ async function signIn(door, authenticator) {
 }
 
 // Drive `/portal/keys`'s two-step enrolment with one authenticator.
-async function enrolAt(b, authenticator, role, label) {
+// Since #470 there is no name before the ceremony: the button pressed is the
+// kind, and a `label` is given afterwards through `/portal/rename-key`, the
+// way the nickname prompt does it.
+async function enrolAt(b, authenticator, role, label, kind) {
   log.debug("Entering enrolAt().");
   let page = await b.go("GET", "/portal/keys");
   const begun = await b.go("POST", "/portal/keys",
-    form({ action: "begin", role: role, label: label || "",
+    form({ action: "begin", role: role, kind: kind || "security-key",
            csrf_token: csrfOf(page.text) }));
   assert.ok(begun.status === 303,
     "beginning the enrolment answered " + begun.status + " " +
@@ -500,36 +510,53 @@ async function enrolAt(b, authenticator, role, label) {
     form({ action: "finish", enrolment_id: hidden(page.text, "enrolment_id"),
            credential: JSON.stringify(authenticator.register(challenge)),
            csrf_token: csrfOf(page.text) }));
+  let prompt = null;
+  let renamed = null;
+  if (done.status === 303) {
+    prompt = await b.go("GET", done.location);
+    if (label) {
+      renamed = await b.go("POST", "/portal/rename-key",
+        form({ credentialId: authenticator.idB64, label: label,
+               csrf_token: csrfOf(prompt.text) }));
+    }
+  }
   log.debug("Leaving enrolAt().");
-  return { armed: page, done: done };
+  return { armed: page, done: done, prompt: prompt, renamed: renamed };
 }
 
 // ---------------------------------------------------------------------------
-// 1a. WHERE THE KEY LIVES (2026-09-26), AND A BROWSER THAT HAS NONE BUILT IN.
+// 1a. TWO CALLS TO ACTION (#470), AND A BROWSER THAT HAS NOTHING BUILT IN.
 //
-// The form asks which kind of authenticator to register. The first version
-// checked "Built into this device" by default and KEPT the pending enrolment
-// when the browser refused — so a browser with nothing built in (Linux
-// Firefox) failed every attempt and could never go back to choose another
-// kind. This asserts the default is the old request, the two kinds reach the
-// ceremony, and a browser's refusal hands the form back.
+// The passkey management guidelines ask for *Create a passkey* and *Use a
+// security key* as two buttons, replacing 2026-09-26's three-way radio. That
+// radio's lesson still holds and is asserted here: a hard `platform` refused
+// outright on a browser with nothing built in (Linux Firefox), so *Create a
+// passkey* sends NO attachment — it hints `client-device` then `hybrid` and
+// prefers a discoverable credential — and a browser's refusal hands the form
+// back rather than re-arming the same ceremony on every reload.
 // ---------------------------------------------------------------------------
-async function whereTheKeyLives(b) {
-  log.debug("Entering whereTheKeyLives().");
-  log.info("=== /portal/keys asks where the key lives ===");
+async function twoCallsToAction(b) {
+  log.debug("Entering twoCallsToAction().");
+  log.info("=== /portal/keys offers Create a passkey and Use a security key ===");
   let page = await b.go("GET", "/portal/keys");
-  check("the form offers the three answers, and LET MY BROWSER CHOOSE is " +
-        "the default — the request as it was before the choice existed",
-        function () {
-    assert.ok(/name="kind" value="any" checked/.test(page.text),
-      "the default is not \"any\": " + String(page.text).slice(0, 600));
-    assert.ok(/name="kind" value="platform"/.test(page.text) &&
-              /name="kind" value="roaming"/.test(page.text),
-      "a kind is missing from the form");
+  check("the page is headed Passkeys and offers the two calls to action, " +
+        "Create a passkey first", function () {
+    assert.ok(/<title>Passkeys/.test(page.text) || />Passkeys</.test(page.text),
+      "the page is not headed Passkeys: " + String(page.text).slice(0, 600));
+    const create = page.text.indexOf('name="kind" value="passkey"');
+    const key = page.text.indexOf('name="kind" value="security-key"');
+    assert.ok(create >= 0 && key >= 0,
+      "a call to action is missing: " + String(page.text).slice(0, 600));
+    assert.ok(create < key, "Create a passkey is not the first");
+    assert.ok(/Create a passkey/.test(page.text) &&
+              /Use a security key/.test(page.text),
+      "the buttons do not say what they do");
+    assert.ok(!/name="kind" value="(any|platform|roaming)"/.test(page.text),
+      "the old three-way choice is still drawn");
   });
 
   const asked = {};
-  for (const kind of ["platform", "roaming", "any"]) {
+  for (const kind of ["passkey", "security-key"]) {
     page = await b.go("GET", "/portal/keys");
     const begun = await b.go("POST", "/portal/keys",
       form({ action: "begin", role: "mfa", kind: kind,
@@ -540,13 +567,13 @@ async function whereTheKeyLives(b) {
     const options = JSON.parse((attr(armed.text, "data-options") || "{}")
       .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
       .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"));
-    asked[kind] = (options.authenticatorSelection || {});
-    if (kind !== "platform") {
+    asked[kind] = options;
+    if (kind !== "passkey") {
       await b.go("POST", "/portal/keys",
         form({ action: "cancel", csrf_token: csrfOf(armed.text) }));
       continue;
     }
-    // THE BROWSER REFUSES, as one with nothing built in does.
+    // THE BROWSER REFUSES, as one with nothing built in and no phone does.
     const refused = await b.go("POST", "/portal/keys",
       form({ action: "finish",
              enrolment_id: hidden(armed.text, "enrolment_id"),
@@ -555,13 +582,13 @@ async function whereTheKeyLives(b) {
                         "allowed." }),
              csrf_token: csrfOf(armed.text) }));
     const after = await b.go("GET", "/portal/keys");
-    check("A BROWSER THAT CANNOT RUN A \"BUILT INTO THIS DEVICE\" CEREMONY " +
-          "gets the form BACK with its error and what to try, rather than " +
-          "the same ceremony re-armed on every reload", function () {
+    check("A BROWSER THAT CANNOT CREATE A PASSKEY gets the form BACK with " +
+          "its error and what to try, rather than the same ceremony re-armed " +
+          "on every reload", function () {
       assert.strictEqual(refused.status, 400,
         "it answered " + refused.status);
       assert.ok(/NotAllowedError/.test(refused.text) &&
-                /no authenticator built into this/.test(refused.text),
+                /Use a security key/.test(refused.text),
         "the page does not say why or what to try: " +
         String(refused.text).slice(0, 600));
       assert.ok(!attr(after.text, "data-challenge") &&
@@ -569,20 +596,21 @@ async function whereTheKeyLives(b) {
         "the ceremony is still armed after the browser refused it");
     });
   }
-  check("the kind reaches the ceremony: platform with a discoverable " +
-        "credential, cross-platform, and nothing for \"let my browser " +
-        "choose\"", function () {
-    assert.strictEqual(asked.platform.authenticatorAttachment, "platform",
-      JSON.stringify(asked.platform));
-    assert.ok(asked.platform.residentKey === "preferred" ||
-              asked.platform.residentKey === "required",
-      JSON.stringify(asked.platform));
-    assert.strictEqual(asked.roaming.authenticatorAttachment,
-      "cross-platform", JSON.stringify(asked.roaming));
-    assert.ok(!("authenticatorAttachment" in asked.any),
-      JSON.stringify(asked.any));
+  check("the button reaches the ceremony: Create a passkey sends no " +
+        "attachment, prefers a discoverable credential and hints the device " +
+        "then hybrid; Use a security key asks for cross-platform and hints " +
+        "a security key (WebAuthn Level 3 section 5.4.8)", function () {
+    const passkey = asked.passkey.authenticatorSelection || {};
+    const key = asked["security-key"].authenticatorSelection || {};
+    assert.ok(!("authenticatorAttachment" in passkey), JSON.stringify(passkey));
+    assert.ok(passkey.residentKey === "preferred" ||
+              passkey.residentKey === "required", JSON.stringify(passkey));
+    assert.deepStrictEqual(asked.passkey.hints, ["client-device", "hybrid"]);
+    assert.strictEqual(key.authenticatorAttachment, "cross-platform",
+      JSON.stringify(key));
+    assert.deepStrictEqual(asked["security-key"].hints, ["security-key"]);
   });
-  log.debug("Leaving whereTheKeyLives().");
+  log.debug("Leaving twoCallsToAction().");
 }
 
 // ---------------------------------------------------------------------------
@@ -657,7 +685,7 @@ async function thePortalCanEnrolAKey(first) {
     form({ action: "cancel",
            csrf_token: csrfOf((await b.go("GET", "/portal/keys")).text) }));
 
-  await whereTheKeyLives(b);
+  await twoCallsToAction(b);
 
   const enrolled = await enrolAt(b, first, "mfa", "the one at my desk");
   check("and a real ceremony against it enrols the key", function () {
@@ -666,16 +694,90 @@ async function thePortalCanEnrolAKey(first) {
       String(enrolled.done.text).slice(0, 500));
   });
 
+  check("THE NICKNAME IS ASKED FOR AFTER THE CEREMONY (#470): the redirect " +
+        "names the new passkey and the page opens its rename form, filled " +
+        "with the default name — a security key's, since this one cannot be " +
+        "backed up and is cross-platform", function () {
+    assert.ok(/[?&]named=/.test(String(enrolled.done.location)),
+      "the redirect names no passkey: " + enrolled.done.location);
+    assert.ok(/Give your security key a nickname/.test(enrolled.prompt.text),
+      "no nickname prompt: " + String(enrolled.prompt.text).slice(0, 600));
+    assert.ok(/name="label"[^>]*value="Security key"/.test(
+      enrolled.prompt.text), "the prompt does not hold the default name");
+    assert.strictEqual(enrolled.renamed && enrolled.renamed.status, 303,
+      "the rename answered " + (enrolled.renamed && enrolled.renamed.status));
+  });
+
   const factors = await factorsFor(PERSON);
-  check("which reaches the person's own entry, with the label they typed and " +
-        "the role they chose", function () {
+  check("which reaches the person's own entry, with the nickname they gave " +
+        "it, the role they chose, and what the passkey pages group it by " +
+        "(#470): BE clear, the transports, not discoverable", function () {
     assert.strictEqual(factors.mfaKeys, 1,
       "the store holds " + factors.mfaKeys + " key(s).");
     assert.strictEqual(factors.keys[0].label, "the one at my desk",
       "the label did not survive: " + JSON.stringify(factors.keys[0]));
+    assert.strictEqual(factors.keys[0].name, "the one at my desk");
     assert.strictEqual(factors.keys[0].role, "mfa",
       "the role did not survive.");
+    assert.strictEqual(factors.keys[0].group, "security-key",
+      JSON.stringify(factors.keys[0]));
+    assert.strictEqual(factors.keys[0].backupEligible, false);
+    assert.deepStrictEqual(factors.keys[0].transports, ["usb", "nfc"]);
+    assert.strictEqual(factors.keys[0].discoverable, false);
+    assert.strictEqual(factors.keys[0].lastUsedAt, 0,
+      "a passkey nobody has used yet says it was used");
   });
+
+  const listed = await b.go("GET", "/portal/keys");
+  check("the list draws it under PASSKEYS ON SECURITY KEYS, with its name, " +
+        "Created, Not used yet, a Rename and a Details fold", function () {
+    assert.ok(/Passkeys on security keys/.test(listed.text),
+      String(listed.text).slice(0, 800));
+    assert.ok(!/Passkeys on your devices/.test(listed.text),
+      "an empty group is drawn");
+    assert.ok(/the one at my desk/.test(listed.text) &&
+              /Created \d{4}-\d\d-\d\d/.test(listed.text) &&
+              /Not used yet/.test(listed.text),
+      "the row does not say what it is and when");
+    assert.ok(/<summary>Rename<\/summary>/.test(listed.text) &&
+              /<summary>Details<\/summary>/.test(listed.text),
+      "the row has no Rename or Details");
+  });
+
+  // RENAME'S REFUSALS (#470): `credentials.renameKey()` is the one writer,
+  // and it is held to `remove-key`'s A01 rule — an id that is not one of
+  // THIS person's keys matches nothing.
+  const tooLong = await b.go("POST", "/portal/rename-key",
+    form({ credentialId: first.idB64, label: "x".repeat(61),
+           csrf_token: csrfOf(listed.text) }));
+  const notTheirs = await b.go("POST", "/portal/rename-key",
+    form({ credentialId: makeAuthenticator("nobody's").idB64, label: "mine",
+           csrf_token: csrfOf(listed.text) }));
+  const noCsrf = await b.go("POST", "/portal/rename-key",
+    form({ credentialId: first.idB64, label: "forged" }));
+  check("a rename is refused for a name over 60 characters, for an id that " +
+        "is not one of theirs, and without the CSRF token", function () {
+    assert.strictEqual(tooLong.status, 400, "too long: " + tooLong.status);
+    assert.ok(/at most 60 characters/.test(tooLong.text),
+      String(tooLong.text).slice(0, 300));
+    assert.strictEqual(notTheirs.status, 400, "not theirs: " +
+      notTheirs.status);
+    assert.strictEqual(noCsrf.status, 403, "no CSRF token: " + noCsrf.status);
+  });
+  const restored = await b.go("POST", "/portal/rename-key",
+    form({ credentialId: first.idB64, label: "",
+           csrf_token: csrfOf(listed.text) }));
+  const afterRestore = await factorsFor(PERSON);
+  check("an EMPTY name restores the default", function () {
+    assert.strictEqual(restored.status, 303, "it answered " + restored.status);
+    assert.strictEqual(afterRestore.keys[0].label, "Security key",
+      JSON.stringify(afterRestore.keys[0]));
+  });
+  const back = await b.go("POST", "/portal/rename-key",
+    form({ credentialId: first.idB64, label: "the one at my desk",
+           csrf_token: csrfOf(listed.text) }));
+  assert.strictEqual(back.status, 303, "renaming back answered " +
+    back.status);
   log.debug("Leaving thePortalCanEnrolAKey().");
   return b;
 }
@@ -710,7 +812,8 @@ async function aSecondKeyIsABackupAndTheSameOneIsNot(first, second) {
         attr(again.armed.text, "data-exclude"));
     });
 
-  const backup = await enrolAt(b, second, "mfa", "the one on my keyring");
+  const backup = await enrolAt(b, second, "mfa", "the one on my keyring",
+                               "passkey");
   check("A DIFFERENT AUTHENTICATOR IS ACCEPTED, which is the whole feature",
     function () {
       assert.strictEqual(backup.done.status, 303,
@@ -730,6 +833,26 @@ async function aSecondKeyIsABackupAndTheSameOneIsNot(first, second) {
       assert.ok(ids.indexOf(first.idB64) >= 0 && ids.indexOf(second.idB64) >= 0,
         "the two enrolled keys are not the two stored: " + ids.join(", "));
     });
+  const synced = factors.keys.filter(function (k) {
+    return k.credentialId === second.idB64;
+  })[0] || {};
+  const page = await b.go("GET", "/portal/keys");
+  check("A PASSKEY IN A CREDENTIAL MANAGER IS ON YOUR DEVICES even reached " +
+        "over hybrid, which a browser reports as cross-platform: the BACKUP " +
+        "ELIGIBILITY flag decides first (#470), and the page draws both " +
+        "groups", function () {
+    assert.strictEqual(synced.backupEligible, true, JSON.stringify(synced));
+    assert.strictEqual(synced.backupState, true, JSON.stringify(synced));
+    assert.strictEqual(synced.group, "device", JSON.stringify(synced));
+    assert.strictEqual(synced.discoverable, true, JSON.stringify(synced));
+    const devices = page.text.indexOf("Passkeys on your devices");
+    const keys = page.text.indexOf("Passkeys on security keys");
+    assert.ok(devices >= 0 && keys > devices,
+      "the two groups are not both drawn, devices first");
+    assert.ok(page.text.indexOf("the one on my keyring") > devices &&
+              page.text.indexOf("the one on my keyring") < keys,
+      "the synced passkey is not under passkeys on your devices");
+  });
   log.debug("Leaving aSecondKeyIsABackupAndTheSameOneIsNot().");
 }
 
@@ -779,6 +902,16 @@ async function theLostKeyIsRemovedWithoutAnOperator(first, second) {
   log.info("=== the lost key is removed, and the last one is not ===");
   const b = await signIn("/portal/keys", second);
   let page = await b.go("GET", "/portal/keys");
+
+  const used = await factorsFor(PERSON);
+  check("EACH PASSKEY NOW SAYS WHEN IT WAS LAST USED (#470) — recorded by " +
+        "every assertion, and drawn on the list", function () {
+    used.keys.forEach(function (k) {
+      assert.ok(k.lastUsedAt > 0, "never used: " + JSON.stringify(k));
+    });
+    assert.ok(/Last used \d{4}-\d\d-\d\d/.test(page.text),
+      "the list does not say when: " + String(page.text).slice(0, 800));
+  });
 
   const removed = await b.go("POST", "/portal/remove-key",
     form({ credentialId: first.idB64, csrf_token: csrfOf(page.text) }));
@@ -862,7 +995,8 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
   // NO PASSWORD FIELD IS SENT AT ALL — what a person who leaves both boxes
   // empty posts is the same as this.
   const armed = await b.go("POST", "/portal/activate",
-    form({ user: NEWCOMER, token: token, key_role: "primary", kind: "any" }));
+    form({ user: NEWCOMER, token: token, key_role: "primary",
+           kind: "passkey" }));
   check("CHOOSING A KEY INSTEAD OF A PASSWORD DRAWS THE CEREMONY rather than " +
         "finishing — the activation page registers the key, authorised by " +
         "the link, with script-src relaxed to 'self' and frame-ancestors " +

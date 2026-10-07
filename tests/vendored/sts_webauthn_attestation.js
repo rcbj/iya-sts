@@ -388,7 +388,7 @@ async function enrol(b, key, how, label) {
   log.debug("Entering enrol(). " + how);
   let page = await b.go("GET", R + "/portal/keys");
   const begun = await b.go("POST", R + "/portal/keys",
-    form({ action: "begin", role: "mfa", label: label,
+    form({ action: "begin", role: "mfa", kind: "security-key",
            csrf_token: csrfOf(page.text) }));
   assert.strictEqual(begun.status, 303, "beginning the enrolment answered " +
     begun.status + " " + begun.text.slice(0, 300));
@@ -400,6 +400,19 @@ async function enrol(b, key, how, label) {
              .enrolment_id || "",
            credential: JSON.stringify(key.register(challenge, how)),
            csrf_token: csrfOf(page.text) }));
+  if (done.status === 303 && label) {
+    // THE NICKNAME (#470): there is no name before the ceremony; the
+    // redirect names the new passkey and the page renames it.
+    const named = decodeURIComponent((String(done.location)
+      .match(/[?&]named=([^&]*)/) || [])[1] || "");
+    const prompt = await b.go("GET", R + "/portal/keys?named=" +
+                              encodeURIComponent(named));
+    const renamed = await b.go("POST", R + "/portal/rename-key",
+      form({ credentialId: named, label: label,
+             csrf_token: csrfOf(prompt.text) }));
+    assert.strictEqual(renamed.status, 303, "naming the passkey answered " +
+      renamed.status + " " + String(renamed.text).slice(0, 300));
+  }
   if (done.status !== 303) {
     // A refused enrolment keeps the ceremony armed; cancel it so the next
     // one starts clean.

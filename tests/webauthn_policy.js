@@ -283,53 +283,68 @@ function run(t) {
       'and a real preference IS sent');
   });
 
-  // THE PERSON'S CHOICE ON /portal/keys (2026-09-26): which kind of
-  // authenticator the enrolment asks for, narrowing the request only while
-  // the realm's setting leaves the choice open.
+  // THE PERSON'S CHOICE ON /portal/keys: which of the two calls to action
+  // they pressed (#470; a three-way radio from 2026-09-26). *Create a
+  // passkey* sends NO attachment — a hard `platform` refused outright on a
+  // browser with nothing built in — and hints the device then hybrid; *Use a
+  // security key* asks for cross-platform and hints a security key.
   withSetting('webauthn.authenticatorAttachment', 'any', function () {
     withSetting('webauthn.residentKey', 'discouraged', function () {
-      const built = policy.creationOptions('localhost', 'platform')
-        .authenticatorSelection;
-      const carried = policy.creationOptions('localhost', 'roaming')
-        .authenticatorSelection;
-      const neither = policy.creationOptions('localhost', 'bogus')
-        .authenticatorSelection;
-      t.check(built.authenticatorAttachment === 'platform' &&
-              built.residentKey === 'preferred' &&
-              built.requireResidentKey === false,
-        'a key BUILT INTO THIS DEVICE asks for the platform authenticator ' +
-        'and a discoverable credential (preferred), because "discouraged" ' +
-        'is what sends Chrome and Edge to a USB key and never the device',
-        JSON.stringify(built));
-      t.check(carried.authenticatorAttachment === 'cross-platform' &&
-              carried.residentKey === 'discouraged',
-        'a key THEY CARRY asks for a roaming authenticator and keeps the ' +
-        'setting\'s resident-key answer — its slot argument is about them',
-        JSON.stringify(carried));
+      const passkey = policy.creationOptions('localhost', 'passkey');
+      const key = policy.creationOptions('localhost', 'security-key');
+      const neither = policy.creationOptions('localhost', 'bogus');
       t.check(!Object.prototype.hasOwnProperty
-                .call(neither, 'authenticatorAttachment') &&
-              neither.residentKey === 'discouraged',
-        'an unknown kind is the request as it always was',
+                .call(passkey.authenticatorSelection,
+                      'authenticatorAttachment') &&
+              passkey.authenticatorSelection.residentKey === 'preferred' &&
+              passkey.authenticatorSelection.requireResidentKey === false &&
+              JSON.stringify(passkey.hints) === '["client-device","hybrid"]',
+        'CREATE A PASSKEY asks for no attachment, a discoverable credential ' +
+        '(preferred, because "discouraged" is what sends Chrome and Edge to ' +
+        'a USB key and never the device) and hints the device then hybrid',
+        JSON.stringify(passkey));
+      t.check(key.authenticatorSelection.authenticatorAttachment ===
+                'cross-platform' &&
+              key.authenticatorSelection.residentKey === 'discouraged' &&
+              JSON.stringify(key.hints) === '["security-key"]',
+        'USE A SECURITY KEY asks for a roaming authenticator, hints a ' +
+        'security key and keeps the setting\'s resident-key answer — its ' +
+        'slot argument is about them', JSON.stringify(key));
+      t.check(!Object.prototype.hasOwnProperty
+                .call(neither.authenticatorSelection,
+                      'authenticatorAttachment') &&
+              neither.authenticatorSelection.residentKey === 'discouraged' &&
+              JSON.stringify(neither.hints) === '[]',
+        'an unknown kind — and the sign-in screen, which sends none — is ' +
+        'the request as it always was, with no hint',
         JSON.stringify(neither));
       t.check(JSON.stringify(policy.authenticatorKinds()) ===
-              '["platform","roaming"]',
-        'both kinds are offered while the setting is any',
+              '["passkey","security-key"]',
+        'both calls to action are offered while the setting is any',
         JSON.stringify(policy.authenticatorKinds()));
     });
     withSetting('webauthn.residentKey', 'required', function () {
-      t.check(policy.creationOptions('localhost', 'platform')
+      t.check(policy.creationOptions('localhost', 'passkey')
                 .authenticatorSelection.residentKey === 'required',
         'a setting of REQUIRED is never loosened to preferred');
     });
   });
   withSetting('webauthn.authenticatorAttachment', 'cross-platform',
               function () {
-    t.check(policy.creationOptions('localhost', 'platform')
+    t.check(policy.creationOptions('localhost', 'passkey')
               .authenticatorSelection.authenticatorAttachment ===
               'cross-platform' &&
-            JSON.stringify(policy.authenticatorKinds()) === '["roaming"]',
-      'a setting that names one wins over the person\'s choice, and the page ' +
-      'is offered only that one');
+            JSON.stringify(policy.authenticatorKinds()) ===
+              '["security-key"]',
+      'a setting that names one wins over the person\'s choice, and the ' +
+      'page is offered only that button');
+  });
+  withSetting('webauthn.authenticatorAttachment', 'platform', function () {
+    t.check(policy.creationOptions('localhost', 'passkey')
+              .authenticatorSelection.authenticatorAttachment === 'platform' &&
+            JSON.stringify(policy.authenticatorKinds()) === '["passkey"]',
+      'a platform setting offers only Create a passkey, and asks for the ' +
+      'platform authenticator');
   });
 
   withSetting('webauthn.residentKey', 'required', function () {

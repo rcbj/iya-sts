@@ -18677,6 +18677,14 @@ const CODES = [
       'attributes-all, attributes-clear) was asked of the Kerberos PAC ' +
       'claim set, which has no catalogue half (#493).',
     spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0849',
+    summary: 'An operator\'s rename of a person\'s passkey named nobody ' +
+      '(#470).',
+    spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0850',
+    summary: 'An operator\'s rename of a person\'s passkey was refused: the ' +
+      'name was not one, or no such key is registered for them (#470).',
+    spec: 'HTTP 400 (API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
