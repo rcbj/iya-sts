@@ -635,6 +635,62 @@ class SpiffeBroker {
     };
   }
 
+  // THE REGISTRY A WORKER JUST WROTE (2026-10-07). A registration entry made
+  // through /admin-api is stored by the request WORKER that answered it, and
+  // this API answers in the FRONT process, which learns of it through the
+  // change log. With no barrier on this socket a reference made just after the
+  // entry was refused WORKLOAD_NOT_ENTITLED (STS-SPIFFE-0138) from the old
+  // copy — `sts_spiffe_broker`'s pod entry in single-node, twice on
+  // 2026-10-07. So before entitlement is asked, the front process waits for
+  // what the workers have answered to commit and pulls it: the two steps
+  // `krb5_kdc.js`'s `catchUpWithWorkers()` takes for port 88, bounded, and
+  // only where request workers exist and `workers.readYourWrite` is on.
+  // Lazy and guarded, as there: a process with no pool answers as it was.
+  /**
+   * Waits, bounded, for the request workers' answered writes to commit and
+   * pulls them into this process.
+   *
+   * @returns nothing
+   */
+  async catchUpWithWorkers(): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeBroker.catchUpWithWorkers().");
+    let pool = null;
+    let persistence = null;
+    try {
+      pool = require('../common/request_pool');
+      persistence = require('../persistence/persistence');
+    } catch (e) {
+      log.debug("Caught in SpiffeBroker.catchUpWithWorkers(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving SpiffeBroker.catchUpWithWorkers(). No pool here.");
+      return;
+    }
+    if (!pool || typeof pool.readYourWrite !== 'function' ||
+        !pool.readYourWrite() || !(pool.size() > 0)) {
+      log.debug("Leaving SpiffeBroker.catchUpWithWorkers(). No workers.");
+      return;
+    }
+    let timer = null;
+    const bound = new Promise(function (resolve) {
+      timer = setTimeout(resolve, 3000);
+    });
+    const caught = Promise.resolve()
+      .then(function () { return pool.awaitCommitConfirmations(null); })
+      .then(function () { return persistence.syncNow(); });
+    try {
+      await Promise.race([caught, bound]);
+    } catch (e) {
+      // Answered from what this process holds, as every other caller of the
+      // barrier is when the store cannot be read.
+      log.debug("Caught in SpiffeBroker.catchUpWithWorkers(): " +
+                ((e && e.message) || e));
+    } finally {
+      clearTimeout(timer);
+    }
+    log.debug("Leaving SpiffeBroker.catchUpWithWorkers().");
+  }
+
   // Steps 1–3 for one call, with the caller the entitlement is asked for.
   // The allow list is asked of the TYPE URL before the reference's value is
   // read, as SPIRE's `authorizeReferenceType()` is: a broker allowed neither
@@ -665,6 +721,7 @@ class SpiffeBroker {
       : typeUrl === K8S_REFERENCE ? 'k8s' : '');
     const ref = this.decodeReference(call);
     const resolved = await this.resolve(call, ref);
+    await this.catchUpWithWorkers();
     const broker = (call.spiffeCaller || {}).broker || {};
     log.debug("Leaving SpiffeBroker.referenced(). " + resolved.describe);
     return { resolved: resolved,
