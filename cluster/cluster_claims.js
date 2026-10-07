@@ -50,8 +50,10 @@
 // ===========================================================================
 
 const bunyan = require('bunyan');
-const nodeCrypto = require('crypto');
 const config = require('../common/config');
+// The one place this service hashes and draws random values (#453). A leaf
+// over `config`, so this require cannot close a cycle.
+const stsCrypto = require('../common/crypto');
 const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
 const capabilities = require('./cluster_capabilities');
@@ -102,8 +104,7 @@ function digestOf(scope, value) {
   // key computes alike.
   const text = String(scope) + '\n' + String(value);
   const keyed = require('../common/keystore').keyedDigest('cluster-claim', text);
-  const out = keyed || nodeCrypto.createHash('sha256').update(text)
-    .digest('base64url');
+  const out = keyed || stsCrypto.digest('sha256', text, 'base64url');
   log.debug("Leaving digestOf().");
   return out;
 }
@@ -239,7 +240,7 @@ function claim(opts) {
   const ttlMs = Math.min(MAX_TTL_MS,
                          Math.max(1000, Math.floor(Number(o.ttlMs) || 0)));
   const digest = digestOf(scope, o.value);
-  const reservation = nodeCrypto.randomBytes(12).toString('base64url');
+  const reservation = stsCrypto.randomBytes(12).toString('base64url');
   const handle = { scope: scope, realm: realmId, key: digest,
                    reservation: reservation };
   const theStore = store();
@@ -511,7 +512,7 @@ function claimInProcess(opts) {
                          expiresAt: existing.expiresAt,
                          origin: 'this process' } };
   }
-  const reservation = nodeCrypto.randomBytes(12).toString('base64url');
+  const reservation = stsCrypto.randomBytes(12).toString('base64url');
   memory.set(key, { reservation: reservation, claimedAt: now,
                     expiresAt: now + ttlMs });
   log.debug("Leaving claimInProcess(). Claimed, in memory.");

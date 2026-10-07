@@ -78,9 +78,10 @@
 // loads. `PepTls` is exported for the root.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import net = require('net');
 import helpers = require('../common/helpers');
+// The one place this service parses a certificate (#453).
+import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
 import audit = require('../common/audit');
 // The error-code registry (a leaf). A refusal carries its code as the
@@ -174,7 +175,7 @@ class PepTls {
       peps: peps,
       isIP: net.isIP,
       subjectAltNameOf: function (pem) {
-        return new nodeCrypto.X509Certificate(pem).subjectAltName;
+        return stsCrypto.parseCertificate(pem).subjectAltName;
       }
     };
   }

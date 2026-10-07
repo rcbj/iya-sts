@@ -147,11 +147,11 @@
 // rows this module writes name the application and never its secret.
 // ===========================================================================
 
-const crypto = require('crypto');
-// For TABLES only — the JWS and JWE algorithms RFC 9701's and RFC 9101's
-// client metadata may name (introspectionResponseProblem(), and the
-// REQUEST_OBJECT_* lists). A leaf `helpers.js` already requires, so this adds
-// nothing to the load path and closes no cycle.
+// The JWS and JWE algorithms RFC 9701's and RFC 9101's client metadata may
+// name (introspectionResponseProblem(), and the REQUEST_OBJECT_* lists), and
+// since #453 every digest, key import and random value here. A leaf
+// `helpers.js` already requires, so this adds nothing to the load path and
+// closes no cycle.
 const stsCrypto = require('./crypto');
 const config = require('./config');
 // The mode. A LEAF (rule 3) requiring only `config`, which is already required
@@ -4511,7 +4511,7 @@ function didKeyProblem(jwk) {
   }
   let key = null;
   try {
-    key = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    key = stsCrypto.publicKeyFromJwk(jwk);
   } catch (e) {
     log.debug("Caught in didKeyProblem(): " + ((e && e.message) || e));
     key = null;
@@ -10265,8 +10265,8 @@ function fromGeneralizedTime(value) {
 function shortName(identifier) {
   log.debug("Entering shortName().");
   log.debug("Leaving shortName().");
-  return 'app-' + crypto.createHash('sha256').update(String(identifier), 'utf8')
-    .digest('hex').slice(0, 12);
+  return 'app-' + stsCrypto.digest('sha256', String(identifier), 'hex')
+    .slice(0, 12);
 }
 
 const MAX_RDN_LENGTH = 64;
@@ -13924,8 +13924,8 @@ function mintClientSecret() {
 function digestSecretId(secret) {
   log.debug("Entering digestSecretId().");
   log.debug("Leaving digestSecretId().");
-  return 'cs-' + crypto.createHash('sha256').update(String(secret))
-    .digest('hex').slice(0, 12);
+  return 'cs-' + stsCrypto.digest('sha256', String(secret), 'hex')
+    .slice(0, 12);
 }
 
 /**
@@ -13936,7 +13936,7 @@ function digestSecretId(secret) {
 function newSecretId() {
   log.debug("Entering newSecretId().");
   log.debug("Leaving newSecretId().");
-  return 'cs-' + crypto.randomBytes(6).toString('hex');
+  return 'cs-' + stsCrypto.randomBytes(6).toString('hex');
 }
 
 /**

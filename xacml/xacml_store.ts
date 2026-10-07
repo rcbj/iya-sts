@@ -81,7 +81,8 @@
 // before anything listens, and against the directory already installed.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+// The one place this service hashes (#453).
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 // The error-code registry (a leaf). A refused write's code is marked on the
 // RESULT as a non-enumerable property, so the console and `/admin-api` can mark
@@ -407,7 +408,7 @@ class XacmlStore {
       errorCodes: errorCodes,
       xml: xml,
       sha256Hex: function (text: string): string {
-        return crypto.createHash('sha256').update(text).digest('hex');
+        return crypto.digest('sha256', text, 'hex');
       }
     };
     helpers.log.debug("Leaving XacmlStore.defaultDeps().");

@@ -90,9 +90,11 @@
 // on the node's membership row (2026-09-18).
 // ===========================================================================
 
-const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
+// The one place this service hashes (#453). A leaf over `config`, so this
+// require cannot close a cycle.
+const stsCrypto = require('./crypto');
 const errorCodes = require('./error_codes');
 // This thread's identity (#364); see common/worker_channel.ts.
 const WorkerChannel = require('./worker_channel');
@@ -641,8 +643,8 @@ function digestKey(text) {
   const colon = s.indexOf(':');
   const kind = colon > 0 && colon <= 16 ? s.slice(0, colon + 1) : '';
   log.debug("Leaving digestKey().");
-  return kind + 'sha256:' + nodeCrypto.createHash('sha256').update(s)
-    .digest('hex').slice(0, 12) + '…';
+  return kind + 'sha256:' + stsCrypto.digest('sha256', s, 'hex')
+    .slice(0, 12) + '…';
 }
 
 // The same for a `realms.map()` store, walked over every realm the owner's

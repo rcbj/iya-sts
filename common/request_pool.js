@@ -100,9 +100,11 @@ const workerThreads = require('worker_threads');
 // The channel's other half (#364): a message a thread posts has its Buffers
 // turned back into Buffers here, as the thread does for what it receives.
 const WorkerChannel = require('./worker_channel');
-const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
+// The one place this service hashes and draws random values (#453). A leaf
+// over `config`, so this require cannot close a cycle.
+const stsCrypto = require('./crypto');
 // A LEAF (rule 3) — it registers no route, so requiring it here cannot move one
 // and cannot join a cycle. It is the shared-key registry this file arbitrates;
 // see keystore.js's block above storedFor().
@@ -3560,8 +3562,8 @@ function credentialKeyOf(req) {
     return '';
   }
   log.debug("Leaving credentialKeyOf().");
-  return 'c:' + nodeCrypto.createHash('sha256').update(String(said))
-    .digest('base64url').slice(0, 22);
+  return 'c:' + stsCrypto.digest('sha256', String(said), 'base64url')
+    .slice(0, 22);
 }
 
 /**
@@ -4134,7 +4136,7 @@ function start() {
   // and the refusal is an ERROR (STS-KEYS-0038) that every product start logged
   // for a key nobody needed — the operator's KEK is already in place.
   if (!keystore.hasEphemeralKek() && !keystore.persists()) {
-    const generated = nodeCrypto.randomBytes(32).toString('hex');
+    const generated = stsCrypto.randomBytes(32).toString('hex');
     if (keystore.useEphemeralKek(generated)) {
       log.info('request_pool: a per-run key-encryption key was generated, so ' +
                'every worker seals and opens the same minted rows. Nothing ' +

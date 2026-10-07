@@ -116,16 +116,19 @@
 // WHERE IT IS REQUIRED FROM.
 //
 // A LIBRARY (rule 3): it registers no route. It requires only `config`,
-// `realms`, `error_codes` and npm leaves, and uses its own logger rather than
-// `helpers.js`'s, because `persistence/persistence.js` requires it to install
-// the store and that module is at 4a, beside `helpers.js` rather than below it.
+// `realms`, `error_codes`, `crypto` (a leaf over `config`) and npm leaves,
+// and uses its own logger rather than `helpers.js`'s, because
+// `persistence/persistence.js` requires it to install the store and that
+// module is at 4a, beside `helpers.js` rather than below it.
 // `persistence.js` fills `setStore()` the moment a driver is open — the
 // arrangement `keystore.setStore()` already has, for its reason.
 // ===========================================================================
 
-const crypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
+// The one place this service hashes and draws random values (#453). A leaf
+// over `config`, so this require cannot close a cycle.
+const stsCrypto = require('./crypto');
 const realms = require('./realms');
 // A LEAF that requires nothing here. The store failures below are tagged in the
 // log; the refusals are the three verifiers' to code, because each answers in
@@ -327,9 +330,9 @@ function capOf() {
  */
 function keyOf(format, issuer, identifier) {
   log.debug("Entering keyOf().");
-  const digest = crypto.createHash('sha256')
-    .update(String(format) + '\n' + String(issuer) + '\n' + String(identifier))
-    .digest('base64url');
+  const digest = stsCrypto.digest('sha256',
+    String(format) + '\n' + String(issuer) + '\n' + String(identifier),
+    'base64url');
   log.debug("Leaving keyOf().");
   return digest;
 }
@@ -607,7 +610,7 @@ function claim(opts) {
     clientId: clip(o.clientId || ''),
     subject: clip(o.subject || ''),
     state: o.request ? 'reserved' : 'spent',
-    reservation: crypto.randomBytes(12).toString('base64url'),
+    reservation: stsCrypto.randomBytes(12).toString('base64url'),
     origin: store.driver && typeof store.driver.origin === 'function'
       ? String(store.driver.origin()) : 'local',
     usedAt: now,
