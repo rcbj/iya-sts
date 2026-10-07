@@ -199,6 +199,21 @@ and puts the bare permission name in `scope`. **A token for an API is for that
 API alone.** The OpenID Connect scopes are left off it, so a client that wants
 UserInfo asks for a separate token.
 
+**In product mode a resource must name a registered target** (#505), at the
+authorization endpoint, at `POST /oauth2/par` and at the token endpoint for
+every grant but the token exchange (whose targets are RFC 8693's, below). A
+registered target is one of this service's own resource servers — the
+default resource indicator `<base>/resource` (or a named authorization
+server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
+`<base>/admin-api`; the GNAP demonstration resource server — or an
+application registered through the console, `/admin-api`,
+`POST /oauth2/register`, an LDAP add or an OpenID Federation, named by its
+audience, permission base URI, `client_id` or identifier. The embedded
+debugger's api is such an application while the debugger is embedded.
+Anything else is `invalid_target` (RFC 8707 section 2): redirected to the
+client from the authorization endpoint, a 400 from PAR and from the token
+endpoint. Development mode accepts any absolute URI, as before.
+
 **A redeemed code is refused if it is presented again, in every mode**, and
 what it bought is revoked (RFC 6749 sections 4.1.2 and 10.5). The refusal says
 when the code was redeemed and by which client, or names the field that differs.
@@ -1874,6 +1889,7 @@ on [What is not checked](what-is-not-checked.md).
 | Unknown client or authorization server | created the first time it is named | refused; create it ahead of time |
 | A client nobody **registered** — unknown, or recorded only because a development request named it | served | the authorization endpoint answers a 400 page and never redirects (`invalid_client`; no `client_id` at all is `invalid_request`); the token endpoint answers 401 `invalid_client` before anything is recorded (#496). Registered means through the console, `/admin-api`, `POST /oauth2/register` or an OpenID Federation |
 | Token exchange to an audience or resource nobody registered | the issuance policy notes it would refuse, and issues | refused `invalid_target`; an application a development request merely recorded is not a target |
+| A `resource` outside a token exchange that names no registered target | accepted, and becomes the token's `aud` | refused `invalid_target` — redirected from the authorization endpoint, a 400 from PAR and the token endpoint; this service's own resource servers and registered applications are targets (#505) |
 | Redirect URIs | any | only one registered for the client |
 | Password grant | offered; accepts any password but `invalid` | not offered (RFC 9700 section 2.4) |
 | Grants for a public client | all | authorization code and refresh only |

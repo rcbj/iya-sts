@@ -1112,11 +1112,42 @@ row on `/admin/mode`): 401 `invalid_client` / `invalid_resource_server`,
 For an instance identifier it is asked before the key is even described; for
 a key, once the proof has said whose key it is.
 
-**NOT DONE: an access right whose `locations` name no registered resource
-server** is still issued with no audience for that location
-(`resourceServersFor()`), as RFC 8707's `resource` outside an exchange is in
-`oauth-oidc/` — whether a bare location names an "application" is open on
-#496.
+**An access right whose `locations` name no registered resource server** was
+left open here and is #505's, below.
 
 `tests/unregistered_applications.js` (G1) holds it, the proof stubbed: what
 is held is whose key it is, which is decided after the proof verifies.
+
+## A RIGHT'S LOCATIONS NAME A REGISTERED RESOURCE SERVER, IN PRODUCT (#505, 2026-10-06)
+
+A location that resolved to no resource server was LEFT OUT: the right was
+granted and the token issued with no audience for it (`resourceServersFor()`
+matches a location only to a `gnapResourceServerUri`). rcbj's follow-up to
+#496: in product every location of every access right must name a registered
+target, and a right that names one that does not is REFUSED rather than
+dropped — the request is answered `invalid_request` (400, RFC 9635 section
+3.6), `STS-GNAP-0903`, the code family a location the catalogue's owner does
+not answer to already gets (`STS-GNAP-0812`).
+
+A location is registered when `common/registered_targets.ts` says so — the
+one definition shared with RFC 8707's `resource` (`oauth-oidc/CLAUDE.md`):
+one of this service's own resource servers (the default resource indicator,
+`/admin-api`, the demonstration resource server at `/gnap/rs/resource` while
+`gnap.demoResourceServer` is on) or a registered application by audience,
+permission base URI, client_id or identifier — or when it is AT or UNDER the
+`gnapResourceServerUri` of a REGISTERED GNAP resource server, GNAP's own
+addressing and the match `resourceServersFor()` makes. "Registered" is
+`appRegisteredBy`; an RS a development sighting filed is not one.
+
+`unregisteredLocationRefusal()` is asked in `judgeRequested()`, right after
+the catalogue's well-formedness and before the issuance policy's questions,
+so at creation, modification and derivation alike and before anybody is
+asked to approve. A reference string names no location and is not asked.
+What a location that IS registered contributes to a token's audience is
+unchanged: `resourceServersFor()` still adds only a matched GNAP resource
+server (so a location naming a registered application by its audience passes
+the check and adds nothing, as before). Behind
+`mode.issuesToUnregisteredApplications()`, the
+`unregistered-resource-targets` row on `/admin/mode`; development is
+unchanged. `tests/registered_targets.js` (T5) holds it in both modes,
+through `judgeRequested()` on a `GnapGrants` built in the test.

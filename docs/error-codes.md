@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4183** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4186** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 264
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 704
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 706
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 105
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 31
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 21
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 46
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 350
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 351
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 92
@@ -2128,6 +2128,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0947` | Product mode: an authorization request (or a pushed one) named a client_id that is no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before anything was decided or recorded (#496). | invalid_client (HTTP 400, not redirected, RFC 6749 4.1.2.1) |
 | `STS-OAUTH-0948` | Product mode: an authorization request named no client_id, so there is no registered client to serve (#496). | invalid_request (HTTP 400, not redirected, RFC 6749 4.1.2.1) |
 | `STS-OAUTH-0949` | Product mode: a token request named a client that is no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the client was counted or recorded (#496). | invalid_client (HTTP 401, RFC 6749 section 5.2) |
+| `STS-OAUTH-0950` | Product mode: an authorization request or a pushed authorization request named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application (no appRegisteredBy) by its oauthAudience, permission base URI, client_id or identifier (#505). | invalid_target (RFC 8707 section 2), redirected; HTTP 400 at PAR |
+| `STS-OAUTH-0951` | Product mode: a token request (any grant but the token exchange) named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application — and was refused before anything was spent (#505). | invalid_target (HTTP 400, RFC 8707 section 2) |
 
 ## STS-SAML
 
@@ -3905,6 +3907,7 @@ Raised from: gnap/.
 | `STS-GNAP-0900` | The mail notice for a GNAP grant waiting for its resource owner could not be queued; the grant waits on the portal regardless (#432 phase 6). | log only |
 | `STS-GNAP-0901` | A GNAP grant could not wait for its resource owner: the user the request names is not a person the directory holds (#432 phase 6). | RFC 9635 section 2.4 (unknown_user, HTTP 400) |
 | `STS-GNAP-0902` | Product mode: a GNAP request was proved with a key, or named an instance identifier, belonging to an application nobody registered (no appRegisteredBy; an entry created on first sight in development is not a registration) (#496). | invalid_client or invalid_resource_server (HTTP 401, RFC 9635 section 2.3.3) |
+| `STS-GNAP-0903` | Product mode: a GNAP access right named a location that is no registered resource server — none of this service's own, no registered application by audience, permission base URI, client_id or identifier, and not at or under a registered GNAP resource server's gnapResourceServerUri — so the request was refused rather than the right dropped (#505). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
 
 ## STS-DEVICE
 

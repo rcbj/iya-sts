@@ -9118,6 +9118,20 @@ const CODES = [
       'filed is not a registration), and was refused before the client ' +
       'was counted or recorded (#496).',
     spec: 'invalid_client (HTTP 401, RFC 6749 section 5.2)' },
+  { code: 'STS-OAUTH-0950',
+    summary: 'Product mode: an authorization request or a pushed ' +
+      'authorization request named an RFC 8707 resource that is no ' +
+      'registered target — none of this service\'s own resource servers, ' +
+      'and no registered application (no appRegisteredBy) by its ' +
+      'oauthAudience, permission base URI, client_id or identifier ' +
+      '(#505).',
+    spec: 'invalid_target (RFC 8707 section 2), redirected; HTTP 400 at PAR' },
+  { code: 'STS-OAUTH-0951',
+    summary: 'Product mode: a token request (any grant but the token ' +
+      'exchange) named an RFC 8707 resource that is no registered target ' +
+      '— none of this service\'s own resource servers, and no registered ' +
+      'application — and was refused before anything was spent (#505).',
+    spec: 'invalid_target (HTTP 400, RFC 8707 section 2)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -16797,6 +16811,14 @@ const CODES = [
       'development is not a registration) (#496).',
     spec: 'invalid_client or invalid_resource_server (HTTP 401, RFC 9635 ' +
       'section 2.3.3)' },
+  { code: 'STS-GNAP-0903',
+    summary: 'Product mode: a GNAP access right named a location that is no ' +
+      'registered resource server — none of this service\'s own, no ' +
+      'registered application by audience, permission base URI, client_id ' +
+      'or identifier, and not at or under a registered GNAP resource ' +
+      'server\'s gnapResourceServerUri — so the request was refused ' +
+      'rather than the right dropped (#505).',
+    spec: 'invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +

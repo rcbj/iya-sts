@@ -155,6 +155,10 @@ import ownership = require('./gnap_ownership');
 // approval needs and approval by an absent resource owner. A library; it
 // reaches this module back lazily, so the require closes no cycle.
 import gnapApproval = require('./gnap_approval');
+// WHAT A RIGHT'S LOCATIONS MAY NAME IN PRODUCT (#505): the one definition of
+// a registered target, shared with RFC 8707's `resource`. A static library
+// that reaches what it reads lazily, so the require closes no cycle.
+import RegisteredTargets = require('../common/registered_targets');
 
 const PROTOCOL = 'GNAP';
 const STATE = store.STATE;
@@ -1193,6 +1197,68 @@ class GnapGrants {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // A RIGHT'S LOCATIONS NAME A REGISTERED RESOURCE SERVER, IN PRODUCT (#505).
+  //
+  // RFC 9635 section 8's `locations` are "the location of the RS or
+  // RS-controlled resource", and they are what a token's audience is made
+  // of (`resourceServersFor()`). Until #505 a location that resolved to no
+  // resource server was simply left out: the right was granted and the token
+  // issued with no audience for it — #496's audit's GNAP gap. In product
+  // every location of every right must now name a registered target, and a
+  // right that names one that does not is REFUSED, not dropped: the request
+  // is answered `invalid_request` (STS-GNAP-0903), section 3.6's code for an
+  // invalid parameter value and the one a location the catalogue's owner
+  // does not answer to already gets (STS-GNAP-0812). A location is
+  // registered when `common/registered_targets.ts` says so — one of this
+  // service's own resource servers, or a registered application by its
+  // audience, permission base URI, client_id or identifier — or when it is
+  // AT or UNDER the `gnapResourceServerUri` of a REGISTERED GNAP resource
+  // server, GNAP's own addressing and the match `resourceServersFor()`
+  // makes. Asked at the request stage, so at creation, modification and
+  // derivation alike, before anybody is asked to approve. A reference
+  // string names no location. Development is unchanged.
+  // ---------------------------------------------------------------------------
+  private unregisteredLocationRefusal(req, tokens) {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.unregisteredLocationRefusal().");
+    const servers = this.gnapApplications().filter(function (one) {
+      return !!String((one && one.registeredBy) || '');
+    });
+    for (let t = 0; t < (tokens || []).length; t++) {
+      const access = tokens[t].access || [];
+      for (let r = 0; r < access.length; r++) {
+        const right = access[r];
+        if (!right || typeof right !== 'object' ||
+            !Array.isArray(right.locations)) {
+          continue;
+        }
+        const strangers = RegisteredTargets.unregistered(right.locations, req)
+          .filter((location) => {
+            return !servers.some((app) => {
+              return this.fieldValues(app, 'gnapResourceServerUri').some(
+                function (uri) {
+                  return !!uri && (location === uri ||
+                                   location.indexOf(uri) === 0);
+                });
+            });
+          });
+        if (strangers.length) {
+          log.debug("Leaving GnapGrants.unregisteredLocationRefusal(). " +
+                    strangers.length + " unregistered location(s).");
+          return this.refusal('STS-GNAP-0903', 'access_token' +
+            (tokens.length > 1 ? '[' + t + ']' : '') + '.access[' + r +
+            ']\'s location ' + RegisteredTargets.describe(strangers) +
+            ' A GNAP resource server is registered with its ' +
+            'gnapResourceServerUri, and a location at or under it names it ' +
+            '(RFC 9635 section 8).', 'invalid_request', 400);
+        }
+      }
+    }
+    log.debug("Leaving GnapGrants.unregisteredLocationRefusal(). None.");
+    return null;
+  }
+
   // The request stage (#432 phase 3): the catalogue's well-formedness, then
   // one policy question per right. A refusal, or the tokens as the policy
   // left them and what it narrowed.
@@ -1203,6 +1269,13 @@ class GnapGrants {
     if (malformed) {
       log.debug("Leaving GnapGrants.judgeRequested(). Malformed.");
       return malformed;
+    }
+    // #505: in product, a location naming no registered resource server.
+    const unregistered = this.unregisteredLocationRefusal(req, tokens);
+    if (unregistered) {
+      log.debug("Leaving GnapGrants.judgeRequested(). An unregistered " +
+                "location.");
+      return unregistered;
     }
     const ctx = this.rightsContext(req, grantish, app, approval);
     // The owner lookups first (#432 phase 5): the question is synchronous.
