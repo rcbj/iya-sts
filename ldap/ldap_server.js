@@ -134,9 +134,11 @@
 // where this service KNOWS whose it is, it does. See didPlan().
 // ---------------------------------------------------------------------------
 
-// For one thing only: the short, stable uid a DID-named entry is placed at.
-// See didPlan().
-const crypto = require('crypto');
+// The one place this service hashes and draws random values (#453): the
+// short, stable uid a DID-named entry is placed at (didPlan()), an entry's
+// UUID, v5 or v4. A leaf `common/helpers.js` has already loaded, and it
+// registers no route.
+const stsCrypto = require('../common/crypto');
 const ldap = require('ldapjs');
 const app = require('../common/app');
 // Rule 2 of the barrier for an operation (#351): its result is sent once its
@@ -2975,8 +2977,8 @@ function clusteredNode() {
 // variant bits set. Node has a v4 generator and no v5 one.
 function nameBasedUuid(name) {
   log.debug("Entering nameBasedUuid().");
-  const hash = crypto.createHash('sha1').update(ENTRY_UUID_NAMESPACE)
-    .update(String(name), 'utf8').digest();
+  const hash = stsCrypto.sha1Digest('uuid-v5', Buffer.concat([
+    ENTRY_UUID_NAMESPACE, Buffer.from(String(name), 'utf8')]));
   const bytes = Buffer.from(hash.subarray(0, 16));
   bytes[6] = (bytes[6] & 0x0f) | 0x50;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
@@ -3309,7 +3311,7 @@ function putEntry(dn, attributes, options) {
     (stored.origin === 'seed' || (stored.origin === 'authentication' &&
                                   clusteredNode())
       ? backfilledEntryUuid(realms.currentId(), normalizeDn(dn))
-      : crypto.randomUUID())];
+      : stsCrypto.randomUuid())];
   // And its aliases, the same way: the entry's, never the caller's.
   delete stored.attributes[ENTRY_UUID_ALIAS];
   if (entryUuidAliasesOf(previous).length) {
@@ -5159,8 +5161,8 @@ function namePlan(name) {
 function didUid(did) {
   log.debug("Entering didUid().");
   log.debug("Leaving didUid().");
-  return 'did-' + crypto.createHash('sha256').update(String(did), 'utf8')
-    .digest('hex').slice(0, 12);
+  return 'did-' + stsCrypto.digest('sha256', String(did), 'hex')
+    .slice(0, 12);
 }
 
 function didPlan(info) {
@@ -5313,8 +5315,8 @@ function didPlan(info) {
 function spiffeUid(id) {
   log.debug("Entering spiffeUid().");
   log.debug("Leaving spiffeUid().");
-  return 'spiffe-' + crypto.createHash('sha256').update(String(id), 'utf8')
-    .digest('hex').slice(0, 12);
+  return 'spiffe-' + stsCrypto.digest('sha256', String(id), 'hex')
+    .slice(0, 12);
 }
 
 function spiffePlan(info) {

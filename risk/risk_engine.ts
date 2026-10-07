@@ -486,7 +486,7 @@ class RiskEngine {
         return require('../common/keystore');
       },
       randomId: function (): string {
-        return require('crypto').randomUUID();
+        return stsCrypto.randomUuid();
       },
       mode: function (): Json {
         return require('../common/mode');
@@ -2208,7 +2208,7 @@ class RiskEngine {
       const high = Number(config.value('risk.highScorePercent')) / 100;
       const score = Math.max(high, before ? Number(before.score) || 0 : 0);
       const id = 'authenticator:' + at.toString(36) + ':' +
-                 require('crypto').randomBytes(6).toString('hex');
+                 stsCrypto.randomBytes(6).toString('hex');
       await store.upsertSubject({ realm: realm, subject: subject,
         score: score, level: 'HIGH', reason: 'authenticator-compromised',
         lastAssessment: id, updatedAt: at }, sealing);

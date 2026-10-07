@@ -84,7 +84,6 @@
 // without the root builds a default when this module finishes loading.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import config = require('./config');
 import stsCrypto = require('./crypto');
@@ -292,9 +291,8 @@ class WebSecurity {
       return '';
     }
     log.debug("Leaving WebSecurity.tokenFor().");
-    return nodeCrypto.createHmac('sha256', clusterSecrets.get('csrf'))
-                     .update(id)
-                     .digest('base64url');
+    return stsCrypto.hmac('sha256', clusterSecrets.get('csrf'), id,
+                          'base64url');
   }
 
   // The hidden input a form carries. Returns '' when there is no session, so a

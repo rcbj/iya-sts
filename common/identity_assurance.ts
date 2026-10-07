@@ -80,8 +80,9 @@
 // are.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
+// The one place this service draws random values (#453).
+import stsCrypto = require('./crypto');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
 import mode = require('./mode');
@@ -1152,7 +1153,7 @@ class IdentityAssurance {
     const { log } = this.deps;
     log.debug("Entering IdentityAssurance.add().");
     const record = Object.assign({
-      id: nodeCrypto.randomUUID(),
+      id: stsCrypto.randomUuid(),
       recorded: new Date(this.deps.now()).toISOString()
     }, fields);
     if (Buffer.byteLength(JSON.stringify(record)) > MAX_RECORD_BYTES) {

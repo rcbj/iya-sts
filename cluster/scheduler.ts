@@ -83,9 +83,10 @@
 // answers it as JSON.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import os = require('os');
 import helpers = require('../common/helpers');
+// The one place this service hashes and draws random values (#453).
+import stsCrypto = require('../common/crypto');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
@@ -1053,9 +1054,9 @@ class Scheduler {
   private runIdFor(job: JobSpec, realmId: string, slot: number): string {
     const { log } = this.deps;
     log.debug("Entering Scheduler.runIdFor().");
-    const digest = nodeCrypto.createHash('sha256')
-      .update(job.id + '\n' + realmId + '\n' + String(slot))
-      .digest('base64url').slice(0, 22);
+    const digest = stsCrypto.digest('sha256',
+      job.id + '\n' + realmId + '\n' + String(slot), 'base64url')
+      .slice(0, 22);
     log.debug("Leaving Scheduler.runIdFor().");
     return 's-' + digest;
   }
@@ -1860,7 +1861,7 @@ class Scheduler {
                run: this.runView(existing) };
     }
     const row = this.writeRow(realmId, {
-      runId: 'm-' + nodeCrypto.randomBytes(12).toString('base64url'),
+      runId: 'm-' + stsCrypto.randomBytes(12).toString('base64url'),
       kind: 'run', jobId: job.id, realm: realmId, slot: null,
       dueAt: this.nowMs(), trigger: 'manual', params: params,
       requestedBy: String(o.requestedBy || ''),
@@ -1903,7 +1904,7 @@ class Scheduler {
     }
     const leader = this.storeOf(realms.DEFAULT_ID).get(LEADER_KEY) || null;
     const row = this.writeRow(realms.DEFAULT_ID, {
-      runId: COMMAND_PREFIX + nodeCrypto.randomBytes(9).toString('base64url'),
+      runId: COMMAND_PREFIX + stsCrypto.randomBytes(9).toString('base64url'),
       kind: 'command', command: 'step-down', state: 'queued',
       requestedBy: String(o.requestedBy || ''),
       requestedVia: String(o.via || ''), queuedAt: this.nowMs(),

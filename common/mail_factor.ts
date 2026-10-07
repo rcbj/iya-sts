@@ -44,7 +44,6 @@
 // scheduler — LAZILY.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import crypto = require('./crypto');
 import errorCodes = require('./error_codes');
@@ -128,10 +127,10 @@ class MailFactor {
       audit: audit,
       authnPolicy: authnPolicy as unknown as MailFactorDeps['authnPolicy'],
       randomInt: function (min: number, max: number): number {
-        return nodeCrypto.randomInt(min, max);
+        return crypto.randomInt(min, max);
       },
       randomBytes: function (size: number): Buffer {
-        return nodeCrypto.randomBytes(size);
+        return crypto.randomBytes(size);
       },
       mail: function () {
         return require('./mail');

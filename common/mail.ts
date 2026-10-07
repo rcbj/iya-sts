@@ -92,9 +92,10 @@
 // to the monitor page's detail view of a captured message in development.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import os = require('os');
 import helpers = require('./helpers');
+// The one place this service hashes and draws random values (#453).
+import stsCrypto = require('./crypto');
 // Which application a mailed link opens, and where it is advertised (#472).
 // Two LEAVES.
 import hostedApplications = require('./hosted_applications');
@@ -505,11 +506,11 @@ class Mail {
   fingerprint(cfg: Json): string {
     const { log } = this.deps;
     log.debug("Entering Mail.fingerprint().");
-    const digest = nodeCrypto.createHash('sha256')
-      .update(JSON.stringify(TRANSPORT_KEYS.map(function (key) {
+    const digest = stsCrypto.digest('sha256',
+      JSON.stringify(TRANSPORT_KEYS.map(function (key) {
         return cfg[key.replace(/^mail\./, '')];
-      }).concat([cfg.transport, cfg.smtpHost, cfg.smtpPort])))
-      .digest('base64url');
+      }).concat([cfg.transport, cfg.smtpHost, cfg.smtpPort])),
+      'base64url');
     log.debug("Leaving Mail.fingerprint().");
     return digest;
   }
@@ -1253,8 +1254,8 @@ class Mail {
         username + ' declined ' + cat.label.toLowerCase()) };
     }
     const dedup = req.dedupKey
-      ? nodeCrypto.createHash('sha256').update(username + '\n' + spec.id +
-          '\n' + String(req.dedupKey)).digest('base64url').slice(0, 22)
+      ? stsCrypto.digest('sha256', username + '\n' + spec.id +
+          '\n' + String(req.dedupKey), 'base64url').slice(0, 22)
       : '';
     const duplicate = this.duplicateOf(realmId, dedup);
     if (duplicate) {
@@ -1303,7 +1304,7 @@ class Mail {
         }))
       : body;
     const at = now();
-    const id = nodeCrypto.randomBytes(16).toString('base64url');
+    const id = stsCrypto.randomBytes(16).toString('base64url');
     const domain = this.fromAddress().split('@').pop();
     const row: Message = {
       id: id, realm: realmId, username: username, to: who.address,

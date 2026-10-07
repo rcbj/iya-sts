@@ -48,14 +48,17 @@
 // keystore is open, because the fingerprint is keyed by the key-encryption key.
 //
 // A LIBRARY (rule 3): no route. It requires config, mode, the capability table,
-// the error-code table and node builtins, and is handed its driver.
+// the error-code table, `common/crypto` and node builtins, and is handed its
+// driver.
 // ===========================================================================
 
 const bunyan = require('bunyan');
 const os = require('os');
-const nodeCrypto = require('crypto');
 const { AsyncLocalStorage } = require('async_hooks');
 const config = require('../common/config');
+// The one place this service hashes and draws random values (#453). A leaf
+// over `config`, so this require cannot close a cycle.
+const stsCrypto = require('../common/crypto');
 const errorCodes = require('../common/error_codes');
 const capabilities = require('./cluster_capabilities');
 // A leaf requiring only `config` and `error_codes` (rule 3ap), so this adds
@@ -456,7 +459,7 @@ function gate(theDriver) {
   }
   install(theDriver);
   role = 'front';
-  nodeId = nodeCrypto.randomUUID();
+  nodeId = stsCrypto.randomUuid();
   log.debug("Leaving gate(). Joining.");
   return join().then(function () {
     if (resolved.mode === 'active-passive') {
@@ -1162,8 +1165,8 @@ function agree(keystore) {
   const canonical = JSON.stringify(values, Object.keys(values).sort());
   const keyed = keystore && typeof keystore.keyedDigest === 'function'
     ? keystore.keyedDigest('cluster-agreement', canonical) : null;
-  fingerprint = keyed || ('unkeyed:' + nodeCrypto.createHash('sha256')
-    .update(canonical).digest('base64url'));
+  fingerprint = keyed || ('unkeyed:' +
+    stsCrypto.digest('sha256', canonical, 'base64url'));
   log.debug("Leaving agree().");
   return driver.agreeFingerprint(nodeId, fingerprint).then(function (answer) {
     if (answer.differing.length) {

@@ -76,7 +76,6 @@
 // `authn/authn.ts` and `portal/portal_devices.ts` call it.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -385,7 +384,7 @@ class BrowserDevices {
     const claims = {
       iss: this.audience(), aud: this.audience(), sub: String(deviceId),
       owner: String(owner), gen: Number(gen),
-      jti: nodeCrypto.randomBytes(16).toString('base64url'),
+      jti: stsCrypto.randomBytes(16).toString('base64url'),
       iat: now, exp: now + this.lifetimeS()
     };
     const signer = this.deps.signer();

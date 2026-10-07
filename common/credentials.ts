@@ -284,8 +284,6 @@ interface CredentialsDeps {
   claims: typeof claims;
   counters: typeof counters;
   capabilities: typeof capabilities;
-  // Node's `crypto`, for random bytes only, loaded where it is used.
-  nodeCrypto(): typeof import('crypto');
   // `persistence/persistence.js`, loaded where it is used — see
   // `sharedStore()`.
   loadPersistence(): typeof import('../persistence/persistence');
@@ -752,9 +750,6 @@ class Credentials {
       claims: claims,
       counters: counters,
       capabilities: capabilities,
-      nodeCrypto: function () {
-        return require('crypto');
-      },
       consoleRolesOf: function consoleRolesOf(username: string) {
         helpers.log.debug("Entering consoleRolesOf().");
         let held = { read: false, write: false };
@@ -5475,7 +5470,7 @@ class Credentials {
    * @returns `{ ok: true, handle, codes, … }`, or a refusal
    */
   beginBackupCodes(username, opts?) {
-    const { log, backupCodes, errorCodes, nodeCrypto } = this.deps;
+    const { log, backupCodes, errorCodes, crypto } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.beginBackupCodes().");
@@ -5525,13 +5520,10 @@ class Credentials {
       }
     });
     // A handle and not the username: two tabs must not be able to confirm each
-    // other's set, and the form carries this back. `require('crypto')` inline
-    // (as `generatePassword()` above once did, before the password policy drew
-    // its passwords) because the module name `crypto` is taken here by THIS
-    // service's crypto module, and shadowing that at the top of the file to
-    // save a require is how somebody later reaches for `crypto.hashSecret()`
-    // and gets node's.
-    const handle = nodeCrypto().randomBytes(24).toString('base64url');
+    // other's set, and the form carries this back. The bytes are this
+    // service's crypto module's (#453): node's `crypto` is required nowhere
+    // but there.
+    const handle = crypto.randomBytes(24).toString('base64url');
     pendingBackupCodes.set(handle, {
       username: name,
       codes: minted,
@@ -7357,7 +7349,7 @@ class Credentials {
    */
   beginKeyEnrolment(username, opts?) {
     const { log, mode, webauthnPolicy, errorCodes,
-      nodeCrypto } = this.deps;
+      crypto } = this.deps;
     const { ROLES } = Credentials;
     const directory = this.directory;
     const coded = this.coded.bind(this);
@@ -7417,12 +7409,11 @@ class Credentials {
     const kind = webauthnPolicy.authenticatorKinds()
       .indexOf(String(options.kind || '')) >= 0 ? String(options.kind) : '';
     const record = {
-      // `require('crypto')` inline, which is what `issueActivation()` below
-      // also does: the module-level `crypto` here is this service's OWN
-      // crypto module, and node's is wanted for nothing but random bytes.
-      id: nodeCrypto().randomBytes(24).toString('base64url'),
+      // Random bytes from this service's own crypto module (#453), as
+      // `issueActivation()` below draws them.
+      id: crypto.randomBytes(24).toString('base64url'),
       username: name,
-      challenge: nodeCrypto().randomBytes(32).toString('base64url'),
+      challenge: crypto.randomBytes(32).toString('base64url'),
       role: role,
       kind: kind,
       // NO LABEL (#470): the key takes its provider's or its group's name, and
@@ -7722,7 +7713,7 @@ class Credentials {
    * @returns `{ ok: true, username, token, expires, … }`, or a refusal
    */
   issueActivation(username) {
-    const { log, crypto, errorCodes, nodeCrypto } = this.deps;
+    const { log, crypto, errorCodes } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.issueActivation().");
@@ -7739,7 +7730,7 @@ class Credentials {
                                    'store is installed, so an activation ' +
                                    'link cannot be issued.'] });
     }
-    const token = nodeCrypto().randomBytes(32).toString('base64url');
+    const token = crypto.randomBytes(32).toString('base64url');
     const expires = Date.now() + this.activationTtlMs();
     let written = false;
     try {
@@ -8157,7 +8148,7 @@ class Credentials {
    * @returns `{ ok: true, username, token, expires, … }`, or a refusal
    */
   issuePasswordReset(username) {
-    const { log, crypto, errorCodes, nodeCrypto } = this.deps;
+    const { log, crypto, errorCodes } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.issuePasswordReset().");
@@ -8179,7 +8170,7 @@ class Credentials {
       return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
           'called "' + name + '" in this realm\'s directory.'] });
     }
-    const token = nodeCrypto().randomBytes(32).toString('base64url');
+    const token = crypto.randomBytes(32).toString('base64url');
     const expires = Date.now() + this.passwordResetTtlMs();
     let written = false;
     try {
