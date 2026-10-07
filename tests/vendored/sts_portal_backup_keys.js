@@ -537,7 +537,8 @@ async function enrolAt(b, authenticator, role, label, kind) {
 // ---------------------------------------------------------------------------
 async function twoCallsToAction(b) {
   log.debug("Entering twoCallsToAction().");
-  log.info("=== /portal/keys offers Create a passkey and Use a security key ===");
+  log.info("=== /portal/keys offers Create a passkey and Use a security " +
+           "key ===");
   let page = await b.go("GET", "/portal/keys");
   check("the page is headed Passkeys and offers the two calls to action, " +
         "Create a passkey first", function () {
@@ -812,7 +813,7 @@ async function aSecondKeyIsABackupAndTheSameOneIsNot(first, second) {
         attr(again.armed.text, "data-exclude"));
     });
 
-  const backup = await enrolAt(b, second, "mfa", "the one on my keyring",
+  const backup = await enrolAt(b, second, "mfa", "the one on my phone",
                                "passkey");
   check("A DIFFERENT AUTHENTICATOR IS ACCEPTED, which is the whole feature",
     function () {
@@ -849,8 +850,8 @@ async function aSecondKeyIsABackupAndTheSameOneIsNot(first, second) {
     const keys = page.text.indexOf("Passkeys on security keys");
     assert.ok(devices >= 0 && keys > devices,
       "the two groups are not both drawn, devices first");
-    assert.ok(page.text.indexOf("the one on my keyring") > devices &&
-              page.text.indexOf("the one on my keyring") < keys,
+    assert.ok(page.text.indexOf("the one on my phone") > devices &&
+              page.text.indexOf("the one on my phone") < keys,
       "the synced passkey is not under passkeys on your devices");
   });
   log.debug("Leaving aSecondKeyIsABackupAndTheSameOneIsNot().");
@@ -1045,8 +1046,8 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
       "it answered " + done.status + " " + String(done.text).slice(0, 400));
     assert.ok(/Your account is ready/.test(done.text),
       "not the account-ready page: " + String(done.text).slice(0, 400));
-    assert.ok(/registered and is how you sign in/.test(done.text),
-      "the page does not say the key is registered.");
+    assert.ok(/Your passkey is ready and is how you sign in/.test(done.text),
+      "the page does not say the passkey is ready.");
   });
 
   const factors = await factorsFor(NEWCOMER);
@@ -1137,7 +1138,9 @@ async function test() {
   log.info("Driving " + base + " as " + PERSON +
            " (origin " + ORIGIN + ", rpId " + RP_ID + ").");
   const first = makeAuthenticator("at my desk");
-  const second = makeAuthenticator("on my keyring");
+  // THE BACKUP IS A PASSKEY IN A CREDENTIAL MANAGER (#470): BE and BS set,
+  // reached over hybrid, so the page must list it on your devices.
+  const second = makeAuthenticator("on my phone", { backup: true });
   await ensurePerson(PERSON);
 
   await thePortalCanEnrolAKey(first);

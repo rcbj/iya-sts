@@ -710,10 +710,11 @@ class WebauthnPolicy {
   //     `webauthn.residentKey`'s reason — the few slots a roaming
   //     authenticator has — still decides the resident key.
   //
-  // A kind narrows nothing beyond the hint while `webauthn.authenticatorAttachment`
-  // names one: that setting is the realm's filter, and `authenticatorKinds()`
-  // then offers only the button it allows. No `kind`, and the sign-in screen's
-  // ceremony, is the request as it always was, with no hint.
+  // A kind narrows nothing beyond the hint while
+  // `webauthn.authenticatorAttachment` names one: that setting is the realm's
+  // filter, and `authenticatorKinds()` then offers only the button it allows.
+  // No `kind`, and the sign-in screen's ceremony, is the request as it always
+  // was, with no hint.
   /**
    * Builds the registration options the browser receives.
    *
