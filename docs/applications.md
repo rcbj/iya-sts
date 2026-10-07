@@ -84,6 +84,15 @@ that has an attribute of its own is then overwritten from the attribute. An
 operator who edits `oauthRedirectUri` is therefore never ignored by the check
 that reads it.
 
+**An LDAP add registers the application.** In product mode an application is
+served only when somebody registered it — `appRegisteredBy` on its entry:
+`administrator` (the console or the management API), `rfc7591`, `startup`, or
+`ldap:<bound DN>` for an `ldapadd` under `ou=applications` (`ldap` alone for an
+unbound add, which only development allows). An add whose author included
+`appRegisteredBy` keeps that value. Only an add stamps it: an `ldapmodify` of
+an entry a development sighting filed changes its configuration and does not
+register it, and a sighting never registers anything.
+
 **Deleting a registration keeps the entry.** `appRegistered` becomes `FALSE`,
 the `client_secret` and the registration access token are removed, and the
 history stays. The registry records what this service has *seen*; losing the

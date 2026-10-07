@@ -1037,13 +1037,16 @@ const SCHEMA = {
     { name: 'appRegisteredBy', kind: 'single', from: 'this registry',
       what: 'How this application was registered, when it was: ' +
             '"administrator" (created on /admin/applications/new or through ' +
-            'the management API), "rfc7591" (POST /oauth2/register) or ' +
-            '"startup" (one of this service\'s own seeded clients). Absent ' +
-            'on an application that simply turned up. Written by this ' +
-            'registry and not editable. IN PRODUCT IT IS WHAT MAKES AN ' +
-            'APPLICATION SERVED (#496): an entry without it — one a ' +
-            'development sighting filed, or an LDAP add — is answered as ' +
-            'no application at every protocol door.' },
+            'the management API), "rfc7591" (POST /oauth2/register), ' +
+            '"ldap:<bound DN>" (an LDAP add under ou=applications, #504; ' +
+            '"ldap" for an unbound one) or "startup" (one of this ' +
+            'service\'s own seeded clients). Absent on an application that ' +
+            'simply turned up. Written by this registry and by an LDAP ' +
+            'add, which keeps a value its author gave; an LDAP modify ' +
+            'never stamps it. IN PRODUCT IT IS WHAT MAKES AN APPLICATION ' +
+            'SERVED (#496): an entry without it — one a development ' +
+            'sighting filed — is answered as no application at every ' +
+            'protocol door.' },
     // REGISTERED THROUGH AN OPENID FEDERATION (#134, 2026-09-23): an
     // application that became a client because its Trust Chain ended at one
     // of this realm's Trust Anchors (OpenID Federation for OpenID Connect
@@ -11146,8 +11149,10 @@ function seen(detail) {
   if (!known && !mode.autoCreates()) {
     log.info('applications: product mode, so "' + identifier + '"' +
              kindPhrase +
-             ' was NOT created on sight. An application must be provisioned ' +
-             'ahead of time, through the console, /admin-api or an LDAP add.');
+             ' was NOT created on sight. An application must be registered ' +
+             'ahead of time, through the console, /admin-api, RFC 7591 or ' +
+             'an LDAP add under ou=applications (which registers it); an ' +
+             'entry a sighting filed is not a registration.');
     log.debug("Leaving seen(). Product mode creates nothing.");
     return null;
   }

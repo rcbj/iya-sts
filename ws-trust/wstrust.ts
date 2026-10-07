@@ -668,8 +668,9 @@ class WsTrust {
       errorCode: 'STS-WSTRUST-0030', trustFault: 'InvalidScope',
       why: 'The AppliesTo "' + wanted + '" is not a registered application ' +
            'in this realm. In product mode a token is issued only for an ' +
-           'application registered ahead of time (the console or ' +
-           '/admin-api); one that was only seen is not registered.'
+           'application registered ahead of time (the console, ' +
+           '/admin-api, RFC 7591 or an LDAP add under ou=applications); ' +
+           'one that was only seen is not registered.'
     };
   }
 

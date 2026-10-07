@@ -14697,6 +14697,47 @@ function publishConnectionsSoon() {
   log.debug("Leaving publishConnectionsSoon().");
 }
 
+// ---------------------------------------------------------------------------
+// AN LDAP ADD OF AN APPLICATION IS A REGISTRATION (#504, 2026-10-06).
+//
+// Since #496 product serves no application without `appRegisteredBy`, and an
+// `ldapadd` under `ou=applications` by an identity allowed to write there is
+// an administrator putting the application there on purpose — the same act
+// as /admin/applications/new arriving by another door. So the add stamps it,
+// `ldap:<the bound DN>` (`ldap` alone for an unbound add, which only
+// development allows), beside the console's `administrator`, RFC 7591's
+// `rfc7591` and the seeding's `startup`.
+//
+// THREE LIMITS, EACH A RULE OF THE TICKET:
+//   * ONLY AN ADD. A modify of an entry `seen()` filed changes its
+//     configuration and does not register it: registering is creating on
+//     purpose, and an entry this service only saw was not created by anyone.
+//   * AN AUTHOR'S VALUE IS KEPT. An add that carries `appRegisteredBy` (an
+//     LDIF restored from another deployment, say) already says who.
+//   * ONLY A DIRECT CHILD of `ou=applications`, which is where an application
+//     entry lives; the container itself is not one.
+// A sighting never reaches here: `seen()` writes through the registry's
+// store, not through this handler, so it still never stamps.
+// ---------------------------------------------------------------------------
+function stampLdapRegistration(req, dn, attributes) {
+  log.debug('Entering stampLdapRegistration(). ' + dn);
+  if (normalizeDn(parentDn(dn)) !== normalizeDn(applicationsDn())) {
+    log.debug('Leaving stampLdapRegistration(). Not an application.');
+    return;
+  }
+  const given = Object.keys(attributes).filter(function (name) {
+    return name.toLowerCase() === 'appregisteredby' &&
+           valuesOf(attributes[name]).length > 0;
+  });
+  if (given.length) {
+    log.debug('Leaving stampLdapRegistration(). The author said who.');
+    return;
+  }
+  const bound = boundDnOf(req);
+  attributes.appRegisteredBy = [bound ? 'ldap:' + bound : 'ldap'];
+  log.debug('Leaving stampLdapRegistration(). ' + attributes.appRegisteredBy);
+}
+
 // --- add -------------------------------------------------------------------
 function ldapAddNow(req, res, next) {
   log.debug('Entering the LDAP add handler.');
@@ -14859,6 +14900,7 @@ function ldapAddNow(req, res, next) {
         policyRefusal, dn));
     }
   }
+  stampLdapRegistration(req, dn, attributes);
   const addedEntry = putEntry(dn, attributes, { origin: 'ldap add' });
   // An application added over the socket WITH credentials (#221): each is
   // announced as created, as the registry announces its own.

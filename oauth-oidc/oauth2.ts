@@ -9291,7 +9291,9 @@ class OAuth2Server {
       return { code: 'STS-OAUTH-0948', error: 'invalid_request',
                description: 'The request names no client_id. In product ' +
                  'mode this authorization server serves only a client ' +
-                 'registered ahead of time.' };
+                 'registered ahead of time (the console, /admin-api, RFC ' +
+                 '7591, an LDAP add under ou=applications or an OpenID ' +
+                 'Federation).' };
     }
     if (IssuerNames.registeredApplication(id)) {
       log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). " +
@@ -9304,7 +9306,8 @@ class OAuth2Server {
              description: 'The client "' + id + '" is not registered in ' +
                'this realm. In product mode this authorization server ' +
                'serves only a client registered ahead of time (the ' +
-               'console, /admin-api, RFC 7591 or an OpenID Federation); ' +
+               'console, /admin-api, RFC 7591, an LDAP add under ' +
+               'ou=applications or an OpenID Federation); ' +
                'one that was only seen is not registered.' };
   }
 

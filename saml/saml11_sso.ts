@@ -1781,8 +1781,9 @@ class Saml11Sso {
                     : 'Nothing in the request names a relying party, so no ') +
           'SAML 1.1 relying party is registered under it in this realm. In ' +
           'product mode this identity provider answers only a relying ' +
-          'party registered ahead of time (the console or /admin-api); one ' +
-          'that was only seen is not registered.');
+          'party registered ahead of time (the console, /admin-api, RFC ' +
+          '7591 or an LDAP add under ou=applications); one that was only ' +
+          'seen is not registered.');
       }
       // Which of the entry's addresses count is
       // `applications.returnAddressesOf()`'s to say (2026-09-12): one a
