@@ -596,10 +596,13 @@ copied, and each is the place to look first:
   works against SPIRE must work here.
 * **THE PATH BUILDER (`pki.js`) FAILS CLOSED WHERE GO WOULD EVALUATE.** An unhandled
   critical extension is refused (Go refuses them too; tpm_devid allows a
-  critical subjectAltName on the EK certificate, as SPIRE strips it), and a
-  CA with nameConstraints is refused outright, because the constraints are
-  not evaluated here. A path accepted unchecked would be wrong; one refused
-  says why. Signatures are checked by the vendored `x509.verifyChain()`,
+  critical subjectAltName on the EK certificate, as SPIRE strips it). A CA
+  with nameConstraints is EVALUATED, not refused (#201): `pki.js`'s
+  `pathRuleProblem()` holds every name below it to RFC 5280 section
+  4.2.1.10's permitted and excluded subtrees, and refuses only a name in a
+  form it does not evaluate, as that section requires; x509-limbo and NIST
+  PKITS hold it. A path accepted unchecked would be wrong; one refused says
+  why. Signatures are checked by the vendored `x509.verifyChain()`,
   which reads ML-DSA, SLH-DSA and composite signatures — so a post-quantum
   CA above an x509pop or DevID leaf verifies.
 * **x509pop CHALLENGES A POST-QUANTUM KEY, BEYOND SPIRE.** SPIRE's challenge
