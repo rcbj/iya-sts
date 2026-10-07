@@ -13741,6 +13741,275 @@ const TLS_NO_RENEGOTIATION = nodeCrypto.constants.SSL_OP_NO_RENEGOTIATION;
 
 // --- #453 group F (spiffe, scep, est, acme, scim, kerberos, tls): begin ---
 
+// Group F's operations: SPIFFE, SCEP, EST, ACME, SCIM, Kerberos and TLS.
+// Everything else those modules did is section 13's, 15's or 17's.
+
+// HOT PATH: an ACME Replay-Nonce is checked on every ACME request, so no
+// Entering/Leaving pair. It would drown the log.
+/**
+ * Compares two byte strings in constant time, answering false (rather than
+ * throwing, as node's `timingSafeEqual()` does) when their lengths differ —
+ * a length is not a secret in any caller (a MAC, a nonce, a derived key).
+ *
+ * @param a - bytes (a Buffer or Uint8Array)
+ * @param b - bytes
+ * @returns true when the two are the same bytes
+ */
+function bytesEqualInConstantTime(a, b) {
+  const left = Buffer.from(a || []);
+  const right = Buffer.from(b || []);
+  if (left.length !== right.length) {
+    return false;
+  }
+  return nodeCrypto.timingSafeEqual(left, right);
+}
+
+// RFC 5652 section 11.2: a SignedData's messageDigest attribute is the digest
+// of the encapsulated content under the SignerInfo's digestAlgorithm. SCEP's
+// pkiMessage is the one CMS this service verifies such an attribute in
+// (`scep/scep_cms.ts`), and its digest table is SHA-2 only (its decision 1),
+// so this takes section 15's DIGESTS and never SHA-1.
+/**
+ * Checks a CMS messageDigest signed attribute against the content it names.
+ *
+ * @param algorithm - the SignerInfo's digest, one of section 15's DIGESTS
+ * @param content - the encapsulated content
+ * @param claimed - the messageDigest attribute's octets; null when absent
+ * @returns true when the attribute is the content's digest
+ * @throws Error for an algorithm outside DIGESTS
+ */
+function cmsMessageDigestMatches(algorithm, content, claimed) {
+  log.debug("Entering cmsMessageDigestMatches(). " + algorithm);
+  const computed = digest(algorithm, content || Buffer.alloc(0));
+  if (!claimed) {
+    log.debug("Leaving cmsMessageDigestMatches(). No attribute.");
+    return false;
+  }
+  const ok = bytesEqualInConstantTime(claimed, computed);
+  log.debug("Leaving cmsMessageDigestMatches(). " + ok);
+  return ok;
+}
+
+// SCEP's content ciphers. RFC 8894 section 3.5.2 still permits DES-EDE3-CBC,
+// a 64-bit block cipher (Sweet32), and `scep/scep_cms.ts` refuses it badAlg
+// before it gets here (its decision 2); this list is the same refusal said
+// again where the cipher is run, so nothing can reach a weaker one.
+const SCEP_CONTENT_CIPHERS = ['aes-128-cbc', 'aes-192-cbc', 'aes-256-cbc'];
+
+/**
+ * Refuses a SCEP content cipher outside SCEP_CONTENT_CIPHERS.
+ *
+ * @param cipher - node's name for it
+ * @throws Error for a cipher outside the list
+ */
+function checkScepContentCipher(cipher) {
+  if (SCEP_CONTENT_CIPHERS.indexOf(cipher) < 0) {
+    // error-code: none — a programming error; the caller names a cipher from
+    // its own table, which is inside this list
+    throw new Error('crypto: a SCEP content cipher is one of ' +
+                    SCEP_CONTENT_CIPHERS.join(', ') + ', not "' + cipher +
+                    '"');
+  }
+}
+
+/**
+ * Encrypts a SCEP envelope's content (an EnvelopedData's
+ * encryptedContent), with CBC's PKCS#7 padding.
+ *
+ * @param cipher - one of SCEP_CONTENT_CIPHERS
+ * @param key - the content-encryption key
+ * @param iv - the sixteen-byte IV
+ * @param plaintext - the content
+ * @returns the ciphertext
+ * @throws Error for a cipher outside the list, or what node throws
+ */
+function scepContentEncrypt(cipher, key, iv, plaintext) {
+  log.debug("Entering scepContentEncrypt(). " + cipher);
+  checkScepContentCipher(cipher);
+  const c = nodeCrypto.createCipheriv(cipher, key, iv);
+  const out = Buffer.concat([c.update(plaintext), c.final()]);
+  log.debug("Leaving scepContentEncrypt().");
+  return out;
+}
+
+// It throws what node throws for a padding that does not check, because the
+// caller (`ScepCms.readEnvelope()`) catches it and gives a wrong key and a bad
+// padding ONE answer — the implicit rejection its decision 3 argues.
+/**
+ * Decrypts a SCEP envelope's content.
+ *
+ * @param cipher - one of SCEP_CONTENT_CIPHERS
+ * @param key - the content-encryption key
+ * @param iv - the sixteen-byte IV
+ * @param ciphertext - the encryptedContent
+ * @returns the plaintext
+ * @throws Error for a cipher outside the list, or what node throws
+ */
+function scepContentDecrypt(cipher, key, iv, ciphertext) {
+  log.debug("Entering scepContentDecrypt(). " + cipher);
+  checkScepContentCipher(cipher);
+  const d = nodeCrypto.createDecipheriv(cipher, key, iv);
+  const out = Buffer.concat([d.update(ciphertext), d.final()]);
+  log.debug("Leaving scepContentDecrypt().");
+  return out;
+}
+
+// CMS key transport (RFC 5652 section 6.2.1) with RSA: RSAES-PKCS1-v1_5
+// (RFC 8017 section 7.2), which every SCEP client in the field sends, and
+// RSAES-OAEP (RFC 3560). OAEP's hash is the sender's choice and SHA-1 is its
+// default (RFC 8017 appendix A.2.1): SHA-1 in OAEP is a mask generator, not
+// a signature, and no collision on it opens an envelope. v1.5 decryption is
+// the Marvin attack's target (CVE-2023-46809); node 24 has OpenSSL's IMPLICIT
+// REJECTION, and a runtime without it throws `ERR_INVALID_ARG_VALUE`, which
+// the caller looks for — so what node throws is thrown unchanged.
+const CMS_KEY_TRANSPORTS = ['rsaes-pkcs1-v1_5', 'rsaes-oaep'];
+const CMS_OAEP_HASHES = ['sha1', 'sha256', 'sha384', 'sha512'];
+
+/**
+ * Unwraps a CMS content-encryption key with an RSA private key.
+ *
+ * @param transport - `rsaes-pkcs1-v1_5` or `rsaes-oaep`
+ * @param privateKey - the recipient's private key (a PEM or a KeyObject)
+ * @param encryptedKey - the KeyTransRecipientInfo's encryptedKey
+ * @param oaepHash - for OAEP, one of CMS_OAEP_HASHES
+ * @returns the content-encryption key
+ * @throws Error for a transport or hash outside the lists, or what node
+ *   throws
+ */
+function cmsKeyTransportDecrypt(transport, privateKey, encryptedKey,
+                                oaepHash) {
+  log.debug("Entering cmsKeyTransportDecrypt(). " + transport);
+  if (CMS_KEY_TRANSPORTS.indexOf(transport) < 0) {
+    log.debug("Leaving cmsKeyTransportDecrypt(). Unknown transport.");
+    // error-code: none — a programming error; the caller names a constant
+    throw new Error('crypto: a CMS key transport is one of ' +
+                    CMS_KEY_TRANSPORTS.join(', ') + ', not "' + transport +
+                    '"');
+  }
+  if (transport === 'rsaes-pkcs1-v1_5') {
+    const key = nodeCrypto.privateDecrypt({
+      key: privateKey,
+      padding: nodeCrypto.constants.RSA_PKCS1_PADDING
+    }, encryptedKey);
+    log.debug("Leaving cmsKeyTransportDecrypt(). PKCS#1 v1.5.");
+    return key;
+  }
+  if (CMS_OAEP_HASHES.indexOf(oaepHash) < 0) {
+    log.debug("Leaving cmsKeyTransportDecrypt(). Unknown OAEP hash.");
+    // error-code: none — a programming error; the caller maps the OID through
+    // a table inside this list
+    throw new Error('crypto: an OAEP hash is one of ' +
+                    CMS_OAEP_HASHES.join(', ') + ', not "' + oaepHash + '"');
+  }
+  const key = nodeCrypto.privateDecrypt({
+    key: privateKey,
+    padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash: oaepHash
+  }, encryptedKey);
+  log.debug("Leaving cmsKeyTransportDecrypt(). OAEP " + oaepHash + ".");
+  return key;
+}
+
+// The reply side is RSAES-PKCS1-v1_5 only: it is what every SCEP client
+// decrypts, forge and OpenSSL's PKCS7 included, and ENCRYPTING with v1.5
+// gives no oracle — the attack is on the party that decrypts.
+/**
+ * Wraps a CMS content-encryption key to an RSA public key with
+ * RSAES-PKCS1-v1_5.
+ *
+ * @param publicKey - the recipient's public key (a KeyObject or a PEM)
+ * @param contentKey - the content-encryption key
+ * @returns the encryptedKey
+ * @throws what node throws for a key that is not RSA
+ */
+function cmsKeyTransportEncrypt(publicKey, contentKey) {
+  log.debug("Entering cmsKeyTransportEncrypt().");
+  const wrapped = nodeCrypto.publicEncrypt({
+    key: publicKey,
+    padding: nodeCrypto.constants.RSA_PKCS1_PADDING
+  }, contentKey);
+  log.debug("Leaving cmsKeyTransportEncrypt().");
+  return wrapped;
+}
+
+// A TPM 2.0 object's Name is nameAlg ‖ H_nameAlg(TPMT_PUBLIC) (Library Part
+// 1, section 16), and nameAlg is the TPM's choice: SHA-1 is a TPM_ALG_ID a
+// TPM may name (TPM_HASHES above), so computing a Name with it is what the
+// specification fixes, not a choice made here. `tpmName()` does it for a
+// parsed public area; `spiffe/spiffe_tpm.ts` hashes its own and compares a
+// Name against another's algorithm, so it needs the hash on its own.
+/**
+ * Hashes bytes under one of the TPM's name algorithms.
+ *
+ * @param hash - a value of TPM_HASHES (`sha1`, `sha256`, `sha384`,
+ *   `sha512`)
+ * @param bytes - what is hashed (a TPMT_PUBLIC)
+ * @returns the digest
+ * @throws Error for a hash outside TPM_HASHES
+ */
+function tpmNameDigest(hash, bytes) {
+  log.debug("Entering tpmNameDigest(). " + hash);
+  const known = Object.keys(TPM_HASHES).some(function (id) {
+    return TPM_HASHES[id] === hash;
+  });
+  if (!known) {
+    log.debug("Leaving tpmNameDigest(). Unknown.");
+    // error-code: none — a parse failure, refused by the caller
+    throw new Error('the TPM hash algorithm ' + hash + ' is not supported');
+  }
+  const out = nodeCrypto.createHash(hash).update(bytes).digest();
+  log.debug("Leaving tpmNameDigest().");
+  return out;
+}
+
+// SPIRE sizes a credential-activation secret by the EK's name hash, so the
+// `tpm_devid` attestor asks for that size by TPM_ALG_ID.
+/**
+ * Returns the digest size, in octets, of a TPM_ALG_ID hash.
+ *
+ * @param algId - the TPM_ALG_ID
+ * @returns the size
+ * @throws Error for one not in TPM_HASHES, as `tpmHashName()` does
+ */
+function tpmDigestSize(algId) {
+  log.debug("Entering tpmDigestSize(). alg=" + algId);
+  const size = nodeCrypto.createHash(tpmHashName(algId)).digest().length;
+  log.debug("Leaving tpmDigestSize(). " + size);
+  return size;
+}
+
+// RFC 7616 (HTTP Digest Access Authentication) section 3.2 names its own
+// algorithms: SHA-256, SHA-512-256 and MD5. MD5 is there because most of
+// the installed base of Digest clients speaks nothing else; SCIM offers it
+// only when `scim.digestMd5` is set, in development (#182), and the digest
+// is a hash over a password a client proves knowledge of, not a signature.
+const HTTP_DIGEST_HASHES = ['sha256', 'sha512-256', 'md5'];
+
+// It runs once per Digest challenge and answer, so it logs as an ordinary
+// function. The text is passed to node as given, so an absent one throws
+// where the caller always met it.
+/**
+ * Computes an RFC 7616 digest (H() or KD()'s hash) as lowercase hex.
+ *
+ * @param hash - one of HTTP_DIGEST_HASHES, by node's name
+ * @param text - the string hashed, read as UTF-8
+ * @returns the digest, hex
+ * @throws Error for a hash outside the list
+ */
+function httpDigestHash(hash, text) {
+  log.debug("Entering httpDigestHash(). " + hash);
+  if (HTTP_DIGEST_HASHES.indexOf(hash) < 0) {
+    log.debug("Leaving httpDigestHash(). Unknown.");
+    // error-code: none — a programming error; the caller's table is inside
+    // this list
+    throw new Error('crypto: an HTTP Digest hash is one of ' +
+                    HTTP_DIGEST_HASHES.join(', ') + ', not "' + hash + '"');
+  }
+  const out = nodeCrypto.createHash(hash).update(text, 'utf8').digest('hex');
+  log.debug("Leaving httpDigestHash().");
+  return out;
+}
+
 // --- #453 group F: end ---
 
 // ===========================================================================
@@ -14733,6 +15002,19 @@ module.exports = {
   // --- #453 group E exports: end ---
   //
   // --- #453 group F exports: begin ---
+  bytesEqualInConstantTime: bytesEqualInConstantTime,
+  cmsMessageDigestMatches: cmsMessageDigestMatches,
+  SCEP_CONTENT_CIPHERS: SCEP_CONTENT_CIPHERS,
+  scepContentEncrypt: scepContentEncrypt,
+  scepContentDecrypt: scepContentDecrypt,
+  CMS_KEY_TRANSPORTS: CMS_KEY_TRANSPORTS,
+  CMS_OAEP_HASHES: CMS_OAEP_HASHES,
+  cmsKeyTransportDecrypt: cmsKeyTransportDecrypt,
+  cmsKeyTransportEncrypt: cmsKeyTransportEncrypt,
+  tpmNameDigest: tpmNameDigest,
+  tpmDigestSize: tpmDigestSize,
+  HTTP_DIGEST_HASHES: HTTP_DIGEST_HASHES,
+  httpDigestHash: httpDigestHash,
   // --- #453 group F exports: end ---
   //
   // --- section 16: PKINIT's CMS, key agreement and reply key (#179) ---

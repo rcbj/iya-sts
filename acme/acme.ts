@@ -65,7 +65,6 @@
 // order is unchanged. Requiring the module registers nothing.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 const { log } = helpers;
@@ -155,7 +154,6 @@ const ORDERS_QUERY = validation.z.looseObject({
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface AcmeDeps {
-  nodeCrypto: typeof nodeCrypto;
   helpers: typeof helpers;
   log: typeof log;
   config: typeof config;
@@ -207,7 +205,6 @@ class Acme {
     log.debug("Entering Acme.defaultDeps().");
     log.debug("Leaving Acme.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
       helpers: helpers,
       log: log,
       config: config,
@@ -1264,11 +1261,11 @@ class Acme {
    * key
    */
   isSelfSigned(pem) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering Acme.isSelfSigned().");
     let self = false;
     try {
-      const cert = new nodeCrypto.X509Certificate(pem);
+      const cert = stsCrypto.parseCertificate(pem);
       self = cert.subject === cert.issuer && cert.checkIssued(cert);
     } catch (e) {
       log.debug("Caught in Acme.isSelfSigned(): " + ((e && e.message) || e));
@@ -1514,7 +1511,7 @@ class Acme {
    */
   registerRoutes(app: RouteApp): void {
     const { log, jws, store, core, errorCodes, audit, validation, config,
-            nodeCrypto, claims, realms, stsCrypto } = this.deps;
+            claims, realms, stsCrypto } = this.deps;
     const self = this;
     log.debug("Entering Acme.registerRoutes().");
     // WHICH CELL ANSWERS (#98 D10) — see `placeRequest()`. Above every ACME
@@ -1977,7 +1974,7 @@ class Acme {
           wildcard: wildcard,
           expires: expires,
           validated: validated,
-          token: jws.b64u(nodeCrypto.randomBytes(24))
+          token: jws.b64u(stsCrypto.randomBytes(24))
         }).id;
       });
       const order = store.createOrder(account, {

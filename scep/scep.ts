@@ -94,7 +94,7 @@
 // order is unchanged. Requiring the module registers nothing.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
@@ -208,7 +208,7 @@ const TRANSACTION_POLL_MS = 250;
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
 interface ScepDeps {
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   log: typeof log;
   audit: typeof audit;
   config: typeof config;
@@ -260,7 +260,7 @@ class Scep {
     log.debug("Entering Scep.defaultDeps().");
     log.debug("Leaving Scep.defaultDeps().");
     return {
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       log: log,
       audit: audit,
       config: config,
@@ -605,12 +605,11 @@ class Scep {
   }
 
   spkiSha256(publicKeyPem) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering Scep.spkiSha256().");
-    const der = nodeCrypto.createPublicKey(publicKeyPem)
-      .export({ type: 'spki', format: 'der' });
+    const der = stsCrypto.spkiDerOf(publicKeyPem);
     log.debug("Leaving Scep.spkiSha256().");
-    return nodeCrypto.createHash('sha256').update(der).digest('hex');
+    return stsCrypto.digest('sha256', der, 'hex');
   }
 
   // ---------------------------------------------------------------------------
@@ -625,7 +624,7 @@ class Scep {
    * @returns a promise of the CSR and the content cipher, or a `refusal`
    */
   async readRequest(message, raKeys) {
-    const { log, cms, core, nodeCrypto } = this.deps;
+    const { log, cms, core, stsCrypto } = this.deps;
     log.debug("Entering Scep.readRequest().");
     const opened = cms.openEnvelope(message.content, raKeys.certificatePem,
                                     raKeys.privateKeyPem);
@@ -649,8 +648,7 @@ class Scep {
     }
     log.debug("Leaving Scep.readRequest().");
     return { csr: csr, cipher: opened.cipher,
-             csrSha256: nodeCrypto.createHash('sha256').update(opened.content)
-               .digest('hex') };
+             csrSha256: stsCrypto.digest('sha256', opened.content, 'hex') };
   }
 
   // The stored result of a transactionID, when this request is a retry of it.

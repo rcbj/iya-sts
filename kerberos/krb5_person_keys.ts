@@ -144,8 +144,8 @@
 //     the key store, the credential store, the application registry, the
 //     audit log, the error codes, the Kerberos codec and principal database
 //     (both locked, JavaScript, and required as they were), the keytab writer
-//     and node's `crypto`. The principal database is typed by what this file
-//     reads of it, because several of those members are getters its
+//     and `common/crypto.js`. The principal database is typed by what this
+//     file reads of it, because several of those members are getters its
 //     `module.exports` gains after the object literal.
 //   * **THE DIRECTORY SLOT IS STATE OF THE INSTANCE**; the in-flight
 //     derivations stay a module-level `Map`, declared as it was.
@@ -160,7 +160,7 @@
 //     resolves to the same files.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -255,7 +255,7 @@ interface Krb5PersonKeysDeps {
   prim: Json;
   principals: PrincipalDatabase;
   keytab: typeof keytab;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   fast: Krb5Fast;
   pkinit: Krb5Pkinit;
   // LAZILY, each (#169): the claim a cluster's first krbtgt key is made
@@ -382,7 +382,7 @@ class Krb5PersonKeys {
       prim: prim,
       principals: principals as unknown as PrincipalDatabase,
       keytab: keytab,
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       fast: new Krb5Fast(Krb5Fast.defaultDeps()),
       pkinit: new Krb5Pkinit(Krb5Pkinit.defaultDeps()),
       claims: function (): Json {
@@ -517,11 +517,11 @@ class Krb5PersonKeys {
    * @returns the stamp
    */
   stampOf(storedHash: unknown): string {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering Krb5PersonKeys.stampOf().");
     log.debug("Leaving Krb5PersonKeys.stampOf().");
-    return nodeCrypto.createHash('sha256').update(String(storedHash || ''))
-      .digest('hex').slice(0, 32);
+    return stsCrypto.digest('sha256', String(storedHash || ''), 'hex')
+      .slice(0, 32);
   }
 
   private saltFor(name: string): string {
@@ -2933,7 +2933,7 @@ class Krb5PersonKeys {
    */
   async personKeytab(name: unknown, password: unknown,
                      context?: ActContext): Promise<Json> {
-    const { log, principals, kcrypto, keytab, audit, nodeCrypto,
+    const { log, principals, kcrypto, keytab, audit, stsCrypto,
             realms } = this.deps;
     log.debug('Entering Krb5PersonKeys.personKeytab(). name=' + name);
     const refused = this.personKeytabRefusal(name);
@@ -2979,8 +2979,8 @@ class Krb5PersonKeys {
       // The kvno, the enctypes and where it came from. Never a key, a salt
       // beyond what ETYPE-INFO2 publishes, the keytab or the password.
       detail: { kvno: made.kvno, etypes: etypes, source: made.source,
-                via: via, fingerprint: nodeCrypto.createHash('sha256')
-                  .update(bytes).digest('hex').slice(0, 16) }
+                via: via, fingerprint: stsCrypto.digest('sha256', bytes, 'hex')
+                  .slice(0, 16) }
     });
     log.info('krb5-keys: a keytab for ' + principal + ' at kvno ' +
              made.kvno + ' was made through the ' + via + ' and handed to ' +
@@ -3017,7 +3017,7 @@ class Krb5PersonKeys {
   private async productPersonKeys(who: string, password: unknown):
       Promise<Json> {
     const self = this;
-    const { log, principals, nodeCrypto } = this.deps;
+    const { log, principals, stsCrypto } = this.deps;
     const directory = this.directory;
     log.debug('Entering Krb5PersonKeys.productPersonKeys(). name=' + who);
     if (typeof password !== 'string' || !password) {
@@ -3062,7 +3062,7 @@ class Krb5PersonKeys {
                                            null);
       const a = Buffer.from(derived);
       const b = Buffer.from(pair[1]);
-      if (a.length !== b.length || !nodeCrypto.timingSafeEqual(a, b)) {
+      if (a.length !== b.length || !stsCrypto.bytesEqualInConstantTime(a, b)) {
         log.debug('Leaving Krb5PersonKeys.productPersonKeys(). The password ' +
                   'does not give the stored key.');
         return this.refusal('STS-KRB-0132', 'That password does not give ' +

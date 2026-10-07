@@ -49,7 +49,6 @@
 // the same engine, which reads post-quantum signatures.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 const { log } = helpers;
 import config = require('../common/config');
@@ -76,7 +75,6 @@ const CURVE_BYTES = { 'prime256v1': 32, 'secp384r1': 48, 'secp521r1': 66 };
 
 interface X509popDeps {
   log: typeof log;
-  crypto: typeof nodeCrypto;
   config: typeof config;
   errorCodes: typeof errorCodes;
   spiffeId: typeof spiffeId;
@@ -128,7 +126,7 @@ class X509popAttestor {
     helpers.log.debug("Entering X509popAttestor.defaultDeps().");
     helpers.log.debug("Leaving X509popAttestor.defaultDeps().");
     return {
-      log: log, crypto: nodeCrypto, config: config, errorCodes: errorCodes,
+      log: log, config: config, errorCodes: errorCodes,
       spiffeId: spiffeId, rpc: rpc, ca: ca, pki: pki, stsCrypto: stsCrypto,
       agentPath: agentPath
     };
@@ -231,7 +229,7 @@ class X509popAttestor {
    * @param kind - `DNS`, `URI`, `IP Address` or `email`
    * @returns the entries' values
    */
-  sans(x509: nodeCrypto.X509Certificate, kind: string): string[] {
+  sans(x509: import('crypto').X509Certificate, kind: string): string[] {
     const { log } = this.deps;
     log.debug("Entering X509popAttestor.sans(). kind=" + kind);
     const text = String(x509.subjectAltName || '');
@@ -255,7 +253,7 @@ class X509popAttestor {
    * @param x509 - the certificate
    * @returns the serial number
    */
-  serialHex(x509: nodeCrypto.X509Certificate): string {
+  serialHex(x509: import('crypto').X509Certificate): string {
     const { log } = this.deps;
     log.debug("Entering X509popAttestor.serialHex().");
     let hex = String(x509.serialNumber || '').toLowerCase()
@@ -296,7 +294,7 @@ class X509popAttestor {
    * @returns the digest, or null when either nonce is not 32 bytes
    */
   combined(challenge: Buffer, response: Buffer): Buffer | null {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering X509popAttestor.combined().");
     if (!challenge || challenge.length !== NONCE_LENGTH || !response ||
         response.length !== NONCE_LENGTH) {
@@ -305,8 +303,7 @@ class X509popAttestor {
       return null;
     }
     log.debug("Leaving X509popAttestor.combined().");
-    return crypto.createHash('sha256').update(challenge).update(response)
-      .digest();
+    return stsCrypto.digest('sha256', Buffer.concat([challenge, response]));
   }
 
   // Does `response` answer the challenge for this key? Every check is
@@ -372,7 +369,7 @@ class X509popAttestor {
    */
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
-    const { log, crypto, config, errorCodes, spiffeId, rpc, ca, pki,
+    const { log, stsCrypto, config, errorCodes, spiffeId, rpc, ca, pki,
             agentPath } = this.deps;
     const self = this;
     log.debug("Entering X509popAttestor.attest().");
@@ -517,7 +514,7 @@ class X509popAttestor {
       throw rpc.statusError(status.INTERNAL, 'unable to generate ' +
         'challenge: unsupported public key type ' + (key.kind || 'unknown'));
     }
-    const nonce = crypto.randomBytes(NONCE_LENGTH);
+    const nonce = stsCrypto.randomBytes(NONCE_LENGTH);
     const challenge = key.kind === 'rsa'
       ? { rsa_signature: { nonce: nonce.toString('base64') },
           ecdsa_signature: null }

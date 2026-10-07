@@ -91,7 +91,7 @@
 // exported for the root.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
@@ -1512,8 +1512,8 @@ class SpiffeRegistry {
     const { log, crypto } = this.deps;
     log.debug("Entering SpiffeRegistry.agentCnFor().");
     log.debug("Leaving SpiffeRegistry.agentCnFor().");
-    return 'agent-' + crypto.createHash('sha256').update(String(id))
-      .digest('hex').slice(0, 12);
+    return 'agent-' + crypto.digest('sha256', String(id), 'hex')
+      .slice(0, 12);
   }
 
   /**

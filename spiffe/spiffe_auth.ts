@@ -125,7 +125,7 @@
 // exported for the root.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log, nowSec } = helpers;
@@ -1000,7 +1000,7 @@ class SpiffeAuth {
     (state.x509Authorities || []).forEach(function (authority) {
       try {
         out.push({ trustDomain: ca.trustDomain(),
-                   certificate: new crypto.X509Certificate(
+                   certificate: crypto.parseCertificate(
                        authority.certificatePem) });
       } catch (e) {
         // An authority this service minted itself that will not parse is a
@@ -1027,7 +1027,7 @@ class SpiffeAuth {
         (key.x5c || []).forEach(function (b64) {
           try {
             out.push({ trustDomain: foreign.trustDomain,
-                       certificate: new crypto.X509Certificate(
+                       certificate: crypto.parseCertificate(
                            Buffer.from(String(b64), 'base64')) });
           } catch (e) {
             // A malformed x5c in a bundle somebody pushed in. Skipped with the
@@ -1090,7 +1090,7 @@ class SpiffeAuth {
     log.debug('Entering SpiffeAuth.verifyPresentedCertificate(). id=' + id);
     let leaf;
     try {
-      leaf = new crypto.X509Certificate(certificate.raw);
+      leaf = crypto.parseCertificate(certificate.raw);
     } catch (e) {
       log.debug('Leaving SpiffeAuth.verifyPresentedCertificate(). It would ' +
                 'not parse.');

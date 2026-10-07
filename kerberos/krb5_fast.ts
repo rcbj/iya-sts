@@ -94,7 +94,6 @@
 // and behaves exactly as before.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import config = require('../common/config');
 import cryptoLib = require('../common/crypto');
@@ -878,8 +877,8 @@ class Krb5Fast {
       const stamp = Buffer.alloc(4);
       stamp.writeUInt32BE(Math.floor(Date.now() / 1000) >>> 0, 0);
       nonce = new Uint8Array(Buffer.concat([
-        stamp, nodeCrypto.randomBytes(Math.max(32,
-                                               fast.armorKey.key.length))]));
+        stamp, cryptoLib.randomBytes(Math.max(32,
+                                              fast.armorKey.key.length))]));
       out.push({ type: codec.PA.OTP_CHALLENGE, value: codec.encOtpChallenge({
         nonce: nonce,
         service: fast.realm,
@@ -1183,8 +1182,7 @@ class Krb5Fast {
       const derived = await kcrypto.etypeById(etype).stringToKey(
         req.pin, prim.utf8(client.salt || ''), null);
       pinOk = held.length === derived.length &&
-              nodeCrypto.timingSafeEqual(Buffer.from(held),
-                                         Buffer.from(derived));
+              cryptoLib.bytesEqualInConstantTime(held, derived);
     } catch (e) {
       log.debug('Caught in Krb5Fast.checkOtpRequest(): ' +
                 ((e && e.message) || e));

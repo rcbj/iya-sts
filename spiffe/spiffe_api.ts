@@ -96,7 +96,7 @@
 // `build…()` methods, called at load where each was declared.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log, nowSec } = helpers;
@@ -1105,8 +1105,7 @@ class SpiffeApi {
     const { log, crypto } = this.deps;
     log.debug("Entering SpiffeApi.joinTokenKey().");
     log.debug("Leaving SpiffeApi.joinTokenKey().");
-    return crypto.createHash('sha256').update(String(token || ''), 'utf8')
-      .digest('base64url');
+    return crypto.digest('sha256', String(token || ''), 'base64url');
   }
 
   /**
@@ -1327,8 +1326,8 @@ class SpiffeApi {
             attestationType: attestationType,
             selectors: verified.selectors,
             canReattest: verified.canReattest,
-            svidHash: crypto.createHash('sha256').update(svid.certificateDer)
-              .digest('hex').slice(0, 32),
+            svidHash: crypto.digest('sha256', svid.certificateDer, 'hex')
+              .slice(0, 32),
             expiresAt: svid.expiresAt
           });
           if (recorded && recorded.banned) {
@@ -1458,8 +1457,8 @@ class SpiffeApi {
           attestationType: agent.attestationType,
           selectors: agent.selectors,
           canReattest: agent.canReattest,
-          svidHash: crypto.createHash('sha256').update(svid.certificateDer)
-            .digest('hex').slice(0, 32),
+          svidHash: crypto.digest('sha256', svid.certificateDer, 'hex')
+            .slice(0, 32),
           expiresAt: svid.expiresAt
         });
         stats.recordSvid('X.509', {
@@ -1497,7 +1496,7 @@ class SpiffeApi {
           ? Number(request.ttl)
           : config.value('spiffe.joinTokenTtl');
         const token = String(request.token || '').trim() ||
-                      crypto.randomUUID();
+                      crypto.randomUuid();
         const expiresAt = nowSec() + ttl;
         const agentId = spiffeId.fromProto(request.agent_id);
         // ---------------------------------------------------------------------
@@ -1750,7 +1749,7 @@ class SpiffeApi {
     log.debug('Entering SpiffeApi.derFromJwk().');
     try {
       log.debug('Leaving SpiffeApi.derFromJwk().');
-      return crypto.createPublicKey({ key: jwk, format: 'jwk' })
+      return crypto.publicKeyFromJwk(jwk)
         .export({ type: 'spki', format: 'der' });
     } catch (e) {
       // A key this node cannot import. Empty rather than fatal: the rest of the
@@ -1834,7 +1833,7 @@ class SpiffeApi {
       if (!der.length) return;
       let jwk: any = {};
       try {
-        const cert = new crypto.X509Certificate(der);
+        const cert = crypto.parseCertificate(der);
         jwk = cert.publicKey.export({ format: 'jwk' });
         delete jwk.key_ops;
         delete jwk.ext;
@@ -1855,8 +1854,8 @@ class SpiffeApi {
       const der = Buffer.from(authority.public_key || []);
       if (!der.length) return;
       try {
-        const jwk = crypto.createPublicKey({ key: der, format: 'der',
-                                             type: 'spki' })
+        const jwk = crypto.publicKeyOf({ key: der, format: 'der',
+                                         type: 'spki' })
           .export({ format: 'jwk' });
         delete jwk.key_ops;
         delete jwk.ext;

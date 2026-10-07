@@ -148,7 +148,6 @@
 
 const https = require('https');
 const tls = require('tls');
-const crypto = require('crypto');
 const fs = require('fs');
 const forge = require('node-forge');
 // The RSA keygen-and-self-sign skeleton this shares with `common/helpers.js`
@@ -599,7 +598,7 @@ function protocolOptions(policy) {
   // — and each renegotiation is a full handshake's CPU spent at the peer's
   // choosing, so OpenSSL refuses every one with a no_renegotiation warning.
   // TLS 1.3 has no renegotiation to refuse.
-  options.secureOptions = crypto.constants.SSL_OP_NO_RENEGOTIATION;
+  options.secureOptions = stsCrypto.TLS_NO_RENEGOTIATION;
   // How long a session may be resumed (#429): a ticket's lifetime and the
   // session cache's. In the context, so every re-application carries it.
   if (p.sessionTimeoutS) {
@@ -1222,7 +1221,7 @@ function suppliedServerCertificate() {
   // that names OpenSSL rather than this setting.
   let leaf = null;
   try {
-    leaf = new crypto.X509Certificate(certPem);
+    leaf = stsCrypto.parseCertificate(certPem);
   } catch (e) {
     log.debug('Leaving suppliedServerCertificate(). Unparseable.');
     throw new Error(errorCodes.tag('STS-TLS-0004') +
@@ -1233,7 +1232,7 @@ function suppliedServerCertificate() {
   // surfaces as an OpenSSL message three layers down.
   let pair = false;
   try {
-    pair = leaf.checkPrivateKey(crypto.createPrivateKey(keyPem));
+    pair = leaf.checkPrivateKey(stsCrypto.privateKeyFrom(keyPem));
   } catch (e) {
     throw new Error(errorCodes.tag('STS-TLS-0005') +
       'tls: ' + keyFile + ' is not a readable private key: ' +
@@ -1330,8 +1329,8 @@ function splitSuppliedBundle(bundlePem, certFile) {
       return;
     }
     try {
-      const top = new crypto.X509Certificate(topPem);
-      if (top.verify(new crypto.X509Certificate(pem).publicKey)) {
+      const top = stsCrypto.parseCertificate(topPem);
+      if (top.verify(stsCrypto.parseCertificate(pem).publicKey)) {
         anchorPem = pem;
       }
     } catch (e) {
@@ -1359,7 +1358,7 @@ function splitSuppliedBundle(bundlePem, certFile) {
 function isSelfSignedPem(pem) {
   log.debug('Entering isSelfSignedPem().');
   try {
-    const cert = new crypto.X509Certificate(pem);
+    const cert = stsCrypto.parseCertificate(pem);
     const self = cert.checkIssued(cert) && cert.verify(cert.publicKey);
     log.debug('Leaving isSelfSignedPem(). ' + self);
     return self;
@@ -1513,7 +1512,7 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   record.fingerprint256 = fingerprintOf(certPem);
   record.selfSigned = false;
   try {
-    const read = new crypto.X509Certificate(certPem);
+    const read = stsCrypto.parseCertificate(certPem);
     record.subject = read.subject.replace(/\n/g, ', ');
     record.notAfter = new Date(read.validTo).toISOString();
   } catch (e) {
@@ -1843,7 +1842,7 @@ function notifyCertificateObservers(algorithm) {
     publicKeyPem: function () {
       log.debug("Entering publicKeyPem().");
       log.debug("Leaving publicKeyPem().");
-      return crypto.createPublicKey(SERVER_CERTIFICATE.privateKeyPem)
+      return stsCrypto.publicKeyOf(SERVER_CERTIFICATE.privateKeyPem)
         .export({ type: 'spki', format: 'pem' });
     },
     onCertified: function (certPem, chainPem) {
@@ -1892,7 +1891,7 @@ function notifyCertificateObservers(algorithm) {
       publicKeyPem: function () {
         log.debug("Entering publicKeyPem().");
         log.debug("Leaving publicKeyPem().");
-        return crypto.createPublicKey(record.privateKeyPem)
+        return stsCrypto.publicKeyOf(record.privateKeyPem)
           .export({ type: 'spki', format: 'pem' });
       },
       onCertified: function (certPem, chainPem) {
@@ -1964,7 +1963,7 @@ function describePem(pem) {
     // before giving up, or every ML-DSA root a debugger uploads is labelled
     // '(unreadable)' on a page whose whole job is to say what was trusted.
     try {
-      subject = new crypto.X509Certificate(pem).subject
+      subject = stsCrypto.parseCertificate(pem).subject
           .split('\n').join(', ');
     } catch (openSslError) {
       log.warn('tls: an anchor could not be parsed for display: ' +
@@ -1981,7 +1980,7 @@ function describePem(pem) {
   let details = { issuer: '', serial: '', notBefore: '', notAfter: '',
                   ca: false, readable: false };
   try {
-    const parsed = new crypto.X509Certificate(pem);
+    const parsed = stsCrypto.parseCertificate(pem);
     details = {
       issuer: parsed.issuer.split('\n').join(', '),
       serial: parsed.serialNumber,
@@ -2238,8 +2237,8 @@ function anchorSigns(anchorPem, record) {
     return false;
   }
   try {
-    const anchor = new crypto.X509Certificate(anchorPem);
-    const top = new crypto.X509Certificate(topPem);
+    const anchor = stsCrypto.parseCertificate(anchorPem);
+    const top = stsCrypto.parseCertificate(topPem);
     log.debug("Leaving anchorSigns().");
     // `verify()` is the SIGNATURE and not the name. That is the whole point:
     // the two Roots this has to tell apart have identical subjects, so
@@ -2749,7 +2748,7 @@ function adoptServerCertificate(bundle) {
   SERVER_CERTIFICATE.selfSigned = !(bundle.chainPem || []).length;
   SERVER_CERTIFICATE.fingerprint256 = fingerprintOf(bundle.certPem);
   try {
-    const read = new crypto.X509Certificate(bundle.certPem);
+    const read = stsCrypto.parseCertificate(bundle.certPem);
     SERVER_CERTIFICATE.subject = read.subject.replace(/\n/g, ', ');
     SERVER_CERTIFICATE.notAfter = new Date(read.validTo).toISOString();
   } catch (e) {
@@ -2870,7 +2869,7 @@ function anchorCertificates() {
     if (!parsedAnchors.has(text)) {
       let parsed = null;
       try {
-        parsed = new crypto.X509Certificate(text);
+        parsed = stsCrypto.parseCertificate(text);
       } catch (e) {
         log.debug("Caught in anchorCertificates(): " +
                   ((e && e.message) || e));
