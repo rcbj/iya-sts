@@ -839,7 +839,7 @@ class AcmeJws {
     const random = bytes.subarray(5, 21);
     const presented = bytes.subarray(21, 37);
     const expected = this.nonceMac(realmId, expiresS, random);
-    if (!stsCrypto.bytesEqualInConstantTime(presented, expected)) {
+    if (!stsCrypto.bytesEqualConstantTime(presented, expected)) {
       log.debug("Leaving AcmeJws.checkNonce(). Not one this service issued " +
                 "here.");
       return { ok: false, reason: 'forged' };

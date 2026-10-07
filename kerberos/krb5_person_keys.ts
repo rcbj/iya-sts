@@ -3062,7 +3062,7 @@ class Krb5PersonKeys {
                                            null);
       const a = Buffer.from(derived);
       const b = Buffer.from(pair[1]);
-      if (a.length !== b.length || !stsCrypto.bytesEqualInConstantTime(a, b)) {
+      if (a.length !== b.length || !stsCrypto.bytesEqualConstantTime(a, b)) {
         log.debug('Leaving Krb5PersonKeys.productPersonKeys(). The password ' +
                   'does not give the stored key.');
         return this.refusal('STS-KRB-0132', 'That password does not give ' +

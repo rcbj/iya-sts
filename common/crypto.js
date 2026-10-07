@@ -14845,26 +14845,6 @@ function coseAlgorithmDigest(coseAlg, data) {
 // Group F's operations: SPIFFE, SCEP, EST, ACME, SCIM, Kerberos and TLS.
 // Everything else those modules did is section 13's, 15's or 17's.
 
-// HOT PATH: an ACME Replay-Nonce is checked on every ACME request, so no
-// Entering/Leaving pair. It would drown the log.
-/**
- * Compares two byte strings in constant time, answering false (rather than
- * throwing, as node's `timingSafeEqual()` does) when their lengths differ —
- * a length is not a secret in any caller (a MAC, a nonce, a derived key).
- *
- * @param a - bytes (a Buffer or Uint8Array)
- * @param b - bytes
- * @returns true when the two are the same bytes
- */
-function bytesEqualInConstantTime(a, b) {
-  const left = Buffer.from(a || []);
-  const right = Buffer.from(b || []);
-  if (left.length !== right.length) {
-    return false;
-  }
-  return nodeCrypto.timingSafeEqual(left, right);
-}
-
 // RFC 5652 section 11.2: a SignedData's messageDigest attribute is the digest
 // of the encapsulated content under the SignerInfo's digestAlgorithm. SCEP's
 // pkiMessage is the one CMS this service verifies such an attribute in
@@ -14886,7 +14866,7 @@ function cmsMessageDigestMatches(algorithm, content, claimed) {
     log.debug("Leaving cmsMessageDigestMatches(). No attribute.");
     return false;
   }
-  const ok = bytesEqualInConstantTime(claimed, computed);
+  const ok = bytesEqualConstantTime(claimed, computed);
   log.debug("Leaving cmsMessageDigestMatches(). " + ok);
   return ok;
 }
@@ -16127,7 +16107,6 @@ module.exports = {
   // --- #453 group E exports: end ---
   //
   // --- #453 group F exports: begin ---
-  bytesEqualInConstantTime: bytesEqualInConstantTime,
   cmsMessageDigestMatches: cmsMessageDigestMatches,
   SCEP_CONTENT_CIPHERS: SCEP_CONTENT_CIPHERS,
   scepContentEncrypt: scepContentEncrypt,

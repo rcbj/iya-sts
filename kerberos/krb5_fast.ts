@@ -1182,7 +1182,7 @@ class Krb5Fast {
       const derived = await kcrypto.etypeById(etype).stringToKey(
         req.pin, prim.utf8(client.salt || ''), null);
       pinOk = held.length === derived.length &&
-              cryptoLib.bytesEqualInConstantTime(held, derived);
+              cryptoLib.bytesEqualConstantTime(held, derived);
     } catch (e) {
       log.debug('Caught in Krb5Fast.checkOtpRequest(): ' +
                 ((e && e.message) || e));
