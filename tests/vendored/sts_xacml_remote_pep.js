@@ -474,6 +474,11 @@ function certPostJson(url, payload) {
       rejectUnauthorized: false,
       cert: xacmlUser ? xacmlUser.certPem : undefined,
       key: xacmlUser ? xacmlUser.keyPem : undefined,
+      // A full handshake every time (#406): the main port's sessions resume on
+      // either node, and a session first made before this job's anchor
+      // reached that node keeps its "not verified" verdict — a 403 for an
+      // unauthenticated caller in the 2026-10-07 cluster run.
+      agent: false,
       headers: { "Content-Type": "application/json",
                  "Content-Length": Buffer.byteLength(data) }
     }, function (response) {
