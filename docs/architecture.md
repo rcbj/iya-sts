@@ -46,6 +46,13 @@ and event loop (#364; they were separate child processes until then):
 | **Request** | The whole protocol stack, the admin console and the user portal included | `workers.requestCount` | 1 where the store coordinates (PostgreSQL); 0 on the memory or LDIF store |
 | **Admin** | Only the admin console and the user portal, when you want them kept apart from protocol traffic | `workers.surfaceCount` | 0 (off: they go to the request workers) |
 
+The sockets that do not speak HTTP hand their work to the same workers as
+*operations*: the leader keeps the connection and the framing and a worker
+answers the request. That covers every LDAP operation, every message to the
+KDC on port 88, the unary SPIFFE Workload and SPIRE Server API calls, and the
+Broker API's FetchJWTSVID once the leader has attested the workload it names.
+Streams stay in the leader.
+
 `workers.dispatch` (default `*`, everything) says what goes to a worker, and
 `workers.readYourWrite` (default on) makes a worker catch up with what the
 leader wrote before it answers. Every worker is a whole second copy of the

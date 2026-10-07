@@ -1355,8 +1355,21 @@ it, and why an operation holds affinity to its CONNECTION) and
 that do not cross, and the channel forked `serialization: 'advanced'`) argue
 them.
 
-The same mechanism is what the KDC would use, and what the first two families
-cost is the index of what a third one owes: a request shape and a result shape,
+**AND THE KDC IS THE THIRD, SINCE 2026-10-07 (rcbj's decision: keep the
+front process's event loop as free as possible)** — every message on TCP and
+UDP 88 is the operation `krb5.message`, the front keeping the sockets and the
+framing; and the SPIFFE Broker API's FetchJWTSVID is cut after the attestation
+the front process must do, its entitlement and minting the operation
+`spiffe.broker.FetchJWTSVID`. Both were cross-process races —
+`sts_kerberos_signout` (a KDC write in the front not yet seen by the worker
+answering a global logout) and `sts_spiffe_broker` (an entry written by a
+worker not yet seen by the Broker API in the front) — closed by
+`runOperation()`'s barrier once the writer and the reader are both workers,
+with no new barrier and no flush before a hand-off. `kerberos/CLAUDE.md` (*PORT
+88 IS ANSWERED IN A REQUEST WORKER*) and `spiffe/CLAUDE.md` (*THE BROKER API'S
+FetchJWTSVID, CUT AFTER THE ATTESTATION*) argue them, and what still races.
+
+What the families cost is the index of what the next one owes: a request shape and a result shape,
 an error that crosses as a NAME or a CODE rather than as a rebuilt table, a
 decision about what may not cross (`unbind` may not, because it ends a file
 descriptor; a server stream may not, because it is a subscription), and a test

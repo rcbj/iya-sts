@@ -11809,6 +11809,17 @@ const CODES = [
       'malformed NDR); the ticket being built carries none of those claims ' +
       '(#493).',
     spec: 'none (logged at warn; [MS-PAC] 2.11, [MS-ADTS] 2.2.18)' },
+  { code: 'STS-KRB-0204',
+    summary: 'A request worker failed a Kerberos message from TCP or UDP 88 ' +
+      'before answering it (the worker went away, or the operation threw); ' +
+      'it is not answered again in the front process, because the worker ' +
+      'may already have written (2026-10-07).',
+    spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9' },
+  { code: 'STS-KRB-0205',
+    summary: 'A request worker answered a Kerberos message from TCP or UDP ' +
+      '88 with no reply bytes; the client is told the KDC is unavailable ' +
+      '(2026-10-07).',
+    spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -13338,6 +13349,12 @@ const CODES = [
       'keyUsage without digitalSignature or with keyCertSign or cRLSign; ' +
       'X509-SVID section 4.3). #201.',
     spec: 'UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller' },
+  { code: 'STS-SPIFFE-0145',
+    summary: 'A request worker failed the SPIFFE Broker API\'s FetchJWTSVID ' +
+      'for an attested reference before answering it (the worker went away, ' +
+      'or the operation threw); it is not run again in the front process, ' +
+      'because the worker may already have minted (2026-10-07).',
+    spec: 'gRPC UNAVAILABLE' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +
