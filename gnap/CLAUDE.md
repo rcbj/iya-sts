@@ -187,6 +187,16 @@ exchange, WS-Trust and the KDC do (`common/CLAUDE.md` rule 3az, `docs/delegation
   narrowing the policy calls self. **One question per R**, because the policy
   issues for exactly one; the first enforced refusal is the one the client
   hears (request_denied, 0770–0781 by refusal kind).
+* **THE ASSERTION MUST BE THE PRESENTING CLIENT'S (#497, every mode).** An
+  ID Token's `aud`, or a SAML assertion's `Audience`, must name the client
+  presenting it — its identifier or an `oauthClientId` (`gnap_subject.ts`'s
+  `presenterIsAudience()`, the names passed by `createGrant()`); otherwise
+  `unknown_user`, STS-GNAP-0073, before the policy is asked. RFC 9635
+  section 11.13: a captured assertion presented by a client that is not its
+  audience is exactly how an end user is impersonated, and section 2.4's
+  case is an assertion the AS issued to the presenting client. Until #497
+  only the signature, issuer and expiry were checked, so any registered
+  client holding a person's ID Token could present it as its own.
 * **Enforced in product, recorded in development** — the policy's own
   `enforced`, read nowhere else; a may_act mismatch in every mode. A `may_act`
   in the presented ID Token is read only after its signature verified
@@ -862,7 +872,7 @@ header argues the design; what a reader needs here:
 
 | Range | Where |
 |---|---|
-| 0001–0199 | keys, request walkers, subjects, the grant engine, the routes |
+| 0001–0199 | keys, request walkers, subjects (0073: a user assertion issued to another client, #497), the grant engine, the routes |
 | 0200–0299 | HTTP message signatures, Content-Digest, proofs |
 | 0300–0399 | access rights and the token formats |
 | 0400–0499 | the resource-owner pages |
@@ -906,8 +916,9 @@ failure patterns.
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_revocation.js` | #432 in process with the whole stack: the sign-out families, a grant ending with its session, `/admin/sessions`, `revokeGrantsOf()` narrowed and whole (and never a global sign-out for a person holding nothing), a global sign-out, the check at use and the disable, the entry's key replaced and deleted, a compromised device. The partner's signal is `tests/ssf_transmitters.js` K |
 | `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
-| `tests/gnap_delegation.js` | #432 phase 1 in process, in a child serving the whole stack, both modes: impersonation refused (0772), recorded "would have been refused", allowed; 0770 with no reach, R the client itself for unregistered rights; `stsNotDelegated` and `appDelegationSubjectGroup` (0771) with may_act standing in; may_act naming somebody else in every mode (0774); the client as itself releasing no subject; `appAllowedProtocol` at the gate; derivation refused (0776) and allowed, `act` on the token, the subset rule in both modes (0513), the depth cap (0782), the chain nesting and at introspection; `act` verified back from each of the five formats; the register, its summary and map |
+| `tests/gnap_delegation.js` | #432 phase 1 in process, in a child serving the whole stack, both modes: an ID Token issued to another client refused (0073, #497), impersonation refused (0772), recorded "would have been refused", allowed; 0770 with no reach, R the client itself for unregistered rights; `stsNotDelegated` and `appDelegationSubjectGroup` (0771) with may_act standing in; may_act naming somebody else in every mode (0774); the client as itself releasing no subject; `appAllowedProtocol` at the gate; derivation refused (0776) and allowed, `act` on the token, the subset rule in both modes (0513), the depth cap (0782), the chain nesting and at introspection; `act` verified back from each of the five formats; the register, its summary and map |
 | `tests/vendored/sts_gnap_delegation.js` | the same over HTTP in whichever mode the service is in: product's refusals by their audited codes, development's rows, `act` on a derived token and at introspection, the cap, and `GET /admin-api/delegation` |
+| `tests/vendored/sts_gnap_chain_impersonation.js`, `sts_gnap_chain_delegation.js` | #497: the four-tier chain (webapp1, apigw1, esb1, sp1) in the default realm, both modes — impersonation by webapp1's own ID Token then two derivations, and apigw1 refused presenting it (0073); delegation by bob's approval then the same derivations, the original client traced through `grant_id` to its grant. Every token's JWS verified by the job and introspected by its tier; the register and the picture. `gnap_chain_kit.js` is the shared half |
 | `tests/vendored/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |
 
 The three jobs share `tests/vendored/gnap_client.js` (an independent client

@@ -15216,6 +15216,11 @@ const CODES = [
     summary: 'The user identifiers and assertions in a GNAP grant request ' +
       'name more than one person.',
     spec: 'HTTP 400 GNAP invalid_request' },
+  { code: 'STS-GNAP-0073',
+    summary: 'A user assertion in a GNAP grant request was issued to ' +
+      'another client: the presenting client instance is not its audience ' +
+      '(#497).',
+    spec: 'RFC 9635 sections 2.4 and 11.13 (HTTP 403 GNAP unknown_user)' },
   { code: 'STS-GNAP-0080',
     summary: 'A GNAP client instance or resource server presented an ' +
       'instance identifier this authorization server does not know.',

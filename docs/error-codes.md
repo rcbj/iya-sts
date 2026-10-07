@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4164** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4165** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -81,7 +81,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 46
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 348
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 349
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 92
@@ -3599,6 +3599,7 @@ Raised from: gnap/.
 | `STS-GNAP-0070` | A GNAP user reference is not one this authorization server issued. | HTTP 403 GNAP unknown_user |
 | `STS-GNAP-0071` | None of the user assertions in a GNAP grant request is one this authorization server issued and can verify. | HTTP 403 GNAP unknown_user |
 | `STS-GNAP-0072` | The user identifiers and assertions in a GNAP grant request name more than one person. | HTTP 400 GNAP invalid_request |
+| `STS-GNAP-0073` | A user assertion in a GNAP grant request was issued to another client: the presenting client instance is not its audience (#497). | RFC 9635 sections 2.4 and 11.13 (HTTP 403 GNAP unknown_user) |
 | `STS-GNAP-0080` | A GNAP client instance or resource server presented an instance identifier this authorization server does not know. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0081` | A GNAP instance identifier resolves to an application entry with no key registered to verify its requests. | HTTP 401 GNAP invalid_client |
 | `STS-GNAP-0082` | In product mode, a GNAP client instance or resource server proved a key no application entry registers (development mode would have created one). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
