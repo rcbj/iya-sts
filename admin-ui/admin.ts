@@ -1541,8 +1541,8 @@ const SECTIONS = [
           { path: '/admin/kerberos/claims', label: 'PAC claims',
             blurb: 'The claims every ticket\'s PAC carries for a service ' +
                    'doing claims-based access control ' +
-                   '(PAC_CLIENT_CLAIMS_INFO, [MS-PAC] 2.11): typed rows ' +
-                   'and directory attributes, each an ' +
+                   '(PAC_CLIENT_CLAIMS_INFO, [MS-PAC] 2.11): typed rows, ' +
+                   'directory attributes and the ticked catalogue, each an ' +
                    '<code>ad://ext/&lt;name&gt;:&lt;hex&gt;</code> claim id, ' +
                    'with the person\'s roles under them. A service ticket ' +
                    'adds the rows of the application that registered its ' +

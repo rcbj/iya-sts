@@ -546,6 +546,19 @@ a runtime setting, per realm), every ticket this KDC builds carries one
   [MS-ADTS] 2.2.18 claim types. The person's realm-wide **roles** go in as a
   string claim under the rows (named by `roles.claimName`); nothing is added
   to the logon information's extra SIDs.
+* **Directory attributes, ticked** (#498): the same page has the table of
+  standard attributes with checkboxes that `/admin/claims`,
+  `/admin/userinfo-claims` and `/admin/saml-attributes` have — one catalogue
+  for all of them, and nothing ticked until somebody ticks it (`POST
+  /admin-api/kerberos/claims/attributes`, `attributes-all`,
+  `attributes-clear`). Each ticked attribute **present on the person's
+  entry** becomes a `string` claim carrying **every value** of it, with the
+  id a row of the attribute's name would have (`ad://ext/ou:<hex>`); an
+  entry without it carries no claim, and nothing is invented. A row of the
+  set, or the roles claim, with the same claim id wins over a ticked
+  attribute. They go in a TGT, reach a service ticket as the rest of its
+  TGT's claims do, and count toward the 64 KiB cap. The `?user=` preview
+  shows what each would carry.
 * **The claim id** is `ad://ext/<name>:<hex>`, Active Directory's form, with
   the hex the first 16 hexadecimal digits of SHA-256 over the UTF-8 name — the
   same id on every node, after every restart and in every realm. A row whose

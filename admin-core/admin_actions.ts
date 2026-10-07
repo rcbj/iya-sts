@@ -6670,19 +6670,10 @@ class AdminActions {
     }
     const label = stats.CLAIM_SETS[setId].label;
 
-    // THE KERBEROS PAC SET HAS NO CATALOGUE HALF (#493): its rows name their
-    // attribute themselves and carry a PAC type, and a ticked catalogue
-    // attribute would be a selection nothing in the KDC reads. Refused by
-    // name rather than stored and ignored.
-    if (stats.CLAIM_SETS[setId].kind === 'kerberos' &&
-        ['attributes', 'attributes-all', 'attributes-clear']
-          .indexOf(action) >= 0) {
-      log.debug("Leaving AdminActions.claimsAction(). No catalogue here.");
-      return this.refused('STS-ADMIN-0848', { ok: false, errors: ['The ' +
-        label + ' set has no directory-attribute catalogue: a row that ' +
-        'carries an attribute is added with add-attribute-claim, naming ' +
-        'the attribute and its PAC type.'] });
-    }
+    // THE KERBEROS PAC SET HAS A CATALOGUE HALF SINCE #498: #493 refused the
+    // three `attributes*` actions for it (STS-ADMIN-0848, retired), and they
+    // now act on its selection exactly as on the other five — the KDC reads
+    // it (admin_stats.js, kerberosPacClaims()).
 
     if (action === 'add') {
       const entry: Record<string, any> = { name: String(body.name || '').trim(),
@@ -6870,18 +6861,15 @@ class AdminActions {
     }
 
     log.debug("Leaving AdminActions.claimsAction(). Unknown action.");
-    // The Kerberos PAC set's door has no catalogue half (#493), so its
-    // sentence names the five it has — the walk of the management API holds
+    // Every claim-set door has the same eight since the Kerberos PAC set
+    // gained its catalogue half (#498) — the walk of the management API holds
     // the sentence to the operations each door documents.
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                     (stats.CLAIM_SETS[setId].kind === 'kerberos'
-                       ? 'The five are: add, add-attribute-claim, remove, ' +
-                         'clear, replace.'
-                       : 'The eight are: add, ' +
-                         'add-attribute-claim, remove, clear, ' +
-                         'replace, attributes, attributes-all, ' +
-                         'attributes-clear.')] });
+                     'The eight are: add, ' +
+                     'add-attribute-claim, remove, clear, ' +
+                     'replace, attributes, attributes-all, ' +
+                     'attributes-clear.'] });
   }
 
   // The sweep's outcome as a sentence, appended to whatever message the action
