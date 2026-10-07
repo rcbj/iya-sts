@@ -190,6 +190,12 @@ import fapi = require('../oauth-oidc/fapi');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('./worker_channel');
+// WHERE THE AUTHORIZATION SERVER IS (#472): its advertised base for the
+// browser, and the listener this process dials for the back channel, when
+// `oauth-oidc` is not on the listener the surface is. A LEAF.
+import listenerMap = require('./listener_map');
+import hostedApplications = require('./hosted_applications');
+import tlsModule = require('tls');
 
 type SurfaceId = 'admin' | 'portal' | 'debugger';
 
@@ -765,6 +771,25 @@ class OidcRelyingParty {
     return baseUrlOf(req);
   }
 
+  // THE AUTHORIZATION SERVER'S BASE, when it is not the surface's (#472). A
+  // surface and the authorization server were one base until custom
+  // listeners: the request's own. When the listener the request arrived on
+  // still answers `oauth-oidc`, that is still the answer (`fallback`, which
+  // keeps a cell's console base where #361 set one); when it does not, the
+  // browser is sent to, and the back channel names, oauth-oidc's advertised
+  // base — so the issuer the surface checks is the one the tokens carry.
+  private authorizationBaseOf(req: any, fallback: string): string {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering OidcRelyingParty.authorizationBaseOf().");
+    if (!req || listenerMap.isTrivial() ||
+        listenerMap.admits(listenerMap.listenerOf(req), 'oauth-oidc')) {
+      log.debug("Leaving OidcRelyingParty.authorizationBaseOf(). Here.");
+      return fallback;
+    }
+    log.debug("Leaving OidcRelyingParty.authorizationBaseOf(). Elsewhere.");
+    return baseUrlOf(req, 'oauth-oidc');
+  }
+
   // -------------------------------------------------------------------------
   // A CELL'S OWN CONSOLE ADDRESS (#361, 2026-09-30). With `global.
   // publicBaseUrl` set, every redirect URI is on the shared public name —
@@ -828,17 +853,18 @@ class OidcRelyingParty {
     return out;
   }
 
-  // A REALM'S OWN LISTENER (#99, 2026-10-02). A realm with
-  // `listener.publicBaseUrl` builds its console's and portal's callbacks on
-  // that base, which an ADMINISTRATOR configured — not a Host header a request
-  // carried — so it is registered on the surface's client in every mode, as a
-  // configured cell's console address is. Only the exact callback under the
-  // realm's own prefix, on the base the ambient realm configured.
+  // A CUSTOM LISTENER'S CALLBACK (#99 2026-10-02, #472 2026-10-07). A surface
+  // advertised on a custom listener — a realm's own, or one the service
+  // defined — builds its callback on that listener's `publicBaseUrl`, which
+  // an ADMINISTRATOR configured — not a Host header a request carried — so it
+  // is registered on the surface's client in every mode, as a configured
+  // cell's console address is. Only the exact callback under the ambient
+  // realm's prefix, on the base the surface's application is advertised on.
   private isRealmListenerCallback(surface: Surface, uri: string): boolean {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering OidcRelyingParty.isRealmListenerCallback().");
-    const base = String(config.value('listener.publicBaseUrl') || '').trim()
-      .replace(/\/+$/, '');
+    const app = hostedApplications.classify(surface.callbackPath);
+    const base = app ? listenerMap.advertisedBase(app) : '';
     if (!base) {
       log.debug("Leaving OidcRelyingParty.isRealmListenerCallback(). No.");
       return false;
@@ -1276,7 +1302,11 @@ class OidcRelyingParty {
               ' ' + options.path);
     log.debug("Leaving OidcRelyingParty.backChannel().");
     return new Promise(function (resolve) {
-      const useHttps = config.value('global.https');
+      // WHICH LISTENER (#472): the main port while `oauth-oidc` is on it, as
+      // always; otherwise one of the custom listeners it is on, which are
+      // HTTPS whatever the main port is.
+      const target = listenerMap.dialTarget('oauth-oidc');
+      const useHttps = target.main ? config.value('global.https') : true;
       // THE LAZY REQUIRE. See the header: at the top of this file it would
       // move every /tls route; here every module is loaded and it is a cache
       // hit.
@@ -1379,7 +1409,7 @@ class OidcRelyingParty {
         // an IPv6 literal here without brackets, which is why this is
         // `loopbackHost()` and not `hostForUrl()`.
         host: helpers.loopbackHost(),
-        port: PORT,
+        port: target.main ? PORT : target.port,
         method: options.method,
         path: options.path,
         headers: headers,
@@ -1389,7 +1419,11 @@ class OidcRelyingParty {
         // certificate names this service and the connection names the
         // loopback interface. Pinning the anchor is the stronger half of the
         // two.
-        ca: anchor ? [anchor] : undefined,
+        // A custom listener presenting an operator's certificate (#472)
+        // chains to a public CA, which the pin cannot reach: node's own
+        // roots join it there, and only there.
+        ca: anchor ? [anchor].concat(target.publicCa
+          ? tlsModule.rootCertificates.slice() : []) : undefined,
         // THE SURFACE'S CLIENT CERTIFICATE (#139), where FAPI 1.0 Advanced
         // requires every access token to be bound to one: the certificate
         // this realm's CA issued with the surface's signing key.
@@ -1830,7 +1864,9 @@ class OidcRelyingParty {
         return String(name).toLowerCase() === 'host' ? host : undefined;
       }
     };
-    const base = baseUrlOf(view as any);
+    // The authorization server's base (#472), whichever application this
+    // back channel was asked from.
+    const base = baseUrlOf(view as any, 'oauth-oidc');
     const issuer = this.deps.loadJwtAccessTokens().issuerFor(base);
     log.debug("Leaving OidcRelyingParty.assertionAudience(). " + issuer);
     return issuer;
@@ -2035,7 +2071,8 @@ class OidcRelyingParty {
                                  jwt: string): Promise<any> {
     const { log, realms, stsCrypto } = this.deps;
     log.debug("Entering OidcRelyingParty.openJarmResponse().");
-    const publicBase = opts.authorizationBase || this.publicBaseOf(req);
+    const publicBase = opts.authorizationBase ||
+      this.authorizationBaseOf(req, this.publicBaseOf(req));
     const host = this.hostHeaderFrom(publicBase);
     const refuse = function (why: string): any {
       log.debug("Leaving OidcRelyingParty.openJarmResponse(). " + why);
@@ -2500,14 +2537,14 @@ class OidcRelyingParty {
       // FAPI 2.0 (#140) takes the same path without JARM: its section
       // 5.3.2.2 requires the push and `code`, and a signed object inside the
       // push is allowed.
+      const authorizationBase = opts.authorizationBase ||
+        self.authorizationBaseOf(req, publicBase);
       if (self.deps.fapi.advanced() || self.deps.fapi.fapi2()) {
         log.debug('Leaving OidcRelyingParty.beginSignIn(). FAPI Advanced.');
         return self.advancedRedirect(req, res, surface, found.client, query,
-                                     opts.authorizationBase || publicBase,
-                                     state, opts.poolPin);
+                                     authorizationBase, state, opts.poolPin);
       }
-      const to = (opts.authorizationBase || publicBase) + AUTHORIZE_PATH +
-                 '?' + query.toString();
+      const to = authorizationBase + AUTHORIZE_PATH + '?' + query.toString();
       log.info('oidc_rp: sending a browser to the authorization endpoint ' +
                'for the ' + surface.label + ' (client_id ' +
                surface.clientId + ', state ' + state + '). It comes back ' +
@@ -2659,8 +2696,9 @@ class OidcRelyingParty {
       // console and the portal and the main port's for the debugger — see
       // the surface table.
       const publicBase = opts.authorizationBase ||
-                         self.cellConsoleBase(req, surface) ||
-                         self.publicBaseOf(req);
+                         self.authorizationBaseOf(req,
+                           self.cellConsoleBase(req, surface) ||
+                           self.publicBaseOf(req));
       const host = self.hostHeaderFrom(publicBase);
 
       // ---------------------------------------------------------------------
@@ -3059,7 +3097,8 @@ class OidcRelyingParty {
                                 found.why);
     }
     const host = tokens.host ||
-      this.hostHeaderFrom(this.publicBaseOf(req));
+      this.hostHeaderFrom(this.authorizationBaseOf(req,
+                                                   this.publicBaseOf(req)));
     const form = new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: tokens.refreshToken

@@ -126,13 +126,12 @@ For example, `listenerLdaps.disableTls12` or `listenerMain.tls13CipherSuites`.
 > client negotiate it. FAPI 2.0 and BCP 195 still allow TLS 1.2 with the AES-GCM
 > suites, but TLS 1.2 has no post-quantum key exchange.
 
-**A realm with a listener of its own** (`listener.port`) has the same settings for
-that listener, on the Listeners page read inside the realm:
-- `listener.disableTls12` and `listener.pqcOnly` (`inherit`, `on`, `off`);
-- `listener.tls13CipherSuites` (empty inherits);
-- `listener.disableOptionalClientCertificate` and `listener.requireClientCertificate`.
-
-A realm without one is shown the default listeners it is served on.
+**A custom listener** (#472 — the service's, or a realm's own) carries the
+same settings in its definition's `tls` block, by their short names
+(`disableTls12`, `pqcOnly`, `tls13CipherSuites`, ...), and its client
+authentication as `clientAuth` (`none`, `optional`, `required`): see
+[Listeners and hosted applications](listeners.md). Each has a tab of its own on
+the Listeners page with the policy in force.
 
 **The TLS 1.2 cipher list is BCP 195 by default** (`tls.ciphers`, the TLS 1.2
 list alone since #423). TLS 1.3's suites come

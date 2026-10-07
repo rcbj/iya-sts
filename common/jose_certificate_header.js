@@ -499,7 +499,9 @@ function scopeSegmentOf(realmId) {
 function chainUrlFor(realmId, thumbprint) {
   log.debug("Entering chainUrlFor().");
   const helpers = require('./helpers');
-  let origin = helpers.pinnedBaseUrl();
+  // Where the certificate authority's documents are advertised (#472); the
+  // chain path names its realm itself, so no realm prefix follows it.
+  let origin = helpers.pinnedBaseUrl('pki');
   if (!origin) {
     const req = currentRequest();
     if (!req) {

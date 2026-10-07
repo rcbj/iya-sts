@@ -128,8 +128,8 @@ class ExchangeAssertions {
   static async verify(input: Json): Promise<Json> {
     log.debug("Entering ExchangeAssertions.verify(). " + input.type);
     const base = String(input.base || '');
-    const asServer = [base + '/oauth2/token', String(input.issuer || ''),
-                      base].filter(Boolean);
+    const asServer = [helpers.rebaseTo(base, 'oauth-oidc') + '/oauth2/token',
+                      String(input.issuer || ''), base].filter(Boolean);
     const rule = ExchangeAssertions.audienceRule();
     const forwarding = rule === 'any-declared-relying-party';
     // THE AUDIENCE RULE: this authorization server always; under

@@ -16,6 +16,7 @@
     - { title: Configuration, url: /configuration.html }
     - { title: Endpoints, url: /endpoints.html }
     - { title: Trust realms, url: /trust-realms.html }
+    - { title: Listeners and hosted applications, url: /listeners.html }
     - { title: What is not checked, url: /what-is-not-checked.html }
     - { title: Conformance suites, url: /conformance.html }
     - { title: Departures from the specifications, url: /spec-departures.html }

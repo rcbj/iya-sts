@@ -105,6 +105,8 @@ import crypto = require('crypto');
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle, and it registers no route, so its position is not a position at all.
 import realms = require('../common/realms');
+// The listeners `oauth-oidc` is on, for RFC 8705's aliases (#472). A LEAF.
+import listenerMap = require('../common/listener_map');
 import forge = require('node-forge');
 import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
@@ -1857,6 +1859,47 @@ class OAuth2Server {
     return jwtAccessToken.issuerFor(base);
   }
 
+  // ---------------------------------------------------------------------------
+  // THE mTLS ALIASES ON ANOTHER LISTENER (#472, rcbj's D4). An application
+  // may be on several listeners and is advertised on one; RFC 8705 section 5
+  // is the one place this authorization server's metadata can name another.
+  // Where `oauth-oidc` is also on a custom listener that asks for a client
+  // certificate (`clientAuth` optional or required) and is not the one it is
+  // advertised on, an endpoint's alias is the same path on THAT listener's
+  // base. Null where there is no such listener, and the aliases stay the
+  // endpoints themselves, as section 5 permits.
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers the function that turns an endpoint into its mTLS alias on a
+   * second listener, or null where there is none.
+   *
+   * @param req - the request the metadata is built for
+   * @returns `(url) => alias`, or null
+   */
+  mtlsAliasOf(req: Req): ((url: string) => string) | null {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering OAuth2Server.mtlsAliasOf().");
+    if (listenerMap.isTrivial()) {
+      log.debug("Leaving OAuth2Server.mtlsAliasOf(). No custom listener.");
+      return null;
+    }
+    const other = listenerMap.alternatives('oauth-oidc')
+      .filter(function (one: Json): boolean {
+        return !!one.base && one.clientAuth !== 'none';
+      })[0];
+    if (!other) {
+      log.debug("Leaving OAuth2Server.mtlsAliasOf(). None asks.");
+      return null;
+    }
+    const own = baseUrlOf(req, 'oauth-oidc');
+    const there = other.base + realms.currentPrefix();
+    log.debug("Leaving OAuth2Server.mtlsAliasOf(). " + other.id);
+    return function (url: string): string {
+      const text = String(url || '');
+      return text.indexOf(own) === 0 ? there + text.slice(own.length) : text;
+    };
+  }
+
   // `raw` is set by capabilitiesFor() below and means "build the document this
   // service would publish, without applying a profile" — the DEFAULTS a profile
   // is merged onto. Without it, asking for the capabilities would apply the
@@ -1927,7 +1970,8 @@ class OAuth2Server {
       // policy — at the realm's own base, since keys are the realm's and not
       // a named authorization server's. A member no specification defines,
       // which RFC 8414 section 2 lets a client ignore.
-      crypto_metadata_uri: base + '/crypto/metadata.json',
+      crypto_metadata_uri: helpers.rebaseTo(base, 'pki') +
+                           '/crypto/metadata.json',
       registration_endpoint: at + '/oauth2/register',
       // `address` and `phone` were listed here and are gone: OIDC Core section
       // 5.4 makes each of these scopes a request for a NAMED set of claims, and
@@ -2069,7 +2113,7 @@ class OAuth2Server {
       // it did.
       token_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
-      service_documentation: base + '/docs',
+      service_documentation: helpers.rebaseTo(base, 'home') + '/docs',
       // One locale, because there is one: the login screen is the only UI this
       // server renders and it is written in English. A request's ui_locales
       // is accepted and answered in English, which section 3.1.2.1 permits
@@ -2077,8 +2121,8 @@ class OAuth2Server {
       // are not supported"). The list used to name four, which a client is
       // entitled to read as "ask for fr-CA and you will get it".
       ui_locales_supported: ['en-US'],
-      op_policy_uri: base + '/policy',
-      op_tos_uri: base + '/tos',
+      op_policy_uri: helpers.rebaseTo(base, 'home') + '/policy',
+      op_tos_uri: helpers.rebaseTo(base, 'home') + '/tos',
       revocation_endpoint: at + '/oauth2/revoke',
       // THE METHODS THE REVOCATION ENDPOINT CAN VERIFY, which since #102
       // (2026-09-22) is introspection's list for introspection's reason: the
@@ -2211,12 +2255,20 @@ class OAuth2Server {
     // mTLS alias — this service has no second listener for them, and
     // publishing the same URLs is what the section permits. The OpenID
     // Provider Configuration adds UserInfo's.
-    if (mtls.available()) {
+    //
+    // AND WHERE IT IS ON A SECOND LISTENER THAT ASKS FOR ONE (#472, rcbj's
+    // D4: "advertise services on multiple listeners"), the aliases are THAT
+    // listener's addresses — the one place a specification gives the other
+    // listeners of an application a name in its metadata. The canonical
+    // endpoints stay on the advertised listener.
+    const aliasOf = self.mtlsAliasOf(req);
+    if (mtls.available() || aliasOf) {
       const aliases: Json = {};
       ['token_endpoint', 'revocation_endpoint', 'introspection_endpoint',
        'pushed_authorization_request_endpoint'].forEach(function (name) {
         if ((metadata as Json)[name]) {
-          aliases[name] = (metadata as Json)[name];
+          aliases[name] = aliasOf ? aliasOf((metadata as Json)[name])
+                                  : (metadata as Json)[name];
         }
       });
       (metadata as Json).mtls_endpoint_aliases = aliases;
@@ -3189,9 +3241,11 @@ class OAuth2Server {
       reapply();
     }
     if (metadata.mtls_endpoint_aliases && metadata.userinfo_endpoint) {
+      const aliasOf = self.mtlsAliasOf(req);
       metadata.mtls_endpoint_aliases = Object.assign({},
         metadata.mtls_endpoint_aliases,
-        { userinfo_endpoint: metadata.userinfo_endpoint });
+        { userinfo_endpoint: aliasOf ? aliasOf(metadata.userinfo_endpoint)
+                                     : metadata.userinfo_endpoint });
     }
     // OPENID CONNECT FOR IDENTITY ASSURANCE 1.0, section 7 (#127): which
     // frameworks, evidence and claims `verified_claims` may carry. Read per
@@ -18088,7 +18142,7 @@ class OAuth2Server {
     const made = deviceAuthorization.create(clientId,
       String(registration.client_name || clientId), scope, dpopJkt);
     const base = self.asBaseOf(req);
-    const verification = base + '/portal/device';
+    const verification = helpers.rebaseTo(base, 'portal') + '/portal/device';
     log.debug("Leaving OAuth2Server.deviceAuthorizationRequest().");
     res.status(200).type('application/json').send(JSON.stringify({
       device_code: made.deviceCode,

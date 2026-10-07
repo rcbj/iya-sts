@@ -35,6 +35,7 @@ each.
 [Configuration](configuration.md) ·
 [Endpoints](endpoints.md) ·
 [Trust realms](trust-realms.md) ·
+[Listeners and hosted applications](listeners.md) ·
 [What is not checked](what-is-not-checked.md) ·
 [Conformance suites](conformance.md) ·
 [Departures from the specifications](spec-departures.md) ·

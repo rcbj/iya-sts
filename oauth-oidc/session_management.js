@@ -51,6 +51,8 @@
 
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// The sign-on session's cookie Domain (#472). A LEAF.
+const listenerMap = require('../common/listener_map');
 const stsCrypto = require('../common/crypto');
 
 /**
@@ -113,7 +115,11 @@ function cookieLine(state, secure) {
   log.debug("Entering cookieLine().");
   const onTls = secure === undefined
     ? config.value('global.https') === true : !!secure;
-  const tail = onTls ? '; SameSite=None; Secure' : '; SameSite=Lax';
+  // The sign-on session's Domain (#472), because the browser state is written
+  // where the session is (`authn/`) and read where the OP iframe is
+  // (`/oauth2/check_session`), which may be another listener's host.
+  const tail = listenerMap.cookieDomainAttribute() +
+    (onTls ? '; SameSite=None; Secure' : '; SameSite=Lax');
   log.debug("Leaving cookieLine().");
   return state
     ? COOKIE + '=' + state + '; Path=/' + tail

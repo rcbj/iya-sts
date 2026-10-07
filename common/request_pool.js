@@ -110,6 +110,9 @@ const keystore = require('./keystore');
 // A LEAF with no requires: the failure codes on the log lines and the 502s and
 // 503s below. See common/error_codes.js.
 const errorCodes = require('./error_codes');
+// Which listener a request arrived on (#472), for LISTENER_HEADER. A LEAF: it
+// requires the settings, the realms and the catalogue of applications.
+const listenerMap = require('./listener_map');
 // Who a request came from, a LEAF (config, net, bunyan). See the
 // `x-forwarded-for` line in proxy() below.
 const clientAddress = require('./client_address');
@@ -734,6 +737,14 @@ const POOL_TICKET_HEADER = 'x-sts-pool-ticket';
  * verified; stripped from what a client sends.
  */
 const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
+
+// WHICH LISTENER THE REQUEST ARRIVED ON (#472), told to the worker so that its
+// own copy of `app.js`'s `enterListener()` asks the same question the front
+// process did, and so that `helpers.baseUrlOf()` knows where it was asked.
+// Stripped from what the client sent first, as the certificate is: a client
+// that could set it could claim to have come in on a listener that answers
+// an application this one does not.
+const LISTENER_HEADER = 'x-sts-listener';
 
 // ---------------------------------------------------------------------------
 // AND THE ONE THAT TELLS A HOSTED-SURFACE WORKER WHERE ITS BACK CHANNEL GOES
@@ -4993,6 +5004,8 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // ---------------------------------------------------------------------
   delete headers[PEER_CERT_HEADER];
   delete headers[PEER_AUTHORIZED_HEADER];
+  delete headers[LISTENER_HEADER];
+  headers[LISTENER_HEADER] = listenerMap.listenerOf(req);
   // THE CLIENT'S JA4 FINGERPRINT (#62 P0), for the same reason as the
   // certificate: a client that could set it could claim any TLS stack.
   const helloModule = clientHelloModule();

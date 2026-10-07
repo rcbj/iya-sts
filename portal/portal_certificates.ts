@@ -229,7 +229,8 @@ class PortalCertificatesPage {
     log.debug("Entering PortalCertificatesPage.freshCard(). kind=" +
               fresh.kind);
     if (fresh.kind === 'eab') {
-      const directory = base + '/enroll/acme/directory';
+      const directory = helpers.rebaseTo(base, 'acme') +
+                        '/enroll/acme/directory';
       log.debug("Leaving PortalCertificatesPage.freshCard(). EAB.");
       return '<div class="card"><h2>Your new ACME account binding key</h2>' +
         '<div class="err"><strong>Copy it now.</strong> The HMAC key is ' +
@@ -251,7 +252,8 @@ class PortalCertificatesPage {
       '<div class="err"><strong>Copy it now.</strong> It is shown on this ' +
       'page once and cannot be shown again.</div>' +
       '<table><tr><th>SCEP URL</th><td><code>' +
-      esc(base + '/enroll/scep/' + fresh.profile) + '</code></td></tr>' +
+      esc(helpers.rebaseTo(base, 'scep') +
+          '/enroll/scep/' + fresh.profile) + '</code></td></tr>' +
       // The plain-HTTP address too (#210): sscep and most device firmware
       // speak no TLS, and SCEP secures its own messages.
       '<tr><th>Plain-HTTP SCEP URL</th><td><code>' +
@@ -328,7 +330,8 @@ class PortalCertificatesPage {
     log.debug("Leaving PortalCertificatesPage.acmeCard().");
     return '<div class="card"><h2>ACME</h2><p class="sub">An ACME client ' +
       'registers an account at <code>' +
-      esc(base + '/enroll/acme/directory') + '</code> with an External ' +
+      esc(helpers.rebaseTo(base, 'acme') +
+          '/enroll/acme/directory') + '</code> with an External ' +
       'Account Binding key; the account is then bound to you for life.</p>' +
       (rows ? '<table><tr><th>Key id</th><th>Status</th><th>Expires</th>' +
         '<th></th></tr>' + rows + '</table>' : '') +
@@ -349,7 +352,8 @@ class PortalCertificatesPage {
       'Nothing needs to be made here first.</p><table><tr><th>Profile</th>' +
       '<th>Enroll at</th></tr>' + profiles.map(function (profile) {
         return '<tr><td><code>' + esc(profile) + '</code></td><td><code>' +
-          esc(base + '/.well-known/est/' + profile + '/simpleenroll') +
+          esc(helpers.rebaseTo(base, 'est') +
+              '/.well-known/est/' + profile + '/simpleenroll') +
           '</code></td></tr>';
       }).join('') + '</table></div>';
   }
@@ -379,7 +383,8 @@ class PortalCertificatesPage {
     log.debug("Leaving PortalCertificatesPage.scepCard().");
     return '<div class="card"><h2>SCEP</h2><p class="sub">A SCEP client ' +
       'puts a challenge password in its certificate request to <code>' +
-      esc(base + '/enroll/scep') + '</code>. Each is for one profile and ' +
+      esc(helpers.rebaseTo(base, 'scep') +
+          '/enroll/scep') + '</code>. Each is for one profile and ' +
       'is spent once.</p>' +
       (rows ? '<table><tr><th>Id</th><th>Profile</th><th>Status</th>' +
         '<th>Expires</th><th></th></tr>' + rows + '</table>' : '') +

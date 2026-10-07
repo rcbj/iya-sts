@@ -433,10 +433,9 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.issuer(). From the request.");
       return iss;
     }
-    // The realm's own base first (#99), as helpers.pinnedBaseUrl() reads it.
-    const pinned = String(config.value('listener.publicBaseUrl') ||
-                          config.value('global.publicBaseUrl') || '').trim()
-      .replace(/\/+$/, '');
+    // The authorization server's advertised base (#99, #472), as every URL
+    // of it is built.
+    const pinned = helpers.pinnedBaseUrl('oauth-oidc');
     if (config.value('oauth2.issuer') || pinned) {
       log.debug("Leaving ProviderCommands.issuer(). Pinned.");
       return jwtAccessToken.issuerFor(pinned + realms.currentPrefix());

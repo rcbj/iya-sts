@@ -2440,8 +2440,9 @@ class AdminApi {
             // where the explorer IS rather than which path space it is in.
             // It moved when this API began requiring a token a browser has
             // no way to carry.
-            docs: base + '/admin/api-explorer',
-            console: base + '/admin',
+            docs: helpers.rebaseTo(base, 'admin-console') +
+                  '/admin/api-explorer',
+            console: helpers.rebaseTo(base, 'admin-console') + '/admin',
             operations: self.operationSummaries()
           });
           log.debug("Leaving the management API index.");
@@ -2968,23 +2969,32 @@ class AdminApi {
         } },
 
       // ---------------------------------------------------------------------
-      // THE LISTENERS (#423). `listenersAdmin.listenersView()`, the function
-      // `/admin/listeners` answers. It changes nothing: the Listeners, TLS
-      // and Realm listener settings are set through config/set (the
-      // process's) and realms/set (a realm's own listener).
+      // THE LISTENERS (#423), AND THE CUSTOM ONES WITH WHICH APPLICATION IS ON
+      // WHICH (#472). `listenersAdmin.listenersView()`, the function
+      // `/admin/listeners` answers, and its two writes. The built-in
+      // listeners' TLS settings are still set through config/set; the custom
+      // listeners and the mapping are set here, because the mapping's write
+      // is the one that may need `confirm` (rcbj's D6).
       // ---------------------------------------------------------------------
       { method: 'GET', path: BASE + '/listeners', tag: 'Service',
         operationId: 'getListeners',
-        summary: 'Every listener, its TLS policy and its client ' +
-                 'authentication',
-        description: 'For the realm the call is in: `realm`, `servedOn` ' +
-                     '(`own` where the realm has a listener of its own, ' +
-                     '`default` where it is served on the default ' +
-                     'listeners), `ownListener` (its `port`, ' +
-                     '`publicBaseUrl`, `state`, `why`, `certificate` and ' +
-                     '`policy`) or `listeners` (each default listener\'s ' +
-                     '`id`, `name`, `setting`, `port`, `tls`, `what` and ' +
-                     '`policy`), the process\'s `process` policy and the ' +
+        summary: 'Every listener, its TLS policy and client authentication, ' +
+                 'and which hosted application is on which',
+        description: 'For the realm the call is in: `realm`; `listeners`, ' +
+                     'the built-in ones (each `id`, `name`, `setting`, ' +
+                     '`port`, `tls`, `what` and `policy`); `custom`, the ' +
+                     'custom listeners this realm sees — the service\'s ' +
+                     '(`listeners.custom`) and its own (`listeners.realm`), ' +
+                     'every realm\'s in the default realm — each with ' +
+                     '`id`, `owner`, `port`, `publicBaseUrl`, `hostnames`, ' +
+                     '`clientAuth`, `certificateSource`, its `state` on this ' +
+                     'node, `certificate` and `policy`; `applications`, each ' +
+                     'hosted application with the `listeners` it is on, the ' +
+                     '`advertised` one its URLs are built on and what ' +
+                     '`decidedBy` (realm, service or default); ' +
+                     '`definitions`, the JSON the two writes take; ' +
+                     '`rescue` (`listeners.adminOnMain`); `problem` and ' +
+                     '`warnings`; the process\'s `process` policy and the ' +
                      'TLS listeners `live` on this node. A `policy` is ' +
                      '`minVersion`, `tls12`, `tls13Suites` (each `name` and ' +
                      '`postQuantum`, in order), `tls12Ciphers`, `pqcOnly`, ' +
@@ -2993,13 +3003,102 @@ class AdminApi {
         mirrors: 'GET /admin/listeners',
         responseDescription: 'The listeners view.',
         responseSchema: { type: 'object',
-          description: '`realm`, `servedOn`, `ownListener`, `listeners`, ' +
+          description: '`realm`, `listeners`, `custom`, `applications`, ' +
+                       '`definitions`, `rescue`, `problem`, `warnings`, ' +
                        '`process` and `live`.' },
         handler: function (req, res) {
           log.debug("Entering the management API listeners endpoint.");
           self.sendJson(res, 200, listenersAdmin.listenersView());
           log.debug("Leaving the management API listeners endpoint.");
         } },
+
+      { method: 'POST', route: BASE + '/listeners/:action', tag: 'Service',
+        mirrors: 'POST /admin/listeners',
+        handler: function (req, res) {
+          log.debug("Entering the management API listeners action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          const result = listenersAdmin.listenersAction(req, body);
+          if (!result || !result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                 'STS-CORE-0154');
+          }
+          self.sendJson(res, result && result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API listeners action " +
+                    "endpoint.");
+        },
+        actions: [
+          { action: 'set-listeners', operationId: 'setListeners',
+            summary: 'Replace the custom listeners this realm defines',
+            description: 'In the default realm, the service\'s listeners ' +
+                         '(`listeners.custom`), which answer every realm; in ' +
+                         'any other, the realm\'s own (`listeners.realm`), ' +
+                         'which answer that realm alone. `value` is a JSON ' +
+                         'array of `{ id, port, publicBaseUrl, hostnames, ' +
+                         'certificateFile, privateKeyFile, clientAuth, tls }` ' +
+                         '— or the array itself — and empty for none. Every ' +
+                         'node binds, rebinds or closes each listener at ' +
+                         'once; a change of `clientAuth` or `tls` is applied ' +
+                         'at the next handshake without a rebind. Refused ' +
+                         'when it would remove a listener a mapping names, ' +
+                         'reuse a port, or split the sign-on session\'s ' +
+                         'applications across host names its cookie cannot ' +
+                         'reach (STS-CORE-0145 to 0155).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                value: { oneOf: [{ type: 'string' }, { type: 'array' }],
+                         description: 'The listeners: a JSON array, as ' +
+                                      'text or as the array.' }
+              },
+              required: ['value'],
+              examples: [{ value: [{ id: 'admin', port: 9443,
+                publicBaseUrl: 'https://admin.example.com:9443',
+                clientAuth: 'required' }] }],
+              additionalProperties: false
+            },
+            responseDescription: 'That it is set.' },
+
+          { action: 'set-applications', operationId: 'setListenerApplications',
+            summary: 'Map hosted applications to listeners',
+            description: 'Replaces `listeners.applications` in the realm the ' +
+                         'call is in — the service\'s mapping in the default ' +
+                         'realm, the realm\'s own entries (read before the ' +
+                         'service\'s) in any other. `value` is a JSON object ' +
+                         'from an application id, or `*`, to `{ listeners, ' +
+                         'advertised }`, and empty for none. A path of an ' +
+                         'application is answered only on the listeners it ' +
+                         'is on (404, STS-TLS-0047, elsewhere), and its URLs ' +
+                         'are built on the advertised one — CHANGING WHERE ' +
+                         'oauth-oidc IS ADVERTISED CHANGES ITS ISSUER. A ' +
+                         'mapping that takes `management-api` off the ' +
+                         'listener this call arrived on is refused ' +
+                         '(STS-CORE-0156) unless `confirm` is true.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                value: { oneOf: [{ type: 'string' }, { type: 'object' }],
+                         description: 'The mapping: a JSON object, as text ' +
+                                      'or as the object.' },
+                // `true` from a script, `true` or `on` from the console's
+                // checkbox (#472).
+                confirm: { oneOf: [{ type: 'boolean' },
+                                   { type: 'string',
+                                     enum: ['true', 'false', 'on'] }],
+                           description: 'Take the management API off the ' +
+                                        'listener this call arrived on.' }
+              },
+              required: ['value'],
+              examples: [{ value: {
+                'admin-console': { listeners: ['admin'] },
+                'management-api': { listeners: ['admin'] } },
+                confirm: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'That it is set.' }
+        ] },
 
       // ---------------------------------------------------------------------
       // THE CACHES (#74). `cachesAdmin.cachesView()` and nothing else — the

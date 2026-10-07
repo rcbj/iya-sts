@@ -1103,10 +1103,9 @@ class VcVerifier {
     const configured = String(config.value('oid4vp.x509DnsName') || '')
       .trim().toLowerCase();
     let pinned = '';
-    // The realm's own base first (#99): its host is the Response URI's.
-    const pinnedBase = String(config.value('listener.publicBaseUrl') ||
-                              config.value('global.publicBaseUrl') || '')
-      .trim();
+    // The verifier's advertised base (#99, #472): its host is the Response
+    // URI's.
+    const pinnedBase = helpers.pinnedBaseUrl('oid4vc');
     if (pinnedBase) {
       try {
         pinned = new URL(pinnedBase).hostname.toLowerCase();

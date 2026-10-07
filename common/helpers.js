@@ -94,6 +94,11 @@ const signerGroups = require('./signer_groups');
 // is how eight of them reach a signing key. realms.js requires config.js and
 // nothing else here, so this cannot be a cycle.
 const realms = require('./realms');
+// WHICH HOSTED APPLICATION A PATH IS, AND WHERE EACH IS ADVERTISED (#472):
+// every URL built here is built on the base of the application it is for.
+// Two LEAVES (they require the settings, the realms and each other).
+const hostedApplications = require('./hosted_applications');
+const listenerMap = require('./listener_map');
 // A LEAF over `config` alone (see its header), so this require can close no
 // cycle. `userFor()` asks it whether to invent persona values.
 const mode = require('./mode');
@@ -7146,50 +7151,171 @@ function forwardedFrom(req) {
 // property a deployed identity provider needs and a mock reached by three
 // container names does not. The realm prefix is still appended.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND SINCE #472 (2026-10-07) IT IS THE BASE OF ONE HOSTED APPLICATION.
+//
+// An administrator maps each hosted application — the console, the API, the
+// portal, the sign-in service, each protocol — to listeners, and advertises
+// it on one (`common/listener_map.js`). A URL is built on the advertised
+// listener of the application it is FOR: that listener's `publicBaseUrl`, or
+// for the main port `global.publicBaseUrl` or the request's own address, as
+// before. So:
+//
+//   * `pinnedBaseUrl(app)` — the pinned base of one application, or of `*`
+//     (every application not named) when no application is given, which is
+//     what #99's realm listener was: a realm with its own listener maps `*`
+//     to it. The 19 callers without a request ask it.
+//   * `baseUrlOf(req, app)` — `app` defaults to the application the REQUEST
+//     belongs to, so the hundreds of call sites that build a URL of their own
+//     application were not edited. One that builds a URL of ANOTHER
+//     application — the authorization endpoint's sign-in screen, the portal's
+//     authorization server — names it, or uses:
+//   * `urlOf(req, path)` — the whole URL of a path, on the base of the
+//     application that path belongs to.
+//
+// A service with no custom listener answers exactly what it did: every
+// application is on `main`, advertised there.
+// ---------------------------------------------------------------------------
 /**
- * Returns `global.publicBaseUrl` without its trailing slashes, the base URL
- * that overrides every request's own.
+ * Returns the base URL that overrides every request's own for one hosted
+ * application: its advertised listener's `publicBaseUrl` (#472), or
+ * `global.publicBaseUrl`, without trailing slashes or the realm prefix.
  *
+ * @param app - the application's id; omitted, every application not named
+ *   in `listeners.applications` (`*`)
  * @returns the pinned base, or '' when none is set
  */
-// A REALM WITH A LISTENER OF ITS OWN (#99, 2026-10-02) is built on its own
-// base: `listener.publicBaseUrl` is read in the ambient realm (it is
-// `realmOnly`, so only that realm's own value is ever seen) and wins over
-// `global.publicBaseUrl`. Every URL a realm builds goes through here — 529
-// calls of `baseUrlOf()` — background jobs with no request included, so one
-// line moves them all; the `/realm/<id>` prefix still follows the base.
-function pinnedBaseUrl() {
-  log.debug("Entering pinnedBaseUrl().");
-  const own = String(config.value('listener.publicBaseUrl') || '').trim();
+function pinnedBaseUrl(app) {
+  log.debug("Entering pinnedBaseUrl(). " + (app || '*'));
+  const own = listenerMap.advertisedBase(app || null);
   const raw = own || String(config.value('global.publicBaseUrl') || '').trim();
   log.debug("Leaving pinnedBaseUrl().");
   return raw ? raw.replace(/\/+$/, '') : '';
 }
 
 /**
+ * Which hosted application a request is for: its path, without the realm
+ * prefix, classified by `common/hosted_applications.js`.
+ *
+ * @param req - the request
+ * @returns the application's id, or null for a path no application claims
+ */
+function applicationOf(req) {
+  log.debug("Entering applicationOf().");
+  const raw = String((req && (req.originalUrl || req.url)) || '/')
+    .split('?')[0];
+  const match = realms.matchPath(raw);
+  const found = hostedApplications.classify(match ? match.rest : raw);
+  log.debug("Leaving applicationOf(). " + found);
+  return found === hostedApplications.EVERYWHERE ? null : found;
+}
+
+/**
  * Returns the base URL a request should be answered under, the trust realm's
  * path prefix included.
  *
- * `global.publicBaseUrl` pins it; otherwise it is read off the request,
- * forwarded headers only where a proxy is trusted.
+ * The base is that of one hosted application (#472): the request's own,
+ * unless another is named. Its advertised listener's `publicBaseUrl` pins it,
+ * or `global.publicBaseUrl` where that is the main port; otherwise it is read
+ * off the request, forwarded headers only where a proxy is trusted — on the
+ * main port's port when the request arrived on another listener.
  *
  * @param req - the request
+ * @param app - optional; the application the URL is for
  * @returns the base URL, without a trailing slash
  */
-function baseUrlOf(req) {
+function baseUrlOf(req, app) {
   log.debug("Entering baseUrlOf().");
-  const pinned = pinnedBaseUrl();
+  const which = app === undefined ? applicationOf(req) : app;
+  const pinned = pinnedBaseUrl(which);
   if (pinned) {
     const base = pinned + realms.currentPrefix();
-    log.debug("Leaving baseUrlOf(). base=" + base + " (global.publicBaseUrl)");
+    log.debug("Leaving baseUrlOf(). base=" + base + " (pinned, " +
+              (which || '*') + ")");
     return base;
   }
   const from = forwardedFrom(req);
-  const base = from.proto + '://' + from.host + realms.currentPrefix();
+  let proto = from.proto;
+  let host = from.host;
+  // THE MAIN PORT IS ADVERTISED AND THE REQUEST CAME ON ANOTHER LISTENER:
+  // its own Host names that listener, so the main port is this host name on
+  // the main port's port and scheme. `global.publicBaseUrl` is the way to
+  // say it outright, and the Listeners page recommends it.
+  if (req && listenerMap.listenerOf(req) !== listenerMap.MAIN) {
+    const name = String(host).replace(/:\d+$/, '');
+    proto = config.value('global.https') === true ? 'https' : 'http';
+    host = name + ':' + PORT;
+  }
+  const base = proto + '://' + host + realms.currentPrefix();
   log.debug("Leaving baseUrlOf(). base=" + base +
             (from.forwarded ? " (from forwarded headers; global.trustProxy " +
                               "is on)" : ""));
   return base;
+}
+
+/**
+ * A base URL moved to where one hosted application is advertised (#472), for
+ * a caller that holds a base and no request — an issuer computed from the
+ * base of the request that happened to ask. Unchanged where the application
+ * is advertised on the main port.
+ *
+ * @param base - a base URL, the realm prefix included
+ * @param app - the application the URL is for
+ * @returns the base it is advertised on, the realm prefix included
+ */
+function rebaseTo(base, app) {
+  log.debug("Entering rebaseTo(). " + app);
+  if (listenerMap.isTrivial()) {
+    log.debug("Leaving rebaseTo(). No custom listener.");
+    return base;
+  }
+  const own = listenerMap.advertisedBase(app);
+  if (own) {
+    log.debug("Leaving rebaseTo(). On its listener.");
+    return own + realms.currentPrefix();
+  }
+  // ADVERTISED ON THE MAIN PORT, AND THE BASE IS A CUSTOM LISTENER'S: the
+  // main port's pinned base, or that host name on the main port.
+  let origin = '';
+  let host = '';
+  try {
+    const parsed = new URL(String(base || ''));
+    origin = parsed.origin;
+    host = parsed.hostname;
+  } catch (e) {
+    log.debug("Caught in rebaseTo(): " + ((e && e.message) || e));
+    log.debug("Leaving rebaseTo(). Not a URL.");
+    return base;
+  }
+  const custom = listenerMap.ownOrigins().indexOf(origin) >= 0;
+  if (!custom) {
+    log.debug("Leaving rebaseTo(). Already the main port's.");
+    return base;
+  }
+  const main = String(config.value('global.publicBaseUrl') || '').trim()
+    .replace(/\/+$/, '') ||
+    (config.value('global.https') === true ? 'https' : 'http') + '://' +
+    hostForUrl(host) + ':' + PORT;
+  log.debug("Leaving rebaseTo(). The main port.");
+  return main + String(base).slice(origin.length);
+}
+
+/**
+ * The absolute URL of a path, on the base of the hosted application the path
+ * belongs to (#472) — for a URL one application builds of another's.
+ *
+ * @param req - the request, or null outside one
+ * @param path - a root-relative path, without the realm prefix
+ * @returns the URL, the realm prefix included
+ */
+function urlOf(req, path) {
+  log.debug("Entering urlOf(). " + path);
+  const found = hostedApplications.classify(String(path || '/'));
+  const app = found === hostedApplications.EVERYWHERE ? null : found;
+  const base = req ? baseUrlOf(req, app)
+                   : pinnedBaseUrl(app) + realms.currentPrefix();
+  log.debug("Leaving urlOf().");
+  return base + String(path || '');
 }
 
 // ---------------------------------------------------------------------------
@@ -7660,6 +7786,12 @@ module.exports = {
   iso: iso,
   baseUrlOf: baseUrlOf,
   pinnedBaseUrl: pinnedBaseUrl,
+  applicationOf: applicationOf,
+  urlOf: urlOf,
+  rebaseTo: rebaseTo,
+  // The sign-on session's cookie Domain (#472, `authn.cookieDomain`), as a
+  // Set-Cookie attribute: `common/listener_map.js`'s.
+  cookieDomainAttribute: listenerMap.cookieDomainAttribute,
   listenHost: listenHost,
   loopbackHost: loopbackHost,
   hostForUrl: hostForUrl,

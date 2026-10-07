@@ -63,30 +63,12 @@ var config = {
     corsOrigins: ""                // Origins treated as this service's own
   },
 
-  // --- Realm listener --------------------------------------------------
-  listener: {
-    port: 0,                                  // The realm's own HTTPS port; restart to apply
-    publicBaseUrl: "",                        // The realm's public base URL; restart to apply
-    hostnames: "",                            // DNS names on the realm listener's certificate; restart to apply
-    certificateFile: "",                      // The realm listener's certificate file; restart to apply
-    privateKeyFile: "",                       // The realm listener's private key file; restart to apply
-    disableTls12: "inherit",                  // The realm listener: disable TLS 1.2; restart to apply
-    tls13CipherSuites: "",                    // The realm listener's TLS 1.3 cipher suites; restart to apply
-    pqcOnly: "inherit",                       // The realm listener: post-quantum safe only; restart to apply
-    disableOptionalClientCertificate: false,  // The realm listener: do not ask for a client certificate; restart to apply
-    requireClientCertificate: false,          // The realm listener: require a client certificate; restart to apply
-    minVersion: "inherit",                    // The realm listener: minimum TLS version; restart to apply
-    ciphers: "",                              // The realm listener: tLS 1.2 cipher list; restart to apply
-    groups: "",                               // The realm listener: tLS key-exchange groups; restart to apply
-    signatureAlgorithms: "",                  // The realm listener: tLS signature algorithms; restart to apply
-    trustAnchorsFile: "",                     // The realm listener: client certificate trust anchors file; restart to apply
-    trustIssuedClientCertificates: "inherit", // The realm listener: trust TLS client certificates issued on the user portal; restart to apply
-    sessionTimeoutS: -1,                      // The realm listener: tLS session lifetime (s); restart to apply
-    sessionCacheSize: -1,                     // The realm listener: tLS session cache size (sessions); restart to apply
-    keepAliveTimeoutS: -1,                    // The realm listener: idle connection kept for (s); restart to apply
-    headersTimeoutS: -1,                      // The realm listener: request header timeout (s); restart to apply
-    maxRequestsPerSocket: -1,                 // The realm listener: requests per connection; restart to apply
-    maxConnections: -1                        // The realm listener: open connections at most; restart to apply
+  // --- Custom listeners ------------------------------------------------
+  listeners: {
+    custom: "",         // The service's custom listeners
+    realm: "",          // This realm's own listeners; restart to apply
+    applications: "",   // Which application is on which listener
+    adminOnMain: false  // Rescue: the console and the API on the main port; restart to apply
   },
 
   // --- HTTP connections ------------------------------------------------
@@ -198,6 +180,7 @@ var config = {
   // --- Web security ----------------------------------------------------
   authn: {
     sessionSweepS: 30,              // How often expired sessions are ended (seconds)
+    cookieDomain: "",               // Sign-on session cookie domain
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
     maxSessions: 100000,            // Most sign-on sessions per realm

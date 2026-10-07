@@ -1038,7 +1038,7 @@ class Acme {
       renewalInfo: ctx.urls.renewalInfo,
       meta: {
         externalAccountRequired: true,
-        website: helpers.baseUrlOf(ctx.req) + '/admin/acme',
+        website: helpers.baseUrlOf(ctx.req, 'admin-console') + '/admin/acme',
         profiles: profiles
       }
     };

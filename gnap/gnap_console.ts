@@ -425,25 +425,30 @@ class GnapConsole {
       specifications: ['RFC 9635', 'RFC 9767', 'RFC 9421', 'RFC 9530',
                        'RFC 9493'],
       endpoints: {
-        grant: base + '/gnap',
-        discovery: 'OPTIONS ' + base + '/gnap',
-        rsDiscovery: base + '/.well-known/gnap-as-rs',
-        continuation: base + '/gnap/continue/{grant}',
-        tokenManagement: base + '/gnap/token/{handle}',
-        introspection: base + '/gnap/introspect',
-        resourceRegistration: base + '/gnap/resource',
-        userCode: base + '/gnap/code',
-        keys: base + '/gnap/keys',
-        zcapController: base + '/gnap/zcap/controller',
+        grant: helpers.rebaseTo(base, 'gnap') + '/gnap',
+        discovery: 'OPTIONS ' + helpers.rebaseTo(base, 'gnap') + '/gnap',
+        rsDiscovery: helpers.rebaseTo(base, 'gnap') + '/.well-known/gnap-as-rs',
+        continuation: helpers.rebaseTo(base, 'gnap') + '/gnap/continue/{grant}',
+        tokenManagement: helpers.rebaseTo(base, 'gnap') +
+                         '/gnap/token/{handle}',
+        introspection: helpers.rebaseTo(base, 'gnap') + '/gnap/introspect',
+        resourceRegistration: helpers.rebaseTo(base, 'gnap') + '/gnap/resource',
+        userCode: helpers.rebaseTo(base, 'gnap') + '/gnap/code',
+        keys: helpers.rebaseTo(base, 'gnap') + '/gnap/keys',
+        zcapController: helpers.rebaseTo(base, 'gnap') +
+                        '/gnap/zcap/controller',
         // #432: where a resource server that checks tokens on its own sees a
         // revocation — the realm's access-token status list (the JWT
         // formats) and the revoked biscuits' identifiers.
-        accessTokenStatusList: base + '/status-lists/access-tokens',
-        biscuitRevocations: base + '/gnap/biscuit/revocations',
-        demonstrationResourceServer: base + '/gnap/rs/resource',
+        accessTokenStatusList: helpers.rebaseTo(base, 'oauth-oidc') +
+                               '/status-lists/access-tokens',
+        biscuitRevocations: helpers.rebaseTo(base, 'gnap') +
+                            '/gnap/biscuit/revocations',
+        demonstrationResourceServer: helpers.rebaseTo(base, 'gnap') +
+                                     '/gnap/rs/resource',
         // #432 phase 5: the demonstration operation that spends a right's
         // limits, the reference for a resource server keeping the totals.
-        demonstrationSpend: base + '/gnap/rs/spend'
+        demonstrationSpend: helpers.rebaseTo(base, 'gnap') + '/gnap/rs/spend'
       },
       capabilities: grants.capabilities(req, null),
       authorizationServers: profiles,

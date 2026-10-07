@@ -278,7 +278,7 @@ interface ScimDeps {
     error(message: string): void;
   };
   xmlEscape(text: unknown): string;
-  baseUrlOf(req: ScimRequest): string;
+  baseUrlOf(req: ScimRequest, app?: string): string;
   validation: { checkDocument: Fn };
   config: { value(key: string): any };
   stats: { recordScim: Fn; identityOf: Fn; scimSnapshot: Fn };
@@ -2861,8 +2861,9 @@ class Scim {
       // length.
       }, scimMap.describeMapping()),
       counters: stats.scimSnapshot(),
-      console: base + '/admin/scim',
-      managementApi: base + '/admin-api/scim'
+      console: helpers.rebaseTo(base, 'admin-console') + '/admin/scim',
+      managementApi: helpers.rebaseTo(base, 'management-api') +
+                     '/admin-api/scim'
     };
     log.debug("Leaving Scim.description(). " + out.endpoints.length +
               " endpoint(s) described.");
@@ -3112,7 +3113,7 @@ class Scim {
                   directory.usersDn() + ', ' +
                   'as "<kid> <base64 DER>". An ldapsearch and /admin/users ' +
                   'show it.',
-        console: baseUrlOf(req) + '/admin/scim',
+        console: baseUrlOf(req, 'admin-console') + '/admin/scim',
         surface: baseUrlOf(req) + '/scim'
       }, null, 2));
       log.debug("Leaving GET " + HOBA_REGISTER_PATH + ".");

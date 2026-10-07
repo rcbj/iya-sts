@@ -95,6 +95,10 @@
 import nodeCrypto = require('crypto');
 import os = require('os');
 import helpers = require('./helpers');
+// Which application a mailed link opens, and where it is advertised (#472).
+// Two LEAVES.
+import hostedApplications = require('./hosted_applications');
+import listenerMap = require('./listener_map');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
 import realms = require('./realms');
@@ -608,10 +612,11 @@ class Mail {
   linkBase(): string {
     const { log, config, realms, mode } = this.deps;
     log.debug("Entering Mail.linkBase().");
-    // A realm with a listener of its own (#99) mails links on its own base.
-    const pinned = String(config.value('listener.publicBaseUrl') ||
-                          config.value('global.publicBaseUrl') || '').trim()
-      .replace(/\/+$/, '');
+    // The base of every application the mapping does not name (#472's `*`;
+    // a realm with a listener of its own, #99, maps it there), or
+    // `global.publicBaseUrl`. `linkOn()` moves one link to the base of the
+    // application its path belongs to.
+    const pinned = helpers.pinnedBaseUrl();
     if (pinned) {
       log.debug("Leaving Mail.linkBase(). Pinned.");
       return pinned + realms.currentPrefix();
@@ -629,6 +634,29 @@ class Mail {
       realms.currentPrefix();
     log.debug("Leaving Mail.linkBase(). The listener's: " + base);
     return base;
+  }
+
+  // ONE MAILED LINK ON THE BASE OF THE APPLICATION IT OPENS (#472): an
+  // activation or reset link on the portal's advertised listener, a sign-in
+  // link on the sign-in service's — whichever of them an administrator moved
+  // — and on `base` (`linkBase()`) where that application is advertised on
+  // the main port, which is what every link was before.
+  /**
+   * Returns one mailed link: the path on its application's advertised base,
+   * or on `base` where that is the main port.
+   *
+   * @param base - `linkBase()`'s answer
+   * @param path - the link's root-relative path
+   * @returns the URL
+   */
+  linkOn(base: string, path: string): string {
+    const { log, realms } = this.deps;
+    log.debug("Entering Mail.linkOn().");
+    const app = hostedApplications.classify(path);
+    const own = app && app !== hostedApplications.EVERYWHERE
+      ? listenerMap.advertisedBase(app) : '';
+    log.debug("Leaving Mail.linkOn().");
+    return own ? own + realms.currentPrefix() + path : base + path;
   }
 
   // -------------------------------------------------------------------------
@@ -1254,11 +1282,12 @@ class Mail {
     values.service = values.service ||
       String(realms.domainOf(realms.current()) || 'this service');
     const links = req.links || {};
+    const self = this;
     spec.links.forEach(function (name: string) {
       const path = String(links[name] || '');
       // A PATH, and nothing that could make it another origin.
       values[name] = /^\/(?!\/)/.test(path) && !/[\s\\]/.test(path)
-        ? base + path : '';
+        ? self.linkOn(base, path) : '';
     });
     // #64: EVERY MESSAGE IS WRAPPED IN THE REALM'S LAYOUT, in the language
     // the message itself was chosen in where the realm has one, the
@@ -1995,8 +2024,7 @@ class Mail {
       available: this.available(),
       from: cfg.from,
       linkBase: this.linkBase(),
-      linkBasePinned: !!String(this.setting('listener.publicBaseUrl') ||
-                               this.setting('global.publicBaseUrl') || ''),
+      linkBasePinned: !!helpers.pinnedBaseUrl(),
       relay: cfg.transport === 'smtp'
         ? { host: cfg.smtpHost, port: cfg.smtpPort, tls: cfg.smtpTls,
             auth: cfg.smtpAuth, dkim: cfg.dkimDomain

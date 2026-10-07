@@ -3402,7 +3402,7 @@ class ScimAuth {
     // therefore no honest value to give it. A throw there takes the whole
     // service down over an optional member.
     if (base) {
-      out.documentationUri = base + '/scim';
+      out.documentationUri = helpers.rebaseTo(base, 'scim') + '/scim';
     }
     log.debug("Leaving ScimAuth.schemeDocument().");
     return out;

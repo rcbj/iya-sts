@@ -864,7 +864,8 @@ class GnapTokens {
       // The kid a jwt-signed token's header carries, which `keys.kidFormat`
       // decides (common/jose_kid.js) — the one this document names has to be
       // it.
-      jwt: { jwks_uri: base + '/oauth2/jwks', alg: 'RS256',
+      jwt: { jwks_uri: helpers.rebaseTo(base, 'oauth-oidc') +
+                       '/oauth2/jwks', alg: 'RS256',
              kid: helpers.publishedKidFor(STS.kid), typ: JWT_HEADER_TYP,
              // Where a revoked JWT shows (#432): the realm's access-token
              // status list, named in each token's `status.status_list`.
@@ -874,7 +875,8 @@ class GnapTokens {
                  root_public_key: 'ed25519/' + raw.toString('hex'),
                  // The revoked biscuits' identifiers (#432). Non-standard,
                  // as `root_public_keys` below is.
-                 revocation_endpoint: base + '/gnap/biscuit/revocations',
+                 revocation_endpoint: helpers.rebaseTo(base, 'gnap') +
+                                      '/gnap/biscuit/revocations',
                  jwk: keys.publicJwk,
                  // Every key a biscuit this realm minted may be signed with
                  // (#49 P5): the current one first, then its next key and the
@@ -889,7 +891,8 @@ class GnapTokens {
       // `cryptosuite` is the one proof suite this realm signs and accepts
       // zcap tokens with (#43); the controller document publishes the key
       // in the form that suite names.
-      zcap: { controller: base + '/gnap/zcap/controller',
+      zcap: { controller: helpers.rebaseTo(base, 'gnap') +
+                          '/gnap/zcap/controller',
               cryptosuite: this.zcapCryptosuite() },
       macaroon: { root_key: 'per resource server; carried (sealed) on the ' +
                   'resource server\'s application entry as ' +

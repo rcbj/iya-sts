@@ -333,7 +333,7 @@ class ScepConsole {
   endpointsOf(req) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering ScepConsole.endpointsOf().");
-    const base = baseUrlOf(req) + '/enroll/scep';
+    const base = baseUrlOf(req, 'scep') + '/enroll/scep';
     log.debug("Leaving ScepConsole.endpointsOf().");
     return {
       scep: base,
@@ -354,7 +354,7 @@ class ScepConsole {
   profileRows(req) {
     const { log, baseUrlOf, core } = this.deps;
     log.debug("Entering ScepConsole.profileRows().");
-    const base = baseUrlOf(req) + '/enroll/scep/';
+    const base = baseUrlOf(req, 'scep') + '/enroll/scep/';
     const allowed = core.allowedProfiles('scep');
     log.debug("Leaving ScepConsole.profileRows().");
     // The device profile (#164 phase 2) beside /admin/pki's nine.
@@ -436,7 +436,7 @@ class ScepConsole {
     const certificates = core.certificatesInRealm('scep');
     const certificatePaging = adminViews.pagingOf(query, certificates.length,
       { name: 'certificates', noun: 'certificates' });
-    const scepBase = baseUrlOf(req) + '/enroll/scep';
+    const scepBase = baseUrlOf(req, 'scep') + '/enroll/scep';
     const json = {
       page: '/admin/scep',
       title: 'SCEP',
@@ -639,7 +639,7 @@ class ScepConsole {
         return this.refused(errorCodes.codeOf(made) || 'STS-SCEP-0061',
                             made.errors);
       }
-      const url = baseUrlOf(ctx.req) + '/enroll/scep/' + made.profile;
+      const url = baseUrlOf(ctx.req, 'scep') + '/enroll/scep/' + made.profile;
       const plainUrl = this.plainUrlOf(made.profile);
       monitor.record('scep', { operation: 'create-challenge',
                                outcome: 'credential', status: 200,

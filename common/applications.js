@@ -17144,11 +17144,14 @@ function internalApplications() {
         client_name: 'Admin console',
         client_id_issued_at: issued,
         registration_access_token: randomId(24),
-        registration_client_uri: base + '/oauth2/register/sts-admin-console',
-        client_uri: base + '/admin',
+        registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
+                                 '/oauth2/register/sts-admin-console',
+        client_uri: helpers.rebaseTo(base, 'admin-console') + '/admin',
         application_type: 'web',
-        redirect_uris: [base + '/admin/callback'],
-        post_logout_redirect_uris: [base + '/admin'],
+        redirect_uris: [helpers.rebaseTo(base, 'admin-console') +
+                        '/admin/callback'],
+        post_logout_redirect_uris: [helpers.rebaseTo(base, 'admin-console') +
+                                    '/admin'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         // `admin:read admin:write` (#110): the console asks for both, and
@@ -17198,11 +17201,13 @@ function internalApplications() {
         client_name: 'User portal',
         client_id_issued_at: issued,
         registration_access_token: randomId(24),
-        registration_client_uri: base + '/oauth2/register/sts-user-portal',
-        client_uri: base + '/portal',
+        registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
+                                 '/oauth2/register/sts-user-portal',
+        client_uri: helpers.rebaseTo(base, 'portal') + '/portal',
         application_type: 'web',
-        redirect_uris: [base + '/portal/callback'],
-        post_logout_redirect_uris: [base + '/portal'],
+        redirect_uris: [helpers.rebaseTo(base, 'portal') + '/portal/callback'],
+        post_logout_redirect_uris: [helpers.rebaseTo(base, 'portal') +
+                                    '/portal'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         scope: 'openid profile email offline_access',
@@ -17242,8 +17247,10 @@ function internalApplications() {
                        randomId(24),
         client_secret_expires_at: 0,
         registration_access_token: randomId(24),
-        registration_client_uri: base + '/oauth2/register/sts-management-api',
-        client_uri: base + '/admin/api-explorer',
+        registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
+                                 '/oauth2/register/sts-management-api',
+        client_uri: helpers.rebaseTo(base, 'admin-console') +
+                    '/admin/api-explorer',
         application_type: 'web',
         // NO redirect URI and no response type: this one is a back-channel
         // client on client_credentials, and a redirect URI on it would be a

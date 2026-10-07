@@ -4,9 +4,11 @@
 # ---------------------------------------------------------------------------
 # A TRUST REALM'S OWN LOAD BALANCER (#99, 2026-10-02).
 #
-# A realm may have a front-end listener of its own: the service binds
-# `listener.port` on every node and builds every URL of the realm on
-# `listener.publicBaseUrl` (tls/realm_listeners.js). The load balancer and the
+# A realm may have a front-end listener of its own: since #472 a definition
+# in the realm's `listeners.realm`, which the service binds on every node
+# (tls/listeners.js), and a `listeners.applications` entry mapping `*` to it,
+# which builds every URL of the realm on its `publicBaseUrl`. The load
+# balancer and the
 # DNS name in front of it are the DEPLOYMENT'S, and this file makes them, one
 # realm per entry of `var.realm_listeners`:
 #
@@ -32,7 +34,7 @@
 #
 # **THE SERVICE IS NOT TOLD BY THIS FILE.** A realm's listener settings live
 # in the realm, in the database, set through /admin-api (or the console); the
-# `realm_listener_settings` output prints the four calls that match this
+# `realm_listener_settings` output prints the two calls that match this
 # file's entries, for the operator to run once the environment is up.
 # ---------------------------------------------------------------------------
 
@@ -144,13 +146,14 @@ resource "aws_route53_record" "realm" {
 output "realm_listener_settings" {
   description = <<-EOT
     For each entry of realm_listeners, the /admin-api calls that give the realm
-    the listener this stack put a load balancer in front of (#99).
+    the listener this stack put a load balancer in front of (#99, #472): the
+    listener in the realm's listeners.realm, and every application of the
+    realm advertised on it while the main port still answers them.
   EOT
   value = {
     for id, r in local.realm_listeners : id => [
-      "POST /admin-api/realms/set {\"id\":\"${id}\",\"key\":\"listener.publicBaseUrl\",\"value\":\"https://${r.hostname}\"}",
-      "POST /admin-api/realms/set {\"id\":\"${id}\",\"key\":\"listener.port\",\"value\":\"${r.port}\"}",
-      "POST /admin-api/realms/set {\"id\":\"${id}\",\"key\":\"listener.hostnames\",\"value\":\"${r.hostname}\"}",
+      "POST /realm/${id}/admin-api/listeners/set-listeners {\"value\":[{\"id\":\"rl-${substr(md5(id), 0, 8)}\",\"port\":${r.port},\"publicBaseUrl\":\"https://${r.hostname}\",\"hostnames\":[\"${r.hostname}\"]}]}",
+      "POST /realm/${id}/admin-api/listeners/set-applications {\"value\":{\"*\":{\"listeners\":[\"main\",\"rl-${substr(md5(id), 0, 8)}\"],\"advertised\":\"rl-${substr(md5(id), 0, 8)}\"}}}",
       "load balancer: ${aws_lb.realm[id].dns_name}"
     ]
   }

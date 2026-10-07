@@ -586,9 +586,9 @@ class EntityCollection {
   jobOff(): string {
     const { log, config } = this.deps;
     log.debug("Entering EntityCollection.jobOff().");
-    // A realm with its own base (#99) has an Entity Identifier without one.
-    const pinned = String(config.value('listener.publicBaseUrl') ||
-                          config.value('global.publicBaseUrl') || '').trim();
+    // A realm whose OpenID Federation endpoints are advertised on a custom
+    // listener (#99, #472) has an Entity Identifier without one.
+    const pinned = helpers.pinnedBaseUrl('oidfed');
     log.debug("Leaving EntityCollection.jobOff().");
     return pinned ? ''
       : 'needs global.publicBaseUrl: a job has no request to take the ' +

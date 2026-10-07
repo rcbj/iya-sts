@@ -337,7 +337,8 @@ class EstConsole {
       endpoints: OPERATIONS.map(function (op) {
         return { operation: op.name, method: op.method, section: op.section,
                  what: op.what,
-                 url: base + '/.well-known/est/' + op.name,
+                 url: helpers.rebaseTo(base, 'est') +
+                      '/.well-known/est/' + op.name,
                  labelFormUrl: labelBase ? labelBase + '/' + op.name : null };
       }),
       labelForm: labelBase ? {
@@ -384,7 +385,8 @@ class EstConsole {
         function (id) {
         const urls = {};
         OPERATIONS.forEach(function (op) {
-          urls[op.name] = base + '/.well-known/est/' + id + '/' + op.name;
+          urls[op.name] = helpers.rebaseTo(base, 'est') +
+                          '/.well-known/est/' + id + '/' + op.name;
         });
         return { id: id, needs: id === core.DEVICE_PROFILE
                    ? 'a device entry — the one the request\'s ' +

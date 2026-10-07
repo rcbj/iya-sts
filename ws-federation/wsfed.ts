@@ -2056,7 +2056,8 @@ class WsFederation {
                 'instant',
                   'When that session authenticated.') +
           '</fed:ClaimTypesOffered>' +
-          endpoint('SecurityTokenServiceEndpoint', base + '/sts') +
+          endpoint('SecurityTokenServiceEndpoint',
+                   helpers.rebaseTo(base, 'ws-trust') + '/sts') +
           endpoint('PassiveRequestorEndpoint', base + PASSIVE_PATH) +
         '</RoleDescriptor>' +
       '</EntityDescriptor>';

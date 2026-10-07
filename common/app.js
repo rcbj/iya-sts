@@ -44,6 +44,10 @@ const { log, headersOf, bodyOf } = helpers;
 // realm. It requires config.js and the error-code table and nothing else here,
 // so it cannot join a cycle; helpers.js above has already pulled it in anyway.
 const realms = require('./realms');
+// WHICH HOSTED APPLICATION A PATH IS, AND WHICH LISTENERS ANSWER IT (#472):
+// `enterListener()`, below the realm. Two LEAVES.
+const hostedApplications = require('./hosted_applications');
+const listenerMap = require('./listener_map');
 // The service's own record of what it has done. Required HERE, and the position
 // is load-bearing twice over: the call log below is where the per-endpoint
 // statistics are collected, so this is a real dependency — and because every
@@ -158,11 +162,13 @@ function enterRealm(req, res, next) {
   const pathname = String(req.url || '').split('?')[0];
   const match = realms.matchPath(pathname);
   // A REALM'S OWN LISTENER ANSWERS THAT REALM AND NOTHING ELSE (#99,
-  // 2026-10-02). `tls/realm_listeners.js` marks every socket it accepts with
-  // its realm; a path that is not under that realm's prefix — another
-  // realm's, or the default realm's unprefixed one — is not served there,
-  // so a realm's host and load balancer front that realm alone. The main port
-  // carries no mark and serves every realm as it always has.
+  // 2026-10-02; a realm's `listeners.realm` since #472). `tls/listeners.js`
+  // marks every socket a realm's listener accepts with its realm; a path that
+  // is not under that realm's prefix — another realm's, or the default
+  // realm's unprefixed one — is not served there, so a realm's host and load
+  // balancer front that realm alone. The main port and the service's own
+  // custom listeners carry no realm mark and serve every realm; WHICH
+  // APPLICATIONS each serves is `enterListener()`, below.
   const own = req.socket && req.socket.stsRealmListener;
   if (own && !(match && match.realm && match.realm.id === own)) {
     require('./error_codes').mark(res, 'STS-TLS-0041');
@@ -299,6 +305,114 @@ function enterMatchedRealm(req, res, next, match) {
 }
 
 app.use(enterRealm);
+
+// ---------------------------------------------------------------------------
+// WHICH HOSTED APPLICATION A LISTENER ANSWERS (#472, 2026-10-07).
+//
+// An administrator maps each hosted application — the console, the
+// management API, the portal, the sign-in service, each protocol — to the
+// listeners that answer it (`common/listener_map.js`). A path of an
+// application that is not mapped to the listener the request arrived on is
+// refused here, with a 404 that names where the application is (STS-TLS-0047)
+// — in the front process, before anything is dispatched, and again in a
+// request worker, which is told the listener (`request_pool.js`). Placed
+// BELOW the realm, because the mapping is per realm and the path is matched
+// without its prefix; nothing else is above it.
+//
+// AND A LINK THAT CROSSES TO ANOTHER LISTENER IS MADE ABSOLUTE. Six modules
+// send a browser to `/authn/login` with a root-relative redirect, the console
+// to `/oauth2/authorize`, and pages link `/portal/...` and `/logout`: on one
+// listener those stay where they are, and once the application they name is
+// not on the listener the browser is on, they would land on this very
+// refusal. So, on the way out, a root-relative `Location`, and a root-relative
+// `href`, `action`, `formaction` or `src` in an HTML page, whose application
+// is not on THIS listener, is rewritten to that application's advertised
+// base (`helpers.urlOf()`); one whose application is here is left alone, for
+// the realm middleware above to prefix as it always did. JSON, JWTs and XML
+// are never rewritten: a URL inside a signed document is built on the right
+// base where it is built. A service with no custom listener skips all of it.
+// ---------------------------------------------------------------------------
+function enterListener(req, res, next) {
+  log.debug("Entering enterListener().");
+  if (listenerMap.isTrivial()) {
+    log.debug("Leaving enterListener(). No custom listener.");
+    next();
+    return;
+  }
+  const at = listenerMap.listenerOf(req);
+  const path = String(req.url || '').split('?')[0];
+  const application = hostedApplications.classify(path);
+  if (!listenerMap.admits(at, application)) {
+    let where = '';
+    try {
+      where = helpers.urlOf(req, path);
+    } catch (e) {
+      log.debug("Caught in enterListener(): " + ((e && e.message) || e));
+    }
+    require('./error_codes').mark(res, 'STS-TLS-0047');
+    res.status(404).type('text/plain')
+      .send('Not found: ' + hostedApplications.labelOf(application) +
+            ' is not served on this listener ("' + at + '").' +
+            (where ? ' It is at ' + where + '.' : ''));
+    log.debug("Leaving enterListener(). Not on this listener.");
+    return;
+  }
+  // Whether this listener answers an application, asked once per application
+  // per response: a console page carries hundreds of links to a handful.
+  // `answers()` and `away()` are a HOT PATH — called for every link of every
+  // page — so neither has an Entering/Leaving pair, which would drown the
+  // log around a table lookup; `enterListener()` brackets them.
+  const here = {};
+  const answers = function (target) {
+    if (!Object.prototype.hasOwnProperty.call(here, target)) {
+      here[target] = listenerMap.admits(at, target);
+    }
+    return here[target];
+  };
+  // The absolute address of a root-relative URL whose application is not on
+  // this listener; the URL unchanged otherwise.
+  const away = function (url) {
+    if (typeof url !== 'string' || url.charAt(0) !== '/' ||
+        url.charAt(1) === '/') {
+      return url;
+    }
+    const cut = url.search(/[?#]/);
+    const own = cut < 0 ? url : url.slice(0, cut);
+    const rest = cut < 0 ? '' : url.slice(cut);
+    const matched = realms.matchPath(own);
+    const bare = matched ? matched.rest : own;
+    const target = hostedApplications.classify(bare);
+    if (!target || target === hostedApplications.EVERYWHERE ||
+        answers(target)) {
+      return url;
+    }
+    return helpers.urlOf(req, bare) + rest;
+  };
+  const location = res.location;
+  res.location = function (url) {
+    log.debug("Entering location(). (listener)");
+    log.debug("Leaving location(). (listener)");
+    return location.call(res, away(url));
+  };
+  const send = res.send;
+  res.send = function (body) {
+    log.debug("Entering send(). (listener)");
+    const type = String(res.get('Content-Type') || '');
+    if (typeof body === 'string' && /html/i.test(type)) {
+      arguments[0] = body.replace(
+        /\b(href|action|formaction|src)="(\/(?!\/)[^"]*)"/g,
+        function (whole, attribute, url) {
+          return attribute + '="' + away(url) + '"';
+        });
+    }
+    log.debug("Leaving send(). (listener)");
+    return send.apply(res, arguments);
+  };
+  log.debug("Leaving enterListener().");
+  next();
+}
+
+app.use(enterListener);
 
 // ---------------------------------------------------------------------------
 // THE AMBIENT REQUEST, for the one thing a signer needs a request for and

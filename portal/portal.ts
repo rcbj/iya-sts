@@ -4271,7 +4271,8 @@ class Portal {
     log.debug("Entering Portal.tlsListenerUrls().");
     const root = String(base || '').replace(/\/+$/, '');
     log.debug("Leaving Portal.tlsListenerUrls().");
-    return { signIn: root + '/tls/sign-in', base: root + '/' };
+    return { signIn: helpers.rebaseTo(root, 'authn') +
+                     '/tls/sign-in', base: root + '/' };
   }
 
   // The signed-in person's `mail`, read off their own entry, for the rfc822Name

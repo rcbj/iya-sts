@@ -471,6 +471,22 @@ class GnapGrants {
     return baseUrlOf(req);
   }
 
+  // The OAuth authorization server's base (#472): the issuer a subject
+  // identifier names is the realm's OpenID provider, which may be advertised
+  // on another listener than GNAP.
+  /**
+   * Returns the realm's OAuth authorization server's base URL.
+   *
+   * @param req - the request
+   * @returns the base URL
+   */
+  oauthBase(req) {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering GnapGrants.oauthBase().");
+    log.debug("Leaving GnapGrants.oauthBase().");
+    return baseUrlOf(req, 'oauth-oidc');
+  }
+
   /**
    * Returns the discovery document's members (section 9) as the settings make
    * them, before an authorization server profile changes any.
@@ -1509,7 +1525,7 @@ class GnapGrants {
           (config.value('gnap.demoResourceServer') !== false)) {
         // A token for nobody in particular is valid at the demonstration RS,
         // which is how a client can present one somewhere at all.
-        audience.push(base + '/gnap/rs/resource');
+        audience.push(helpers.rebaseTo(base, 'gnap') + '/gnap/rs/resource');
       }
       const model = {
         jti: store.handle(16),
@@ -1591,7 +1607,8 @@ class GnapGrants {
       if (config.value('gnap.tokenManagement') !== false) {
         const manageValue = store.issueManagement(record);
         store.saveToken(record);
-        response.manage = { uri: base + '/gnap/token/' + record.manageHandle,
+        response.manage = { uri: helpers.rebaseTo(base, 'gnap') +
+                                 '/gnap/token/' + record.manageHandle,
                             access_token: { value: manageValue } };
       }
       grant.tokens = (grant.tokens || []).concat([record.jti]);
@@ -1695,7 +1712,7 @@ class GnapGrants {
       return null;
     }
     const oauth2 = this.deps.loadOauth2();
-    const issuer = oauth2.issuerOf(this.realmBase(req));
+    const issuer = oauth2.issuerOf(this.oauthBase(req));
     const formats = grant.request.subject.subIdFormats.filter((format) => {
       return this.allows(this.capabilityList(req, grant.as,
                                              'sub_id_formats_supported'),
@@ -1891,7 +1908,8 @@ class GnapGrants {
         const id = store.handle(18);
         interaction.modes[mode] = { id: id, used: false };
         store.putInteraction(mode + ':' + id, grant.id);
-        out[mode] = base + '/gnap/' + (mode === 'redirect' ? 'interact' :
+        out[mode] = helpers.rebaseTo(base, 'gnap') +
+                    '/gnap/' + (mode === 'redirect' ? 'interact' :
                                        'app') + '/' + id;
       } else if (mode === 'user_code' || mode === 'user_code_uri') {
         const code = interaction.modes.user_code ?
@@ -1901,7 +1919,8 @@ class GnapGrants {
         interaction.modes[mode] = { code: code, used: false };
         store.putUserCode(code, grant.id);
         out[mode] = mode === 'user_code' ? code :
-                    { code: code, uri: base + '/gnap/code' };
+                    { code: code, uri: helpers.rebaseTo(base, 'gnap') +
+                                       '/gnap/code' };
       }
     });
     if (finish) {
@@ -2078,8 +2097,8 @@ class GnapGrants {
     }
     const oauth2 = this.deps.loadOauth2();
     const resolved = subject.resolveUser(asked.user, {
-      issuer: oauth2.issuerOf(this.realmBase(req)),
-      oauthIssuer: oauth2.issuerOf(this.realmBase(req)),
+      issuer: oauth2.issuerOf(this.oauthBase(req)),
+      oauthIssuer: oauth2.issuerOf(this.oauthBase(req)),
       // A user reference resolves only for the client it was issued to
       // (#432 phase 7, gnap_subject.ts).
       client: identifier,

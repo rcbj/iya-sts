@@ -105,6 +105,8 @@
 
 const cors = require('cors');
 const helpers = require('./helpers');
+// Every listener's origin is this service's own (#472). A LEAF.
+const listenerMap = require('./listener_map');
 const { log } = helpers;
 const config = require('./config');
 const mode = require('./mode');
@@ -211,7 +213,8 @@ function configuredOrigins() {
  * talking to itself.
  *
  * The address the request was made to, `global.publicBaseUrl`, the embedded
- * debugger's listener and whatever `global.corsOrigins` names.
+ * debugger's listener, every custom listener's public base (#472) and
+ * whatever `global.corsOrigins` names.
  * @param req - the express request
  * @returns the normalised origins
  */
@@ -254,6 +257,20 @@ function ownOrigins(req) {
   });
   if (mode.embedsProtocolDebugger()) {
     add(originOfUrl(config.value('debugger.publicBaseUrl')));
+  }
+  // EVERY LISTENER'S ORIGIN (#472): the console on one listener calls the
+  // management API and the token endpoint on another, and a page served by
+  // any listener of this service is this service's own. With a custom
+  // listener defined, the main port on the request's own host name is one
+  // too, for the request that arrived on the custom one.
+  if (!listenerMap.isTrivial()) {
+    listenerMap.ownOrigins().forEach(add);
+    hostnames.filter(function (one) {
+      return !!one;
+    }).forEach(function (hostname) {
+      add(originOfUrl(scheme + '://' + hostname + ':' +
+                      config.value('global.port')));
+    });
   }
   configuredOrigins().forEach(add);
   log.debug("Leaving ownOrigins(). " + out.length + " origin(s).");

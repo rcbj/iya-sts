@@ -11159,3 +11159,75 @@ of the composition root. RFC 8693's `resolveTarget()` is deliberately NOT
 this definition: it must answer an application to read relationships from.
 The two doors are argued in `oauth-oidc/CLAUDE.md` and `gnap/CLAUDE.md`;
 `tests/registered_targets.js` holds it in both modes.
+
+## Hosted applications and the listeners they are on: `hosted_applications.js`, `listener_map.js` (#472, 2026-10-07)
+
+rcbj: "I want to be able to define custom listeners and map the hosted
+applications to specific listeners ... I want to be able to advertise services
+on multiple listeners potentially. it's up to the administrator and their use
+case." His answers on the ticket, D1–D6, are what this section holds to.
+
+* **`hosted_applications.js` IS THE CATALOGUE, CLOSED.** An application is an
+  id, a label and the paths it answers (prefixes on a segment boundary, and
+  exact paths); `classify(path)` answers which, for a path without its realm
+  prefix. `/healthcheck` is `EVERYWHERE`, a path nobody claims is null and
+  admitted everywhere (so Express's `Cannot GET` body is unchanged). Named
+  authorization servers (`/<as>/oauth2`, `/<as>/gnap`) are matched on their
+  second segment. **`tests/hosted_applications.js` holds it to the router**:
+  a route no application claims fails it, because it would answer on every
+  listener — the console moved off the main port and a new page of it still
+  there. A new route family owes an entry here, the way it owes one in
+  `sts_metadata.ts`.
+* **`listener_map.js` DECIDES THREE THINGS AND ONLY HERE**: what the
+  listeners are (`main`; the service's `listeners.custom`; each realm's
+  `listeners.realm`, which is what #99's realm listener became — D1), which
+  application is on which (`listeners.applications`, per realm, the realm's
+  entry and then its `*` read before the service's — D2), and where an
+  application's URLs are built (its ADVERTISED listener — D4). Both are JSON
+  in a string row, as `spiffe.brokers` keeps its list, because a set of
+  listeners an administrator names is not a table of generated rows.
+* **FOUR RULES OVER THE WHOLE STATE, AT EVERY WRITE.** A write is judged by
+  building the state as it is, patching in the value, and asking
+  `stateProblem()` — so no order of writes reaches what a single write could
+  not: well formed and unique (ids, ports — none of the process's sockets —
+  STS-CORE-0153, 0146, 0147, and none in a multi-cell service, 0148); scoped
+  (a mapping names applications and listeners of its own scope, a mapped
+  listener cannot be removed, and oidfed is on the listener oauth-oidc is
+  advertised on, because the Entity Identifier is the issuer — 0154); the
+  sign-on cookie reaching every application that reads it (one host name, or
+  all under `authn.cookieDomain` — D3, 0155); and no write taking
+  `management-api` off the listener the request arrived on unless it says
+  `confirm` (D6, 0156; the ambient request is `jose_certificate_header.js`'s).
+  The process's writes reach it through `config.addWriteRule()`, which since
+  #472 is told whether the write lands in a realm; a realm's through
+  `realms.js`'s `listenerOverrideProblem()`. **A reset is not a write and
+  asks no rule**, so the Listeners page and the API write an empty value
+  instead of clearing one. What the process STARTED with is judged by
+  `startupProblem()` in `server.js`'s `bind()`, and is fatal (0157).
+* **`listeners.adminOnMain` IS THE OTHER HALF OF D6**: restart-only and
+  `perProcess`, so the one setting that puts the console and the API back on
+  `main` is one no write can turn off.
+* **WHERE A URL IS BUILT (`helpers.js`).** `pinnedBaseUrl(app)` is the
+  advertised listener's `publicBaseUrl`, or `global.publicBaseUrl` where that
+  is `main`; with no application it is `*`'s, which is #99's realm base for a
+  realm that maps `*` to its listener. `baseUrlOf(req, app)` defaults `app`
+  to the REQUEST's application — so the hundreds of call sites that build a
+  URL of their own application were not edited — and `urlOf(req, path)` and
+  `rebaseTo(base, app)` are for a URL one application builds of another's
+  (the issuer from the portal, the console listing protocol endpoints, a
+  mailed portal link). The audit that found those 79 sites is the pattern for
+  the next: a `base + '/<path>'` whose path is another application's.
+* **WHAT CROSSES BY ITSELF.** `common/app.js`'s `enterListener()` makes a
+  root-relative `Location` and HTML link absolute when its application is not
+  on the listener the browser is on, so the six protocol modules that redirect
+  to `/authn/login`, and the sign-in's root-relative return, needed no edit.
+  The console is told where its authorization server, API and sign-out are
+  (`data-sts-*` on the shell, `connect-src`), CORS counts every listener's
+  origin as this service's own, the portal's back channel dials the listener
+  `oauth-oidc` is on (`dialTarget()`), and RFC 9068's resource-server issuer
+  check accepts the issuer at oauth-oidc's base as well as its own.
+* **THE ADVERTISED ONE IS CANONICAL; THE OTHERS ARE PUBLISHED WHERE A
+  SPECIFICATION HAS A PLACE (D4)**: RFC 8705 `mtls_endpoint_aliases` on a
+  second `oauth-oidc` listener asking for a client certificate
+  (`oauth2.ts`'s `mtlsAliasOf()`), and a second `SingleSignOnService` and
+  `SingleLogoutService` Location per `saml2` listener in SAML metadata.

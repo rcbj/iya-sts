@@ -1263,21 +1263,24 @@ to on.
   listener in a realm should use the same certificate").**
   - The default realm's main port, LDAPS and debugger present the one service
     certificate.
-  - A realm with a listener of its own (#99) presents that realm's
-    certificate, `listener.certificateFile` or one its CA issues.
+  - A custom listener (#472; a realm's own, #99, among them) presents its
+    own: the operator's `certificateFile`, or one its owning realm's CA
+    issues — the default realm's for a service listener.
   - The only listeners that present something else are those whose protocol
     requires it: SPIFFE's gRPC listeners present an X509-SVID of the realm's
     trust domain, and the cell channel presents a cell certificate.
   - A change that would give one realm two different listener certificates is
     against this rule.
-  - **A NEW SERVER CERTIFICATE IS MADE ONLY WHEN A REALM DEFINES ITS OWN PORT**
-    (rcbj, 2026-10-02). The realm's `listener.port`, #99 (`tls/realm_listeners.js`),
-    gets a `realm-tls` leaf from the realm's CA unless `listener.certificateFile`
-    names one. No other setting or listener mints a server certificate. The
-    service certificate is made once, at startup, and only re-issued over its
-    own key when the Root is rebuilt. SPIFFE's SVIDs and the cell channel's
-    leaf are their protocols' credentials, not server certificates in this
-    sense.
+  - **A NEW SERVER CERTIFICATE IS MADE ONLY WHEN A LISTENER IS DEFINED**
+    (rcbj, 2026-10-02, for a realm's own port; widened by rcbj's D5 on #472,
+    2026-10-07: "Files, else realm CA"). A custom listener (`tls/listeners.js`)
+    with no `certificateFile` gets a `realm-tls` leaf from its owning realm's
+    CA — the default realm's for one in `listeners.custom` — one slot per
+    listener per node. No other setting or listener mints a server
+    certificate. The service certificate is made once, at startup, and only
+    re-issued over its own key when the Root is rebuilt. SPIFFE's SVIDs and
+    the cell channel's leaf are their protocols' credentials, not server
+    certificates in this sense.
 * **Tests that need TLS 1.2 turn it on:**
   - `sts_tlsfuzzer.js` turns it on service-wide for its run (it is `exclusive`);
   - `tlsfuzzer_debugger.js` and `ldaps_no_certificate_request.js` set it in
@@ -1360,20 +1363,23 @@ rcbj asked for:
   that requires one.
 
 The settings are drawn, all on Server configuration → Listeners
-(`admin-ui/listeners_admin.ts`), along with the TLS and Realm listener groups
-that moved there from this page. `docs/tls.md` has the table.
+(`admin-ui/listeners_admin.ts`), along with the TLS group that moved there
+from this page and, since #472, the Custom listeners group. `docs/tls.md` has
+the table.
 
 * **A POLICY PER LISTENER, FROM ONE FUNCTION.** `policyFor(kind, realmId)`
   answers `{ disableTls12, pqcOnly, tls13Suites, clientAuth }`:
-  - the kinds are `main`, `ldaps`, `debugger`, `realm`, `spiffe` and `cell`;
+  - the kinds are `main`, `ldaps`, `debugger`, `custom`, `spiffe` and `cell`
+    (`custom` was `realm` until #472, and takes a listener id where that
+    took a realm id);
   - `protocolOptions(policy)` turns a policy into node's options;
   - `clientAuthOptions(mode)` turns it into `requestCert` / `rejectUnauthorized`;
   - with no argument, `protocolOptions()` is the process's policy, which is
     what every caller that predates #423 still passes.
 
-  A realm's listener reads its `listener.*` rows inside the realm and inherits
-  the process's unless set. `spiffe` and `cell` get no client authentication:
-  their protocols fix it.
+  A custom listener reads its definition's `tls` block and `clientAuth`
+  (`common/listener_map.js`) and inherits the process's unless set. `spiffe`
+  and `cell` get no client authentication: their protocols fix it.
 * **RUNTIME, AND RE-APPLIED IN PLACE.** The floor, the suites and the groups are
   baked into a secure context, and node reads `server.requestCert` /
   `server.rejectUnauthorized` at each connection. So:
@@ -1659,18 +1665,30 @@ arrived (`tls.resumedChainWaitMs`, `STS-TLS-0038` when it runs out).
 **HTTP/2 is not offered** — express cannot run on node's own `http2` server,
 and rcbj wants that out of the box rather than written here: #407.
 
-## A trust realm's own front-end listener (#99, 2026-10-02)
+## Custom listeners (#472, 2026-10-07; a realm's own, #99, among them)
 
-`tls/realm_listeners.js` binds an HTTPS listener per realm that sets
-`listener.port`, in the front process, built by `server.js`'s
-`realmListener()` with the main port's wiring and the realm's own certificate
-(an operator's files, or a `realm-tls` leaf from the realm's CA, one slot per
-node so one node's issuance never supersedes another's). It is reconciled on
-every realm change; bind failures are recorded, never fatal. Two things it
-needed from this directory: `trustClientCertificatesOn()` takes the listener's
-own certificate (`certificateOf`), because `applyAnchors()` used to push the
-MAIN port's certificate to every registered listener on each truststore
-change; and `forgetListener()`, for a listener closed at runtime.
-`common/app.js`'s `enterRealm` refuses any other realm's path on it
-(STS-TLS-0041); `docs/trust-realms.md` is the operator's half.
+`tls/listeners.js` binds an HTTPS listener for every definition
+`common/listener_map.js` reads — the service's `listeners.custom` and each
+realm's `listeners.realm`, which is what #99's realm listener became (rcbj's
+D1) — in the front process, on every node, built by `server.js`'s
+`customListener()` with the main port's wiring and the listener's own
+certificate (the operator's files, or a `realm-tls` leaf from the owning
+realm's CA, one slot per listener per node so one node's issuance never
+supersedes another's). It is reconciled on every settings and realm change;
+only what a socket or its certificate is made of rebinds (the owner, port,
+names and certificate files), and a change of `tls` or `clientAuth` is applied
+in place by `reapplyPolicy()`. Bind failures are recorded, never fatal.
 
+Two things it needed from this directory: `trustClientCertificatesOn()` takes
+the listener's own certificate (`certificateOf`), because `applyAnchors()`
+used to push the MAIN port's certificate to every registered listener on each
+truststore change; and `forgetListener()`, for a listener closed at runtime.
+
+**Every socket is marked** — `stsListener` with the listener's id, and a
+realm's own with `stsRealmListener` as well. `common/app.js`'s `enterRealm`
+refuses any other realm's path on a realm's listener (STS-TLS-0041), and its
+`enterListener()` refuses the path of an application not mapped to the
+listener (STS-TLS-0047); `common/request_pool.js` carries the id to a worker
+in a header it strips from the client first. Which application is where, and
+where URLs are built, is `common/CLAUDE.md`'s (*Hosted applications and the
+listeners they are on*); `docs/listeners.md` is the operator's half.
