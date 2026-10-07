@@ -324,8 +324,13 @@ function bridgeConnection(t) {
           JSON.stringify({ url: o && o.connectionString, ssl: o && o.ssl }));
   const plain = driverWith([], null, 'postgres://sts_app@db:5432/sts')
     .bridgeConnection();
-  t.check(plain.ssl === undefined,
-          'D2. no sslmode, no ssl option — the driver\'s one rule');
+  // #273: postgres is never dialled in the clear, so a URL with no sslmode
+  // means require and carries the same ssl option D1's does.
+  t.check(plain && !/sslmode/.test(plain.connectionString) && plain.ssl &&
+          typeof plain.ssl.rejectUnauthorized === 'boolean',
+          'D2. no sslmode means require (#273): the ssl option is there too',
+          JSON.stringify({ url: plain && plain.connectionString,
+                           ssl: plain && plain.ssl }));
   log.debug("Leaving bridgeConnection().");
 }
 

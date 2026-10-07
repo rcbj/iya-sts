@@ -547,11 +547,25 @@ async function settle(promise) {
   }
 }
 
+// THE REALM IS REMOVED AFTERWARDS (2026-10-07). run.js runs every file in
+// one process, and a realm left behind here was the second realm that
+// tests/realm_isolation.js and tests/realm_directory_lookups.js, which run
+// later and assert that only the default realm is left, then found.
 async function checkBroker(t) {
   log.debug("Entering checkBroker().");
   t.log.info('=== the Broker API: FetchJWTSVID\'s second half ===');
   const id = 'kdcbroker' + Date.now().toString(36);
   realms.create({ id: id, name: 'KDC and broker operations' });
+  try {
+    await checkBrokerIn(t, id);
+  } finally {
+    realms.remove(id);
+  }
+  log.debug("Leaving checkBroker().");
+}
+
+async function checkBrokerIn(t, id) {
+  log.debug("Entering checkBrokerIn().");
   const realm = realms.get(id);
   const entries = [{ spiffeId: 'spiffe://x.test/a', hint: 'h' },
                    { spiffeId: 'spiffe://x.test/b', hint: 'h' },
@@ -665,7 +679,7 @@ async function checkBroker(t) {
   t.check(waited === 0 && got.caller.brokered === true,
           '6k. referenced() attests without waiting for the workers',
           'waited ' + waited);
-  log.debug("Leaving checkBroker().");
+  log.debug("Leaving checkBrokerIn().");
 }
 
 async function run(t) {
