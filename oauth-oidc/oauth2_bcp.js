@@ -1218,15 +1218,14 @@ const REQUIREMENTS = [
 
   { id: 'framing-device-pages', section: '4.14', level: 'MUST',
     appliesTo: 'authorization server', enforced: 'always',
-    title: 'And the device authorization pages, if there were any',
-    note: 'There are none: this service implements no device authorization ' +
-          'grant, so there is no user_code page to frame. It is a row rather ' +
-          'than an omission because the section names those pages and a ' +
-          'reader checking this table against it should find the answer ' +
-          'rather than a gap. If that grant is ever added, its pages are ' +
-          'covered by the two rows above without anybody doing anything — ' +
+    title: 'And the device authorization pages',
+    note: 'RFC 8628\'s user_code page is /portal/device (#150, off by ' +
+          'default behind oauth2.deviceAuthorization). It relaxes nothing, ' +
+          'so it carries the framing clauses of the two rows above like ' +
+          'every other page, without anybody having done anything for it — ' +
           'which is the point of the policy being a service-wide default ' +
-          'that a relaxation cannot weaken.' },
+          'that a relaxation cannot weaken. Until #276 this row said there ' +
+          'was no such page; the grant had been built in #150.' },
 
   // --- section 4.3 — token leakage through the browser --------------------
   { id: 'no-token-in-query', section: '2.6, 4.3.2', level: 'MUST NOT',
