@@ -2282,8 +2282,9 @@ const SCHEMA = {
             'none. Written by consuming its metadata (every KeyDescriptor ' +
             'use="signing" or with no use), by the SAML 2.0 console page, by ' +
             'POST /admin-api/saml2/set-signing-certificate, by confirming ' +
-            'the observed certificate below, or by hand; an RSA certificate ' +
-            'is required, because the verifier here is RSA. It is NEVER ' +
+            'the observed certificate below, or by hand. Its key must make ' +
+            'an XML signature this service verifies — RSA, EC, EdDSA, DSA, ' +
+            'ML-DSA or SLH-DSA (STS-REG-0160). It is NEVER ' +
             'written from a request: the certificate a request carries in ' +
             'its ds:KeyInfo goes on samlObservedSigningCertificate. Values ' +
             'written before 2026-09-17 were captured off requests and carry ' +

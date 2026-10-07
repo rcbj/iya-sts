@@ -170,7 +170,7 @@ the diagram and a walk through each layer.
 | Post-quantum and hybrid JWE key establishment — ML-KEM, and HPKE over ML-KEM or X-Wing (drafts) | every encrypted token and response; a realm's own keys by opt-in | [post-quantum-encryption](post-quantum-encryption.md) |
 | WS-Trust 1.0 – 1.4 | `/sts` | [ws-trust](ws-trust.md) |
 | WS-Federation 1.2, passive requestor, with a mock relying party | `/wsfed`, `/wsfed/rp` | [ws-federation](ws-federation.md) |
-| SAML 2.0 Web Browser SSO — a full identity provider, all three bindings | `/saml2`, `/saml2/metadata/{sp}`, `/saml2/sp` | [saml2-sso](saml2-sso.md) |
+| SAML 2.0 Web Browser SSO — a full identity provider, all four bindings | `/saml2`, `/saml2/metadata/{sp}`, `/saml2/sp` | [saml2-sso](saml2-sso.md) |
 | SAML 1.1 browser profiles — Browser/POST and Browser/Artifact, and an attribute authority | `/saml11`, `/saml11/metadata/{rp}`, `/saml11/rp` | [saml11](saml11.md) |
 | SAML 2.0 and SAML 1.1 assertions | inside all four above | [saml2-sso](saml2-sso.md) |
 | **Federation** — this service as either end of a relationship with a foreign identity service, in five of those protocols | `/federation`, `/admin/federation` | [federation](federation.md) |

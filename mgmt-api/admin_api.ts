@@ -1399,8 +1399,9 @@ class AdminApi {
    * Returns the action rows of one claim-set family (custom claims, SAML
    * attributes or UserInfo claims), from the family's parameters.
    *
-   * @param family - `sets`, `noun`, `carrier`, `example`, `reserved` and the
-   *   operationIds in `ids`
+   * @param family - `sets`, `noun`, `carrier`, `example`, `placeholder`
+   *   (one that expands in this family), `reserved` and the operationIds
+   *   in `ids`
    * @returns the action rows
    */
   claimSetActions(family) {
@@ -1555,7 +1556,7 @@ class AdminApi {
           required: ['set', 'claims'],
           examples: [{ set: family.example, claims: [
             { name: 'dept', value: 'engineering' },
-            { name: 'on_behalf_of', value: '${username}' }
+            { name: 'on_behalf_of', value: family.placeholder }
           ] }],
           additionalProperties: false
         },
@@ -11471,11 +11472,12 @@ class AdminApi {
         operationId: 'getSaml2ServiceProviders',
         summary: 'Every SAML 2.0 service provider, and the endpoints each is ' +
                  'configured from',
-        description: 'A full SAML 2.0 identity provider: HTTP Redirect and ' +
-                     'HTTP POST for the AuthnRequest, and HTTP POST, HTTP ' +
-                     'Redirect or HTTP Artifact for the Response, with a ' +
+        description: 'A full SAML 2.0 identity provider: HTTP Redirect, ' +
+                     'HTTP POST and HTTP POST SimpleSign for the ' +
+                     'AuthnRequest, and HTTP POST, HTTP Redirect, HTTP POST ' +
+                     'SimpleSign or HTTP Artifact for the Response, with a ' +
                      'SOAP artifact resolution service behind the ' +
-                     'third.\n\n**Every service provider gets its own ' +
+                     'last.\n\n**Every service provider gets its own ' +
                      'identity provider metadata** — a distinct entityID and ' +
                      'its own endpoints — and **in development a document is ' +
                      'minted for any entityID asked for**, so nothing has to ' +
@@ -23597,6 +23599,7 @@ const JWT_CLAIM_FAMILY = {
   noun: 'claim',
   carrier: 'token',
   example: 'id_token',
+  placeholder: '${username}',
   reserved: true,
   ids: { add: 'addClaim', addAttribute: 'addAttributeClaim',
          remove: 'removeClaim', clear: 'clearClaims',
@@ -23622,6 +23625,7 @@ const USERINFO_CLAIM_FAMILY = {
   noun: 'claim',
   carrier: 'UserInfo response',
   example: 'userinfo',
+  placeholder: '${username}',
   reserved: true,
   ids: { add: 'addUserInfoClaim',
          addAttribute: 'addUserInfoAttributeClaim',
@@ -23637,6 +23641,9 @@ const SAML_CLAIM_FAMILY = {
   noun: 'attribute',
   carrier: 'assertion',
   example: 'saml11',
+  // A SAML attribute's context is `{ subject, audience }` (saml/CLAUDE.md),
+  // so `${username}` would reach the assertion as written (#287).
+  placeholder: '${subject}',
   reserved: false,
   ids: { add: 'addSamlAttribute',
          addAttribute: 'addSamlDirectoryAttributeClaim',
@@ -23656,6 +23663,7 @@ const KERBEROS_CLAIM_FAMILY = {
   noun: 'claim',
   carrier: 'ticket',
   example: 'kerberos-pac',
+  placeholder: '${username}',
   reserved: false,
   entryOnly: true,
   attributeTypes: ['string', 'int64', 'uint64', 'boolean'],

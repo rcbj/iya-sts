@@ -6,8 +6,8 @@
 // File: saml2_sso.ts
 //
 // ===========================================================================
-// SAML 2.0 — the Web Browser SSO profile, all three bindings, and Single
-// Logout.
+// SAML 2.0 — the Web Browser SSO profile, on all four bindings (Redirect,
+// POST, POST-SimpleSign and Artifact), and Single Logout.
 //
 // **THIS FILE REVERSES A DOCUMENTED NON-GOAL.** Until 2026-08-24 the sentence
 // "there is no SAML 2.0 Web SSO profile" appeared in README.md, in the root
@@ -640,19 +640,21 @@ class Saml2Sso {
       const base = baseUrlOf(req);
       const where = self.endpointsFor(base, '');
       self.sendPage(res, 200, 'SAML 2.0 — Web Browser SSO',
-             '<h1>SAML 2.0 — Web Browser SSO, all three bindings</h1>' +
+             '<h1>SAML 2.0 — Web Browser SSO, all four bindings</h1>' +
              '<p class="sub">Identity provider <code>' +
                xmlEscape(self.idpEntityIdFor('')) +
              '</code> ' +
              'at <code>' + xmlEscape(base) + '</code></p><p>A full SAML 2.0 ' +
-             'identity provider: HTTP Redirect and HTTP POST for the ' +
-             'request, and HTTP POST, HTTP Redirect or HTTP Artifact for the ' +
-             'response, with a SOAP artifact resolution service behind the ' +
-             'third. It accepts ANY entityID — a service provider does not ' +
+             'identity provider: HTTP Redirect, HTTP POST and HTTP POST ' +
+             'SimpleSign for the request, and HTTP POST, HTTP Redirect, HTTP ' +
+             'POST SimpleSign or HTTP Artifact for the response, with a SOAP ' +
+             'artifact resolution service behind the last. In development ' +
+             'mode it accepts ANY entityID — a service provider does not ' +
              'have to be provisioned here before it can be pointed at this ' +
              'service, and the first valid AuthnRequest from an entityID ' +
-             'creates its application entry in the embedded ' +
-             'directory.</p><h2>The ' +
+             'creates its application entry in the embedded directory. In ' +
+             'product mode only a REGISTERED service provider is served ' +
+             '(#496).</p><h2>The ' +
              'endpoints</h2><table><thead><tr><th>Endpoint</th><th>What it ' +
              'is</th></tr></thead><tbody><tr><td><a href="' + SSO_PATH + '">' +
                SSO_PATH + '</a></td><td>Single ' +
@@ -2579,7 +2581,7 @@ class Saml2Sso {
 
   // Deliver a built message to a service provider, on whichever binding was
   // asked for. One function for the sign-in response and the logout response
-  // alike, because the three bindings are a property of SAML and not of the
+  // alike, because the four bindings are a property of SAML and not of the
   // message.
   private deliver(res, opts) {
     const { config } = this.deps;
@@ -5582,8 +5584,9 @@ class Saml2Sso {
           'the assertion.') +
       '</p><h2>Try it</h2><ul><li><a ' +
       'href="' + SP_PATH + '">' + SP_PATH + '</a> — a mock service ' +
-      'provider here that sends a complete AuthnRequest over each of the ' +
-      'three bindings and then verifies the response check by ' +
+      'provider here that sends a complete AuthnRequest asking for the ' +
+      'response on HTTP POST, HTTP Redirect and HTTP Artifact, and then ' +
+      'verifies the response check by ' +
       'check.</li><li><a href="' + xmlEscape(where.metadata) + '">' +
         xmlEscape(where.metadata) +
       '</a> ' +

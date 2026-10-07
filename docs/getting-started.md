@@ -489,7 +489,7 @@ its default `development` mode. There is no setting that opens the console;
 2.0 access token of its own.
 
 A protocol you can drive end to end in a browser with nothing else installed is
-**SAML 2.0**: open `https://localhost:8081/saml2/sp`, pick one of the three bindings, sign
+**SAML 2.0**: open `https://localhost:8081/saml2/sp`, pick a response binding, sign
 in with any username, and the mock service provider verifies the response it gets
 back check by check. `https://localhost:8081/saml2/metadata` is the identity provider
 metadata; `https://localhost:8081/saml2/metadata/anything-you-like` is a document of its

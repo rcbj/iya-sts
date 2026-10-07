@@ -99,7 +99,7 @@ class SamlPage {
     }).join('');
 
     const inner = '<h1>SAML 2.0 identity provider</h1><p class="sub">The Web ' +
-      'Browser SSO profile, all three bindings, and Single Logout. This page ' +
+      'Browser SSO profile, all four bindings, and Single Logout. This page ' +
       'holds nothing: every row is an entry in ' +
       '<code>ou=applications</code>.</p>' +
       kit.note('<strong>Every service provider gets its own metadata ' +
@@ -224,10 +224,13 @@ class SamlPage {
          : 'The same for every service provider, because ' +
            'saml2.perApplicationEntityId is off. The ENDPOINTS below are ' +
            'still this service provider\'s own.'],
-      ['Metadata', facts.metadataUrl, 'Signed, and served no-store because ' +
-       'the signing key is regenerated on every start. This is the URL to ' +
+      ['Metadata', facts.metadataUrl, 'Signed, and served no-store, as ' +
+       'every document carrying a key is: the signing key can rotate (and ' +
+       'is regenerated on every start in development mode). This is the ' +
+       'URL to ' +
        'configure the service provider from.'],
-      ['Single Sign-On', facts.ssoUrl, 'HTTP Redirect and HTTP POST both. ' +
+      ['Single Sign-On', facts.ssoUrl, 'HTTP Redirect, HTTP POST and HTTP ' +
+       'POST SimpleSign. ' +
        'Which binding the RESPONSE comes back on is the AuthnRequest\'s own ' +
        'ProtocolBinding.'],
       ['Single Logout', facts.sloUrl, 'A LogoutRequest arriving from this ' +
