@@ -59,10 +59,12 @@ class TokenLifetimesPage {
 
     const inner = kit.note('How long an access token, an ID Token and a ' +
       'refresh token ' +
-      'issued here are good for, and how far out a clock may be before ' +
-      'this service stops believing one of its own. All four are <a ' +
+      'issued here are good for, how long a refresh chain may sit unused, ' +
+      'whether a sign-out revokes the refresh tokens of its session, and ' +
+      'how far out a clock may be before this service stops believing one ' +
+      'of its own. All six are <a ' +
       'href="/admin/oauth2">configuration settings</a> and this page is a ' +
-      'shorter way to the same four rows — it writes through the same ' +
+      'shorter way to the same six rows — it writes through the same ' +
       'function, so a change made here and one made there are one change.') +
 
       kit.warn('<strong>A change applies to the NEXT token and to nothing ' +
@@ -104,7 +106,7 @@ class TokenLifetimesPage {
       // is invalid and every browser closes the paragraph in front of it,
       // which leaves the fold outside the form it belongs to.
       '<p><button>Save lifetimes</button></p>' +
-      kit.note('All four are checked before any is applied — a form that ' +
+      kit.note('All six are checked before any is applied — a form that ' +
       'took two and refused the third would leave this service issuing a ' +
       'combination nobody chose.') +
       '</form>' +
@@ -114,15 +116,15 @@ class TokenLifetimesPage {
           kit.esc(String(settings.filter(function (s) {
             return s.overridden;
           }).length)) +
-          ' of the four are set here, ' +
+          ' of the six are set here, ' +
           SettingsForms.overrideKept(json.context) + '. <form method="post" ' +
           'action="/admin/token-lifetimes" class="inline"><input ' +
           'type="hidden" name="action" value="defaults"><button ' +
-          'class="secondary">Put these four back</button></form> It clears ' +
-          'the override on these four only, and leaves any other setting ' +
+          'class="secondary">Put these six back</button></form> It clears ' +
+          'the override on these six only, and leaves any other setting ' +
           'alone — <a href="/admin/config">Configuration</a> has the ' +
           'reset-all.</div>'
-        : kit.note('None of the four is overridden: each is coming from ' +
+        : kit.note('None of the six is overridden: each is coming from ' +
           'its environment variable, from ' +
           '<code>' + kit.esc((json.context || {}).configFile || 'the ' +
               'appconfig file') +
@@ -173,25 +175,24 @@ class TokenLifetimesPage {
        '<tr><td colspan="7">Nothing has been issued yet.</td></tr>') +
       '</table>' +
 
-      '<h2>Two lifetimes this page does not set</h2>' +
-      kit.note('An <strong>authorization code</strong> is good for five ' +
-      'minutes and is not configurable: it is redeemed within seconds of ' +
-      'being issued or it is a bug in the client, and a code that could be ' +
-      'made long-lived would be an invitation to build one that is. RFC ' +
-      '9700 mode’s <strong>refresh idle timeout</strong> ' +
-      '(<code>oauth2.refreshIdleSeconds</code>, on <a ' +
-      'href="/admin/oauth2">the OAuth 2.0 / OIDC settings</a>) is a ' +
-      'different question from the refresh lifetime above: it is measured ' +
+      '<h2>The refresh idle timeout is not the refresh lifetime</h2>' +
+      kit.note('RFC 9700 mode’s <strong>refresh idle timeout</strong> ' +
+      '(<code>oauth2.refreshIdleSeconds</code>, in the table above) is a ' +
+      'different question from the refresh lifetime beside it: it is ' +
+      'measured ' +
       'from the last time any token in a refresh CHAIN was redeemed rather ' +
       'than from issuance, so a busy client keeps its grant indefinitely ' +
       'and a quiet one is cut off. The lifetime here is a wall the chain ' +
-      'cannot be refreshed past however busy it is.') +
+      'cannot be refreshed past however busy it is. An ' +
+      '<strong>authorization code</strong>’s lifetime is not set here: ' +
+      'it is <code>oauth2.authorizationCodeTtlS</code>, on <a ' +
+      'href="/admin/oauth2">the OAuth 2.0 / OIDC settings</a>.') +
 
-      kit.note('The same four over JSON are at ' +
+      kit.note('The same six over JSON are at ' +
       '<code>/admin/token-lifetimes?format=json</code> and <code>GET ' +
       '/admin-api/token-lifetimes</code>; the two actions on this page are ' +
       '<code>POST /admin-api/token-lifetimes/set</code> and ' +
-      '<code>/defaults</code>. They are also four ordinary rows of ' +
+      '<code>/defaults</code>. They are also six ordinary rows of ' +
       '<code>GET /admin-api/config</code>.');
 
     return inner;

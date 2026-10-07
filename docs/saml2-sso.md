@@ -443,7 +443,11 @@ outbound policy: https with the certificate verified (plain http only with
 failure changes nothing, so an application that was working keeps working.
 
 Four block ciphers (`aes256-gcm`, `aes128-gcm`, `aes256-cbc`, `aes128-cbc`) and
-two key transports (`rsa-oaep-mgf1p`, `rsa-1_5`). CBC is unauthenticated and
+three key transports to an RSA key (`rsa-oaep-mgf1p`; `rsa-oaep`, XML Encryption
+1.1's RSA-OAEP with SHA-256 and MGF1-SHA-256, which this service's own
+federation relationships publish and require (#168); and `rsa-1_5`). A recipient
+whose certificate is EC is encrypted to by ECDH-ES key agreement whatever the
+setting says. CBC is unauthenticated and
 `rsa-1_5` is Bleichenbacher-broken; both are offered because deployed service
 providers require them. **`rsa-1_5` is development mode's only** (#181): a
 product realm wraps with `rsa-oaep-mgf1p` whatever the setting or the
@@ -595,7 +599,7 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.artifactTtlS` | `STS_SAML2_ARTIFACT_TTL_S` | `300` | yes | How long an unresolved artifact lives (it is one-shot regardless); per application with `saml2ArtifactTtlS`. |
 | `saml2.encryptAssertion` | `STS_SAML2_ENCRYPT_ASSERTION` | `false` | yes | Encrypt the assertion; per application with `saml2EncryptAssertion`. |
 | `saml2.encryptionAlgorithm` | `STS_SAML2_ENCRYPTION_ALGORITHM` | `aes256-gcm` | yes | The block cipher: `aes256-gcm`, `aes128-gcm`, `aes256-cbc`, `aes128-cbc`. |
-| `saml2.keyTransportAlgorithm` | `STS_SAML2_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | The key wrap: `rsa-oaep-mgf1p` or the broken `rsa-1_5`. `rsa-1_5` is development mode only: product wraps with `rsa-oaep-mgf1p` instead, here and per application, and refuses setting it (#181). |
+| `saml2.keyTransportAlgorithm` | `STS_SAML2_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | The key wrap to an RSA key: `rsa-oaep-mgf1p`, `rsa-oaep` (SHA-256 and MGF1-SHA-256, #168) or the broken `rsa-1_5`; an EC recipient gets ECDH-ES whatever this says. `rsa-1_5` is development mode only: product wraps with `rsa-oaep-mgf1p` instead, here and per application, and refuses setting it (#181). |
 | `saml2.encryptLogoutNameId` | `STS_SAML2_ENCRYPT_LOGOUT_NAMEID` | `false` | yes | Send `<saml:EncryptedID>` in the LogoutRequests this service sends. |
 | `saml2.autocreateApplications` | `STS_SAML2_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry for a new entityID on its first valid AuthnRequest or metadata request. |
 | `saml2.requireSignedAuthnRequests` | `STS_SAML2_REQUIRE_SIGNED_AUTHN_REQUESTS` | `auto` | yes | Refuse unsigned requests: `auto` (on in product), `on` or `off`; also sets `WantAuthnRequestsSigned`. |

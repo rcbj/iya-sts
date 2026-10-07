@@ -5865,7 +5865,8 @@ class AdminViews {
   // three), because the people list is a walk of the directory and has no
   // natural bound. `common/delegation_policy.ts` builds the register; the
   // attributes are EDITED where every application attribute is — the
-  // application's own page and POST /admin-api/applications/update — and
+  // application's own page and POST /admin-api/applications/set, /add,
+  // /remove or /update-fields — and
   // the two person flags on the person's page and POST
   // /admin-api/users/set-not-delegated and /set-may-act.
   // ---------------------------------------------------------------------------

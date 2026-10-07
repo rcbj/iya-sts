@@ -1378,8 +1378,9 @@ const SPECS: Spec[] = [
     where: 'OASIS saml-profiles-2.0-os',
     url:
       'https://docs.oasis-open.org/security/saml/v2.0/saml-profiles-2.0-os.pdf',
-    coverage: 'partial: the Web Browser SSO profile (section 4.1) ' +
-              'service-provider-initiated, over all three bindings, with the ' +
+    coverage: 'partial: the Web Browser SSO profile (section 4.1), ' +
+              'service-provider-initiated and identity-provider-initiated ' +
+              '(#189), over all four bindings, with the ' +
               'bearer SubjectConfirmationData 4.1.4.2 requires, every ' +
               'assertion SIGNED in product mode whatever the binding ' +
               '(4.1.3.5 and 4.1.4.5 require it over POST; ' +
@@ -6303,8 +6304,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'appDelegationSubjectGroup and appDelegationSemantics — and the ' +
           'people carrying stsNotDelegated or stsMayAct. Three paged lists. ' +
           'Read only; the attributes are edited through ' +
-          '/admin-api/applications/update and /admin-api/users/set-not-' +
-          'delegated and /set-may-act. Mirrors GET /admin/delegation.' },
+          '/admin-api/applications/set, /add, /remove or /update-fields, ' +
+          'and /admin-api/users/set-not-delegated and /set-may-act. ' +
+          'Mirrors GET /admin/delegation.' },
   { path: '/admin-api/permissions', group: 'Management API',
     name: 'Delegated permissions',
     // Not the four the delegation resource cites: those are four ways of
@@ -6377,7 +6379,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'button. Moving a form is not moving an action. A PERMISSION MUST ' +
           'BE DEFINED BEFORE IT CAN BE GRANTED, which is the one ordering ' +
           'rule here and is checked in applications.updateApplication() so ' +
-          'that these five, the generic POST /admin-api/applications/update ' +
+          'that these five, the generic POST /admin-api/applications/add ' +
           'and the console agree about it. An ungranted permission is ' +
           'refused invalid_scope in product mode; in development it is ' +
           'honoured, logged and marked unless ' +
@@ -7252,7 +7254,7 @@ const ENDPOINTS: EndpointEntry[] = [
   // them says there is no Web SSO profile here, it is that note that is wrong.
   { path: '/saml2', group: 'SAML 2.0', name: 'What the profile is',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'saml2-metadata'],
-    what: 'A description page: the endpoints, the three bindings, and how ' +
+    what: 'A description page: the endpoints, the four bindings, and how ' +
           'the per-service-provider metadata works. GET /sts and GET /wsfed ' +
           'answer the same way for the same reason — an endpoint that 400s ' +
           'at somebody who wanted to know what it was is a bad first ' +
@@ -7411,8 +7413,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/saml2/sp', group: 'SAML 2.0', name: 'Mock service provider (not ' +
                                                 'a spec endpoint)',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
-    effect: 'mints a RelayState and offers a complete AuthnRequest for each ' +
-            'of the three bindings',
+    effect: 'mints a RelayState and offers a complete AuthnRequest asking ' +
+            'for the response on HTTP POST, HTTP Redirect and HTTP Artifact',
     what: 'NON-SPEC — a service provider is not part of an identity ' +
           'provider. It is here because it is the default ' +
           'AssertionConsumerServiceURL, and because it VERIFIES the response ' +
@@ -9533,10 +9535,11 @@ const PROTOCOLS: Protocol[] = [
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'saml2-metadata',
             'xmldsig'],
     what: 'A full identity provider since 2026-08-24: the Web Browser SSO ' +
-          'profile over all three bindings — HTTP Redirect and HTTP POST for ' +
-          'the AuthnRequest, and HTTP POST, HTTP Redirect or HTTP Artifact ' +
-          'for the Response, with a SOAP artifact resolution service behind ' +
-          'the third — plus Single Logout and SIGNED METADATA PER SERVICE ' +
+          'profile over all four bindings — HTTP Redirect, HTTP POST and ' +
+          'HTTP POST SimpleSign for the AuthnRequest, and HTTP POST, HTTP ' +
+          'Redirect, HTTP POST SimpleSign or HTTP Artifact for the ' +
+          'Response, with a SOAP artifact resolution service behind the ' +
+          'last — plus Single Logout and SIGNED METADATA PER SERVICE ' +
           'PROVIDER, minted for any entityID asked for. **This card used to ' +
           'say NO ROUTE OF ITS OWN**, and it was true for years: the ' +
           'assertions were built by saml/saml2.ts and travelled inside ' +

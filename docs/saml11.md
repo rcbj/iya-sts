@@ -76,7 +76,7 @@ registered each assertion consumer service WITH its profile — a Shibboleth SP
 publishes `/SAML/POST` as `browser-post` and `/SAML/Artifact` as
 `artifact-01` — so the `shire` it sends chooses, which is what a Shibboleth
 identity provider does. Otherwise `saml11.defaultProfile` decides, and the
-non-spec `profile` parameter (or an arriving `SAMLart`) overrides it — the same
+non-spec `profile` parameter overrides both — the same
 kind of device as WS-Trust's `/sts?encrypt=1`, and marked as non-spec wherever
 it appears.
 

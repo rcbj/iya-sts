@@ -203,7 +203,7 @@ presents its credential again (*Sessions that are not a browser's*, below):
 | Protocol | Activity | `via` |
 |---|---|---|
 | OAuth 2.0 / OIDC | an authorization request at `/oauth2/authorize` answered out of a session that already existed — no screen drawn | `OAuth 2.0 / OIDC` |
-| SAML 2.0 | an `AuthnRequest` at `/saml2/sso`, over any of the three bindings, that reaches the answer step on an existing session | `SAML 2.0` |
+| SAML 2.0 | an `AuthnRequest` at `/saml2/sso`, over any of its three request bindings (Redirect, POST, POST-SimpleSign), that reaches the answer step on an existing session | `SAML 2.0` |
 | SAML 1.1 | an arrival at the inter-site transfer service carrying a `TARGET`, answered on an existing session | `SAML 1.1` |
 | WS-Federation | a `wsignin1.0` at the passive requestor endpoint answered on an existing session | `WS-Federation` |
 | GNAP | an interaction that meets a live sign-on session and approves without a new authentication | `GNAP` |

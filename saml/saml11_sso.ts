@@ -68,7 +68,10 @@
 //      * **Nothing asks for a NameIdentifier format, a binding or an
 //        authentication context**, so `saml11.nameIdFormat` and
 //        `saml11.defaultProfile` are answers rather than defaults a request
-//        overrides. The non-spec `format` and `profile` parameters exist so
+//        overrides — except that since #189 a relying party whose metadata
+//        was consumed registered a profile WITH each assertion consumer
+//        service, and the `shire` it sends picks it (`profileFor()`). The
+//        non-spec `format` and `profile` parameters exist so
 //        that both can be exercised by hand; that is the same device
 //        `/sts?encrypt=1` is, and it is marked as non-spec everywhere it
 //        appears.
@@ -128,8 +131,10 @@
 //    to work at all, and once it exists an `<AttributeQuery>` is the same
 //    assertion builder behind the same envelope. So all four of SAML 1.1's
 //    request types are answered: AssertionArtifact, AssertionIDReference,
-//    AttributeQuery and AuthenticationQuery — the two QUERIES in development
-//    mode only, since product mode refuses both (see above soapEnvelope()).
+//    AttributeQuery and AuthenticationQuery — the two QUERIES to anybody in
+//    development mode, and in product only under #189's release policy: a
+//    registered, authenticated relying party asking about a subject it holds
+//    a live session for (`queryReleasePolicy()`, see answerQuery()).
 //    **The attribute authority is the
 //    half of SAML 1.1 that Shibboleth deployments actually leaned on**, and a
 //    mock that spoke the browser profile without it would be missing the part a
@@ -1601,10 +1606,11 @@ class Saml11Sso {
   }
 
   // Which profile to use. The request may say — `profile=post|artifact`,
-  // non-spec and marked as such — and otherwise `saml11.defaultProfile`
-  // answers. There is no way for a SAML 1.1 relying party to ask in the
-  // protocol itself, which is decision 1 again: in 2.0 this comes off the
-  // AuthnRequest's ProtocolBinding.
+  // non-spec and marked as such — then the binding registered for the
+  // `shire` (below), and otherwise `saml11.defaultProfile` answers. There
+  // is no way for a SAML 1.1 relying party to ask in the protocol itself,
+  // which is decision 1 again: in 2.0 this comes off the AuthnRequest's
+  // ProtocolBinding.
   private profileFor(params, rpId?) {
     const { config, log } = this.deps;
     log.debug("Entering Saml11Sso.profileFor(). asked=" +
@@ -1614,7 +1620,7 @@ class Saml11Sso {
       log.debug("Leaving Saml11Sso.profileFor(). " + asked + ", from the " +
                                                    "non-spec profile " +
                                                    "parameter.");
-      return { profile: asked, stated: true };
+      return { profile: asked, from: 'parameter' };
     }
     if (asked) {
       log.debug("Leaving Saml11Sso.profileFor(). An unknown profile was " +
@@ -1647,14 +1653,14 @@ class Saml11Sso {
                                                            : 'post';
         log.debug("Leaving Saml11Sso.profileFor(). " + profile + ", the " +
                   "shire's registered binding.");
-        return { profile: profile, stated: true };
+        return { profile: profile, from: 'shire' };
       }
     }
     const dflt = String(config.value('saml11.defaultProfile') || 'post');
     log.debug("Leaving Saml11Sso.profileFor(). " + dflt + ", the configured " +
         "default.");
     return { profile: dflt === 'artifact' ? 'artifact' : 'post',
-            stated: false };
+             from: 'setting' };
   }
 
   private interSiteTransfer(req, res) {
@@ -1914,10 +1920,13 @@ class Saml11Sso {
                 'party\'s entry — which this mode requires.' },
           { label: 'Browser profile', value: wanted.profile === 'artifact'
               ? 'Browser/Artifact (section 4.1)' : 'Browser/POST (section 4.2)',
-            note: wanted.stated ? 'asked for by the non-spec profile parameter.'
-                                : 'the saml11.defaultProfile setting; ' +
-                                  'nothing ' +
-                                  'in SAML 1.1 lets a relying party ask.' },
+            note: wanted.from === 'parameter'
+              ? 'asked for by the non-spec profile parameter.'
+              : (wanted.from === 'shire'
+                ? 'the binding registered for this shire on the relying ' +
+                  'party\'s entry (samlAcsEndpoint).'
+                : 'the saml11.defaultProfile setting; nothing in SAML 1.1 ' +
+                  'lets a relying party ask.') },
           { label: 'TARGET', value: String(carried.TARGET || '(none)'),
             note: 'the relying party\'s own state, echoed back untouched. ' +
                   'SAML ' +
@@ -3072,14 +3081,17 @@ class Saml11Sso {
        ['providerId', 'Who the assertion is FOR — the audience restriction. ' +
                       'Shibboleth\'s parameter, and the only way a SAML 1.1 ' +
                       'relying party can name itself.'],
-       ['time', 'Read and logged. Shibboleth sends it; nothing here enforces ' +
-                'it, because there is no clock skew setting for this profile ' +
-                'to reject a request under.'],
+       ['time', 'Accepted and ignored. Shibboleth sends it; nothing here ' +
+                'reads it, because there is no clock skew setting for this ' +
+                'profile to reject a request under.'],
        ['profile', '<strong>Non-spec.</strong> <code>post</code> or <code>' +
                    'artifact</code>, choosing between the two browser ' +
                    'profiles. Nothing in SAML 1.1 lets a relying party ' +
-                   'choose, so without it the saml11.defaultProfile setting ' +
-                   'decides.'],
+                   'choose, so without it the binding registered for the ' +
+                   '<code>shire</code> on the relying party\'s entry ' +
+                   '(<code>samlAcsEndpoint</code>, from its consumed ' +
+                   'metadata) decides, and failing that the ' +
+                   'saml11.defaultProfile setting.'],
        ['format', '<strong>Non-spec.</strong> The NameIdentifier Format to ' +
                   'answer with. SAML 1.1 has no NameIDPolicy to ask in, so ' +
                   'without it saml11.nameIdFormat decides.']
@@ -3734,9 +3746,13 @@ class Saml11Sso {
         'Nothing authenticates a caller here for a QUERY.</strong> In ' +
         'development anybody who can reach this port can ask this responder ' +
         'for an assertion about anybody, by name, with no credential and no ' +
-        'attribute release policy; product mode refuses both query types. A ' +
-        'real attribute authority uses mutual TLS and a policy. Every query ' +
-        'is logged saying so.</div><div><strong>An ARTIFACT is different:' +
+        'attribute release policy. Product mode answers a query only for a ' +
+        'REGISTERED relying party (its <code>Resource</code>, or this ' +
+        'path\'s segment) that authenticates as itself — a signed ' +
+        '<code>&lt;samlp:Request&gt;</code> or its registered certificate ' +
+        'at the TLS handshake — about a subject it holds a live session for ' +
+        'from this service, as a real attribute authority does. Every query ' +
+        'is logged.</div><div><strong>An ARTIFACT is different:' +
         '</strong> it is resolved only for the relying party it was issued ' +
         'to, and that party must be authenticated — a signature on the ' +
         '<code>&lt;samlp:Request&gt;</code> or its registered certificate as ' +

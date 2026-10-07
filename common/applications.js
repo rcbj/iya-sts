@@ -1170,7 +1170,7 @@ const SCHEMA = {
     { name: 'oauthPostLogoutRedirectUri', kind: 'multi', from: 'POST ' +
         '/oauth2/register',
       what: 'Registered post_logout_redirect_uris, which RP-Initiated Logout ' +
-            'matches against in RFC 9700 mode.' },
+            'matches against exactly, in every mode (#124).' },
     { name: 'oauthFrontchannelLogoutUri', kind: 'single',
       from: 'POST /oauth2/register, the console, or by hand',
       what: 'WHERE THIS CLIENT IS TOLD THAT THE USER SIGNED OUT — OpenID ' +
@@ -2282,8 +2282,9 @@ const SCHEMA = {
             'none. Written by consuming its metadata (every KeyDescriptor ' +
             'use="signing" or with no use), by the SAML 2.0 console page, by ' +
             'POST /admin-api/saml2/set-signing-certificate, by confirming ' +
-            'the observed certificate below, or by hand; an RSA certificate ' +
-            'is required, because the verifier here is RSA. It is NEVER ' +
+            'the observed certificate below, or by hand. Its key must make ' +
+            'an XML signature this service verifies — RSA, EC, EdDSA, DSA, ' +
+            'ML-DSA or SLH-DSA (STS-REG-0160). It is NEVER ' +
             'written from a request: the certificate a request carries in ' +
             'its ds:KeyInfo goes on samlObservedSigningCertificate. Values ' +
             'written before 2026-09-17 were captured off requests and carry ' +
@@ -4312,7 +4313,7 @@ const EDITABLE = {
   // is checked in updateApplication() rather than in the console: a permission
   // must be DEFINED before it can be GRANTED, and the check has to sit where
   // both doors go through it or the form and `POST
-  // /admin-api/applications/update` would hold two opinions about the same
+  // /admin-api/applications/add` would hold two opinions about the same
   // relationship. Same argument as `appAllowedProtocol`'s closed vocabulary two
   // hundred lines up, and the same asymmetry: only an ADD is checked, because a
   // REMOVE has to name a value the entry already carries and refusing to remove
@@ -8179,7 +8180,8 @@ function oidcRegistrationProblem(values) {
 // SUBJECT AND ITS ASSERTION ALGORITHM (#118, 2026-09-22).
 //
 // The SHAPE of three members, checked without a network — `subject_type` is
-// `public` or `pairwise`, `sector_identifier_uri` is an https URL, and
+// `public`, `pairwise` or `ephemeral` (#149), `sector_identifier_uri` is an
+// https URL, and
 // `token_endpoint_auth_signing_alg` is a JWS algorithm this service verifies
 // that the registered authentication method can use (never `none`, an HMAC
 // only for client_secret_jwt). And one rule about the set: a pairwise client
@@ -13014,8 +13016,9 @@ function updateApplication(identifier, change) {
   // the first row to carry `families` (fifteen do today).
   //
   // HERE rather than in the console for the reason every rule in this function
-  // is: this is the ONE door the form and `POST /admin-api/applications/update`
-  // both go through, and a refusal enforced in either alone is a refusal the
+  // is: this is the ONE door the form and the generic `POST
+  // /admin-api/applications/set`, `/add`, `/remove` and `/update-fields` all
+  // go through, and a refusal enforced in either alone is a refusal the
   // other walks around.
   //
   // A CLEAR IS ALWAYS ALLOWED — `mode === 'set'` with an empty value — which is
@@ -13090,7 +13093,8 @@ function updateApplication(identifier, change) {
   // ---------------------------------------------------------------------------
   // THE DELEGATED PERMISSION RULES, AND THEY ARE HERE FOR THE REASON THE
   // PROTOCOL FAMILY CHECK ABOVE IS: this function is the ONE door the console
-  // form and `POST /admin-api/applications/update` both go through, and a rule
+  // form and the generic `POST /admin-api/applications/*` writes all go
+  // through, and a rule
   // enforced in either of them alone would be a rule the other could walk
   // around. `common/app_permissions.ts`'s five actions call this function too,
   // so there is one implementation of each rule and not five.
@@ -13116,7 +13120,8 @@ function updateApplication(identifier, change) {
   // an entry could not be dismantled in any order.
   // THE HOME PAGE, checked for the reason the base URI below it is: this
   // function is the ONE door the console form and
-  // `POST /admin-api/applications/update` both go through. Only a `set`
+  // the generic `POST /admin-api/applications/*` writes all go through.
+  // Only a `set`
   // carrying a value — clearing it is how an entry stops naming a home page,
   // and that is a state /portal/applications draws rather than an error.
   if (attribute === 'ssfAllowedEvents' &&
