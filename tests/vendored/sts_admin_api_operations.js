@@ -1616,6 +1616,14 @@ async function theObservedReturnAddressesAreDecided() {
   }
 
   // --- the sightings, in DEVELOPMENT --------------------------------------
+  // The relying party is REGISTERED first, with no assertion consumer, so the
+  // two sightings are what put addresses on it. Since #496 product refuses a
+  // relying party development merely SAW with a 403 (STS-SAML-0105) before its
+  // addresses are read, so an entry the sighting filed would never reach the
+  // observed-address refusal the product half below asserts.
+  await ok("/applications/create", { identifier: rpId, name: rpId,
+    protocols: ["saml11"], fields: { samlEntityId: [rpId] } },
+    "registered the relying party with no assertion consumer");
   for (const shire of [ONE, TWO]) {
     const seen = await sight(shire);
     assert.ok(seen.status < 400,

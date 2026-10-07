@@ -349,6 +349,8 @@ const ACTIONS = [
     label: 'Somebody enrolled a security key on their own account' },
   { action: 'portal.key.removed', category: 'authentication',
     label: 'Somebody removed a security key from their own account' },
+  { action: 'portal.key.renamed', category: 'authentication',
+    label: 'Somebody renamed one of their own passkeys' },
   // A PERSON'S OWN TLS CLIENT CERTIFICATE (2026-09-13), on
   // /portal/signing-key. `issued` is the moment a private key left this
   // service, which is the row somebody investigating a certificate sign-in
@@ -742,6 +744,8 @@ const ACTIONS = [
     label: 'An operator cleared somebody\'s authenticator app' },
   { action: 'admin.mfa.key.cleared', category: 'admin',
     label: 'An operator removed somebody\'s security key' },
+  { action: 'admin.mfa.key.renamed', category: 'admin',
+    label: 'An operator renamed somebody\'s passkey' },
   // THE PASSWORD AND SECOND-FACTOR CONTROLS ON A PERSON'S PAGE (2026-09-13),
   // each one ACT with who performed it. The sessions a reset's sign-out ends
   // write their own `session.end` rows, so these do not count them again.
