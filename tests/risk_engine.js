@@ -30,6 +30,11 @@
 //   F. `assess()` never rejects, and a person nobody named is not assessed.
 //   G. An operator's factor (`risk.signalFactors`, calibration) is the one a
 //      sign-in is scored with, and an entry naming no signal is ignored.
+//   H. One shared network at the default threshold (#499), with datasets.
+//   I. The same with NO datasets (#502): every address unmapped, as on a
+//      container bridge. Repeated sign-ins stay LOW; a new address with no
+//      ASN and no country is new, and the record says which levels were
+//      unknown.
 //
 // Every address is a documentation one (RFC 5737), every list synthetic.
 // ===========================================================================
@@ -273,6 +278,7 @@ async function run(t) {
   config.setOverride('risk.datasetShrinkLimitPercent', 50);
   config.clearOverride('risk.minimumHistory');
   await sharedNetwork(t);
+  await unmappedNetwork(t);
   log.debug("Leaving run().");
 }
 
@@ -293,10 +299,8 @@ async function sharedNetwork(t) {
   riskStore.reset();
   riskDatasets.forget();
   // Two networks in two countries, so a new address can be in a new one.
-  // Without the datasets every address has the same EMPTY network and
-  // country, which the model's hierarchy counts as values the person has
-  // used — so a new address would read as "a new address on a known
-  // network" (reported on #499; the model is unchanged there).
+  // Without the datasets every address has no network and no country, which
+  // the model counts as unseen since #502 — section I, below.
   await require('../risk/risk_terms').accept({ provider: 'dbip-lite',
     acceptedBy: 'a test', via: 'upload' });
   const networks = await riskDatasets.importVersion({ dataset: 'asn',
@@ -344,7 +348,9 @@ async function sharedNetwork(t) {
           newAddress && newBrowser &&
           newAddress.score > last.score * 2 &&
           newBrowser.score > last.score * 2 &&
-          newAddress.level !== 'LOW' && newBrowser.level !== 'LOW',
+          newAddress.level !== 'LOW' && newBrowser.level !== 'LOW' &&
+          JSON.stringify(newAddress.signals[0].unknown) === '[]' &&
+          JSON.stringify(model.unknown) === '[]',
           'H2. a genuinely new address (on a new network), or a new ' +
           'browser, still raises the ' +
           'same person\'s score past the MEDIUM line',
@@ -353,6 +359,107 @@ async function sharedNetwork(t) {
                            address: newAddress && newAddress.score,
                            browser: newBrowser && newBrowser.score }));
   log.debug("Leaving sharedNetwork().");
+}
+
+// ---------------------------------------------------------------------------
+// I. NO DATASETS, ONE BRIDGE (#502). H again with nothing loaded: every
+// address — a private one on a container bridge, as every suite job is —
+// has no ASN and no country. Until #502 that empty network and country were
+// values everybody shared, so a new address read as a new address on a
+// known network and moved the score from 2.01 to 2.06. Now the two levels
+// are unseen on both sides (Freeman et al. section II-C, Eq. (9)), so the
+// person's repeated sign-ins from the bridge are still LOW (their address
+// counts at the address level) and a new unmapped address is new.
+// ---------------------------------------------------------------------------
+async function unmappedNetwork(t) {
+  log.debug("Entering unmappedNetwork().");
+  riskStore.reset();
+  riskDatasets.forget();
+  const BRIDGE = '172.29.0.1';
+  const HEAVY = 'urn:uuid:00000000-0000-4000-8000-0000000000ca';
+  const people = ['c1', 'c2', 'c3'].map(function (n) {
+    return 'urn:uuid:00000000-0000-4000-8000-0000000000' + n;
+  });
+  const minimum = Number(config.value('risk.minimumHistory'));
+  for (let i = 0; i < 30; i++) {
+    await signIn(BRIDGE, CHROME, { subject: HEAVY });
+  }
+  let last = null;
+  for (const person of people) {
+    for (let i = 0; i <= minimum; i++) {
+      last = await signIn(BRIDGE, CHROME, { subject: person });
+    }
+  }
+  const model = (last && last.signals[0]) || {};
+  const f = model.factors || {};
+  t.check(last && last.level === 'LOW' && last.score < 3 &&
+          f.ip <= 1 && f.ua <= 1 && model.knownContext === true &&
+          JSON.stringify(model.unknown) === '["asn","country"]',
+          'I1. with no datasets, a person\'s repeated sign-ins from one ' +
+          'bridge address stay LOW at the default MEDIUM line (H1\'s case, ' +
+          'unmapped), a known context, with asn and country recorded unknown',
+          JSON.stringify({ level: last && last.level, score: last &&
+                           last.score, model: model }));
+  const person = people[people.length - 1];
+  const fresh = await signIn('172.29.0.9', CHROME, { subject: person });
+  const freshModel = (fresh && fresh.signals[0]) || {};
+  t.check(fresh && freshModel.factors && freshModel.factors.ip === 4 &&
+          fresh.score > last.score * 3 && fresh.level !== 'LOW' &&
+          freshModel.knownContext === false &&
+          JSON.stringify(freshModel.unknown) === '["asn","country"]',
+          'I2. a new address with no ASN and no country raises the score ' +
+          'past the MEDIUM line: ip ×4, where the shared empty network gave ' +
+          '~1 (2.01 → 2.06 on #499)',
+          JSON.stringify({ known: last && last.score, fresh: fresh &&
+                           fresh.score, factors: freshModel.factors }));
+  const empties = await riskStore.featureCounts(REALM, '*',
+    [{ feature: 'asn', value: '' }, { feature: 'country', value: '' }],
+    false);
+  const mine = await riskStore.featureCounts(REALM, person,
+    [{ feature: 'asn', value: '' }, { feature: 'country', value: '' }],
+    false);
+  // Nor as a network or country an address was seen in: no ASN or country
+  // was ever known here, so the combination rows the smoothing counts are
+  // empty.
+  const combos = [];
+  for (const level of ['ip>asn', 'ip>country']) {
+    combos.push(await riskStore.distinctValues(REALM, '*', level, '', false));
+  }
+  t.check(empties.length === 0 && mine.length === 0 &&
+          combos[0] === 0 && combos[1] === 0,
+          'I3. and a missing network or country is never counted as a ' +
+          'value, for the population or the person, nor as a network or ' +
+          'country an address was seen in',
+          JSON.stringify({ population: empties, person: mine,
+                           combinations: combos }));
+  // `risk.listsMatchSpecialPurpose` sets the LISTS aside for a private
+  // address (#226); it does not make the model treat one as familiar.
+  config.setOverride('risk.listsMatchSpecialPurpose', false);
+  let aside = null;
+  try {
+    aside = await signIn('10.0.0.7', CHROME, { subject: person });
+  } finally {
+    config.clearOverride('risk.listsMatchSpecialPurpose');
+  }
+  t.check(aside && aside.signals[0].factors &&
+          aside.signals[0].factors.ip === 4 && aside.level !== 'LOW',
+          'I4. with risk.listsMatchSpecialPurpose off, a new private address ' +
+          'is still new to the model: the setting is about lists',
+          JSON.stringify(aside && aside.signals[0]));
+  let drawn = '';
+  try {
+    const RiskPage = require('../admin-ui/web_risk');
+    drawn = RiskPage.modelCell(freshModel) + ' | ' +
+      RiskPage.modelCell({ signal: 'model', score: null,
+                           unknown: ['asn', 'country'] });
+  } catch (e) {
+    drawn = 'threw: ' + (e && e.message);
+  }
+  t.check(/model: ip ×4\.00 .* · unknown: asn, country \|/.test(drawn) &&
+          /\| model: unknown: asn, country$/.test(drawn),
+          'I5. Monitoring → Risk draws the unknown levels beside the ' +
+          'factors, and on an unscored sign-in too', drawn);
+  log.debug("Leaving unmappedNetwork().");
 }
 
 module.exports = {

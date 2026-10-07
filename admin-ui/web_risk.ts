@@ -767,11 +767,20 @@ class RiskPage {
   // sign-ins, the realm's, and how many people signed in. Empty for a
   // sign-in the model did not score, or an assessment written before the
   // user term was recorded (it then shows the two features only).
+  //
+  // THE LEVELS WHOSE LOOKUP FOUND NOTHING follow (#502): no network, no
+  // country, no browser the User-Agent named. The model counts each as
+  // unseen on both sides, so they are what makes a new unmapped address's
+  // ip factor what it is; drawn for an unscored sign-in too.
   // ---------------------------------------------------------------------------
   static modelCell(row: Json): string {
     const f = row && row.factors;
+    const unknown = row && Array.isArray(row.unknown) && row.unknown.length
+      ? 'unknown: ' + row.unknown.map(function (l: unknown): string {
+        return kit.esc(l);
+      }).join(', ') : '';
     if (!f || typeof f !== 'object') {
-      return '';
+      return unknown ? 'model: ' + unknown : '';
     }
     const parts = ['ip', 'ua', 'user'].filter(function (k: string): boolean {
       return typeof f[k] === 'number';
@@ -782,7 +791,9 @@ class RiskPage {
     const counts = t && typeof t === 'object' && typeof f.user === 'number'
       ? ' (' + kit.esc(t.userSignIns) + ' of ' + kit.esc(t.signIns) +
         ' sign-ins, ' + kit.esc(t.users) + ' people)' : '';
-    return parts.length ? 'model: ' + parts.join(' · ') + counts : '';
+    const said = parts.length ? parts.join(' · ') + counts : '';
+    return said || unknown
+      ? 'model: ' + said + (said && unknown ? ' · ' : '') + unknown : '';
   }
 
   // A provider's credit as its licence asks (`risk_terms.attributionOf()`):

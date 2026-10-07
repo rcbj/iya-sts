@@ -1032,8 +1032,12 @@ class RiskEngine {
     log.debug("Entering RiskEngine.historyOf(). " + subject);
     const pairs = [{ feature: '_total', value: '' }];
     riskModel.FEATURES.forEach(function (f: Json): void {
-      f.levels.forEach(function (level: Json): void {
-        pairs.push({ feature: level[0], value: String(attempt[level[0]]) });
+      f.levels.forEach(function (level: Json, i: number): void {
+        // A level whose lookup found nothing is unseen and never asked
+        // for (#502; `risk_model.ts`'s `missing()`).
+        if (i === 0 || !riskModel.missing(attempt[level[0]])) {
+          pairs.push({ feature: level[0], value: String(attempt[level[0]]) });
+        }
       });
     });
     const rows = await store.featureCounts(realm, subject, pairs, sealing);
@@ -1421,6 +1425,12 @@ class RiskEngine {
                   terms: modelled.terms || null,
                   why: modelled.why || '',
                   knownContext: knownContext,
+                  // THE LEVELS WHOSE LOOKUP FOUND NOTHING (#502): no
+                  // network, no country, no browser bowser could name —
+                  // counted as unseen on both sides, so a new address on
+                  // an unmapped network is new. Recorded whether or not
+                  // the sign-in was scored.
+                  unknown: riskModel.unknownLevels(attempt),
                   capped: capped ? capped.why : '',
                   // Lists the address is on that were set aside for a
                   // special-purpose address (#226), so the record says so.
@@ -1456,19 +1466,26 @@ class RiskEngine {
         moves.push({ subject: who, feature: feature, value: value });
       }
     };
+    // A level whose lookup found nothing is not a value (#502): it is not
+    // counted for the person or the population, and it is not a network or
+    // a country the address was seen in, so no distinct count ever holds it.
     [subject, POPULATION].forEach(function (who: string): void {
       move(who, '_total', '');
       riskModel.FEATURES.forEach(function (f: Json): void {
-        f.levels.forEach(function (level: Json): void {
-          move(who, level[0], String(attempt[level[0]]));
+        f.levels.forEach(function (level: Json, i: number): void {
+          if (i === 0 || !riskModel.missing(attempt[level[0]])) {
+            move(who, level[0], String(attempt[level[0]]));
+          }
         });
       });
     });
     riskModel.FEATURES.forEach(function (f: Json): void {
       const first = f.levels[0][0];
       f.levels.slice(1).forEach(function (level: Json): void {
-        move(POPULATION, first + '>' + level[0], String(attempt[first]) +
-             '|' + String(attempt[level[0]]));
+        if (!riskModel.missing(attempt[level[0]])) {
+          move(POPULATION, first + '>' + level[0], String(attempt[first]) +
+               '|' + String(attempt[level[0]]));
+        }
       });
     });
     move(POPULATION, 'user', subject);

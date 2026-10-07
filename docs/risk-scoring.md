@@ -92,6 +92,19 @@ three (`model: ip ×… · ua ×… · user ×…` on Monitoring → Risk, and
   average, above 1 for one who signs in less, and the same whatever address
   or browser they use.
 
+**When a lookup finds nothing.** A private, loopback or container-bridge
+address is in no dataset, and without the ASN and geolocation datasets (or
+with stale ones) no address has a network or a country. Such a level is
+**unknown**, and the model counts it as never seen, for this person and for
+the realm alike (Freeman et al., section II-C, Eq. 9). The same goes for a
+browser, operating system or device type the `User-Agent` does not name. So
+an address the person has used before is still familiar, and an address
+they have never used is new (ip ×4) even when nobody can say what network
+it is on. Each assessment lists the unknown levels (`unknown: asn, country`
+on Monitoring → Risk, `signals[0].unknown` in `GET /admin-api/risk`). A
+request with no `User-Agent` at all, such as a Kerberos one, is not an
+unknown: having no header is itself the value.
+
 A familiar sign-in usually scores far below 1, because a person's own
 address and browser are rare in the realm. **Where everybody shares one
 address and one browser** — behind a NAT, a VPN or a container bridge — the
@@ -124,7 +137,9 @@ person arrives from the same address, so one listed bogon puts a signal on
 everybody. Turn off `risk.listsMatchSpecialPurpose` (Monitoring → Risk) when
 you test on one machine or run that way. The Tor, reputation and deny lists
 are then set aside for such an address, and the assessment records which
-lists were set aside. The allow list is not affected.
+lists were set aside. The allow list is not affected. The setting is about
+lists only: a private address the person has never used is still new to the
+model.
 
 **A known context caps the address evidence at MEDIUM.** A person may have at
 least `risk.minimumHistory` earlier sign-ins from this exact address and this
@@ -135,7 +150,8 @@ and the assessment says what was capped. Evidence about the credential is not
 capped, because a network does not share it: `account-failures`,
 `automated-client`, `authenticator-compromised` and "this wasn't me". The cap
 also bounds how far the `risk.rescore` job can raise that session on a list it
-gains later.
+gains later. Unknown network or country levels change nothing here, because a
+known context is counted by address and browser only.
 
 These factors are a first calibration. You can change any of them for a
 realm with `risk.signalFactors`, without a new release. It takes a list of
