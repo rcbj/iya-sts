@@ -48,6 +48,15 @@
 //   this file                      what a TOKEN carries                /admin/claims
 //   this file (the same store)     what a USERINFO RESPONSE carries    /admin/userinfo-claims
 //   this file (the same store)     what an ASSERTION carries           /admin/saml-attributes
+//   this file (the same store)     what a KERBEROS PAC carries         /admin/kerberos/claims
+//
+// THE SIXTH SET, `kerberos-pac` (#498, 2026-10-06), is read differently and
+// NOT through claimsFor(): admin_stats.js's kerberosPacClaims() asks this
+// file only WHICH attributes are ticked (the slot's `selectedAttributes`
+// member) and reads their values off the entry itself, every value as a PAC
+// STRING claim, never a persona — see KERBEROS PAC CLAIMS there. The
+// selection, the funnel, the audit row and the catalogue are this file's, as
+// for the other five.
 //
 // Keeping them separate is what makes "issue a credential carrying a claim the
 // access token does not" and "ask for a claim nothing here issues" reachable.
@@ -168,7 +177,7 @@ interface SelectionResult {
 interface ClaimAttributesDeps {
   log: typeof helpers.log;
   stats: {
-    CLAIM_SETS: Record<string, { label?: string }>;
+    CLAIM_SETS: Record<string, { label?: string; kind?: string }>;
     DEFAULT_SAML11_NAMESPACE: string;
     setAttributeResolver(hooks: unknown): void;
     // The application an issuance's claims are for (#495). Optional, so a
@@ -397,12 +406,14 @@ class ClaimAttributes {
     log.debug("Leaving ClaimAttributes.wire().");
   }
 
+  // Known by the set ids admin_stats.js declares, not by the partition's
+  // keys: a partition persisted before a set existed (the sixth, #493) lacks
+  // its key, and every reader below takes a missing list as nothing ticked.
   private isKnownSet(setId: unknown): boolean {
-    const { log, selections } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering ClaimAttributes.isKnownSet().");
     log.debug("Leaving ClaimAttributes.isKnownSet().");
-    return Object.prototype.hasOwnProperty.call(selections,
-                                                String(setId || ''));
+    return SET_IDS.indexOf(String(setId || '')) >= 0;
   }
 
   // -------------------------------------------------------------------------
@@ -657,6 +668,16 @@ class ClaimAttributes {
     log.debug("Leaving ClaimAttributes.recordChange().");
   }
 
+  // The Kerberos PAC set (#498), told apart by its kind as admin_stats.js
+  // declares it rather than by its id.
+  private isKerberosSet(setId: string): boolean {
+    const { log, stats } = this.deps;
+    log.debug("Entering ClaimAttributes.isKerberosSet().");
+    const set = stats.CLAIM_SETS[setId];
+    log.debug("Leaving ClaimAttributes.isKerberosSet().");
+    return !!set && set.kind === 'kerberos';
+  }
+
   private labelOf(setId: string): string {
     const { log, stats } = this.deps;
     log.debug("Entering ClaimAttributes.labelOf().");
@@ -726,8 +747,8 @@ class ClaimAttributes {
       wanted.add(key);
     });
     if (errors.length) {
-      this.recordChange(id, how || 'select', [], [], selections[id].length,
-                        false, errors,
+      this.recordChange(id, how || 'select', [], [],
+                        (selections[id] || []).length, false, errors,
                         'STS-REG-0035');
       log.debug("Leaving ClaimAttributes.setSelection(). " + errors.length +
           " error(s); nothing changed.");
@@ -735,7 +756,7 @@ class ClaimAttributes {
     }
 
     // A Set for the difference below; the stored form is the list.
-    const before = new Set<string>(selections[id]);
+    const before = new Set<string>(selections[id] || []);
     const added: string[] = [];
     const removed: string[] = [];
     wanted.forEach(function (key) {
@@ -778,10 +799,14 @@ class ClaimAttributes {
       return;
     }
     const saml = setId === 'saml2' || setId === 'saml11';
+    // A PAC claim is named by the attribute itself (#498): its id is
+    // `ad://ext/<attribute>:<hex>`, and claimValuesFor() finds it by that name.
+    const pac = this.isKerberosSet(setId);
     const names: string[] = [];
     attributes.forEach(function (ldapName) {
       const row = BY_LDAP.get(String(ldapName).toLowerCase());
-      const name = row ? (saml ? row.claim.join('.') : row.claim[0]) : '';
+      const name = !row ? '' : pac ? row.ldap
+        : (saml ? row.claim.join('.') : row.claim[0]);
       if (name && names.indexOf(name) < 0) {
         names.push(name);
       }
@@ -1307,7 +1332,8 @@ class ClaimAttributes {
   // This is the whole of the installation, and it is why no issuance site
   // changed. admin_stats.js calls these two from inside jwtClaims() and
   // samlAttributes(), wraps them, and merges what comes back UNDER the typed
-  // claims — see the note there about precedence.
+  // claims — see the note there about precedence. Two more members: the
+  // entry (#94) and, for the Kerberos PAC set, the selection alone (#498).
   //
   // Done at require time, like every other inverted dependency here: since
   // #50's R2 `wire()` calls this when the root installs the instance (or,
@@ -1335,6 +1361,14 @@ class ClaimAttributes {
         log.debug("Leaving samlAttributes().");
         return self.samlAttributesFor(setId, self.subjectOf(context),
                                       self.applicationOf(setId, context));
+      },
+      // WHICH ATTRIBUTES ARE TICKED (#498), for the Kerberos PAC set, whose
+      // values admin_stats.js reads off the entry itself (every value, as a
+      // PAC string). The realm's selection: no application holds one.
+      selectedAttributes: function (setId) {
+        log.debug("Entering selectedAttributes().");
+        log.debug("Leaving selectedAttributes().");
+        return self.selectedNames(setId);
       },
       // THE ENTRY ITSELF (#94), for the claim sets' attribute claims: every
       // attribute, lower-cased, of the person the token is about, or null.

@@ -1860,10 +1860,33 @@ already per realm through the realm layer, like `krb5.pkinit`. The argument
 is at the row in `common/config.js`; `tests/config_realm_layer.js`'s list is
 unchanged.
 
+**THE TICKED CATALOGUE (#498, 2026-10-06)** reverses #493's "no catalogue
+half" (`STS-ADMIN-0848`, retired). The set has the table of standard
+attributes the other five have, from `claim_attributes.ts`'s one catalogue and
+its `kerberos-pac` selection (nothing ticked by default); rcbj's rules:
+
+* each ticked attribute PRESENT ON THE ENTRY is a claim — never the persona
+  the JWT sets fall back to — with id `ad://ext/<attribute>:<hex>` derived by
+  `pacClaimId()` from the canonical catalogue spelling, exactly as a row of
+  that name; type STRING, every value, source type AD;
+* a set ROW and the ROLES claim the KDC writes win over a ticked attribute of
+  the same claim id, which then adds nothing;
+* it is part of `kerberosPacClaims()` — a TGT's claims — so a service ticket
+  gets it through the carry and override rules above, unchanged, and it
+  counts toward `PAC_CLAIMS_MAX_BYTES`. An application holds no selection of
+  its own for this set.
+
+**THIS FILE CHANGED NOTHING FOR IT.** `admin_stats.js` reads the selection
+through the attribute resolver slot's fourth member, `selectedAttributes`
+(filled by `claim_attributes.ts`; the require would close rule 2's cycle),
+and the entry through the third, so the parent's COPY closure still owes
+nothing.
+
 Tests: `tests/pac_claims.js` (in process: the rows, a TGT's claims and
 signatures, carry versus re-evaluation, the override on one SPN only, a krbtgt
 SPN's application ignored, S4U2Self, S4U2Proxy, a cross-realm re-sign byte for
-byte; thirteen mutants, all caught) and `tests/vendored/sts_kerberos_pac_claims.js`
+byte; thirteen mutants, all caught; section G is #498's ticked catalogue, eleven more)
+and `tests/vendored/sts_kerberos_pac_claims.js`
 (over `/KdcProxy` in a throwaway realm, tickets opened with
 `create-service` keytabs). The codec's own tests are in the parent's
 `tests/krb5_pac_layout.js`.

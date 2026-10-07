@@ -18667,8 +18667,10 @@ const CODES = [
   { code: 'STS-ADMIN-0848',
     summary: 'A directory-attribute catalogue action (attributes, ' +
       'attributes-all, attributes-clear) was asked of the Kerberos PAC ' +
-      'claim set, which has no catalogue half (#493).',
-    spec: 'HTTP 400' },
+      'claim set, which had no catalogue half (#493). Retired by #498: the ' +
+      'set has a ticked catalogue like the other five, and the three ' +
+      'actions act on it.',
+    spec: '', retired: true },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

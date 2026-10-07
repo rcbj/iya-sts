@@ -3292,7 +3292,19 @@ with `Cannot find module` naming a file the operator never mentioned.
    tokens issued without their configured attributes and `admin.js` requiring it
    would only make that true by accident.
 
-   **Nothing is selected on a fresh start, in any of the five sets.** Unlike
+   **THE SIXTH SET, `kerberos-pac`, HAS A SELECTION TOO (#498, 2026-10-06)**,
+   kept here like the other five and drawn on `/admin/kerberos/claims` with the
+   same table. It is read differently: `admin_stats.js`'s `kerberosPacClaims()`
+   asks this module only WHICH names are ticked — a FOURTH member of the same
+   slot, `selectedAttributes(setId)`, for the reason the third is a member and
+   not a slot — and reads every value off the entry itself as a PAC string
+   claim, never the persona `claimsFor()` falls back to. `isKnownSet()` asks
+   `SET_IDS` rather than the partition's keys, so a partition persisted before
+   a set existed still accepts it. No application selection for it
+   (`APP_SELECTION_ATTRIBUTES` has no row; `applicationClaimSelections()`
+   leaves it out).
+
+   **Nothing is selected on a fresh start, in any of the sets.** Unlike
    `/admin/vc`'s ten defaults — which reproduce what that issuer already carried
    — this page changes what every client of this service receives, so it does
    nothing until it is asked to.
@@ -9733,10 +9745,14 @@ ticket's PAC carries (`kind: 'kerberos'`, on `/admin/kerberos/claims` and
 differs in three ways: every row carries a PAC TYPE (`PAC_CLAIM_TYPES`:
 string, int64, uint64, boolean — a fixed value is held to it at the write,
 `STS-REG-0338`), its name must make a claim id (`STS-REG-0336`;
-`pacClaimId()` derives `ad://ext/<name>:<first 16 hex of SHA-256>`), and it
-has NO catalogue half (`STS-ADMIN-0848`). The KDC reads it through
-`kerberosPacClaims()` (a TGT: the set and the person's realm-wide roles as a
-string claim) and `kerberosApplicationPacClaims()` (an SPN's own rows, found by
+`pacClaimId()` derives `ad://ext/<name>:<first 16 hex of SHA-256>`), and its
+TICKED CATALOGUE (#498; #493 had none and refused it with `STS-ADMIN-0848`,
+now retired) is read off the ENTRY alone — a ticked attribute the entry holds
+is a STRING claim of every value, named by its catalogue spelling, under the
+rows and the roles claim, which win by claim id. The KDC reads it through
+`kerberosPacClaims()` (a TGT: the set, the person's realm-wide roles as a
+string claim, and the ticked attributes) and `kerberosApplicationPacClaims()`
+(an SPN's own rows, found by
 `applications.forServicePrincipal()`), and merges by claim id itself
 (`kerberos/CLAUDE.md`, *PAC CLIENT CLAIMS*). A ticket that carried claims is
 recorded with `claimSet: 'kerberos-pac'` and its username, so

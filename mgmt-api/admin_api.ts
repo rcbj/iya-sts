@@ -1575,12 +1575,19 @@ class AdminApi {
                      'removal is expressed — there is no per-attribute ' +
                      'remove, because the console\'s control is a table of ' +
                      'checkboxes and an API that removed differently would ' +
-                     'be a second model of the same state.\n\nThe value a ' +
+                     'be a second model of the same state.\n\n' +
+                     (family.entryOnly
+                       ? 'A selected attribute becomes a STRING PAC claim ' +
+                         'named ad://ext/<attribute>:<hex>, carrying EVERY ' +
+                         'value on that person\'s entry under ou=users; an ' +
+                         'entry without it carries no claim — nothing is ' +
+                         'invented (#498). '
+                       : 'The value a ' +
                      'selected attribute carries is the one on that ' +
                      'person\'s entry under ou=users, or — where the entry ' +
                      'has nothing — invented from their username, ' +
                      'deterministically, so one username is one invented ' +
-                     'person across restarts. Unlike POST ' +
+                     'person across restarts. ') + 'Unlike POST ' +
                      '/admin-api/credential-claims/select this does NOT ' +
                      'sweep the directory: the credential page writes the ' +
                      'attributes it needs onto every entry, and doing it ' +
@@ -1669,13 +1676,7 @@ class AdminApi {
           additionalProperties: false
         },
         responseDescription: 'An empty `attributes`, and what was `removed`.' }
-    ].filter(function (row) {
-      // A family with no catalogue half (the Kerberos PAC set, #493) has no
-      // `attributes*` operations: claimsAction() refuses them for it.
-      return !family.noCatalogue ||
-             ['attributes', 'attributes-all', 'attributes-clear']
-               .indexOf(row.action) < 0;
-    });
+    ];
     log.debug("Leaving AdminApi.claimSetActions(). " + rows.length +
               " action(s).");
     return rows;
@@ -10425,8 +10426,7 @@ class AdminApi {
       // THE KERBEROS PAC HALF OF THE SAME STORE (#493): the sixth set, the
       // claims a ticket's PAC_CLIENT_CLAIMS_INFO carries, on its own page
       // under Protocols → Kerberos. Same action function, same audit row,
-      // same CAEP announcement; no catalogue half (its rows name their
-      // attribute and their PAC type themselves).
+      // same CAEP announcement, and since #498 the same ticked catalogue.
       // -----------------------------------------------------------------------
       { method: 'GET', path: BASE + '/kerberos/claims', tag: 'Kerberos',
         operationId: 'getKerberosPacClaims',
@@ -10444,7 +10444,14 @@ class AdminApi {
                      'winning by name (that application\'s Configuration ' +
                      'tab, `krb5ClaimsPac`). A claim id is ' +
                      '`ad://ext/<name>:<hex>`, the hex derived from the name ' +
-                     '(`idFormat`). Nothing already issued changes.',
+                     '(`idFormat`). Nothing already issued changes.\n\n' +
+                     'The set\'s TICKED CATALOGUE (#498) is the other ' +
+                     'pages\' `attributeCatalogue` (each row with the ' +
+                     '`pacClaimId` it becomes) and `sets[].attributes`: a ' +
+                     'ticked attribute is a string claim of every value on ' +
+                     'the person\'s entry, under the rows and the roles ' +
+                     'claim, which win by claim id. `preview.byLdap` is ' +
+                     'what each attribute would carry for the person.',
         mirrors: 'GET /admin/kerberos/claims',
         parameters: [
           { name: 'user', in: 'query', required: false,
@@ -10472,8 +10479,11 @@ class AdminApi {
           log.debug("Entering the management API Kerberos PAC claims action " +
                     "endpoint.");
           const body = parseBody(req);
+          // The `attributes` action's list (#498), in both spellings, as the
+          // other claim-set doors take it.
+          const names = self.namesOf(req, body, 'attribute', 'attributes');
           const result = adminActions.claimsAction(self.withAction(req, body),
-                                                   [],
+                                                   names,
                                             stats.KERBEROS_CLAIM_SET_IDS);
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0131');
@@ -23444,22 +23454,26 @@ const SAML_CLAIM_FAMILY = {
          none: 'clearSamlDirectoryAttributes' }
 };
 
-// The sixth family (#493): the Kerberos PAC set. `noCatalogue` drops the
-// three `attributes*` operations (the set has no catalogue half) and
-// `attributeTypes` is the four PAC claim types an attribute row may name.
+// The sixth family (#493): the Kerberos PAC set. `attributeTypes` is the
+// four PAC claim types an attribute row may name, and `entryOnly` says a
+// ticked attribute is read off the entry alone (#498, which gave the set the
+// three `attributes*` operations #493 left out).
 const KERBEROS_CLAIM_FAMILY = {
   sets: stats.KERBEROS_CLAIM_SET_IDS,
   noun: 'claim',
   carrier: 'ticket',
   example: 'kerberos-pac',
   reserved: false,
-  noCatalogue: true,
+  entryOnly: true,
   attributeTypes: ['string', 'int64', 'uint64', 'boolean'],
   ids: { add: 'addKerberosPacClaim',
          addAttribute: 'addKerberosPacAttributeClaim',
          remove: 'removeKerberosPacClaim',
          clear: 'clearKerberosPacClaims',
-         replace: 'replaceKerberosPacClaims' }
+         replace: 'replaceKerberosPacClaims',
+         attributes: 'setKerberosPacClaimAttributes',
+         all: 'selectAllKerberosPacClaimAttributes',
+         none: 'clearKerberosPacClaimAttributes' }
 };
 
 // Filled by `AdminApi.wire()` (#50, R2), in this order, with the request
