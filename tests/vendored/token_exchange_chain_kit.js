@@ -904,6 +904,11 @@ module.exports = {
   serviceBase: serviceBase,
   castFor: castFor,
   isProduct: isProduct,
+  // The browser's code walk and the token request, for a chain kit whose
+  // first tier signs in through OpenID Connect without this kit's cast —
+  // `gnap_chain_kit.js`'s webapp1 (#497).
+  authorizationCode: authorizationCode,
+  tokenRequest: tokenRequest,
   provisionCast: provisionCast,
   signIn: signIn,
   clientCredentials: clientCredentials,

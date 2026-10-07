@@ -382,6 +382,14 @@ const JOBS = [
     local: true },
   { file: 'sts_kerberos_chain_delegation.js', browser: false,
     local: true },
+  // AND IN GNAP (#497): the same four tiers as GNAP parties. Impersonation
+  // is a trusted client presenting the person's ID Token (issued to it) as
+  // a user assertion, then two RFC 9767 derivations; delegation is the
+  // person approving webapp1's grant, then the same derivations, the
+  // original client traced through the grant every token names. `local:
+  // true`: GNAP exists here and nowhere else. Entries are left standing.
+  { file: 'sts_gnap_chain_impersonation.js', browser: false, local: true },
+  { file: 'sts_gnap_chain_delegation.js', browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
@@ -1624,7 +1632,14 @@ const LOCAL_HELPERS = [
   // PAC's server signature, S4U_DELEGATION_INFO), and the register read
   // back. It takes the protocol-independent half from
   // token_exchange_chain_kit.js.
-  'kerberos_chain_kit.js'
+  'kerberos_chain_kit.js',
+  // WHAT THE TWO GNAP CHAIN JOBS SHARE (#497): the four GNAP parties and
+  // their keys, the catalogue they declare, the OpenID Connect sign-in, the
+  // user assertion, the approval and the RFC 9767 derivations over
+  // gnap_client.js, each token verified and introspected by its tier, the
+  // original grant, the register and the optional capture. It takes the
+  // protocol-independent half from token_exchange_chain_kit.js.
+  'gnap_chain_kit.js'
 ];
 
 // ---------------------------------------------------------------------------
