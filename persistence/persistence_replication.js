@@ -582,14 +582,35 @@ function createReplication(label) {
     // -------------------------------------------------------------------------
     const needNo = pullsStarted;
 
+    // THE PULL IN FLIGHT, OR THE DEADLINE, WHICHEVER COMES FIRST
+    // (2026-10-07). This waited for the pull alone, and the deadline was read
+    // only once it had finished — so a pull that applies a burst of rows held
+    // every reader for as long as it ran. In the `cluster` mode the leader
+    // rotated the signing keys of dozens of realms at once, the other node's
+    // pull of the key and certificate-authority rows took about 17s, and a
+    // Kerberos AS-REQ waiting on this barrier was answered 20s late, after its
+    // client had given up (`sts_kerberos_rc4`, `KDC ... did not answer within
+    // 10000ms`). The pull goes on; only the reader stops waiting for it, and
+    // is answered at the deadline from what this process has, as below.
     function settled() {
       log.debug("Entering settled().");
-      log.debug("Leaving settled().");
-      return (runningPull || Promise.resolve()).catch(function (e) {
+      const finished = (runningPull || Promise.resolve()).catch(function (e) {
         // A pull that failed is the timer's business to report; this only needs
         // to know it has finished.
         log.debug("Caught in syncNow(): a pull in flight failed: " +
                   ((e && e.message) || e));
+      });
+      const remaining = deadline - Date.now();
+      let timer = null;
+      const timedOut = new Promise(function (resolve) {
+        timer = setTimeout(resolve, Math.max(0, remaining));
+        if (timer.unref) {
+          timer.unref();
+        }
+      });
+      log.debug("Leaving settled().");
+      return Promise.race([finished, timedOut]).then(function () {
+        clearTimeout(timer);
       });
     }
 
@@ -632,7 +653,9 @@ function createReplication(label) {
       // nearly every barrier meets one. `runningPull` settles when that pull's
       // pages have been applied.
       return settled().then(function () {
-        if (lastCompletedStartNo > needNo) {
+        if (lastCompletedStartNo > needNo || Date.now() >= deadline) {
+          // Caught up, or out of time with a pull still running: step() says
+          // which, and starts no second pull behind the running one.
           return null;
         }
         return pull();

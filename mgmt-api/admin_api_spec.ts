@@ -3473,14 +3473,32 @@ const SCHEMAS = {
                 label: { type: 'string' },
                 claims: { type: 'array',
                           description: 'Its rows, each with `claimId`.',
-                          items: { type: 'object' } }
+                          items: { type: 'object' } },
+                attributes: { type: 'array', items: { type: 'string' },
+                              description: 'The ticked catalogue ' +
+                                           'attributes (#498).' }
               }) },
+      attributeCatalogue: { type: 'array', items: { type: 'object' },
+                            description: 'The one directory-attribute ' +
+                                         'catalogue, as the other claim ' +
+                                         'pages answer it, each row with ' +
+                                         'the `pacClaimId` it becomes ' +
+                                         '(#498).' },
       attributeChoices: { type: 'array', items: { type: 'object' } },
       preview: openObject('What one person\'s next TGT would carry.', {
         user: { type: 'string' },
         claims: { type: 'array', items: { type: 'object' },
                   description: 'Each `name`, `id`, `type`, `values` and ' +
-                               '`from` (roles, value or attribute).' }
+                               '`from` (roles, value, attribute or ' +
+                               'catalogue).' },
+        entryFound: { type: 'boolean',
+                      description: 'Whether the person has a directory ' +
+                                   'entry.' },
+        byLdap: { type: 'object',
+                  description: 'Per lower-cased catalogue attribute the ' +
+                               'entry holds: its `claimId`, `values` and ' +
+                               '`value` as a ticked attribute would carry ' +
+                               'them (#498).' }
       })
     }),
 

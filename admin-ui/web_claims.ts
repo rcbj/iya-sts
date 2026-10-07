@@ -423,6 +423,12 @@ class ClaimsPage {
       return one.id === setId;
     })[0].attributes;
     const values = json.preview;
+    // THE KERBEROS PAC SET (#498) draws the same table from the same
+    // catalogue: each row's column is the PAC claim id it becomes, and a
+    // value is the entry's own, every value — never generated.
+    const pac = json.attributeCatalogue.some(function (row) {
+      return !!row.pacClaimId;
+    });
 
     const rows = json.attributeCatalogue.map(function (row) {
       const on = !!row.sets[setId];
@@ -435,13 +441,16 @@ class ClaimsPage {
         ? '<td><code>' + kit.esc(found.value) + '</code></td><td>' +
           kit.esc(found.source) + '</td>'
         : '<td><span class="state-none">—</span></td><td>' +
-          (row.generated ? 'would be generated' : 'the entry\'s own') + '</td>';
+          (pac ? 'none on the entry: no claim'
+               : row.generated ? 'would be generated' : 'the entry\'s own') +
+          '</td>';
       return '<tr><td><input type="checkbox" name="attribute" value="' +
         kit.esc(row.ldap) + '"' +
         (on ? ' checked' : '') + '></td>' +
         '<td><code>' + kit.esc(row.ldap) + '</code></td>' +
         '<td>' + kit.esc(row.schema) + '</td>' +
-        '<td><code>' + kit.esc(row.claim) + '</code></td>' +
+        '<td><code>' + kit.esc(pac ? row.pacClaimId : row.claim) +
+        '</code></td>' +
         valueCell + '</tr>';
     }).join('');
 
@@ -454,7 +463,9 @@ class ClaimsPage {
       '<input type="hidden" name="set" value="' + kit.esc(setId) + '">' +
       '<table><tr><th>In</th><th>LDAP attribute</th><th>Defined by</th>' +
       '<th>' +
-      (setId === 'saml2' || setId === 'saml11' ? 'Attribute name' : 'Claim') +
+      (pac ? 'PAC claim id'
+           : setId === 'saml2' || setId === 'saml11' ? 'Attribute name'
+           : 'Claim') +
       '</th><th>For ' + kit.esc(json.preview.user) + '</th><th>Source</th></tr>' +
       rows + '</table><div class="formrow"><button>Update</button><span ' +
       'class="note">The ticked boxes become the whole selection for this ' +
@@ -1180,8 +1191,10 @@ class ClaimsPage {
   // the two things only a PAC claim has: a TYPE on every row (the four of
   // [MS-ADTS] 2.2.18.2) and a claim ID, `ad://ext/<name>:<hex>`, derived from
   // the row's name and shown beside it so a service's access rule can be
-  // written against it. No catalogue half: a row that reads the directory
-  // names its attribute itself.
+  // written against it. Since #498 it has the catalogue half the other pages
+  // have, drawn by claimAttributeSection() from the same members of the
+  // reply: the ticked attributes are string claims of every value on the
+  // entry, under the rows.
   // ---------------------------------------------------------------------------
   /**
    * Draws `/admin/kerberos/claims`: the PAC claim set with its claim ids, the
@@ -1228,8 +1241,8 @@ class ClaimsPage {
             kit.esc(claim.values.join(', ')) + '</code></td><td>' +
             kit.esc(claim.from) + '</td></tr>';
         }).join('') + '</table>'
-      : '<p class="sub">Nothing: no row has a value for this person and ' +
-        'they hold no realm-wide role.</p>';
+      : '<p class="sub">Nothing: no row or ticked attribute has a value ' +
+        'for this person and they hold no realm-wide role.</p>';
     return (json.enabled
       ? kit.note('<strong>On in this realm</strong> (<code>' +
         kit.esc(json.setting) + '</code>): every ticket the KDC builds ' +
@@ -1291,6 +1304,15 @@ class ClaimsPage {
         'type when it is added; one with a placeholder, or a directory ' +
         'value, that is not its type at issuance leaves that claim out of ' +
         'the ticket and is logged.') +
+      '<h2>Directory attributes</h2>' +
+      kit.note('Tick an attribute to carry it in every TGT as a ' +
+        '<code>string</code> claim of <strong>every value</strong> on the ' +
+        'person\'s entry, named <code>ad://ext/&lt;attribute&gt;:&lt;hex' +
+        '&gt;</code> as a row of that name would be. An entry without the ' +
+        'attribute carries no claim: nothing is invented. A row above, or ' +
+        'the roles claim, with the same claim id wins. Nothing is ticked ' +
+        'until somebody ticks it.') +
+      ClaimsPage.claimAttributeSection(setId, json, pageUrl) +
       '<h2>What a TGT would carry</h2>' +
       '<form method="get" action="/admin/kerberos/claims"><div ' +
       'class="formrow"><label for="kuser">For</label><input type="text" ' +

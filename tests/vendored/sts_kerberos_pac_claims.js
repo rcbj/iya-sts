@@ -28,6 +28,13 @@
 //   5. `krb5.pacClaims` off on the realm: the next ticket has a PAC and no
 //      claims buffer.
 //
+// AND THE TICKED CATALOGUE (#498): the person's entry holds two values of
+// `ou` and a `title`; `POST /admin-api/kerberos/claims/attributes` ticks
+// `ou`, `title` and `employeeType`, and a row named `title` sits in the set.
+// The ticket carries `ou` as ONE string claim of both values, by the
+// `pacClaimId` GET names for it; the row's `title`, not the entry's; and no
+// `employeeType`, which the entry lacks.
+//
 // WHAT IT CHANGES: one trust realm, created here and left standing
 // (`leave-test-created-realms`). The default realm's settings are not
 // touched, so no other job's tickets change shape while this runs.
@@ -237,6 +244,15 @@ async function test() {
              attributes: { cn: "pac " + USER, givenName: "pac", sn: USER,
                            displayName: "pac " + USER, mail: MAIL } },
            "created " + USER + " in " + RID);
+  // A multi-valued `ou` and a `title` on the entry, for the ticked
+  // catalogue (#498).
+  await ok(realmApi + "/users/set-attribute",
+           { user: USER, attribute: "ou", value: "blue" }, "set ou");
+  await ok(realmApi + "/users/add-attribute",
+           { user: USER, attribute: "ou", value: "green" }, "added an ou");
+  await ok(realmApi + "/users/set-attribute",
+           { user: USER, attribute: "title", value: "Entry title" },
+           "set title");
   const own = await ok(realmApi + "/kerberos/principals/create-service",
                        { spn: SPN_OWN }, "created " + SPN_OWN);
   const plain = await ok(realmApi + "/kerberos/principals/create-service",
@@ -250,8 +266,13 @@ async function test() {
       { name: "department", type: "string", value: "Sales" },
       { name: "level", type: "int64", value: "-7" },
       { name: "who", type: "string", value: "${username}" },
-      { name: "mailclaim", type: "string", attribute: "mail" }
+      { name: "mailclaim", type: "string", attribute: "mail" },
+      { name: "title", type: "string", value: "Row title" }
     ] }, "replaced the realm's PAC claims");
+  const ticked = await ok(realmApi + "/kerberos/claims/attributes",
+                          { set: "kerberos-pac",
+                            attributes: ["ou", "title", "employeeType"] },
+                          "ticked ou, title and employeeType (#498)");
   await ok(realmApi + "/applications/set-custom-claim",
            { application: SPN_OWN + "@" + KREALM, set: "kerberos-pac",
              name: "department", type: "string", value: "Own team" },
@@ -272,6 +293,23 @@ async function test() {
         .test(ids[name] || ""), name + ": " + ids[name]);
     });
   });
+  check("the attributes action answers the three ticked, and GET names " +
+        "them with the PAC claim id each catalogue row becomes (#498)",
+        function () {
+    assert.deepStrictEqual(ticked.attributes.slice().sort(),
+                           ["employeeType", "ou", "title"]);
+    assert.deepStrictEqual(view.json.sets[0].attributes.slice().sort(),
+                           ["employeeType", "ou", "title"]);
+    view.json.attributeCatalogue.forEach(function (row) {
+      ids["@" + row.ldap] = row.pacClaimId;
+    });
+    assert.ok(/^ad:\/\/ext\/ou:[0-9a-f]{16}$/.test(ids["@ou"] || ""),
+              "ou: " + ids["@ou"]);
+    assert.strictEqual(ids["@title"], ids.title,
+                       "a ticked title and a row named title share an id");
+    assert.deepStrictEqual(view.json.preview.byLdap.ou.values,
+                           ["blue", "green"]);
+  });
 
   log.info("=== 3. a TGT and two service tickets ===");
   const kdc = wire.proxyTransport(base + "/realm/" + RID);
@@ -282,7 +320,7 @@ async function test() {
                                                      first.first));
   });
   const realmSeen = await serviceTicket(kdc, first.tgt, SPN_REALM, plainKeys,
-    function (seen) { return !!seen.claims; });
+    function (seen) { return !!seen.claims && !!seen.claims[ids["@ou"]]; });
   check("the service ticket for " + SPN_REALM + " carries a claims buffer, " +
         "uncompressed, under a server signature its own key verifies",
         function () {
@@ -299,6 +337,15 @@ async function test() {
     assert.deepStrictEqual(realmSeen.claims[ids.who], ["STRING", [USER]]);
     assert.deepStrictEqual(realmSeen.claims[ids.mailclaim],
                            ["STRING", [MAIL]]);
+  });
+  check("a ticked multi-valued attribute is one STRING claim of every " +
+        "value; the set's row wins over a ticked attribute of its id; an " +
+        "attribute the entry lacks is no claim (#498)", function () {
+    assert.deepStrictEqual(realmSeen.claims[ids["@ou"]],
+                           ["STRING", ["blue", "green"]]);
+    assert.deepStrictEqual(realmSeen.claims[ids.title],
+                           ["STRING", ["Row title"]]);
+    assert.strictEqual(realmSeen.claims[ids["@employeeType"]], undefined);
   });
   const ownSeen = await serviceTicket(kdc, first.tgt, SPN_OWN, ownKeys,
     function (seen) {
@@ -341,7 +388,7 @@ async function test() {
     assert.strictEqual(offSeen.verified, true);
   });
 
-  const floor = 7;
+  const floor = 9;
   assert.ok(checks >= floor, "only " + checks + " checks ran (floor " +
             floor + "); a section has stopped being called.");
   log.info(checks + " check(s) passed.");
@@ -354,7 +401,8 @@ program
   .name("sts_kerberos_pac_claims")
   .description("A service ticket's PAC carries PAC_CLIENT_CLAIMS_INFO with " +
     "the claims /admin-api/kerberos/claims configures, a service's own row " +
-    "replacing the realm's, and none with krb5.pacClaims off (#493).")
+    "replacing the realm's, its ticked directory attributes (#498), and " +
+    "none with krb5.pacClaims off (#493).")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

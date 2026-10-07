@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4170** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4169** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -4364,7 +4364,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0845` | add-conferring-client or remove-conferring-client named no client, or add-conferring-client named one that is not registered in the realm (#454). | — |
 | `STS-ADMIN-0846` | add-conferring-client named a client that already confers the role (#454). | — |
 | `STS-ADMIN-0847` | remove-conferring-client named a client that does not confer the role (#454). | — |
-| `STS-ADMIN-0848` | A directory-attribute catalogue action (attributes, attributes-all, attributes-clear) was asked of the Kerberos PAC claim set, which has no catalogue half (#493). | HTTP 400 |
+| `STS-ADMIN-0848` *(retired)* | A directory-attribute catalogue action (attributes, attributes-all, attributes-clear) was asked of the Kerberos PAC claim set, which had no catalogue half (#493). Retired by #498: the set has a ticked catalogue like the other five, and the three actions act on it. | — |
 | `STS-ADMIN-0849` | An operator's rename of a person's passkey named nobody (#470). | HTTP 400 (API) |
 | `STS-ADMIN-0850` | An operator's rename of a person's passkey was refused: the name was not one, or no such key is registered for them (#470). | HTTP 400 (API) |
 

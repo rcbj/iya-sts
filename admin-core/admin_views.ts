@@ -2326,14 +2326,20 @@ class AdminViews {
 
   // THE KERBEROS PAC CLAIM SET (#493), as `/admin/kerberos/claims` and
   // `GET /admin-api/kerberos/claims` both answer it. Not built on
-  // claimSetsJson(): that reply is the catalogue half of a JWT or SAML set
-  // (ticked LDAP attributes, the groups claim, release lists), and a PAC set
-  // has none of the three — its rows are typed, an attribute row names its
-  // attribute itself, groups are already SIDs in the logon information and
-  // no federation partner reads a ticket. What it carries instead is what
-  // only a PAC claim has: each row's claim id, the four types, whether the
-  // realm writes the buffer at all, and the claims one person's next TGT
-  // would carry, built by the function the KDC calls.
+  // claimSetsJson(): that reply carries the groups claim and the federation
+  // release lists, and a PAC set has neither — groups are already SIDs in the
+  // logon information and no federation partner reads a ticket — and its
+  // preview is a JWT's, persona and all. What it carries instead is what only
+  // a PAC claim has: each row's claim id, the four types, whether the realm
+  // writes the buffer at all, and the claims one person's next TGT would
+  // carry, built by the function the KDC calls.
+  //
+  // THE TICKED CATALOGUE (#498) is the same three members the other pages'
+  // replies carry — `attributeCatalogue` (claimAttributes.catalogueRows(),
+  // the one catalogue, each row with the PAC claim id it would become),
+  // `sets[].attributes` and `preview.byLdap` — so the renderer draws it with
+  // the other pages' table. Its values are the ENTRY's, every value, as the
+  // KDC reads them (stats.kerberosPacAttributeValues()); none is invented.
   /**
    * Builds `/admin/kerberos/claims`'s JSON: the PAC claim set, its claim ids,
    * the setting that turns it on and one person's preview.
@@ -2342,14 +2348,17 @@ class AdminViews {
    * @returns the JSON
    */
   kerberosClaimsJson(previewUser) {
-    const { log, stats, config } = this.deps;
+    const { log, stats, config, claimAttributes } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.kerberosClaimsJson(). previewUser=" +
               previewUser);
     const user = previewUser || 'alice';
     let preview = [];
+    let catalogueValues = { entryFound: false, byLdap: {} };
     try {
       preview = stats.kerberosPacClaims({ username: user });
+      catalogueValues = stats.kerberosPacAttributeValues({ username: user },
+        claimAttributes.allNames());
     } catch (e) {
       log.debug("Caught in AdminViews.kerberosClaimsJson(): " +
                 ((e && e.message) || e));
@@ -2367,7 +2376,10 @@ class AdminViews {
                 'written.',
       precedence: 'The person\'s realm-wide roles are a string claim under ' +
                   'the rows (roles.claimName); a row of the same name ' +
-                  'wins. A service ticket carries what its TGT carried, ' +
+                  'wins. A ticked directory attribute is a string claim ' +
+                  'with every value on the person\'s entry, under both: ' +
+                  'a row or the roles claim with the same claim id wins. ' +
+                  'A service ticket carries what its TGT carried, ' +
                   'with the application\'s own rows (krb5ClaimsPac on the ' +
                   'application of the service principal name) added and ' +
                   'winning by name.',
@@ -2376,10 +2388,15 @@ class AdminViews {
                  claims: stats.claimSet(id).map(function (row) {
                    return Object.assign({ claimId: stats.pacClaimId(row.name) },
                                         row);
-                 }) };
+                 }),
+                 attributes: claimAttributes.selectedNames(id) };
+      }),
+      attributeCatalogue: claimAttributes.catalogueRows().map(function (row) {
+        return Object.assign({ pacClaimId: stats.pacClaimId(row.ldap) }, row);
       }),
       attributeChoices: self.attributeClaimChoices(),
-      preview: { user: user, claims: preview }
+      preview: Object.assign({ user: user, claims: preview },
+                             catalogueValues)
     };
     log.debug("Leaving AdminViews.kerberosClaimsJson(). " +
               json.sets[0].claims.length + " row(s).");
@@ -9957,7 +9974,11 @@ class AdminViews {
     const { log, stats, claimAttributes, vcClaims } = this.deps;
     log.debug("Entering AdminViews.applicationClaimSelections().");
     const user = String(previewUser || '').trim() || 'alice';
-    const sets = setIds.map(function (id) {
+    // Only the sets an application may hold a selection for: the Kerberos
+    // PAC set's ticked catalogue is the realm's alone (#498).
+    const sets = setIds.filter(function (id) {
+      return !!claimAttributes.APP_SELECTION_ATTRIBUTES[id];
+    }).map(function (id) {
       const own = claimAttributes.applicationSelection(id, row);
       const preview = claimAttributes.previewFor(id, user, row);
       return {

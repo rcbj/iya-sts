@@ -3189,8 +3189,9 @@ let attributeResolver = null;
  * Installs the directory-attribute resolver the claim sets read; filled by
  * `claim_attributes.ts`.
  *
- * @param hooks - `jwtClaims(setId, context)` and `samlAttributes(setId,
- *   context)`
+ * @param hooks - `jwtClaims(setId, context)`, `samlAttributes(setId,
+ *   context)`, `entryAttributes(context)` (#94) and `selectedAttributes(setId)`
+ *   (#498, the Kerberos PAC set's ticked catalogue)
  */
 function setAttributeResolver(hooks) {
   log.debug("Entering setAttributeResolver().");
@@ -4554,6 +4555,24 @@ function holdsLiveIssuance(username, sub) {
 // A value that cannot be its row's type at issuance — a `${placeholder}` or a
 // directory value that is not an integer — leaves THAT claim out, said once
 // at warn with STS-KRB-0200; it never costs the ticket.
+//
+// **THE TICKED CATALOGUE (#498, 2026-10-06)** is the set's other half, as on
+// the other five: `claim_attributes.ts`'s `kerberos-pac` selection, nothing
+// ticked on a fresh start, read through this slot's `selectedAttributes`
+// member (the cycle rule 2 exists for forbids the require). rcbj's rules:
+//
+//  * each ticked attribute PRESENT ON THE PERSON'S ENTRY becomes a claim —
+//    the directory only, never the persona the JWT sets fall back to, as an
+//    attribute row reads it (#94) — named by its canonical catalogue spelling,
+//    so its id is `ad://ext/<attribute>:<hex>` derived exactly as a row's;
+//  * type STRING, EVERY value of a multi-valued attribute, source type AD;
+//  * a set's own ROW, and the roles claim the KDC writes itself, are never
+//    shadowed: a ticked attribute whose claim id one of them already holds
+//    adds nothing. So the precedence is roles (unless a row of its name
+//    replaces it, #493), rows, then the catalogue;
+//  * a TGT carries them (kerberosPacClaims()), a service ticket by the KDC's
+//    carry and override rules, and they count toward its 64 KiB cap. An
+//    application has no selection of its own for this set.
 // ---------------------------------------------------------------------------
 
 // One value as a PAC claim of `type`: a string for `string`, a decimal string
@@ -4614,9 +4633,10 @@ function pacClaimId(name) {
 // roles claim under them when `withRoles`. Later rows replace earlier ones of
 // the same NAME, which is how an application's rows win when the caller
 // passes the merged list.
-function pacClaimsFromRows(rows, context, withRoles) {
+function pacClaimsFromRows(rows, context, withRoles, attributes) {
   log.debug("Entering pacClaimsFromRows(). " + rows.length + " row(s).");
   const ctx = context || {};
+  const ticked = attributes || [];
   const byName = new Map();
   const dropped = [];
   if (withRoles) {
@@ -4631,8 +4651,9 @@ function pacClaimsFromRows(rows, context, withRoles) {
       }
     });
   }
-  const entry = rows.some(function (row) { return !!row.attribute; })
-    ? resolvedEntryAttributes(ctx) : null;
+  const entry = ticked.length || rows.some(function (row) {
+    return !!row.attribute;
+  }) ? resolvedEntryAttributes(ctx) : null;
   rows.forEach(function (row) {
     const type = row.type || 'string';
     let raw;
@@ -4660,6 +4681,23 @@ function pacClaimsFromRows(rows, context, withRoles) {
                            type: type, values: values,
                            from: row.attribute ? 'attribute' : 'value' });
   });
+  // THE TICKED CATALOGUE (#498), UNDER everything above: a claim id a row or
+  // the roles claim already holds is theirs (see the header).
+  const taken = new Set(Array.from(byName.values()).map(function (claim) {
+    return claim.id;
+  }));
+  ticked.forEach(function (attribute) {
+    const claim = pacCatalogueClaim(entry, attribute);
+    if (!claim || taken.has(claim.id)) {
+      return;
+    }
+    if (claim.dropped) {
+      dropped.push(attribute);
+      return;
+    }
+    taken.add(claim.id);
+    byName.set(attribute, claim);
+  });
   if (dropped.length) {
     log.warn(errorCodes.tag('STS-KRB-0200') + 'krb5: the PAC claim(s) ' +
              dropped.join(', ') + ' for "' + String(ctx.username || '') +
@@ -4671,10 +4709,91 @@ function pacClaimsFromRows(rows, context, withRoles) {
   return out;
 }
 
+// One ticked catalogue attribute as a PAC claim (#498): every value on the
+// entry, as STRING; null when the entry has none (it adds nothing), and
+// `dropped` when a value cannot be a PAC string (a NUL). Once per ticked
+// attribute while a ticket is built: the hot-path exception, so no
+// Entering/Leaving pair.
+function pacCatalogueClaim(entry, attribute) {
+  const name = String(attribute || '');
+  if (!PAC_CLAIM_NAME.test(name)) {
+    return null;
+  }
+  const raw = attributeValuesOf(entry, name);
+  if (!raw.length) {
+    return null;
+  }
+  const values = raw.map(function (one) {
+    return pacClaimValue(one, 'string');
+  });
+  const claim = { name: name, id: pacClaimId(name), type: 'string',
+                  values: values, from: 'catalogue' };
+  if (values.some(function (one) { return one === null; })) {
+    claim.dropped = true;
+  }
+  return claim;
+}
+
+// The realm's ticked catalogue attributes for a set, through the slot's
+// `selectedAttributes` member (#498), canonically spelled; none without a
+// resolver. Wrapped for resolvedJwtClaims()'s reason: a selection that cannot
+// be read costs those claims, never the ticket.
+function resolvedSelection(id) {
+  log.debug("Entering resolvedSelection(). " + id);
+  if (!attributeResolver ||
+      typeof attributeResolver.selectedAttributes !== 'function') {
+    log.debug("Leaving resolvedSelection(). No resolver.");
+    return [];
+  }
+  try {
+    const names = [].concat(attributeResolver.selectedAttributes(id) || [])
+      .map(String);
+    log.debug("Leaving resolvedSelection(). " + names.length + ".");
+    return names;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-REG-0042') +
+              'the claim-attribute resolver threw reading the ' + id +
+              ' selection and was ignored; the artifact is issued without ' +
+              'its ticked attributes: ' + e.message);
+    log.debug("Leaving resolvedSelection(). Threw.");
+    return [];
+  }
+}
+
+/**
+ * Returns what each named catalogue attribute would be as a PAC claim for one
+ * person (#498) — the console's and the API's table beside the checkboxes,
+ * built by the function a ticket is.
+ *
+ * @param context - `username`
+ * @param names - the catalogue attribute names, canonically spelled
+ * @returns `{ entryFound, byLdap: { <lower-cased name>: { claimId, values,
+ *   value, source } } }`, an attribute the entry lacks absent
+ */
+function kerberosPacAttributeValues(context, names) {
+  log.debug("Entering kerberosPacAttributeValues().");
+  const ctx = Object.assign({}, context || {});
+  ctx.subject = ctx.subject || ctx.username;
+  const entry = resolvedEntryAttributes(ctx);
+  const byLdap = {};
+  (names || []).forEach(function (name) {
+    const claim = pacCatalogueClaim(entry, name);
+    if (claim && !claim.dropped) {
+      byLdap[String(name).toLowerCase()] = {
+        claimId: claim.id, values: claim.values,
+        value: claim.values.join(', '), source: 'directory' };
+    }
+  });
+  log.debug("Leaving kerberosPacAttributeValues(). " +
+            Object.keys(byLdap).length + ".");
+  return { entryFound: !!entry, byLdap: byLdap };
+}
+
 /**
  * Returns the claims a person's TGT carries in its PAC: the realm's
  * `kerberos-pac` set, with the person's realm-wide roles under it as a
- * string claim (rcbj's decision 3 on #493).
+ * string claim (rcbj's decision 3 on #493), and the set's ticked catalogue
+ * attributes under both (#498).
  *
  * @param context - `username` (the person), and nothing else is needed
  * @returns `[{ name, id, type, values, from }]`, empty for none
@@ -4686,7 +4805,8 @@ function kerberosPacClaims(context) {
   // No application: a TGT is for the KDC, and its roles are the realm-wide
   // ones (the roles of one application are not this person's in general).
   delete ctx.application;
-  const out = pacClaimsFromRows(claimSet('kerberos-pac'), ctx, true);
+  const out = pacClaimsFromRows(claimSet('kerberos-pac'), ctx, true,
+                                resolvedSelection('kerberos-pac'));
   log.debug("Leaving kerberosPacClaims(). " + out.length + " claim(s).");
   return out;
 }
@@ -6493,6 +6613,7 @@ module.exports = {
   pacClaimValue: pacClaimValue,
   kerberosPacClaims: kerberosPacClaims,
   kerberosApplicationPacClaims: kerberosApplicationPacClaims,
+  kerberosPacAttributeValues: kerberosPacAttributeValues,
   APP_CLAIM_ATTRIBUTES: APP_CLAIM_ATTRIBUTES,
   applicationClaimSet: applicationClaimSet,
   effectiveClaimSet: effectiveClaimSet,

@@ -9,8 +9,8 @@
 // sixth claim set, `kerberos-pac`.
 //
 //   A. THE ROWS: the set's own rules — a name that makes a claim id, one of
-//      the four PAC types, a fixed value held to its type, no catalogue half
-//      — and the claim id's derivation.
+//      the four PAC types, a fixed value held to its type — and the claim
+//      id's derivation.
 //   B. OFF: with `krb5.pacClaims` off a TGT carries no claims buffer at all.
 //   C. A TGT: the realm's set, typed, the person's roles as a string claim,
 //      a directory attribute, a placeholder; every PAC signature verifies.
@@ -22,6 +22,13 @@
 //      and S4U2PROXY carries the evidence's, with the target's override.
 //   F. A CROSS-REALM RE-SIGN (EXAMPLE.COM to PARTNER.COM) carries the
 //      claims buffer byte for byte, under new signatures that verify.
+//   G. THE TICKED CATALOGUE (#498): nothing ticked on a fresh start, an
+//      unknown attribute refused whole, and the selection in a TGT — every
+//      value of a multi-valued attribute as one STRING claim by the id a row
+//      of that name would have, an absent attribute no claim, a row and the
+//      roles claim each winning over a ticked attribute of the same id —
+//      carried into a service ticket, the console's preview built by the
+//      same function, and gone again after attributes-clear.
 //
 // In process, through `kdc.handleMessage()` and the local client
 // `tests/vendored/krb5_wire.js`, because every assertion opens a ticket with
@@ -34,8 +41,10 @@ delete process.env.CONFIG_FILE;
 const nodeCrypto = require('crypto');
 const config = require('../common/config');
 require('../common/app');
-require('../ldap/ldap_server');
+const ldap = require('../ldap/ldap_server');
 const stats = require('../common/admin_stats');
+const claimAttributes = require('../common/claim_attributes');
+const adminViews = require('../admin-core/admin_views');
 const roles = require('../common/roles');
 const applications = require('../common/applications');
 const adminActions = require('../admin-core/admin_actions');
@@ -54,6 +63,7 @@ const DOMAIN = REALM.toLowerCase();
 const PARTNER = 'PARTNER.COM';
 const RUN = nodeCrypto.randomBytes(3).toString('hex');
 const ROLE = 'pac-role-' + RUN;
+const PERSON = 'pac-cat-' + RUN;
 const T = {
   label: 'in-process',
   send: function (bytes) {
@@ -137,11 +147,11 @@ async function tgtOf(t, name, password) {
   return got.tgt;
 }
 
-function act(body) {
+function act(body, names) {
   log.debug("Entering act(). " + body.action);
   log.debug("Leaving act().");
   return adminActions.claimsAction(Object.assign({ set: 'kerberos-pac' },
-                                                 body), [],
+                                                 body), names || [],
                                    stats.KERBEROS_CLAIM_SET_IDS);
 }
 
@@ -176,8 +186,7 @@ function theRows(t) {
     [{ action: 'add', name: 'big', type: 'uint64', value: '-1' },
      'STS-REG-0338'],
     [{ action: 'add', name: 'flag', type: 'boolean', value: 'yes' },
-     'STS-REG-0338'],
-    [{ action: 'attributes', attributes: ['mail'] }, 'STS-ADMIN-0848']
+     'STS-REG-0338']
   ];
   refusals.forEach(function (pair, at) {
     const r = act(pair[0]);
@@ -364,12 +373,137 @@ async function run(t) {
             'every signature it checks verifies');
   }
 
+  await theCatalogue(t, userPassword);
+
   // Cleanup: the set and the override, so a later file meets a clean realm.
   override('HTTP/web.' + DOMAIN + '@' + REALM, []);
   stats.setClaimSet('kerberos-pac', []);
+  claimAttributes.clearSelection('kerberos-pac');
   roles.remove(ROLE);
   config.setOverride('krb5.pacClaims', false);
   log.debug("Leaving run().");
+}
+
+// G. THE TICKED CATALOGUE (#498) — see the header.
+async function theCatalogue(t, userPassword) {
+  log.debug("Entering theCatalogue().");
+  t.log.info('=== G. the ticked catalogue ===');
+  t.check(claimAttributes.selectedNames('kerberos-pac').length === 0,
+          'G1. nothing is ticked in the PAC set on a fresh start',
+          JSON.stringify(claimAttributes.selectedNames('kerberos-pac')));
+  const unknown = act({ action: 'attributes' }, ['mail', 'noSuchThing']);
+  t.check(unknown.ok === false &&
+          require('../common/error_codes').codeOf(unknown) ===
+            'STS-REG-0035' &&
+          claimAttributes.selectedNames('kerberos-pac').length === 0,
+          'G2. an attribute the catalogue does not hold refuses the WHOLE ' +
+          'call (STS-REG-0035), and nothing is ticked',
+          JSON.stringify(unknown));
+
+  // A person of their own, whose entry holds a multi-valued `ou`, a `title`
+  // a row of the same name will shadow, and an `employeeNumber` the roles
+  // claim (renamed to it) will shadow; `employeeType` is ticked and absent.
+  ldap.createUser(PERSON, { invent: false, attributes: {} });
+  ldap.autoCreateUser({ key: PERSON, federation: {
+    id: 'pac-partner-' + RUN, peer: 'https://partner.example', create: false,
+    updateAttributes: true, attributes: {
+      ou: ['blue', 'green'], title: ['Title on the entry'],
+      employeeNumber: ['4242'], departmentNumber: ['D-17'],
+      mail: [PERSON + '@' + DOMAIN] } } });
+  roles.write(ROLE, { users: ['alice', PERSON] });
+  // What the set change announces to holders of live tickets (#238): the
+  // claims by the names a PAC claim has — the attribute's own.
+  const announced = [];
+  const announce = stats.announceClaimsReshaped;
+  stats.announceClaimsReshaped = function (change) {
+    announced.push(change);
+  };
+  let ticked;
+  try {
+    ticked = act({ action: 'attributes' },
+                 ['ou', 'title', 'employeeNumber', 'employeeType', 'mail',
+                  'departmentNumber']);
+  } finally {
+    stats.announceClaimsReshaped = announce;
+  }
+  t.check(ticked.ok === true &&
+          claimAttributes.selectedNames('kerberos-pac').slice().sort()
+            .join() ===
+            'departmentNumber,employeeNumber,employeeType,mail,ou,title',
+          'G3. the attributes action ticks six in the PAC set, as on the ' +
+          'other five sets', JSON.stringify(ticked));
+  t.check(announced.length === 1 &&
+          JSON.stringify(announced[0].sets) === '["kerberos-pac"]' &&
+          announced[0].names.slice().sort().join() ===
+            'departmentNumber,employeeNumber,employeeType,mail,ou,title',
+          'G3a. the change is announced under the PAC claims\' own names — ' +
+          'the attributes\' — not the JWT claims they map to',
+          JSON.stringify(announced));
+  stats.setClaimSet('kerberos-pac', [
+    { name: 'title', type: 'string', value: 'Row title' }]);
+  config.setOverride('roles.claimName', 'employeeNumber');
+  const tgt = await tgtOf(t, PERSON, userPassword);
+  if (!tgt) {
+    config.clearOverride('roles.claimName');
+    log.debug("Leaving theCatalogue(). No TGT.");
+    return;
+  }
+  let seen = await opened(tgt.ticket, ['krbtgt', REALM], REALM);
+  t.check(valuesOf(seen, 'ou') === '["STRING",["blue","green"]]',
+          'G4. a ticked multi-valued attribute is ONE string claim carrying ' +
+          'every value, by ad://ext/ou:<hex>', JSON.stringify(seen.claims));
+  t.check(valuesOf(seen, 'mail') ===
+            '["STRING",["' + PERSON + '@' + DOMAIN + '"]]' &&
+          valuesOf(seen, 'employeeType') === 'none' &&
+          valuesOf(seen, 'departmentNumber') === '["STRING",["D-17"]]',
+          'G5. a ticked attribute on the entry is a claim; one the entry ' +
+          'lacks is none — nothing is invented', JSON.stringify(seen.claims));
+  t.check(valuesOf(seen, 'title') === '["STRING",["Row title"]]',
+          'G6. the set\'s own row wins over a ticked attribute with the same ' +
+          'claim id', JSON.stringify(seen.claims));
+  t.check(seen.claims && seen.claims[idOf('employeeNumber')] &&
+          seen.claims[idOf('employeeNumber')].values.indexOf(ROLE) >= 0 &&
+          seen.claims[idOf('employeeNumber')].values.indexOf('4242') < 0,
+          'G7. the roles claim the KDC writes is never shadowed by a ticked ' +
+          'attribute of the same id', JSON.stringify(seen.claims &&
+            seen.claims[idOf('employeeNumber')]));
+  t.check(seen.signatures === true && Object.keys(seen.claims).every(
+            function (id) {
+              return /^ad:\/\/ext\/[A-Za-z0-9._-]+:[0-9a-f]{16}$/.test(id);
+            }),
+          'G8. every claim id is ad://ext/<name>:<16 hex>, and the PAC ' +
+          'signatures verify');
+  config.clearOverride('roles.claimName');
+  const preview = adminViews.kerberosClaimsJson(PERSON);
+  const previewIds = {};
+  preview.preview.claims.forEach(function (claim) {
+    previewIds[claim.id] = claim.values;
+  });
+  t.check(JSON.stringify(previewIds[idOf('ou')]) === '["blue","green"]' &&
+          preview.sets[0].attributes.length === 6 &&
+          preview.preview.byLdap.ou &&
+          preview.preview.byLdap.ou.claimId === idOf('ou') &&
+          !preview.preview.byLdap.employeetype &&
+          preview.attributeCatalogue.filter(function (row) {
+            return row.ldap === 'ou';
+          })[0].pacClaimId === idOf('ou'),
+          'G9. the console\'s view: the ticked list, the catalogue with each ' +
+          'row\'s PAC claim id, and the person\'s values built by the ' +
+          'function the KDC calls', JSON.stringify(preview.preview.byLdap));
+  const r = await wire.tgsExchange(T, tgt, spn('backend'), REALM, {});
+  seen = r.ok ? await opened(r.ticket, spn('backend').name, REALM) : {};
+  t.check(r.ok && valuesOf(seen, 'ou') === '["STRING",["blue","green"]]',
+          'G10. a service ticket carries the TGT\'s ticked attributes',
+          JSON.stringify(r.ok ? seen.claims : String(r.error)));
+  const cleared = act({ action: 'attributes-clear' });
+  const after = await tgtOf(t, PERSON, userPassword);
+  seen = after ? await opened(after.ticket, ['krbtgt', REALM], REALM) : {};
+  t.check(cleared.ok === true && valuesOf(seen, 'ou') === 'none' &&
+          valuesOf(seen, 'title') === '["STRING",["Row title"]]',
+          'G11. after attributes-clear the next TGT carries no ticked ' +
+          'attribute, and the rows are untouched', JSON.stringify(
+            seen.claims));
+  log.debug("Leaving theCatalogue().");
 }
 
 module.exports = {
