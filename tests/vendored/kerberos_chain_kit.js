@@ -137,6 +137,7 @@ const registry = require("./sts_applications.js");
 const facts = require("./service_facts.js");
 const chain = require("./token_exchange_chain_kit.js");
 const wire = require("./krb5_wire.js");
+const capture = require("./chain_capture.js");
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({
@@ -243,6 +244,8 @@ function castFor(K, tag) {
     tiers: [webapp, gateway, esb, provider]
   };
   cast.principal = cast.user + "@" + K.realm;
+  capture.set({ protocol: "Kerberos v5 ([MS-SFU] S4U2Self / S4U2Proxy)",
+                useCase: /imp$/.test(tag) ? "impersonation" : "delegation" });
   log.debug("Leaving castFor().");
   return cast;
 }
@@ -498,6 +501,10 @@ async function tierTgt(K, tier) {
     tier.tgt = await tgtWith(K, tier.spn, { keys: tier.keys });
     log.info("[wire] " + tier.spn + " holds a TGT (its own key, as " +
              "`kinit -k`); flags " + tier.tgt.flagNames.join(","));
+    captureTgt(K, tier.tgt, {
+      hop: capture.hop(tier.stem, "KDC"), requester: tier.identifier,
+      notes: tier.stem + "'s own TGT, from its long-term key (as " +
+        "`kinit -k`); the credential it makes its TGS requests with" });
   }
   log.debug("Leaving tierTgt().");
   return tier.tgt;
@@ -533,6 +540,13 @@ function forwardable(r) {
 // in PA-FOR-USER — no credential of the user's is involved.
 async function s4u2self(K, cast, tier) {
   log.debug("Entering s4u2self(). " + tier.spn);
+  capture.layer({
+    hop: capture.hop("bob", "webapp1"), requester: cast.user,
+    target: cast.webapp.identifier, mechanism: "sign-in outside Kerberos",
+    kind: "none", format: null, value: null,
+    notes: "protocol transition: " + cast.user + " signs in to webapp1 " +
+      "without Kerberos and webapp1 hands his NAME to " + tier.stem +
+      "; no ticket of his exists" });
   const tgt = await tierTgt(K, tier);
   const r = await settled(tier.stem + "'s S4U2Self", function () {
     return wire.tgsExchange(K.transport, tgt, snameOf(tier), K.realm, {
@@ -543,6 +557,11 @@ async function s4u2self(K, cast, tier) {
   }, forwardable);
   assert.ok(r.ok, tier.spn + "'s S4U2Self for " + cast.user + " was " +
             "refused: " + String(r.error));
+  pendingCapture(r, {
+    hop: capture.hop("webapp1", tier.stem), requester: tier.identifier,
+    target: tier.identifier, mechanism: "S4U2Self",
+    notes: tier.stem + " named " + cast.user + " in PA-FOR-USER and was " +
+      "issued a ticket for him to itself" });
   log.debug("Leaving s4u2self().");
   return r;
 }
@@ -563,6 +582,11 @@ async function s4u2proxy(K, cast, tier, evidence) {
     });
   assert.ok(r.ok, tier.spn + "'s S4U2Proxy to " + tier.next.registeredSpn +
             " for " + cast.user + " was refused: " + String(r.error));
+  pendingCapture(r, {
+    hop: capture.hop(tier.stem, tier.next.stem), requester: tier.identifier,
+    target: tier.next.identifier, mechanism: "S4U2Proxy",
+    notes: tier.stem + " presented the ticket it holds for " + cast.user +
+      " (cname-in-addl-tkt) and asked for " + tier.next.registeredSpn });
   log.debug("Leaving s4u2proxy().");
   return r;
 }
@@ -581,11 +605,167 @@ async function userTicketTo(K, cast, tier) {
   log.info("[wire] " + cast.principal + " authenticated to the KDC (" +
            (cast.userKeys ? "the development key" : "his password") +
            "); TGT flags " + tgt.flagNames.join(","));
+  captureTgt(K, tgt, {
+    hop: capture.hop("bob", "KDC"), requester: cast.principal,
+    notes: cast.user + " authenticated with PA-ENC-TIMESTAMP under " +
+      (cast.userKeys ? "the development KDC's key for him"
+                     : "the key derived from his password") });
   const r = await wire.tgsExchange(K.transport, tgt, snameOf(tier), K.realm);
   assert.ok(r.ok, "bob's ticket to " + tier.registeredSpn + ": " +
             String(r.error));
+  pendingCapture(r, {
+    hop: capture.hop("bob", tier.stem), requester: cast.principal,
+    target: tier.identifier, mechanism: "TGS-REQ",
+    notes: cast.user + "'s own ticket to " + tier.registeredSpn +
+      ", handed to " + tier.stem + " in an AP-REQ" });
   log.debug("Leaving userTicketTo().");
   return r;
+}
+
+// ---------------------------------------------------------------------------
+// THE CAPTURE (`chain_capture.js`, STS_CHAIN_CAPTURE): every ticket of the
+// chain, written down. A service ticket is recorded when the tier it is for
+// OPENS it in accept(), because only then is its enc-part readable — so the
+// request that produced it leaves a note on the reply object for accept()
+// to find. A TGT is opened by nobody here (only the KDC holds krbtgt's key),
+// so it is recorded with what the AS-REP told its holder. `value` is the
+// Ticket's DER as it went on the wire; NO SESSION KEY and no long-term key
+// is ever written — the claims are picked field by field, and the enc-part's
+// `key` is not among them.
+// ---------------------------------------------------------------------------
+const pendingCaptures = new WeakMap();
+
+function pendingCapture(reply, fields) {
+  log.debug("Entering pendingCapture(). " + fields.hop);
+  if (capture.enabled()) {
+    pendingCaptures.set(reply, fields);
+  }
+  log.debug("Leaving pendingCapture().");
+}
+
+function ticketValue(ticket) {
+  log.debug("Entering ticketValue().");
+  let out = null;
+  try {
+    out = Buffer.from(msgs.encTicket(ticket)).toString("base64");
+  } catch (e) {
+    log.debug("Caught in ticketValue(): " + ((e && e.message) || e));
+    // A ticket that will not re-encode is recorded without its bytes.
+  }
+  log.debug("Leaving ticketValue().");
+  return out;
+}
+
+// The Ticket's cleartext half: what anybody holding it can read.
+function ticketHeader(ticket) {
+  log.debug("Entering ticketHeader().");
+  const enc = ticket.encPart || {};
+  log.debug("Leaving ticketHeader().");
+  return { tktVno: ticket.tktVno, realm: ticket.realm,
+           sname: (ticket.sname && ticket.sname.name || []).join("/"),
+           encPartEtype: enc.etype,
+           encPartEtypeName: etypeName(enc.etype),
+           encPartKvno: enc.kvno === undefined ? null : enc.kvno };
+}
+
+function etypeName(etype) {
+  log.debug("Entering etypeName().");
+  let out = null;
+  try {
+    const profile = kcrypto.etypeById(etype);
+    out = (profile && profile.name) || null;
+  } catch (e) {
+    log.debug("Caught in etypeName(): " + ((e && e.message) || e));
+    // An enctype the codec does not know is recorded by number only.
+  }
+  log.debug("Leaving etypeName().");
+  return out;
+}
+
+function principal(name, realm) {
+  log.debug("Entering principal().");
+  log.debug("Leaving principal().");
+  return ((name && name.name) || []).join("/") + (realm ? "@" + realm : "");
+}
+
+function captureTgt(K, tgt, f) {
+  log.debug("Entering captureTgt(). " + f.hop);
+  if (!capture.enabled()) {
+    log.debug("Leaving captureTgt(). Not capturing.");
+    return;
+  }
+  capture.layer({
+    hop: f.hop, requester: f.requester,
+    target: principal(tgt.sname, tgt.srealm), mechanism: "AS-REQ",
+    kind: "TGT", format: "Kerberos Ticket (DER, base64)",
+    value: ticketValue(tgt.ticket), header: ticketHeader(tgt.ticket),
+    claims: { client: principal(tgt.client, tgt.realm),
+              server: principal(tgt.sname, tgt.srealm),
+              flags: tgt.flagNames, authtime: tgt.authtime,
+              endtime: tgt.endtime, renewTill: tgt.renewTill,
+              readFrom: "the AS-REP's enc-part, as its holder reads it; " +
+                "the ticket's own enc-part is krbtgt's" },
+    actChain: [], notes: f.notes });
+  log.debug("Leaving captureTgt().");
+}
+
+// A service ticket, opened: `reply` is the TGS-REP answer the request left
+// its note on, `ticket` and `part` what accept() decoded.
+function captureAccepted(reply, ticket, part, pac, delegation) {
+  log.debug("Entering captureAccepted().");
+  const f = capture.enabled() ? pendingCaptures.get(reply) : null;
+  if (!f) {
+    log.debug("Leaving captureAccepted(). Nothing to capture.");
+    return;
+  }
+  const buffer = function (type) {
+    log.debug("Entering buffer(). " + type);
+    const found = kpac.bufferOfType(pac, type);
+    log.debug("Leaving buffer().");
+    return found && found.parsed ? found.parsed : null;
+  };
+  const logon = buffer(kpac.TYPE.LOGON_INFO) || {};
+  const claimsInfo = buffer(kpac.TYPE.CLIENT_CLAIMS);
+  const transited = delegation ? delegation.transitedServices || [] : [];
+  capture.layer({
+    hop: f.hop, requester: f.requester, target: f.target,
+    mechanism: f.mechanism, kind: "Kerberos service ticket",
+    format: "Kerberos Ticket (DER, base64)",
+    value: ticketValue(ticket), header: ticketHeader(ticket),
+    claims: {
+      client: principal(part.cname, part.crealm),
+      server: principal(ticket.sname, ticket.realm),
+      flags: msgs.ticketFlagNames(part.flags),
+      authtime: part.authtime, starttime: part.starttime,
+      endtime: part.endtime, renewTill: part.renewTill,
+      transitedEncoding: part.transited
+        ? { type: part.transited.type, contents: part.transited.contents }
+        : null,
+      pac: {
+        logonInfo: {
+          effectiveName: logon.effectiveName,
+          fullName: logon.fullName,
+          logonDomainName: logon.logonDomainName,
+          userSid: logon.userSid,
+          primaryGroupSid: logon.primaryGroupSid,
+          groups: logon.groups || [],
+          extraSids: logon.extraSids || [],
+          resourceGroupDomainSid: logon.resourceGroupDomainSid || null,
+          resourceGroups: logon.resourceGroups || []
+        },
+        delegationInfo: delegation
+          ? { s4u2proxyTarget: delegation.s4u2proxyTarget,
+              transitedServices: transited }
+          : null,
+        clientClaims: claimsInfo
+          ? (claimsInfo.claims && claimsInfo.claims.length
+            ? claimsInfo.claims : claimsInfo)
+          : null
+      }
+    },
+    actChain: transited,
+    notes: f.notes + (delegation ? "" : "; no S4U_DELEGATION_INFO") });
+  log.debug("Leaving captureAccepted().");
 }
 
 // ---------------------------------------------------------------------------
@@ -650,6 +830,14 @@ async function accept(K, cast, tier, ticket) {
            (delegation ? JSON.stringify({
              target: delegation.s4u2proxyTarget,
              transited: delegation.transitedServices }) : "absent"));
+  try {
+    captureAccepted(ticket, apReq.ticket, part, pac, delegation);
+  } catch (e) {
+    log.debug("Caught in accept(): " + ((e && e.message) || e));
+    // The capture is a by-product of the run and never fails it.
+    log.warn("[capture] the ticket for " + tier.spn + " was not recorded: " +
+             ((e && e.message) || e));
+  }
   log.debug("Leaving accept().");
   return { ticket: apReq.ticket, flagNames: flagNames, part: part,
            delegation: delegation };

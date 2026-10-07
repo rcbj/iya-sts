@@ -74,6 +74,7 @@
 const assert = require("assert");
 const crypto = require("crypto");
 const registry = require("./sts_applications.js");
+const capture = require("./chain_capture.js");
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({
@@ -146,6 +147,7 @@ function castFor(tag) {
     redirectUri: "https://" + webapp.identifier + ".example.com/callback",
     secrets: {}
   };
+  capture.set({ protocol: "OAuth 2.0 token exchange (RFC 8693)" });
   log.debug("Leaving castFor().");
   return cast;
 }
@@ -217,6 +219,8 @@ async function isProduct(base) {
   const r = await call("GET", base + "/admin-api/mode");
   if (r.status === 404) {
     const product = await registry.isProduct(base);
+    capture.set({ service: base,
+                  mode: product ? "product" : "development" });
     log.debug("Leaving isProduct(). From global.mode: " + product);
     return product;
   }
@@ -225,6 +229,8 @@ async function isProduct(base) {
     "GET /admin-api/mode should answer 200 with `isProduct` and answered " +
     r.status + ": " + r.text.slice(0, 300));
   log.info("[mode] the service says it is in " + r.json.mode + " mode.");
+  capture.set({ service: base, mode: r.json.mode ||
+                (r.json.isProduct ? "product" : "development") });
   log.debug("Leaving isProduct(). " + r.json.isProduct);
   return r.json.isProduct;
 }
@@ -333,6 +339,7 @@ async function provisionCast(base, cast, semantics) {
   log.debug("Entering provisionCast(). " + cast.tag + " " + semantics);
   log.info("=== Provisioning " + cast.user + " and the four applications " +
            "(" + semantics + ") ===");
+  capture.set({ useCase: semantics });
   await registry.ensurePerson(base, cast.user, cast.password);
   // No `stsMayAct` on the person, ever: it names ONE delegate, and a chain
   // has two actors, so a `may_act` naming either refuses the other in every
@@ -519,6 +526,82 @@ async function authorizationCode(base, opts) {
   return { code: decodeURIComponent(code), verifier: pair.verifier };
 }
 
+// ---------------------------------------------------------------------------
+// THE CAPTURE (`chain_capture.js`, STS_CHAIN_CAPTURE): each token this chain
+// is issued, written down where it arrives. Nothing here runs unless the
+// variable names a directory, and nothing here can fail the job.
+// ---------------------------------------------------------------------------
+// A tier's name without the job's tag: `apigw1-del` -> `apigw1`, so every
+// protocol's hops read the same in the spreadsheet.
+function stemOf(cast, identifier) {
+  log.debug("Entering stemOf(). " + identifier);
+  const suffix = "-" + cast.tag;
+  const id = String(identifier || "");
+  log.debug("Leaving stemOf().");
+  return id.slice(-suffix.length) === suffix
+    ? id.slice(0, -suffix.length) : id;
+}
+
+// One JWT layer: its header and claims decoded, `act` flattened.
+function captureJwt(f) {
+  log.debug("Entering captureJwt(). " + f.hop);
+  if (!capture.enabled()) {
+    log.debug("Leaving captureJwt(). Not capturing.");
+    return;
+  }
+  const read = capture.jwt(f.token);
+  const claims = read.claims && typeof read.claims === "object"
+    ? read.claims : {};
+  const kind = capture.jwtKind(read.header) +
+      (f.kind ? ", " + f.kind : "");
+  capture.layer({
+    hop: f.hop, requester: f.requester, target: f.target,
+    mechanism: f.mechanism,
+    kind: f.kindExact || kind,
+    format: read.encrypted ? "JWE (compact)" : "JWT (compact JWS)",
+    value: f.token, header: read.header, claims: read.claims,
+    actChain: capture.actChain(claims.act, claims.iss),
+    notes: f.notes || null });
+  log.debug("Leaving captureJwt().");
+}
+
+// The sign-in's response: the ID Token is webapp1's own, the access token
+// is what webapp1 hands the gateway, and the refresh token stays with
+// webapp1 (a JWE's protected header is all anybody else can read of it).
+function captureSignIn(cast, json) {
+  log.debug("Entering captureSignIn().");
+  if (!capture.enabled()) {
+    log.debug("Leaving captureSignIn(). Not capturing.");
+    return;
+  }
+  const bobToWebapp = capture.hop("bob", "webapp1");
+  if (json.id_token) {
+    captureJwt({ hop: bobToWebapp, requester: cast.webapp.identifier,
+                 target: cast.webapp.identifier,
+                 mechanism: "authorization code (OpenID Connect, PKCE)",
+                 token: json.id_token, kindExact: "ID Token",
+                 notes: cast.user + " signed in to " +
+                   cast.webapp.identifier });
+  }
+  if (json.refresh_token) {
+    captureJwt({ hop: bobToWebapp, requester: cast.webapp.identifier,
+                 target: cast.webapp.identifier,
+                 mechanism: "authorization code (OpenID Connect, PKCE)",
+                 token: json.refresh_token, kindExact: "refresh token",
+                 notes: "held by " + cast.webapp.identifier + " and " +
+                   "presented only to this service's token endpoint" });
+  }
+  captureJwt({ hop: capture.hop("webapp1", "apigw1"),
+               requester: cast.webapp.identifier,
+               target: cast.gateway.identifier,
+               mechanism: "authorization code (OpenID Connect, PKCE)",
+               token: json.access_token,
+               notes: "issued to " + cast.webapp.identifier + " at the " +
+                 "sign-in with resource=" + cast.gateway.audience +
+                 ", and presented to " + cast.gateway.identifier });
+  log.debug("Leaving captureSignIn().");
+}
+
 // THE SIGN-IN: a code the way a browser gets one (above), then redeemed by
 // the PUBLIC client with its verifier and no secret.
 //
@@ -552,6 +635,7 @@ async function signIn(base, cast) {
            cast.webapp.identifier + " asking for \"" + scope + "\" with " +
            "resource=" + resource + "; the response carries " +
            Object.keys(r.json).join(", ") + ".");
+  captureSignIn(cast, r.json);
   log.debug("Leaving signIn().");
   return r.json;
 }
@@ -566,6 +650,12 @@ async function clientCredentials(base, cast, tier) {
     basicAuth(tier.identifier, secretOf(cast, tier.identifier)));
   assert.strictEqual(r.status, 200, tier.identifier + "'s client_" +
                      "credentials grant: " + r.text.slice(0, 400));
+  captureJwt({
+    hop: capture.hop(stemOf(cast, tier.identifier), "authorization server"),
+    requester: tier.identifier, target: tier.identifier,
+    mechanism: "client_credentials", token: r.json.access_token,
+    kind: "actor token", notes: tier.identifier + "'s own token, about " +
+      "itself, sent as the actor_token of its exchange (delegation)" });
   log.debug("Leaving clientCredentials().");
   return r.json;
 }
@@ -589,6 +679,15 @@ async function exchange(base, cast, tier, subjectToken, actorToken) {
                      next.audience + ": " + r.text.slice(0, 500));
   assert.strictEqual(r.json.issued_token_type, ACCESS_TOKEN_TYPE,
                      r.text.slice(0, 400));
+  captureJwt({
+    hop: capture.hop(stemOf(cast, tier.identifier),
+                     stemOf(cast, next.identifier)),
+    requester: tier.identifier, target: next.identifier,
+    mechanism: "RFC 8693 token exchange" +
+      (actorToken ? " with actor_token" : ""),
+    token: r.json.access_token,
+    notes: "audience " + next.audience + "; issued_token_type " +
+      r.json.issued_token_type });
   log.debug("Leaving exchange().");
   return r.json;
 }
@@ -918,5 +1017,7 @@ module.exports = {
   registerSince: registerSince,
   actProducing: actProducing,
   assertAct: assertAct,
-  assertGraphIsAChain: assertGraphIsAChain
+  assertGraphIsAChain: assertGraphIsAChain,
+  stemOf: stemOf,
+  captureJwt: captureJwt
 };

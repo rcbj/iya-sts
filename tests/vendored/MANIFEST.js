@@ -1624,7 +1624,12 @@ const LOCAL_HELPERS = [
   // PAC's server signature, S4U_DELEGATION_INFO), and the register read
   // back. It takes the protocol-independent half from
   // token_exchange_chain_kit.js.
-  'kerberos_chain_kit.js'
+  'kerberos_chain_kit.js',
+  // THE CHAIN JOBS' OPTIONAL RECORD OF WHAT EACH LAYER WAS ISSUED: off
+  // unless STS_CHAIN_CAPTURE names a directory, then `<job>.json` there with
+  // every token, assertion or ticket, decoded. Required by the three chain
+  // kits above and by the GNAP one. Nothing from the service.
+  'chain_capture.js'
 ];
 
 // ---------------------------------------------------------------------------
