@@ -4666,6 +4666,11 @@ class Authn {
       // session and its event exist, because the risk engine scores it; the
       // event asks again for the same request and gets this same answer.
       registeredDevice: this.registeredDeviceFor(d, String(username)),
+      // A WEBAUTHN CEREMONY MAY FOLLOW (#259): the door says so, and the
+      // session's start amends this assessment with the device the
+      // ceremony proved (`startSessionHere()`, `risk_engine.ts`'s
+      // `amend()`).
+      deviceAwaited: d.deviceAwaited === true,
       userAgent: String(headers['user-agent'] || '') });
     log.debug("Leaving Authn.assessSignIn(). " +
               (assessment ? assessment.level : 'Not assessed.'));
@@ -5060,6 +5065,19 @@ class Authn {
     // person's standing or none. See `risk/risk_engine.ts`.
     // -------------------------------------------------------------------------
     const riskEngine = this.riskEngine();
+    // THE DEVICE THE CEREMONY PROVED, PUT INTO THE SCORE (#259). A door
+    // that assessed before a WebAuthn ceremony could follow said so
+    // (`deviceAwaited`), and this is the one funnel every finisher reaches:
+    // the assessment is amended with the device this authentication
+    // recognises — the same recognition the event below records — before
+    // the policy is asked about it, so the decision, the session's risk and
+    // the history all read the amended answer. Replaced on `extra`, so a
+    // second reading of it amends nothing twice.
+    if (extra.risk && extra.risk.deviceAwaited && riskEngine && !extra.key) {
+      extra.risk = riskEngine.amend(extra.risk,
+                                    this.registeredDeviceFor(extra, username),
+                                    username);
+    }
     const risk = extra.risk && riskEngine ? riskEngine.riskOf(extra.risk)
                                           : null;
     let riskDecision = String(extra.riskDecision || 'permit');
@@ -8051,7 +8069,9 @@ class Authn {
     const credential = { kind: 'email-' + kind };
     const assessed = await this.assessSignIn(req, username, record.protocol,
       { application: String(record.application || ''),
-        credential: credential });
+        credential: credential,
+        // A key may answer as the second factor (#259).
+        deviceAwaited: true });
     const second = this.beginSecondFactorAfterWallet(req, res, record,
       username, { amr: ['otp'], acr: '1' }, assessed, { first: 'email' });
     if (second.refused) {
@@ -9205,7 +9225,9 @@ class Authn {
     const assessment = await this.assessSignIn(req, username,
       record.protocol, { application: String(record.application || ''),
                          credential: { kind: passwordless ? 'webauthn'
-                                                          : 'password' } });
+                                                          : 'password' },
+                         // A key may answer next, in either role (#259).
+                         deviceAwaited: true });
     const riskEngine = assessment ? this.riskEngine() : null;
     const risk = riskEngine ? riskEngine.riskOf(assessment) : null;
     const roleAnswer = gate.check(Object.assign({

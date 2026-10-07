@@ -1161,7 +1161,9 @@ class VcSignin {
     // factor is.
     const assessed = await authn.assessSignIn(req, username, VIA,
       { application: record.application || '',
-        credential: { kind: 'wallet' } });
+        credential: { kind: 'wallet' },
+        // A key may answer as the second factor (#259).
+        deviceAwaited: true });
 
     // A SECOND FACTOR AFTER THE WALLET, where one is needed.
     const second = authn.beginSecondFactorAfterWallet(req, res, record,

@@ -15055,6 +15055,13 @@ const CODES = [
       'devices.androidStatusUrl (#256); the active list, if any, is ' +
       'unchanged.',
     spec: 'none — a warning in the log and a failed run' },
+  { code: 'STS-RISK-0047',
+    summary: 'A sign-in\'s risk assessment, amended with the registered ' +
+      'device its WebAuthn ceremony proved (#259), could not be recorded: ' +
+      'the history\'s device feature, the assessment row, the standing or ' +
+      'the reactions to a change of level may be missing. The session was ' +
+      'decided on the amended assessment.',
+    spec: 'none — a warning in the log' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

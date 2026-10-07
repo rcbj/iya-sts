@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4211** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4212** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 47
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 46
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 47
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 351
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
@@ -3522,6 +3522,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0044` | A security key found cloned (its signature counter went backwards) could not be recorded on the person's risk standing (#231). The assertion was refused and RISC credential-compromise was still sent; only the standing, and the risk-response policy's reaction to it, are missing. | WebAuthn Level 3 section 6.1.1 |
 | `STS-RISK-0045` | An upload or download meant as Google's Android attestation status list was not one: not JSON, or not an object whose `entries` are keyed by certificate serial (#256). Nothing was loaded. | HTTP 400 (management API); none for the download job |
 | `STS-RISK-0046` | The devices.android-status-refresh job could not download Google's Android attestation status list from devices.androidStatusUrl (#256); the active list, if any, is unchanged. | none — a warning in the log and a failed run |
+| `STS-RISK-0047` | A sign-in's risk assessment, amended with the registered device its WebAuthn ceremony proved (#259), could not be recorded: the history's device feature, the assessment row, the standing or the reactions to a change of level may be missing. The session was decided on the amended assessment. | none — a warning in the log |
 
 ## STS-MAIL
 
