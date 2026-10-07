@@ -3647,7 +3647,12 @@ const SETTINGS = [
                  'them. These are the work behind the sockets that do not ' +
                  'speak HTTP: the front process keeps the socket and the ' +
                  'framing (it accepts the connection, decodes the BER and ' +
-                 'writes the reply) and the worker does the work.\n- ' +
+                 'writes the reply) and the worker does the work. The ' +
+                 'families are "ldap" (the directory on 389 and 636), ' +
+                 '"spiffe" (the unary Workload and SPIRE Server API methods, ' +
+                 'and the Broker API\'s FetchJWTSVID once its reference is ' +
+                 'attested) and "krb5" (every message on the KDC\'s TCP and ' +
+                 'UDP 88).\n- ' +
                  '**"*"**, which is EVERYTHING of both kinds — how "run the ' +
                  'service in the pool" is said, and the only spelling that ' +
                  'cannot go stale the next time a family is added.\n\n"*" IS ' +

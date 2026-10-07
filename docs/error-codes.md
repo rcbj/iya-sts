@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4186** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4189** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -70,12 +70,12 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 21
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 203
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 205
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 145
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 45
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
@@ -2752,6 +2752,8 @@ Raised from: kerberos/.
 | `STS-KRB-0201` | A ticket's PAC client claims encoded to more than the 64 KiB a ticket may carry; the ticket was issued with no claims buffer (#493). | none (logged; [MS-PAC] 2.11) |
 | `STS-KRB-0202` | A ticket's PAC client claims could not be read or encoded; the ticket was issued with no claims buffer, or without the application's own claims (#493). | none (logged; [MS-PAC] 2.11) |
 | `STS-KRB-0203` | A PAC presented to the KDC carries a client claims buffer that does not decode (a compression format other than XPRESS Huffman, or malformed NDR); the ticket being built carries none of those claims (#493). | none (logged at warn; [MS-PAC] 2.11, [MS-ADTS] 2.2.18) |
+| `STS-KRB-0204` | A request worker failed a Kerberos message from TCP or UDP 88 before answering it (the worker went away, or the operation threw); it is not answered again in the front process, because the worker may already have written (2026-10-07). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
+| `STS-KRB-0205` | A request worker answered a Kerberos message from TCP or UDP 88 with no reply bytes; the client is told the KDC is unavailable (2026-10-07). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
 
 ## STS-LDAP
 
@@ -3140,6 +3142,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0142` | A rootless Podman workload was not attested by the docker attestor because spiffe.dockerUseRootlessPodman is off, SPIRE's rule; logged once per process (#170). | no docker selectors for that workload |
 | `STS-SPIFFE-0143` | A gRPC handler threw after the call waited for the cluster read barrier, so the exception could not reach grpc-js; a unary call is answered INTERNAL. | INTERNAL for a unary call |
 | `STS-SPIFFE-0144` | A certificate presented to the SPIRE Server or Broker API was signed by an authority this trust domain trusts and is refused: the two-certificate path breaks RFC 5280 (pki.verifyIssuedDirectly — a critical extension nothing here implements, a name constraint, a malformed certificate) or it is not a leaf X509-SVID (cA set, or a keyUsage without digitalSignature or with keyCertSign or cRLSign; X509-SVID section 4.3). #201. | UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller |
+| `STS-SPIFFE-0145` | A request worker failed the SPIFFE Broker API's FetchJWTSVID for an attested reference before answering it (the worker went away, or the operation threw); it is not run again in the front process, because the worker may already have minted (2026-10-07). | gRPC UNAVAILABLE |
 
 ## STS-TLS
 

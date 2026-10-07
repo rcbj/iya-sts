@@ -4596,8 +4596,23 @@ async function answerTgsReq(request, state) {
 // for what the workers have answered to commit and pulls it — the same two
 // steps `request_pool.js` takes for an HTTP request it keeps. Lazy and
 // guarded for the parent's COPY set, as below.
+//
+// **AND NOT IN A REQUEST WORKER (2026-10-07).** Port 88's messages are
+// answered in a worker now (`answerSocketMessage()`, below), and so is
+// MS-KKDCP over HTTP; both reach a worker through the request pool's read
+// barrier — `runOperation()` for an operation, `dispatch()` for a request —
+// which already waited for every answered write to commit and brought this
+// worker up to the generation they made. Waiting again here was a second
+// pull of the change log per message, in a process that has no workers of
+// its own to wait for: `pool.size()` answers the CONFIGURED count, which a
+// worker reads too, so the check below did not tell the two apart.
 async function catchUpWithWorkers() {
   log.debug('Entering catchUpWithWorkers().');
+  if (process.env.STS_REQUEST_WORKER) {
+    log.debug('Leaving catchUpWithWorkers(). A worker; the pool\'s barrier ' +
+              'brought it here.');
+    return;
+  }
   let pool = null;
   let persistence = null;
   try {
@@ -4802,6 +4817,227 @@ async function handleMessage(bytes, options) {
 }
 
 // ---------------------------------------------------------------------------
+// PORT 88 IS ANSWERED IN A REQUEST WORKER (2026-10-07, rcbj's decision).
+//
+// The front process owns every listener this service has and node runs them
+// all on one thread, so every AS-REQ and TGS-REQ on TCP and UDP 88 — string-
+// to-key, the PAC's signatures, PKINIT's Diffie-Hellman, the risk assessment
+// — was work on the one event loop every socket shares. And it was answered
+// from the FRONT process's copy of the store, which learns of a worker's
+// write through the change log: `sts_kerberos_signout` in single-node had a
+// sign-in's principal row written here and a global logout answered 3 s later
+// by a worker that had not received it, so the logout stamped nothing
+// (STS-LOGOUT-0007, "ended 0 of 1") and the old TGT was honoured.
+//
+// So the socket and the framing stay here — the TCP length prefix, the
+// datagram, the reply written back — and each complete message is the
+// request pool's OPERATION `krb5.message`, LDAP's arrangement
+// (`ldap/ldap_server.js`, `throughTheRequestPool()`) and SPIFFE's
+// (`spiffe/spiffe_grpc.ts`, `dispatchUnary()`). A worker runs the SAME
+// `handleMessage()` MS-KKDCP has run in workers since the pool dispatched
+// HTTP, so nothing the KDC holds is new to a worker: the principal database,
+// the krbtgt keys, FAST's cookie and PKINIT's freshness token (both sealed
+// under the krbtgt key, so any process opens them), the OTP step (a cluster
+// counter), the PKINIT AuthPack and the acceptor's Authenticator (cluster
+// claims). **`runOperation()` puts it through the read barrier**, which is
+// what orders a KDC write after the HTTP write before it and before the HTTP
+// read after it; with both ends in workers, that is the whole fix, and the
+// front process no longer waits for anything (`catchUpWithWorkers()` runs
+// only where there is no worker to give the message to).
+//
+// WHAT CROSSES, AND WHY THAT IS ALL OF IT. `handleMessage()` reads exactly
+// one thing off the socket — nothing — and the AMBIENT AUDIT SOURCE, which
+// `startTcp()` and `startUdp()` enter around each message so that every row
+// it causes names the client (2026-09-18), and which #499's risk assessment
+// reads as the sign-in's address. A worker has no socket, so the address
+// crosses beside the bytes and the worker enters the same source. The
+// transport and the port are carried for the worker's log line. **No realm
+// crosses**: the sockets pass none, and the realm is chosen inside
+// `handleMessage()` from the Kerberos realm NAME in the request (`routeOf()`),
+// which is in the bytes.
+//
+// WHAT COMES BACK is the reply's bytes and its REFUSAL — the condition
+// `errorReply()` hangs under a Symbol, which does not survive a structured
+// clone. The front process puts it back on the reply, so `recordRawRefusal()`
+// writes the transport's audit row exactly as it did.
+//
+// NO AFFINITY. A Kerberos message carries its own credential (a password-
+// derived timestamp, a TGT, a certificate) and is answered on its own, which
+// is the property the HTTP side's fanout list has; a TCP connection is a
+// framing, not a session, and almost every client sends one message on it.
+//
+// NOT DISPATCHED is handled HERE, as it always was: no pool module (the
+// parent project's in-process copies), `krb5` not named in `workers.dispatch`,
+// or no worker ready — `runOperation()` answers `{ dispatched: false }` for
+// all three.
+//
+// A WORKER THAT FAILS MID-MESSAGE IS NOT RETRIED HERE, LDAP's rule: it may
+// already have written — a principal registered, an AuthPack spent, an OTP
+// step consumed, a risk assessment recorded — and answering the same request
+// again here would refuse the client's own retry as a replay or count it
+// twice. The client is told KDC_ERR_SVC_UNAVAILABLE (29) (STS-KRB-0204),
+// which MIT's and Heimdal's clients read as "this KDC did not answer" and
+// retry, against the next KDC in their list or this one again.
+//
+// The require of the pool is LAZY and guarded, for the parent project's COPY
+// set (kerberos/CLAUDE.md): a process without it answers here, as before.
+// ---------------------------------------------------------------------------
+const MESSAGE_OPERATION = 'krb5.message';
+
+function requestPool() {
+  log.debug('Entering requestPool().');
+  try {
+    log.debug('Leaving requestPool().');
+    return require('../common/request_pool');
+  } catch (e) {
+    log.debug('Caught in requestPool(): ' + ((e && e.message) || e));
+    log.debug('Leaving requestPool(). No request pool here.');
+    // A process with no pool module cannot dispatch, which is the ordinary
+    // state of the parent project's in-process loaders of this file.
+    return null;
+  }
+}
+
+// What a worker is sent for one message: a function of its own so that a test
+// drives the same shape the socket sends.
+function messageRequest(bytes, transport, address, port) {
+  log.debug('Entering messageRequest().');
+  log.debug('Leaving messageRequest().');
+  return {
+    // A Buffer, and it arrives as a Uint8Array that `worker_channel.ts`
+    // revives into one; `performMessage()` takes either.
+    bytes: Buffer.from(bytes),
+    transport: String(transport || ''),
+    // THE CLIENT, as the socket saw it — with global.proxyProtocol on,
+    // the address in the PROXY header (common/proxy_protocol.ts).
+    address: String(address || ''),
+    port: Number(port) || 0
+  };
+}
+
+// The worker's half: the message answered inside the client's audit source,
+// and the reply returned with the refusal its Symbol would not carry across.
+function performMessage(args) {
+  log.debug('Entering performMessage().');
+  const a = args || {};
+  const raw = a.bytes;
+  const bytes = (raw && typeof raw.length === 'number')
+    ? Buffer.from(raw) : Buffer.alloc(0);
+  log.debug('krb5: a ' + (a.transport || '?') + ' message of ' + bytes.length +
+            ' bytes from ' + (a.address || '?') + ':' + (a.port || '?') +
+            ', answered in a request worker.');
+  log.debug('Leaving performMessage().');
+  return audit.withSource({ address: String(a.address || '') }, function () {
+    return handleMessage(bytes);
+  }).then(function (reply) {
+    return { reply: Buffer.from(reply), refusal: refusalOf(reply) };
+  });
+}
+
+// The front process's half, turned back into what `handleMessage()` answers:
+// a reply carrying its refusal under the Symbol. Null for an answer with no
+// reply in it.
+function replyFromResult(result) {
+  log.debug('Entering replyFromResult().');
+  const raw = result && result.reply;
+  if (!raw || typeof raw.length !== 'number' || !raw.length) {
+    log.debug('Leaving replyFromResult(). No reply.');
+    return null;
+  }
+  const reply = Buffer.from(raw);
+  if (result.refusal && typeof result.refusal === 'object') {
+    Object.defineProperty(reply, REFUSAL, {
+      enumerable: false, configurable: true, value: result.refusal
+    });
+  }
+  log.debug('Leaving replyFromResult().');
+  return reply;
+}
+
+// What a socket calls for one complete message. Resolves the reply bytes,
+// never rejects: a failure is a KRB-ERROR the client can act on.
+async function answerSocketMessage(bytes, transport, address, port) {
+  log.debug('Entering answerSocketMessage(). transport=' + transport);
+  const pool = requestPool();
+  if (!pool || typeof pool.runOperation !== 'function') {
+    log.debug('Leaving answerSocketMessage(). Answered here: no pool.');
+    return handleMessage(bytes);
+  }
+  let answer = null;
+  try {
+    answer = await pool.runOperation(MESSAGE_OPERATION,
+      messageRequest(bytes, transport, address, port));
+  } catch (e) {
+    log.debug('Caught in answerSocketMessage(): ' + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-KRB-0204') + 'krb5: a request worker ' +
+              'failed a ' + transport + ' message from ' + (address || '?') +
+              ': ' + String((e && e.message) || e).replace(/\.$/, '') +
+              '. The client is told ' +
+              'KDC_ERR_SVC_UNAVAILABLE rather than having it answered here, ' +
+              'because a worker that failed part way through may already ' +
+              'have written.');
+    log.debug('Leaving answerSocketMessage(). The worker failed.');
+    return errorReply(29, { errorCode: 'STS-KRB-0204',
+      eText: 'the KDC could not complete this request; try again' });
+  }
+  if (!answer || !answer.dispatched) {
+    log.debug('Leaving answerSocketMessage(). Answered here: not ' +
+              'dispatched.');
+    return handleMessage(bytes);
+  }
+  const reply = replyFromResult(answer.result);
+  if (!reply) {
+    log.error(errorCodes.tag('STS-KRB-0205') + 'krb5: a request worker ' +
+              'answered a ' + transport + ' message from ' +
+              (address || '?') + ' with no reply bytes. The client is told ' +
+              'KDC_ERR_SVC_UNAVAILABLE.');
+    log.debug('Leaving answerSocketMessage(). No reply from the worker.');
+    return errorReply(29, { errorCode: 'STS-KRB-0205',
+      eText: 'the KDC could not complete this request; try again' });
+  }
+  log.debug('Leaving answerSocketMessage(). Answered by a worker.');
+  return reply;
+}
+
+// ---------------------------------------------------------------------------
+// AND THE REGISTRATION ON THE WORKER SIDE, ONLY IN A WORKER.
+//
+// `spiffe_grpc.ts`'s `registerWorkerMethod()` carries the argument and the
+// test it cost: requiring `common/request_worker.ts` pulls
+// `common/service_state.ts` in at module scope, and in any other process that
+// is half the service's start-up machinery loaded for a table nothing reads —
+// here it would also be a new require reaching the parent project's
+// in-process copies of this file, which never set `STS_REQUEST_WORKER`. Run
+// at the foot of this file, at load, which in a worker is
+// `protocol_stack.ts`'s require of it; idempotent, because `register()`
+// throws on a second registration.
+// ---------------------------------------------------------------------------
+function registerWorkerOperation() {
+  log.debug('Entering registerWorkerOperation().');
+  if (!process.env.STS_REQUEST_WORKER) {
+    log.debug('Leaving registerWorkerOperation(). Not a request worker.');
+    return false;
+  }
+  let worker = null;
+  try {
+    worker = require('../common/request_worker');
+  } catch (e) {
+    log.debug('Caught in registerWorkerOperation(): ' +
+              ((e && e.message) || e));
+    log.debug('Leaving registerWorkerOperation(). No worker module.');
+    return false;
+  }
+  if (!worker || typeof worker.register !== 'function' ||
+      (worker.OPERATIONS && worker.OPERATIONS.has(MESSAGE_OPERATION))) {
+    log.debug('Leaving registerWorkerOperation(). Nothing to do.');
+    return false;
+  }
+  worker.register(MESSAGE_OPERATION, performMessage);
+  log.debug('Leaving registerWorkerOperation(). Registered.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // The listeners.
 // ---------------------------------------------------------------------------
 function startTcp(port) {
@@ -4861,7 +5097,10 @@ function startTcp(port) {
         if (buffer.length < 4 + declared) return;
         const message = buffer.subarray(4, 4 + declared);
         buffer = buffer.subarray(4 + declared);
-        handleMessage(message).then(function (reply) {
+        // Answered in a request worker where there is one — see
+        // answerSocketMessage() above; the framing stays here.
+        answerSocketMessage(message, 'tcp', socket.remoteAddress,
+                            socket.remotePort).then(function (reply) {
           const framed = Buffer.alloc(4 + reply.length);
           framed.writeUInt32BE(reply.length, 0);
           Buffer.from(reply).copy(framed, 4);
@@ -4912,7 +5151,8 @@ function startUdp(port) {
   // The datagram's sender on every audit row it causes — see startTcp().
   socket.on('message', function (message, rinfo) {
     audit.withSource({ address: rinfo.address }, function () {
-      handleMessage(message).then(function (reply) {
+      answerSocketMessage(message, 'udp', rinfo.address,
+                          rinfo.port).then(function (reply) {
         // A real KDC answers KRB_ERR_RESPONSE_TOO_BIG when its reply will not
         // fit in a datagram, and a client then retries over TCP. Reproducing
         // that is worth more than sending an oversized datagram, because the
@@ -5216,9 +5456,23 @@ function listen(port) {
   return result;
 }
 
+// In a request worker, the table it answers `krb5.message` from — see
+// registerWorkerOperation().
+registerWorkerOperation();
+
 module.exports = {
   listen: listen,
   handleMessage: handleMessage,
+  // PORT 88'S OPERATION SEAM (2026-10-07), exported for
+  // tests/kerberos_worker_operation.js and for nothing else in the service:
+  // the sockets call answerSocketMessage() and a worker reaches
+  // performMessage() through the table registerWorkerOperation() filled.
+  MESSAGE_OPERATION: MESSAGE_OPERATION,
+  messageRequest: messageRequest,
+  performMessage: performMessage,
+  answerSocketMessage: answerSocketMessage,
+  registerWorkerOperation: registerWorkerOperation,
+  refusalOf: refusalOf,
   KDC_PORT: KDC_PORT,
   // The Kerberos realm of the AMBIENT trust realm — a getter since 2026-09-15,
   // for `krb5_principals.js`'s reason.
