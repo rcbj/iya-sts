@@ -42,6 +42,9 @@ class ConfigPage {
    */
   static body(ctx, json) {
     const snapshot = json;
+    // What the settings block says about this process: the appconfig file
+    // and whether an override is written down.
+    const stored = (json.settings && json.settings.context) || {};
     const overridden = snapshot.overridden.length;
     // What this page still edits: the groups with no protocol to belong to
     // (`Global`, `Key material`, `Web security`). Asked for by path rather
@@ -92,14 +95,20 @@ class ConfigPage {
       'somebody can find in a file — which is what makes the ' +
       '<em>Source</em> column worth reading.') +
 
-      kit.warn('<strong>Changes are in memory and are gone on ' +
-      'restart.</strong> Nothing writes to the appconfig file. That is the ' +
-      'same arrangement as the custom claims and the credential claims ' +
-      'next door, and it is deliberate: a service that edited a file ' +
-      'checked into a repository would leave a test\'s forgotten change ' +
-      'behind permanently. To make something stick, put it in ' +
-      '<code>' + kit.esc(snapshot.configFile || 'env/local.js') +
-      '</code>.') +
+      // Worded from the block's own `context` (rcbj, 2026-10-07): this
+      // said "in memory and gone on restart" unconditionally, which has been
+      // wrong on every persistent store since 2026-08-27.
+      (SettingsForms.keeps(stored)
+        ? '<div class="ok"><strong>Changes SURVIVE A RESTART.</strong> ' +
+          SettingsForms.durability(stored) + ' The file is left alone ' +
+          'deliberately: a service that edited a file checked into a ' +
+          'repository would leave a test\'s forgotten change behind ' +
+          'permanently.</div>'
+        : kit.warn('<strong>Changes are in memory and are gone on ' +
+          'restart.</strong> Nothing writes to the appconfig file, ' +
+          'deliberately: a service that edited a file checked into a ' +
+          'repository would leave a test\'s forgotten change behind ' +
+          'permanently. ' + SettingsForms.durability(stored))) +
 
       '<h2>' + kit.esc(String(snapshot.settingCount)) + ' settings, ' +
       kit.esc(String(snapshot.editableCount)) + ' of them changeable ' +

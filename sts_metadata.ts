@@ -6637,8 +6637,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'is refused with the reason rather than accepted, because an ' +
           'accepted change that does nothing reads as having worked. A ' +
           'change is a runtime override, and whether it outlives the process ' +
-          'is persistence.appconfig — gone on restart in the default memory ' +
-          'mode, written down and re-applied with a store on. Reset-all is ' +
+          'is persistence.appconfig (persistence.realms for a write made ' +
+          'inside a realm) — written down and re-applied with a persistent ' +
+          'store on, gone on restart only with persistence.mode=memory. ' +
+          'Reset-all is ' +
           'what a test should call to put the service back either way, and a ' +
           'reset is written down too. Mirrors POST /admin/config.' },
   // ---------------------------------------------------------------------------

@@ -23,7 +23,10 @@
 //     `context.defaultsFile` — `GET /admin-api/config` already reported
 //     both);
 //   * whether an override survives a restart, and the persistence mode that
-//     says so (`context.persistsAppconfig`, `context.persistenceMode`);
+//     says so (`context.persistsAppconfig`, `context.persistenceMode`) —
+//     and, since 2026-10-07, `context.persistsRealms`, `context.inRealm` and
+//     `context.realmId`, because a write inside a non-default realm lands on
+//     the realm's row (`keeps()` below);
 //   * which other pages draw the same group (`sharedWith`), which is
 //     `SETTING_HOMES` and the navigation's labels.
 //
@@ -83,7 +86,7 @@ class SettingsForms {
    */
   static sourceNote(setting, context) {
     if (setting.source === 'override') {
-      return 'set here, in memory only';
+      return 'set here, ' + SettingsForms.overrideKept(context, setting.key);
     }
     if (setting.source === 'env') {
       return 'from ' + setting.env;
@@ -98,6 +101,75 @@ class SettingsForms {
       return 'from ' + context.defaultsFile + ' (the default appconfig file)';
     }
     return 'derived from another setting';
+  }
+
+  // WHERE AN OVERRIDE SET HERE IS HELD, IN TWO WORDS AND IN ONE SENTENCE
+  // (rcbj, 2026-10-07). The Source column said "in memory only" and the
+  // shorter settings pages — Token lifetimes, SAML assertions, Configuration
+  // — said "Changes are in memory and are gone on restart" unconditionally,
+  // which has been wrong on every persistent store since 2026-08-27.
+  //
+  // ONE RULE, `keeps()`, AND IT IS THE REPLIES' RULE. A write made while a
+  // non-default realm is ambient lands on the realm's row and is kept when
+  // `persistsRealms` is; every other write lands in the process-wide map and
+  // is kept when `persistsAppconfig` is — what
+  // `AdminActions.overrideDurability()` words a reply by. The two `realms.*`
+  // rows always land process-wide, so `keeps()` takes the key when it has
+  // one. The block's lead note below, these two and the Source column all ask
+  // it, so no page can disagree with the reply its own Save gets back.
+  /**
+   * Says whether an override written from a page with this context is kept
+   * across a restart.
+   *
+   * @param context - the settings block's `context`
+   * @param key - the setting, when the question is about one; optional
+   * @returns true when the store under the write persists it
+   */
+  static keeps(context, key?) {
+    const ctx = context || {};
+    const inRealm = !!ctx.inRealm && String(key || '').indexOf('realms.') !== 0;
+    return inRealm ? !!ctx.persistsRealms : !!ctx.persistsAppconfig;
+  }
+
+  /**
+   * Words where a runtime override set on these pages is held.
+   *
+   * @param context - the settings block's `context`
+   * @param key - the setting, when it is about one; optional
+   * @returns `kept in the store` or `in memory only`
+   */
+  static overrideKept(context, key?) {
+    return SettingsForms.keeps(context, key) ? 'kept in the store'
+      : 'in memory only';
+  }
+
+  /**
+   * Says, in a sentence for a page's notes, whether a change made on it is
+   * kept across a restart, and how to keep it when it is not.
+   *
+   * @param context - the settings block's `context`: the appconfig file,
+   *   the two persistence facts, the mode and the ambient realm
+   * @returns the sentence as HTML
+   */
+  static durability(context) {
+    const ctx = context || {};
+    const file = '<code>' + kit.esc(ctx.configFile || 'env/local.js') +
+                 '</code>';
+    if (SettingsForms.keeps(ctx)) {
+      return 'A change is written to the <code>persistence.mode=' +
+             kit.esc(String(ctx.persistenceMode)) + '</code> store' +
+             (ctx.inRealm
+               ? ' with the <code>' + kit.esc(String(ctx.realmId)) +
+                 '</code> realm\'s row'
+               : '') +
+             ' and kept across restarts; nothing rewrites ' + file +
+             '. See <a href="/admin/persistence">Persistence</a>.';
+    }
+    return 'Changes are in memory and are gone on restart; to make one ' +
+           'stick, put it in ' + file + ' or the setting\'s environment ' +
+           'variable, or turn on a persistent store (<code>' +
+           (ctx.inRealm ? 'persistence.realms' : 'persistence.appconfig') +
+           '</code>) — see <a href="/admin/persistence">Persistence</a>.';
   }
 
   // ---------------------------------------------------------------------------
@@ -428,11 +500,19 @@ class SettingsForms {
       // the persistent store instead, which is a place nothing is checked in
       // from.
       // ---------------------------------------------------------------------
-      (context.persistsAppconfig
+      // SINCE 2026-10-07 it asks `keeps()`, the replies' rule: inside a
+      // non-default realm a value set here lands on the realm's row, so
+      // `persistsRealms` decides it there and the note names the realm.
+      (SettingsForms.keeps(context)
         ? '<div class="ok"><strong>Changes here SURVIVE A RESTART.</strong> ' +
           'This process is running with <code>persistence.mode=' +
           kit.esc(context.persistenceMode) + '</code>, so a value set ' +
-          'here is written to the persistent store and applied again the ' +
+          'here is written to the persistent store' +
+          (context.inRealm
+            ? ' with the <code>' + kit.esc(String(context.realmId)) +
+              '</code> realm\'s row'
+            : '') +
+          ' and applied again the ' +
           'next time this service starts. It is still a runtime override ' +
           'rather than a new layer — the same setting, the same override ' +
           'map, put back through the same function — so <em>Reset</em> still ' +
@@ -449,7 +529,12 @@ class SettingsForms {
           'permanently. To make something stick, put it in ' +
           '<code>' + kit.esc(configFile) + '</code>, in ' +
           'the setting\'s environment variable, or turn on a persistent ' +
-          'store — see <a href="/admin/persistence">Persistence</a>, which ' +
+          'store' +
+          (context.inRealm
+            ? ' with <code>persistence.realms</code>, which keeps this ' +
+              'realm\'s own values on its row'
+            : '') +
+          ' — see <a href="/admin/persistence">Persistence</a>, which ' +
           'is off by default.')) +
 
       (fixed

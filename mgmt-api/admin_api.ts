@@ -9760,12 +9760,18 @@ class AdminApi {
             summary: 'Change one setting',
             description: 'A RUNTIME OVERRIDE — the top of config.js\'s five ' +
                          'layers. Whether it outlives the process is ' +
-                         '`persistence.appconfig`: in the default memory ' +
-                         'mode it is gone on restart, and with a store on it ' +
-                         'is written down and re-applied at the next start ' +
+                         '`persistence.appconfig`: with a persistent store ' +
+                         '(`persistence.mode` `ldif` or `postgres`) it is ' +
+                         'written down and re-applied at the next start ' +
                          'through this same function, which is why it adds ' +
-                         'no sixth layer. See `GET ' +
-                         '/admin-api/persistence`.\n\nNOTHING HERE WRITES TO ' +
+                         'no sixth layer, and only with ' +
+                         '`persistence.mode=memory` is it gone on restart. ' +
+                         'A write made while a non-default realm is ambient ' +
+                         'lands on that realm and is written down with the ' +
+                         'realm row, so `persistence.realms` decides it ' +
+                         'there. The reply\'s `message` says which. See ' +
+                         '`GET /admin-api/persistence`.\n\nNOTHING HERE ' +
+                         'WRITES TO ' +
                          'THE APPCONFIG FILE in either mode, and that is ' +
                          'deliberate rather than unfinished: a service that ' +
                          'edited a file checked into a repository would ' +
@@ -9954,11 +9960,14 @@ class AdminApi {
           { action: 'set', operationId: 'setTokenLifetimes',
             summary: 'Set one or more of the six',
             description: 'A RUNTIME OVERRIDE, like every other change made ' +
-                         'through this API: gone on restart in the default ' +
-                         'memory mode, and written down and re-applied at ' +
+                         'through this API: written down and re-applied at ' +
                          'the next start when `persistence.appconfig` has a ' +
-                         'store under it. Nothing writes to the appconfig ' +
-                         'file in either case.\n\nName any of the six; the ' +
+                         'store under it (`persistence.realms` for a write ' +
+                         'made inside a realm), and gone on restart only ' +
+                         'with `persistence.mode=memory`; the reply\'s ' +
+                         '`message` says which. Nothing writes to the ' +
+                         'appconfig file in either case.\n\nName any ' +
+                         'of the six; the ' +
                          'console form posts them all at once and a caller ' +
                          'may post one. ALL-OR-NOTHING: every value is ' +
                          'checked before any is written, so a body with one ' +
@@ -10132,11 +10141,14 @@ class AdminApi {
           { action: 'set', operationId: 'setSamlAssertions',
             summary: 'Set one or more of the SAML assertion settings',
             description: 'A RUNTIME OVERRIDE, like every other change made ' +
-                         'through this API: gone on restart in the default ' +
-                         'memory mode, and written down and re-applied at ' +
+                         'through this API: written down and re-applied at ' +
                          'the next start when `persistence.appconfig` has a ' +
-                         'store under it. Nothing writes to the appconfig ' +
-                         'file in either case.\n\nName any of them; the ' +
+                         'store under it (`persistence.realms` for a write ' +
+                         'made inside a realm), and gone on restart only ' +
+                         'with `persistence.mode=memory`; the reply\'s ' +
+                         '`message` says which. Nothing writes to the ' +
+                         'appconfig file in either case.\n\nName any ' +
+                         'of them; the ' +
                          'console forms post several at once and a caller ' +
                          'may post one. ALL-OR-NOTHING: every value is ' +
                          'checked before any is written, so a body with one ' +

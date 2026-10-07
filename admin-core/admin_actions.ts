@@ -135,6 +135,10 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
+// The store's own status, for what a settings write's reply says about
+// whether the override is kept across a restart (rcbj, 2026-10-07). A
+// library, required in the ordinary direction, as `admin_views.ts` does.
+import persistence = require('../persistence/persistence');
 import credentials = require('../common/credentials');
 import realms = require('../common/realms');
 import stats = require('../common/admin_stats');
@@ -925,6 +929,8 @@ interface AdminActionsDeps {
   b64uDecode: typeof helpers.b64uDecode;
   numberWord: typeof helpers.numberWord;
   config: typeof config;
+  // Whether a settings override is written down (`overrideDurability()`).
+  persistence: typeof persistence;
   credentials: typeof credentials;
   realms: typeof realms;
   stats: typeof stats;
@@ -1015,6 +1021,7 @@ class AdminActions {
       b64uDecode: helpers.b64uDecode,
       numberWord: helpers.numberWord,
       config: config,
+      persistence: persistence,
       credentials: credentials,
       realms: realms,
       stats: stats,
@@ -7490,6 +7497,52 @@ class AdminActions {
               markers.length + " folded.");
     return refusal;
   }
+  // WHETHER A SETTINGS OVERRIDE JUST WRITTEN OUTLIVES THIS PROCESS (rcbj,
+  // 2026-10-07). Every reply below used to end "gone on restart", which was
+  // true for the whole life of this service until 2026-08-27 and has been
+  // wrong on every persistent store since: on 8081 (product, postgres)
+  // `POST /admin-api/config/set` said the override was gone on restart while
+  // the store was holding it. The settings block on every console page words
+  // both cases from `persistsAppconfig` (`web_settings.ts`); this is the same
+  // fact for a reply, asked of the same `persistence.status()`.
+  //
+  // WHICH OF THE TWO FACTS DEPENDS ON WHERE THE WRITE LANDED. `setOverride()`
+  // puts a write made while a non-default realm is ambient on that realm's
+  // own override object, which is written down with the realm row
+  // (`persistsRealms`), and every other write in the process-wide map
+  // (`persistsAppconfig`). The two `realms.*` rows always land process-wide,
+  // so a write naming only those is asked about the process.
+  /**
+   * Words whether the overrides just written are kept across a restart.
+   *
+   * @param keys - the settings written; optional
+   * @returns one sentence: written to the store and kept, or in memory and
+   *   gone on restart with how to keep it
+   */
+  overrideDurability(keys?: string[]): string {
+    const { log, persistence, realms } = this.deps;
+    log.debug("Entering AdminActions.overrideDurability().");
+    const status = persistence.status();
+    const realmWide = (keys || ['']).some(function (key) {
+      return String(key).indexOf('realms.') !== 0;
+    });
+    const inRealm = realmWide && !realms.isDefault();
+    const kept = inRealm ? !!status.persistsRealms
+      : !!status.persistsAppconfig;
+    if (kept) {
+      log.debug("Leaving AdminActions.overrideDurability(). Kept.");
+      return 'It is written to the ' + status.mode + ' store' +
+             (inRealm ? ' with the "' + realms.currentId() + '" realm' : '') +
+             ' and kept across restarts.';
+    }
+    log.debug("Leaving AdminActions.overrideDurability(). Not kept.");
+    return 'It is in memory and gone on restart; to keep it, put it in the ' +
+           'appconfig file or its environment variable, or turn on a ' +
+           'persistent store (' +
+           (inRealm ? 'persistence.realms' : 'persistence.appconfig') +
+           ').';
+  }
+
   // The action switch. `set` and `reset` name one setting; `set-many` is what a
   // section's Save posts, and it is not a convenience — a section is how a
   // person changes configuration, and turning that into one call per field
@@ -7540,7 +7593,7 @@ class AdminActions {
                setting: config.describe(this.configSettingFor(key)),
                message: key + ' is now "' + config.text(key) + '". It ' +
                         'applies to the next token, assertion, ticket or ' +
-                        'search, and is gone on restart.' };
+                        'search. ' + this.overrideDurability([key]) };
     }
 
     if (action === 'set-many') {
@@ -7600,7 +7653,7 @@ class AdminActions {
                message: changed.length
                  ? changed.length + ' setting(s) changed: ' +
                  changed.join(', ') +
-                   '. Gone on restart.'
+                   '. ' + self.overrideDurability(changed)
                  : 'Nothing changed — every value posted was the one already ' +
                    'in force.' };
     }
@@ -7770,7 +7823,10 @@ class AdminActions {
                    'in force.') +
                  ' It applies to the NEXT token signed; nothing already ' +
                  'issued is affected, because a lifetime is stamped into a ' +
-                 'token as its exp claim. Gone on restart.' };
+                 'token as its exp claim.' +
+                 (changed.length
+                   ? ' ' + self.overrideDurability(changed)
+                   : '') };
     }
 
     if (action === 'defaults') {
@@ -7907,7 +7963,10 @@ class AdminActions {
                    'in force.') +
                  ' It applies to the NEXT assertion signed; nothing already ' +
                  'issued is affected, because a validity window is stamped ' +
-                 'into an assertion when it is signed. Gone on restart.' };
+                 'into an assertion when it is signed.' +
+                 (changed.length
+                   ? ' ' + self.overrideDurability(changed)
+                   : '') };
     }
 
     if (action === 'defaults') {

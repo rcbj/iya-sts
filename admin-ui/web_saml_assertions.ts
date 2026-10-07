@@ -63,10 +63,8 @@ class SamlAssertionsPage {
       'an assertion as <code>Conditions/NotBefore</code> and ' +
       '<code>NotOnOrAfter</code> when it is signed, so an assertion ' +
       'already in a relying party&rsquo;s hands cannot be shortened or ' +
-      'extended afterwards by anything on this page. Changes are in memory ' +
-      'and are gone on restart; to make one stick, put it in <code>' +
-      kit.esc((json.context || {}).configFile || 'env/local.js') +
-      '</code>.') +
+      'extended afterwards by anything on this page. ' +
+      SettingsForms.durability(json.context)) +
 
       SamlAssertionsPage.samlAssertionWarnings(json) +
 
@@ -131,7 +129,8 @@ class SamlAssertionsPage {
           kit.esc(String(settings.filter(function (s) {
             return s.overridden;
           }).length)) +
-          ' of the sixteen are set here, in memory only. <form ' +
+          ' of the sixteen are set here, ' +
+          SettingsForms.overrideKept(json.context) + '. <form ' +
           'method="post" action="/admin/saml-assertions" ' +
           'class="inline"><input type="hidden" name="action" ' +
           'value="defaults"><button class="secondary">Put these sixteen ' +
