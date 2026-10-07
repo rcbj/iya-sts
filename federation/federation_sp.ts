@@ -143,17 +143,18 @@
 // shape: `FederationSp` takes every module of this service it reads — and
 // each helper it used to destructure — through its constructor as
 // `FederationSpDeps`, and its four endpoints are registered by
-// `registerRoutes(app)`. node's `crypto` and `zlib`, `jsonwebtoken` and
-// xmldom are libraries and are used directly. Since #50's R2 the composition
-// root builds the instance; the module's old names are FACADES forwarding to
-// it, for the modules and tests that require it by them, and a process
-// without the root builds a default at load. Loading the module registers
-// NOTHING (#50, R1): the module exports `registerRoutes(app)`, and
-// `common/protocol_stack.ts` calls it at the point in the route order where
-// requiring this module used to register the routes (rule 1).
+// `registerRoutes(app)`. node's `zlib`, `jsonwebtoken` and xmldom are
+// libraries and are used directly; node's `crypto` is not, since #453 — every
+// digest, random value and key goes through `common/crypto.js`. Since #50's
+// R2 the composition root builds the instance; the module's old names are
+// FACADES forwarding to it, for the modules and tests that require it by
+// them, and a process without the root builds a default at load. Loading
+// the module registers NOTHING (#50, R1): the module exports
+// `registerRoutes(app)`, and `common/protocol_stack.ts` calls it at the
+// point in the route order where requiring this module used to register the
+// routes (rule 1).
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import zlib = require('zlib');
 import jwt = require('jsonwebtoken');
 import xmldom = require('@xmldom/xmldom');
@@ -2059,18 +2060,18 @@ class FederationSp {
     const { log } = this.deps;
     log.debug("Entering FederationSp.bindingHashOf().");
     log.debug("Leaving FederationSp.bindingHashOf().");
-    return crypto.createHash('sha256').update(String(value), 'utf8')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(value), 'base64url');
   }
 
   // Two binding hashes compared in constant time.
   private sameBinding(a, b) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.sameBinding().");
-    const left = Buffer.from(String(a || ''), 'utf8');
-    const right = Buffer.from(String(b || ''), 'utf8');
-    const same = left.length > 0 && left.length === right.length &&
-                 crypto.timingSafeEqual(left, right);
+    // An empty binding matches nothing; two of different lengths answer
+    // false in constantTimeEquals(), as the length check here did.
+    const left = String(a || '');
+    const same = left.length > 0 &&
+                 stsCrypto.constantTimeEquals(left, String(b || ''));
     log.debug("Leaving FederationSp.sameBinding(). " + same);
     return same;
   }
@@ -2597,7 +2598,7 @@ class FederationSp {
       xmlEscape, iso
     } = this.deps;
     log.debug("Entering FederationSp.authnRequestXml().");
-    const id = '_' + crypto.randomBytes(16).toString('hex');
+    const id = '_' + stsCrypto.randomBytes(16).toString('hex');
     const xml =
       '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' +
         NS_SAML + '" ' +
@@ -2727,10 +2728,8 @@ class FederationSp {
   private pkcePair() {
     const { log } = this.deps;
     log.debug("Entering FederationSp.pkcePair().");
-    const verifier = crypto.randomBytes(32).toString('base64url');
-    const challenge = crypto.createHash('sha256')
-                            .update(verifier)
-                            .digest('base64url');
+    const verifier = stsCrypto.randomBytes(32).toString('base64url');
+    const challenge = stsCrypto.digest('sha256', verifier, 'base64url');
     log.debug("Leaving FederationSp.pkcePair().");
     return { verifier: verifier, challenge: challenge };
   }
@@ -3866,7 +3865,7 @@ class FederationSp {
     for (let i = 0; i < candidates.length; i++) {
       let pem = null;
       try {
-        pem = crypto.createPublicKey({ key: candidates[i], format: 'jwk' });
+        pem = stsCrypto.publicKeyFromJwk(candidates[i]);
       } catch (e) {
         lastWhy = 'a key in the set could not be read: ' + e.message;
         lastCode = 'STS-FED-0036';

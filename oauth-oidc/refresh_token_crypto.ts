@@ -71,7 +71,6 @@
 // already issued.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -249,10 +248,9 @@ class RefreshTokenCrypto {
     log.debug("Entering RefreshTokenCrypto.symmetricKeyFor().");
     const length = this.symmetricBytes(alg, enc);
     log.debug("Leaving RefreshTokenCrypto.symmetricKeyFor().");
-    return Buffer.from(nodeCrypto.hkdfSync('sha256', Buffer.from(secret),
-      Buffer.alloc(0),
-      Buffer.from('iya-sts refresh token v1|' + alg + '|' + enc,
-                  'utf8'), length));
+    return stsCrypto.hkdf('sha256', Buffer.from(secret), Buffer.alloc(0),
+      Buffer.from('iya-sts refresh token v1|' + alg + '|' + enc, 'utf8'),
+      length);
   }
 
   // -------------------------------------------------------------------------
@@ -277,9 +275,9 @@ class RefreshTokenCrypto {
   kemKeyFor(keys: Json, alg: string): Json {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering RefreshTokenCrypto.kemKeyFor(). " + alg);
-    const ikm = Buffer.from(nodeCrypto.hkdfSync('sha256',
-      Buffer.from(keys.secret), Buffer.alloc(0),
-      Buffer.from('iya-sts refresh token kem v1|' + alg, 'utf8'), 64));
+    const ikm = stsCrypto.hkdf('sha256', Buffer.from(keys.secret),
+      Buffer.alloc(0),
+      Buffer.from('iya-sts refresh token kem v1|' + alg, 'utf8'), 64);
     const out = stsCrypto.deriveJweKemKeyPair(alg, ikm, keys.secretKid + '.' +
       alg.toLowerCase().replace(/[^a-z0-9]+/g, ''));
     log.debug("Leaving RefreshTokenCrypto.kemKeyFor().");

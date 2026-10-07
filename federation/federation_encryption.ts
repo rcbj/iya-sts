@@ -87,7 +87,6 @@ import stsCrypto = require('../common/crypto');
 import keystore = require('../common/keystore');
 import errorCodes = require('../common/error_codes');
 import scheduler = require('../cluster/scheduler');
-import nodeCrypto = require('crypto');
 
 type Json = any;
 
@@ -215,7 +214,7 @@ class FederationEncryption {
       return null;
     }
     try {
-      const key = nodeCrypto.createPrivateKey(pem);
+      const key = stsCrypto.privateKeyFrom(pem);
       log.debug("Leaving FederationEncryption.privateKeyOf().");
       return key;
     } catch (e) {

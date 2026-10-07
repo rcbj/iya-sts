@@ -171,7 +171,6 @@
 // ---------------------------------------------------------------------------
 
 import http = require('http');
-import nodeCrypto = require('crypto');
 import https = require('https');
 import stsCrypto = require('../common/crypto');
 import pki = require('../common/pki');
@@ -205,7 +204,6 @@ interface PushedRequests {
 
 interface RequestObjectDeps {
   http: typeof http;
-  nodeCrypto: typeof nodeCrypto;
   https: typeof https;
   stsCrypto: typeof stsCrypto;
   pki: typeof pki;
@@ -369,7 +367,6 @@ class RequestObject {
     helpers.log.debug("Leaving RequestObject.defaultDeps().");
     return {
       http: http,
-      nodeCrypto: nodeCrypto,
       https: https,
       stsCrypto: stsCrypto,
       pki: pki,
@@ -641,7 +638,7 @@ class RequestObject {
   // `symmetricKeyFor()`'s; see SYMMETRIC_KEY_BYTES above.
   // -------------------------------------------------------------------------
   private symmetricKeyFor(alg: Json, enc: Json, secret: Json): Json {
-    const { nodeCrypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     log.debug("Entering RequestObject.symmetricKeyFor(). " +
               "alg=" + alg + ", enc=" + enc);
     if (/^PBES2-/.test(alg)) {
@@ -658,9 +655,8 @@ class RequestObject {
     }
     const hash = bytes <= 32 ? 'sha256' : bytes <= 48 ? 'sha384' : 'sha512';
     log.debug("Leaving RequestObject.symmetricKeyFor().");
-    return nodeCrypto.createHash(hash)
-      .update(Buffer.from(String(secret), 'utf8'))
-      .digest().subarray(0, bytes);
+    return stsCrypto.digest(hash, Buffer.from(String(secret), 'utf8'))
+      .subarray(0, bytes);
   }
 
   private decrypt(compact: Json, client: Json, profile: Json,
@@ -1097,7 +1093,7 @@ class RequestObject {
    * @returns a sentence naming the problem, or ''
    */
   fragmentProblem(uri: Json, content: Json): Json {
-    const { nodeCrypto, log, config } = this.deps;
+    const { stsCrypto, log, config } = this.deps;
     log.debug("Entering RequestObject.fragmentProblem().");
     // `oauth2.requestUriFragmentCheck` (#187): the section names the
     // fragment a cache signal and asks no OP to verify it; this one does
@@ -1114,8 +1110,7 @@ class RequestObject {
                 "fragment.");
       return '';
     }
-    const digest = nodeCrypto.createHash('sha256')
-      .update(String(content), 'utf8').digest('base64url');
+    const digest = stsCrypto.digest('sha256', String(content), 'base64url');
     log.debug("Leaving RequestObject.fragmentProblem().");
     return digest === fragment ? '' :
       'the request_uri\'s fragment is "' + fragment + '", which is the ' +

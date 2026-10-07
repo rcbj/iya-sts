@@ -164,7 +164,6 @@
 // between this service and the hole described at the top of this file.
 // ===========================================================================
 
-const crypto = require('crypto');
 const config = require('./../common/config');
 const { log, nowSec, randomId } = require('./../common/helpers');
 // The release index below is per trust realm. A LEAF requiring only `config`,

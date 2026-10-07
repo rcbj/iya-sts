@@ -59,7 +59,6 @@
 // forward to the installed instance.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and nothing else here, so it cannot join a cycle and it registers
 // no route, so its position is not a position at all.
@@ -758,9 +757,9 @@ class Dpop {
     const { log, b64u } = this.deps;
     log.debug("Entering Dpop.athOf().");
     log.debug("Leaving Dpop.athOf().");
-    return b64u(crypto.createHash('sha256')
-                      .update(String(accessToken), 'ascii')
-                      .digest());
+    // The 'ascii' reading the hash was always fed, kept (#453).
+    return b64u(stsCrypto.digest('sha256',
+                                 Buffer.from(String(accessToken), 'ascii')));
   }
 
   // -------------------------------------------------------------------------

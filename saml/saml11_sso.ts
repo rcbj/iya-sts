@@ -194,7 +194,6 @@
 // anonymous functions in the exports are methods now.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires only
 // config.js and error_codes.js here, so it cannot join a cycle and it
 // registers no route, so its position is not a position at all.
@@ -1437,10 +1436,8 @@ class Saml11Sso {
     log.debug("Entering Saml11Sso.mintArtifact(). providerId=" + providerId);
     const header = Buffer.alloc(2);
     header.writeUInt16BE(0x0001, 0);
-    const sourceId = crypto.createHash('sha1')
-                           .update(String(providerId), 'utf8')
-                           .digest();
-    const handle = samlCells.stampHandle(crypto.randomBytes(20));
+    const sourceId = stsCrypto.samlArtifactSourceId(providerId);
+    const handle = samlCells.stampHandle(stsCrypto.randomBytes(20));
     const artifact = Buffer.concat([header, sourceId,
                                     handle]).toString('base64');
     log.debug("Leaving Saml11Sso.mintArtifact(). " + artifact.length +
@@ -1466,9 +1463,7 @@ class Saml11Sso {
                 "artifact.");
       return false;
     }
-    const own = crypto.createHash('sha1')
-                      .update(String(this.providerIdFor(scopedId)), 'utf8')
-                      .digest();
+    const own = stsCrypto.samlArtifactSourceId(this.providerIdFor(scopedId));
     const foreign = !own.equals(bytes.subarray(2, 22));
     log.debug("Leaving Saml11Sso.isForeignArtifact(). " + foreign);
     return foreign;

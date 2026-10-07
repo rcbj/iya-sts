@@ -82,7 +82,6 @@
 // never sent; the person links again.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -712,10 +711,9 @@ class ClaimsProviders {
       return { ok: false, code: 'STS-OAUTH-0678',
                why: 'this realm has no Claims Provider "' + id + '"' };
     }
-    const state = nodeCrypto.randomBytes(24).toString('base64url');
-    const verifier = nodeCrypto.randomBytes(32).toString('base64url');
-    const challenge = nodeCrypto.createHash('sha256').update(verifier)
-      .digest('base64url');
+    const state = stsCrypto.randomBytes(24).toString('base64url');
+    const verifier = stsCrypto.randomBytes(32).toString('base64url');
+    const challenge = stsCrypto.digest('sha256', verifier, 'base64url');
     const redirectUri = base + CALLBACK_PATH;
     flows.set(state, { username: String(username), provider: id,
                        verifier: verifier, redirectUri: redirectUri,
@@ -910,7 +908,7 @@ class ClaimsProviders {
     let why = 'no key in the provider\'s set verified it';
     for (const jwk of keys) {
       try {
-        const key = nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' });
+        const key = stsCrypto.publicKeyFromJwk(jwk);
         const claims = stsCrypto.verifyJws(String(jwt), key, {
           // THE FAMILY FROM THE KEY, never the token's word alone.
           algorithms: [alg], issuer: provider.issuer,

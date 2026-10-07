@@ -53,7 +53,6 @@ import applications = require('../common/applications');
 import clusterSecrets = require('../cluster/cluster_secrets');
 import fedHttp = require('../federation/federation_http');
 import config = require('../common/config');
-import nodeCrypto = require('crypto');
 
 type Json = any;
 
@@ -412,7 +411,7 @@ class PairwiseSubjects {
     let sub = index ? String(ephemeral.get(index) || '') : '';
     const held = sub ? ephemeral.get('e|' + sub) : null;
     if (!held || held.local !== local) {
-      sub = nodeCrypto.randomBytes(20).toString('base64url');
+      sub = stsCrypto.randomBytes(20).toString('base64url');
     }
     const until = now() + this.ephemeralLifetimeMs();
     ephemeral.set('e|' + sub, { local: local, client: clientId,
