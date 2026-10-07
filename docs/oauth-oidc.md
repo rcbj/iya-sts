@@ -1868,7 +1868,6 @@ endpoints on this page:
 
 ### Not implemented
 
-* The device authorization grant: there is no device authorization endpoint.
 * A Self-Issued OP (#129).
 * Enforcing `value`/`values` or `essential` in a claims request, other than
   for `acr`.
@@ -1935,7 +1934,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.refreshTokenTtlS` | `STS_OAUTH2_REFRESH_TOKEN_TTL_S` | `86400` | yes | A refresh token's absolute lifetime, in both modes (it was thirty days before; `2592000` restores that). |
 | `oauth2.clockSkewS` | `STS_OAUTH2_CLOCK_SKEW_S` | `30` | yes | The allowance on `exp` and `nbf` wherever this service reads back a token it issued, and on every console screen's state. |
 | `oauth2.authorizationCodeTtlS` | `STS_OAUTH2_AUTHORIZATION_CODE_TTL_S` | `300` | yes | How long an authorization code may wait to be redeemed; RFC 9700 mode's transaction memory is measured from it. |
-| `oauth2.redeemedCodeCacheSize` | `STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE` | `10000` | yes | How many redeemed codes are remembered so an identical repeat gets the same tokens and a different one is refused by name. |
+| `oauth2.redeemedCodeCacheSize` | `STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE` | `10000` | yes | How many redeemed codes are remembered, so a repeat is refused naming when and by whom the code was redeemed (or the field that differs) and what it bought is revoked. Only with `oauth2.codeReplayIdempotent` on does an identical repeat get the same tokens. Past the limit the oldest is forgotten, and its replay is refused as an unknown code. |
 | `oauth2.expiredTokenRetentionS` | `STS_OAUTH2_EXPIRED_TOKEN_RETENTION_S` | `86400` | yes | How long an expired token stays in the `/admin/tokens` register before the hourly purge job deletes its record. |
 | `oauth2.accessTokenStatusListTtlS` | `STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_TTL_S` | `60` | yes | The `ttl` (and HTTP `max-age`) of the realm's access-token status list and of the revoked-biscuit list: how long a resource server that checks access tokens on its own may keep them, and so how long a revocation can take to reach it (#432). |
 | `oauth2.accessTokenStatusListLifetimeS` | `STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_LIFETIME_S` | `3600` | yes | How long after it is signed the access-token status list says it is valid (its `exp`). |
@@ -2123,11 +2122,14 @@ be set per [trust realm](trust-realms.md).
 * **An address is part of an issuer.** Tokens, software statements and
   audiences are compared as whole URLs. The earlier path-only match accepted a
   token narrowed to somebody else's `/resource`.
-* **A redeemed code answers an identical repeat.** A reloaded page, a
-  double-submitted form and a retry after a bad `code_verifier` are
-  indistinguishable from a stolen code. Answering with the same tokens, and
-  naming what differs otherwise, tells the client what happened. RFC 9700 mode
-  turns this off.
+* **A redeemed code is refused, and named, when it comes again.** A reloaded
+  page, a double-submitted form and a retry after a bad `code_verifier` are
+  indistinguishable from a stolen code, so in every mode the repeat is
+  refused and what the code bought is revoked (RFC 6749 section 10.5). The
+  refusal says when and by which client the code was redeemed, or which field
+  differs, which tells the client what happened. Answering an identical
+  repeat with the same tokens is `oauth2.codeReplayIdempotent`, off by
+  default and ignored in RFC 9700, OAuth 2.1 and FAPI mode.
 * **Refresh tokens are encrypted to their realm.** Nobody but this service
   needs to read one, and a token from one realm cannot be redeemed in another.
 * **Claims requests are honoured and never echoed.** `value`/`values` could be

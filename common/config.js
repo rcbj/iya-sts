@@ -5180,12 +5180,16 @@ const SETTINGS = [
     env: 'STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE', type: 'int', dflt: 10000,
     min: 10, max: 1000000, runtime: true,
     description: 'How many redeemed authorization codes a trust realm ' +
-                 'remembers, so that a repeat of the SAME token request is ' +
-                 'answered with the tokens it already got and a different ' +
-                 'one is refused naming what differs. Past it the OLDEST is ' +
-                 'forgotten, which costs only that courtesy: the code itself ' +
-                 'was removed when it was redeemed, so a replay of a ' +
-                 'forgotten one is still refused as an unknown code.' },
+                 'remembers. A repeat of a remembered code is refused in ' +
+                 'every mode, naming when and by which client it was ' +
+                 'redeemed (or the field that differs), and the tokens it ' +
+                 'bought are revoked (RFC 6749 section 10.5); only with ' +
+                 'oauth2.codeReplayIdempotent on is an identical repeat ' +
+                 'answered with the tokens it already got. Past the limit ' +
+                 'the OLDEST is forgotten: the code itself was removed when ' +
+                 'it was redeemed, so a replay of a forgotten one is still ' +
+                 'refused, as an unknown code, but what it bought is no ' +
+                 'longer revoked.' },
 
   { key: 'oauth2.codeReplayIdempotent', group: 'OAuth 2.0 / OIDC',
     label: 'Answer a repeated code redemption with the same tokens',
