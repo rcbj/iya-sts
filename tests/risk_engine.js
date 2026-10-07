@@ -272,7 +272,87 @@ async function run(t) {
 
   config.setOverride('risk.datasetShrinkLimitPercent', 50);
   config.clearOverride('risk.minimumHistory');
+  await sharedNetwork(t);
   log.debug("Leaving run().");
+}
+
+// ---------------------------------------------------------------------------
+// H. ONE SHARED NETWORK, AT THE DEFAULT THRESHOLD (#499). Every person behind
+// one address with one browser — a NAT, a VPN, a container bridge, a test
+// stack — and one of them signing in far more than the rest. With
+// risk.minimumHistory at its default, a person whose earlier sign-ins are all
+// from that same context is scored, and the score is mostly the model's
+// user term (above 1: they sign in less than the average). At the default
+// MEDIUM line (risk.mediumScorePercent 300, Freeman et al.'s θ calibrated —
+// rcbj's decision on #499) that is LOW; at the old line of 1 it was MEDIUM,
+// which is what refused the WS-Trust chain jobs on a long-lived service. A
+// genuinely new address, or a new browser, still raises the score past it.
+// ---------------------------------------------------------------------------
+async function sharedNetwork(t) {
+  log.debug("Entering sharedNetwork().");
+  riskStore.reset();
+  riskDatasets.forget();
+  // Two networks in two countries, so a new address can be in a new one.
+  // Without the datasets every address has the same EMPTY network and
+  // country, which the model's hierarchy counts as values the person has
+  // used — so a new address would read as "a new address on a known
+  // network" (reported on #499; the model is unchanged there).
+  await require('../risk/risk_terms').accept({ provider: 'dbip-lite',
+    acceptedBy: 'a test', via: 'upload' });
+  const networks = await riskDatasets.importVersion({ dataset: 'asn',
+    format: 'dbip-asn-csv', version: 'h-asn', source: 'upload',
+    content: '192.0.2.0,192.0.2.255,64496,Example Networks\n' +
+             '198.18.8.0,198.18.8.255,64497,Documentation Carrier' });
+  const places = await riskDatasets.importVersion({ dataset: 'geo.city',
+    format: 'dbip-city-csv', version: 'h-city', source: 'upload',
+    content: '192.0.2.0,192.0.2.255,OC,AU,Queensland,Example City,' +
+             '-27.4748,153.017\n198.18.8.0,198.18.8.255,EU,DE,Berlin,' +
+             'Berlin,52.52,13.405' });
+  const SHARED = '192.0.2.50';
+  const HEAVY = 'urn:uuid:00000000-0000-4000-8000-0000000000aa';
+  const people = ['b1', 'b2', 'b3'].map(function (n) {
+    return 'urn:uuid:00000000-0000-4000-8000-0000000000' + n;
+  });
+  const minimum = Number(config.value('risk.minimumHistory'));
+  for (let i = 0; i < 30; i++) {
+    await signIn(SHARED, CHROME, { subject: HEAVY });
+  }
+  let last = null;
+  for (const person of people) {
+    for (let i = 0; i <= minimum; i++) {
+      last = await signIn(SHARED, CHROME, { subject: person });
+    }
+  }
+  const model = (last && last.signals[0]) || {};
+  const f = model.factors || {};
+  t.check(Number(config.value('risk.mediumScorePercent')) === 300 &&
+          last && last.level === 'LOW' && typeof model.score === 'number' &&
+          model.score > 1 && last.score < 3 && f.user > 1 &&
+          f.ip <= 1 && f.ua <= 1 && model.knownContext === true,
+          'H1. a person with risk.minimumHistory (' + minimum + ') identical ' +
+          'sign-ins on a shared network is LOW at the default MEDIUM line ' +
+          '(3): the score is above 1 only by the user term, which says they ' +
+          'sign in less than average and nothing about this context',
+          JSON.stringify({ level: last && last.level, score: last &&
+                           last.score, factors: f }));
+  const person = people[people.length - 1];
+  const newAddress = await signIn('198.18.8.10', CHROME,
+                                  { subject: person });
+  const newBrowser = await signIn(SHARED, 'Mozilla/5.0 (X11; Linux x86_64; ' +
+    'rv:142.0) Gecko/20100101 Firefox/142.0', { subject: person });
+  t.check(networks && networks.ok && places && places.ok &&
+          newAddress && newBrowser &&
+          newAddress.score > last.score * 2 &&
+          newBrowser.score > last.score * 2 &&
+          newAddress.level !== 'LOW' && newBrowser.level !== 'LOW',
+          'H2. a genuinely new address (on a new network), or a new ' +
+          'browser, still raises the ' +
+          'same person\'s score past the MEDIUM line',
+          JSON.stringify({ networks: networks.ok, places: places.ok,
+                           known: last && last.score,
+                           address: newAddress && newAddress.score,
+                           browser: newBrowser && newBrowser.score }));
+  log.debug("Leaving sharedNetwork().");
 }
 
 module.exports = {

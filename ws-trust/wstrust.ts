@@ -1938,7 +1938,14 @@ class WsTrust {
     // #480: the realm's OAuth issuer at this request's base, which a JWT
     // this STS issues carries and a JWT presented to it must carry.
     const jwtIssuer = this.oauthIssuer(String(options.base || ''));
-    const auth: any = this.authenticate(doc, jwtIssuer);
+    // AUTHENTICATED AT THE DOOR ALREADY (#499): the route authenticates an
+    // Issue or a Renew that delegates nothing before calling this, so that
+    // the sign-in can be assessed for risk between the credential and the
+    // decision (doorAssessment()). It hands the answer in rather than have
+    // the credential verified twice — a second verification would count a
+    // refused password twice and spend a nonce twice.
+    const auth: any = options.preAuthenticated ||
+      this.authenticate(doc, jwtIssuer);
     if (!auth.ok) {
       log.debug("Leaving WsTrust.handleRst(). Authentication failed, " +
                 "answering with a SOAP Fault.");
@@ -2145,13 +2152,24 @@ class WsTrust {
     // A REFUSAL IS A SOAP FAULT, because that is the only answer this protocol
     // has: an RST is answered with an RSTR or with a Fault, and an RSTR
     // carrying no token would be a success that issued nothing.
-    const roleAnswer = gate.check({
+    // THE SIGN-IN'S OWN RISK (#499): where the route assessed this very
+    // sign-in at the door, the policy decides on that assessment — not on
+    // the person's standing from an earlier one, which is what a request
+    // that delegates, or one handed in with no door, is still decided on
+    // (the gate finds it: `riskFactsOf()`).
+    const doorRisk = options.doorRisk &&
+      String(options.doorRisk.username) === String(subject || '')
+      ? { risk: options.doorRisk.facts } : {};
+    const roleAnswer = gate.check(Object.assign({
       application: audience,
       kind: gate.ISSUANCE.WSTRUST_TOKEN,
       subject: { kind: 'user', name: String(subject || ''),
                  authenticated: subject !== 'anonymous' },
       claims: null
-    });
+    }, doorRisk));
+    if (typeof options.onIssuanceAnswer === 'function') {
+      options.onIssuanceAnswer(roleAnswer);
+    }
     if (!roleAnswer.allowed) {
       log.info('wstrust: the issuance policy refused a token for "' +
                String(subject) + '" to "' + audience + '". ' + roleAnswer.why);
@@ -2827,48 +2845,150 @@ class WsTrust {
                   firstByLocal(doc, 'ActAs'));
   }
 
+  // ---------------------------------------------------------------------------
   // The endpoint, once the request is known to be served HERE.
+  //
+  // THE STANDINGS, READ FIRST (#62 P3): the requester's, and — new with
+  // #499 — the subject of an OnBehalfOf / ActAs, whose standing is what a
+  // delegated hop is decided on and which a node that did not see their
+  // sign-in holds only from the store. Then THE SIGN-IN ITSELF IS ASSESSED
+  // AT THE DOOR (doorAssessment(), #499), and the exchange is decided on
+  // that assessment rather than on the standing an earlier one left —
+  // which is what risk/CLAUDE.md's door table always said WS-Trust did.
+  // ---------------------------------------------------------------------------
   private stsEndpointHere(req, res, claimed, delegated?: string, doc?) {
-    const { log, subjectForName } = this.deps;
+    const { log, subjectForName, firstByLocal } = this.deps;
     log.debug("Entering WsTrust.stsEndpointHere().");
     const self = this;
-    let preload: Promise<unknown> = Promise.resolve(null);
+    const names: string[] = [];
     if (claimed) {
+      names.push(String(claimed));
+    }
+    const obo = doc ? firstByLocal(doc, 'OnBehalfOf') ||
+                      firstByLocal(doc, 'ActAs') : null;
+    const oboNamed = obo ? firstByLocal(obo, 'NameID') ||
+                           firstByLocal(obo, 'NameIdentifier') : null;
+    const oboName = oboNamed ? String(oboNamed.textContent || '').trim() : '';
+    if (oboName && names.indexOf(oboName) < 0) {
+      names.push(oboName);
+    }
+    const preloads = names.map(function (name: string): Promise<unknown> {
       try {
-        const sub = String(subjectForName(claimed) || '');
-        preload = sub ? require('../risk/risk_engine').loadStanding(
-          require('../common/realms').currentId(), claimed, sub)
-          : preload;
+        const sub = String(subjectForName(name) || '');
+        return sub ? require('../risk/risk_engine').loadStanding(
+          require('../common/realms').currentId(), name, sub)
+          : Promise.resolve(null);
       } catch (e) {
         log.debug("Caught in WsTrust.stsEndpointHere(): " +
                   ((e && e.message) || e));
         // No risk engine in this process: nothing to read, and the roles
         // decide.
-        preload = Promise.resolve(null);
+        return Promise.resolve(null);
       }
-    }
-    log.debug("Leaving WsTrust.stsEndpointHere().");
-    return preload.then(function (): unknown {
+    });
+    const serve = function (door: any): unknown {
+      log.debug("Entering serve().");
+      log.debug("Leaving serve().");
       return delegated ? self.delegatedHere(req, res, delegated, doc)
-                       : self.stsEndpointNow(req, res);
-    }, function (e: any): unknown {
+                       : self.stsEndpointNow(req, res, door);
+    };
+    log.debug("Leaving WsTrust.stsEndpointHere().");
+    return Promise.all(preloads).then(function (): Promise<unknown> {
+      return delegated ? Promise.resolve(null)
+                       : self.doorAssessment(req, doc);
+    }).then(serve, function (e: any): unknown {
       log.debug("Caught in WsTrust.stsEndpointHere(): " +
                 ((e && e.message) || e));
-      // loadStanding() never rejects; this is its belt and braces.
-      return delegated ? self.delegatedHere(req, res, delegated, doc)
-                       : self.stsEndpointNow(req, res);
+      // loadStanding() and doorAssessment() never reject; this is their
+      // belt and braces. Served as before #499: authenticated inside the
+      // exchange and decided on the standing.
+      return serve(null);
     });
   }
 
-  private stsEndpointNow(req, res) {
+  // ---------------------------------------------------------------------------
+  // THE SIGN-IN, ASSESSED AT THE DOOR (#499; rcbj's decision 2 on the
+  // ticket). An Issue or a Renew that delegates nothing signs its requester
+  // in, so it is authenticated HERE, before the exchange, and — when it
+  // authenticated a person — assessed with `authn.assessSignIn()`, the same
+  // call every other door makes between the credential and the decision.
+  // The assessment is RECORDED (it moves the person's history and standing,
+  // as every sign-in's does) and the exchange is decided on it, so a person
+  // held at MEDIUM by an earlier sign-in is let through the moment this one
+  // scores lower, and refused the moment it scores higher.
+  //
+  // Answers `{ auth, username, assessment, facts }`, `{ auth }` for a
+  // credential that did not authenticate a person (handleRst() answers its
+  // Fault without verifying it again), or null for a request this does not
+  // apply to: no document, a delegation, an operation that signs nobody in.
+  // Never rejects: an engine that failed answers `{ auth }`, and the
+  // standing decides, as it did.
+  // ---------------------------------------------------------------------------
+  private async doorAssessment(req, doc): Promise<any> {
+    const { authn, firstByLocal, log, textByLocal } = this.deps;
+    log.debug("Entering WsTrust.doorAssessment().");
+    if (!doc || firstByLocal(doc, 'OnBehalfOf') ||
+        firstByLocal(doc, 'ActAs')) {
+      log.debug("Leaving WsTrust.doorAssessment(). Not a sign-in here.");
+      return null;
+    }
+    const op = String(textByLocal(doc, 'RequestType') || '').split('/')
+      .pop().toLowerCase();
+    if (op !== 'issue' && op !== 'renew') {
+      log.debug("Leaving WsTrust.doorAssessment(). " + (op || 'No') +
+                " operation signs nobody in.");
+      return null;
+    }
+    const auth: any = this.authenticate(doc,
+      this.oauthIssuer(helpers.baseUrlOf(req)));
+    if (!auth.ok || !auth.subject || auth.subject === 'anonymous' ||
+        auth.kind === 'delegated') {
+      log.debug("Leaving WsTrust.doorAssessment(). Nobody signed in.");
+      return { auth: auth };
+    }
+    const username = String(auth.subject);
+    try {
+      const assessment = await authn.assessSignIn(req, username,
+                                                  'WS-Trust ' + op, {});
+      const engine = assessment ? require('../risk/risk_engine') : null;
+      if (!engine) {
+        log.debug("Leaving WsTrust.doorAssessment(). Not assessed.");
+        return { auth: auth };
+      }
+      const facts = engine.factsOf(engine.riskOf(assessment),
+        auth.kind === 'assertion' ? [] : ['pwd'], '1');
+      log.debug("Leaving WsTrust.doorAssessment(). " + assessment.level);
+      return { auth: auth, username: username, assessment: assessment,
+               facts: facts };
+    } catch (e) {
+      log.debug("Caught in WsTrust.doorAssessment(): " +
+                ((e && e.message) || e));
+      // assessSignIn() never rejects; a risk module missing from this
+      // process is no facts, and the standing decides, as before #499.
+      log.debug("Leaving WsTrust.doorAssessment(). Failed.");
+      return { auth: auth };
+    }
+  }
+
+  private stsEndpointNow(req, res, door?: any) {
     const { authn, errorCodes, log } = this.deps;
     log.debug("Entering the WS-Trust STS endpoint.");
     const contentType = req.headers['content-type'] || '';
     try {
       const encrypt = req.query.encrypt === '1' || req.query.encrypt === 'true';
+      let issuanceAnswer: any = null;
       const result = this.handleRst(req.body || '', contentType,
-                                    { encrypt: encrypt,
-                                      base: helpers.baseUrlOf(req) });
+        { encrypt: encrypt, base: helpers.baseUrlOf(req),
+          preAuthenticated: door ? door.auth : null,
+          doorRisk: door && door.facts
+            ? { username: door.username, facts: door.facts } : null,
+          onIssuanceAnswer: function (answer: any): void {
+            issuanceAnswer = answer;
+          } });
+      // WHAT THE POLICY DECIDED ON THE DOOR'S ASSESSMENT, written back onto
+      // it (#499), as the sign-in screen writes its own (`settle()`).
+      const doorDecision = door && door.assessment
+        ? this.settleDoorRisk(door, issuanceAnswer) : '';
       // THE SESSION, IF THE EXCHANGE MADE ONE. See handleRst()'s note on
       // `signIn` for why the decision is made there and the act is performed
       // here.
@@ -2895,10 +3015,20 @@ class WsTrust {
           // exchange also starts, which is a side effect of the exchange rather
           // than its product. Refusing the RSTR here would refuse a credential
           // the policy had already permitted.
+          // THE DOOR'S ASSESSMENT RIDES IN (#499), so the session is
+          // decided on it and carries it, and is not assessed a second time.
+          const doorAssessed = door && door.assessment &&
+            door.username === result.signIn.username ? door.assessment
+            : undefined;
           const signedIn = authn.startSession(res, result.signIn.username,
                                               result.signIn.amr || ['pwd'], '1',
                                               result.signIn.via,
-                                              { request: req });
+                                              doorAssessed
+                                                ? { request: req,
+                                                    risk: doorAssessed,
+                                                    riskDecision:
+                                                      doorDecision }
+                                                : { request: req });
           if (!signedIn) {
             log.info('ws-trust: the token was issued and the issuance policy ' +
                      'refused the browser SESSION for ' +
@@ -2942,6 +3072,39 @@ class WsTrust {
                          (e && e.message ? e.message : String(e))));
       log.debug("Leaving the WS-Trust STS endpoint. It failed.");
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DECISION ON THE DOOR'S ASSESSMENT, written back onto it (#499):
+  // `permit`, `step-up` or `refuse`, `observe:` before it where development
+  // set a risk Deny aside, and the code a refusal was recorded under. The
+  // sign-in screen does the same through `authn`'s settleRisk(). Answers the
+  // decision, which the session started on it records again with its id.
+  // ---------------------------------------------------------------------------
+  private settleDoorRisk(door: any, answer: any): string {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.settleDoorRisk().");
+    const risk = answer && answer.risk ? answer.risk : null;
+    const decision = risk
+      ? (risk.observed ? 'observe:' : '') + String(risk.action)
+      : (answer && !answer.allowed ? 'refuse' : 'permit');
+    try {
+      const engine = require('../risk/risk_engine');
+      const refused = !!(answer && !answer.allowed && risk && !risk.observed);
+      engine.settle(require('../common/realms').currentId(),
+        String(door.assessment.id || ''), Object.assign(
+          { decision: decision, policy: (answer && answer.policy) || '' },
+          refused ? { errorCode: risk.action === 'step-up' ? 'STS-RISK-0017'
+                                                           : 'STS-RISK-0016' }
+            : {}));
+    } catch (e) {
+      log.debug("Caught in WsTrust.settleDoorRisk(): " +
+                ((e && e.message) || e));
+      // The record of the decision is bookkeeping: the exchange was decided
+      // and answered whatever this could write.
+    }
+    log.debug("Leaving WsTrust.settleDoorRisk(). " + decision);
+    return decision;
   }
 
   // The startup half of issuerDisagreement(), once, for the process-wide

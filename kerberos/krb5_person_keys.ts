@@ -215,6 +215,7 @@ interface PrincipalDatabase {
     krbtgtKeys?(): Json;
     personDisabled?(name: string): boolean;
     personSecondFactor?(name: string): Json;
+    decideSignIn?(name: string, detail: Json): Promise<Json>;
     fast?: Krb5Fast;
     pkinit?: Krb5Pkinit;
   }): unknown;
@@ -1043,6 +1044,96 @@ class Krb5PersonKeys {
     log.debug('Leaving Krb5PersonKeys.personSecondFactor(). needed=' +
               !!answer.needed);
     return answer;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE AS-REQ'S RISK, AT THE DOOR (#499; rcbj's decision 2 on the ticket).
+  // Asked by the KDC through `principals.decideSignIn()` once a person's
+  // pre-authentication verified. The sign-in is assessed with
+  // `authn.assessSignIn()` — the call every door makes between the credential
+  // and the decision; the client's address is the KDC's ambient audit source
+  // — which RECORDS it, so the person's standing is now this sign-in's and
+  // the TGS-REQs after it are decided on it. The issuance policy is then
+  // asked about the ticket-granting ticket with those facts: no application
+  // (the krbtgt is nobody's to put a requirement on), so only a Deny ABOUT
+  // RISK can refuse, and a Kerberos client has no way to be asked for a
+  // step-up, so a step-up is a refusal (STS-RISK-0017) unless the
+  // pre-authentication already met it — an OTP is a second factor, a
+  // hardware PKINIT key a security key.
+  //
+  // Answers `{ refused, errorCode, eText }`, or null: not refused, nobody to
+  // assess, development observing, or the engine not loaded (each a module
+  // required LAZILY — this file is built long before the risk modules and
+  // must never pull them into the parent project's COPY closure, which it is
+  // outside of anyway).
+  // -------------------------------------------------------------------------
+  /**
+   * Assesses an AS-REQ's sign-in for risk and asks the issuance policy, once
+   * pre-authentication verified.
+   *
+   * @param name - the username
+   * @param detail - `{ indicators, pkinit, hardware, method }`
+   * @returns `{ refused, errorCode, eText }` when refused on risk, or null
+   */
+  async decideSignIn(name: string, detail: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.decideSignIn(). name=' + name);
+    const d = detail || {};
+    const indicators = Array.isArray(d.indicators) ? d.indicators.map(String)
+                                                   : [];
+    const otp = indicators.indexOf('otp') >= 0;
+    const amr = d.pkinit ? (d.hardware ? ['hwk'] : ['swk'])
+                         : (otp ? ['pwd', 'otp'] : ['pwd']);
+    const acr = otp ? 'mfa' : '1';
+    let assessment: Json = null;
+    let engine: Json = null;
+    let gate: Json = null;
+    try {
+      assessment = await require('../authn/authn').assessSignIn(null, name,
+        'Kerberos AS-REQ', { credential: { kind: d.pkinit ? 'certificate'
+                                                          : 'kerberos-key' } });
+      engine = assessment ? require('../risk/risk_engine') : null;
+      gate = engine ? require('../common/issuance_gate') : null;
+    } catch (e) {
+      log.debug('Caught in Krb5PersonKeys.decideSignIn(): ' +
+                ((e && e.message) || e));
+      // No authn or risk modules in this process: nothing to decide on, and
+      // the ticket is issued as before #499.
+      assessment = null;
+    }
+    if (!assessment || !engine || !gate) {
+      log.debug('Leaving Krb5PersonKeys.decideSignIn(). Not assessed.');
+      return null;
+    }
+    const answer = gate.check({
+      application: '',
+      kind: gate.ISSUANCE.KERBEROS_TICKET,
+      subject: { kind: 'user', name: name, authenticated: true },
+      claims: null,
+      risk: engine.factsOf(engine.riskOf(assessment), amr, acr)
+    });
+    const risk = answer && answer.risk ? answer.risk : null;
+    const refused = !!(answer && !answer.allowed && risk && !risk.observed);
+    const code = risk && risk.action === 'step-up' ? 'STS-RISK-0017'
+                                                   : 'STS-RISK-0016';
+    engine.settle(this.deps.realms.currentId(), String(assessment.id || ''),
+      Object.assign({ decision: risk
+        ? (risk.observed ? 'observe:' : '') + String(risk.action) : 'permit',
+                      policy: (answer && answer.policy) || '' },
+                    refused ? { errorCode: code } : {}));
+    if (!refused) {
+      log.debug('Leaving Krb5PersonKeys.decideSignIn(). ' + assessment.level +
+                ', not refused.');
+      return null;
+    }
+    log.debug('Leaving Krb5PersonKeys.decideSignIn(). Refused on risk.');
+    // ASCII only, for the reason every eText from the KDC is; it names
+    // neither the level nor the signals, as no refusal on risk does.
+    return { refused: true, errorCode: code,
+             eText: risk.action === 'step-up'
+               ? 'a stronger authentication is required: use FAST with OTP ' +
+                 'pre-authentication or PKINIT'
+               : 'authentication failed' };
   }
 
   // What the KDC does about pre-authentication in the AMBIENT realm, for the
@@ -3280,6 +3371,8 @@ class Krb5PersonKeys {
                                   this.personDisabled.bind(this),
                                 personSecondFactor:
                                   this.personSecondFactor.bind(this),
+                                // #499: the AS-REQ's risk, at the door.
+                                decideSignIn: this.decideSignIn.bind(this),
                                 fast: this.deps.fast,
                                 pkinit: this.deps.pkinit });
     } else {

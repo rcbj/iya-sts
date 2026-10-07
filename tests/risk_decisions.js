@@ -351,6 +351,116 @@ function childMain() {
          JSON.stringify(observed.risk));
     config.setOverride('risk.enforceInDevelopment', true);
 
+    // --- M. WS-Trust and the KDC decide at the door (#499) -----------------
+    // The sign-in being made is assessed before anything is issued and the
+    // decision is made on THAT assessment, recorded — not on the standing
+    // an earlier sign-in left. So a person held at MEDIUM is assessed again
+    // on every attempt, and is let through the moment they score lower.
+    // The MEDIUM line is moved to make the earlier sign-ins MEDIUM, and back
+    // to its default (3) for the one that recovers. Before any list names
+    // the loopback these requests come from (F below adds them).
+    config.setOverride('risk.minimumHistory', 1);
+    const assessedFor = async function (name, door) {
+      const v = await riskEngine.view('default',
+        { subject: helpers.subjectForName(name), days: 1 });
+      return v.assessments.rows.filter(function (a) {
+        return String(a.door).indexOf(door) === 0;
+      });
+    };
+    const WST = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
+    const soap = function (user) {
+      const body = '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-' +
+        'envelope" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/' +
+        'oasis-200401-wss-wssecurity-secext-1.0.xsd"><s:Header>' +
+        '<wsse:Security><wsse:UsernameToken><wsse:Username>' + user +
+        '</wsse:Username><wsse:Password>any</wsse:Password>' +
+        '</wsse:UsernameToken></wsse:Security></s:Header><s:Body>' +
+        '<wst:RequestSecurityToken xmlns:wst="' + WST + '">' +
+        '<wst:RequestType>' + WST + '/Issue</wst:RequestType>' +
+        '</wst:RequestSecurityToken></s:Body></s:Envelope>';
+      return new Promise(function (resolve) {
+        const req = http.request({ host: '127.0.0.1', port: port,
+          path: '/sts', method: 'POST',
+          headers: { 'content-type': 'application/soap+xml; charset=utf-8',
+                     'content-length': Buffer.byteLength(body),
+                     'user-agent': CHROME } }, function (res) {
+          let text = '';
+          res.on('data', function (c) { text += c; });
+          res.on('end', function () {
+            resolve({ status: res.statusCode, text: text });
+          });
+        });
+        req.end(body);
+      });
+    };
+    ldap.createUser('rd-kim', { invent: false });
+    const kimFirst = await soap('rd-kim');
+    config.setOverride('risk.mediumScorePercent', 1);
+    const kimHeld = await soap('rd-kim');
+    const kimHeldAgain = await soap('rd-kim');
+    const kimHeldRows = await assessedFor('rd-kim', 'WS-Trust');
+    config.clearOverride('risk.mediumScorePercent');
+    const kimBack = await soap('rd-kim');
+    const kimRows = await assessedFor('rd-kim', 'WS-Trust');
+    note(kimFirst.status === 200 && kimHeld.status === 403 &&
+         kimHeldAgain.status === 403 && kimHeldRows.length === 3 &&
+         kimHeldRows[0].level === 'MEDIUM' &&
+         /step-up/.test(String(kimHeldRows[0].decision)),
+         'M1. WS-Trust assesses every Issue at the door and decides on it: ' +
+         'a MEDIUM sign-in is refused, and the next attempt is ASSESSED ' +
+         'AGAIN (three assessments, the last MEDIUM with its step-up ' +
+         'decision recorded) rather than refused on the standing',
+         JSON.stringify({ statuses: [kimFirst.status, kimHeld.status,
+                                     kimHeldAgain.status],
+                          rows: kimHeldRows.map(function (a) {
+                            return [a.level, a.decision];
+                          }) }));
+    note(kimBack.status === 200 && kimRows.length === 4 &&
+         kimRows[0].level === 'LOW' &&
+         riskEngine.standingOf('default', 'rd-kim').level === 'LOW',
+         'M2. a person held at MEDIUM recovers at the door the moment their ' +
+         'score allows: at the default line the next Issue scores LOW and is ' +
+         'issued, and their standing is LOW',
+         JSON.stringify({ status: kimBack.status, rows: kimRows.map(
+           function (a) {
+             return [a.level, a.score, a.decision];
+           }) }));
+
+    const kdc = require(ROOT + '/kerberos/krb5_kdc.js');
+    const principals = require(ROOT + '/kerberos/krb5_principals.js');
+    const wire = require(ROOT + '/tests/vendored/krb5_wire.js');
+    const inproc = { label: 'in-process', send: function (bytes) {
+      return kdc.handleMessage(bytes);
+    } };
+    const KPW = String(config.value('krb5.userPassword'));
+    const kinit = async function (name) {
+      const r = await wire.asExchange(inproc, principals.REALM, name,
+                                      { password: KPW });
+      const e = (r.second && r.second.error) || (r.first && r.first.error);
+      return { tgt: !!r.tgt, code: e ? e.code : null,
+               eText: e ? String(e.eText || '') : '' };
+    };
+    ldap.createUser('rd-kurt', { invent: false });
+    const kurtFirst = await kinit('rd-kurt');
+    config.setOverride('risk.mediumScorePercent', 1);
+    const kurtHeld = await kinit('rd-kurt');
+    config.clearOverride('risk.mediumScorePercent');
+    const kurtBack = await kinit('rd-kurt');
+    const kurtRows = await assessedFor('rd-kurt', 'Kerberos');
+    note(kurtFirst.tgt && !kurtHeld.tgt && kurtHeld.code === 12 &&
+         /stronger authentication/.test(kurtHeld.eText) && kurtBack.tgt &&
+         kurtRows.length === 3 && kurtRows[1].level === 'MEDIUM' &&
+         kurtRows[0].level === 'LOW',
+         'M3. the KDC assesses an AS-REQ at the door once the pre-' +
+         'authentication verified: a MEDIUM sign-in gets no ticket ' +
+         '(KDC_ERR_POLICY, a stronger authentication), and the next, LOW, ' +
+         'gets one — each recorded',
+         JSON.stringify({ first: kurtFirst, held: kurtHeld, back: kurtBack,
+                          rows: kurtRows.map(function (a) {
+                            return [a.level, a.decision];
+                          }) }));
+    config.clearOverride('risk.minimumHistory');
+
     // --- F. the sign-in screen ----------------------------------------------
     await riskTerms.accept({ provider: 'tor-project', acceptedBy: 'a test',
                              via: 'upload' });

@@ -2699,6 +2699,51 @@ function personShaped(nameComponents, realm) {
 }
 
 // ---------------------------------------------------------------------------
+// THE SIGN-IN'S RISK, DECIDED AT THE DOOR (#499; rcbj's decision 2). Asked by
+// the KDC once an AS-REQ's pre-authentication has verified, before a ticket
+// is built: the source (`krb5_person_keys.ts`) assesses the sign-in with the
+// risk engine, records it — so the person's standing is THIS sign-in's, which
+// is what the TGS-REQs after it are decided on — and asks the issuance policy.
+// Answers `{ refused: true, errorCode, eText }` when the policy refused it on
+// risk, and null otherwise. One component, this KDC's own realm; a source
+// without the function (the parent project's in-process jobs have none), or
+// one that threw, refuses nobody — an assessment that could not be made is
+// "no facts", which never denies.
+// ---------------------------------------------------------------------------
+/**
+ * Asks the key source to assess an AS-REQ's sign-in for risk and decide on it,
+ * after pre-authentication verified.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @param detail - `{ indicators, pkinit, hardware, method }` of the
+ *   pre-authentication
+ * @returns `{ refused, errorCode, eText }` when refused on risk, or null
+ */
+async function decideSignIn(nameComponents, realm, detail) {
+  log.debug('Entering decideSignIn().');
+  const ctx = current();
+  if (!keySource || typeof keySource.decideSignIn !== 'function' ||
+      !Array.isArray(nameComponents) || nameComponents.length !== 1 ||
+      !nameComponents[0] || (realm || ctx.REALM) !== ctx.REALM) {
+    log.debug('Leaving decideSignIn(). Not asked.');
+    return null;
+  }
+  let answer = null;
+  try {
+    answer = await keySource.decideSignIn(String(nameComponents[0]),
+                                          detail || {});
+  } catch (e) {
+    log.debug('Caught in decideSignIn(): ' + ((e && e.message) || e));
+    // Unknown never denies: the ticket is decided as it was before #499.
+    answer = null;
+  }
+  log.debug('Leaving decideSignIn(). ' +
+            (answer && answer.refused ? 'Refused.' : 'Not refused.'));
+  return answer && answer.refused ? answer : null;
+}
+
+// ---------------------------------------------------------------------------
 // IS THIS PERSON'S ACCOUNT DISABLED? (2026-09-17). Asked by the KDC before an
 // AS-REQ or an S4U2Self is answered, in BOTH modes — a development KDC that
 // would create the principal on the spot still refuses a person an
@@ -4103,6 +4148,7 @@ module.exports = {
   lookupUser: lookupUser,
   personDisabled: personDisabled,
   personSecondFactor: personSecondFactor,
+  decideSignIn: decideSignIn,
   preauthProvider: preauthProvider,
   pkinitProvider: pkinitProvider,
   certificatePerson: certificatePerson,
