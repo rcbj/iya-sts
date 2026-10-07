@@ -12,8 +12,8 @@
 // person's Attributes tab has a simplified view (the fields usually filled
 // in) and an advanced one (every field), except a sub-tab of fewer than six
 // fields, which has none. The Every protocol and OAuth 2.0 / OpenID Connect
-// sub-tabs' simple fields are exactly what rcbj's two working applications
-// hold. What is held:
+// sub-tabs' simple fields are what rcbj's two working applications hold,
+// with `appMfaMechanism` added on Every protocol (rcbj). What is held:
 //
 //   1. those two sub-tabs' simple fields are that set — no more, no fewer —
 //      and every name in `SIMPLE_FIELD_ATTRIBUTES` is a field the grid has;
@@ -41,7 +41,9 @@ const log = require('bunyan').createLogger({
 // (that API) hold on the two sub-tabs, read from the 8081 instance on
 // 2026-10-07. `appCorsOrigin` and `appRequiredRole` were held as well and are
 // drawn on tabs of their own.
+// `appMfaMechanism` is not held by either and was asked for beside them.
 const EVERY = ['description', 'appHomePageUrl', 'appAuthnMechanism',
+               'appMfaMechanism',
                'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
                'appDelegationSubjectGroup', 'appDelegationSemantics'];
 const OAUTH = ['oauthClientId', 'oauthConfidential',
