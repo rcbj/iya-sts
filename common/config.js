@@ -2331,12 +2331,13 @@ const SETTINGS = [
   //     `attestation`, `userVerification`. These go to the BROWSER, in the
   //     options this service hands it, and what happens to them after that is
   //     the browser's and the authenticator's business.
-  //   * **CTAP2** — `authenticatorAttachment`, `residentKey`, `credProps`.
-  //     These are the ones a browser translates into what it asks the
-  //     AUTHENTICATOR for: which kind of authenticator may answer, whether the
-  //     credential is discoverable (a CTAP2 resident key, which is what makes
-  //     usernameless sign-in possible), and whether the browser is asked to
-  //     report back which it made.
+  //   * **CTAP2** — `authenticatorAttachment`, `credProps`. These are the
+  //     ones a browser translates into what it asks the AUTHENTICATOR for:
+  //     which kind of authenticator may answer, and whether the browser is
+  //     asked to report back whether the credential is discoverable. WHETHER
+  //     IT IS ASKED TO BE DISCOVERABLE (a CTAP2 resident key, which is what
+  //     makes usernameless sign-in possible) is the passkey policy's since
+  //     #527, not a row here.
   //   * **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`,
   //     `maxKeysPerPerson`. These are not WebAuthn at all: they are what THIS
   //     service will do with a key once the ceremony is over, and they are
@@ -2346,8 +2347,8 @@ const SETTINGS = [
   // that distinction is the one to keep: `userVerification` is sent to the
   // browser AND checked in `authn/webauthn.js` when the ceremony comes back,
   // so `required` really does refuse an authenticator that did not verify the
-  // person. `attestation`, `residentKey` and `authenticatorAttachment` are
-  // REQUESTS — this service records what came back and refuses nothing on
+  // person. `attestation`, `authenticatorAttachment` and the passkey
+  // policy's resident key (#527) are REQUESTS — this service records what came back and refuses nothing on
   // them. What is done with the attestation STATEMENT that comes back is the
   // fourth kind, below the policy rows: `webauthn.attestationPolicy` and the
   // six settings beside it (#105), which do refuse.
@@ -2715,25 +2716,15 @@ const SETTINGS = [
                  'whose attachment turned out to be the other one. What it ' +
                  'does do is RECORD what came back, where the browser said.' },
 
-  { key: 'webauthn.residentKey', group: 'WebAuthn',
-    label: 'Discoverable credential (CTAP resident key)',
-    path: 'webauthn.residentKey', env: 'STS_WEBAUTHN_RESIDENT_KEY',
-    type: 'enum', enumValues: ['discouraged', 'preferred', 'required'],
-    dflt: 'discouraged', runtime: true,
-    description: 'Whether the credential is stored ON the authenticator — a ' +
-                 'CTAP2 *resident key* — so that it can be found without ' +
-                 'this service naming it first. That is what makes a ' +
-                 'usernameless sign-in possible, and it is what a passkey ' +
-                 'is. `discouraged` is the default because a resident key ' +
-                 'consumes one of the small number of slots a roaming ' +
-                 'authenticator has and CANNOT ALWAYS BE DELETED FROM IT — a ' +
-                 'debugging service should not fill somebody\'s security key ' +
-                 'without being asked. It decides the sign-in screen\'s ' +
-                 'ceremony and *Use a security key*; **a passkey (*Create a ' +
-                 'passkey*) always asks `required`** (#474), because a ' +
-                 'passkey is a credential that can be found without a ' +
-                 'username, which is what `webauthn.usernameless` signs in ' +
-                 'with.' },
+  // ---------------------------------------------------------------------
+  // `webauthn.residentKey` and `webauthn.usernameless` WERE HERE until #527
+  // (2026-10-08). The passkey policy decides both now, per realm and
+  // inherited from the default realm (`common/passkey_policy.ts`, Directory
+  // → Policies): `allowUsernameless`, off by default, and
+  // `securityKeyResidentKey`, which a security key is asked for — `required`
+  // while usernameless sign-in is off. No shim; REPLACED_SETTINGS refuses a
+  // start that still names either.
+  // ---------------------------------------------------------------------
 
   { key: 'webauthn.credProps', group: 'WebAuthn',
     label: 'Ask for the credProps extension',
@@ -2767,25 +2758,6 @@ const SETTINGS = [
                  'flipping a switch, which is not a thing a setting should ' +
                  'be able to do.' },
 
-  { key: 'webauthn.usernameless', group: 'WebAuthn',
-    label: 'Sign in with a passkey and no username',
-    path: 'webauthn.usernameless', env: 'STS_WEBAUTHN_USERNAMELESS',
-    type: 'bool', dflt: false, runtime: true,
-    description: 'Offers a passkey sign-in that asks for NO username (#474): ' +
-                 'the sign-in screen\'s *Sign in with a passkey* button and ' +
-                 'the username field\'s autofill ask the browser for any ' +
-                 'discoverable credential of this realm (WebAuthn Level 3 ' +
-                 'section 5.4, `allowCredentials` empty), and the user ' +
-                 'handle it returns names the account. **User verification ' +
-                 'is required and checked** whatever ' +
-                 '`webauthn.userVerification` says, and the session records ' +
-                 '`amr ["hwk","user"]` and `acr "mfa"` — the key and the ' +
-                 'PIN or biometric that unlocked it. Only a PRIMARY key ' +
-                 'registered since #474 answers it; one registered before ' +
-                 'was made under the username and works only where the ' +
-                 'username is typed. Off by default (rcbj\'s decision); it ' +
-                 'also needs `webauthn.enabled` and ' +
-                 '`webauthn.primaryAllowed`.' },
 
   { key: 'webauthn.mfaAllowed', group: 'WebAuthn',
     label: 'Allow a key as a SECOND factor',
@@ -16933,6 +16905,13 @@ const REALM_LISTENER_REPLACED = ' It was removed on 2026-10-07 (#472): a ' +
   'tls block of the per-listener settings), and the realm is served on it ' +
   'where its listeners.applications maps * (or an application) to it.';
 
+// What #527's two rows say when either is still named.
+const PASSKEY = ' It was removed on 2026-10-08 (#527): the passkey policy on ' +
+  'Directory → Policies decides it now, per realm and inherited from the ' +
+  'default realm — POST /admin-api/policies/save-passkey-policy, or the ' +
+  'console. Usernameless sign-in is off by default, and while it is off a ' +
+  'security key is asked for a discoverable credential.';
+
 // What every one of #523's rows says when it is still named.
 const ONE_ISSUER = ' It was removed on 2026-10-08 (#523): every SAML Issuer, ' +
   'identity provider entityID and providerID, and the WS-Trust STS\'s name ' +
@@ -17036,6 +17015,13 @@ const REPLACED_SETTINGS = [
   // realm's OAuth issuer (`common/issuer_names.ts`), which follows the public
   // base URL; the seven names that set them apart are gone, and so is the
   // one legacy environment variable, `STS_ISSUER`, that fed three of them.
+  // #527 (2026-10-08): two WebAuthn settings became rows of the passkey
+  // policy, a directory entry per realm rather than a setting, so `now`
+  // names the policy and its row rather than a setting key.
+  { key: 'webauthn.residentKey', env: 'STS_WEBAUTHN_RESIDENT_KEY',
+    now: ['the passkey policy\'s securityKeyResidentKey'], why: PASSKEY },
+  { key: 'webauthn.usernameless', env: 'STS_WEBAUTHN_USERNAMELESS',
+    now: ['the passkey policy\'s allowUsernameless'], why: PASSKEY },
   { key: 'saml.issuer', env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER',
     now: ['global.publicBaseUrl'], why: ONE_ISSUER },
   { key: 'saml2.entityId', env: 'STS_SAML2_ENTITY_ID',
@@ -18717,9 +18703,11 @@ function refuseReplacedSettings() {
     // the settings it fed.
     [row.env, row.legacyEnv].forEach(function (name) {
       if (name && process.env[name] !== undefined) {
+        // A replacement that is a setting is named by its variable; one
+        // that is not (#527: a policy row) is named as it is written.
         named.push('  ' + name + ' (in the environment) is now ' +
                    row.now.map(function (key) {
-                     return byKey[key].env;
+                     return byKey[key] ? byKey[key].env : key;
                    }).join(', ') + '.' + replacedBy(row.key));
       }
     });

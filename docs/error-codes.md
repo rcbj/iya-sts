@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4211** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4215** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 267
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 271
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 708
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1417,13 +1417,17 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0298` | A sign-in was refused at the sign-in door because it used a mechanism the application being signed in to does not allow (appAuthnMechanism, #457). The screen is drawn again, naming the mechanisms it allows. | the sign-in screen, drawn again |
 | `STS-AUTHN-0299` | Renaming a passkey named a credential id that is not registered for that person (#470). | action result with the reason |
 | `STS-AUTHN-0300` | Renaming a passkey was refused: the name is longer than 60 characters or carries a control character (#470). | action result with the reason |
-| `STS-AUTHN-0301` | A passkey sign-in with no username was asked for where it is not offered: webauthn.usernameless, webauthn.primaryAllowed or webauthn.enabled is off, the authentication policy does not accept a passkey as a first factor, the application does not allow one, or the sign-in is linking an account (#474). | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0301` | A passkey sign-in with no username was asked for where it is not offered: the passkey policy's allowUsernameless (#527; webauthn.usernameless until then), webauthn.primaryAllowed or webauthn.enabled is off, the authentication policy does not accept a passkey as a first factor, the application does not allow one, or the sign-in is linking an account (#474). | none — the sign-in screen is drawn again |
 | `STS-AUTHN-0302` | A passkey sign-in with no username named no account: the authenticator returned no user handle, or one nobody in this realm holds (#474). Where only one realm and one cell exist, the page asks the browser to forget the credential (signalUnknownCredential). | none — the sign-in screen is drawn again |
 | `STS-AUTHN-0303` | A passkey assertion's user handle is not the one its key was registered under — WebAuthn Level 3 section 7.2 step 6 (#474). | none — the sign-in screen or the passkey step is drawn again |
 | `STS-AUTHN-0304` | A passkey registered before #474 — under the username's bytes as its user handle — was used to sign in with no username. It works only where the username is typed; registering it again makes it usable without one. | none — the sign-in screen is drawn again |
 | `STS-AUTHN-0305` | A sign-in was refused at the sign-in door because its second factor is one the application being signed in to does not allow (appMfaMechanism, #475). The screen is drawn again, naming the second factors it allows. | the sign-in screen, drawn again |
 | `STS-AUTHN-0306` | A second factor was needed of a person who holds none the application allows (appMfaMechanism, #475), and none of the allowed ones (a security key, an authenticator app) can be set up at sign-in in this realm; refused rather than signed in on one factor. | the sign-in screen, drawn again |
 | `STS-AUTHN-0307` | A second factor was DEMANDED — a security key by the relying party or on risk, or a second factor on risk — and the second factors the application allows (appMfaMechanism, #475) leave the person none that answers it. A step-up never enrols one. | the sign-in screen, drawn again |
+| `STS-AUTHN-0308` | A passkey policy profile other than `default` was named; there is one profile per realm, and nothing assigns a second yet (#527, #535). | HTTP 400 (management API) |
+| `STS-AUTHN-0309` | A passkey policy save was refused: a field was missing, not a yes-or-no value, or not one of discouraged, preferred, required (#527). | HTTP 400 (management API) |
+| `STS-AUTHN-0310` | There is no embedded directory in this process, so a passkey policy could not be saved (#527). | HTTP 400 (management API) |
+| `STS-AUTHN-0311` | The directory would not store the passkey policy profile: it holds its maximum number of entries (#527). | HTTP 400 (management API) |
 
 ## STS-OAUTH
 

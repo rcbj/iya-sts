@@ -314,12 +314,14 @@ class ProtocolSettingsPage {
       kit.esc(info.residentKey) +
         '</code> — a CTAP2 <em>resident key</em>, stored on the ' +
         'authenticator itself, for the sign-in screen\'s ceremony and ' +
-        '<em>Use a security key</em>. <strong>A passkey (<em>Create a ' +
-        'passkey</em>) always asks <code>required</code></strong> (#474): ' +
-        'it is what the usernameless sign-in below finds. ' +
-        '<code>required</code> here consumes one of the small number of ' +
-        'slots a roaming authenticator has — which cannot always be freed ' +
-        'again.</td></tr>' +
+        '<em>Use a security key</em>, decided by the <a ' +
+        'href="/admin/policies#passkey">passkey policy</a> (#527): ' +
+        '<code>required</code> while usernameless sign-in is off, its ' +
+        '<code>securityKeyResidentKey</code> while it is on. <strong>A ' +
+        'passkey (<em>Create a passkey</em>) always asks ' +
+        '<code>required</code></strong> (#474): it is what the usernameless ' +
+        'sign-in below finds. A resident key consumes one of the small ' +
+        'number of slots a roaming authenticator has.</td></tr>' +
       '<tr><th>credProps</th><td>' + (info.credProps
         ? 'asked for. It is the only way to find out whether a ' +
           '<code>preferred</code> ceremony actually produced a discoverable ' +
@@ -351,7 +353,8 @@ class ProtocolSettingsPage {
           'the session records <code>amr ["hwk","user"]</code> and <code>acr ' +
           '"mfa"</code> (#474).'
         : '<span class="state-none">not offered</span> — ' +
-          '<code>webauthn.usernameless</code> is off' +
+          'the <a href="/admin/policies#passkey">passkey policy</a>\'s ' +
+          '<code>allowUsernameless</code> is off' +
           (info.primaryAllowed ? '' : ', and a primary key is not allowed') +
           '. A passkey still signs in where the username is typed.') +
         '</td></tr>' +

@@ -1241,6 +1241,20 @@ class AdminApi {
               '`allow*` door fields say which password doors a service ' +
               'account may use.',
         example: { rotationEnabled: false, allowBrowserSignIn: false }
+      },
+      // #527: the fourth kind.
+      passkey: {
+        save: 'Writes `cn=default,ou=passkeyPolicies` in this realm\'s ' +
+              'directory, REPLACING what is there; a realm with no entry of ' +
+              'its own follows the default realm\'s. `allowUsernameless` ' +
+              '(off by default) offers a passkey sign-in with no username. ' +
+              'While it is off, "Use a security key" asks the authenticator ' +
+              'for a discoverable credential (`residentKey: required`), as ' +
+              '"Create a passkey" always does; while it is on, it asks ' +
+              '`securityKeyResidentKey` (`discouraged`, `preferred` or ' +
+              '`required`, default `required`).',
+        example: { allowUsernameless: false,
+                   securityKeyResidentKey: 'required' }
       }
     };
     const cap = function (text) {

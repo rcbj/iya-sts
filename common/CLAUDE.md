@@ -11280,3 +11280,42 @@ case." His answers on the ticket, D1–D6, are what this section holds to.
   second `oauth-oidc` listener asking for a client certificate
   (`oauth2.ts`'s `mtlsAliasOf()`), and a second `SingleSignOnService` and
   `SingleLogoutService` Location per `saml2` listener in SAML metadata.
+
+## 3ch. `passkey_policy.ts`: THE PASSKEY POLICY, THE FOURTH KIND ON DIRECTORY → POLICIES (#527, 2026-10-08)
+
+rcbj: "a new policy (which can be overridden per realm) that governs the
+behavior of passkeys including whether usernameless logins are allowed
+(usernameless logins should be disabled by default). When usernameless
+logins are disabled, the 'use a security key' button should request
+discoverables." What prompted it was a tester finding that one physical
+security key got a discoverable credential through *Create a passkey* and,
+usually, a non-discoverable one through *Use a security key*, because the
+second followed `webauthn.residentKey`, which defaulted to `discouraged`.
+
+* **A fourth kind, built as the other three are.**
+  - It is `cn=default,ou=passkeyPolicies`, a realm inheriting the default
+    realm's and then the built-in defaults (3bd's arrangement).
+  - It is registered in `admin-core/policy_kinds.ts`, so the page, its JSON
+    and `/admin-api/policies/{save,reset}-passkey-policy` come with no route
+    of their own.
+  - The directory's three store functions are `ldap_server.js`'s, filled
+    through `setDirectory()`.
+* **Two rows, and rcbj's three answers on the issue:**
+  - `allowUsernameless` is off by default.
+  - `securityKeyResidentKey` defaults to `required`.
+  - `securityKeyResidentKey()` answers `required` while `allowUsernameless`
+    is off, whatever the row says (answer 1), and the row while it is on.
+    The row's default is the same (answer 2), so both buttons make a
+    discoverable credential unless a realm lowers it.
+  - Per realm only (answer 3); named policies are #535.
+* **What it replaced.** `webauthn.usernameless` and `webauthn.residentKey`
+  are retired with no shim. `REPLACED_SETTINGS` refuses a start that names
+  either, and its message now names a policy row where a replacement is not
+  a setting. `authn/webauthn_policy.ts`'s `settings()` reads both values from
+  this module in one read, so `creationOptions()`, `usernamelessOffered()`
+  and the console's report are unchanged in shape.
+* **The other `webauthn.*` settings stay settings, each for a reason**, which
+  the module's header gives: request shape, already realm-overridable; #105's
+  verifier, which moves with #528 and #530; and process-wide rows.
+* Error codes `STS-AUTHN-0308` to `0311`, for its save, as the
+  service-account policy's are for its own.
