@@ -6635,7 +6635,12 @@ other node's listener certificate. rcbj's decisions on #162:
    traded off.
 2. **Each node keeps its own listener key.** It generates the key and is
    issued its certificate from the shared CA; only the record and the serial
-   are shared.
+   are shared. **Since 2026-10-08 "keeps" is literal**: the key is generated
+   only when none is stored for the node, and kept sealed in the node's own
+   row of `tls.listenerKeys` (`unit@node`), with the certificate it was last
+   issued, which `heldCertificateCurrent()` here lets the next start present
+   again while it is current. Until then a restart made a new key under the
+   kept CA. `tls/CLAUDE.md`, *THE LISTENER KEY IS KEPT PER NODE*.
 3. **Any node may sign**, under the merge rules above: issued serials and
    revocations are unions, tiers first writer wins, the build claimed once.
 4. **One code path**: a single node is a cluster of one. Development keeps the

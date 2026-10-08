@@ -13710,6 +13710,13 @@ const CODES = [
       'that answers only the sign-in service. The answer names where the ' +
       'application is.',
     spec: '404' },
+  { code: 'STS-TLS-0048',
+    summary: 'The listener key stored for this node and algorithm unit ' +
+      '(tls.listenerKeys) cannot be used: another algorithm, an RSA ' +
+      'modulus other than tls.selfSignedKeyBits, or a key that will not ' +
+      'parse. The key made at this start replaces it.',
+    spec: 'logged; a new certificate is issued over the new key, and the ' +
+      'restart is announced (tls-certificate-changed, restarted)' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

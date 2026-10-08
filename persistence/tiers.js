@@ -372,7 +372,9 @@ const CELL_MINTED = [
   'ssf_dead_letter_report.sweeps', 'ssf.relationshipInbox', 'ssf.relationshipLocks',
   'ssf_receivers.inbox', 'ssf_streams.deadLetters', 'ssf_streams.queued',
   'ssf_streams.received', 'ssf_streams.streams', 'tls.listenerAnnounced',
-  'tls.presentedChains',
+  // Each node's own listener key (2026-10-08), sealed: a node is a member of
+  // one cell, and its key never leaves that cell's store.
+  'tls.listenerKeys', 'tls.presentedChains',
   'tls.sessionTicketKey', 'vc_api.issued', 'vc_issued.credentials',
   'vc_issuer.lastCredentialRequest', 'vc_issuer.notificationIds',
   'vc_issuer.vciNonces', 'vc_offers.credentialOffers',

@@ -806,15 +806,17 @@ let listenError = null;
 // ---------------------------------------------------------------------------
 // The server certificate.
 //
-// Generated per start and never written down, because a certificate committed
-// to a repository is a private key committed to a repository. It is born
-// SELF-SIGNED, and until 2026-09-11 it stayed that way, so the anchor changed
-// on every restart — which is why `GET /tls/server-certificate` exists: a
-// debugger fetches it and puts it in its own truststore, rather than being
-// told to disable verification, which is the habit this whole workflow is
-// trying to break. Since that day the key is certified under this service's
-// own Root, which is the anchor now — see the block above
-// `serverCertificateExtensions()`.
+// Generated at start and never written to a file, because a certificate
+// committed to a repository is a private key committed to a repository —
+// and where minted state persists, the KEY is kept per node in the sealed
+// store (*THE LISTENER KEY IS KEPT PER NODE*, below SERVER_CERTIFICATE).
+// It is born SELF-SIGNED, and until 2026-09-11 it stayed that way, so the
+// anchor changed on every restart — which is why `GET
+// /tls/server-certificate` exists: a debugger fetches it and puts it in its
+// own truststore, rather than being told to disable verification, which is
+// the habit this whole workflow is trying to break. Since that day the key
+// is certified under this service's own Root, which is the anchor now — see
+// the block above `serverCertificateExtensions()`.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // EVERY LEAF THE MAIN PORT PRESENTS, AS THIS PROCESS KNOWS THEM (#248).
@@ -1090,8 +1092,9 @@ function certificateProvenance() {
   // only a process with none still presents a self-signed one.
   if (SERVER_CERTIFICATE && (SERVER_CERTIFICATE.chainPem || []).length) {
     log.debug('Leaving certificateProvenance(). Issued under the Root.');
-    return 'issued by this service\'s TLS Issuing CA under its own Root ' +
-           'and reissued on every start, so trust the Root ' +
+    return 'issued by this service\'s TLS Issuing CA under its own Root, ' +
+           'over a key each node keeps where minted state persists and ' +
+           'makes at every start where it does not, so trust the Root ' +
            '(/pki/revocation lists it) rather than the certificate itself';
   }
   log.debug('Leaving certificateProvenance(). Self-signed.');
@@ -1446,6 +1449,285 @@ const SERVER_CERTIFICATES = (function buildServerCertificates() {
 const SERVER_CERTIFICATE = SERVER_CERTIFICATES[0];
 
 // ===========================================================================
+// THE LISTENER KEY IS KEPT PER NODE, WHERE MINTED STATE PERSISTS (2026-10-08).
+//
+// The keys above are made at require time, and until this date that was the
+// whole of it: every start of a product container with its database kept
+// presented a NEW key pair under the Root it had kept, certified by the
+// process CA it had kept. rcbj: "#162 was supposed to generate a key pair if
+// one didn't already exist in the database. Not recreate it on every restart
+// with a persisted volume." #162's decision 2 still binds and shapes the
+// whole of this: **each node keeps its OWN listener key**, no listener
+// private key is shared between nodes, the process CA is one shared
+// authority, and no node address is published anywhere.
+//
+// **WHERE.** `tls.listenerKeys`, a `realms.sharedMap()` beside
+// `tls.listenerAnnounced` (#264), so it persists exactly where that record
+// does — product mode on postgres, a cluster, a dispatched pool with a real
+// key-encryption key (`persistence_minted.js`'s `enabled()`) — and every row
+// is SEALED under the KEK like every other minted row. Not a table of its
+// own: a private key the store already seals beside the session ids and the
+// Kerberos keys is one more row of the same kind, and a second table would
+// be a second answer to *where does this service keep a private key*.
+// Anywhere else the map is this process's memory and dies with it, so
+// development, `memory` mode and an `ldif` store still make a key per start,
+// and an ephemeral-KEK pool clears the rows it finds, as it does for all.
+//
+// **KEYED BY ALGORITHM UNIT AND NODE NAME** — `rsa@node-a`,
+// `ml-dsa-65@node-a` (the units #264 names) — the node name being
+// `cluster.nodeName`, else the host name (`cluster.js`'s `nodeName()`; the
+// compose stack's `hostname: sts`, AWS's `STS_CLUSTER_NODE_NAME` per node).
+// A unit never contains `@`, so the split is unambiguous. **Two nodes given
+// ONE name would share a key**, which is the configuration's fault and is
+// said in `tls/CLAUDE.md`; a node RENAMED makes a key of its own and leaves
+// the old row behind, unread.
+//
+// **EACH NODE HOLDS ONLY ITS OWN ROW.** The store is shared — a change log
+// carries every row to every node — so the reconciler below admits a row
+// only when it names THIS node, at a restore and at replication alike; any
+// other node's row is opened by the persistence layer, dropped, and never
+// held. That is decision 2 read strictly: another node's key is in the
+// database it cannot read without the KEK, and in no other node's memory.
+//
+// **WHAT A ROW HOLDS**: the private key, its unit and (RSA) its modulus
+// size, and the certificate this node last took for it with its chain and
+// what it was issued for. The certificate is what lets a plain restart
+// present the SAME leaf (`heldListenerCertificate()`, and `common/pki.js`'s
+// `heldCertificateCurrent()`, which decides), so #264's `restarted` notice
+// does not fire for a restart that changed nothing. It is kept per node and
+// not read off the `tls:server` slot, because that slot holds ONE node's
+// record at a time (#162) and a cluster restart would find another node's
+// there.
+//
+// **WHEN.** The key is settled the first time `common/pki.js` asks for the
+// public key to certify (`settleListenerKey()`, from the registration's
+// `publicKeyPem()`), which is inside `pki.start()` — after the minted rows
+// are restored and before anything binds. The record's own `privateKeyPem`
+// stays the one its self-signed bootstrap certificate is over until a
+// certificate over the settled key is taken (`takeIssuedCertificate()`), so
+// key and certificate never disagree on a socket, and with no hierarchy
+// (`pki.autoBuild` off) nothing is settled or stored at all.
+//
+// **A STORED KEY THAT NO LONGER FITS** — another algorithm, an RSA modulus
+// other than `tls.selfSignedKeyBits`, a row that will not parse — is
+// replaced by the key made at this start, with `STS-TLS-0048` saying why.
+// A request worker (handed in), a supplied certificate and a process with no
+// registration settle nothing.
+// ===========================================================================
+const listenerKeys = realms.sharedMap({
+  persist: 'tls.listenerKeys',
+  scope: 'shared',
+  reconcile: {
+    // Only this node's rows are held — see the block above.
+    restore: function (key, incoming) {
+      log.debug("Entering restore().");
+      const own = isOwnListenerKeyName(key);
+      log.debug("Leaving restore(). " + (own ? 'This node\'s.' : 'Not held.'));
+      return own ? incoming : undefined;
+    }
+  }
+});
+
+// This node's name, read when asked: a setting is final by the time anything
+// certifies, and `cluster.js` is a library that registers nothing, required
+// here lazily so that loading this module loads nothing more.
+function listenerNodeName() {
+  log.debug("Entering listenerNodeName().");
+  const name = String(require('../cluster/cluster').nodeName() || '');
+  log.debug("Leaving listenerNodeName().");
+  return name;
+}
+
+function listenerKeyName(unit) {
+  log.debug("Entering listenerKeyName(). " + unit);
+  log.debug("Leaving listenerKeyName().");
+  return String(unit) + '@' + listenerNodeName();
+}
+
+function isOwnListenerKeyName(key) {
+  log.debug("Entering isOwnListenerKeyName().");
+  const text = String(key || '');
+  const at = text.indexOf('@');
+  const own = at > 0 && text.slice(at + 1) === listenerNodeName();
+  log.debug("Leaving isOwnListenerKeyName(). " + own);
+  return own;
+}
+
+// Why a stored key may not be used for this unit now, or '' when it may.
+function storedKeyProblem(unit, held) {
+  log.debug("Entering storedKeyProblem(). " + unit);
+  if (!held || typeof held !== 'object' || !held.privateKeyPem) {
+    log.debug("Leaving storedKeyProblem(). No key.");
+    return 'the row holds no key';
+  }
+  if (String(held.unit || '') !== String(unit)) {
+    log.debug("Leaving storedKeyProblem(). Another unit.");
+    return 'the row is for "' + held.unit + '"';
+  }
+  let key = null;
+  try {
+    key = stsCrypto.privateKeyFrom(held.privateKeyPem);
+  } catch (e) {
+    log.debug("Caught in storedKeyProblem(): " + ((e && e.message) || e));
+    log.debug("Leaving storedKeyProblem(). Unreadable.");
+    return 'the key will not parse (' + ((e && e.message) || e) + ')';
+  }
+  const type = String(key.asymmetricKeyType || '');
+  if (unit === 'rsa') {
+    const bits = Number((key.asymmetricKeyDetails || {}).modulusLength || 0);
+    const wanted = Number(config.value('tls.selfSignedKeyBits'));
+    if (type !== 'rsa') {
+      log.debug("Leaving storedKeyProblem(). Not RSA.");
+      return 'it is a ' + (type || 'unknown') + ' key, not RSA';
+    }
+    if (bits !== wanted) {
+      log.debug("Leaving storedKeyProblem(). Another size.");
+      return 'it is ' + bits + ' bits and tls.selfSignedKeyBits is ' + wanted;
+    }
+    log.debug("Leaving storedKeyProblem(). Fits.");
+    return '';
+  }
+  if (type !== unit) {
+    log.debug("Leaving storedKeyProblem(). Another algorithm.");
+    return 'it is a ' + (type || 'unknown') + ' key, not ' + unit;
+  }
+  log.debug("Leaving storedKeyProblem(). Fits.");
+  return '';
+}
+
+/**
+ * Settles the key this node certifies for one listener certificate: the one
+ * stored for this node and unit where it still fits the configuration, and
+ * otherwise the key made at this start, which is then stored. Idempotent.
+ *
+ * @param record - an entry of SERVER_CERTIFICATES this process owns
+ * @returns the private key PEM to certify
+ */
+function settleListenerKey(record) {
+  log.debug("Entering settleListenerKey(). " + record.algorithm);
+  if (record.nodeKeyPem) {
+    log.debug("Leaving settleListenerKey(). Already settled.");
+    return record.nodeKeyPem;
+  }
+  const unit = String(record.algorithm);
+  const name = listenerKeyName(unit);
+  const held = listenerKeys.get(name);
+  const problem = held ? storedKeyProblem(unit, held) : '';
+  if (held && !problem) {
+    record.nodeKeyPem = held.privateKeyPem;
+    log.info('tls: this node (' + listenerNodeName() + ') keeps its ' + unit +
+             ' listener key across restarts, and the one it stored is used ' +
+             'again.');
+    log.debug("Leaving settleListenerKey(). Stored.");
+    return record.nodeKeyPem;
+  }
+  if (held) {
+    log.warn(errorCodes.tag('STS-TLS-0048') + 'tls: the ' + unit +
+             ' listener key stored for this node (' + listenerNodeName() +
+             ') cannot be used — ' + problem + ' — so the key made at this ' +
+             'start replaces it, and a new certificate is issued over it.');
+  }
+  record.nodeKeyPem = record.privateKeyPem;
+  const row = { unit: unit, node: listenerNodeName(),
+                privateKeyPem: record.nodeKeyPem,
+                createdAt: new Date().toISOString() };
+  if (unit === 'rsa') {
+    row.bits = Number(config.value('tls.selfSignedKeyBits'));
+  }
+  listenerKeys.set(name, row);
+  log.debug("Leaving settleListenerKey(). Made at this start.");
+  return record.nodeKeyPem;
+}
+
+// What a listener certificate is issued FOR — the name, the key usage and
+// the extensions — in one place, so the registration and the comparison
+// below cannot drift. A change to any of them (tls.hostnames, tls.ips) makes
+// a held certificate stale.
+function listenerIssuance(record) {
+  log.debug("Entering listenerIssuance(). " + record.algorithm);
+  const mlDsa = !!stsCrypto.ML_DSA_OIDS[record.algorithm];
+  log.debug("Leaving listenerIssuance().");
+  return {
+    commonName: TLS_HOSTNAMES[0] || 'localhost',
+    // digitalSignature ALONE for ML-DSA: such a key cannot encipher anything,
+    // and TLS 1.3 — the only version that negotiates one — needs nothing else
+    // of a server certificate's key.
+    keyUsage: mlDsa ? ['digitalSignature']
+                    : ['digitalSignature', 'keyEncipherment'],
+    extensions: serverCertificateExtensions()
+  };
+}
+
+function issuanceSignature(record) {
+  log.debug("Entering issuanceSignature().");
+  log.debug("Leaving issuanceSignature().");
+  return JSON.stringify(listenerIssuance(record));
+}
+
+/**
+ * Answers the certificate this node last took over its stored listener key,
+ * for `common/pki.js` to present again where it is still current, or null.
+ *
+ * @param record - an entry of SERVER_CERTIFICATES this process owns
+ * @returns `{ certificatePem, chainPem }`, or null
+ */
+function heldListenerCertificate(record) {
+  log.debug("Entering heldListenerCertificate(). " + record.algorithm);
+  const held = listenerKeys.get(listenerKeyName(record.algorithm));
+  if (!held || !record.nodeKeyPem ||
+      held.privateKeyPem !== record.nodeKeyPem || !held.certificatePem ||
+      !Array.isArray(held.chainPem) ||
+      held.issuedFor !== issuanceSignature(record)) {
+    log.debug("Leaving heldListenerCertificate(). None to offer.");
+    return null;
+  }
+  log.debug("Leaving heldListenerCertificate().");
+  return { certificatePem: held.certificatePem,
+           chainPem: held.chainPem.slice() };
+}
+
+// The certificate just taken, written onto this node's row beside its key.
+function rememberListenerCertificate(record) {
+  log.debug("Entering rememberListenerCertificate(). " + record.algorithm);
+  const name = listenerKeyName(record.algorithm);
+  const held = listenerKeys.get(name);
+  if (!held || held.privateKeyPem !== record.nodeKeyPem) {
+    log.debug("Leaving rememberListenerCertificate(). Not this key's row.");
+    return;
+  }
+  if (held.certificatePem === record.certPem) {
+    log.debug("Leaving rememberListenerCertificate(). Unchanged.");
+    return;
+  }
+  listenerKeys.set(name, Object.assign({}, held, {
+    certificatePem: record.certPem,
+    chainPem: (record.chainPem || []).slice(),
+    issuedFor: issuanceSignature(record),
+    certifiedAt: new Date().toISOString()
+  }));
+  log.debug("Leaving rememberListenerCertificate().");
+}
+
+// What this process holds of `tls.listenerKeys`, for the tests and a page:
+// the row names and their public facts, never a key.
+/**
+ * Returns the listener-key rows this process holds, without their keys.
+ *
+ * @returns `{ "<unit>@<node>": { unit, node, bits, createdAt, certified } }`
+ */
+function heldListenerKeys() {
+  log.debug("Entering heldListenerKeys().");
+  const out = {};
+  listenerKeys.forEach(function (value, name) {
+    out[name] = { unit: value.unit, node: value.node,
+                  bits: value.bits || null, createdAt: value.createdAt,
+                  certified: !!value.certificatePem };
+  });
+  log.debug("Leaving heldListenerKeys().");
+  return out;
+}
+
+// ===========================================================================
 // AND IT IS CERTIFIED BY THIS SERVICE'S OWN CERTIFICATE AUTHORITY (2026-09-11).
 //
 // The certificate built above is SELF-SIGNED, and until this date that was the
@@ -1501,9 +1783,29 @@ function serverCertificateExtensions() {
 // what adopting a certificate involves.
 function takeIssuedCertificate(record, certPem, chainPem) {
   log.debug("Entering takeIssuedCertificate(). " + record.algorithm);
+  // **THE SAME CERTIFICATE AGAIN IS NOTHING TO DO (2026-10-08).** Since the
+  // listener key is kept per node, `common/pki.js` hands back the certificate
+  // this record already presents whenever it is still current — a second
+  // `certifyRegistered()` in one life among them — and re-applying it would
+  // re-key every socket and tell every observer about a change that is not
+  // one.
+  if (record.selfSigned === false && record.certPem === certPem &&
+      JSON.stringify(record.chainPem || []) === JSON.stringify(chainPem)) {
+    log.debug("Leaving takeIssuedCertificate(). Already presented.");
+    return;
+  }
   // What the socket presented until now, for the notice below (#245).
   const wasFingerprint = record.fingerprint256 || '';
   const wasIssued = !!record.certPem && record.selfSigned === false;
+  // **THE KEY THE CERTIFICATE IS OVER GOES ON THE RECORD WITH IT.** What
+  // `common/pki.js` certified is the key `settleListenerKey()` settled — the
+  // one this node stored, where it had one — and until this moment the
+  // record carried the key its self-signed bootstrap is over. One assignment
+  // beside the certificate's, so the socket never holds one without the
+  // other.
+  if (record.nodeKeyPem) {
+    record.privateKeyPem = record.nodeKeyPem;
+  }
   record.certPem = certPem;
   // The chain travels with it: without the Issuing CA and the
   // Intermediate a client holding only the Root cannot build a path, and
@@ -1522,6 +1824,9 @@ function takeIssuedCertificate(record, certPem, chainPem) {
              'certificate could not be read back for its subject and ' +
              'expiry: ' + e.message);
   }
+  // Kept beside this node's key, so the next start can present it again
+  // where it is still current (`heldListenerCertificate()`).
+  rememberListenerCertificate(record);
   // **AND THE LISTENERS HAVE TO BE TOLD, because they were built before
   // this ran.** Every listener this module knows — the main port and the
   // debugger's, registered through `trustClientCertificatesOn()` — was
@@ -1551,9 +1856,12 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   // to every realm's streams, the one port serving them all.
   //
   // **THE FIRST CERTIFICATE A PROCESS TAKES OVER ITS SELF-SIGNED BOOTSTRAP IS
-  // COMPARED WITH WHAT THE SERVICE LAST ANNOUNCED (#264)**, not ignored: the
-  // listener key is made again at every start, so a restart presents a
-  // certificate a receiver has never seen. At start that comparison waits
+  // COMPARED WITH WHAT THE SERVICE LAST ANNOUNCED (#264)**, not ignored: a
+  // start may present a certificate a receiver has never seen — wherever the
+  // listener key is not kept (it is per node, and only where minted state
+  // persists), and in a cluster whenever another node announced last. A
+  // restart that presents the SAME certificate again announces nothing,
+  // because nothing differs. At start that comparison waits
   // for `listen()` — the main port is bound by then, so a receiver that
   // fetches the certificate at once reaches it; a first certificate taken
   // AFTER `listen()` (a hierarchy that arrived late) is compared here.
@@ -1607,9 +1915,14 @@ function sendCertificateNotice(rotated, reason) {
 // WHAT THE SERVICE LAST ANNOUNCED, KEPT ACROSS A RESTART (#264, 2026-09-26).
 //
 // `tls-certificate-changed` was sent only when a certificate the RUNNING
-// process had issued was replaced. The listener key is made again at every
-// start (`makeServerCertificate()`), so a restart presents a certificate
-// nobody was told about, and a receiver that pins it learned nothing.
+// process had issued was replaced. The listener key was made again at every
+// start (`makeServerCertificate()`), so a restart presented a certificate
+// nobody was told about, and a receiver that pins it learned nothing. Since
+// 2026-10-08 the key — and, while it is current, the certificate — is kept
+// per node where minted state persists, so a plain restart of one node
+// presents what it presented before and this compares equal; what is still
+// announced is a start that presents something else: a new key, a re-issue
+// after the hierarchy moved, or another node's leaf.
 //
 // **FOR THE SERVICE, NOT PER NODE — rcbj's rule that no node is ever
 // exposed, and a fact about node identity.** A receiver reaches the
@@ -1712,9 +2025,9 @@ function announceSinceLastStart(records) {
     return 0;
   }
   log.info('tls: the listener presents ' + rotated.length + ' certificate(s) ' +
-           'other than the one(s) this service last announced — the key is ' +
-           'made at every start — so tls-certificate-changed goes to every ' +
-           'realm\'s streams, reason "restarted".');
+           'other than the one(s) this service last announced, so ' +
+           'tls-certificate-changed goes to every realm\'s streams, reason ' +
+           '"restarted".');
   sendCertificateNotice(rotated, 'restarted');
   log.debug("Leaving announceSinceLastStart().");
   return rotated.length;
@@ -1828,6 +2141,9 @@ function notifyCertificateObservers(algorithm) {
   // A LEAF (rule 3w): it registers no route, so requiring it here moves
   // nothing. The registration is passive — `pki.start()` is what acts on it.
   const pki = require('../common/pki');
+  // What it is issued for, in one place with the comparison that decides
+  // whether a held certificate still fits (`listenerIssuance()`).
+  const rsaIssuance = listenerIssuance(SERVER_CERTIFICATE);
   pki.registerCertifiable({
     scope: pki.PROCESS_SCOPE,
     useCase: 'tls',
@@ -1835,15 +2151,23 @@ function notifyCertificateObservers(algorithm) {
     alg: 'RS256',
     keyAlg: 'rsa-2048',
     label: 'TLS server certificate',
-    commonName: TLS_HOSTNAMES[0] || 'localhost',
+    commonName: rsaIssuance.commonName,
     profile: 'tls-server',
-    keyUsage: ['digitalSignature', 'keyEncipherment'],
-    extensions: serverCertificateExtensions(),
+    keyUsage: rsaIssuance.keyUsage,
+    extensions: rsaIssuance.extensions,
+    // THE KEY THIS NODE KEEPS (2026-10-08), settled on the first ask — see
+    // *THE LISTENER KEY IS KEPT PER NODE* above. `pki.start()` is the first
+    // caller, after the minted rows are back and before anything binds.
     publicKeyPem: function () {
       log.debug("Entering publicKeyPem().");
       log.debug("Leaving publicKeyPem().");
-      return stsCrypto.publicKeyOf(SERVER_CERTIFICATE.privateKeyPem)
+      return stsCrypto.publicKeyOf(settleListenerKey(SERVER_CERTIFICATE))
         .export({ type: 'spki', format: 'pem' });
+    },
+    heldCertificate: function () {
+      log.debug("Entering heldCertificate().");
+      log.debug("Leaving heldCertificate().");
+      return heldListenerCertificate(SERVER_CERTIFICATE);
     },
     onCertified: function (certPem, chainPem) {
       log.debug("Entering onCertified().");
@@ -1874,6 +2198,9 @@ function notifyCertificateObservers(algorithm) {
     return one !== SERVER_CERTIFICATE &&
            !!stsCrypto.ML_DSA_OIDS[one.algorithm];
   }).forEach(function (record) {
+    // digitalSignature ALONE, in `listenerIssuance()`: an ML-DSA key cannot
+    // encipher anything.
+    const issuance = listenerIssuance(record);
     pki.registerCertifiable({
       scope: pki.PROCESS_SCOPE,
       useCase: 'tls',
@@ -1881,18 +2208,21 @@ function notifyCertificateObservers(algorithm) {
       alg: record.algorithm.toUpperCase(),
       keyAlg: record.algorithm,
       label: 'TLS server certificate (' + record.algorithm + ')',
-      commonName: TLS_HOSTNAMES[0] || 'localhost',
+      commonName: issuance.commonName,
       profile: 'tls-server',
-      // digitalSignature ALONE. An ML-DSA key cannot encipher anything, and
-      // TLS 1.3 — the only version that negotiates one — needs nothing
-      // else of a server certificate's key.
-      keyUsage: ['digitalSignature'],
-      extensions: serverCertificateExtensions(),
+      keyUsage: issuance.keyUsage,
+      extensions: issuance.extensions,
+      // Kept per node like the RSA key, under its own unit.
       publicKeyPem: function () {
         log.debug("Entering publicKeyPem().");
         log.debug("Leaving publicKeyPem().");
-        return stsCrypto.publicKeyOf(record.privateKeyPem)
+        return stsCrypto.publicKeyOf(settleListenerKey(record))
           .export({ type: 'spki', format: 'pem' });
+      },
+      heldCertificate: function () {
+        log.debug("Entering heldCertificate().");
+        log.debug("Leaving heldCertificate().");
+        return heldListenerCertificate(record);
       },
       onCertified: function (certPem, chainPem) {
         log.debug("Entering onCertified().");
@@ -5902,6 +6232,8 @@ module.exports = {
   // What the service last announced of the listener certificate (#264).
   lastAnnouncedListenerCertificates: lastAnnouncedListenerCertificates,
   listenerChangesSinceAnnounced: listenerChangesSinceAnnounced,
+  // The listener-key rows this node holds, without their keys (2026-10-08).
+  heldListenerKeys: heldListenerKeys,
   // Exported for tests, which check these without opening a socket.
   splitPemCertificates: splitPemCertificates,
   // The RFC 4514 form of a subject. It now LIVES in common/helpers.js and is
@@ -5987,8 +6319,9 @@ module.exports = {
   // The whole of it, private key included, because ldap_server.js serves it on
   // 636 — see the note above SERVER_CERTIFICATE. Handing a private key to
   // another module in this process is not the same act as publishing one: this
-  // key is generated per start, exists only in memory and dies with the
-  // process. Nothing here writes it to a response; GET
+  // key is held in memory, and written down only as this node's SEALED row of
+  // `tls.listenerKeys` where minted state persists. Nothing here writes it to
+  // a response; GET
   // /tls/server-certificate publishes the CERTIFICATE alone.
   /**
    * Returns the listener certificate with its private key, chain and trust

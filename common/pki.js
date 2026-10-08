@@ -10645,7 +10645,10 @@ const certifiable = [];
  * `certifyRegistered()`.
  *
  * @param spec - `useCase`, `slot`, and a `publicKeyPem` function (the key
- *   may not exist yet when it registers)
+ *   may not exist yet when it registers); optionally `heldCertificate`, a
+ *   function of that key answering `{ certificatePem, chainPem }` the owner
+ *   already holds for it, presented again while it is current
+ *   (`heldCertificateCurrent()`)
  * @returns true when registered, false (and logged) when refused
  */
 function registerCertifiable(spec) {
@@ -10665,6 +10668,117 @@ function registerCertifiable(spec) {
   log.debug('Leaving registerCertifiable(). ' + certifiable.length +
             ' registration(s).');
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// A CERTIFICATE THE OWNER ALREADY HOLDS, AND WHETHER IT IS STILL THE ONE TO
+// PRESENT (2026-10-08).
+//
+// `certifyRegistered()` used to issue a new certificate for every
+// registration at every start. For the TLS listener that was harmless only
+// while the KEY was made at every start too: a new key needs a new
+// certificate. Since the listener keeps its key per node where minted state
+// persists (`tls/tls_server.js`, *THE LISTENER KEY IS KEPT PER NODE*), a
+// re-issue at a plain restart would present a new leaf over the same key —
+// a new serial for nothing, and a `tls-certificate-changed` (`restarted`,
+// #264) nobody needed.
+//
+// So a registration may carry `heldCertificate(publicKeyPem)`, answering the
+// certificate and chain it holds for that key, and it is reused when ALL of
+// these hold. Each is a reason a relying party would refuse the held one or
+// a reason this service would no longer answer for it:
+//
+//   * **it is over the key being certified** — compared by
+//     SubjectPublicKeyInfo, never by a name or a fingerprint the owner kept;
+//   * **its chain IS the branch this process holds now** — the Issuing CA
+//     and the Intermediate certificate for certificate, and the branch still
+//     chains to the Root (`scopeChainsToRoot()`). The `certifyPqKeys()`
+//     comparison, and for its reason: a Root or a branch rebuilt since makes
+//     it a leaf of an authority nobody publishes any more;
+//   * **it is in its validity and more than a third of it remains**, so a
+//     service restarted now and then still renews a leaf well before a
+//     client sees it expire;
+//   * **this authority's register still knows its serial and has not revoked
+//     it** (`pki_revocation.js`'s `issuedHere()` and `isRevoked()`): the
+//     certificate names this service's OCSP responder, and one the register
+//     forgot is a certificate the responder answers `unknown` about.
+//
+// Anything else is answered `{ current: false, why }` and the caller issues a
+// new one, over the same key, as before. The owner decides what else makes
+// its certificate stale — the names, the key usage — and answers null for it.
+// ---------------------------------------------------------------------------
+/**
+ * Answers whether a certificate a registration already holds may be
+ * presented again instead of issuing a new one.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case it was issued under
+ * @param held - `{ certificatePem, chainPem }`
+ * @param publicKeyPem - the key being certified
+ * @returns `{ current: true }`, or `{ current: false, why }`
+ */
+function heldCertificateCurrent(scopeId, useCaseId, held, publicKeyPem) {
+  log.debug('Entering heldCertificateCurrent(). scope=' + scopeId + ' use=' +
+            useCaseId);
+  const id = String(scopeId);
+  const uc = useCase(useCaseId);
+  if (!uc || !held || !held.certificatePem ||
+      !Array.isArray(held.chainPem) || held.chainPem.length < 2) {
+    log.debug('Leaving heldCertificateCurrent(). Nothing to compare.');
+    return { current: false, why: 'nothing is held' };
+  }
+  const row = rawRowFor(id) || {};
+  const issuing = (row.issuing || {})[uc.id];
+  if (!issuing || !row.intermediate ||
+      held.chainPem[0] !== issuing.certificatePem ||
+      held.chainPem[1] !== row.intermediate.certificatePem) {
+    log.debug('Leaving heldCertificateCurrent(). Another branch.');
+    return { current: false,
+             why: 'its chain is not the branch this process holds now' };
+  }
+  if (!scopeChainsToRoot(id)) {
+    log.debug('Leaving heldCertificateCurrent(). The branch is stale.');
+    return { current: false,
+             why: 'the branch no longer chains to the Root' };
+  }
+  let read = null;
+  try {
+    read = stsCrypto.parseCertificate(held.certificatePem);
+    const sameKey = stsCrypto.spkiDerOf(read.publicKey)
+      .equals(stsCrypto.spkiDerOf(publicKeyPem));
+    if (!sameKey) {
+      log.debug('Leaving heldCertificateCurrent(). Another key.');
+      return { current: false, why: 'it is over another key' };
+    }
+  } catch (e) {
+    // Not a failure of anything: a certificate this process cannot read back
+    // is simply not one to present again, and a new one is issued.
+    log.debug('Caught in heldCertificateCurrent(): ' +
+              ((e && e.message) || e));
+    log.debug('Leaving heldCertificateCurrent(). Unreadable.');
+    return { current: false, why: 'it could not be read' };
+  }
+  const from = new Date(read.validFrom).getTime();
+  const to = new Date(read.validTo).getTime();
+  const now = Date.now();
+  if (!(from <= now) || !(to - now > (to - from) / 3)) {
+    log.debug('Leaving heldCertificateCurrent(). Due for renewal.');
+    return { current: false,
+             why: 'less than a third of its validity remains' };
+  }
+  const revocation = require('./pki_revocation');
+  const serial = read.serialNumber;
+  if (!revocation.issuedHere(id, uc.id, serial)) {
+    log.debug('Leaving heldCertificateCurrent(). Not in the register.');
+    return { current: false,
+             why: 'the register no longer records its serial' };
+  }
+  if (revocation.isRevoked(id, uc.id, serial)) {
+    log.debug('Leaving heldCertificateCurrent(). Revoked.');
+    return { current: false, why: 'it is revoked' };
+  }
+  log.debug('Leaving heldCertificateCurrent(). Current.');
+  return { current: true };
 }
 
 // Certify everything registered. Called from `start()`, before anything binds,
@@ -10704,6 +10818,45 @@ async function certifyRegistered(opts) {
     if (!publicPem) {
       log.debug('certifyRegistered(): ' + one.slot + ' has no key yet.');
       continue;
+    }
+    // A CERTIFICATE THE OWNER ALREADY HOLDS FOR THIS KEY, presented again
+    // where it is still current — see `heldCertificateCurrent()`, which is
+    // also what refuses one from a branch a rebuilt hierarchy left behind.
+    if (typeof one.heldCertificate === 'function') {
+      let held = null;
+      try {
+        held = one.heldCertificate(publicPem);
+      } catch (e) {
+        // The owner could not say; a new certificate is issued, as before.
+        log.debug('Caught in certifyRegistered(): ' +
+                  ((e && e.message) || e));
+        held = null;
+      }
+      const verdict = held
+        ? heldCertificateCurrent(scope, one.useCase, held, publicPem)
+        : { current: false, why: 'nothing is held' };
+      if (verdict.current) {
+        log.info('pki: the ' + one.useCase + ' key "' + one.slot + '" ' +
+                 'already holds a current certificate from this branch, ' +
+                 'so it is presented again rather than re-issued.');
+        done += 1;
+        if (typeof one.onCertified === 'function') {
+          try {
+            one.onCertified(held.certificatePem, held.chainPem.slice());
+          } catch (e) {
+            log.error(errorCodes.tag('STS-PKI-0047') + 'pki: the ' +
+                      one.useCase + ' key "' + one.slot + '" was ' +
+                      'certified and the module that owns it threw on ' +
+                      'being told: ' + e.message);
+          }
+        }
+        continue;
+      }
+      if (held) {
+        log.info('pki: the certificate the ' + one.useCase + ' key "' +
+                 one.slot + '" holds is not presented again (' +
+                 verdict.why + '); a new one is issued over the same key.');
+      }
     }
     const made = await certify(scope, one.useCase, {
       slot: one.slot,
@@ -13159,6 +13312,9 @@ module.exports = {
   PQ_JOSE_IN_X509: PQ_JOSE_IN_X509,
   pqSubjectPublicKeyPem: pqSubjectPublicKeyPem,
   registerCertifiable: registerCertifiable,
+  // Whether a certificate a registration holds may be presented again
+  // (2026-10-08): `certifyRegistered()` asks it, and the tests.
+  heldCertificateCurrent: heldCertificateCurrent,
   certifyRegistered: certifyRegistered,
   // Editing the hierarchy: a new key for one authority, a renewal under the
   // same one, and the two doors for material an operator supplied.
