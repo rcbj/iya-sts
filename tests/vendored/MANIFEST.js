@@ -371,6 +371,14 @@ const JOBS = [
     local: true },
   { file: 'sts_wstrust_saml11_chain_delegation.js', browser: false,
     local: true },
+  // AND WITH EACH TIER ON A TOKEN IT WAS ISSUED FOR ITSELF (#519): the
+  // OnBehalfOf chain once per token type, each tier's application first
+  // asking, with its own client secret, for a token about itself and for
+  // itself, and presenting THAT in wsse:Security — no service account beside
+  // any application; then the matrix of every requester credential × every
+  // OnBehalfOf input × every issued type (36 RSTs). `local: true`: the
+  // scenario is ours. Its entries are left standing.
+  { file: 'sts_wstrust_own_token_chain.js', browser: false, local: true },
   // AND IN KERBEROS (#486): the same four tiers as service principals,
   // reached over MS-KKDCP. Impersonation is protocol transition — apigw1's
   // S4U2Self for a user who signed in to webapp1 without Kerberos, then

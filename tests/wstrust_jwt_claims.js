@@ -555,7 +555,8 @@ function jwtCredential(t) {
       } else if (one[0] === 'R3a') {
         t.check(r.status === 200,
                 'R3a (development). a tampered JWT credential is believed, ' +
-                'as a NameID is', r.status + ' ' + String(r.body).slice(0, 300));
+                'as a NameID is', r.status + ' ' +
+                String(r.body).slice(0, 300));
       }
     });
     if (product) {

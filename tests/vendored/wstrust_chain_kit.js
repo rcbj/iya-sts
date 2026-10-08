@@ -1601,6 +1601,8 @@ module.exports = {
   signIn: signIn,
   exchange: exchange,
   rstWith: rstWith,
+  usernameToken: usernameToken,
+  sts: sts,
   selfToken: selfToken,
   exchangeWith: exchangeWith,
   securityOf: securityOf,

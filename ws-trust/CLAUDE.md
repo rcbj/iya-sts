@@ -177,8 +177,8 @@ fault. Each refusal names its code at the place it refuses:
 |---|---|---|
 | `InvalidScope` | `0030` (#496: product, an `AppliesTo` that resolves to no registered application) | 1.3 section 4.1 calls `wsp:AppliesTo` "the scope for which this security token is desired", so an AppliesTo this STS serves nobody under is section 11's "The request scope is invalid" — the exact sentence, where InvalidRequest would have been true and said less |
 | `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025` | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
-| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007`, `0009`, `0010` | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
-| `ExpiredData` | `0006`, in either seat, and a delegated JWT's `0027` (#477) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
+| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010` | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
+| `ExpiredData` | `0006`, in either seat, and a JWT's `0027` in either seat (#477, #519) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
 | `RequestFailed` | `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell) | the request was understood and authenticated, and could not be done |
 
 **Not used, and why**: `InvalidSecurityToken` is "Security token has been
@@ -596,6 +596,74 @@ nothing-recorded checks; `tests/wstrust_fault_codes.js` holds both faults.
 
 **A JWT's `iss` is not one of these.** It is the realm's OAuth issuer
 (#476's exceptions, above; rcbj kept it on #494).
+
+## ANY TOKEN TYPE IN ANY SEAT, AND AN APPLICATION AS ITSELF (#519, 2026-10-08)
+
+rcbj: "maximum flexibility in supported input / output token types for the
+WS-Trust protocol". An RST has three seats that take a token, and each takes
+SAML 2.0, SAML 1.1 and JWT:
+
+| Seat | What it takes |
+|---|---|
+| the requester's credential, `wsse:Security` | a UsernameToken; an assertion this STS issued (either SAML version); **a JWT this STS issued (#519)**, in the `wsse:BinarySecurityToken` this STS's own RSTR carries one in |
+| `<wst:OnBehalfOf>` / `<wst14:ActAs>` | an assertion (either version); a JWT (#477) |
+| `wst:TokenType` | SAML 2.0, SAML 1.1 (#487), JWT (#476) |
+
+**THE REQUESTER'S JWT** is read by `readOwnJwt()`, the one function the
+delegated JWT goes through too, so the two seats cannot disagree about what
+"a JWT this STS issued" means: in product verified with this realm's own key,
+within `exp` / `nbf`, the realm's OAuth issuer (#480), and a subject this
+realm knows. Its refusals are the requester's — `wst:FailedAuthentication`,
+`wst:ExpiredData` for an expired one — under the delegated JWT's codes
+(`0026`–`0028`). An accepted one is a credential issued earlier, so a SAML
+assertion issued on it states PreviousSession, as on an assertion. A JWT
+inside OnBehalfOf / ActAs is NOT read as the requester's
+(`insideAnotherPartysToken()`), and `homeNameOf()` reads its `sub` to place
+the request in a deployment of cells.
+
+**AN APPLICATION AUTHENTICATES AS ITSELF, WITH ITS CLIENT SECRETS** (rcbj: "I
+don't really want to use a user object service account along side the
+application object. it's redundant"). A UsernameToken whose Username names
+NO person and names an application — by identifier, else by client_id — is
+checked against that application's unexpired client secrets
+(`applicationSecretCredential()`), in product; development believes it, as
+it believes a person's password, except the reserved `invalid`. A wrong
+secret is the fault a wrong password gets (`0003`), for the enumeration
+rule. **A person of the name is asked first**, so a service account (#221)
+beside an application of its name authenticates exactly as before: service
+accounts are still supported, and the application path is for a tier that
+has none. **WS-Trust only**: the other password-only doors (LDAP bind, SCIM
+and SSF Basic, EST) still read people alone.
+
+* **An application's own token is about the application.** A JWT for it
+  names it by its client subject — `urn:sts:client:<client_id>` where the
+  token endpoint does (RFC 9700 mode, which product implies), bare
+  otherwise, as an `act` entry names it — and `client_id` its own; so
+  `0017` does not refuse it. A SAML assertion's NameID is its identifier.
+  Presented back as the credential, either is read to the application
+  (`applicationNamedBy()`), and the delegation policy reads the APPLICATION
+  entry, as it always did for a service account.
+* **Recorded as a client** (`recordAuthentication({ isClient })`), which is
+  what keeps the directory from making a person of its name in development
+  (`ldap.autocreateUsers`). Without it, the first token an application asked
+  for would have grown exactly the service account this exists to avoid.
+* **The act names the token the requester presented.** A delegation act's
+  `WS-Security credential` row carries the identifier (assertion `ID` /
+  `AssertionID`, JWT `jti`) of a token presented as the credential, so the
+  register can follow the token a tier was issued for itself to the act it
+  was spent on.
+
+**Not decided, on #519**: nothing checks the AUDIENCE of a token presented
+as the requester's credential (an assertion's never was checked either), so
+a tier holding a token about a person, audienced to the tier, could present
+it in `wsse:Security` and be authenticated as that person. Requiring the
+credential's audience to name the requester would close that, and would
+also refuse a person's own token audienced to the application they signed
+in to. rcbj's call.
+
+`tests/wstrust_jwt_claims.js` sections R and S hold it in process in both
+modes; `tests/vendored/sts_wstrust_own_token_chain.js` drives the four-tier
+chain on each tier's own token in every type, and the 36-request matrix.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 
