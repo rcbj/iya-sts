@@ -1109,6 +1109,23 @@ function assertChainAssertion11(cast, xml, expect) {
               JSON.stringify(["gold-" + cast.user]),
             expect.what + " should carry tier=gold-" + cast.user + " in " +
             "urn:example:chain: " + JSON.stringify(attrs.tier));
+  // #522: THE PARTIES THAT ACTED, as SAML 1.1 can say it: the `delegates`
+  // attribute in urn:iya:sts:delegation, least to most recent — exactly the
+  // ones expected, and no attribute at all where nobody acted.
+  const delegates = expect.delegates || [];
+  if (delegates.length) {
+    assert.ok(attrs.delegates &&
+              attrs.delegates.namespace === "urn:iya:sts:delegation" &&
+              JSON.stringify(attrs.delegates.values) ===
+                JSON.stringify(delegates),
+              expect.what + " should name the delegates " +
+              JSON.stringify(delegates) + " in its delegates attribute: " +
+              JSON.stringify(attrs.delegates));
+  } else {
+    assert.strictEqual(attrs.delegates, undefined, expect.what + " names " +
+                       "delegates nobody expected: " +
+                       JSON.stringify(attrs.delegates));
+  }
   log.info("[assertion 1.1] " + expect.what + ": AssertionID=" + got.id +
            ", Issuer=" + got.issuer + ", subject=" + got.nameId +
            ", audience=" + JSON.stringify(got.audiences) + ", method=" +
@@ -1529,9 +1546,10 @@ function actNotes(act, element, product, jwt, saml11) {
   const out = [];
   const note = String(act.note || "");
   if (saml11) {
-    // #487: SAML 1.1 has no element to say who acted, and the note says so.
+    // #522: SAML 1.1 names who acted in its `delegates` attribute, and the
+    // note says so.
     assert.ok(element === "ActAs"
-      ? /a SAML 1\.1 assertion has no element to say so/.test(note)
+      ? /in its "delegates" attribute/.test(note)
       : /the SAML 1\.1 assertion names the subject and adds nobody/
         .test(note), "the " + element + " act's note for a SAML 1.1 token " +
       "says: \"" + note + "\"");

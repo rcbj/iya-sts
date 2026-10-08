@@ -80,10 +80,21 @@ leaves the slot empty and the party is drawn from `presented`, as before.
 **Both are authorized by the delegation policy since #108 (2026-09-23)**, and
 the row names what allowed it in the same field where a Kerberos row names an
 attribute on an account — see the next section. **The composite fact IS in
-an `ActAs` token since #186.** A SAML assertion names every party that acted,
-one `<del:Delegate>` each, least to most recent, in its SAML V2.0 Condition
-for Delegation Restriction. A JWT names them in RFC 8693's nested `act`
-claim (#476). An `OnBehalfOf` token adds nobody, and keeps whatever chain
+an `ActAs` token since #186.** A SAML 2.0 assertion names every party that
+acted, one `<del:Delegate>` each, least to most recent, in its SAML V2.0
+Condition for Delegation Restriction. A JWT names them in RFC 8693's nested
+`act` claim (#476). **A SAML 1.1 assertion names them in an attribute
+(#522, rcbj 2026-10-08)**, because SAML 1.1 has no Delegation Restriction
+(the SAML V2.0 condition derives from SAML 2.0's `ConditionAbstractType`
+and does not validate in SAML 1.1): `AttributeName="delegates"`,
+`AttributeNamespace="urn:iya:sts:delegation"`, one `AttributeValue` per
+party in the same order, signed with the assertion. A condition of this
+service's own was the alternative and was not chosen: a SAML 1.1 relying
+party treats an assertion with a condition it does not understand as
+Indeterminate, where an attribute it does not know is ignored.
+`delegatedDelegates()` reads the attribute back, so a chain of SAML 1.1
+tokens keeps it (`buildSaml11Token()`). Until #522 a SAML 1.1 token named
+nobody and the register was the only record. An `OnBehalfOf` token adds nobody, and keeps whatever chain
 the presented token carried. The act's note says which of these the issued
 token does, in that token's vocabulary (`actNote()`, #478). Until #478 the
 note and this paragraph still said no `ActAs` token carried the fact, "a gap

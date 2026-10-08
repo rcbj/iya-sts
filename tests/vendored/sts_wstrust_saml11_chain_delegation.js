@@ -17,15 +17,15 @@
 // AppliesTo the next tier's registered identifier, each hop presenting the
 // SAML 1.1 assertion the hop before produced.
 //
-// **WHAT IS NOT THERE, AND WHY (the exception, ws-trust/CLAUDE.md).** SAML
-// 1.1 has no Delegation Restriction: the SAML V2.0 Condition for Delegation
+// **THE DELEGATES ARE AN ATTRIBUTE (#522, ws-trust/CLAUDE.md).** SAML 1.1
+// has no Delegation Restriction: the SAML V2.0 Condition for Delegation
 // Restriction is a SAML 2.0 condition type and cannot appear in a SAML 1.1
-// assertion, and SAML 1.1 defines no element of its own for "this party
-// acted". WS-Trust 1.4 section 9.3 asks an ActAs token to carry the identity
-// acted as and names no representation of the requester. So every assertion
-// here is about bob_end_user and names NO delegate, and the chain the SAML
-// 2.0 job reads off the final assertion is read here from the delegation
-// register instead, whose act note says SAML 1.1 cannot carry it.
+// assertion. Until #522 every assertion here named NO delegate and the chain
+// was in the register alone; since then each one names the parties that
+// acted, least to most recent, in its `delegates` attribute
+// (urn:iya:sts:delegation) — webapp1 at apigw1, webapp1 and apigw1 at esb1,
+// all three at sp1, the SAML 2.0 job's Delegation Restriction in SAML 1.1's
+// words.
 //
 // WHAT IT ASSERTS, in the SAML job's four layers:
 //
@@ -36,14 +36,16 @@
 //      requested registered identifier, its Issuer the entityID the
 //      AppliesTo's own metadata names (#480; both modes since #494), its
 //      AuthenticationStatement's method
-//      `am:password` at the sign-in and `am:unspecified` after, no
-//      delegation element, and the AppliesTo application's SAML 1.1
-//      attributes: `teams`, `roles` and `saml11CustomAttributes`' `tier`.
+//      `am:password` at the sign-in and `am:unspecified` after, the
+//      `delegates` attribute naming who acted (#522), and the AppliesTo
+//      application's SAML 1.1 attributes: `teams`, `roles` and
+//      `saml11CustomAttributes`' `tier`.
 //   3. THE TARGET'S VALIDATION at sp1: the signature against `GET
 //      /sts/cert` (AssertionID the identifier), the Conditions, the audience.
 //   4. THE REGISTER AND THE PICTURE: one `wstrust-actas` act per hop,
 //      producing a `SAML 1.1 assertion` and consuming the AssertionID
-//      presented, its note saying SAML 1.1 cannot name who acted; the
+//      presented, its note saying the delegates attribute names who acted;
+//      the
 //      issuance policy's sentence; apigw1 and esb1 each ONE box.
 //
 // In development and product mode alike; entries `-w11del`, left behind.
@@ -131,7 +133,9 @@ async function test() {
     check("2" + "bcd"[i] + ". " + tier.identifier + "'s SAML 1.1 " +
           "assertion: about " + cast.user + ", restricted to " +
           next.appliesTo + " and no tier it has left, a new AssertionID, " +
-          "NO delegate (SAML 1.1 has no Delegation Restriction)", function () {
+          "naming " + requesters.slice(0, i + 1).map(function (one) {
+            return one.identifier;
+          }).join(", ") + " in its delegates attribute (#522)", function () {
       assertions.push(kit.assertChainAssertion11(cast, answer.assertion, {
         what: tier.identifier + "'s " + ELEMENT + " assertion",
         audience: next.appliesTo, issuer: issuers[i + 1],
@@ -141,7 +145,10 @@ async function test() {
         notIds: assertions.map(function (one) {
           return one.id;
         }),
-        authnMethod: kit.AM_UNSPECIFIED }));
+        authnMethod: kit.AM_UNSPECIFIED,
+        delegates: requesters.slice(0, i + 1).map(function (one) {
+          return one.identifier;
+        }) }));
     });
   }
   const final = assertions[assertions.length - 1];

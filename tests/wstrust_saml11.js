@@ -24,10 +24,12 @@
 //       OnBehalfOf and ActAs, in product verified as a SAML 2.0 one is: one
 //       not signed is refused (STS-WSTRUST-0004, InvalidRequest), an
 //       expired one (STS-WSTRUST-0006, ExpiredData);
-//   T4. an ActAs answered in SAML 1.1 names no delegate (SAML 1.1 has no
-//       Delegation Restriction — ws-trust/CLAUDE.md, the exception), and
-//       the register's row says so and records a `SAML 1.1 assertion`
-//       produced, consuming the presented one's AssertionID.
+//   T4. an ActAs answered in SAML 1.1 names the requester in its
+//       `delegates` attribute (urn:iya:sts:delegation, #522: SAML 1.1 has no
+//       Delegation Restriction), and no del:Delegate; the register's row
+//       says so and records a `SAML 1.1 assertion` produced, consuming the
+//       presented one's AssertionID. A chain of SAML 1.1 hops keeping the
+//       list is sts_wstrust_saml11_chain_delegation.js's.
 //
 // IN PROCESS, in a throwaway realm, in the mode each case belongs to.
 // ===========================================================================
@@ -274,18 +276,22 @@ function cases(t) {
       return one.identifier === id;
     });
   })[0] || {};
+  // #522: the requester named in the `delegates` attribute.
+  const delegatesAttr = /<saml:Attribute AttributeName="delegates" AttributeNamespace="urn:iya:sts:delegation">((?:<saml:AttributeValue>[^<]*<\/saml:AttributeValue>)+)<\/saml:Attribute>/
+    .exec(xml);
   t.check(r.status === 200 && /<saml:NameIdentifier[^>]*>w11-alice</
             .test(xml) && xml.indexOf('Delegate') < 0 &&
+          !!delegatesAttr && delegatesAttr[1] ===
+            '<saml:AttributeValue>w11-front</saml:AttributeValue>' &&
           act.type === 'wstrust-actas' &&
-          /a SAML 1\.1 assertion has no element to say so/
-            .test(String(act.note)) &&
+          /in its "delegates" attribute/.test(String(act.note)) &&
           (act.produced || [])[0].kind === 'SAML 1.1 assertion' &&
           (act.consumed || []).some(function (c) {
             return c.identifier === presentedId;
           }),
-          'T4 (product). an ActAs answered in SAML 1.1 names no delegate; the ' +
-          'register records it, consuming the presented AssertionID and ' +
-          'saying SAML 1.1 cannot carry who acted',
+          'T4 (product). an ActAs answered in SAML 1.1 names the requester ' +
+          'in its delegates attribute (#522); the register records it, ' +
+          'consuming the presented AssertionID and saying so',
           r.status + ' ' + JSON.stringify({ note: act.note,
                                             produced: act.produced,
                                             consumed: act.consumed }) + ' ' +

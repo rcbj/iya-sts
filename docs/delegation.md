@@ -59,8 +59,8 @@ anything is compared. A target that no application registers is refused.
 An act has one of three **semantics**:
 
 * **Delegation.** The actor acts for the subject *visibly*.
-  * The issued token names the actor: RFC 8693's `act` claim, or a SAML 2.0
-    Delegation Restriction condition.
+  * The issued token names the actor: RFC 8693's `act` claim, a SAML 2.0
+    Delegation Restriction condition, or a SAML 1.1 `delegates` attribute.
   * Kerberos S4U2Proxy's ticket is the front end's request on the user's
     behalf.
   * `act` claims **nest**. A token that already carried an actor keeps it
@@ -349,6 +349,11 @@ refused in both modes: there is no unverified reading of XML to fall back on.
     * an application is named `urn:sts:client:<client_id>` in RFC 9700 mode
       and by its bare client_id otherwise;
     * the JWT's `client_id` is the requester's application.
+  * a **SAML 1.1** assertion has no Delegation Restriction, so it names the
+    same parties, in the same order, in an attribute:
+    `<saml:Attribute AttributeName="delegates" AttributeNamespace="urn:iya:sts:delegation">`,
+    one `AttributeValue` each. It is signed with the assertion, and a relying
+    party that does not know it ignores it.
 * **`OnBehalfOf` asks for impersonation** (1.3 section 9.2). The token is the
   subject's, and adds nobody to the chain; one the delegated assertion
   already carried is kept.
