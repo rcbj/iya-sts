@@ -753,8 +753,10 @@ class WebauthnPolicy {
     const asked = live.authenticatorAttachment === 'any' &&
                   wanted === 'security-key' ? 'cross-platform' : '';
     const residentKey = wanted === 'passkey' ? 'required' : live.residentKey;
-    const hints = wanted === 'passkey' ? ['client-device', 'hybrid']
-      : (wanted === 'security-key' ? ['security-key'] : []);
+    // THE HINTS ARE THE PASSKEY POLICY'S ROWS (#531), whose defaults are what
+    // this line sent before: client-device then hybrid for a passkey,
+    // security-key for a security key, none for an enrolment naming no kind.
+    const hints = passkeyPolicy.hintsFor(wanted);
     // A POLICY THAT NEEDS A STATEMENT ASKS FOR ONE (#105). `none` and
     // `indirect` let the browser strip or anonymise the statement, and a
     // realm that requires a trusted one would then refuse every enrolment
@@ -831,11 +833,18 @@ class WebauthnPolicy {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.requestOptions(). rpId=' + rpId);
     const live = this.settings();
-    const out = {
+    const out: { rpId: string; userVerification: string; timeout: number;
+                 hints?: string[] } = {
       rpId: rpId,
       userVerification: live.userVerification,
       timeout: live.timeoutMs
     };
+    // A SIGN-IN'S HINTS (#531), the passkey policy's `signInHints`; absent
+    // where it names none, so the default request is what it always was.
+    const hints = passkeyPolicy.hintsFor('sign-in');
+    if (hints.length) {
+      out.hints = hints;
+    }
     log.debug('Leaving WebauthnPolicy.requestOptions(). uv=' +
               out.userVerification);
     return out;
@@ -891,11 +900,17 @@ class WebauthnPolicy {
   discoverableRequestOptions(rpId) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.discoverableRequestOptions().');
-    const out = {
+    const out: { rpId: string; userVerification: string; timeout: number;
+                 hints?: string[] } = {
       rpId: rpId,
       userVerification: 'required',
       timeout: this.settings().timeoutMs
     };
+    // The sign-in's hints (#531), as `requestOptions()` sends them.
+    const hints = passkeyPolicy.hintsFor('sign-in');
+    if (hints.length) {
+      out.hints = hints;
+    }
     log.debug('Leaving WebauthnPolicy.discoverableRequestOptions().');
     return out;
   }

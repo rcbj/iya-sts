@@ -299,6 +299,9 @@ it on the console or with `POST /admin-api/policies/save-passkey-policy`;
 | `minPinLength` | 4 | The minimum, 4 to 63 characters, while `enforcePinLength` is on. |
 | `pinLengthOnlyIfSupported` | off | On, a key that does not report its PIN length is accepted. |
 | `enforceAttestationAtSignIn` | off | Holds every passkey sign-in to the attestation rules in force, not only registration (below). |
+| `passkeyHints` | `client-device,hybrid` | The WebAuthn hints *Create a passkey* sends, in order (below). |
+| `securityKeyHints` | `security-key` | The hints *Use a security key* sends. |
+| `signInHints` | `none` | The hints a passkey sign-in sends. |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
 a passkey* always asks `residentKey: required`. *Use a security key* asks
@@ -385,6 +388,22 @@ and the FIDO Metadata Service as it is now:
 The first refusal of a key marks it, sends a Shared Signals CAEP
 `credential-change`, and `/portal/keys` tells its owner. If the metadata
 service cannot be asked, the sign-in is refused (`STS-AUTHN-0317`).
+
+**Hints** (`passkeyHints`, `securityKeyHints`, `signInHints`). WebAuthn
+Level 3 section 5.4.8 lets a relying party tell the browser which kind of
+authenticator to lead with: `security-key`, `client-device` (the device's
+own) or `hybrid` (a phone, by QR code). Each row is an ordered list of them,
+or `none`. The defaults are what this service always sent: *Create a passkey*
+leads with this device then a phone, *Use a security key* with a security
+key, and a sign-in names none, so the browser offers every way it knows.
+
+A hint must agree with the authenticator attachment the same request asks
+for: `client-device` implies `platform`, `security-key` and `hybrid` imply
+`cross-platform`. *Use a security key* always asks for `cross-platform`, and
+*Create a passkey* asks for whatever `webauthn.authenticatorAttachment` says,
+so a list that contradicts its request is refused when the policy is saved,
+naming the hint. If the setting changes later, a hint it now contradicts is
+not sent, and the log says so (`STS-AUTHN-0319`).
 
 The policy replaced the settings `webauthn.usernameless` and
 `webauthn.residentKey` (#527); a configuration that still names either is

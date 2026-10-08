@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4222** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4223** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 278
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 279
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 708
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1425,7 +1425,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0306` | A second factor was needed of a person who holds none the application allows (appMfaMechanism, #475), and none of the allowed ones (a security key, an authenticator app) can be set up at sign-in in this realm; refused rather than signed in on one factor. | the sign-in screen, drawn again |
 | `STS-AUTHN-0307` | A second factor was DEMANDED — a security key by the relying party or on risk, or a second factor on risk — and the second factors the application allows (appMfaMechanism, #475) leave the person none that answers it. A step-up never enrols one. | the sign-in screen, drawn again |
 | `STS-AUTHN-0308` | A passkey policy profile other than `default` was named; there is one profile per realm, and nothing assigns a second yet (#527, #535). | HTTP 400 (management API) |
-| `STS-AUTHN-0309` | A passkey policy save was refused: a field was missing, not a yes-or-no value, or not one of its values — discouraged, preferred, required; allow, disallow; or a minimum PIN length outside 4 to 63 (#527, #528, #529). | HTTP 400 (management API) |
+| `STS-AUTHN-0309` | A passkey policy save was refused: a field was missing, not a yes-or-no value, or not one of its values — discouraged, preferred, required; allow, disallow; or a minimum PIN length outside 4 to 63; or a hint list that is not one, or contradicts the attachment its request sends (#527, #528, #529, #531). | HTTP 400 (management API) |
 | `STS-AUTHN-0310` | There is no embedded directory in this process, so a passkey policy could not be saved (#527). | HTTP 400 (management API) |
 | `STS-AUTHN-0311` | The directory would not store the passkey policy profile: it holds its maximum number of entries (#527). | HTTP 400 (management API) |
 | `STS-AUTHN-0312` | A synced passkey was not registered: its authenticator data set the backup-eligible flag (BE, WebAuthn Level 3 section 6.1) and the realm's passkey policy takes only device-bound passkeys (backupEligibility disallow, #528). Asked where every key is written, so the sign-in screen, /portal/keys and an activation link all refuse it. | the ceremony's page, drawn again with the reason |
@@ -1435,6 +1435,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0316` | A passkey sign-in was refused by the attestation rules in force (#530, the passkey policy's enforceAttestationAtSignIn): the key's recorded attestation is not trusted where a rule demands it, its AAGUID is not on webauthn.attestationAllowedAaguids, its model is below the certification level or FIPS asked for, or the FIDO Metadata Service now reports the model compromised. The first refusal of a key for a reason marks its row and sends a CAEP credential-change. | the passkey page or the sign-in screen, with the reason |
 | `STS-AUTHN-0317` | A passkey's attestation could not be held to the rules at sign-in: the FIDO metadata lookup or the check threw (#530). The sign-in is refused, since the rule is on and an unchecked key is not a checked one. | the passkey page or the sign-in screen, with the reason |
 | `STS-AUTHN-0318` | The mark of a passkey the attestation rules refused at sign-in could not be written to its row (#530); the refusal stands and no credential-change is sent for it. | none — logged |
+| `STS-AUTHN-0319` | A passkey-policy hint list contradicts webauthn.authenticatorAttachment, which changed after the policy was saved (#531): client-device implies platform, security-key and hybrid cross-platform. The contradicting hints are not sent; save the policy again to fix it. | none — logged; the ceremony is sent without them |
 
 ## STS-OAUTH
 

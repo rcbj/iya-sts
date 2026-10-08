@@ -29,7 +29,11 @@
 //       at sign-in (STS-AUTHN-0313);
 //   P9. #529's PIN length: not enforced by default; enforced, a reported
 //       minimum above, at and below the rule's, and none reported, with and
-//       without `pinLengthOnlyIfSupported`; the bounds 4 and 63.
+//       without `pinLengthOnlyIfSupported`; the bounds 4 and 63;
+//   P10. #531's hints: the defaults are what each ceremony sent before; a
+//       list in order reaches the options of its ceremony; every
+//       contradiction with the attachment is refused at save; a stored list
+//       a later attachment change contradicts loses the hint.
 //
 // IN PROCESS: the policy is a library over the directory, and a realm is
 // created and removed here.
@@ -128,7 +132,10 @@ function saves(t) {
   const form = passkeyPolicy.validate({ form: 'console',
                                         securityKeyResidentKey: 'preferred',
                                         backupEligibility: 'allow',
-                                        minPinLength: '4' });
+                                        minPinLength: '4',
+                                        passkeyHints: 'client-device,hybrid',
+                                        securityKeyHints: 'security-key',
+                                        signInHints: '' });
   t.check(!form.problems.length && form.values.allowUsernameless === false,
           'P2d. an unticked checkbox on the console\'s form is a no',
           JSON.stringify(form));
@@ -204,7 +211,7 @@ function answers(t) {
     });
   });
   const said = passkeyPolicy.describe(passkeyPolicy.read());
-  t.check(said.length === 6 && /names the person first/.test(said[0]) &&
+  t.check(said.length === 7 && /names the person first/.test(said[0]) &&
           /synced \(backup-eligible\) passkeys are accepted/.test(said[3]),
           'P4c. the rules in sentences', JSON.stringify(said));
   log.debug('Leaving answers().');
@@ -307,6 +314,72 @@ function pinLength(t) {
   log.debug('Leaving pinLength().');
 }
 
+function hints(t) {
+  log.debug('Entering hints().');
+  const config = require('../common/config');
+  const sent = function (kind) {
+    log.debug('Entering hints() sent().');
+    const out = kind === 'sign-in'
+      ? webauthnPolicy.requestOptions('localhost').hints
+      : webauthnPolicy.creationOptions('localhost', kind || undefined).hints;
+    log.debug('Leaving hints() sent().');
+    return JSON.stringify(out === undefined ? null : out);
+  };
+  t.check(sent('passkey') === '["client-device","hybrid"]' &&
+          sent('security-key') === '["security-key"]' && sent('') === '[]' &&
+          sent('sign-in') === 'null' &&
+          webauthnPolicy.discoverableRequestOptions('localhost').hints ===
+            undefined,
+          'P10. #531: the defaults are what each ceremony sent before',
+          [sent('passkey'), sent('security-key'), sent(''), sent('sign-in')]
+            .join(' '));
+  const saved = passkeyPolicy.save('default', withDefaults({
+    passkeyHints: 'hybrid, client-device', securityKeyHints: 'none',
+    signInHints: 'security-key,hybrid' }));
+  try {
+    t.check(saved.ok && sent('passkey') === '["hybrid","client-device"]' &&
+            sent('security-key') === '[]' &&
+            sent('sign-in') === '["security-key","hybrid"]' &&
+            JSON.stringify(webauthnPolicy.discoverableRequestOptions(
+              'localhost').hints) === '["security-key","hybrid"]',
+            'P10b. a list reaches its ceremony in its order; none sends ' +
+            'none', JSON.stringify(saved.errors || []));
+  } finally {
+    passkeyPolicy.reset('default');
+  }
+  const bad = passkeyPolicy.save('default', withDefaults({
+    securityKeyHints: 'security-key,client-device' }));
+  t.check(!bad.ok && errorCodes.codeOf(bad) === 'STS-AUTHN-0309' &&
+          /client-device contradicts.*cross-platform/.test(
+            (bad.errors || []).join(' ')),
+          'P10c. client-device on "Use a security key" (cross-platform) is ' +
+          'refused, with the reason', JSON.stringify(bad.errors));
+  const junk = passkeyPolicy.save('default', withDefaults({
+    passkeyHints: 'hybrid,hybrid' }));
+  const unknown = passkeyPolicy.save('default', withDefaults({
+    signInHints: 'usb' }));
+  t.check(!junk.ok && !unknown.ok,
+          'P10d. a hint twice, or one that is not a hint, is refused',
+          JSON.stringify([junk.errors, unknown.errors]));
+  config.setOverride('webauthn.authenticatorAttachment', 'platform');
+  try {
+    const conflict = passkeyPolicy.save('default', withDefaults({
+      passkeyHints: 'client-device,hybrid' }));
+    t.check(!conflict.ok && /hybrid contradicts/.test(
+              (conflict.errors || []).join(' ')),
+            'P10e. with the attachment platform, hybrid on "Create a ' +
+            'passkey" is refused', JSON.stringify(conflict.errors));
+    t.check(sent('passkey') === '["client-device"]',
+            'P10f. and the default list, stored before the attachment ' +
+            'changed, loses the contradicting hint when sent',
+            sent('passkey'));
+  } finally {
+    config.clearOverride('webauthn.authenticatorAttachment');
+    passkeyPolicy.reset('default');
+  }
+  log.debug('Leaving hints().');
+}
+
 function retired(t) {
   log.debug('Entering retired().');
   const keys = ['webauthn.usernameless', 'webauthn.residentKey'];
@@ -335,7 +408,7 @@ function kind(t) {
           'P7. the fourth kind on Directory → Policies, with its two ' +
           'actions', JSON.stringify(policyKinds.actions()));
   const view = adminViews.policiesView({});
-  t.check(!!view.passkey && view.passkey.fields.length === 7 &&
+  t.check(!!view.passkey && view.passkey.fields.length === 10 &&
           view.passkey.fields.some(function (field) {
             return field.key === 'securityKeyResidentKey' &&
                    field.type === 'enum' && field.values.length === 3;
@@ -367,6 +440,7 @@ module.exports = {
     door(t);
     synced(t);
     pinLength(t);
+    hints(t);
     retired(t);
     kind(t);
     log.debug('Leaving run().');

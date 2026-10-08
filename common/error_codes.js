@@ -5955,7 +5955,8 @@ const CODES = [
     summary: 'A passkey policy save was refused: a field was missing, not ' +
       'a yes-or-no value, or not one of its values — discouraged, ' +
       'preferred, required; allow, disallow; or a minimum PIN length ' +
-      'outside 4 to 63 (#527, #528, #529).',
+      'outside 4 to 63; or a hint list that is not one, or contradicts ' +
+      'the attachment its request sends (#527, #528, #529, #531).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-AUTHN-0310',
     summary: 'There is no embedded directory in this process, so a passkey ' +
@@ -6014,6 +6015,13 @@ const CODES = [
       'sign-in could not be written to its row (#530); the refusal stands ' +
       'and no credential-change is sent for it.',
     spec: 'none — logged' },
+  { code: 'STS-AUTHN-0319',
+    summary: 'A passkey-policy hint list contradicts ' +
+      'webauthn.authenticatorAttachment, which changed after the policy was ' +
+      'saved (#531): client-device implies platform, security-key and ' +
+      'hybrid cross-platform. The contradicting hints are not sent; save ' +
+      'the policy again to fix it.',
+    spec: 'none — logged; the ceremony is sent without them' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

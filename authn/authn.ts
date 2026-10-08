@@ -1098,6 +1098,8 @@ const WEBAUTHN_SCRIPT = [
   '    var pkOptions = function () {',
   '      return { challenge: bytes(pk.getAttribute("data-challenge")),',
   '        rpId: po.rpId || pkRp, allowCredentials: [],',
+  // The sign-in's hints (#531), where the passkey policy names any.
+  '        hints: po.hints && po.hints.length ? po.hints : undefined,',
   '        userVerification: "required", timeout: po.timeout || 60000 };',
   '    };',
   '    var pkSend = function (payload) {',
@@ -1225,6 +1227,7 @@ const WEBAUTHN_SCRIPT = [
   '          return { type: "public-key", id: bytes(id) };',
   '        }) : undefined,',
   '        userVerification: o.userVerification || "preferred",',
+  '        hints: o.hints && o.hints.length ? o.hints : undefined,',
   '        timeout: o.timeout || 60000 } })',
   '        .then(function (a) { return { id: a.id, rawId: b64u(a.rawId), ' +
   'type: a.type,',
