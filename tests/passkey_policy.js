@@ -125,10 +125,13 @@ function saves(t) {
             (bad.errors || []).join(' ')),
           'P2b. a resident key that is not one of WebAuthn\'s three is ' +
           'refused, naming them', JSON.stringify(bad.errors));
-  const other = passkeyPolicy.save('admins', withDefaults());
-  t.check(!other.ok && errorCodes.codeOf(other) === 'STS-AUTHN-0308',
-          'P2c. a second profile is refused (STS-AUTHN-0308; #535 is ' +
-          'where several come)', JSON.stringify(other.errors));
+  const other = passkeyPolicy.save('Not A Name', withDefaults());
+  const unselected = passkeyPolicy.save('admins', withDefaults());
+  t.check(!other.ok && errorCodes.codeOf(other) === 'STS-AUTHN-0308' &&
+          !unselected.ok && errorCodes.codeOf(unselected) === 'STS-AUTHN-0309',
+          'P2c. a profile name that is not one is refused (STS-AUTHN-0308), ' +
+          'and a named profile that selects nobody (#535)',
+          JSON.stringify([other.errors, unselected.errors]));
   const form = passkeyPolicy.validate({ form: 'console',
                                         securityKeyResidentKey: 'preferred',
                                         backupEligibility: 'allow',

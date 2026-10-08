@@ -3036,6 +3036,10 @@ class Credentials {
     // data's BE flag, which both ceremony doors put on the record. Here for
     // the role check's reason — the one writer — and ahead of the cap, so the
     // answer names the rule rather than a count.
+    // THE PERSON'S PASSKEY POLICY (#535) where the door selected none.
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
     const synced = this.deps.passkeyPolicy.backupEligibleRefusal(
       (credential || {}).backupEligible, 'registration') ||
       // AND THE KEY'S MINIMUM PIN LENGTH (#529), as it reported it: here for

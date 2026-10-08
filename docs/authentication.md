@@ -478,6 +478,30 @@ needs no script. The rule applies to the passwordless step and to the passkey
 asked for after a password. Either way the assertion is checked against the
 passkey it names; only the request changes.
 
+**Named passkey policies** (#535). Beside `default`, a realm may keep named
+passkey policies, for example a strict one for administrators. Each has all
+the rows above and three selectors:
+
+- the applications it applies to (identifier or client_id);
+- the groups whose members it applies to (by cn or DN);
+- a precedence, from 1 to 1000.
+
+At a sign-in, the named policy that applies is one listing the application
+being signed in to, or a group the person is in. Where several match, the
+one with the **lowest precedence** wins, and where none matches, `default`
+applies. An application's policy and a person's are not ranked by kind: give
+the stricter one the lower number. For example, a strict application at 5
+beats a lenient group at 50.
+
+Registration on `/portal/keys` or through an activation link has no
+application, so only group selectors apply there. A realm's named policies
+are its own: unlike `default`, they are not inherited from the default realm.
+
+Manage them on Directory → Policies (*Named profiles*), or with
+`POST /admin-api/policies/save-passkey-policy` naming `profile`,
+`selectApplications`, `selectGroups` and `precedence`.
+`reset-passkey-policy` with a named `profile` removes it.
+
 The policy replaced the settings `webauthn.usernameless` and
 `webauthn.residentKey` (#527); a configuration that still names either is
 refused at start.

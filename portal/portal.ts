@@ -5424,6 +5424,8 @@ class Portal {
       }
       const username = String(asked.value.user || '').trim();
       const token = String(asked.value.token || '');
+      // The person's passkey policy (#535).
+      passkeyPolicy.select(username, '');
       // RATE LIMITED even on the GET: this endpoint takes a credential, and an
       // endpoint that takes a credential must not be the one place in this
       // service that answers guesses at network speed.
@@ -5474,6 +5476,8 @@ class Portal {
       const username = String(body.user || '').trim();
       const token = String(body.token || '');
       const base = baseUrlOf(req);
+      // The person's passkey policy (#535).
+      passkeyPolicy.select(username, '');
 
       const allowed = await websecurity.attemptShared('activation', req,
                                                       username);
@@ -6241,6 +6245,8 @@ class Portal {
         errorCodes.mark(res, self.innerCode(asked) || 'STS-PORTAL-0001');
         return self.refuseShape(res, asked);
       }
+      // The person's passkey policy (#535); no application is in hand here.
+      passkeyPolicy.select(session.user.username, '');
       log.debug('Leaving GET ' + BASE + '/keys. Drawn for ' +
                 session.user.username + '.');
       // THROUGH `sendKeysPage()`, which relaxes `script-src` to `'self'` — this
@@ -7142,6 +7148,8 @@ class Portal {
       }
       const username = session.user.username;
       const base = baseUrlOf(req);
+      // The person's passkey policy (#535).
+      passkeyPolicy.select(username, '');
       const posted = validation.checkParsed(parseBody(req), 'body',
                                             ENROL_KEY_FORM);
       if (!posted.ok) {

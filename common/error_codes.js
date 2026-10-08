@@ -5947,9 +5947,9 @@ const CODES = [
       'person none that answers it. A step-up never enrols one.',
     spec: 'the sign-in screen, drawn again' },
   { code: 'STS-AUTHN-0308',
-    summary: 'A passkey policy profile other than `default` was named; there ' +
-      'is one profile per realm, and nothing assigns a second yet (#527, ' +
-      '#535).',
+    summary: 'A passkey policy profile name was refused: it is neither ' +
+      '`default` nor a name of lower-case letters, digits and hyphens of ' +
+      'at most 64 (#527, #535).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-AUTHN-0309',
     summary: 'A passkey policy save was refused: a field was missing, not ' +

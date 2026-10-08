@@ -1830,6 +1830,30 @@ class AdminViews {
       }),
       schema: module.SCHEMA
     };
+    // A KIND WITH NAMED PROFILES (#535, the passkey policy): each named
+    // profile of this realm, with its rows and its selectors, in precedence
+    // order, for the console's forms and the API.
+    if (Array.isArray(module.SELECTORS)) {
+      (out as any).named = module.list().filter(function (one) {
+        return one.name !== module.DEFAULT_PROFILE;
+      }).map(function (one) {
+        return {
+          name: one.name, dn: one.dn, description: one.description,
+          selectApplications: one.selectApplications || [],
+          selectGroups: one.selectGroups || [],
+          precedence: one.precedence,
+          rules: module.describe(one),
+          fields: module.FIELDS.map(function (field) {
+            return { key: field.key, attribute: field.attribute,
+                     label: field.label, type: field.type, min: field.min,
+                     max: field.max, values: field.values,
+                     unit: field.unit || '', default: field.dflt,
+                     value: one[field.key], source: one.sources[field.key],
+                     what: field.what };
+          })
+        };
+      });
+    }
     log.debug("Leaving AdminViews.policyKindMember().");
     return out;
   }

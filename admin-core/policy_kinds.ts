@@ -55,6 +55,9 @@ interface PolicyModule {
     { ok: boolean; errors?: string[]; removed?: boolean;
       profile?: Record<string, any> };
   describe(profile?: Record<string, any> | null): string[];
+  // A kind whose profiles may be NAMED and selected (#535, the passkey
+  // policy): the selectors each named profile carries.
+  SELECTORS?: ReadonlyArray<Record<string, any>>;
 }
 
 interface PolicyKind {
