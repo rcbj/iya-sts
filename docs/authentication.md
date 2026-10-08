@@ -294,6 +294,7 @@ it on the console or with `POST /admin-api/policies/save-passkey-policy`;
 |---|---|---|
 | `allowUsernameless` | off | Offers a passkey sign-in with **no username**, described below. |
 | `securityKeyResidentKey` | `required` | What *Use a security key* asks the authenticator to store **while usernameless sign-in is on**: `discouraged`, `preferred` or `required`. |
+| `backupEligibility` | `allow` | `disallow` accepts only **device-bound** passkeys, refusing a synced one at registration and at sign-in (below). |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
 a passkey* always asks `residentKey: required`. *Use a security key* asks
@@ -303,6 +304,35 @@ through either button; while it is on, it asks `securityKeyResidentKey`. A
 realm can lower that to `preferred` or `discouraged` to spare a security key's
 few resident slots, and a key enrolled that way may need the username to sign
 in.
+
+**Synced passkeys** (`backupEligibility`). A *synced* passkey is one its
+provider copies to the person's other devices, or keeps a backup of: a
+passkey in a phone's or a browser's password manager usually is. A
+*device-bound* one never leaves the authenticator it was made on: a hardware
+security key usually is. The authenticator says which in every registration
+and every sign-in, with the **backup eligible** (BE) flag of WebAuthn Level 3
+section 6.1, and the BE flag never changes for a credential's life.
+
+A realm may refuse synced passkeys because a copy of the key is a copy of the
+credential: it is only as safe as the person's account with the provider that
+syncs it, and it can sign in from a device the realm has never seen. A realm
+that needs to know which physical authenticator holds a key — the usual case
+for an administrator, or for a regulated deployment — sets `disallow`. Most
+passkeys people already hold are synced, which is why the default is `allow`.
+
+While it is `disallow`:
+
+- a passkey with BE set is **not registered**, at the sign-in screen, on
+  `/portal/keys` or through an activation link (`STS-AUTHN-0312`), and the
+  page says why;
+- a passkey with BE set **does not sign anybody in**, whether it is the
+  first factor, the step after a password, or a sign-in with no username
+  (`STS-AUTHN-0313`, a `session.refuse` audit row). That catches a synced
+  passkey registered before the realm said no, and `/portal/keys` marks
+  such a key so its owner can replace it.
+
+The console lists a person's keys with what the authenticator said about
+backup: *device-bound*, *eligible, not backed up*, or *backed up*.
 
 The policy replaced the settings `webauthn.usernameless` and
 `webauthn.residentKey` (#527); a configuration that still names either is

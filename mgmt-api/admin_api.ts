@@ -1252,9 +1252,12 @@ class AdminApi {
               'for a discoverable credential (`residentKey: required`), as ' +
               '"Create a passkey" always does; while it is on, it asks ' +
               '`securityKeyResidentKey` (`discouraged`, `preferred` or ' +
-              '`required`, default `required`).',
+              '`required`, default `required`). `backupEligibility` ' +
+              '(`allow` by default) set to `disallow` refuses a synced ' +
+              '(backup-eligible) passkey at registration and at sign-in.',
         example: { allowUsernameless: false,
-                   securityKeyResidentKey: 'required' }
+                   securityKeyResidentKey: 'required',
+                   backupEligibility: 'allow' }
       }
     };
     const cap = function (text) {

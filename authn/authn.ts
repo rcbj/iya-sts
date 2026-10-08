@@ -518,6 +518,8 @@ import webauthnPolicy = require('./webauthn_policy');
 // THE AUTHENTICATION POLICY (#64): which mechanisms are first and second
 // factors. A LEAF (common/authn_policy.ts), so no cycle and no route.
 import authnPolicy = require('../common/authn_policy');
+// The passkey policy (#528): whether a synced passkey may sign anybody in.
+import passkeyPolicy = require('../common/passkey_policy');
 // THE ATTESTATION STATEMENT, VERIFIED (#105). Rule 3 as well: a library that
 // requires the policy above, `crypto`, `pki` and `error_codes`, and reaches
 // the FIDO metadata and revocation lazily — nothing that reaches back here.
@@ -1315,6 +1317,7 @@ interface AuthnDeps {
   webauthnVerifier: typeof webauthnVerifier;
   webauthnPolicy: typeof webauthnPolicy;
   authnPolicy: typeof authnPolicy;
+  passkeyPolicy: typeof passkeyPolicy;
   webauthnAttestation: typeof webauthnAttestation;
   totp: typeof totp;
 }
@@ -1387,6 +1390,7 @@ class Authn {
       webauthnVerifier: webauthnVerifier,
       webauthnPolicy: webauthnPolicy,
       authnPolicy: authnPolicy,
+      passkeyPolicy: passkeyPolicy,
       webauthnAttestation: webauthnAttestation,
       totp: totp
     };
@@ -4741,6 +4745,23 @@ class Authn {
     return code;
   }
 
+  // The passkey policy's refusal of a backup-eligible passkey (#528), or
+  // null: only a WebAuthn credential whose BE flag the door read as set.
+  private syncedPasskeyRefusal(credential: any):
+      { code: string; why: string } | null {
+    const { log, passkeyPolicy } = this.deps;
+    log.debug("Entering Authn.syncedPasskeyRefusal().");
+    if (!credential || String(credential.kind || '') !== 'webauthn') {
+      log.debug("Leaving Authn.syncedPasskeyRefusal(). Not a passkey.");
+      return null;
+    }
+    const out = passkeyPolicy.backupEligibleRefusal(credential.backupEligible,
+                                                    'sign-in');
+    log.debug("Leaving Authn.syncedPasskeyRefusal(). " +
+              (out ? out.code : 'allowed'));
+    return out;
+  }
+
   /**
    * Starts (or upgrades) the sign-on session for a person who has
    * authenticated, and sets its cookie.
@@ -4939,6 +4960,42 @@ class Authn {
       });
       extra.refusedWith = policyCode;
       log.debug("Leaving Authn.startSessionHere(). The policy refused.");
+      return null;
+    }
+    // -------------------------------------------------------------------------
+    // A SYNCED PASSKEY WHERE THE REALM TAKES ONLY DEVICE-BOUND ONES (#528),
+    // asked here for the authentication policy's reason above: every door a
+    // passkey signs somebody in through — the passkey step after a password,
+    // the passwordless one, the usernameless sign-in — names its credential's
+    // BE flag, and this is the line they all reach. BE never changes for a
+    // credential, so this is what refuses a synced key enrolled before the
+    // realm said no; `credentials.addKey()` refuses a new one.
+    // -------------------------------------------------------------------------
+    const syncedRefusal = extra.authenticated === false ? null
+      : this.syncedPasskeyRefusal(extra.credential);
+    if (syncedRefusal) {
+      log.info('authn: a session for "' + username + '" was REFUSED at the ' +
+               (via || 'sign-in') + ' door: the passkey that answered is ' +
+               'backup eligible and this realm\'s passkey policy takes only ' +
+               'device-bound ones (' + syncedRefusal.code + ').');
+      audit.audit({
+        action: 'session.refuse', actor: String(username || ''),
+        errorCode: syncedRefusal.code,
+        protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+        summary: 'a session for ' + username + ' was refused at the ' +
+                 (via || 'sign-in') + ' door: a synced (backup-eligible) ' +
+                 'passkey, where the passkey policy takes only device-bound ' +
+                 'ones',
+        detail: { credential: 'webauthn',
+                  credentialFingerprint: String(extra.credential &&
+                                                extra.credential.id
+                    ? stsCrypto.credentialFingerprint(
+                        String(extra.credential.id)) : ''),
+                  application: String(extra.application || '') }
+      });
+      extra.refusedWith = syncedRefusal.code;
+      extra.refusedWhy = syncedRefusal.why;
+      log.debug("Leaving Authn.startSessionHere(). A synced passkey.");
       return null;
     }
     // -------------------------------------------------------------------------
@@ -7332,7 +7389,8 @@ class Authn {
                                          : 'STS-AUTHN-0010');
     const message = (code === 'STS-AUTHN-0010' ||
                      code === 'STS-AUTHN-0298' ||
-                     code === 'STS-AUTHN-0305') && said.refusedWhy
+                     code === 'STS-AUTHN-0305' ||
+                     code === 'STS-AUTHN-0313') && said.refusedWhy
       ? String(said.refusedWhy)
       : 'Authentication failed for ' + username + '.';
     log.info('authn: the session for "' + username + '" was refused at the ' +

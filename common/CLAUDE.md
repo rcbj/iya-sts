@@ -11319,3 +11319,31 @@ second followed `webauthn.residentKey`, which defaulted to `discouraged`.
   verifier, which moves with #528 and #530; and process-wide rows.
 * Error codes `STS-AUTHN-0308` to `0311`, for its save, as the
   service-account policy's are for its own.
+
+**#528 ADDED `backupEligibility` (2026-10-08)**: `allow` by default, or
+`disallow`, which accepts only device-bound passkeys. A passkey whose
+authenticator data sets BE (backup eligible, WebAuthn Level 3 section 6.1) is
+refused in two places, both funnels:
+
+* **Registration** in `credentials.addKey()`, the one writer, right after the
+  role check (`STS-AUTHN-0312`, reason `backup-eligible`). Every door that
+  enrols a key reaches it, and each already draws or audits `addKey()`'s
+  refusal: the sign-in screen, `/portal/keys` and the activation link. A key
+  written with no BE flag at all (one typed by value) is not refused.
+* **Sign-in** in `authn.ts`'s `startSessionHere()`, beside the
+  authentication policy's check (`STS-AUTHN-0313`, a `session.refuse` row,
+  and the sentence on the screen through `refusedSession()`). BE never
+  changes for a credential, so this catches a synced key enrolled before the
+  realm said no. Every passkey door names its credential's BE flag on the
+  session detail.
+
+`backupEligibleRefusal()` is the one sentence for both, and `/portal/keys`
+asks it to mark a held key that will no longer sign its owner in.
+
+**Why the module and not an issuance-policy rule.** The ticket asked for the
+refusal "where the decision belongs", and rcbj's rule is that every
+authorization decision is policy. This is an AUTHENTICATION policy row on
+Directory → Policies, enforced at the doors as `authn_policy.ts`'s rows are
+(3bd: `startSession()` refuses a mechanism the policy does not accept). The
+issuance policy is not asked at a session that names no application, and
+`gated: true` doors ask it before the ceremony, when BE is not yet known.

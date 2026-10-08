@@ -5953,8 +5953,8 @@ const CODES = [
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-AUTHN-0309',
     summary: 'A passkey policy save was refused: a field was missing, not ' +
-      'a yes-or-no value, or not one of discouraged, preferred, required ' +
-      '(#527).',
+      'a yes-or-no value, or not one of its values — discouraged, ' +
+      'preferred, required; allow, disallow (#527, #528).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-AUTHN-0310',
     summary: 'There is no embedded directory in this process, so a passkey ' +
@@ -5964,6 +5964,21 @@ const CODES = [
     summary: 'The directory would not store the passkey policy profile: it ' +
       'holds its maximum number of entries (#527).',
     spec: 'HTTP 400 (management API)' },
+  { code: 'STS-AUTHN-0312',
+    summary: 'A synced passkey was not registered: its authenticator data ' +
+      'set the backup-eligible flag (BE, WebAuthn Level 3 section 6.1) and ' +
+      'the realm\'s passkey policy takes only device-bound passkeys ' +
+      '(backupEligibility disallow, #528). Asked where every key is ' +
+      'written, so the sign-in screen, /portal/keys and an activation link ' +
+      'all refuse it.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0313',
+    summary: 'A sign-in with a synced passkey was refused: the key\'s ' +
+      'assertion set the backup-eligible flag and the realm\'s passkey ' +
+      'policy takes only device-bound passkeys (backupEligibility ' +
+      'disallow, #528). BE never changes for a credential, so this is what ' +
+      'refuses a synced key registered before the realm said no.',
+    spec: 'the sign-in screen, drawn again with the reason' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

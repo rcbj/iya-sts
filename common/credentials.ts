@@ -150,6 +150,9 @@ import serviceAccountPolicy = require('./service_account_policy');
 // answer: `/portal/keys` would have refused an eleventh key while
 // `/admin-api` allowed it, or the other way round, with nothing failing.
 import webauthnPolicy = require('../authn/webauthn_policy');
+// The passkey policy (#527, #528): a leaf over the directory, which
+// `webauthn_policy` above already requires.
+import passkeyPolicy = require('./passkey_policy');
 // THE VERIFIER, for the two-step key enrolment below. A LEAF on the same terms
 // as the policy module beside it — it registers nothing and requires only npm
 // packages, `common/crypto` and `common/helpers`, so it can neither move a
@@ -278,6 +281,7 @@ interface CredentialsDeps {
   serviceAccounts: typeof serviceAccounts;
   serviceAccountPolicy: typeof serviceAccountPolicy;
   webauthnPolicy: typeof webauthnPolicy;
+  passkeyPolicy: typeof passkeyPolicy;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnAttestation: typeof webauthnAttestation;
   errorCodes: typeof errorCodes;
@@ -744,6 +748,7 @@ class Credentials {
       serviceAccounts: serviceAccounts,
       serviceAccountPolicy: serviceAccountPolicy,
       webauthnPolicy: webauthnPolicy,
+      passkeyPolicy: passkeyPolicy,
       webauthnVerifier: webauthnVerifier,
       webauthnAttestation: webauthnAttestation,
       errorCodes: errorCodes,
@@ -3008,6 +3013,21 @@ class Credentials {
       log.debug("Leaving Credentials.addKey().");
       return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
                    { ok: false, errors: [allowed.why] });
+    }
+    // A SYNCED PASSKEY WHERE THE REALM TAKES ONLY DEVICE-BOUND ONES (#528):
+    // the passkey policy's `backupEligibility`, asked of the authenticator
+    // data's BE flag, which both ceremony doors put on the record. Here for
+    // the role check's reason — the one writer — and ahead of the cap, so the
+    // answer names the rule rather than a count.
+    const synced = this.deps.passkeyPolicy.backupEligibleRefusal(
+      (credential || {}).backupEligible, 'registration');
+    if (synced) {
+      log.info('credentials: a synced passkey was NOT enrolled for ' + name +
+               ' (' + synced.code + '): the passkey policy takes only ' +
+               'device-bound ones.');
+      log.debug("Leaving Credentials.addKey(). Backup eligible.");
+      return coded(synced.code, { ok: false, reason: 'backup-eligible',
+                                  errors: [synced.why] });
     }
     // HOW MANY. Several keys is the ordinary case and the specification expects
     // it — an assertion NAMES the credential that produced it, so there is none

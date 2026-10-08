@@ -136,6 +136,8 @@ import credentials = require('../common/credentials');
 // neither move a route nor close a cycle — and `credentials.js` above already
 // requires it, so this is a second reader of one module rather than a new edge.
 import webauthnPolicy = require('../authn/webauthn_policy');
+// The passkey policy (#528): whether this realm still takes a synced key.
+import passkeyPolicy = require('../common/passkey_policy');
 // The mechanism itself, for the settings this page prints and the otpauth URI
 // and QR code it draws. A LIBRARY (rule 3) that registers no route, and
 // `credentials.js` above already requires it — so this is a second reader of
@@ -3126,6 +3128,14 @@ class Portal {
       ' · ' + (one.role === 'primary' ? 'instead of a password'
                                       : 'second step after your password') +
       '</div>' +
+      // A SYNCED KEY THE REALM NO LONGER TAKES (#528): it is refused at
+      // sign-in, so the person is told here before they meet the refusal.
+      (passkeyPolicy.backupEligibleRefusal(one.backupEligible, 'sign-in')
+        ? '<div class="meta" id="passkey-synced-refused">This passkey can ' +
+          'be synced, and this realm now accepts only device-bound ' +
+          'passkeys, so it will not sign you in. Remove it and register a ' +
+          'security key or a passkey kept on one device.</div>'
+        : '') +
       self.renameForm(one, csrf, false) +
       '<details><summary>Details</summary><table>' +
       '<tr><th>Used</th><td>' + self.esc(one.role === 'primary'
