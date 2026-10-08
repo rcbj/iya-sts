@@ -1863,12 +1863,25 @@ async function theDeclaredFlowsAreEnforced() {
       code_challenge_method: pair.method }).toString(),
     { redirect: "manual" });
   const location = asked.headers.get("location") || "";
-  assert.ok(location.indexOf(MINT_REDIRECT_URI) === 0 &&
-            /[?&#]error=unauthorized_client/.test(location),
+  // TWO CORRECT ANSWERS, AND THE MODE DECIDES WHICH. With nobody signed in,
+  // RFC 9700 section 4.11.2 forbids redirecting an error, so in RFC 9700
+  // mode (which product mode implies) the authorization endpoint draws a 400
+  // page whose LINK carries the same redirect; outside it the error is a 302
+  // to the redirect URI. Either must name the client's own redirect URI and
+  // unauthorized_client (RFC 6749 section 4.1.2.1).
+  const page = location ? "" : await asked.text();
+  const link = (new RegExp('href="(' + MINT_REDIRECT_URI
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '[^"]*)"').exec(page) ||
+                [])[1] || "";
+  const target = location ||
+    (asked.status === 400 ? link.replace(/&amp;/g, "&") : "");
+  assert.ok(target.indexOf(MINT_REDIRECT_URI) === 0 &&
+            /[?&#]error=unauthorized_client/.test(target),
     "a response type the client did not declare should be sent back to its " +
-    "redirect URI as unauthorized_client (RFC 6749 section 4.1.2.1); the " +
-    "authorization endpoint answered " + asked.status + " " +
-    location.slice(0, 200));
+    "redirect URI as unauthorized_client (RFC 6749 section 4.1.2.1), by a " +
+    "redirect or, with nobody signed in in RFC 9700 mode, by a page linking " +
+    "to it; the authorization endpoint answered " + asked.status + " " +
+    (location || page.replace(/\s+/g, " ")).slice(0, 300));
 
   // The sightings are records, not declarations: no door writes them.
   await refused("/applications/add",
