@@ -17284,7 +17284,13 @@ function internalApplications() {
       // the person holds.
       // `admin:console` (#454) beside them: ADMIN_CONSOLE, which this client
       // confers on everybody signing in through it, authorizes it.
-      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email',
+      // DECLARED FOR WHAT IT IS (2026-10-08): an OAuth 2.0 client and an
+      // OpenID Connect relying party. `protocols` above is the DERIVED
+      // `appProtocol`; the console's protocol checkboxes and the issuance
+      // policy read `appAllowedProtocol`, which nothing seeded, so the
+      // service's own client read as declared for nothing.
+      attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'admin:read',
                                          'admin:write', 'admin:console'] },
       registration: {
@@ -17342,7 +17348,9 @@ function internalApplications() {
       // `consent.js`: the entry is the register, so an operator who wants the
       // screen removes the values and gets it, which is what makes this a
       // default rather than a special case.
-      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email',
+      // Declared OAuth 2.0 and OpenID Connect, the console's reason.
+      attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access'] },
       registration: {
         client_id: 'sts-user-portal',
@@ -17376,6 +17384,9 @@ function internalApplications() {
       realmScope: 'every',
       description: 'seeded at startup: this service\'s own management API at ' +
                    '/admin-api (applications.seedInternal)',
+      // Declared OAuth 2.0 alone, the console's reason: a client_credentials
+      // client with no ID Token, so not OpenID Connect.
+      attributes: { appAllowedProtocol: ['oauth2'] },
       registration: {
         client_id: 'sts-management-api',
         client_name: 'Management API',

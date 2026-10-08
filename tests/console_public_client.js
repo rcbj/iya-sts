@@ -159,6 +159,19 @@ function childMain() {
       }).length;
     };
 
+    // --- 0. the seeded surfaces are DECLARED for their protocol families
+    // (appAllowedProtocol), not only sighted in them.
+    // The management API is a client_credentials client: oauth2 alone.
+    [['sts-admin-console', ['oauth2', 'oidc']],
+     ['sts-user-portal', ['oauth2', 'oidc']],
+     ['sts-management-api', ['oauth2']]].forEach(function (pair) {
+      const families = applications.declaredFamiliesOf(
+        applications.get(pair[0])).sort();
+      note(JSON.stringify(families) === JSON.stringify(pair[1]),
+           '0. ' + pair[0] + ' is seeded declared for ' + pair[1].join(' and '),
+           JSON.stringify(families));
+    });
+
     // --- 1. as seeded: confidential, and nothing changed --------------------
     const seeded = applications.clientConfigOf(CONSOLE) || {};
     const unbound = await mintFor();
