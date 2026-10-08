@@ -626,13 +626,26 @@ async function theSchemasMatchTheReplies(doc) {
 async function theReadsAgreeWithTheConsole(consoleClient) {
   log.debug("Entering theReadsAgreeWithTheConsole().");
   log.info("=== The API and the console see one service ===");
-  const apiTokens = await get("/tokens?per=5");
+  let apiTokens = await get("/tokens?per=5");
   assert.ok(apiTokens.held > 0,
     "the revocation check above has just minted three artifacts, so an " +
     "empty list here means this comparison would be 0 against 0 — which " +
     "passes and proves nothing.");
-  const consoleTokens = await consoleJson("/admin/tokens?per=5&format=json",
-                                          consoleClient);
+  // The two reads are two moments, and other jobs run beside this one and
+  // mint in the same realm: one artifact minted between them made the counts
+  // differ by one in a single-node run (2026-10-08). So a pair that disagrees
+  // is read again, a few times; one list read through two doors agrees in a
+  // quiet moment, and a real disagreement still fails every time.
+  let consoleTokens = await consoleJson("/admin/tokens?per=5&format=json",
+                                        consoleClient);
+  for (let again = 0; again < 3 && consoleTokens.ok &&
+       apiTokens.held !== consoleTokens.body.held; again++) {
+    log.info("the API said " + apiTokens.held + " held and the console " +
+             consoleTokens.body.held + "; reading both again.");
+    apiTokens = await get("/tokens?per=5");
+    consoleTokens = await consoleJson("/admin/tokens?per=5&format=json",
+                                      consoleClient);
+  }
   assert.ok(consoleTokens.ok,
     "the console's JSON view should answer 200, and it answered " +
     consoleTokens.status + ": " + String(consoleTokens.raw).slice(0, 300) +
