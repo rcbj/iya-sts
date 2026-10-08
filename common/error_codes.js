@@ -5954,7 +5954,8 @@ const CODES = [
   { code: 'STS-AUTHN-0309',
     summary: 'A passkey policy save was refused: a field was missing, not ' +
       'a yes-or-no value, or not one of its values — discouraged, ' +
-      'preferred, required; allow, disallow (#527, #528).',
+      'preferred, required; allow, disallow; or a minimum PIN length ' +
+      'outside 4 to 63 (#527, #528, #529).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-AUTHN-0310',
     summary: 'There is no embedded directory in this process, so a passkey ' +
@@ -5978,6 +5979,19 @@ const CODES = [
       'policy takes only device-bound passkeys (backupEligibility ' +
       'disallow, #528). BE never changes for a credential, so this is what ' +
       'refuses a synced key registered before the realm said no.',
+    spec: 'the sign-in screen, drawn again with the reason' },
+  { code: 'STS-AUTHN-0314',
+    summary: 'A passkey was not registered: the realm\'s passkey policy ' +
+      'enforces a minimum security-key PIN length (enforcePinLength, #529) ' +
+      'and the key reported a shorter minimum through CTAP 2.1\'s ' +
+      'minPinLength extension, or reported none while ' +
+      'pinLengthOnlyIfSupported is off. Asked where every key is written.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0315',
+    summary: 'A sign-in with a passkey was refused: the realm\'s passkey ' +
+      'policy enforces a minimum security-key PIN length (#529) and the ' +
+      'minimum the key reported at registration — recorded on its row — is ' +
+      'shorter, or none was recorded while pinLengthOnlyIfSupported is off.',
     spec: 'the sign-in screen, drawn again with the reason' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +

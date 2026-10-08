@@ -646,6 +646,10 @@ function verifyRegistration(input) {
     credentialIdRaw: authData.credentialId,
     rpIdHash: authData.rpIdHash,
     coseAlg: key ? key.coseAlg : null,
+    // THE AUTHENTICATOR'S EXTENSION OUTPUTS (#529), the ED flag's CBOR map as
+    // plain data: CTAP 2.1's `minPinLength` comes back here. Null where the
+    // flag is clear. Parsed above and dropped until then.
+    extensions: authData.extensions ? plainOf(authData.extensions) : null,
   };
   log.debug('Leaving verifyRegistration(). ok=' + result.ok);
   return result;

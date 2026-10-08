@@ -586,7 +586,9 @@ async function syncedPasskeys(deviceBound) {
   const set = await call("POST", "/policies/save-passkey-policy",
                          { allowUsernameless: true,
                            securityKeyResidentKey: "required",
-                           backupEligibility: "disallow" });
+                           backupEligibility: "disallow",
+                           enforcePinLength: false, minPinLength: 4,
+                           pinLengthOnlyIfSupported: false });
   assert.ok(set.status === 200 && set.body && set.body.ok !== false,
     "disallowing synced passkeys answered " + set.status + " " +
     String(set.raw).slice(0, 300));
@@ -641,7 +643,9 @@ async function test() {
   const set = await call("POST", "/policies/save-passkey-policy",
                          { allowUsernameless: true,
                            securityKeyResidentKey: "required",
-                           backupEligibility: "allow" });
+                           backupEligibility: "allow",
+                           enforcePinLength: false, minPinLength: 4,
+                           pinLengthOnlyIfSupported: false });
   assert.ok(set.status === 200 && set.body && set.body.ok !== false,
     "allowing usernameless sign-in in " + REALM + "'s passkey policy " +
     "answered " + set.status + " " + String(set.raw).slice(0, 300));

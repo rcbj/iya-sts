@@ -379,6 +379,23 @@ const pendingKeys = realms.map({ persist: 'credentials.pendingKeys',
  * accepted unchecked; product mode verifies every one.
  */
 class Credentials {
+  /**
+   * The minimum PIN length a registration's authenticator reported (#529),
+   * CTAP 2.1 section 12.4's `minPinLength` extension output, or null where it
+   * reported none.
+   *
+   * @param verdict - `authn/webauthn.js`'s registration verdict
+   * @returns a whole number from 0 to 255, or null
+   */
+  static reportedMinPinLength(verdict: any): number | null {
+    helpers.log.debug("Entering Credentials.reportedMinPinLength().");
+    const ext = verdict && verdict.extensions;
+    const value = ext && typeof ext === 'object' ? ext.minPinLength : null;
+    helpers.log.debug("Leaving Credentials.reportedMinPinLength().");
+    return typeof value === 'number' && Number.isInteger(value) &&
+           value >= 0 && value <= 255 ? value : null;
+  }
+
   // An AAGUID as the UUID string CAEP and the FIDO metadata service write
   // (`01020304-0506-...`), from the 32 hex digits `authn/webauthn.js` parses
   // out of the attested credential data. All zeros — an authenticator that
@@ -3020,13 +3037,21 @@ class Credentials {
     // the role check's reason — the one writer — and ahead of the cap, so the
     // answer names the rule rather than a count.
     const synced = this.deps.passkeyPolicy.backupEligibleRefusal(
-      (credential || {}).backupEligible, 'registration');
+      (credential || {}).backupEligible, 'registration') ||
+      // AND THE KEY'S MINIMUM PIN LENGTH (#529), as it reported it: here for
+      // the same reason, and with the same one sentence the sign-in reads.
+      this.deps.passkeyPolicy.pinLengthRefusal(
+        (credential || {}).minPinLength, 'registration');
     if (synced) {
-      log.info('credentials: a synced passkey was NOT enrolled for ' + name +
-               ' (' + synced.code + '): the passkey policy takes only ' +
-               'device-bound ones.');
-      log.debug("Leaving Credentials.addKey(). Backup eligible.");
-      return coded(synced.code, { ok: false, reason: 'backup-eligible',
+      const pin = synced.code === 'STS-AUTHN-0314';
+      log.info('credentials: a passkey was NOT enrolled for ' + name +
+               ' (' + synced.code + '): the passkey policy ' +
+               (pin ? 'requires a longer minimum PIN.'
+                    : 'takes only device-bound ones.'));
+      log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
+                "policy.");
+      return coded(synced.code, { ok: false,
+                                  reason: pin ? 'pin-length' : 'backup-eligible',
                                   errors: [synced.why] });
     }
     // HOW MANY. Several keys is the ordinary case and the specification expects
@@ -3123,6 +3148,11 @@ class Credentials {
         ? credential.discoverable : null,
       userVerified: typeof credential.userVerified === 'boolean'
         ? credential.userVerified : null,
+      // THE MINIMUM PIN LENGTH THE KEY REPORTED (#529), CTAP 2.1 section
+      // 12.4, or null where it reported none: what the passkey policy holds
+      // every later sign-in to while it enforces a PIN length.
+      minPinLength: typeof credential.minPinLength === 'number'
+        ? credential.minPinLength : null,
       // THE USER HANDLE IT WAS CREATED UNDER (#474): what its authenticator
       // hands back, and what `userHandleRefusal()` holds an assertion to.
       // Only a handle this service mints; a key written without one (before
@@ -7639,6 +7669,8 @@ class Credentials {
         backupState: !!(verdict.flags && verdict.flags.bs),
         transports: Credentials.transportsOf(credential),
         discoverable: Credentials.discoverableOf(credential),
+        // CTAP 2.1's minPinLength, as the key reported it (#529).
+        minPinLength: Credentials.reportedMinPinLength(verdict),
         // The handle the page created it under (#474).
         userHandle: held.userHandle
       }, held.role).then((stored) => {

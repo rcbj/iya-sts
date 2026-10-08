@@ -311,6 +311,10 @@ class WebauthnPolicy {
       // A SIGN-IN WITH NO USERNAME (#474): off unless the realm's passkey
       // policy allows it (#527; it was the setting webauthn.usernameless).
       usernameless: passkeyPolicy.allowsUsernameless(passkeys),
+      // WHETHER A REGISTRATION ASKS FOR THE KEY'S MINIMUM PIN LENGTH (#529):
+      // only while the passkey policy enforces one, so a realm that does not
+      // sends exactly the options it always did.
+      minPinLength: passkeyPolicy.pinLengthRule(passkeys).enforce,
       mfaAllowed: config.value('webauthn.mfaAllowed') !== false,
       // The two algorithm flags (2026-10-01).
       insecureAlgorithms: this.insecureAlgorithmsAllowed(),
@@ -774,6 +778,10 @@ class WebauthnPolicy {
         requireResidentKey: residentKey === 'required'
       },
       credProps: live.credProps,
+      // CTAP 2.1 section 12.4's extension, asked for only while the passkey
+      // policy enforces a PIN length (#529); absent otherwise, so the options
+      // a realm that does not are byte for byte what they were.
+      minPinLength: live.minPinLength === true ? true : undefined,
       hints: hints
     };
     // ABSENT AND NOT `"any"`. The options dictionary has no value meaning "no

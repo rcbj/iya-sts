@@ -1254,10 +1254,16 @@ class AdminApi {
               '`securityKeyResidentKey` (`discouraged`, `preferred` or ' +
               '`required`, default `required`). `backupEligibility` ' +
               '(`allow` by default) set to `disallow` refuses a synced ' +
-              '(backup-eligible) passkey at registration and at sign-in.',
+              '(backup-eligible) passkey at registration and at sign-in. ' +
+              '`enforcePinLength` (off) asks a key for its minimum PIN ' +
+              'length (CTAP 2.1 minPinLength) and holds it to ' +
+              '`minPinLength` (4 to 63); `pinLengthOnlyIfSupported` (off) ' +
+              'accepts a key that does not report.',
         example: { allowUsernameless: false,
                    securityKeyResidentKey: 'required',
-                   backupEligibility: 'allow' }
+                   backupEligibility: 'allow',
+                   enforcePinLength: false, minPinLength: 4,
+                   pinLengthOnlyIfSupported: false }
       }
     };
     const cap = function (text) {

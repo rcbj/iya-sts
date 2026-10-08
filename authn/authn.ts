@@ -1187,7 +1187,12 @@ const WEBAUTHN_SCRIPT = [
   '        excludeCredentials: exclude.map(function (id) {',
   '          return { type: "public-key", id: bytes(id) };',
   '        }),',
-  '        extensions: o.credProps ? { credProps: true } : undefined,',
+  // credProps, and CTAP 2.1's minPinLength where the passkey policy asks
+  // for it (#529): the browser passes it to the authenticator, whose answer
+  // comes back in the authenticator data's extensions.
+  '        extensions: (o.credProps || o.minPinLength) ? Object.assign(',
+  '          o.credProps ? { credProps: true } : {},',
+  '          o.minPinLength ? { minPinLength: true } : {}) : undefined,',
   // WHICH AUTHENTICATOR THE PAGE MEANS (#470), WebAuthn Level 3 section
   // 5.4.8: "Create a passkey" and "Use a security key" are two buttons, and
   // a hint is how the browser is told which UI to lead with without the
@@ -4762,6 +4767,29 @@ class Authn {
     return out;
   }
 
+  // The passkey policy's refusal of a key's PIN length at sign-in (#529), or
+  // null: the minimum the key REPORTED at registration, read off its row on
+  // the person's entry, held to the rule in force now.
+  private pinLengthSignInRefusal(username: string, credential: any):
+      { code: string; why: string } | null {
+    const { log, passkeyPolicy, credentials } = this.deps;
+    log.debug("Entering Authn.pinLengthSignInRefusal().");
+    if (!credential || String(credential.kind || '') !== 'webauthn' ||
+        !passkeyPolicy.pinLengthRule().enforce) {
+      log.debug("Leaving Authn.pinLengthSignInRefusal(). Not asked.");
+      return null;
+    }
+    const id = String(credential.id || '');
+    const key = credentials.keysOf(username).filter(function (one) {
+      return String(one.credentialId) === id;
+    })[0] || null;
+    const out = passkeyPolicy.pinLengthRefusal(key ? key.minPinLength : null,
+                                               'sign-in');
+    log.debug("Leaving Authn.pinLengthSignInRefusal(). " +
+              (out ? out.code : 'allowed'));
+    return out;
+  }
+
   /**
    * Starts (or upgrades) the sign-on session for a person who has
    * authenticated, and sets its cookie.
@@ -4972,20 +5000,24 @@ class Authn {
     // realm said no; `credentials.addKey()` refuses a new one.
     // -------------------------------------------------------------------------
     const syncedRefusal = extra.authenticated === false ? null
-      : this.syncedPasskeyRefusal(extra.credential);
+      : (this.syncedPasskeyRefusal(extra.credential) ||
+         this.pinLengthSignInRefusal(username, extra.credential));
     if (syncedRefusal) {
       log.info('authn: a session for "' + username + '" was REFUSED at the ' +
-               (via || 'sign-in') + ' door: the passkey that answered is ' +
-               'backup eligible and this realm\'s passkey policy takes only ' +
-               'device-bound ones (' + syncedRefusal.code + ').');
+               (via || 'sign-in') + ' door: the passkey policy refused the ' +
+               'passkey that answered (' + syncedRefusal.code + '): ' +
+               syncedRefusal.why);
       audit.audit({
         action: 'session.refuse', actor: String(username || ''),
         errorCode: syncedRefusal.code,
         protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
         summary: 'a session for ' + username + ' was refused at the ' +
-                 (via || 'sign-in') + ' door: a synced (backup-eligible) ' +
-                 'passkey, where the passkey policy takes only device-bound ' +
-                 'ones',
+                 (via || 'sign-in') + ' door: ' +
+                 (syncedRefusal.code === 'STS-AUTHN-0315'
+                   ? 'the passkey\'s minimum PIN length is not what the ' +
+                     'passkey policy requires'
+                   : 'a synced (backup-eligible) passkey, where the passkey ' +
+                     'policy takes only device-bound ones'),
         detail: { credential: 'webauthn',
                   credentialFingerprint: String(extra.credential &&
                                                 extra.credential.id
@@ -4995,7 +5027,8 @@ class Authn {
       });
       extra.refusedWith = syncedRefusal.code;
       extra.refusedWhy = syncedRefusal.why;
-      log.debug("Leaving Authn.startSessionHere(). A synced passkey.");
+      log.debug("Leaving Authn.startSessionHere(). The passkey policy " +
+                "refused the passkey.");
       return null;
     }
     // -------------------------------------------------------------------------
@@ -7390,7 +7423,8 @@ class Authn {
     const message = (code === 'STS-AUTHN-0010' ||
                      code === 'STS-AUTHN-0298' ||
                      code === 'STS-AUTHN-0305' ||
-                     code === 'STS-AUTHN-0313') && said.refusedWhy
+                     code === 'STS-AUTHN-0313' ||
+                     code === 'STS-AUTHN-0315') && said.refusedWhy
       ? String(said.refusedWhy)
       : 'Authentication failed for ' + username + '.';
     log.info('authn: the session for "' + username + '" was refused at the ' +
@@ -13124,6 +13158,9 @@ class Authn {
                 // not.
                 attachment: credential.authenticatorAttachment || null,
                 discoverable: this.discoverableFrom(credential),
+                // CTAP 2.1's minPinLength, as the key reported it (#529).
+                minPinLength: credentials.Credentials.reportedMinPinLength(
+                  verdict),
                 // The handle the page created it under (#474).
                 userHandle: step.userHandle || undefined,
                 userVerified: !!(verdict.flags && verdict.flags.uv),

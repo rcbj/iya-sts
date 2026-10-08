@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4217** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4219** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 273
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 275
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 708
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1425,11 +1425,13 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0306` | A second factor was needed of a person who holds none the application allows (appMfaMechanism, #475), and none of the allowed ones (a security key, an authenticator app) can be set up at sign-in in this realm; refused rather than signed in on one factor. | the sign-in screen, drawn again |
 | `STS-AUTHN-0307` | A second factor was DEMANDED — a security key by the relying party or on risk, or a second factor on risk — and the second factors the application allows (appMfaMechanism, #475) leave the person none that answers it. A step-up never enrols one. | the sign-in screen, drawn again |
 | `STS-AUTHN-0308` | A passkey policy profile other than `default` was named; there is one profile per realm, and nothing assigns a second yet (#527, #535). | HTTP 400 (management API) |
-| `STS-AUTHN-0309` | A passkey policy save was refused: a field was missing, not a yes-or-no value, or not one of its values — discouraged, preferred, required; allow, disallow (#527, #528). | HTTP 400 (management API) |
+| `STS-AUTHN-0309` | A passkey policy save was refused: a field was missing, not a yes-or-no value, or not one of its values — discouraged, preferred, required; allow, disallow; or a minimum PIN length outside 4 to 63 (#527, #528, #529). | HTTP 400 (management API) |
 | `STS-AUTHN-0310` | There is no embedded directory in this process, so a passkey policy could not be saved (#527). | HTTP 400 (management API) |
 | `STS-AUTHN-0311` | The directory would not store the passkey policy profile: it holds its maximum number of entries (#527). | HTTP 400 (management API) |
 | `STS-AUTHN-0312` | A synced passkey was not registered: its authenticator data set the backup-eligible flag (BE, WebAuthn Level 3 section 6.1) and the realm's passkey policy takes only device-bound passkeys (backupEligibility disallow, #528). Asked where every key is written, so the sign-in screen, /portal/keys and an activation link all refuse it. | the ceremony's page, drawn again with the reason |
 | `STS-AUTHN-0313` | A sign-in with a synced passkey was refused: the key's assertion set the backup-eligible flag and the realm's passkey policy takes only device-bound passkeys (backupEligibility disallow, #528). BE never changes for a credential, so this is what refuses a synced key registered before the realm said no. | the sign-in screen, drawn again with the reason |
+| `STS-AUTHN-0314` | A passkey was not registered: the realm's passkey policy enforces a minimum security-key PIN length (enforcePinLength, #529) and the key reported a shorter minimum through CTAP 2.1's minPinLength extension, or reported none while pinLengthOnlyIfSupported is off. Asked where every key is written. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0315` | A sign-in with a passkey was refused: the realm's passkey policy enforces a minimum security-key PIN length (#529) and the minimum the key reported at registration — recorded on its row — is shorter, or none was recorded while pinLengthOnlyIfSupported is off. | the sign-in screen, drawn again with the reason |
 
 ## STS-OAUTH
 
