@@ -457,6 +457,13 @@ class PoliciesPage {
             (String(field.value) === String(value) ? ' selected' : '') +
             '>' + kit.esc(value) + '</option>';
         }).join('') + '</select>';
+    } else if (field.type === 'list') {
+      // AN ORDERED LIST (#531): typed, comma-separated, or `none`. A list of
+      // checkboxes could not say the order, which is the point of one.
+      control = '<input type="text" id="' + kit.esc(id) + '" name="' +
+        kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
+        hint + '> <span class="sub">in order, from ' +
+        kit.esc((field.values || []).join(', ')) + ', or none</span>';
     } else {
       control = '<input type="number" id="' + kit.esc(id) + '" name="' +
         kit.esc(field.key) + '" min="' + kit.esc(field.min) + '" max="' +

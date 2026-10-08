@@ -1260,13 +1260,17 @@ class AdminApi {
               '`minPinLength` (4 to 63); `pinLengthOnlyIfSupported` (off) ' +
               'accepts a key that does not report. ' +
               '`enforceAttestationAtSignIn` (off) holds every passkey ' +
-              'sign-in to the attestation rules in force.',
+              'sign-in to the attestation rules in force. ' +
+              '`passkeyHints`, `securityKeyHints` and `signInHints` are ' +
+              'the WebAuthn hints each ceremony sends, in order, or `none`.',
         example: { allowUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
                    enforcePinLength: false, minPinLength: 4,
                    pinLengthOnlyIfSupported: false,
-                   enforceAttestationAtSignIn: false }
+                   enforceAttestationAtSignIn: false,
+                   passkeyHints: 'client-device,hybrid',
+                   securityKeyHints: 'security-key', signInHints: 'none' }
       }
     };
     const cap = function (text) {
@@ -1298,6 +1302,11 @@ class AdminApi {
           : field.type === 'enum'
             ? { type: 'string', enum: field.values,
                 description: field.what + ' Default `' + field.dflt + '`.' }
+          : field.type === 'list'
+            ? { type: 'string',
+                description: field.what + ' An ordered, comma-separated ' +
+                             'list of ' + (field.values || []).join(', ') +
+                             ', or `none`. Default `' + field.dflt + '`.' }
             : { oneOf: [{ type: 'integer', minimum: field.min,
                           maximum: field.max },
                         { type: 'string' }],

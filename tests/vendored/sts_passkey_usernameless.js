@@ -589,7 +589,10 @@ async function syncedPasskeys(deviceBound) {
                            backupEligibility: "disallow",
                            enforcePinLength: false, minPinLength: 4,
                            pinLengthOnlyIfSupported: false,
-                           enforceAttestationAtSignIn: false });
+                           enforceAttestationAtSignIn: false,
+                           passkeyHints: "client-device,hybrid",
+                           securityKeyHints: "security-key",
+                           signInHints: "none" });
   assert.ok(set.status === 200 && set.body && set.body.ok !== false,
     "disallowing synced passkeys answered " + set.status + " " +
     String(set.raw).slice(0, 300));
@@ -647,7 +650,10 @@ async function test() {
                            backupEligibility: "allow",
                            enforcePinLength: false, minPinLength: 4,
                            pinLengthOnlyIfSupported: false,
-                           enforceAttestationAtSignIn: false });
+                           enforceAttestationAtSignIn: false,
+                           passkeyHints: "client-device,hybrid",
+                           securityKeyHints: "security-key",
+                           signInHints: "none" });
   assert.ok(set.status === 200 && set.body && set.body.ok !== false,
     "allowing usernameless sign-in in " + REALM + "'s passkey policy " +
     "answered " + set.status + " " + String(set.raw).slice(0, 300));

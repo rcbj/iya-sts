@@ -11368,6 +11368,19 @@ sends CAEP `credential-change` by `policy`. Decided on the ticket: an
 untrusted statement fails every trust rule, an AAGUID list included, and a
 lookup that throws refuses (`STS-AUTHN-0317`).
 
+**#531 MADE THE WEBAUTHN HINTS ROWS (2026-10-08)**: `passkeyHints`,
+`securityKeyHints` and `signInHints`, the policy's first `list` rows (an
+ordered list of the row's `values`, or `none`, which is how an empty list is
+written so a stored empty list is not read as "no value"). `hintsFor(kind)`
+is what `creationOptions()`, `requestOptions()` and
+`discoverableRequestOptions()` send; the browser script passes a request's
+hints to both `get()` calls. The defaults are the old fixed hints. `validate()`
+refuses a hint that contradicts the attachment its request sends (it reads
+`webauthn.authenticatorAttachment`, so the module now requires `config`), and
+`hintsFor()` drops one a later change of that setting made contradictory
+(`STS-AUTHN-0319`). The console draws a `list` row as a text field and the
+API takes it as a string.
+
 **Why the module and not an issuance-policy rule.** The ticket asked for the
 refusal "where the decision belongs", and rcbj's rule is that every
 authorization decision is policy. This is an AUTHENTICATION policy row on

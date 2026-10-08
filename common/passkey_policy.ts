@@ -82,6 +82,17 @@
 //                            held to the rule; the docs warn that it is then
 //                            unenforced for most keys.
 //
+// #531 (2026-10-08) made the WebAuthn hints (Level 3 section 5.4.8) rows:
+// `passkeyHints` (`client-device,hybrid`), `securityKeyHints`
+// (`security-key`) and `signInHints` (`none`), each an ORDERED list of
+// `security-key`, `client-device` and `hybrid`, or `none`. The defaults are
+// what the two portal buttons and the sign-in ceremonies sent before, so
+// nothing changes until a realm sets them. A hint must not contradict the
+// attachment the same request sends — `security-key` and `hybrid` imply
+// `cross-platform`, `client-device` implies `platform` — so a save is
+// refused for one that does, with the reason, and `hintsFor()` drops one a
+// later change of `webauthn.authenticatorAttachment` made contradictory.
+//
 // #530 (2026-10-08) added `enforceAttestationAtSignIn`, off: on, every
 // passkey sign-in holds the key's RECORDED attestation to the attestation
 // rules in force now (`webauthn_attestation.ts`'s `signInVerdict()`), so a
@@ -118,6 +129,9 @@ import helpers = require('./helpers');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+// The attachment setting a hint is held to (#531). `config` is below every
+// module here; `helpers` already requires it.
+import config = require('./config');
 
 const { log } = helpers;
 
@@ -125,7 +139,7 @@ const { log } = helpers;
 interface PolicyField {
   key: string;
   attribute: string;
-  type: 'bool' | 'enum' | 'int';
+  type: 'bool' | 'enum' | 'int' | 'list';
   dflt: boolean | string | number;
   values?: string[];
   min?: number;
@@ -196,6 +210,16 @@ const BACKUP_ELIGIBILITY_VALUES = ['allow', 'disallow'];
  */
 const MIN_PIN_LENGTH = 4;
 const MAX_PIN_LENGTH = 63;
+/**
+ * The WebAuthn hints (Level 3 section 5.4.8) and the attachment each implies
+ * (#531). An empty list is written `none`.
+ */
+const HINTS = ['security-key', 'client-device', 'hybrid'];
+const HINT_ATTACHMENT: Record<string, string> = {
+  'security-key': 'cross-platform', 'hybrid': 'cross-platform',
+  'client-device': 'platform'
+};
+const NO_HINTS = 'none';
 
 /**
  * The policy's fields: one table read as the schema, the console form, the API
@@ -273,7 +297,28 @@ const FIELDS: PolicyField[] = [
           'and the FIDO Metadata Service as it is now, so a key registered ' +
           'before a rule was tightened, or whose model was since reported ' +
           'compromised, stops signing anybody in. A key with no trusted ' +
-          'attestation fails every rule that demands one.' }
+          'attestation fails every rule that demands one.' },
+  { key: 'passkeyHints', attribute: 'stsPasskeyHintsPasskey', type: 'list',
+    values: HINTS.slice(), dflt: 'client-device,hybrid',
+    label: 'Hints "Create a passkey" sends',
+    what: 'The WebAuthn hints (Level 3 section 5.4.8) the portal\'s *Create ' +
+          'a passkey* sends, in order, from security-key, client-device and ' +
+          'hybrid, or none. They tell the browser which way of making the ' +
+          'passkey to lead with. A hint may not contradict ' +
+          'webauthn.authenticatorAttachment: client-device implies platform, ' +
+          'security-key and hybrid cross-platform.' },
+  { key: 'securityKeyHints', attribute: 'stsPasskeyHintsSecurityKey',
+    type: 'list', values: HINTS.slice(), dflt: 'security-key',
+    label: 'Hints "Use a security key" sends',
+    what: 'The hints *Use a security key* sends, in order, or none. The ' +
+          'button asks for a cross-platform authenticator, so client-device ' +
+          'contradicts it and is refused.' },
+  { key: 'signInHints', attribute: 'stsPasskeyHintsSignIn', type: 'list',
+    values: HINTS.slice(), dflt: NO_HINTS,
+    label: 'Hints a passkey sign-in sends',
+    what: 'The hints a sign-in ceremony sends — the passkey step, the ' +
+          'sign-in with no username and its autofill — in order, or none ' +
+          '(the default: the browser offers every way it knows).' }
 ];
 
 /**
@@ -434,6 +479,27 @@ class PasskeyPolicy {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.parseField().");
     const text = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (field.type === 'list') {
+      // AN ORDERED LIST OF THE ROW'S VALUES (#531), commas or spaces between
+      // them, each once; empty or `none` is the empty list, written `none`
+      // so a stored empty list is not read as "no value" and its default.
+      const items = text.toLowerCase() === NO_HINTS ? []
+        : text.split(/[\s,]+/).filter(Boolean);
+      const unknown = items.filter(function (one) {
+        return (field.values || []).indexOf(one) < 0;
+      });
+      const twice = items.filter(function (one, at) {
+        return items.indexOf(one) !== at;
+      });
+      if (unknown.length || twice.length || items.length > 8) {
+        log.debug("Leaving PasskeyPolicy.parseField(). Not a list.");
+        return { problem: field.label + ' must be "none" or a list of ' +
+                          (field.values || []).join(', ') + ', each once; ' +
+                          '"' + text.slice(0, 60) + '" is not.' };
+      }
+      log.debug("Leaving PasskeyPolicy.parseField().");
+      return { value: items.length ? items.join(',') : NO_HINTS };
+    }
     if (field.type === 'int') {
       // `service_account_policy.ts`'s whole number, bounded by the row.
       const value = /^\d{1,6}$/.test(text) ? Number(text) : NaN;
@@ -687,6 +753,104 @@ class PasskeyPolicy {
     return out;
   }
 
+  // The attachment each enrolment sends, as `webauthn_policy.ts`'s
+  // `creationOptions()` decides it: the setting, or — for *Use a security
+  // key* while the setting is `any` — `cross-platform`.
+  private attachmentFor(kind: string): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.attachmentFor().");
+    const setting = String(config.value('webauthn.authenticatorAttachment') ||
+                           'any');
+    log.debug("Leaving PasskeyPolicy.attachmentFor().");
+    return setting !== 'any' ? setting
+      : (kind === 'security-key' ? 'cross-platform' : '');
+  }
+
+  // The hints of a list that contradict an attachment.
+  private contradicting(list: string[], attachment: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.contradicting().");
+    log.debug("Leaving PasskeyPolicy.contradicting().");
+    return !attachment ? [] : list.filter(function (hint) {
+      return HINT_ATTACHMENT[hint] && HINT_ATTACHMENT[hint] !== attachment;
+    });
+  }
+
+  // A save's hints that contradict the attachment their request sends.
+  private hintProblems(values: Record<string, unknown>): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.hintProblems().");
+    const out: string[] = [];
+    const rows: [string, string][] = [['passkeyHints', 'passkey'],
+                                      ['securityKeyHints', 'security-key']];
+    rows.forEach(([key, kind]) => {
+      const list = PasskeyPolicy.listOf(values[key]);
+      const attachment = this.attachmentFor(kind);
+      const bad = this.contradicting(list, attachment);
+      if (bad.length) {
+        out.push(FIELD_BY_KEY[key].label + ': ' + bad.join(', ') +
+                 ' contradicts the authenticatorAttachment that request ' +
+                 'sends (' + attachment + '); ' +
+                 bad.map(function (hint) {
+                   return hint + ' implies ' + HINT_ATTACHMENT[hint];
+                 }).join(', ') + '.');
+      }
+    });
+    log.debug("Leaving PasskeyPolicy.hintProblems(). " + out.length);
+    return out;
+  }
+
+  /**
+   * A stored hint list as an array: `none` and nothing are the empty list.
+   *
+   * @param value - the row's value
+   * @returns the hints, in order
+   */
+  static listOf(value: unknown): string[] {
+    log.debug("Entering PasskeyPolicy.listOf().");
+    const text = String(value === undefined || value === null ? '' : value);
+    log.debug("Leaving PasskeyPolicy.listOf().");
+    return text === NO_HINTS ? [] : text.split(',').filter(function (one) {
+      return HINTS.indexOf(one) >= 0;
+    });
+  }
+
+  /**
+   * The hints a ceremony sends (#531): `passkey` and `security-key` for the
+   * two enrolment buttons, `sign-in` for every sign-in ceremony, and `''`
+   * for an enrolment naming no kind, which sends none. A hint a later change
+   * of `webauthn.authenticatorAttachment` made contradictory is dropped.
+   *
+   * @param kind - `passkey`, `security-key`, `sign-in` or `''`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the hints, in order
+   */
+  hintsFor(kind: string, profile?: PasskeyProfile | null): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.hintsFor(). " + kind);
+    const key = kind === 'passkey' ? 'passkeyHints'
+      : (kind === 'security-key' ? 'securityKeyHints'
+        : (kind === 'sign-in' ? 'signInHints' : ''));
+    if (!key) {
+      log.debug("Leaving PasskeyPolicy.hintsFor(). No kind.");
+      return [];
+    }
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    const list = PasskeyPolicy.listOf(rules[key]);
+    const bad = kind === 'sign-in' ? []
+      : this.contradicting(list, this.attachmentFor(kind));
+    if (bad.length) {
+      log.warn(errorCodes.tag('STS-AUTHN-0319') + 'passkey policy: the ' +
+               key + ' hint(s) ' + bad.join(', ') + ' contradict ' +
+               'webauthn.authenticatorAttachment, changed since the policy ' +
+               'was saved, and are not sent.');
+    }
+    log.debug("Leaving PasskeyPolicy.hintsFor().");
+    return list.filter(function (one) {
+      return bad.indexOf(one) < 0;
+    });
+  }
+
   /**
    * Says whether every passkey sign-in is held to the attestation rules in
    * force (#530).
@@ -807,10 +971,23 @@ class PasskeyPolicy {
       this.pinLengthSentence(rules),
       rules.enforceAttestationAtSignIn === true
         ? 'every passkey sign-in is held to the attestation rules in force'
-        : 'the attestation rules are checked when a passkey is registered'
+        : 'the attestation rules are checked when a passkey is registered',
+      '"Create a passkey" hints ' + this.hintSentence(rules.passkeyHints) +
+        '; "Use a security key" ' +
+        this.hintSentence(rules.securityKeyHints) + '; a sign-in ' +
+        this.hintSentence(rules.signInHints)
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
+  }
+
+  // A hint list in words (#531).
+  private hintSentence(value: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.hintSentence().");
+    const list = PasskeyPolicy.listOf(value);
+    log.debug("Leaving PasskeyPolicy.hintSentence().");
+    return list.length ? list.join(', ') : 'nothing';
   }
 
   // The PIN-length rule in a sentence (#529).
@@ -880,6 +1057,10 @@ class PasskeyPolicy {
         return;
       }
       values[field.key] = parsed.value;
+    });
+    // HINTS THAT CONTRADICT THE ATTACHMENT THE SAME REQUEST SENDS (#531).
+    this.hintProblems(values).forEach(function (one) {
+      problems.push(one);
     });
     log.debug('Leaving PasskeyPolicy.validate(). ' + problems.length +
               ' problem(s).');
@@ -1026,6 +1207,8 @@ export = {
   backupEligibleRefusal: slot.forward('backupEligibleRefusal'),
   pinLengthRule: slot.forward('pinLengthRule'),
   enforcesAttestationAtSignIn: slot.forward('enforcesAttestationAtSignIn'),
+  hintsFor: slot.forward('hintsFor'),
+  listOf: PasskeyPolicy.listOf,
   pinLengthRefusal: slot.forward('pinLengthRefusal'),
   describe: slot.forward('describe'),
   enforced: slot.forward('enforced')
