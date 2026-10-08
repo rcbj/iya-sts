@@ -1258,12 +1258,15 @@ class AdminApi {
               '`enforcePinLength` (off) asks a key for its minimum PIN ' +
               'length (CTAP 2.1 minPinLength) and holds it to ' +
               '`minPinLength` (4 to 63); `pinLengthOnlyIfSupported` (off) ' +
-              'accepts a key that does not report.',
+              'accepts a key that does not report. ' +
+              '`enforceAttestationAtSignIn` (off) holds every passkey ' +
+              'sign-in to the attestation rules in force.',
         example: { allowUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
                    enforcePinLength: false, minPinLength: 4,
-                   pinLengthOnlyIfSupported: false }
+                   pinLengthOnlyIfSupported: false,
+                   enforceAttestationAtSignIn: false }
       }
     };
     const cap = function (text) {

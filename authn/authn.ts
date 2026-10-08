@@ -4767,6 +4767,72 @@ class Authn {
     return out;
   }
 
+  // THE ATTESTATION RULES AT SIGN-IN (#530): the key's recorded attestation
+  // held to the rules in force now, where the passkey policy says so. A
+  // refusal writes a `session.refuse` row and, the first time this key is
+  // refused for this reason, a CAEP credential-change (#239's pattern: the
+  // credential changed state, by policy). Asynchronous, because today's FIDO
+  // metadata is a store lookup; never rejects.
+  private async attestationAtSignIn(username: string, key: any):
+      Promise<{ code: string; why: string } | null> {
+    const { log, passkeyPolicy, webauthnAttestation, credentials,
+      accountSignals, errorCodes } = this.deps;
+    log.debug("Entering Authn.attestationAtSignIn().");
+    if (!key) {
+      log.debug("Leaving Authn.attestationAtSignIn(). No key.");
+      return null;
+    }
+    try {
+      if (!passkeyPolicy.enforcesAttestationAtSignIn()) {
+        log.debug("Leaving Authn.attestationAtSignIn(). Not enforced.");
+        return null;
+      }
+      const verdict = await webauthnAttestation.signInVerdict(key);
+      if (verdict.ok) {
+        log.debug("Leaving Authn.attestationAtSignIn(). Allowed.");
+        return null;
+      }
+      const code = errorCodes.codeOf(verdict) || 'STS-AUTHN-0316';
+      const why = String(verdict.why || '');
+      log.info('authn: a passkey of "' + username + '" was REFUSED at sign-' +
+               'in by the attestation rules in force (' + code + '): ' + why);
+      audit.audit({
+        action: 'session.refuse', actor: String(username || ''),
+        errorCode: code, protocol: 'WebAuthn', channel: 'http', target: '',
+        summary: 'a passkey of ' + username + ' was refused at sign-in: ' +
+                 'the attestation rules in force no longer accept it',
+        detail: { credential: 'webauthn',
+                  credentialFingerprint: stsCrypto.credentialFingerprint(
+                    String(key.credentialId || '')),
+                  aaguid: credentials.Credentials.aaguidString(key.aaguid) }
+      });
+      if (code === 'STS-AUTHN-0316' &&
+          credentials.noteKeyAttestationRefused(username, key.credentialId,
+                                                code, why)) {
+        accountSignals.credentialChanged({
+          username: username,
+          credentialType: accountSignals.keyCredentialType(key),
+          fido2Aaguid: credentials.Credentials.aaguidString(key.aaguid),
+          friendlyName: String(key.label || ''),
+          changeType: 'update', initiatingEntity: 'policy', via: 'sign-in',
+          reasonAdmin: 'A passkey of ' + username + ' no longer meets this ' +
+                       'realm\'s attestation rules: ' + why,
+          reasonUser: 'One of your passkeys no longer meets this ' +
+                      'service\'s rules and cannot sign you in.' });
+      }
+      log.debug("Leaving Authn.attestationAtSignIn(). Refused.");
+      return { code: code, why: why };
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0317') + 'authn: holding a ' +
+                'passkey of "' + username + '" to the attestation rules ' +
+                'threw: ' + ((e && e.stack) || e));
+      log.debug("Leaving Authn.attestationAtSignIn(). Threw.");
+      return { code: 'STS-AUTHN-0317',
+               why: 'This passkey could not be checked against this ' +
+                    'realm\'s rules. Try again.' };
+    }
+  }
+
   // The passkey policy's refusal of a key's PIN length at sign-in (#529), or
   // null: the minimum the key REPORTED at registration, read off its row on
   // the person's entry, held to the rule in force now.
@@ -11183,6 +11249,15 @@ class Authn {
         errorCodes.codeOf(spent) || 'STS-AUTHN-0182',
         String(spent.detail || spent.reason), SAID);
     }
+    // THE ATTESTATION RULES IN FORCE (#530). The account is known by now,
+    // so the refusal may say why.
+    const attestationRefused = await this.attestationAtSignIn(owner, known);
+    if (attestationRefused) {
+      log.debug("Leaving Authn.passkeySignIn(). The attestation rules " +
+                "refused the key.");
+      return this.passkeyRefused(res, base, record, attestationRefused.code,
+        attestationRefused.why, attestationRefused.why);
+    }
     const flags = verdict.flags || {};
     const said = { request: req, application: String(record.application ||
                                                        ''),
@@ -13364,7 +13439,28 @@ class Authn {
         return this.finishWebauthn(req, res, base, body, step, verdict);
       }
       credentials.spendAssertion(toSpend).then(function (spent) {
+        // THE ATTESTATION RULES IN FORCE (#530), asked once the assertion is
+        // spent and before the session: a refusal reaches the same page as
+        // every failed check, naming why.
         if (!spent.ok) {
+          return spent;
+        }
+        const heldKey = credentials.keysOf(step.username).filter(
+          function (one) {
+            return String(one.credentialId) === String(toSpend.credentialId);
+          })[0] || null;
+        return self.attestationAtSignIn(step.username, heldKey)
+          .then(function (refused) {
+            return refused ? Object.assign({}, spent, { attestation:
+                                                         refused })
+                           : spent;
+          });
+      }).then(function (spent) {
+        if (spent.attestation) {
+          verdict = errorCodes.mark({ ok: false, checks: verdict.checks,
+                                      failed: [spent.attestation.why] },
+                                    spent.attestation.code);
+        } else if (!spent.ok) {
           // A REFUSAL LIKE EVERY OTHER CHECK THE CEREMONY FAILS, so it reaches
           // the same page with the check that failed named — "the signature
           // counter did not increase" is worth a person reading.

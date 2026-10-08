@@ -5993,6 +5993,27 @@ const CODES = [
       'minimum the key reported at registration — recorded on its row — is ' +
       'shorter, or none was recorded while pinLengthOnlyIfSupported is off.',
     spec: 'the sign-in screen, drawn again with the reason' },
+  { code: 'STS-AUTHN-0316',
+    summary: 'A passkey sign-in was refused by the attestation rules in ' +
+      'force (#530, the passkey policy\'s enforceAttestationAtSignIn): ' +
+      'the key\'s recorded attestation is not trusted where a rule demands ' +
+      'it, its AAGUID is not on webauthn.attestationAllowedAaguids, its ' +
+      'model is below the certification level or FIPS asked for, or the ' +
+      'FIDO Metadata Service now reports the model compromised. The first ' +
+      'refusal of a key for a reason marks its row and sends a CAEP ' +
+      'credential-change.',
+    spec: 'the passkey page or the sign-in screen, with the reason' },
+  { code: 'STS-AUTHN-0317',
+    summary: 'A passkey\'s attestation could not be held to the rules at ' +
+      'sign-in: the FIDO metadata lookup or the check threw (#530). The ' +
+      'sign-in is refused, since the rule is on and an unchecked key is ' +
+      'not a checked one.',
+    spec: 'the passkey page or the sign-in screen, with the reason' },
+  { code: 'STS-AUTHN-0318',
+    summary: 'The mark of a passkey the attestation rules refused at ' +
+      'sign-in could not be written to its row (#530); the refusal stands ' +
+      'and no credential-change is sent for it.',
+    spec: 'none — logged' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

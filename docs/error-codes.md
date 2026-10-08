@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4219** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4222** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 275
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 278
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 708
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1432,6 +1432,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0313` | A sign-in with a synced passkey was refused: the key's assertion set the backup-eligible flag and the realm's passkey policy takes only device-bound passkeys (backupEligibility disallow, #528). BE never changes for a credential, so this is what refuses a synced key registered before the realm said no. | the sign-in screen, drawn again with the reason |
 | `STS-AUTHN-0314` | A passkey was not registered: the realm's passkey policy enforces a minimum security-key PIN length (enforcePinLength, #529) and the key reported a shorter minimum through CTAP 2.1's minPinLength extension, or reported none while pinLengthOnlyIfSupported is off. Asked where every key is written. | the ceremony's page, drawn again with the reason |
 | `STS-AUTHN-0315` | A sign-in with a passkey was refused: the realm's passkey policy enforces a minimum security-key PIN length (#529) and the minimum the key reported at registration — recorded on its row — is shorter, or none was recorded while pinLengthOnlyIfSupported is off. | the sign-in screen, drawn again with the reason |
+| `STS-AUTHN-0316` | A passkey sign-in was refused by the attestation rules in force (#530, the passkey policy's enforceAttestationAtSignIn): the key's recorded attestation is not trusted where a rule demands it, its AAGUID is not on webauthn.attestationAllowedAaguids, its model is below the certification level or FIPS asked for, or the FIDO Metadata Service now reports the model compromised. The first refusal of a key for a reason marks its row and sends a CAEP credential-change. | the passkey page or the sign-in screen, with the reason |
+| `STS-AUTHN-0317` | A passkey's attestation could not be held to the rules at sign-in: the FIDO metadata lookup or the check threw (#530). The sign-in is refused, since the rule is on and an unchecked key is not a checked one. | the passkey page or the sign-in screen, with the reason |
+| `STS-AUTHN-0318` | The mark of a passkey the attestation rules refused at sign-in could not be written to its row (#530); the refusal stands and no credential-change is sent for it. | none — logged |
 
 ## STS-OAUTH
 

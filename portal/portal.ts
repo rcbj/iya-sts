@@ -3136,6 +3136,14 @@ class Portal {
           'passkeys, so it will not sign you in. Remove it and register a ' +
           'security key or a passkey kept on one device.</div>'
         : '') +
+      // AND ONE THE ATTESTATION RULES REFUSED AT SIGN-IN (#530), as its row
+      // was marked, while the rule is still on.
+      (one.attestationRefused && passkeyPolicy.enforcesAttestationAtSignIn()
+        ? '<div class="meta" id="passkey-attestation-refused">' +
+          self.esc(String(one.attestationRefused.why || 'This passkey no ' +
+                          'longer meets this service\'s rules.')) +
+          ' Remove it and register another.</div>'
+        : '') +
       // AND ONE WHOSE MINIMUM PIN THE REALM NO LONGER ACCEPTS (#529).
       (passkeyPolicy.pinLengthRefusal(one.minPinLength, 'sign-in')
         ? '<div class="meta" id="passkey-pin-refused">' +

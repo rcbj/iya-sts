@@ -339,6 +339,12 @@ class WebauthnAttestation {
     }
     const recorded = Object.assign({}, base, {
       verified: true, type: statement.type });
+    // THE ATTESTATION KEY IDENTIFIER (#530), kept so a sign-in can find the
+    // model in the FIDO Metadata Service again for a statement that names no
+    // AAGUID (fido-u2f), as `modelOf()` does here.
+    const keyLeaf = WebauthnAttestation.leafOf(statement);
+    recorded.attestationKeyId = statement.acki ||
+      (keyLeaf ? this.deps.pki.attestationKeyIdentifier(keyLeaf) : '');
     // STEP 23: what the FIDO Metadata Service says about the model.
     const listed = await this.modelOf(statement, base.aaguid);
     if (listed) {
@@ -411,6 +417,98 @@ class WebauthnAttestation {
              (recorded.model ? ', ' + recorded.model : '') + ').');
     log.debug("Leaving WebauthnAttestation.assessUnder(). Accepted.");
     return { ok: true, attestation: recorded };
+  }
+
+  // =========================================================================
+  // AT SIGN-IN (#530): a registered key held to the rules in force NOW.
+  //
+  // Registration is the only time a statement is in hand, so what is checked
+  // here is what was RECORDED then — the AAGUID, whether the statement was
+  // trusted, the attestation key identifier — against today's settings and
+  // today's FIDO Metadata Service: the model's compromise, its certification
+  // level and FIPS (`levelProblem()`, the registration's own rule). Three
+  // decisions, recorded on the ticket:
+  //
+  //   * A KEY WITH NO TRUSTED STATEMENT — `none`, self attestation, one the
+  //     policy did not verify, or one written before #105 — FAILS any rule
+  //     that demands trust, an AAGUID list included: an AAGUID nobody
+  //     vouched for is the authenticator's say-so.
+  //   * THE METADATA IS TODAY'S, so a model reported compromised after the
+  //     key was registered is refused, as #256 downgrades a revoked chain.
+  //   * A LOOKUP THAT THROWS REFUSES (STS-AUTHN-0317): the rule is on, and
+  //     an unchecked key is not a checked one.
+  //
+  // Never rejects.
+  // =========================================================================
+  /**
+   * Holds a registered key's recorded attestation to the attestation rules in
+   * force now, and the FIDO Metadata Service as it is now (#530).
+   *
+   * @param key - the key's row: its `aaguid` and its `attestation` record
+   * @returns `{ ok: true }`, or `{ ok: false, why }` carrying an error code
+   */
+  async signInVerdict(key: Json): Promise<Json> {
+    const { log, policy, errorCodes } = this.deps;
+    log.debug("Entering WebauthnAttestation.signInVerdict().");
+    const settings = policy.attestationSettings();
+    const rec = (key && key.attestation) || null;
+    if (settings.policy === 'off' && !settings.demandsTrust) {
+      log.debug("Leaving WebauthnAttestation.signInVerdict(). Off.");
+      return { ok: true };
+    }
+    const refuse = function (code: string, why: string): Json {
+      log.debug("Entering signInVerdict() refuse(). " + code);
+      log.debug("Leaving signInVerdict() refuse().");
+      return errorCodes.mark({ ok: false, why: why }, code);
+    };
+    try {
+      const aaguid = String((rec && rec.aaguid) ||
+        WebauthnAttestation.aaguidString(key && key.aaguid) || '');
+      const metadata = this.deps.metadata();
+      let listed = aaguid
+        ? await metadata.lookupAuthenticatorBy('aaguid', aaguid) : null;
+      if (!listed && rec && rec.attestationKeyId) {
+        listed = await metadata.lookupAuthenticatorBy('acki',
+                                                      rec.attestationKeyId);
+      }
+      const m = (listed && listed.model) || {};
+      let out: Json = { ok: true };
+      if (m.compromised) {
+        out = refuse('STS-AUTHN-0316', 'The FIDO Metadata Service now ' +
+                     'reports this passkey\'s model (' + (m.description ||
+                     aaguid || 'unnamed') + ') as ' +
+                     WebauthnAttestation.compromisedStatuses(m).join(', ') +
+                     ', so it no longer signs anybody in here.');
+      } else if (settings.demandsTrust && !(rec && rec.trusted === true)) {
+        out = refuse('STS-AUTHN-0316', 'This passkey was registered ' +
+                     (rec && rec.verified ? 'with an attestation that does ' +
+                                            'not chain to a trust anchor'
+                                          : 'without an attestation this ' +
+                                            'service verified') +
+                     ', and this realm now requires a trusted one (' +
+                     WebauthnAttestation.demandedBy(settings) + ').');
+      } else if (settings.allowedAaguids.length &&
+                 settings.allowedAaguids.indexOf(
+                   aaguid.replace(/-/g, '')) < 0) {
+        out = refuse('STS-AUTHN-0316', 'This passkey\'s model (AAGUID ' +
+                     (aaguid || 'none') + ') is no longer one this realm ' +
+                     'allows (webauthn.attestationAllowedAaguids).');
+      } else {
+        const level = WebauthnAttestation.levelProblem(listed, settings);
+        if (level) {
+          out = refuse('STS-AUTHN-0316', level);
+        }
+      }
+      log.debug("Leaving WebauthnAttestation.signInVerdict(). ok=" + out.ok);
+      return out;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0317') + 'webauthn: holding a ' +
+                'passkey\'s attestation to the rules at sign-in threw: ' +
+                ((e && e.stack) || e));
+      log.debug("Leaving WebauthnAttestation.signInVerdict(). Threw.");
+      return refuse('STS-AUTHN-0317', 'This passkey\'s attestation could ' +
+                    'not be checked against this realm\'s rules. Try again.');
+    }
   }
 
   // =========================================================================
@@ -1442,6 +1540,7 @@ export = {
     slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   assess: slot.forward('assess'),
+  signInVerdict: slot.forward('signInVerdict'),
   verifyStatement: slot.forward('verifyStatement'),
   FORMATS: FORMATS,
   sameKey: WebauthnAttestation.sameKey,
