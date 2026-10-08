@@ -42,6 +42,23 @@
 //                            `required` always (#474). It REPLACES the
 //                            setting `webauthn.residentKey`.
 //
+// #528 (2026-10-08) added a row, and the more secure default is decided on
+// the ticket:
+//
+//   backupEligibility        `allow`. `disallow` refuses a SYNCED passkey —
+//                            one whose authenticator data has BE (backup
+//                            eligible, WebAuthn Level 3 section 6.1) set — at
+//                            registration, in `credentials.addKey()`, the one
+//                            writer (STS-AUTHN-0312), and at sign-in, in
+//                            `authn.ts`'s `startSessionHere()`, the line
+//                            every door reaches (STS-AUTHN-0313). BE never
+//                            changes for a credential's life, so the sign-in
+//                            half catches a key enrolled before the realm
+//                            said no. `allow` is the default because most
+//                            passkeys people hold are synced, and refusing
+//                            them is a realm's deliberate choice of
+//                            device-bound keys (docs/authentication.md).
+//
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
 //
@@ -136,6 +153,10 @@ const DEFAULT_PROFILE = 'default';
  * The resident-key requirements WebAuthn Level 3 section 5.4.6 defines.
  */
 const RESIDENT_KEY_VALUES = ['discouraged', 'preferred', 'required'];
+/**
+ * What `backupEligibility` may be (#528).
+ */
+const BACKUP_ELIGIBILITY_VALUES = ['allow', 'disallow'];
 
 /**
  * The policy's fields: one table read as the schema, the console form, the API
@@ -164,7 +185,17 @@ const FIELDS: PolicyField[] = [
           '`required` always). `discouraged` or `preferred` spare a ' +
           'security key\'s few resident slots, at the cost of a key that ' +
           'needs the username to sign in. Replaces the setting ' +
-          'webauthn.residentKey.' }
+          'webauthn.residentKey.' },
+  { key: 'backupEligibility',
+    attribute: 'stsPasskeyBackupEligibility', type: 'enum',
+    values: BACKUP_ELIGIBILITY_VALUES.slice(), dflt: 'allow',
+    label: 'Synced passkeys (backup eligible)',
+    what: '`allow` (the default) accepts any passkey. `disallow` accepts ' +
+          'only DEVICE-BOUND ones: a passkey whose authenticator says it ' +
+          'may be backed up or synced (the BE flag, WebAuthn Level 3 ' +
+          'section 6.1) is refused when it is registered and when it signs ' +
+          'somebody in, so a synced passkey enrolled before the realm said ' +
+          'no stops working too. BE never changes for a credential.' }
 ];
 
 /**
@@ -517,6 +548,56 @@ class PasskeyPolicy {
   }
 
   /**
+   * Says whether this realm refuses a passkey that may be synced: one whose
+   * authenticator data has BE set (#528).
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns true where `backupEligibility` is `disallow`
+   */
+  refusesBackupEligible(profile?: PasskeyProfile | null): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.refusesBackupEligible().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    log.debug("Leaving PasskeyPolicy.refusesBackupEligible().");
+    return rules.backupEligibility === 'disallow';
+  }
+
+  /**
+   * The refusal of a backup-eligible passkey, or null where the realm allows
+   * it or the credential is not one (#528). One sentence, so the portal, the
+   * sign-in screen and the audit row say the same thing.
+   *
+   * @param backupEligible - the credential's BE flag; anything but `true` is
+   *   not backup eligible (a flag never read is not refused)
+   * @param at - `registration` or `sign-in`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ code, why }` or null
+   */
+  backupEligibleRefusal(backupEligible: unknown, at: string,
+                        profile?: PasskeyProfile | null):
+      { code: string; why: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.backupEligibleRefusal().");
+    if (backupEligible !== true || !this.refusesBackupEligible(profile)) {
+      log.debug("Leaving PasskeyPolicy.backupEligibleRefusal(). Allowed.");
+      return null;
+    }
+    const registering = at === 'registration';
+    const out = {
+      code: registering ? 'STS-AUTHN-0312' : 'STS-AUTHN-0313',
+      why: 'That passkey can be synced or backed up (its authenticator ' +
+           'set the backup-eligible flag), and this realm accepts only ' +
+           'device-bound passkeys (the passkey ' +
+           'policy\'s backupEligibility is disallow). ' +
+           (registering
+             ? 'Use a security key, or a passkey kept on this device only.'
+             : 'Sign in another way, and register a device-bound key.')
+    };
+    log.debug("Leaving PasskeyPolicy.backupEligibleRefusal(). " + out.code);
+    return out;
+  }
+
+  /**
    * Describes the policy in sentences, for the page and a save's answer.
    *
    * @param profile - a profile already read; read afresh when omitted
@@ -538,7 +619,11 @@ class PasskeyPolicy {
       '"Use a security key" asks residentKey ' + securityKey +
         (securityKey === 'required'
           ? ', so it makes a discoverable credential too'
-          : ', so a key enrolled through it may need the username to sign in')
+          : ', so a key enrolled through it may need the username to sign in'),
+      rules.backupEligibility === 'disallow'
+        ? 'only device-bound passkeys: a synced (backup-eligible) passkey ' +
+          'is refused at registration and at sign-in'
+        : 'synced (backup-eligible) passkeys are accepted'
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -739,6 +824,8 @@ export = {
   reset: slot.forward('reset'),
   allowsUsernameless: slot.forward('allowsUsernameless'),
   securityKeyResidentKey: slot.forward('securityKeyResidentKey'),
+  refusesBackupEligible: slot.forward('refusesBackupEligible'),
+  backupEligibleRefusal: slot.forward('backupEligibleRefusal'),
   describe: slot.forward('describe'),
   enforced: slot.forward('enforced')
 };

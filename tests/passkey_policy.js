@@ -23,7 +23,10 @@
 //   P6. the two settings it replaced are refused at start (REPLACED_SETTINGS)
 //       and are no longer settings;
 //   P7. the fourth kind on Directory → Policies: in `policy_kinds`, the
-//       page's view and its two actions.
+//       page's view and its two actions;
+//   P8. #528's backupEligibility: allowed by default, and under `disallow`
+//       a backup-eligible key refused at registration (STS-AUTHN-0312) and
+//       at sign-in (STS-AUTHN-0313).
 //
 // IN PROCESS: the policy is a library over the directory, and a realm is
 // created and removed here.
@@ -120,7 +123,8 @@ function saves(t) {
           'P2c. a second profile is refused (STS-AUTHN-0308; #535 is ' +
           'where several come)', JSON.stringify(other.errors));
   const form = passkeyPolicy.validate({ form: 'console',
-                                        securityKeyResidentKey: 'preferred' });
+                                        securityKeyResidentKey: 'preferred',
+                                        backupEligibility: 'allow' });
   t.check(!form.problems.length && form.values.allowUsernameless === false,
           'P2d. an unticked checkbox on the console\'s form is a no',
           JSON.stringify(form));
@@ -196,7 +200,8 @@ function answers(t) {
     });
   });
   const said = passkeyPolicy.describe(passkeyPolicy.read());
-  t.check(said.length === 3 && /names the person first/.test(said[0]),
+  t.check(said.length === 4 && /names the person first/.test(said[0]) &&
+          /synced \(backup-eligible\) passkeys are accepted/.test(said[3]),
           'P4c. the rules in sentences', JSON.stringify(said));
   log.debug('Leaving answers().');
 }
@@ -217,6 +222,38 @@ function door(t) {
     passkeyPolicy.reset('default');
   }
   log.debug('Leaving door().');
+}
+
+function synced(t) {
+  log.debug('Entering synced().');
+  t.check(passkeyPolicy.read().backupEligibility === 'allow' &&
+          passkeyPolicy.backupEligibleRefusal(true, 'registration') === null,
+          'P8. #528: synced (backup-eligible) passkeys are allowed by ' +
+          'default');
+  passkeyPolicy.save('default', withDefaults({
+    backupEligibility: 'disallow' }));
+  try {
+    const at = passkeyPolicy.backupEligibleRefusal(true, 'registration');
+    const later = passkeyPolicy.backupEligibleRefusal(true, 'sign-in');
+    t.check(!!at && at.code === 'STS-AUTHN-0312' &&
+            !!later && later.code === 'STS-AUTHN-0313' &&
+            /device-bound/.test(at.why) && /device-bound/.test(later.why),
+            'P8b. disallow: BE=1 is refused at registration (0312) and at ' +
+            'sign-in (0313), saying why', JSON.stringify([at, later]));
+    t.check(passkeyPolicy.backupEligibleRefusal(false, 'sign-in') === null &&
+            passkeyPolicy.backupEligibleRefusal(undefined, 'sign-in') ===
+              null,
+            'P8c. a device-bound key, and one whose BE was never read, are ' +
+            'not');
+    const bad = passkeyPolicy.save('default', withDefaults({
+      backupEligibility: 'sometimes' }));
+    t.check(!bad.ok && errorCodes.codeOf(bad) === 'STS-AUTHN-0309',
+            'P8d. a value that is not allow or disallow is refused',
+            JSON.stringify(bad.errors));
+  } finally {
+    passkeyPolicy.reset('default');
+  }
+  log.debug('Leaving synced().');
 }
 
 function retired(t) {
@@ -247,7 +284,7 @@ function kind(t) {
           'P7. the fourth kind on Directory → Policies, with its two ' +
           'actions', JSON.stringify(policyKinds.actions()));
   const view = adminViews.policiesView({});
-  t.check(!!view.passkey && view.passkey.fields.length === 2 &&
+  t.check(!!view.passkey && view.passkey.fields.length === 3 &&
           view.passkey.fields.some(function (field) {
             return field.key === 'securityKeyResidentKey' &&
                    field.type === 'enum' && field.values.length === 3;
@@ -277,6 +314,7 @@ module.exports = {
     inheritance(t);
     answers(t);
     door(t);
+    synced(t);
     retired(t);
     kind(t);
     log.debug('Leaving run().');
