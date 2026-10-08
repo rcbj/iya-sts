@@ -595,7 +595,7 @@ async function syncedPasskeys(deviceBound) {
                            signInHints: "none",
                            enterpriseSerialAttribute: "",
                            userDisplayName: "", rpNameExtras: "none",
-                           credentialLabel: "" });
+                           credentialLabel: "", aggregateDevices: true });
   assert.ok(set.status === 200 && set.body && set.body.ok !== false,
     "disallowing synced passkeys answered " + set.status + " " +
     String(set.raw).slice(0, 300));
@@ -659,7 +659,7 @@ async function test() {
                            signInHints: "none",
                            enterpriseSerialAttribute: "",
                            userDisplayName: "", rpNameExtras: "none",
-                           credentialLabel: "" });
+                           credentialLabel: "", aggregateDevices: true });
   assert.ok(set.status === 200 && set.body && set.body.ok !== false,
     "allowing usernameless sign-in in " + REALM + "'s passkey policy " +
     "answered " + set.status + " " + String(set.raw).slice(0, 300));

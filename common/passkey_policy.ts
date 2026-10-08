@@ -104,6 +104,13 @@
 // recorded on the key. It is read through a fourth directory hook,
 // `personAttributeValues()`, which never answers a secret attribute.
 //
+// #534 (2026-10-08) added `aggregateDevices`, ON — what the sign-in did
+// before: one "Use passkey" ceremony whose `allowCredentials` lists every
+// key of the step's role, the authenticator choosing. Off, a person holding
+// more than one is shown one choice per key, labelled with its name, and
+// the ceremony then names only that key. It changes the request, not what
+// is accepted: the assertion is checked against the key it names either way.
+//
 // #533 (2026-10-08) added the names a ceremony shows: `userDisplayName`
 // (empty), an ordered list of up to six directory attributes or
 // space-separated groups of them, the first with every value present
@@ -386,7 +393,14 @@ const FIELDS: PolicyField[] = [
     what: 'EMPTY BY DEFAULT: the provider\'s name, else "Passkey" or ' +
           '"Security key". Otherwise this text, with {provider} and {kind} ' +
           'filled in, at most 60 characters. The person may rename it ' +
-          'afterwards, as always.' }
+          'afterwards, as always.' },
+  { key: 'aggregateDevices', attribute: 'stsPasskeyAggregateDevices',
+    type: 'bool', dflt: true,
+    label: 'Offer a person\'s passkeys as one sign-in choice',
+    what: 'ON BY DEFAULT: one "Use passkey" step whose request lists every ' +
+          'one of the person\'s passkeys, and the browser offers whichever ' +
+          'is present. Off, a person with more than one is shown a choice ' +
+          'per passkey, by its name, and the request names only that one.' }
 ];
 
 /**
@@ -1077,6 +1091,21 @@ class PasskeyPolicy {
   }
 
   /**
+   * Says whether a person's passkeys are offered as one sign-in choice
+   * (#534).
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the `aggregateDevices` field
+   */
+  aggregatesDevices(profile?: PasskeyProfile | null): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.aggregatesDevices().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    log.debug("Leaving PasskeyPolicy.aggregatesDevices().");
+    return rules.aggregateDevices !== false;
+  }
+
+  /**
    * The attribute holding a person's security-key serials, or empty (#532).
    *
    * @param profile - a profile already read; read afresh when omitted
@@ -1274,7 +1303,10 @@ class PasskeyPolicy {
         : 'the person\'s name as the sign-in knows it') +
         (rules.rpNameExtras && rules.rpNameExtras !== 'none'
           ? ', and the service\'s name with its ' + rules.rpNameExtras
-          : '')
+          : ''),
+      rules.aggregateDevices === false
+        ? 'a person with several passkeys chooses one at sign-in'
+        : 'a person\'s passkeys are offered as one sign-in choice'
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -1509,6 +1541,7 @@ export = {
   hintsFor: slot.forward('hintsFor'),
   enterpriseSerialAttribute: slot.forward('enterpriseSerialAttribute'),
   displayNameFor: slot.forward('displayNameFor'),
+  aggregatesDevices: slot.forward('aggregatesDevices'),
   rpNameFor: slot.forward('rpNameFor'),
   credentialLabelFor: slot.forward('credentialLabelFor'),
   displaySafe: PasskeyPolicy.displaySafe,
