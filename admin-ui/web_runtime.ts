@@ -1252,6 +1252,38 @@ class ConsoleRuntime {
     this.targetFragment();
     this.wireCopyButtons();
     this.loadPageScripts();
+    this.revealActiveNav();
+  }
+
+  // THE ACTIVE TAB IS BROUGHT INTO VIEW IN THE SIDEBAR (2026-10-08). The
+  // server-drawn console marked it `autofocus` (WebShell.ACTIVE_NAV_FOCUS)
+  // and the browser scrolled to it when the page loaded. A page drawn in
+  // place by `innerHTML` replaces the nav, whose own scroll starts again at
+  // the top, and a browser honours `autofocus` once per document — so a tab
+  // far down the list was highlighted out of sight after every click.
+  // Only the nav's own scroll is moved, centring the tab where it can be;
+  // `scrollIntoView()` would move the page under it too. Where the nav does
+  // not scroll (the narrow layout), setting `scrollTop` changes nothing.
+  /**
+   * Scrolls the sidebar so the page's active tab is in its middle.
+   *
+   * @returns nothing
+   */
+  revealActiveNav(): void {
+    const doc = this.env.document;
+    if (!doc || typeof doc.querySelector !== 'function') {
+      return;
+    }
+    const nav = doc.querySelector('aside.side nav');
+    const here = nav ? nav.querySelector('.here') : null;
+    if (!nav || !here) {
+      return;
+    }
+    const navBox = nav.getBoundingClientRect();
+    const hereBox = here.getBoundingClientRect();
+    const offset = (hereBox.top - navBox.top) -
+      (nav.clientHeight - hereBox.height) / 2;
+    nav.scrollTop = Math.max(0, nav.scrollTop + offset);
   }
 
   // A SCRIPT A PAGE NAMES (`data-script`): markup drawn by `innerHTML` runs
