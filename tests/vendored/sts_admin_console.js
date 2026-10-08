@@ -4531,9 +4531,10 @@ async function theDelegationPageDefinesAndGrants(driver) {
   if (pickHref) {
     await open(driver, pickHref);
     // Two `grant-permission` forms are on this page; the resource half's is
-    // the one carrying `page`.
+    // the one carrying `resource` (it carried `page` too until 2026-10-08,
+    // when that dead field was dropped — b9f88f3e).
     ownGrant = await formIndexPostingWithField(driver, "grant-permission",
-                                               "input[name=page]");
+                                               "input[name=resource]");
   }
   check("and, once picked, grants its permission to that client",
         function () {
