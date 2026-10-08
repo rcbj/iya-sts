@@ -11353,6 +11353,21 @@ which reads the RECORDED value off the key row — decided on the ticket, so a
 raised minimum stops a key enrolled under a lower one). `pinLengthRefusal()`
 is the one sentence; `/portal/keys` shows it on such a key.
 
+**#530 ADDED `enforceAttestationAtSignIn` (2026-10-08)**, off: on, every
+passkey sign-in is held to the `webauthn.attestation*` rules in force by
+`webauthn_attestation.ts`'s `signInVerdict()`. It reads the key's RECORDED
+attestation (`trusted`, `aaguid`, and `attestationKeyId`, which registration
+now records for a statement with no AAGUID) and today's FIDO metadata, and
+reuses the registration's own `levelProblem()` and `demandedBy()`. The
+verdict is asynchronous (a metadata lookup), so it is asked in the two
+assertion doors after the assertion is spent and before the session —
+`authn.ts`'s `attestationAtSignIn()` — not at `startSessionHere()`, which is
+synchronous. A refusal writes a `session.refuse` row and, the first time per
+key and reason, marks the row (`credentials.noteKeyAttestationRefused()`) and
+sends CAEP `credential-change` by `policy`. Decided on the ticket: an
+untrusted statement fails every trust rule, an AAGUID list included, and a
+lookup that throws refuses (`STS-AUTHN-0317`).
+
 **Why the module and not an issuance-policy rule.** The ticket asked for the
 refusal "where the decision belongs", and rcbj's rule is that every
 authorization decision is policy. This is an AUTHENTICATION policy row on

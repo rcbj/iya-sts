@@ -82,6 +82,13 @@
 //                            held to the rule; the docs warn that it is then
 //                            unenforced for most keys.
 //
+// #530 (2026-10-08) added `enforceAttestationAtSignIn`, off: on, every
+// passkey sign-in holds the key's RECORDED attestation to the attestation
+// rules in force now (`webauthn_attestation.ts`'s `signInVerdict()`), so a
+// key registered before the rules were tightened stops working
+// (STS-AUTHN-0316). Decided on the ticket: a key with no trusted statement
+// fails any rule that demands trust, an AAGUID list included.
+//
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
 //
@@ -254,7 +261,19 @@ const FIELDS: PolicyField[] = [
           'length is enforced, a key that does not report it is refused. ' +
           'On, such a key is accepted and only a reported minimum is held ' +
           'to the rule — so the rule then binds only keys configured to ' +
-          'report to this relying party.' }
+          'report to this relying party.' },
+  { key: 'enforceAttestationAtSignIn',
+    attribute: 'stsPasskeyEnforceAttestationAtSignIn', type: 'bool',
+    dflt: false,
+    label: 'Hold every sign-in to the attestation rules in force',
+    what: 'OFF BY DEFAULT. The attestation rules (the webauthn.attestation* ' +
+          'settings: the policy, the AAGUID list, the certification level ' +
+          'and FIPS) are checked when a passkey is registered. On, they are ' +
+          'checked again at every sign-in against what was recorded then ' +
+          'and the FIDO Metadata Service as it is now, so a key registered ' +
+          'before a rule was tightened, or whose model was since reported ' +
+          'compromised, stops signing anybody in. A key with no trusted ' +
+          'attestation fails every rule that demands one.' }
 ];
 
 /**
@@ -669,6 +688,21 @@ class PasskeyPolicy {
   }
 
   /**
+   * Says whether every passkey sign-in is held to the attestation rules in
+   * force (#530).
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the `enforceAttestationAtSignIn` field
+   */
+  enforcesAttestationAtSignIn(profile?: PasskeyProfile | null): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.enforcesAttestationAtSignIn().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    log.debug("Leaving PasskeyPolicy.enforcesAttestationAtSignIn().");
+    return rules.enforceAttestationAtSignIn === true;
+  }
+
+  /**
    * The PIN-length rule in force (#529): whether it is enforced, the
    * minimum, and whether a key that does not report is accepted.
    *
@@ -770,7 +804,10 @@ class PasskeyPolicy {
         ? 'only device-bound passkeys: a synced (backup-eligible) passkey ' +
           'is refused at registration and at sign-in'
         : 'synced (backup-eligible) passkeys are accepted',
-      this.pinLengthSentence(rules)
+      this.pinLengthSentence(rules),
+      rules.enforceAttestationAtSignIn === true
+        ? 'every passkey sign-in is held to the attestation rules in force'
+        : 'the attestation rules are checked when a passkey is registered'
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -988,6 +1025,7 @@ export = {
   refusesBackupEligible: slot.forward('refusesBackupEligible'),
   backupEligibleRefusal: slot.forward('backupEligibleRefusal'),
   pinLengthRule: slot.forward('pinLengthRule'),
+  enforcesAttestationAtSignIn: slot.forward('enforcesAttestationAtSignIn'),
   pinLengthRefusal: slot.forward('pinLengthRefusal'),
   describe: slot.forward('describe'),
   enforced: slot.forward('enforced')

@@ -298,6 +298,7 @@ it on the console or with `POST /admin-api/policies/save-passkey-policy`;
 | `enforcePinLength` | off | Requires a minimum **security-key PIN length**, as the key reports it (below). |
 | `minPinLength` | 4 | The minimum, 4 to 63 characters, while `enforcePinLength` is on. |
 | `pinLengthOnlyIfSupported` | off | On, a key that does not report its PIN length is accepted. |
+| `enforceAttestationAtSignIn` | off | Holds every passkey sign-in to the attestation rules in force, not only registration (below). |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
 a passkey* always asks `residentKey: required`. *Use a security key* asks
@@ -362,6 +363,28 @@ can be registered at all. With it on, every other key is accepted, and the
 rule then binds only the keys that report: **it is weaker, and is meant for a
 realm moving its keys over one at a time.** The browser must also pass the
 extension on; one that does not is a key that reports nothing.
+
+**The attestation rules at sign-in** (`enforceAttestationAtSignIn`). The
+`webauthn.attestation*` settings — the attestation policy, the list of
+allowed authenticator models (`webauthn.attestationAllowedAaguids`), the
+minimum certification level and FIPS — decide which keys may be
+**registered**. A key registered before a rule was tightened would otherwise
+go on working. With `enforceAttestationAtSignIn` on, every passkey sign-in
+holds the key to the rules in force now, using what was recorded when it was
+registered (its model, and whether its attestation was verified and trusted)
+and the FIDO Metadata Service as it is now:
+
+- a key whose model is no longer on the list, or below the level or FIPS
+  certification asked for, is refused (`STS-AUTHN-0316`);
+- a key the metadata service now reports **compromised** is refused;
+- a key registered with **no trusted attestation** — `none`, self
+  attestation, or before this service verified attestations — fails every
+  rule that demands one, an AAGUID list included: its model is only what the
+  authenticator claimed.
+
+The first refusal of a key marks it, sends a Shared Signals CAEP
+`credential-change`, and `/portal/keys` tells its owner. If the metadata
+service cannot be asked, the sign-in is refused (`STS-AUTHN-0317`).
 
 The policy replaced the settings `webauthn.usernameless` and
 `webauthn.residentKey` (#527); a configuration that still names either is

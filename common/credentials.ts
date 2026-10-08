@@ -3537,6 +3537,57 @@ class Credentials {
     }
   }
 
+  // A KEY THE ATTESTATION RULES NOW REFUSE AT SIGN-IN (#530): marked on its
+  // row once, so the Shared Signals credential-change it causes is sent once
+  // rather than at every attempt, and the key lists can say why it stopped.
+  /**
+   * Marks a key as refused at sign-in by the attestation rules in force.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @param code - the refusal's error code
+   * @param why - the refusal's sentence
+   * @returns true when the mark is new, false when it was already there or
+   *   could not be written
+   */
+  noteKeyAttestationRefused(username, credentialId, code, why) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.noteKeyAttestationRefused().');
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). No store.');
+      return false;
+    }
+    const keys = this.keysOf(username);
+    const found = keys.filter(function (one) {
+      return one.credentialId === String(credentialId);
+    })[0];
+    if (!found || (found.attestationRefused &&
+                   found.attestationRefused.why === String(why || ''))) {
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' +
+                'Nothing new.');
+      return false;
+    }
+    found.attestationRefused = { code: String(code || ''),
+                                 why: String(why || '').slice(0, 500),
+                                 at: Date.now() };
+    try {
+      const written = !!directory.replaceWebauthn(
+        String(username || '').trim(), keys.map(function (one) {
+          return JSON.stringify(one);
+        }));
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' +
+                written);
+      return written;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
+                'refused attestation of a passkey of ' + username +
+                ' could not be recorded: ' + e.message);
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). Threw.');
+      return false;
+    }
+  }
+
   // Update the signature counter after a successful assertion. WebAuthn's
   // replay defence: an authenticator's counter only ever goes up, so a counter
   // that went backwards is a cloned key. `webauthn.js` performs the CHECK; this
@@ -9137,6 +9188,7 @@ export = {
   noteKeyUsed: slot.forward('noteKeyUsed'),
   androidAttestedCredentials: slot.forward('androidAttestedCredentials'),
   untrustKeyAttestation: slot.forward('untrustKeyAttestation'),
+  noteKeyAttestationRefused: slot.forward('noteKeyAttestationRefused'),
   noteKeyCloned: slot.forward('noteKeyCloned'),
   noteBootstrapPassword: slot.forward('noteBootstrapPassword'),
   mechanismsFor: slot.forward('mechanismsFor'),
