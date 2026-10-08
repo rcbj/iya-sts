@@ -2526,9 +2526,10 @@ class Portal {
       if (choice.error) {
         errorCodes.mark(res, 'STS-PORTAL-0074');
       }
-      self.send(res, choice.error ? 400 : 200, self.page('Choose your realm',
-        '<div class="card"><h1>Choose your realm</h1>' +
-        realmChooser.form(req, 'portal', choice.error) + '</div>'));
+      // A page of its own, not the portal's frame — the console's reason
+      // (`RealmChooser.page()`).
+      self.send(res, choice.error ? 400 : 200,
+                realmChooser.page(req, 'portal', choice.error));
       log.debug("Leaving Portal.requireSignIn(). The realm chooser.");
       return null;
     }
