@@ -35,11 +35,32 @@ Write each response type as one value, its words separated by spaces
 (`code id_token`). What a client has actually used is recorded separately, in
 `oauthResponseTypeObserved` and `oauthGrantTypeObserved`.
 
-**Some client metadata exists only as registration members.** That includes
-the JARM algorithms, the signing and encryption algorithms for UserInfo and
-the ID Token, and `default_acr_values` / `default_max_age`. No console or API
-attribute holds them, so a client that needs them must use dynamic
-registration.
+**How responses are signed and encrypted is an attribute too.** The JARM
+algorithms, the signing and encryption algorithms for the ID Token and
+UserInfo, and `default_acr_values` / `default_max_age` are held on the
+application entry, whether a registration wrote them or an administrator set
+them on the console or through `/admin-api`:
+
+| Registration member | Attribute |
+|---|---|
+| `id_token_signed_response_alg` | `oauthIdTokenSignedResponseAlg` |
+| `id_token_encrypted_response_alg` / `_enc` | `oauthIdTokenEncryptedResponseAlg` / `Enc` |
+| `userinfo_signed_response_alg` | `oauthUserinfoSignedResponseAlg` |
+| `userinfo_encrypted_response_alg` / `_enc` | `oauthUserinfoEncryptedResponseAlg` / `Enc` |
+| `authorization_signed_response_alg` | `oauthAuthorizationSignedResponseAlg` |
+| `authorization_encrypted_response_alg` / `_enc` | `oauthAuthorizationEncryptedResponseAlg` / `Enc` |
+| `default_acr_values` | `oauthDefaultAcrValues` (space-separated, most preferred first) |
+| `default_max_age` | `oauthDefaultMaxAge` (seconds) |
+
+The console, the API and a registration refuse the same values. An RFC 7592
+update replaces them: a member it leaves out is cleared. An encryption
+algorithm encrypts to the key in `oauthJwks` or `oauthJwksUri`. For example,
+an ES256 ID Token for a client created through the API:
+
+```bash
+api applications/set '{"application":"parmon-a",
+  "attribute":"oauthIdTokenSignedResponseAlg","value":"ES256"}'
+```
 
 **Consent is on by default.** Unless the person has already approved the
 client, the flow stops at `/oauth2/consent`. For a first-party client, grant
@@ -137,8 +158,9 @@ goes in the fragment. `code id_token` and `code id_token token` require a
 
 * **`code id_token`** works in every mode. The job `sts_oidc_core.js` runs it
   across `id_token_signed_response_alg` values `RS256`, `RS384`, `PS512`,
-  `ES512`, `EdDSA` and `ML-DSA-44`. That algorithm is a registration member,
-  so those clients are registered dynamically.
+  `ES512`, `EdDSA` and `ML-DSA-44`, registering each client dynamically, and
+  sets `oauthIdTokenSignedResponseAlg` on a client it creates through
+  `/admin-api`.
 * **`code token`** and **`code id_token token`** are refused in RFC 9700 mode
   and product mode.
 
@@ -162,7 +184,7 @@ POST /realm/<id>/oauth2/register
 | `query` | none | The default for `code` and `none`. |
 | `fragment` | none | The default for everything else. |
 | `form_post` | none | Answers with a self-submitting form (`/oauth2/autopost.js`) that also has a real submit button. Refused to a private-use (native) redirect URI. |
-| `jwt`, `query.jwt`, `fragment.jwt`, `form_post.jwt` (JARM) | optional registration members `authorization_signed_response_alg` (default `RS256`), `authorization_encrypted_response_alg` and `_enc` | Works in every mode. `query.jwt` carrying a token is refused unless the response is encrypted. `oauth2.jarmResponseLifetimeS` defaults to 600. |
+| `jwt`, `query.jwt`, `fragment.jwt`, `form_post.jwt` (JARM) | optional `oauthAuthorizationSignedResponseAlg` (registration member `authorization_signed_response_alg`, default `RS256`), `oauthAuthorizationEncryptedResponseAlg` and `Enc` | Works in every mode. `query.jwt` carrying a token is refused unless the response is encrypted. `oauth2.jarmResponseLifetimeS` defaults to 600. |
 
 Taken from `sts_form_post.js`, which sets `oauth2.openRegistration` and
 `oauth2.rfc9700` to `true` in its realm and registers:
@@ -191,8 +213,9 @@ The token must carry the `openid` scope, or the answer is 403
     "street":"1 Main St","l":"Springfield","postalCode":"12345","c":"US"}}'
   ```
   (These attributes are the ones `sts_oidc_core.js` creates.)
-* **Signed or encrypted UserInfo** is chosen by the registration members
-  `userinfo_signed_response_alg` and `userinfo_encrypted_response_alg`. The
+* **Signed or encrypted UserInfo** is chosen by `oauthUserinfoSignedResponseAlg`
+  and `oauthUserinfoEncryptedResponseAlg` (registration members
+  `userinfo_signed_response_alg` and `userinfo_encrypted_response_alg`). The
   job for this is `sts_userinfo_protected.js`.
 * **`claims=`** (OIDC Core 5.5) needs no configuration. `essential`, `value`
   and `values` are carried through but not enforced, except that an essential

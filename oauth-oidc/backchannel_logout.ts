@@ -742,9 +742,12 @@ class BackchannelLogout {
     const { log, applications, signJwtAsAsync, errorCodes,
             idTokenEncryption } = this.deps;
     log.debug("Entering BackchannelLogout.signedToken(). " + row.clientId);
+    // The client's ATTRIBUTES (#290), which a registration, the console and
+    // the management API all write, so a client none of them registered is
+    // signed and encrypted to as it says.
     let registered: Json = {};
     try {
-      registered = applications.registrationOf(row.clientId) || {};
+      registered = applications.clientConfigOf(row.clientId);
     } catch (e) {
       log.debug("Caught in BackchannelLogout.signedToken(): " +
                 ((e && e.message) || e));
