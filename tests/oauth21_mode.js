@@ -302,7 +302,9 @@ function tokenClient(t) {
   applications.seen({ identifier: sighted, kind: 'oauth2-client',
                       protocol: 'OAuth 2.0 / OIDC', counts: false,
                       fields: { oauthClientId: sighted, oauthScope: ['openid'],
-                                oauthGrantType: 'authorization_code',
+                                // What a sighting records since #289; the
+                                // declared oauthGrantType is not its to set.
+                                oauthGrantTypeObserved: 'authorization_code',
                                 appRedirectUriObserved:
                                     'https://sighted.example/cb' } });
   const sightedConfig = applications.clientConfigOf(sighted);

@@ -2270,7 +2270,7 @@ metadata and honoured little of it. rcbj's answers:
 | Asked | Chosen |
 |---|---|
 | A `jwks_uri` | FETCHED, under the outbound policy — the eighth outbound fetch in the root index |
-| `grant_types` / `response_types` | Enforced in every mode, for a registered client |
+| `grant_types` / `response_types` | Enforced in every mode, for a registered client — and since #289 for every client that declares them |
 | `initiate_login_uri` | Validated, and launched from the user portal |
 
 **`applications.oidcRegistrationProblem()` is the grammar**, asked at RFC
@@ -2287,15 +2287,23 @@ required for the redirect grants (`0184`), the two signing algorithms
 an https `initiate_login_uri` (`0188`). `withRegistrationDefaults()` applies
 section 2's defaults, which are stored and returned (RFC 7591 section 3.2.1).
 
-**ENFORCEMENT READS `appRegistrationJson` ONLY** (`registeredFlowsOf()`),
-because `oauthGrantType` and `oauthResponseType` also record what a client
-was OBSERVED doing — a sighting is not a registration, and a client created
-by hand declares nothing and is not restricted. A response type not
-registered is a redirected `unauthorized_client` (`STS-OAUTH-0597`, in
+**ENFORCEMENT READS THE DECLARED LISTS, `oauthGrantType` AND
+`oauthResponseType`** (`declaredFlowsOf()`), for every client however they
+were written — a registration, the console, `/admin-api` (#289, rcbj
+2026-10-07). Until #289 it read `appRegistrationJson` only, because those two
+attributes also recorded what a client was OBSERVED doing, so a client created
+by hand was restricted by nothing it declared. The sightings moved to
+`oauthGrantTypeObserved` and `oauthResponseTypeObserved`, as
+`appRedirectUriObserved` sits beside `oauthRedirectUri`, and a registration or
+RFC 7592 update REPLACES the two declared lists (a `multi` field otherwise
+only adds), so an update that narrows `grant_types` narrows the client. **An
+empty list restricts nothing** (rcbj's answer). A response type not declared
+is a redirected `unauthorized_client` (`STS-OAUTH-0597`, in
 `vetAuthorizationRequest()`, so PAR asks it too); a grant is 400
-`unauthorized_client` (`0598`) above the grant switch — and a client that
-registered no `refresh_token` grant is issued no refresh token (`0600`,
-recorded in `issue()`, for #34's half-a-token-set reason).
+`unauthorized_client` (`0598`) above the grant switch, and the device
+authorization endpoint asks the same of `device_code` (`0692`) — and a client
+that declares grants without `refresh_token` is issued no refresh token
+(`0600`, recorded in `issue()`, for #34's half-a-token-set reason).
 
 **`default_acr_values` and `default_max_age`** are `step_up.ts`'s
 `requirementOf(query, registered)`, each overridden by the request's own —

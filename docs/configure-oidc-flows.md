@@ -24,13 +24,16 @@ exchange and the assertion grants) are on that page too.
 
 ## Two things to know first
 
-**A client registered in the console or through `/admin-api` may use every
-response type the server advertises.** `oauthResponseType` and
-`oauthGrantType` record what the client is for, but they are not enforced. A
-client that registers itself with `POST /oauth2/register` (RFC 7591) *is*
-held to the `response_types` and `grant_types` it registered, and is refused
-anything else with `unauthorized_client`. To restrict a client, register it
-[dynamically](#dynamic-client-registration).
+**A client is held to the response types and grant types it declares.**
+`oauthResponseType` and `oauthGrantType` are the lists, whether a dynamic
+registration wrote them (`POST /oauth2/register`, RFC 7591 `response_types`
+and `grant_types`) or an administrator set them in the console or through
+`/admin-api`. A response type or grant not on a list is refused with
+`unauthorized_client`, in both modes. An empty list restricts nothing, so a
+client with neither list may use every response type the server advertises.
+Write each response type as one value, its words separated by spaces
+(`code id_token`). What a client has actually used is recorded separately, in
+`oauthResponseTypeObserved` and `oauthGrantTypeObserved`.
 
 **Some client metadata exists only as registration members.** That includes
 the JARM algorithms, the signing and encryption algorithms for UserInfo and

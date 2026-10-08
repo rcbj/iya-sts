@@ -1806,6 +1806,81 @@ async function theObservedReturnAddressesAreDecided() {
   log.debug("Leaving theObservedReturnAddressesAreDecided().");
 }
 
+// ---------------------------------------------------------------------------
+// WHAT AN ADMINISTRATOR DECLARES IS WHAT A CLIENT MAY USE (#289, 2026-10-07).
+//
+// Until #289 `oauthGrantType` and `oauthResponseType` restricted only a client
+// that registered itself at /oauth2/register; on an entry made here they were
+// a record, and a sighting added to them whatever the client used. Now both
+// are declarations the endpoints hold every client to, in every mode, and the
+// sightings go to `oauthGrantTypeObserved` / `oauthResponseTypeObserved`,
+// which no door may write. Each refusal is told apart from the one the
+// request would meet without the rule: a made-up refresh token is
+// invalid_grant to a client allowed the grant, and a `code` request with PKCE
+// and a registered redirect is answered with a sign-in, not an error.
+// ---------------------------------------------------------------------------
+async function theDeclaredFlowsAreEnforced() {
+  log.debug("Entering theDeclaredFlowsAreEnforced().");
+  log.info("=== Applications: declared grant and response types are " +
+           "enforced (#289) ===");
+  const client = "declared-flows-" + REALM;
+  await ok("/applications/create", {
+    identifier: client, name: client, protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [client], oauthClientSecret: MINT_CLIENT_SECRET,
+              oauthTokenEndpointAuthMethod: "client_secret_post",
+              oauthGrantType: ["client_credentials"],
+              oauthRedirectUri: [MINT_REDIRECT_URI],
+              oauthResponseType: ["code id_token"] }
+  }, "created a client declaring client_credentials and `code id_token`");
+  const token = function (params) {
+    return common.httpJson(base + "/realm/" + REALM + "/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(Object.assign({ client_id: client,
+        client_secret: MINT_CLIENT_SECRET }, params)).toString()
+    });
+  };
+
+  const allowed = await token({ grant_type: "client_credentials" });
+  assert.strictEqual(allowed.status, 200,
+    "the declared grant should be answered; client_credentials answered " +
+    allowed.status + " " + String(allowed.raw).slice(0, 200));
+  const undeclared = await token({ grant_type: "refresh_token",
+                                   refresh_token: "not-a-refresh-token" });
+  assert.strictEqual(undeclared.status, 400,
+    "a grant the client did not declare should be refused with 400; the " +
+    "refresh_token grant answered " + undeclared.status);
+  assert.strictEqual((undeclared.body || {}).error, "unauthorized_client",
+    "and refused as unauthorized_client (RFC 6749 section 5.2), before the " +
+    "refresh token is read — invalid_grant here means oauthGrantType " +
+    "restricted nothing. It said " + String(undeclared.raw).slice(0, 200));
+
+  const pair = registry.pkce();
+  const asked = await fetch(base + "/realm/" + REALM + "/oauth2/authorize?" +
+    new URLSearchParams({ response_type: "code", client_id: client,
+      redirect_uri: MINT_REDIRECT_URI, scope: "openid", state: "s-289",
+      code_challenge: pair.challenge,
+      code_challenge_method: pair.method }).toString(),
+    { redirect: "manual" });
+  const location = asked.headers.get("location") || "";
+  assert.ok(location.indexOf(MINT_REDIRECT_URI) === 0 &&
+            /[?&#]error=unauthorized_client/.test(location),
+    "a response type the client did not declare should be sent back to its " +
+    "redirect URI as unauthorized_client (RFC 6749 section 4.1.2.1); the " +
+    "authorization endpoint answered " + asked.status + " " +
+    location.slice(0, 200));
+
+  // The sightings are records, not declarations: no door writes them.
+  await refused("/applications/add",
+    { application: client, attribute: "oauthGrantTypeObserved",
+      value: "password" },
+    /oauthGrantTypeObserved|not editable|DERIVED/i,
+    "writing an observed grant type by hand");
+  await ok("/applications/forget", { application: client },
+           "forgot the client");
+  log.debug("Leaving theDeclaredFlowsAreEnforced().");
+}
+
 async function application(identifier) {
   log.debug("Entering application(). identifier=" + identifier);
   const reply = await get("/applications?application=" +
@@ -5528,6 +5603,7 @@ async function test() {
     await everyReadAnswersAboutThisRealm(doc);
     await theApplicationsRegistryRoundTrips();
     await theObservedReturnAddressesAreDecided();
+    await theDeclaredFlowsAreEnforced();
     await theDelegatedPermissionsRoundTrip();
     await theClaimSetDoorsRoundTrip();
     await theFederationRegisterRoundTrips();

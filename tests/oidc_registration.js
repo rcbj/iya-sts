@@ -13,8 +13,7 @@
 // What is held here:
 //
 //   1. THE LIBRARY: `applications.oidcRegistrationProblem()` for every rule
-//      (REG-0181..0188), `registeredFlowsOf()` reading the registration and
-//      not the sightings, `initiateLoginUriOf()`, and `step_up.ts`'s
+//      (REG-0181..0188), `initiateLoginUriOf()`, and `step_up.ts`'s
 //      registered defaults each overridden by the request's own.
 //   2. THE ENDPOINTS, in a child process on an ephemeral loopback port, with
 //      a SECOND listener playing the clients' key host:

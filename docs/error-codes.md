@@ -1909,10 +1909,10 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0594` | A discovery path named no issuer: not [realm/<id>][/<server>], an unknown realm, or more than one server segment. Answered with Express's 404 and no authorization server created (#119). | HTTP 404 |
 | `STS-OAUTH-0595` | An RFC 7592 update named a client_id other than the one it updates, or a client_secret other than the one this server issued (section 2.2) (#120). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0596` | A registration access token was presented for a client that no longer exists; the token was revoked and refused (RFC 7592 section 3) (#120). Logged at warn. | HTTP 401 {error: invalid_token} |
-| `STS-OAUTH-0597` | An authorization request asked for a response_type the client did not register in response_types (OpenID Connect Registration section 2) (#120). | redirect {error: unauthorized_client} |
-| `STS-OAUTH-0598` | A token request used a grant_type the client did not register in grant_types (RFC 7591 section 2) (#120). | HTTP 400 {error: unauthorized_client} |
+| `STS-OAUTH-0597` | An authorization request asked for a response_type the client did not declare in oauthResponseType — registered as response_types (OpenID Connect Registration section 2) or written by an administrator (#120, #289). | redirect {error: unauthorized_client} |
+| `STS-OAUTH-0598` | A token request used a grant_type the client did not declare in oauthGrantType — registered as grant_types (RFC 7591 section 2) or written by an administrator (#120, #289). | HTTP 400 {error: unauthorized_client} |
 | `STS-OAUTH-0599` | A client's registered jwks_uri could not be read: the outbound policy refused it, it did not answer 200, or it did not answer a JSON Web Key Set (#120). Logged at warn; the verification or encryption that needed the key is refused with its own code. | none (log only) |
-| `STS-OAUTH-0600` | A client that registered grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120). Recorded, not refused. | none (the token response omits refresh_token) |
+| `STS-OAUTH-0600` | A client that declares grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120, #289). Recorded, not refused. | none (the token response omits refresh_token) |
 | `STS-OAUTH-0601` | The OP iframe or its script was asked for while oauth2.sessionManagement is off in the realm (#121): a 404 naming the setting. | HTTP 404 |
 | `STS-OAUTH-0602` | An RP-Initiated Logout id_token_hint did not verify as an ID Token this authorization server issued to the client the request names — or a client_id it was not issued to was given beside it (section 2's MUST, #124, #115). Refused in every mode; the session is not ended. | HTTP 400 (an HTML page) |
 | `STS-OAUTH-0603` | In product mode, an RP-Initiated Logout post_logout_redirect_uri named no client that registered it (#124): not followed. Development still follows one. | none (the sign-out page says so) |
@@ -2004,7 +2004,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0689` | The device authorization grant or endpoint was used in a realm where oauth2.deviceAuthorization is off (RFC 8628, #150). | HTTP 404 {error: invalid_request} at the endpoint; {error: unsupported_grant_type} at the token endpoint |
 | `STS-OAUTH-0690` | A device authorization request was malformed (RFC 8628 section 3.1, #150). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0691` | A device authorization request's client did not authenticate as it registered to (RFC 8628 section 3.1, #150). | HTTP 401 {error: invalid_client} |
-| `STS-OAUTH-0692` | A client that did not register the device_code grant asked the device authorization endpoint for codes (#150). | HTTP 400 {error: unauthorized_client} |
+| `STS-OAUTH-0692` | A client whose declared grant types omit device_code asked the device authorization endpoint for codes (#150, #289). | HTTP 400 {error: unauthorized_client} |
 | `STS-OAUTH-0693` | The DPoP proof on a device authorization request did not verify (RFC 9449, OpenID Connect Key Binding, #150). | HTTP 400 {error: invalid_dpop_proof} |
 | `STS-OAUTH-0694` | The device authorization endpoint failed unexpectedly (#150). | HTTP 500 {error: server_error} |
 | `STS-OAUTH-0695` | A device_code grant named no device authorization of this client (RFC 8628 section 3.5, #150). | HTTP 400 {error: invalid_grant} |
