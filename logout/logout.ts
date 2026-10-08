@@ -199,6 +199,12 @@ import gnapRevocation = require('../gnap/gnap_revocation');
 // hit: it is built with `oauth2` at 9.
 import grantManagement = require('../oauth-oidc/grant_management');
 import InstanceSlot = require('../common/instance_slot');
+// THE CONSOLE'S FOLDS, for this page's prose (2026-10-08). `web_kit` is a
+// leaf that requires nothing, so this is a cache hit with no load-time effect
+// and no route — the same require `scim/web_scim.ts` and the other family
+// renderers make. One fold rule for the console and this page, rather than a
+// second copy of when a paragraph is long enough to collapse.
+import kit = require('../admin-ui/web_kit');
 
 /**
  * The path of the protocol-independent sign-out.
@@ -222,6 +228,7 @@ interface LogoutDeps {
   app: typeof app;
   log: typeof helpers.log;
   xmlEscape: typeof helpers.xmlEscape;
+  kit: typeof kit;
   baseUrlOf: typeof helpers.baseUrlOf;
   parseBody: typeof helpers.parseBody;
   nowSec: typeof helpers.nowSec;
@@ -301,6 +308,7 @@ class Logout {
       app: app,
       log: helpers.log,
       xmlEscape: helpers.xmlEscape,
+      kit: kit,
       baseUrlOf: helpers.baseUrlOf,
       parseBody: helpers.parseBody,
       nowSec: helpers.nowSec,
@@ -2982,8 +2990,7 @@ class Logout {
       'Roboto,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;' +
       'line-height:1.5;color:#111}h1{font-size:1.5rem;margin-bottom:.2rem}' +
       'h2{font-size:1.05rem;margin:1.6rem 0 .3rem}.sub{color:#555;' +
-      'font-size:.9rem}.what{color:#444;font-size:.88rem;margin:.2rem 0 ' +
-      '.6rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;' +
+      'font-size:.9rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;' +
       'padding:.6rem .8rem;margin:1rem 0}.warn{background:#fff8e1;' +
       'border-left:4px solid #f9a825;padding:.6rem .8rem;margin:1rem 0}' +
       '.err{background:#ffebee;border-left:4px solid #b00020;padding:.6rem ' +
@@ -2997,7 +3004,19 @@ class Logout {
       '.9rem;border-radius:4px;border:1px solid #999;background:#f6f6f6;' +
       'cursor:pointer}button.global{background:#b00020;border-color:#8a0018;' +
       'color:#fff;font-weight:600}.actions{margin:1.2rem 0;display:flex;' +
-      'gap:.8rem;flex-wrap:wrap;align-items:center}</style></head>' +
+      'gap:.8rem;flex-wrap:wrap;align-items:center}' +
+      // The console's fold, restyled for this page's palette: a `<details>`
+      // whose summary is the prose's opening sentence (`WebKit.note()`), so
+      // the explanation is one line until somebody asks for the rest.
+      '.note{color:#444;font-size:.88rem;margin:.2rem 0 .6rem}' +
+      'details.fold{margin:.3rem 0 .8rem}details.fold>summary{cursor:' +
+      'pointer;list-style:none;display:flex;gap:.45em;align-items:' +
+      'baseline}details.fold>summary::-webkit-details-marker{display:' +
+      'none}details.fold>summary::before{content:"\\25b8";flex:none;' +
+      'font-size:.9em}details.fold[open]>summary::before{content:' +
+      '"\\25be"}details.fold>summary:focus-visible{outline:2px solid ' +
+      '#555;outline-offset:2px}.foldbody{margin:.3rem 0 0 1.05em}' +
+      'details.note.fold>summary:hover{color:#111}</style></head>' +
       '<body>' + inner + '</body></html>' };
   }
 
@@ -3021,8 +3040,8 @@ class Logout {
     log.debug("Entering Logout.familyTable().");
     const head = '<h2>' + xmlEscape(family.label) + '</h2>' +
       '<div class="spec">' + xmlEscape(family.protocol) + ' — ' +
-      xmlEscape(family.spec) + '</div><div ' +
-      'class="what">' + xmlEscape(family.what) + '</div>';
+      xmlEscape(family.spec) + '</div>' +
+      this.deps.kit.note(xmlEscape(family.what));
     if (family.failure) {
       log.debug("Leaving Logout.familyTable().");
       return head + '<div class="err">This could not be read: ' +
@@ -3054,17 +3073,36 @@ class Logout {
       '<table><thead><tr><th>End</th><th>What</th><th>Kind</th><th>Since</th>' +
       '<th>Until</th></tr></thead><tbody>' + body + '</tbody></table>' +
       (family.notListed
-        ? '<p class="sub">' + family.notListed + ' more not listed ' +
+        ? this.deps.kit.note(family.notListed + ' more not listed ' +
           '(logout.maxRows is ' +
           '<code>' + family.held + '</code> held against a cap). A GLOBAL ' +
           'logout still ends every one of them — the cap is on what is ' +
-          'drawn, never on what a termination reaches.</p>'
+          'drawn, never on what a termination reaches.')
         : '');
   }
 
   private inventoryPage(base?, inventory?, username?, message?, error?) {
-    const { log, mode, xmlEscape } = this.deps;
+    const { log, mode, xmlEscape, kit } = this.deps;
     log.debug("Entering Logout.inventoryPage(). key=" + inventory.key);
+    const familiesHeld = inventory.families.filter((f) => {
+      return f.rows.length;
+    }).length;
+    // THE GLOBAL LOGOUT IS AT THE TOP (2026-10-08), above the inventory it
+    // ends, because it is what nearly everybody arriving here came to press
+    // and the inventory runs to a dozen tables. It is the default too — a
+    // POST that selects nothing does the same — so the page leads with what
+    // the endpoint does when asked nothing. The ticked-items form stays
+    // under the tables it reads from. Every paragraph of explanation goes
+    // through the console's fold (`kit.note()` / `kit.warn()`): one line
+    // until somebody opens it, the amber box keeping its colour closed.
+    const globalForm = '<form method="post" ' +
+      'action="' + xmlEscape(LOGOUT_PATH) + '">' +
+      '<input type="hidden" name="username" value="' + xmlEscape(username) +
+      '"><input type="hidden" name="scope" value="global"><div ' +
+      'class="actions"><button type="submit" class="global">Global logout — ' +
+      'end everything below</button><span class="sub">The default. A POST ' +
+      'to <code>/logout</code> with nothing selected does exactly ' +
+      'this.</span></div></form>';
     const inner =
       '<h1>Sign out</h1>' +
       '<p class="sub">Everything this service is still holding for <code>' +
@@ -3072,17 +3110,13 @@ class Logout {
       '</code>, across every protocol family it speaks.</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       (message ? '<div class="ok">' + xmlEscape(message) + '</div>' : '') +
-      '<div class="warn"><strong>' + inventory.total + ' live ' +
-                                                       'item(s)</strong> in ' +
-      inventory.families.filter((f) => { return f.rows.length; }).length +
-      ' famil' +
-      (inventory.families.filter((f) => {
-        return f.rows.length;
-      }).length === 1
-                  ? 'y' : 'ies') + '. Some of them cannot be ended by ' +
-      'anybody — they are listed with the reason, because a sign-out that ' +
-      'hid them would look complete when it is not.</div><form method="post" ' +
-      'action="' + xmlEscape(LOGOUT_PATH) + '">' +
+      globalForm +
+      kit.warn('<strong>' + inventory.total + ' live item(s)</strong> in ' +
+        familiesHeld + ' famil' + (familiesHeld === 1 ? 'y' : 'ies') +
+        '. Some of them cannot be ended by anybody — they are listed with ' +
+        'the reason, because a sign-out that hid them would look complete ' +
+        'when it is not.') +
+      '<form method="post" action="' + xmlEscape(LOGOUT_PATH) + '">' +
       '<input type="hidden" name="username" value="' + xmlEscape(username) +
       '">' +
       inventory.families.map((family) => {
@@ -3090,30 +3124,22 @@ class Logout {
       }).join('') +
       '<div class="actions"><button type="submit" name="scope" ' +
       'value="selected">End the ticked items</button><span ' +
-      'class="sub">Nothing ticked ends nothing.</span></div></form><form ' +
-      'method="post" ' +
-      'action="' + xmlEscape(LOGOUT_PATH) + '">' +
-      '<input type="hidden" name="username" value="' + xmlEscape(username) +
-      '"><input type="hidden" name="scope" value="global"><div ' +
-      'class="actions"><button type="submit" class="global">Global logout — ' +
-      'end everything above</button><span class="sub">The default. A POST to ' +
-      '<code>/logout</code> with nothing selected does exactly ' +
-      'this.</span></div></form>' +
+      'class="sub">Nothing ticked ends nothing.</span></div></form>' +
       // BUILT FROM THE MODE, because "this service checks no password anywhere"
       // was printed on a product-mode page for as long as that mode existed.
-      '<p class="sub">' +
-      (this.anyUserAllowed()
-        ? 'This service checks no password anywhere, so ' +
-          '<code>?username=</code> names anybody and grants nothing that was ' +
-          'not already true — signing in as them takes one request. ' +
-          '<code>logout.anyUser</code> turns that off.'
-        : (mode.opensTestControls()
-            ? '<code>logout.anyUser</code> is off, so this endpoint acts ' +
-              'only on the session you are holding.'
-            : 'This service is in product mode, so this endpoint acts only ' +
-              'on the session you are holding.')) +
-      ' The operator\'s view of the same lists, with an undo, is ' +
-      '<code>/admin/logout</code>.</p>';
+      kit.note(
+        (this.anyUserAllowed()
+          ? 'This service checks no password anywhere, so ' +
+            '<code>?username=</code> names anybody and grants nothing that ' +
+            'was not already true — signing in as them takes one request. ' +
+            '<code>logout.anyUser</code> turns that off.'
+          : (mode.opensTestControls()
+              ? '<code>logout.anyUser</code> is off, so this endpoint acts ' +
+                'only on the session you are holding.'
+              : 'This service is in product mode, so this endpoint acts ' +
+                'only on the session you are holding.')) +
+        ' The operator\'s view of the same lists, with an undo, is ' +
+        '<code>/admin/logout</code>.');
     log.debug("Leaving Logout.inventoryPage().");
     return this.page('Sign out', inner);
   }
@@ -3122,7 +3148,7 @@ class Logout {
   // and the three things only the BROWSER can do — the front-channel iframes,
   // the WS-Federation cleanup images, and the SAML LogoutRequests as links.
   private resultPage(base?, result?, inventory?) {
-    const { log, app, federationSlo, xmlEscape } = this.deps;
+    const { log, app, federationSlo, xmlEscape, kit } = this.deps;
     log.debug("Entering Logout.resultPage().");
     const listOf = (rows, cls) => {
       log.debug("Entering listOf().");
@@ -3146,10 +3172,10 @@ class Logout {
           'everything ticked had already gone.</div>') +
       (result.skipped.length
         ? '<h2>Not ended</h2>' + listOf(result.skipped, 'cannot') +
-          '<p class="sub">These are the honest half. Most of them cannot be ' +
+          kit.note('These are the honest half. Most of them cannot be ' +
           'ended by anybody: nothing consults this service when an ' +
           'assertion, a service ticket or an SVID is presented, so there is ' +
-          'no revocation to perform.</p>'
+          'no revocation to perform.')
         : '') +
       fan.html +
       // The federation partners the sessions were signed in THROUGH (#167):
@@ -3195,7 +3221,7 @@ class Logout {
    *   `app.contentSecurityPolicy()`
    */
   fanOutOf(results?) {
-    const { log, frontchannel, backchannel, xmlEscape } = this.deps;
+    const { log, frontchannel, backchannel, xmlEscape, kit } = this.deps;
     log.debug("Entering Logout.fanOutOf().");
     const all = (Array.isArray(results) ? results : [results])
       .filter(Boolean);
@@ -3244,20 +3270,21 @@ class Logout {
         ? '<h2>WS-Federation cleanup ' +
           'requests</h2><table><thead><tr><th>Realm</th><th>Cleanup ' +
           'URL</th></tr></thead><tbody>' +
-          cleanupRows + '</tbody></table><p class="sub">Each was fetched as ' +
+          cleanupRows + '</tbody></table>' +
+          kit.note('Each was fetched as ' +
           'a one-pixel image as this page loaded — front-channel logout — ' +
           'and the links are the same URLs so a failed ping can be seen ' +
-          'rather ' +
-          'than guessed at.</p>' + images
+          'rather than guessed at.') + images
         : '') +
       (logoutRequests.length
         ? '<h2>SAML 2.0 LogoutRequests</h2><table><thead><tr><th>Service ' +
           'provider</th><th>LogoutRequest</th></tr></thead><tbody>' +
-          logoutRows + '</tbody></table><p class="sub">Links rather than an ' +
+          logoutRows + '</tbody></table>' +
+          kit.note('Links rather than an ' +
           'automatic fan-out, which is /saml2/slo\'s own decision reused: a ' +
           'LogoutRequest is a signed message a service provider ANSWERS, and ' +
           'firing those into hidden frames would claim a federation-wide ' +
-          'logout this service cannot observe.</p>'
+          'logout this service cannot observe.')
         : '');
     const origins = frontchannel.frameOriginsOf(notifications);
     const policy = {};
