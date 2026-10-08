@@ -189,9 +189,13 @@ function metadataRoutes() {
                      return String(k).toLowerCase() === 'host'
                        ? 'sts.in.example' : undefined;
                    } }, res);
-    const m = /<EntityDescriptor [^>]*\bentityID="([^"]*)"/.exec(res.body);
+    const m = /<(?:md:)?EntityDescriptor [^>]*\bentityID="([^"]*)"/
+      .exec(res.body);
     log.debug("Leaving ask().");
     return { status: res.statusCode, entityId: m ? m[1] : '',
+             roles: /fed:SecurityTokenServiceType/.test(res.body) &&
+                    /<md:IDPSSODescriptor[\s>]/.test(res.body) &&
+                    /<md:AttributeAuthorityDescriptor[\s>]/.test(res.body),
              cache: String(res.headers['Cache-Control'] || ''),
              code: require('../common/error_codes').codeOf(res) || '',
              body: res.body.slice(0, 300) };
@@ -327,10 +331,13 @@ function wsfedMetadata(t, prefix) {
       const seenOnly = routes.of(UNREG_REALM);
       t.check(own.status === 200 && own.entityId === expected &&
               /no-store/.test(own.cache) && bySlug.entityId === expected &&
-              shared.status === 200 && shared.entityId === expected,
+              shared.status === 200 && shared.entityId === expected &&
+              own.roles && shared.roles,
               'U5. ' + m + ': the shared document and /wsfed/metadata/{rp}, ' +
               'by identifier and by slug, name the issuer at the request\'s ' +
-              'base (' + expected + ')', JSON.stringify([own, bySlug, shared]));
+              'base (' + expected + '), and each is the WS-Federation view of ' +
+              'the realm\'s one entity: its role beside the SAML roles (#524)',
+              JSON.stringify([own, bySlug, shared]));
       t.check(unreg.status === 404 && seenOnly.status === 404 &&
               unreg.code === 'STS-WSFED-0019' &&
               /no-store/.test(unreg.cache),

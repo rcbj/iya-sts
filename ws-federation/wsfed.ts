@@ -1857,34 +1857,56 @@ class WsFederation {
   // At AD FS's path, because that is where every relying party in this
   // ecosystem looks and the specification names no path at all.
   //
-  // It is SIGNED, and the signature goes FIRST inside EntityDescriptor — the
-  // SAML metadata schema puts ds:Signature at the head of the sequence, where
-  // an assertion puts it after the Issuer and a SAML 1.1 assertion puts it
-  // last. Three documents in this service, three positions, all
-  // schema-mandated.
-  //
-  // What is deliberately NOT in it: an IDPSSODescriptor. This document
-  // describes the WS-Federation security token service. When it was written
-  // this service had no SAML 2.0 Web SSO profile, and a role descriptor
-  // advertising one would have been a relying party's first 404; the profile
-  // now exists (`saml/saml2_sso.ts`) and publishes its own metadata, with its
-  // own SingleSignOnService endpoints, at its own path.
+  // ONE ENTITY, TWO VIEWS (#524, after #523). The entityID is the realm's
+  // one issuer — the name SAML 2.0 and SAML 1.1 publish too — and
+  // saml-metadata-2.0-os gives one entity one <EntityDescriptor>, so this
+  // profile no longer publishes a document of its own: it contributes its
+  // role, `roleDescriptor()` below, to the one `saml2_sso.ts`'s
+  // `metadataFor()` builds and signs (signature FIRST inside the
+  // EntityDescriptor, as the metadata schema requires), and serves THE
+  // WS-FEDERATION VIEW of it: that role beside the IDPSSODescriptor and
+  // AttributeAuthorityDescriptor. The SAML paths serve the same document
+  // without this role, because its `xsi:type` resolves only with the
+  // WS-Federation schema and a SAML-only consumer that validates strictly
+  // refuses it (SimpleSAMLphp's validator does) — rcbj's "two views, one
+  // entity".
   /**
-   * Builds the federation metadata (section 3.1), signed with the signature
-   * first in the EntityDescriptor.
-   *
-   * Served unsigned, and logged (STS-WSFED-0015), when it cannot be signed.
+   * The WS-Federation view of the realm's one metadata document (#524):
+   * the WS-Federation role, and the SAML roles with their endpoints
+   * unscoped, since a `wtrealm` need not be a SAML provider.
    *
    * @param base - the base URL the request reached
-   * @param application - #494: a registered relying party's identifier, for
-   * its own document naming its own entityID; none for the shared one
+   * @param application - a registered relying party's identifier, for
+   * `/wsfed/metadata/{rp}`; the document is the same either way
    * @returns the XML document
    */
   federationMetadata(base, application?) {
-    const { STS, config, documentSettings, errorCodes, genId, log, logArtifact,
-            mode, stsCrypto, xmlEscape } = this.deps;
-    log.debug("Entering WsFederation.federationMetadata().");
-    const id = genId();
+    const { log } = this.deps;
+    log.debug("Entering WsFederation.federationMetadata(). " +
+              (application ? 'rp=' + application : '(shared)'));
+    // Lazily: `saml2_sso` is built after this module (10, 10a).
+    const out = require('../saml/saml2_sso').metadataFor(base, '', true);
+    log.debug("Leaving WsFederation.federationMetadata().");
+    return out;
+  }
+
+  // THE WS-FEDERATION ROLE (section 3.1): the security token service, its
+  // token-signing keys, the token types and claim types it offers, and its
+  // two endpoints — the passive requestor endpoint here and the WS-Trust STS
+  // at `/sts`. `md:`-prefixed, because the EntityDescriptor around it
+  // declares the metadata namespace under that prefix; its own namespaces
+  // are declared on the RoleDescriptor itself, so it is whole wherever it
+  // is put.
+  /**
+   * The `fed:SecurityTokenServiceType` RoleDescriptor of the realm's one
+   * metadata document (#524).
+   *
+   * @param base - the base URL the request reached
+   * @returns the RoleDescriptor element
+   */
+  roleDescriptor(base) {
+    const { log, mode, stsCrypto, xmlEscape } = this.deps;
+    log.debug("Entering WsFederation.roleDescriptor().");
     const claim = (name, namespace, display, description) => {
       log.debug("Entering claim().");
       log.debug("Leaving claim().");
@@ -1900,10 +1922,10 @@ class WsFederation {
       // One per live generation of the XML key (#42): the token-signing
       // certificate a relying party trusts is published ahead of its use.
       return helpers.ownXmlSigningCertificates().map(function (one: any) {
-        return '<KeyDescriptor use="' + use + '"><ds:KeyInfo ' +
+        return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo ' +
           'xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data>' +
           '<ds:X509Certificate>' + stsCrypto.stripPem(one.certPem) +
-          '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></KeyDescriptor>';
+          '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
       }).join('');
     };
 
@@ -1914,12 +1936,8 @@ class WsFederation {
         xmlEscape(address) +
         '</wsa:Address></wsa:EndpointReference></fed:' + element + '>';
     };
-    const xml =
-      '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<EntityDescriptor xmlns="' + SAML_METADATA_NS + '" ID="' + id + '"' +
-        ' entityID="' +
-        xmlEscape(IssuerNames.issuer(base)) + '">' +
-        '<RoleDescriptor ' +
+    const out =
+        '<md:RoleDescriptor ' +
         'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' +
           ' xmlns:fed="' + WSFED_NS + '"' +
           ' xmlns:auth="' + WSFED_AUTH_NS + '"' +
@@ -1977,43 +1995,9 @@ class WsFederation {
           endpoint('SecurityTokenServiceEndpoint',
                    helpers.rebaseTo(base, 'ws-trust') + '/sts') +
           endpoint('PassiveRequestorEndpoint', base + PASSIVE_PATH) +
-        '</RoleDescriptor>' +
-      '</EntityDescriptor>';
-    logArtifact('WS-Federation metadata', 'before signing', xml);
-    try {
-      // FIRST, which is where a metadata EntityDescriptor's signature goes — a
-      // protocol message puts it after <Issuer> and metadata puts it before
-      // everything. Both are schema-mandated, and getting either wrong produces
-      // a document that verifies and that a strict parser rejects.
-      //
-      // The configured algorithms since 2026-09-12, which are the SAML group's
-      // because the assertions this document describes are SAML's — one answer
-      // for every signature a WS-Federation relying party verifies here.
-      const how = documentSettings.signatureOptions();
-      const signed = stsCrypto.signXml(xml, {
-        // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
-        // `STS.xmlSigner`, the one for the configured algorithm (#68).
-        privateKeyPem: STS.xmlSigner.privateKeyPem,
-        privateKey: STS.xmlSigner.privateKey,
-        certPem: STS.xmlSigner.certPem,
-        sigAlg: how.sigAlg,
-        c14nAlg: how.c14nAlg,
-        placement: stsCrypto.PLACEMENT.FIRST,
-        refUri: '#' + id,
-        what: 'WS-Federation metadata'
-      });
-      logArtifact('WS-Federation metadata', 'after signing', signed);
-      log.debug("Leaving WsFederation.federationMetadata(). Signed.");
-      return signed;
-    } catch (e) {
-      log.debug("Caught in WsFederation.federationMetadata(): " +
-                ((e && e.message) || e));
-      log.error(errorCodes.tag('STS-WSFED-0015') +
-                'the federation metadata could not be signed, serving it ' +
-                'unsigned: ' + e.message);
-      log.debug("Leaving WsFederation.federationMetadata(). Unsigned.");
-      return xml;
-    }
+        '</md:RoleDescriptor>';
+    log.debug("Leaving WsFederation.roleDescriptor().");
+    return out;
   }
 
   // ===========================================================================
@@ -2507,6 +2491,7 @@ export = {
   SAML11_TOKEN_TYPE: SAML11_TOKEN_TYPE,
   SAML2_TOKEN_TYPE: SAML2_TOKEN_TYPE,
   federationMetadata: slot.forward('federationMetadata'),
+  roleDescriptor: slot.forward('roleDescriptor'),
   verifySignInResponse: slot.forward('verifySignInResponse'),
   verifyAssertionSignature: slot.forward('verifyAssertionSignature'),
   // The cleanup requests one session is owed. Read by ../logout/logout.ts so

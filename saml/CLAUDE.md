@@ -524,6 +524,16 @@ another base), still answered empty and left unspent.
 the OAuth issuer is; unpinned, a back channel arriving under another host
 name computes another name and another SourceID.
 
+**AND WS-FEDERATION'S VIEW ADDS ITS ROLE (#524).** The same entity is
+WS-Federation's security token service, so `metadataFor(base, sp, true)` also
+asks `../ws-federation/wsfed.ts`'s `roleDescriptor(base)` (lazily) and puts
+that `fed:SecurityTokenServiceType` RoleDescriptor first among the roles; the
+WS-Federation paths serve that view. The SAML paths do NOT carry it: its
+`xsi:type` resolves only with the WS-Federation schema, and SimpleSAMLphp's
+metadata validator refused the whole document over it (the Shibboleth SP
+accepted it). rcbj chose "two views, one entity" — one entityID, one signer,
+the WS-Federation view a superset — over one document everywhere.
+
 ---
 
 ## FOURTEEN OF THESE SETTINGS ARE PER APPLICATION, AND `settingFor()` IS THE ONLY PLACE THAT IS DECIDED

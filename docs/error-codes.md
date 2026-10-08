@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4212** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4211** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -2163,7 +2163,7 @@ Raised from: saml/.
 | `STS-SAML-0011` | In product mode, a SAML 2.0 assertion configured to be encrypted could not be encrypted (no usable certificate), so none was sent. | samlp:Response with status Responder and no assertion |
 | `STS-SAML-0012` | A SAML 2.0 assertion or logout NameID could not be encrypted to the service provider's certificate (usually a non-RSA key) and went out in clear. | — |
 | `STS-SAML-0013` | A SAML 2.0 protocol message (Response, LogoutResponse or LogoutRequest) could not be signed and was sent unsigned. | — |
-| `STS-SAML-0014` | The SAML identity provider metadata (one document for SAML 2.0 and 1.1 since #523) could not be signed and was served unsigned. | — |
+| `STS-SAML-0014` | The realm's identity provider metadata (one document for SAML 2.0, SAML 1.1 and WS-Federation since #523 and #524) could not be signed and was served unsigned. | — |
 | `STS-SAML-0015` | The body posted to the SAML 2.0 Artifact Resolution Service is not XML. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
 | `STS-SAML-0016` | The SOAP body posted to the SAML 2.0 Artifact Resolution Service carries no <samlp:ArtifactResolve>. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
 | `STS-SAML-0017` | A SAML 2.0 ArtifactResolve carries no <samlp:Artifact>. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
@@ -2323,7 +2323,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0012` | The request asked for wattr1.0 (attribute service) or wpseudo1.0 (pseudonym service), neither of which is implemented. | HTTP 501 error page |
 | `STS-WSFED-0013` | The passive requestor endpoint was sent a wa value it does not understand. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0014` | The wreq parameter is not readable XML; it is ignored and the default token type is used. | — |
-| `STS-WSFED-0015` | The WS-Federation metadata document could not be signed and was served unsigned. | — |
+| `STS-WSFED-0015` *(retired)* | The WS-Federation metadata document could not be signed and was served unsigned. Retired 2026-10-08 (#524): the realm has one metadata document, and STS-SAML-0014 names its failure. | — |
 | `STS-WSFED-0016` | The mock relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. | HTTP 200 page listing the failed checks |
 | `STS-WSFED-0017` | A WS-Federation sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-WSFED-0018` | A WS-Federation request back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |

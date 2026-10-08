@@ -182,8 +182,16 @@ with `fed:TokenTypesOffered`, `fed:ClaimTypesOffered`, the
 `PassiveRequestorEndpoint` and the `SecurityTokenServiceEndpoint` — the latter
 at `/sts`, the same service answering the active profile
 ([WS-Trust](ws-trust.md)). It describes what this realm's mode
-actually emits. It carries no SAML `IDPSSODescriptor` — that is at
-`/saml2/metadata`.
+actually emits. **It describes the realm's one entity** (#524): the same
+entity is also the SAML 2.0 and SAML 1.1 identity provider, so its
+`IDPSSODescriptor` and `AttributeAuthorityDescriptor` are in it beside the
+WS-Federation role. `/saml2/metadata` and `/saml11/metadata` serve the same
+document without the WS-Federation role, because its
+`xsi:type="fed:SecurityTokenServiceType"` resolves only with the WS-Federation
+schema and a SAML-only consumer that validates metadata strictly (SimpleSAMLphp,
+for one) refuses a document it cannot resolve. One entityID, one signer, two
+consistent views; a relying party configured from any of them trusts the same
+entity.
 
 **One name, in every protocol** (#523). The metadata's `entityID` and every
 assertion's Issuer are the realm's OAuth 2.0 issuer — the string

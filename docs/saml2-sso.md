@@ -63,12 +63,16 @@ realm's OAuth 2.0 issuer** (#523), the string
 `iss`. It is not a setting; it follows the public base URL, so pin
 `global.publicBaseUrl` in a deployment.
 
-**It is one document for SAML 2.0 and SAML 1.1** (#523): one entity, one
-`<EntityDescriptor>`. Its `IDPSSODescriptor` names both protocols (and
+**It describes the realm's one entity** (#523, #524): one entity, one
+`<EntityDescriptor>`. Its `IDPSSODescriptor` names both SAML protocols (and
 Shibboleth's) with both profiles' endpoints — the SAML 2.0 artifact resolver at
-index 0, the SAML 1.1 responder at index 1 on its own SOAP binding — and its
+index 0, the SAML 1.1 responder at index 1 on its own SOAP binding — its
 `AttributeAuthorityDescriptor` both attribute services.
-`/saml11/metadata/{rp}` serves the same document.
+`/saml11/metadata/{rp}` serves the same document. The WS-Federation paths
+(`/FederationMetadata/2007-06/FederationMetadata.xml`, `/wsfed/metadata/{rp}`)
+serve it with the WS-Federation `RoleDescriptor` added and the SAML endpoints
+unscoped; it is left out here because its `xsi:type` resolves only with the
+WS-Federation schema, which a SAML-only validator does not have.
 
 **The same name signs WS-Trust's and WS-Federation's assertions** in either
 mode, for every application, registered or not, and the WS-Federation

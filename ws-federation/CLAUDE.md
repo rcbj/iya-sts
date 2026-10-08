@@ -188,11 +188,23 @@ with no override. It replaced #494's per-application name
   `saml2_sso.slugOf()`'s slug, and **a 404 in BOTH modes for anything
   unregistered** (`STS-WSFED-0019`).
 * **The mock relying party checks against that one name.**
-* **The document still holds only the WS-Federation role** (a
-  `fed:SecurityTokenServiceType` RoleDescriptor). The SAML document under the
-  same entityID is `/saml2/metadata`; a relying party that loads both meets one
-  entityID twice, which the SAML profiles avoided by merging theirs (#523,
-  `../saml/CLAUDE.md`). Open on #523.
+* **ONE ENTITY, TWO VIEWS (#524, rcbj: "Address #1", then "Two views, one
+  entity").** With one entityID, a WS-Federation document of its own was a
+  second `<EntityDescriptor>` for an entity the SAML document already
+  described. So this module publishes no document: `roleDescriptor(base)` is
+  its `fed:SecurityTokenServiceType` role, `md:`-prefixed with its own
+  namespaces on itself, and `saml2_sso.metadataFor(base, '', true)` puts it
+  first among the roles of the one document and signs it.
+  `federationMetadata()` serves that view, with the SAML endpoints unscoped (a
+  `wtrealm` need not be a SAML provider), at both WS-Federation paths.
+  **The SAML paths serve the same document WITHOUT this role**: tried in one
+  document everywhere first, SimpleSAMLphp's metadata validator refused the
+  whole document — the role's `xsi:type` resolves only with the
+  WS-Federation schema, and an abstract RoleDescriptor whose type does not
+  resolve fails validation — while the Shibboleth SP accepted it. The
+  WS-Federation view is a superset of the SAML one, under one entityID and
+  one signer. `STS-WSFED-0015` (its own signing failure) is retired into
+  `STS-SAML-0014`.
 
 ## A relying party nobody registered gets nothing, in product (#496, 2026-10-06)
 
