@@ -256,7 +256,7 @@ class RealmChooser {
     const action = this.serviceRoot(req) + surface.root;
     const listed = mode.listsRealmsBeforeSignIn();
     const control = listed
-      ? '<select id="realmchoice" name="realm">' +
+      ? '<select id="realmchoice" name="realm" autofocus>' +
         realms.list().map(function (realm) {
           return '<option value="' + Html.esc(realm.id) + '">' +
             Html.esc(realm.name) +
@@ -265,7 +265,7 @@ class RealmChooser {
         }).join('') + '</select>'
       : '<input type="text" id="realmchoice" name="realm" size="28" ' +
         'autocomplete="organization" placeholder="' +
-        Html.esc(realms.DEFAULT_ID) + '" required>';
+        Html.esc(realms.DEFAULT_ID) + '" required autofocus>';
     log.debug("Leaving RealmChooser.form(). " +
               (listed ? "A list." : "A text box."));
     return (error ? '<div class="err">' + Html.esc(error) + '</div>' : '') +
@@ -280,6 +280,76 @@ class RealmChooser {
         : '<p class="note">Your administrator can tell you the id of your ' +
           'realm. The default realm\'s id is <code>' +
           Html.esc(realms.DEFAULT_ID) + '</code>.</p>');
+  }
+
+  // THE CHOOSER AS A PAGE OF ITS OWN (2026-10-08, rcbj). Both surfaces drew
+  // the form inside their own frame — the console's sidebar, account menu
+  // and refresh, the portal's navigation — and every one of those controls
+  // led to a sign-in this page had not let the reader start, so the first
+  // thing a visitor saw was a console with nothing in it and a small form
+  // that was the only thing on it that worked. So the page is the question
+  // and nothing else: a blank, centred document holding a large control (a
+  // list in development, the realm's id in product — #32's rule, unchanged)
+  // and its button. No script and no stylesheet but its own: everything a
+  // frame would add here is a control that cannot be used yet.
+  /**
+   * Draws the chooser as a complete HTML document of its own: a heading, a
+   * note saying a realm must be chosen first, and the form, centred and large,
+   * with nothing of either surface's frame around it.
+   *
+   * @param req - the express request
+   * @param surfaceId - 'admin' or 'portal'
+   * @param error - optional sentence to show above the form
+   * @returns the HTML document
+   */
+  page(req: ChooserRequest, surfaceId: string, error?: string): string {
+    const { log } = this.deps;
+    log.debug("Entering RealmChooser.page(). surface=" + surfaceId);
+    const surface = SURFACES[surfaceId as SurfaceId] || SURFACES.admin;
+    const style =
+      ':root{--bg:#f4f4f7;--card:#fff;--ink:#1f2330;--muted:#5b6070;' +
+      '--line:#d5d5dd;--accent:#4b3fa7;--accent-ink:#fff;--err:#a3242c;' +
+      '--err-bg:#fbeaea}' +
+      '@media (prefers-color-scheme:dark){:root{--bg:#15161b;' +
+      '--card:#1f2129;--ink:#e8e9ee;--muted:#a3a7b5;--line:#3a3d4a;' +
+      '--accent:#8f84f0;--accent-ink:#15161b;--err:#ff9ca2;' +
+      '--err-bg:#3a1d20}}' +
+      '*{box-sizing:border-box}' +
+      'body{margin:0;min-height:100vh;display:flex;align-items:center;' +
+      'justify-content:center;background:var(--bg);color:var(--ink);' +
+      'font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;' +
+      'padding:16px}' +
+      '.chooser{background:var(--card);border:1px solid var(--line);' +
+      'border-radius:14px;padding:36px 40px;width:100%;max-width:34rem;' +
+      'box-shadow:0 8px 32px rgba(0,0,0,.08);text-align:center}' +
+      '.chooser h1{font-size:1.7rem;margin:0 0 .4em}' +
+      '.chooser .lead{font-size:1.1rem;margin:0 0 1.4em;color:var(--muted)}' +
+      '.chooser form p{display:flex;flex-direction:column;gap:14px;' +
+      'margin:1.2em 0}' +
+      '.chooser label{font-weight:600;font-size:1.05rem}' +
+      '.chooser select,.chooser input{font-size:1.35rem;padding:.6em .7em;' +
+      'border:2px solid var(--accent);border-radius:10px;width:100%;' +
+      'background:var(--card);color:var(--ink)}' +
+      '.chooser button{font-size:1.25rem;padding:.7em 1em;border:0;' +
+      'border-radius:10px;background:var(--accent);color:var(--accent-ink);' +
+      'cursor:pointer;width:100%}' +
+      '.chooser button:focus-visible,.chooser select:focus-visible,' +
+      '.chooser input:focus-visible{outline:3px solid var(--accent);' +
+      'outline-offset:3px}' +
+      '.chooser .note,.chooser>p{color:var(--muted);font-size:.95rem}' +
+      '.chooser .err{background:var(--err-bg);color:var(--err);' +
+      'border-radius:8px;padding:.7em 1em;margin:0 0 1em;text-align:left}';
+    const html = '<!DOCTYPE html><html lang="en"><head>' +
+      '<meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>Choose your realm</title><style>' + style + '</style></head>' +
+      '<body><main class="chooser"><h1>Choose your realm</h1>' +
+      '<p class="lead">Choose a realm to continue to ' +
+      Html.esc(surface.label) + '. Nothing else here can be used until ' +
+      'you do.</p>' + this.form(req, surfaceId, error) +
+      '</main></body></html>';
+    log.debug("Leaving RealmChooser.page().");
+    return html;
   }
 }
 
@@ -320,5 +390,6 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   decide: slot.forward('decide'),
-  form: slot.forward('form')
+  form: slot.forward('form'),
+  page: slot.forward('page')
 };

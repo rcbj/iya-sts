@@ -8816,12 +8816,13 @@ class AdminConsole {
         if (choice.error) {
           errorCodes.mark(res, 'STS-ADMIN-0790');
         }
+        // A PAGE OF ITS OWN, not the console's frame: every control the
+        // frame draws leads to a sign-in this page has not let the reader
+        // start (`RealmChooser.page()`).
         res.status(choice.error ? 400 : 200)
            .set('Cache-Control', 'no-store')
-           .type('text/html').send(self.page('Choose your realm', null,
-             '<div class="card"><h2>Choose your realm</h2>' +
-             loginRealmChooser.form(req, 'admin', choice.error) + '</div>',
-             null, null, req));
+           .type('text/html')
+           .send(loginRealmChooser.page(req, 'admin', choice.error));
         log.debug("Leaving the static console shell. The realm chooser.");
         return;
       }
