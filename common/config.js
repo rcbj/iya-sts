@@ -1563,10 +1563,12 @@ const SETTINGS = [
     path: 'gnap.maxDerivationDepth', env: 'STS_GNAP_MAX_DERIVATION_DEPTH',
     type: 'int', dflt: 2, min: 1, max: 16,
     runtime: true,
-    description: 'How many resource servers a derived token\'s actor chain ' +
-                 '(act) may name: each RFC 9767 section 4 derivation adds ' +
-                 'the deriving resource server, and a derivation past this ' +
-                 'depth is refused (request_denied) in every mode.' },
+    description: 'How many times a token may be derived: how many deriving ' +
+                 'resource servers its actor chain (act) may name, the ' +
+                 'original client at its foot not counted (#526). Each RFC ' +
+                 '9767 section 4 derivation adds the deriving resource ' +
+                 'server, and one past this depth is refused ' +
+                 '(request_denied) in every mode.' },
   { key: 'gnap.pushFinish', group: 'GNAP', label: 'Deliver push interaction ' +
                                                   'finishes',
     path: 'gnap.pushFinish', env: 'STS_GNAP_PUSH_FINISH', type: 'bool',
