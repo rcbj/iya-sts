@@ -302,6 +302,7 @@ it on the console or with `POST /admin-api/policies/save-passkey-policy`;
 | `passkeyHints` | `client-device,hybrid` | The WebAuthn hints *Create a passkey* sends, in order (below). |
 | `securityKeyHints` | `security-key` | The hints *Use a security key* sends. |
 | `signInHints` | `none` | The hints a passkey sign-in sends. |
+| `enterpriseSerialAttribute` | empty | The attribute of a person's entry holding the serials of the security keys issued to them; set, a key registers only if its enterprise attestation names one of them (below). |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
 a passkey* always asks `residentKey: required`. *Use a security key* asks
@@ -404,6 +405,39 @@ for: `client-device` implies `platform`, `security-key` and `hybrid` imply
 so a list that contradicts its request is refused when the policy is saved,
 naming the hint. If the setting changes later, a hint it now contradicts is
 not sent, and the log says so (`STS-AUTHN-0319`).
+
+**Binding security keys to the people they were issued to**
+(`enterpriseSerialAttribute`). An organisation that hands out security keys
+usually wants each key to work only for the person it was given to. With
+*enterprise attestation* (WebAuthn Level 3 section 5.4.7, CTAP 2.1 section
+7.1) a key's attestation certificate carries its serial number, and this
+service reads it from either of two places:
+
+- the certificate subject's `serialNumber` attribute, or
+- Yubico's device serial extension (`1.3.6.1.4.1.41482.13.1`), written in
+  decimal as printed on the key.
+
+A key whose certificate keeps its serial anywhere else has no serial this
+service can read, and is refused.
+
+Set `enterpriseSerialAttribute` to the attribute of a person's entry that
+lists their keys' serials (for example `serialNumber`, which may hold
+several values). Then a security key registers only if:
+
+- its attestation verifies and chains to a trusted anchor, because a serial
+  is worth only what the certificate naming it is worth; and
+- the serial it names is one of that person's values (`STS-AUTHN-0320`).
+
+A key whose certificate names no readable serial is refused
+(`STS-AUTHN-0321`). The serial is recorded on the key and shown on the
+console and on `/portal/keys`.
+
+**Enterprise attestation must be switched on outside this service.** Set
+`webauthn.attestation` to `enterprise`, and arrange with the key's vendor or
+the platform (a managed browser policy, or the vendor's RP ID list) for
+enterprise attestation to be released to this service's RP ID. Without that,
+the browser quietly sends ordinary attestation, which carries no serial, and
+every registration is refused.
 
 The policy replaced the settings `webauthn.usernameless` and
 `webauthn.residentKey` (#527); a configuration that still names either is

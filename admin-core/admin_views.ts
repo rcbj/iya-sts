@@ -12232,6 +12232,10 @@ class AdminViews {
                                                            : [],
                  discoverable: typeof one.discoverable === 'boolean'
                    ? one.discoverable : null,
+                 // THE DEVICE SERIAL A TRUSTED ENTERPRISE ATTESTATION NAMED
+                 // (#532), or null.
+                 deviceSerial: (one.attestation &&
+                                one.attestation.deviceSerial) || null,
                  // WHETHER IT SIGNS IN WITH NO USERNAME (#474), and why not.
                  withoutUsername: credentials.withoutUsername(one) };
       }),

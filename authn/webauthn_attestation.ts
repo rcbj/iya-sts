@@ -345,6 +345,15 @@ class WebauthnAttestation {
     const keyLeaf = WebauthnAttestation.leafOf(statement);
     recorded.attestationKeyId = statement.acki ||
       (keyLeaf ? this.deps.pki.attestationKeyIdentifier(keyLeaf) : '');
+    // THE DEVICE SERIAL AN ENTERPRISE ATTESTATION NAMES (#532), read off the
+    // attestation certificate and recorded on the key; the passkey policy
+    // binds it to the person in `credentials.addKey()`.
+    const serial = keyLeaf ? this.deps.pki.attestationDeviceSerial(keyLeaf)
+                           : null;
+    if (serial) {
+      recorded.deviceSerial = serial.serial;
+      recorded.deviceSerialSource = serial.source;
+    }
     // STEP 23: what the FIDO Metadata Service says about the model.
     const listed = await this.modelOf(statement, base.aaguid);
     if (listed) {
@@ -1410,6 +1419,10 @@ class WebauthnAttestation {
     }
     if (settings.requireFips) {
       why.push('webauthn.attestationRequireFips is on');
+    }
+    if (settings.enterpriseSerialAttribute) {
+      why.push('the passkey policy binds security-key serials (' +
+               settings.enterpriseSerialAttribute + ')');
     }
     log.debug("Leaving WebauthnAttestation.demandedBy().");
     return why.join('; ');

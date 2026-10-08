@@ -3155,6 +3155,11 @@ class Portal {
       '<tr><th>Used</th><td>' + self.esc(one.role === 'primary'
         ? 'instead of a password (primary)'
         : 'as a second step after your password (mfa)') + '</td></tr>' +
+      // The device serial an enterprise attestation named (#532).
+      (one.attestation && one.attestation.deviceSerial
+        ? '<tr><th>Serial</th><td>' +
+          self.esc(String(one.attestation.deviceSerial)) + '</td></tr>'
+        : '') +
       '<tr><th>Kind</th><td>' + self.esc(credentials.keyKind(one).text) +
       '</td></tr>' +
       '<tr><th>Backup</th><td>' + self.esc(backup) + '</td></tr>' +

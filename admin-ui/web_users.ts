@@ -1886,6 +1886,10 @@ class UsersPage {
       return '<tr><td>' + kit.esc(one.name || one.label || 'Passkey') +
         (one.provider && one.provider !== one.name
           ? '<div class="note">' + kit.esc(one.provider) + '</div>' : '') +
+        // The device serial an enterprise attestation named (#532).
+        (one.deviceSerial
+          ? '<div class="note">Serial ' + kit.esc(one.deviceSerial) +
+            '</div>' : '') +
         (state.write
           ? '<details><summary>Rename</summary>' +
             '<form method="post" action="/admin/users">' +

@@ -93,6 +93,17 @@
 // refused for one that does, with the reason, and `hintsFor()` drops one a
 // later change of `webauthn.authenticatorAttachment` made contradictory.
 //
+// #532 (2026-10-08) added `enterpriseSerialAttribute`, empty: the directory
+// attribute on a person's entry holding the serial numbers of the security
+// keys issued to them. Set, a registration must carry an attestation this
+// service TRUSTS (it demands trust, as an AAGUID list does) whose
+// certificate names a device serial (`pki.attestationDeviceSerial()`: the
+// subject's serialNumber, or Yubico's serial extension), and that serial
+// must be one of the person's values (STS-AUTHN-0320); a certificate with no
+// serial this service can read is refused (STS-AUTHN-0321). The serial is
+// recorded on the key. It is read through a fourth directory hook,
+// `personAttributeValues()`, which never answers a secret attribute.
+//
 // #530 (2026-10-08) added `enforceAttestationAtSignIn`, off: on, every
 // passkey sign-in holds the key's RECORDED attestation to the attestation
 // rules in force now (`webauthn_attestation.ts`'s `signInVerdict()`), so a
@@ -139,7 +150,7 @@ const { log } = helpers;
 interface PolicyField {
   key: string;
   attribute: string;
-  type: 'bool' | 'enum' | 'int' | 'list';
+  type: 'bool' | 'enum' | 'int' | 'list' | 'attribute';
   dflt: boolean | string | number;
   values?: string[];
   min?: number;
@@ -155,6 +166,7 @@ interface DirectoryHooks {
   writePasskeyPolicy?(name: string,
                       attributes: Record<string, unknown>): unknown;
   deletePasskeyPolicy?(name: string): unknown;
+  personAttributeValues?(username: string, attribute: string): string[];
   [hook: string]: unknown;
 }
 
@@ -318,7 +330,20 @@ const FIELDS: PolicyField[] = [
     label: 'Hints a passkey sign-in sends',
     what: 'The hints a sign-in ceremony sends — the passkey step, the ' +
           'sign-in with no username and its autofill — in order, or none ' +
-          '(the default: the browser offers every way it knows).' }
+          '(the default: the browser offers every way it knows).' },
+  { key: 'enterpriseSerialAttribute',
+    attribute: 'stsPasskeyEnterpriseSerialAttribute', type: 'attribute',
+    dflt: '',
+    label: 'Directory attribute holding a person\'s security-key serials',
+    what: 'EMPTY BY DEFAULT: no serial is checked. Set to an attribute of ' +
+          'a person\'s entry (for example `serialNumber`, which may hold ' +
+          'several values), a security key registers only with a TRUSTED ' +
+          'enterprise attestation whose certificate names a device serial ' +
+          'that is one of that person\'s values. Needs ' +
+          'webauthn.attestation set to enterprise, and the vendor or ' +
+          'platform configured to release enterprise attestation to this ' +
+          'RP ID; without that the browser sends ordinary attestation and ' +
+          'every registration is refused.' }
 ];
 
 /**
@@ -479,6 +504,18 @@ class PasskeyPolicy {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.parseField().");
     const text = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (field.type === 'attribute') {
+      // A DIRECTORY ATTRIBUTE NAME (#532), RFC 4512 section 1.4's descr, or
+      // empty for none.
+      if (text && !/^[A-Za-z][A-Za-z0-9-]{0,63}$/.test(text)) {
+        log.debug("Leaving PasskeyPolicy.parseField(). Not a name.");
+        return { problem: field.label + ' must be an attribute name — a ' +
+                          'letter, then letters, digits and hyphens — or ' +
+                          'empty; "' + text.slice(0, 60) + '" is not.' };
+      }
+      log.debug("Leaving PasskeyPolicy.parseField().");
+      return { value: text };
+    }
     if (field.type === 'list') {
       // AN ORDERED LIST OF THE ROW'S VALUES (#531), commas or spaces between
       // them, each once; empty or `none` is the empty list, written `none`
@@ -852,6 +889,69 @@ class PasskeyPolicy {
   }
 
   /**
+   * The attribute holding a person's security-key serials, or empty (#532).
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the attribute name, or ''
+   */
+  enterpriseSerialAttribute(profile?: PasskeyProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.enterpriseSerialAttribute().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    log.debug("Leaving PasskeyPolicy.enterpriseSerialAttribute().");
+    return String(rules.enterpriseSerialAttribute || '');
+  }
+
+  /**
+   * The refusal of a registration's device serial, or null (#532): none is
+   * bound, or the serial is one of the person's.
+   *
+   * @param username - the person registering the key
+   * @param serial - the serial the trusted attestation certificate named,
+   *   or nothing
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ code, why }` or null
+   */
+  enterpriseSerialRefusal(username: string, serial: unknown,
+                          profile?: PasskeyProfile | null):
+      { code: string; why: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.enterpriseSerialRefusal().");
+    const attribute = this.enterpriseSerialAttribute(profile);
+    if (!attribute) {
+      log.debug("Leaving PasskeyPolicy.enterpriseSerialRefusal(). Not bound.");
+      return null;
+    }
+    const given = String(serial === undefined || serial === null ? ''
+                                                                 : serial)
+      .trim();
+    if (!given) {
+      log.debug("Leaving PasskeyPolicy.enterpriseSerialRefusal(). None.");
+      return { code: 'STS-AUTHN-0321',
+               why: 'That security key\'s attestation names no device ' +
+                    'serial this service can read, and this realm binds ' +
+                    'security keys to the serials issued to each person ' +
+                    '(the passkey policy\'s enterpriseSerialAttribute). ' +
+                    'Use a key from your organisation, registered where ' +
+                    'enterprise attestation is enabled.' };
+    }
+    const hook = this.directory && this.directory.personAttributeValues;
+    const held = typeof hook === 'function'
+      ? (hook.call(this.directory, username, attribute) || []) : [];
+    const mine = held.some(function (one) {
+      return String(one).trim().toLowerCase() === given.toLowerCase();
+    });
+    log.debug("Leaving PasskeyPolicy.enterpriseSerialRefusal(). " +
+              (mine ? 'Bound.' : 'Not this person\'s.'));
+    return mine ? null : {
+      code: 'STS-AUTHN-0320',
+      why: 'That security key (serial ' + given.slice(0, 64) + ') is not ' +
+           'one issued to you: its serial is not on your directory entry ' +
+           '(' + attribute + '). Use the key your organisation issued you.'
+    };
+  }
+
+  /**
    * Says whether every passkey sign-in is held to the attestation rules in
    * force (#530).
    *
@@ -975,7 +1075,12 @@ class PasskeyPolicy {
       '"Create a passkey" hints ' + this.hintSentence(rules.passkeyHints) +
         '; "Use a security key" ' +
         this.hintSentence(rules.securityKeyHints) + '; a sign-in ' +
-        this.hintSentence(rules.signInHints)
+        this.hintSentence(rules.signInHints),
+      rules.enterpriseSerialAttribute
+        ? 'a security key registers only with a trusted enterprise ' +
+          'attestation naming a serial in the person\'s ' +
+          rules.enterpriseSerialAttribute
+        : 'no security-key serial is checked'
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -1208,6 +1313,8 @@ export = {
   pinLengthRule: slot.forward('pinLengthRule'),
   enforcesAttestationAtSignIn: slot.forward('enforcesAttestationAtSignIn'),
   hintsFor: slot.forward('hintsFor'),
+  enterpriseSerialAttribute: slot.forward('enterpriseSerialAttribute'),
+  enterpriseSerialRefusal: slot.forward('enterpriseSerialRefusal'),
   listOf: PasskeyPolicy.listOf,
   pinLengthRefusal: slot.forward('pinLengthRefusal'),
   describe: slot.forward('describe'),

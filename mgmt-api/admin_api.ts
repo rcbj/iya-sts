@@ -1262,7 +1262,10 @@ class AdminApi {
               '`enforceAttestationAtSignIn` (off) holds every passkey ' +
               'sign-in to the attestation rules in force. ' +
               '`passkeyHints`, `securityKeyHints` and `signInHints` are ' +
-              'the WebAuthn hints each ceremony sends, in order, or `none`.',
+              'the WebAuthn hints each ceremony sends, in order, or `none`. ' +
+              '`enterpriseSerialAttribute` (empty) names the attribute of ' +
+              'a person\'s entry holding their security-key serials, which ' +
+              'a registration\'s trusted enterprise attestation must name.',
         example: { allowUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
@@ -1270,7 +1273,8 @@ class AdminApi {
                    pinLengthOnlyIfSupported: false,
                    enforceAttestationAtSignIn: false,
                    passkeyHints: 'client-device,hybrid',
-                   securityKeyHints: 'security-key', signInHints: 'none' }
+                   securityKeyHints: 'security-key', signInHints: 'none',
+                   enterpriseSerialAttribute: '' }
       }
     };
     const cap = function (text) {
@@ -1302,6 +1306,10 @@ class AdminApi {
           : field.type === 'enum'
             ? { type: 'string', enum: field.values,
                 description: field.what + ' Default `' + field.dflt + '`.' }
+          : field.type === 'attribute'
+            ? { type: 'string',
+                description: field.what + ' A directory attribute name, or ' +
+                             'empty for none. Default empty.' }
           : field.type === 'list'
             ? { type: 'string',
                 description: field.what + ' An ordered, comma-separated ' +

@@ -6022,6 +6022,18 @@ const CODES = [
       'hybrid cross-platform. The contradicting hints are not sent; save ' +
       'the policy again to fix it.',
     spec: 'none — logged; the ceremony is sent without them' },
+  { code: 'STS-AUTHN-0320',
+    summary: 'A security key was not registered: the realm binds keys to ' +
+      'the serials issued to each person (the passkey policy\'s ' +
+      'enterpriseSerialAttribute, #532), and the serial its trusted ' +
+      'enterprise attestation names is not among the person\'s values.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0321',
+    summary: 'A security key was not registered: the realm binds keys to ' +
+      'serials (#532), and the key\'s attestation names no device serial ' +
+      'this service can read — no subject serialNumber and no Yubico ' +
+      'serial extension, or no trusted enterprise attestation at all.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

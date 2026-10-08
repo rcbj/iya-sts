@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4223** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4225** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 279
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 281
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 708
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1436,6 +1436,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0317` | A passkey's attestation could not be held to the rules at sign-in: the FIDO metadata lookup or the check threw (#530). The sign-in is refused, since the rule is on and an unchecked key is not a checked one. | the passkey page or the sign-in screen, with the reason |
 | `STS-AUTHN-0318` | The mark of a passkey the attestation rules refused at sign-in could not be written to its row (#530); the refusal stands and no credential-change is sent for it. | none — logged |
 | `STS-AUTHN-0319` | A passkey-policy hint list contradicts webauthn.authenticatorAttachment, which changed after the policy was saved (#531): client-device implies platform, security-key and hybrid cross-platform. The contradicting hints are not sent; save the policy again to fix it. | none — logged; the ceremony is sent without them |
+| `STS-AUTHN-0320` | A security key was not registered: the realm binds keys to the serials issued to each person (the passkey policy's enterpriseSerialAttribute, #532), and the serial its trusted enterprise attestation names is not among the person's values. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0321` | A security key was not registered: the realm binds keys to serials (#532), and the key's attestation names no device serial this service can read — no subject serialNumber and no Yubico serial extension, or no trusted enterprise attestation at all. | the ceremony's page, drawn again with the reason |
 
 ## STS-OAUTH
 

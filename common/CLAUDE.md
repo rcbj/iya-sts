@@ -11381,6 +11381,19 @@ refuses a hint that contradicts the attachment its request sends (it reads
 (`STS-AUTHN-0319`). The console draws a `list` row as a text field and the
 API takes it as a string.
 
+**#532 ADDED `enterpriseSerialAttribute` (2026-10-08)**, the policy's first
+`attribute` row (an RFC 4512 descr, or empty). `pki.js`'s
+`attestationDeviceSerial()` reads the serial — the subject's serialNumber,
+then Yubico's extension `1.3.6.1.4.1.41482.13.1` (a DER INTEGER, in decimal)
+— and `webauthn_attestation.ts` records it on a VERIFIED statement as
+`deviceSerial` and `deviceSerialSource`. Set, the row makes
+`attestationSettings().demandsTrust` true, so an untrusted statement never
+reaches the binding, and `addKey()` refuses a serial that is not one of the
+person's values (`STS-AUTHN-0320`) or a key with none (`STS-AUTHN-0321`). The
+values come through a fourth directory hook on the policy's slot,
+`personAttributeValues()`, filled by `ldap_server.js` and never answering a
+secret attribute. The serial is on the console's and the portal's key rows.
+
 **Why the module and not an issuance-policy rule.** The ticket asked for the
 refusal "where the decision belongs", and rcbj's rule is that every
 authorization decision is policy. This is an AUTHENTICATION policy row on

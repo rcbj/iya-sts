@@ -457,6 +457,11 @@ class PoliciesPage {
             (String(field.value) === String(value) ? ' selected' : '') +
             '>' + kit.esc(value) + '</option>';
         }).join('') + '</select>';
+    } else if (field.type === 'attribute') {
+      // A DIRECTORY ATTRIBUTE NAME, or empty (#532).
+      control = '<input type="text" id="' + kit.esc(id) + '" name="' +
+        kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
+        hint + '> <span class="sub">an attribute name, or empty</span>';
     } else if (field.type === 'list') {
       // AN ORDERED LIST (#531): typed, comma-separated, or `none`. A list of
       // checkboxes could not say the order, which is the point of one.

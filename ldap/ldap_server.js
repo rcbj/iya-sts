@@ -8347,7 +8347,21 @@ if (typeof passkeyPolicy.setDirectory === 'function') {
   passkeyPolicy.setDirectory({
     allPasskeyPolicies: allPasskeyPolicies,
     writePasskeyPolicy: writePasskeyPolicy,
-    deletePasskeyPolicy: deletePasskeyPolicy
+    deletePasskeyPolicy: deletePasskeyPolicy,
+    // THE VALUES OF ONE ATTRIBUTE OF A PERSON'S ENTRY (#532): the serials of
+    // the security keys issued to them, which the passkey policy binds a
+    // registration to. Never a secret attribute, whatever is asked.
+    personAttributeValues: function (key, attribute) {
+      log.debug("Entering personAttributeValues().");
+      const name = String(attribute || '').toLowerCase();
+      const secret = SECRET_ATTRIBUTES.some(function (one) {
+        return String(one).toLowerCase() === name;
+      });
+      const stored = secret || !name ? null
+        : locateEntry(String(key || '')).stored;
+      log.debug("Leaving personAttributeValues().");
+      return stored ? (stored.attributes[name] || []).map(String) : [];
+    }
   });
 } else {
   log.warn('ldap: common/passkey_policy.ts offers no setDirectory(), so ' +
