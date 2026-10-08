@@ -17,12 +17,13 @@
 // credential does.
 //
 // **ALL OF IT IN A THROWAWAY REALM OF ITS OWN**, because the suite runs jobs
-// side by side (the main, bulk and conformance lanes): `webauthn.usernameless`
+// side by side (the main, bulk and conformance lanes): the passkey policy's
+// `allowUsernameless` (#527; the setting `webauthn.usernameless` until then)
 // changes what `/authn/login` draws, and turned on in the DEFAULT realm it
-// would be on for every job loading that screen meanwhile. A realm's setting
-// is its own. The realm is left behind afterwards, as every job's is.
+// would be on for every job loading that screen meanwhile. A realm's own
+// policy is its own. The realm is left behind afterwards, as every job's is.
 //
-// The setting is off at first (G), then on for the rest:
+// It is off at first (G), then on for the rest:
 //
 //   A. the page created the credential under a minted 64-byte handle, never
 //      the username's bytes, and the person's key list says it signs in with
@@ -503,7 +504,8 @@ async function signingInWithNoUsername(authenticator) {
 // ---------------------------------------------------------------------------
 async function offByDefault(authenticator) {
   log.debug("Entering offByDefault().");
-  log.info("=== webauthn.usernameless off, its default ===");
+  log.info("=== the passkey policy's allowUsernameless off, its default " +
+           "===");
   const s = await theSignInScreen();
   const r = await withoutAUsername(s, authenticator.assert(
     attr(s.screen.text, "challenge") || "none"));
@@ -512,7 +514,7 @@ async function offByDefault(authenticator) {
     assert.ok(!/id="wa-passkey"/.test(s.screen.text),
       "the passkey button is drawn with the setting off.");
     assert.strictEqual(r.status, 200, "it answered " + r.status);
-    assert.ok(/webauthn\.usernameless/.test(r.text),
+    assert.ok(/allowUsernameless/.test(r.text),
       String(r.text).slice(0, 300));
   });
   log.debug("Leaving offByDefault().");
@@ -531,11 +533,13 @@ async function test() {
   await registerThePasskey(authenticator);
   // OFF FIRST, which is the default; then on, in this realm alone.
   await offByDefault(authenticator);
-  const set = await call("POST", "/config/set-many",
-                         { "webauthn.usernameless": true });
+  // #527: the realm's own passkey policy, saved whole.
+  const set = await call("POST", "/policies/save-passkey-policy",
+                         { allowUsernameless: true,
+                           securityKeyResidentKey: "required" });
   assert.ok(set.status === 200 && set.body && set.body.ok !== false,
-    "turning webauthn.usernameless on in " + REALM + " answered " +
-    set.status + " " + String(set.raw).slice(0, 300));
+    "allowing usernameless sign-in in " + REALM + "'s passkey policy " +
+    "answered " + set.status + " " + String(set.raw).slice(0, 300));
   await signingInWithNoUsername(authenticator);
   assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
             "stopped being called.");

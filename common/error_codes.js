@@ -5906,7 +5906,8 @@ const CODES = [
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0301',
     summary: 'A passkey sign-in with no username was asked for where it is ' +
-      'not offered: webauthn.usernameless, webauthn.primaryAllowed or ' +
+      'not offered: the passkey policy\'s allowUsernameless (#527; ' +
+      'webauthn.usernameless until then), webauthn.primaryAllowed or ' +
       'webauthn.enabled is off, the authentication policy does not accept ' +
       'a passkey as a first factor, the application does not allow one, or ' +
       'the sign-in is linking an account (#474).',
@@ -5945,6 +5946,24 @@ const CODES = [
       'factors the application allows (appMfaMechanism, #475) leave the ' +
       'person none that answers it. A step-up never enrols one.',
     spec: 'the sign-in screen, drawn again' },
+  { code: 'STS-AUTHN-0308',
+    summary: 'A passkey policy profile other than `default` was named; there ' +
+      'is one profile per realm, and nothing assigns a second yet (#527, ' +
+      '#535).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-AUTHN-0309',
+    summary: 'A passkey policy save was refused: a field was missing, not ' +
+      'a yes-or-no value, or not one of discouraged, preferred, required ' +
+      '(#527).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-AUTHN-0310',
+    summary: 'There is no embedded directory in this process, so a passkey ' +
+      'policy could not be saved (#527).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-AUTHN-0311',
+    summary: 'The directory would not store the passkey policy profile: it ' +
+      'holds its maximum number of entries (#527).',
+    spec: 'HTTP 400 (management API)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

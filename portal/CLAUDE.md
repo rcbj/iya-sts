@@ -1482,8 +1482,8 @@ lesson is kept by sending *Create a passkey* with NO attachment, only hints
 (see *The passkey page*, above). The paragraph is kept for why.
 
 **AND `/portal/keys` ASKS WHERE THE KEY LIVES (2026-09-26).** The page asked for
-"a security key" and let the browser choose, and with `webauthn.residentKey` at
-`discouraged` Chrome and Edge offered a USB key or a phone and never the
+"a security key" and let the browser choose, and with `webauthn.residentKey` (the
+passkey policy's since #527) at `discouraged` Chrome and Edge offered a USB key or a phone and never the
 device's own authenticator — so nothing a person enrolled could be linked. The
 form now offers *Built into this device* (a platform authenticator and a
 discoverable credential, `preferred` unless the setting says `required`) and *A

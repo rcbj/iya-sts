@@ -377,6 +377,9 @@ const authnPolicy = require('../common/authn_policy');
 // requires move no route and close no cycle.
 const serviceAccountPolicy = require('../common/service_account_policy');
 const serviceAccounts = require('../common/service_accounts');
+// THE PASSKEY POLICY REGISTER (#527, 2026-10-08), `ou=passkeyPolicies`, for
+// the three policies' reason exactly: a LEAF whose store this directory is.
+const passkeyPolicy = require('../common/passkey_policy');
 const mode = require('../common/mode');
 // The attributes no outside source may write (#94), asked at the federated
 // write. A leaf.
@@ -908,6 +911,14 @@ function serviceAccountPoliciesDn() {
   log.debug("Entering serviceAccountPoliciesDn().");
   log.debug("Leaving serviceAccountPoliciesDn().");
   return 'ou=serviceAccountPolicies,' + baseDn();
+}
+
+// ou=passkeyPolicies is the PASSKEY POLICY register (#527), a fourth
+// container for the same reason. `common/passkey_policy.ts` owns the schema.
+function passkeyPoliciesDn() {
+  log.debug("Entering passkeyPoliciesDn().");
+  log.debug("Leaving passkeyPoliciesDn().");
+  return 'ou=passkeyPolicies,' + baseDn();
 }
 
 // The fourth and fifth, and they are `spiffe_registry.js`'s store the way
@@ -2705,6 +2716,10 @@ serviceAccountPolicy.SCHEMA.attributes.forEach(function (row) {
 serviceAccounts.SCHEMA.personAttributes.forEach(function (row) {
   learnName(row.name, 'the service-account schema');
 });
+// #527: the passkey policy's attributes.
+passkeyPolicy.SCHEMA.attributes.forEach(function (row) {
+  learnName(row.name, 'the passkey policy schema');
+});
 xacmlStore.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML policy schema');
 });
@@ -3650,6 +3665,18 @@ function seed() {
       'the built-in defaults apply where neither exists. ' +
       'common/service_account_policy.ts holds the schema; GET ' +
       '/admin/policies publishes it.'
+  }, { origin: 'seed' });
+  // And the passkey policy's (#527), for the same reason.
+  putEntry(passkeyPoliciesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'passkeyPolicies',
+    description: 'PASSKEY POLICY profiles: how passkeys behave in this ' +
+      'realm — whether a sign-in may name no username, and what a ' +
+      'security key is asked to store. The profile is cn=default; while it ' +
+      'is absent a realm other than the default one follows the DEFAULT ' +
+      'REALM\'s, and the built-in defaults apply where neither exists. ' +
+      'common/passkey_policy.ts holds the schema; GET /admin/policies ' +
+      'publishes it.'
   }, { origin: 'seed' });
   putEntry(pepsDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -8313,6 +8340,19 @@ if (typeof serviceAccountPolicy.setDirectory === 'function') {
   log.warn('ldap: common/service_account_policy.ts offers no setDirectory(), ' +
            'so ou=serviceAccountPolicies is unreachable and the built-in ' +
            'service-account policy cannot be edited.');
+}
+
+// THE PASSKEY POLICY REGISTER'S CONTAINER (#527), guarded the same way.
+if (typeof passkeyPolicy.setDirectory === 'function') {
+  passkeyPolicy.setDirectory({
+    allPasskeyPolicies: allPasskeyPolicies,
+    writePasskeyPolicy: writePasskeyPolicy,
+    deletePasskeyPolicy: deletePasskeyPolicy
+  });
+} else {
+  log.warn('ldap: common/passkey_policy.ts offers no setDirectory(), so ' +
+           'ou=passkeyPolicies is unreachable and the built-in passkey ' +
+           'policy cannot be edited.');
 }
 if (typeof serviceAccounts.setDirectory === 'function') {
   serviceAccounts.setDirectory({
@@ -17361,6 +17401,74 @@ function deleteServiceAccountPolicy(name) {
   touchDirectory();
   auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
   log.debug('Leaving deleteServiceAccountPolicy(). ' + entries.size +
+            ' entry/entries left.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// ou=passkeyPolicies AS A STORE (#527). ou=serviceAccountPolicies' three
+// functions again, for the same reasons.
+// ---------------------------------------------------------------------------
+function passkeyPolicyDn(name) {
+  log.debug("Entering passkeyPolicyDn().");
+  log.debug("Leaving passkeyPolicyDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' + passkeyPoliciesDn();
+}
+
+function allPasskeyPolicies() {
+  log.debug('Entering allPasskeyPolicies().');
+  const rows = entriesUnder(passkeyPoliciesDn()).map(function (stored) {
+    const object = entryObject(stored);
+    object.name = (stored.attributes.cn || [])[0] ||
+                  stored.dn.split(',')[0].replace(/^cn=/i, '');
+    return object;
+  });
+  log.debug('Leaving allPasskeyPolicies(). ' + rows.length + ' profile(s).');
+  return rows;
+}
+
+function writePasskeyPolicy(name, attributes) {
+  log.debug('Entering writePasskeyPolicy(). name=' + name);
+  const dn = passkeyPolicyDn(name);
+  const existing = getEntry(dn);
+  if (!existing && cappedEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writePasskeyPolicy(). The directory is full.');
+    return false;
+  }
+  if (!getEntry(passkeyPoliciesDn())) {
+    putEntry(passkeyPoliciesDn(), {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: 'passkeyPolicies'
+    }, { origin: 'passkey policy' });
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin
+                              : 'passkey policy' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writePasskeyPolicy(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deletePasskeyPolicy(name) {
+  log.debug('Entering deletePasskeyPolicy(). name=' + name);
+  const stored = getEntry(passkeyPolicyDn(name));
+  if (!stored) {
+    log.debug('Leaving deletePasskeyPolicy(). It was not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
+  log.debug('Leaving deletePasskeyPolicy(). ' + entries.size +
             ' entry/entries left.');
   return true;
 }

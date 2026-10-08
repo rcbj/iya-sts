@@ -275,6 +275,11 @@ class ProtocolStack {
                require('./service_account_policy'), 'ServiceAccountPolicy');
     this.build('common/service_accounts', require('./service_accounts'),
                'ServiceAccounts');
+    // #527: the passkey policy, the fourth kind — a library over the
+    // directory slot like the three above, built before the WebAuthn policy
+    // that asks it.
+    this.build('common/passkey_policy', require('./passkey_policy'),
+               'PasskeyPolicy');
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
                'WebauthnPolicy');
     // #105: a registration's attestation statement, verified. A library

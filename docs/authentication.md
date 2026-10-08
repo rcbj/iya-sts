@@ -281,9 +281,36 @@ removed here disappears there too, and gives it their display name. A person
 whose passkeys were all registered before the user handle existed (when it
 was the username, which every realm shares) is sent nothing.
 
-**Signing in with a passkey and no username** (`webauthn.usernameless`, off
-by default). Where it is on, the sign-in screen draws *Sign in with a
-passkey*, and the username field offers passkeys as autofill in browsers that
+### The passkey policy
+
+How passkeys behave in a realm is a policy on **Directory → Policies**, beside
+the password, authentication and service-account policies: the **passkey
+policy**, `cn=default,ou=passkeyPolicies`. A realm without its own follows the
+default realm's, and the built-in defaults apply where neither exists. Change
+it on the console or with `POST /admin-api/policies/save-passkey-policy`;
+`reset-passkey-policy` goes back to inheriting.
+
+| Field | Default | What it does |
+|---|---|---|
+| `allowUsernameless` | off | Offers a passkey sign-in with **no username**, described below. |
+| `securityKeyResidentKey` | `required` | What *Use a security key* asks the authenticator to store **while usernameless sign-in is on**: `discouraged`, `preferred` or `required`. |
+
+**Both portal buttons ask for a discoverable credential by default.** *Create
+a passkey* always asks `residentKey: required`. *Use a security key* asks
+`required` too while usernameless sign-in is off, whatever
+`securityKeyResidentKey` says, so one security key gives the same result
+through either button; while it is on, it asks `securityKeyResidentKey`. A
+realm can lower that to `preferred` or `discouraged` to spare a security key's
+few resident slots, and a key enrolled that way may need the username to sign
+in.
+
+The policy replaced the settings `webauthn.usernameless` and
+`webauthn.residentKey` (#527); a configuration that still names either is
+refused at start.
+
+**Signing in with a passkey and no username** (the passkey policy's
+`allowUsernameless`, off by default). Where it is on, the sign-in screen draws
+*Sign in with a passkey*, and the username field offers passkeys as autofill in browsers that
 support conditional mediation. The browser is asked for any passkey of this
 service, the user handle it returns names the account, and:
 
@@ -612,10 +639,8 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | The attestation conveyance asked for at registration. Whether a statement is verified is `webauthn.attestationPolicy`'s decision, not this setting's ([WebAuthn](#webauthn), above). |
 | `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` hint handed to the browser. |
 | `webauthn.authenticatorAttachment` | `STS_WEBAUTHN_ATTACHMENT` | `any` | yes | `platform`, `cross-platform` or `any`; a filter in the browser. |
-| `webauthn.residentKey` | `STS_WEBAUTHN_RESIDENT_KEY` | `discouraged` | yes | Whether the credential should be discoverable on the authenticator, for the sign-in screen's ceremony and *Use a security key*; *Create a passkey* always asks `required`. |
 | `webauthn.credProps` | `STS_WEBAUTHN_CRED_PROPS` | `true` | yes | Ask the browser to report whether the credential is discoverable. |
 | `webauthn.primaryAllowed` | `STS_WEBAUTHN_PRIMARY_ALLOWED` | `true` | yes | Allow a key to be the only credential (passwordless). |
-| `webauthn.usernameless` | `STS_WEBAUTHN_USERNAMELESS` | `false` | yes | Offer a passkey sign-in with no username: a button and autofill on the sign-in screen; user verification required, `acr "mfa"`. |
 | `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` | yes | Allow a key to be enrolled as a second factor. |
 | `webauthn.maxKeysPerPerson` | `STS_WEBAUTHN_MAX_KEYS` | `10` | yes | How many keys one person may hold; refuses the enrolment, never a sign-in. |
 

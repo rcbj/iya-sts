@@ -36,6 +36,7 @@ import helpers = require('../common/helpers');
 import passwordPolicy = require('../common/password_policy');
 import authnPolicy = require('../common/authn_policy');
 import serviceAccountPolicy = require('../common/service_account_policy');
+import passkeyPolicy = require('../common/passkey_policy');
 
 const { log } = helpers;
 
@@ -250,6 +251,22 @@ PolicyKinds.register({
   auditAction: 'admin.service-account-policy.change',
   appliesTo: 'every service account in this realm from the next time it ' +
              'signs in, binds or is rotated',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in defaults where it has not'
+});
+
+// #527: the fourth kind, rcbj's "a new policy (which can be overridden per
+// realm) that governs the behavior of passkeys".
+PolicyKinds.register({
+  id: 'passkey',
+  label: 'Passkey policy',
+  container: 'ou=passkeyPolicies',
+  governs: 'how passkeys behave — whether a sign-in may name no username, ' +
+           'and what a security key is asked to store',
+  module: passkeyPolicy as unknown as PolicyModule,
+  auditAction: 'admin.passkey-policy.change',
+  appliesTo: 'the NEXT sign-in and the NEXT passkey enrolled in this realm; ' +
+             'a passkey already enrolled keeps what its authenticator stored',
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
                'built-in defaults where it has not'
 });

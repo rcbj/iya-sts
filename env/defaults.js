@@ -248,10 +248,8 @@ var config = {
     attestationAndroidSoftwareKeys: false,                                                                                                             // Accept Android keys not enforced in the TEE
     timeoutMs: 60000,                                                                                                                                  // Ceremony timeout (ms)
     authenticatorAttachment: "any",                                                                                                                    // Authenticator attachment (CTAP)
-    residentKey: "discouraged",                                                                                                                        // Discoverable credential (CTAP resident key)
     credProps: true,                                                                                                                                   // Ask for the credProps extension
     primaryAllowed: true,                                                                                                                              // Allow a key as a PRIMARY credential
-    usernameless: false,                                                                                                                               // Sign in with a passkey and no username
     mfaAllowed: true,                                                                                                                                  // Allow a key as a SECOND factor
     maxKeysPerPerson: 10                                                                                                                               // Keys per person
   },

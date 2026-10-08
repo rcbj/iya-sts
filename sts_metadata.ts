@@ -8026,7 +8026,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'and a password-only sign-in records amr ["pwd"] and acr "1". A ' +
           'returned userHandle must be the one the key was created under ' +
           '(Level 3 section 7.2 step 6) — 64 random bytes per person since ' +
-          '#474, never the username. Where webauthn.usernameless is on, the ' +
+          '#474, never the username. Where the passkey policy\'s ' +
+          'allowUsernameless is on (#527), the ' +
           'sign-in screen itself (POST /authn/login, action=passkey) takes a ' +
           'discoverable credential with no username: the handle names the ' +
           'account, user verification is required, and the session records ' +

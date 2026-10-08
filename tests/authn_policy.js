@@ -300,15 +300,18 @@ function kinds(t) {
     const view = adminViews.policiesView({});
     t.check(view.kinds.map(function (k) {
       return k.id;
-    }).join(',') === 'password,authn,serviceAccount' && !!view.password &&
+    }).join(',') === 'password,authn,serviceAccount,passkey' &&
+            !!view.password &&
             !!view.authn && !!view.serviceAccount &&
             Array.isArray(view.password.doors) && !!view.password.generator,
-            'F1. the page holds every policy (#221 added the third), and ' +
+            'F1. the page holds every policy (#221 added the third, #527 ' +
+            'the fourth), and ' +
             'the password policy says ' +
             'everything it said before', JSON.stringify(view.kinds));
     t.check(view.actions.join(',') === 'save-password-policy,' +
             'reset-password-policy,save-authn-policy,reset-authn-policy,' +
-            'save-serviceAccount-policy,reset-serviceAccount-policy',
+            'save-serviceAccount-policy,reset-serviceAccount-policy,' +
+            'save-passkey-policy,reset-passkey-policy',
             'F2. the actions are every kind\'s, the password policy\'s by ' +
             'the names they always had', view.actions.join(','));
     const saved = adminActions.policiesAction(Object.assign(
@@ -370,7 +373,7 @@ function kinds(t) {
       const unknown = adminActions.policiesAction(
         { action: 'no-such-action-exists' }, { via: 'api' });
       t.check(!unknown.ok && /save-widget-policy, reset-widget-policy/.test(
-                unknown.errors[0]) && /The eight are/.test(unknown.errors[0]),
+                unknown.errors[0]) && /The ten are/.test(unknown.errors[0]),
               'F6. the refusal of an unknown action names every kind\'s — ' +
               'the sentence the parity checks read', unknown.errors[0]);
     } finally {

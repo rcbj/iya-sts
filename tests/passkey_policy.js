@@ -1,0 +1,284 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: passkey_policy.js
+//
+// ===========================================================================
+// THE PASSKEY POLICY (#527), in process:
+//
+//   P1. the built-in profile: usernameless sign-in OFF, a security key asked
+//       for `required`, from the built-in defaults;
+//   P2. a save replaces the whole profile and is refused for a missing
+//       field, a value that is not one of the enum's (STS-AUTHN-0309) and a
+//       second profile (STS-AUTHN-0308);
+//   P3. a realm with no entry of its own follows the default realm's, its
+//       own entry wins, and a reset goes back to inheriting;
+//   P4. rcbj's answers: while `allowUsernameless` is off the security key is
+//       asked `required` whatever `securityKeyResidentKey` says; while on,
+//       the row; the registration options of both buttons follow;
+//   P5. the usernameless door: refused while off, naming the policy row
+//       (STS-AUTHN-0301), offered while on;
+//   P6. the two settings it replaced are refused at start (REPLACED_SETTINGS)
+//       and are no longer settings;
+//   P7. the fourth kind on Directory → Policies: in `policy_kinds`, the
+//       page's view and its two actions.
+//
+// IN PROCESS: the policy is a library over the directory, and a realm is
+// created and removed here.
+// ===========================================================================
+
+delete process.env.CONFIG_FILE;
+
+const config = require('../common/config');
+const realms = require('../common/realms');
+const errorCodes = require('../common/error_codes');
+const passkeyPolicy = require('../common/passkey_policy');
+const ldap = require('../ldap/ldap_server');
+const webauthnPolicy = require('../authn/webauthn_policy');
+const policyKinds = require('../admin-core/policy_kinds');
+const adminViews = require('../admin-core/admin_views');
+const adminActions = require('../admin-core/admin_actions');
+
+const log = require('bunyan').createLogger({ name: 'passkey_policy',
+  level: process.env.LOG_LEVEL || 'info' });
+
+void ldap;
+
+function withDefaults(fields) {
+  log.debug('Entering withDefaults().');
+  log.debug('Leaving withDefaults().');
+  return Object.assign({}, passkeyPolicy.DEFAULTS, fields || {});
+}
+
+function withRealm(t, fn) {
+  log.debug('Entering withRealm().');
+  const id = 'passkey-policy-' + require('crypto').randomBytes(3)
+    .toString('hex');
+  const made = realms.create({ id: id, name: id,
+                               description: 'Created by ' + __filename });
+  if (!made.ok) {
+    t.bad('could not create the realm "' + id + '"',
+          (made.errors || []).join(' '));
+    log.debug('Leaving withRealm(). Not created.');
+    return undefined;
+  }
+  log.debug('Leaving withRealm().');
+  try {
+    return realms.run(made.realm, function () {
+      return fn(made.realm);
+    });
+  } finally {
+    // REMOVED AGAIN: every other file in this run asserts that only the
+    // default realm is left when it finishes.
+    realms.remove(id);
+  }
+}
+
+// The resident key each enrolment asks for: Create a passkey, Use a
+// security key, and one naming no kind.
+function asked() {
+  log.debug('Entering asked().');
+  const out = ['passkey', 'security-key', ''].map(function (kind) {
+    return webauthnPolicy.creationOptions('localhost', kind || undefined)
+      .authenticatorSelection.residentKey;
+  }).join(',');
+  log.debug('Leaving asked(). ' + out);
+  return out;
+}
+
+function builtIn(t) {
+  log.debug('Entering builtIn().');
+  const p = passkeyPolicy.read();
+  t.check(p.from === 'built-in' && p.allowUsernameless === false &&
+          p.securityKeyResidentKey === 'required' && p.enforced === true,
+          'P1. built in: usernameless sign-in OFF, a security key asked ' +
+          'for required, in force in both modes', JSON.stringify(p));
+  t.check(asked() === 'required,required,required',
+          'P1b. so both buttons, and an enrolment naming no kind, ask for a ' +
+          'discoverable credential', asked());
+  log.debug('Leaving builtIn().');
+}
+
+function saves(t) {
+  log.debug('Entering saves().');
+  const missing = passkeyPolicy.save('default', { allowUsernameless: true });
+  t.check(!missing.ok && errorCodes.codeOf(missing) === 'STS-AUTHN-0309' &&
+          /securityKeyResidentKey/.test((missing.errors || []).join(' ')),
+          'P2. a save naming one field is refused: a save replaces the ' +
+          'whole profile (STS-AUTHN-0309)', JSON.stringify(missing.errors));
+  const bad = passkeyPolicy.save('default',
+    withDefaults({ securityKeyResidentKey: 'sometimes' }));
+  t.check(!bad.ok && errorCodes.codeOf(bad) === 'STS-AUTHN-0309' &&
+          /discouraged, preferred, required/.test(
+            (bad.errors || []).join(' ')),
+          'P2b. a resident key that is not one of WebAuthn\'s three is ' +
+          'refused, naming them', JSON.stringify(bad.errors));
+  const other = passkeyPolicy.save('admins', withDefaults());
+  t.check(!other.ok && errorCodes.codeOf(other) === 'STS-AUTHN-0308',
+          'P2c. a second profile is refused (STS-AUTHN-0308; #535 is ' +
+          'where several come)', JSON.stringify(other.errors));
+  const form = passkeyPolicy.validate({ form: 'console',
+                                        securityKeyResidentKey: 'preferred' });
+  t.check(!form.problems.length && form.values.allowUsernameless === false,
+          'P2d. an unticked checkbox on the console\'s form is a no',
+          JSON.stringify(form));
+  log.debug('Leaving saves().');
+}
+
+function inheritance(t) {
+  log.debug('Entering inheritance().');
+  const saved = realms.run(realms.DEFAULT_REALM, function () {
+    return passkeyPolicy.save('default', withDefaults({
+      allowUsernameless: true, securityKeyResidentKey: 'preferred' }));
+  });
+  t.check(saved.ok && saved.profile.from === 'realm',
+          'P3. the default realm saves its own profile',
+          JSON.stringify(saved.errors));
+  try {
+    withRealm(t, function () {
+      const inherited = passkeyPolicy.read();
+      t.check(inherited.from === 'default-realm' &&
+              inherited.allowUsernameless === true &&
+              inherited.securityKeyResidentKey === 'preferred',
+              'P3b. a realm with no entry of its own follows the default ' +
+              'realm\'s', JSON.stringify(inherited));
+      const own = passkeyPolicy.save('default', withDefaults());
+      const mine = passkeyPolicy.read();
+      t.check(own.ok && mine.from === 'realm' &&
+              mine.allowUsernameless === false,
+              'P3c. its own entry wins', JSON.stringify(mine));
+      const reset = passkeyPolicy.reset('default');
+      t.check(reset.ok && reset.removed &&
+              passkeyPolicy.read().from === 'default-realm',
+              'P3d. a reset goes back to inheriting',
+              JSON.stringify(reset));
+    });
+  } finally {
+    realms.run(realms.DEFAULT_REALM, function () {
+      passkeyPolicy.reset('default');
+    });
+  }
+  t.check(passkeyPolicy.read().from === 'built-in',
+          'P3e. and the default realm\'s reset puts the built-in profile ' +
+          'back');
+  log.debug('Leaving inheritance().');
+}
+
+function answers(t) {
+  log.debug('Entering answers().');
+  const run = function (fields, fn) {
+    log.debug('Entering answers() run().');
+    passkeyPolicy.save('default', withDefaults(fields));
+    try {
+      log.debug('Leaving answers() run().');
+      return fn();
+    } finally {
+      passkeyPolicy.reset('default');
+    }
+  };
+  run({ allowUsernameless: false, securityKeyResidentKey: 'discouraged' },
+      function () {
+    t.check(passkeyPolicy.securityKeyResidentKey() === 'required' &&
+            asked() === 'required,required,required',
+            'P4. usernameless OFF: the security key is asked REQUIRED ' +
+            'whatever securityKeyResidentKey says (rcbj\'s answer 1)',
+            asked());
+  });
+  ['discouraged', 'preferred', 'required'].forEach(function (value) {
+    run({ allowUsernameless: true, securityKeyResidentKey: value },
+        function () {
+      t.check(passkeyPolicy.securityKeyResidentKey() === value &&
+              asked() === 'required,' + value + ',' + value,
+              'P4b. usernameless ON: the security key is asked the row (' +
+              value + '); Create a passkey stays required', asked());
+    });
+  });
+  const said = passkeyPolicy.describe(passkeyPolicy.read());
+  t.check(said.length === 3 && /names the person first/.test(said[0]),
+          'P4c. the rules in sentences', JSON.stringify(said));
+  log.debug('Leaving answers().');
+}
+
+function door(t) {
+  log.debug('Entering door().');
+  const off = webauthnPolicy.usernamelessOffered();
+  t.check(!off.ok && errorCodes.codeOf(off) === 'STS-AUTHN-0301' &&
+          /allowUsernameless/.test(off.why),
+          'P5. usernameless OFF: the door refuses, naming the passkey ' +
+          'policy\'s row (STS-AUTHN-0301)', JSON.stringify(off));
+  passkeyPolicy.save('default', withDefaults({ allowUsernameless: true }));
+  try {
+    t.check(webauthnPolicy.usernamelessOffered().ok === true &&
+            webauthnPolicy.settings().usernameless === true,
+            'P5b. usernameless ON: offered');
+  } finally {
+    passkeyPolicy.reset('default');
+  }
+  log.debug('Leaving door().');
+}
+
+function retired(t) {
+  log.debug('Entering retired().');
+  const keys = ['webauthn.usernameless', 'webauthn.residentKey'];
+  const settings = config.SETTINGS.filter(function (row) {
+    return keys.indexOf(row.key) >= 0;
+  });
+  const replaced = config.REPLACED_SETTINGS.filter(function (row) {
+    return keys.indexOf(row.key) >= 0 &&
+           /passkey policy/.test(row.now.join(' ')) && /#527/.test(row.why);
+  });
+  t.check(!settings.length && replaced.length === 2,
+          'P6. webauthn.usernameless and webauthn.residentKey are no longer ' +
+          'settings, and a start naming either is refused, naming the ' +
+          'passkey policy\'s row', JSON.stringify(replaced.map(function (r) {
+            return r.key + ' -> ' + r.now.join(', ');
+          })));
+  log.debug('Leaving retired().');
+}
+
+function kind(t) {
+  log.debug('Entering kind().');
+  const found = policyKinds.byId('passkey');
+  t.check(!!found && found.container === 'ou=passkeyPolicies' &&
+          policyKinds.actions().indexOf('save-passkey-policy') >= 0 &&
+          policyKinds.actions().indexOf('reset-passkey-policy') >= 0,
+          'P7. the fourth kind on Directory → Policies, with its two ' +
+          'actions', JSON.stringify(policyKinds.actions()));
+  const view = adminViews.policiesView({});
+  t.check(!!view.passkey && view.passkey.fields.length === 2 &&
+          view.passkey.fields.some(function (field) {
+            return field.key === 'securityKeyResidentKey' &&
+                   field.type === 'enum' && field.values.length === 3;
+          }),
+          'P7b. the page\'s view draws it from its fields',
+          JSON.stringify(view.passkey && view.passkey.fields));
+  const saved = adminActions.policiesAction(Object.assign(
+    { action: 'save-passkey-policy' }, withDefaults()), { via: 'api' });
+  t.check(saved.ok && saved.kind === 'passkey',
+          'P7c. save-passkey-policy is handed to the passkey policy',
+          JSON.stringify(saved.errors));
+  adminActions.policiesAction({ action: 'reset-passkey-policy' },
+                              { via: 'api' });
+  log.debug('Leaving kind().');
+}
+
+module.exports = {
+  name: 'passkey policy',
+  describe: 'The passkey policy (#527): usernameless sign-in off by ' +
+            'default, a security key asked for a discoverable credential, ' +
+            'whole saves, inheritance from the default realm, the two ' +
+            'retired settings, and the fourth kind on Directory → Policies',
+  run: function (t) {
+    log.debug('Entering run().');
+    builtIn(t);
+    saves(t);
+    inheritance(t);
+    answers(t);
+    door(t);
+    retired(t);
+    kind(t);
+    log.debug('Leaving run().');
+  }
+};
