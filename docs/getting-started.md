@@ -129,8 +129,8 @@ log when it does.
 ## In a container
 
 ```bash
-docker build -t rcbj/sts .
-docker run --rm -p 8081:8081 rcbj/sts
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 iya-sts
 ```
 
 The image copies the whole build context (`.dockerignore` decides what is in it)

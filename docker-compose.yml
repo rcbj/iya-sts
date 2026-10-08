@@ -194,7 +194,7 @@ services:
     container_name: ${XACML_PEP_CONTAINER_NAME:-xacml-pep}
     hostname: xacml-pep
     profiles: ["xacml"]
-    image: ${XACML_PEP_IMAGE:-rcbj/xacml-pep}
+    image: ${XACML_PEP_IMAGE:-iyasec/iya-sts-xacml-pep}
     build:
       context: .
       dockerfile: xacml-pep/Dockerfile
