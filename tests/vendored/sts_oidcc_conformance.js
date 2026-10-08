@@ -533,15 +533,25 @@ async function prepare(plan) {
 function operatorFor(api) {
   log.debug("Entering operatorFor().");
   const started = {};
+  // Attempts per module. A step that throws (a request the service did not
+  // answer — the memory mode's event loop has been seen blocked for six
+  // seconds under the plans running side by side) is tried again on the
+  // next poll, because runModule() calls this on every poll while the module
+  // is CONFIGURED. It was marked started BEFORE the rotation until
+  // 2026-10-08, so one failed request left the module never started and the
+  // plan reported it unexplained. A repeated rotation is harmless: the
+  // module compares the JWKS before and after whatever rotations ran.
+  const attempts = {};
   log.debug("Leaving operatorFor().");
   return async function (id, info) {
     log.debug("Entering the OP operator. " + id);
     if (started[id] || !info || info.status !== "CONFIGURED" ||
-        info.testName !== "oidcc-server-rotate-keys") {
+        info.testName !== "oidcc-server-rotate-keys" ||
+        (attempts[id] || 0) >= 5) {
       log.debug("Leaving the OP operator. Nothing to do.");
       return;
     }
-    started[id] = true;
+    attempts[id] = (attempts[id] || 0) + 1;
     const rotated = await oidf.send(api + "/keys/rotate", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: "{}" });
@@ -557,6 +567,7 @@ function operatorFor(api) {
       await oidf.waitMs(1000);
     }
     const r = await oidf.suite("POST", "api/runner/" + id);
+    started[id] = true;
     log.info("  rotated the realm's signing keys and started the module: " +
              r.status);
     log.debug("Leaving the OP operator.");
