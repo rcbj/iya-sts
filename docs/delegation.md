@@ -464,8 +464,13 @@ See [Kerberos and SPNEGO](kerberos.html).
   * R is each downstream resource server the requested rights resolve to, or
     the deriving one itself when it only narrows (self);
   * the derived token carries **no more access** than the original, in every
-    mode, and names the deriving resource server in an `act` chain — in all
-    five token formats — capped by `gnap.maxDerivationDepth`.
+    mode, and names who acted in an `act` chain, in all five token formats.
+    This is the OAuth2 Token Exchange act chain, an extension to GNAP, written
+    under the token exchange's rules: the deriving resource server outermost,
+    the **original client** at the foot, and every entry
+    `{"sub": "urn:sts:client:<identifier>", "iss": "<the GNAP grant
+    endpoint>"}`. It is capped by `gnap.maxDerivationDepth`, which counts
+    derivations, not the original client's entry.
 * A client skipping interaction **without** an assertion acts for nobody and
   is asked nothing.
 * **Refusals** are `request_denied` (HTTP 403); the audited code says which
