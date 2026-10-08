@@ -19697,6 +19697,10 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      // JARM, as the POST checks it (#284): until then an update could
+      // store an authorization_*_response_alg a registration refuses.
+      applications.jarmMetadataProblem(metadata) ||
+      self.deps.jarm.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||
