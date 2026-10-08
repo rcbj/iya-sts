@@ -9932,6 +9932,14 @@ const CODES = [
       'before anything was issued or recorded (#496).',
     spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
       '11' },
+  { code: 'STS-WSTRUST-0032',
+    summary: 'Product mode: a SAML assertion or JWT presented as the ' +
+      'requester\'s credential is addressed neither to its holder (an ' +
+      'audience the holder\'s application registers) nor to this IdP (its ' +
+      'WS-Trust issuer name, SAML entityID, OAuth issuer or /sts address) ' +
+      '(#519).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +

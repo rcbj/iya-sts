@@ -72,6 +72,18 @@
 //       OnBehalfOf, and the token issued names it as the client;
 //   S4. after all of it the directory still holds no person of its name.
 //
+// AND A TOKEN AS THE CREDENTIAL MUST BE ADDRESSED TO ITS HOLDER OR TO THE
+// IdP (#519, section T; rcbj: "A caller's credential AppliesTo element can
+// either be the audience registered in the application object or a generic
+// audience that references the IdP"):
+//
+//   T1. product refuses a token about a person addressed to an application
+//       (STS-WSTRUST-0032, FailedAuthentication) — the tier holding it is
+//       not that person; development accepts it, verifying nothing;
+//   T2. an RST whose AppliesTo is the IdP's own name is issued in product
+//       (not #496's unregistered AppliesTo), for every name it answers to;
+//   T3. and that token is accepted as the person's credential.
+//
 // AND THE REGISTER'S ROW FOR EACH ACT SAYS WHAT HAPPENED (section N):
 //
 //   N1. an ActAs act's note says the token issued names who acted — the
@@ -114,6 +126,9 @@ const FINAL = 'https://wj-final.example';
 const FRONT = 'https://wj-front.example';
 // The base the RSTs are handed, as the route hands its request's (#480).
 const AS_BASE = 'https://sts.wj.example';
+// A requester's credential is addressed to this IdP (#519): its WS-Trust
+// endpoint at that base, one of the audiences a credential may carry.
+const IDP = AS_BASE + '/sts';
 
 function inMode(m, fn) {
   log.debug("Entering inMode(). " + m);
@@ -240,7 +255,7 @@ function inBothModes(t) {
       log.debug("Entering ask().");
       log.debug("Leaving ask().");
       return inMode(m, function () {
-        return wstrust.handleRst(rst(signed(requester, 'https://sts.test'),
+        return wstrust.handleRst(rst(signed(requester, IDP),
                                      appliesTo, body, tokenType),
                                  'application/soap+xml', { base: AS_BASE });
       });
@@ -345,7 +360,7 @@ function jwtInside(t) {
       log.debug("Entering ask().");
       log.debug("Leaving ask().");
       return inMode(m, function () {
-        return wstrust.handleRst(rst(signed(requester, 'https://sts.test'),
+        return wstrust.handleRst(rst(signed(requester, IDP),
                                      appliesTo, body, tokenType),
                                  'application/soap+xml', { base: AS_BASE });
       });
@@ -489,7 +504,7 @@ function jwtCredential(t) {
     const aliceSub = helpers.subjectForName('wj-alice');
     // The tier's own JWT, for itself (rcbj's decision on #519).
     const own = jwtOf(ask(saml2.buildSamlAssertion('wj-front',
-                                                    'https://sts.test', 5),
+                                                    IDP, 5),
                           FRONT, '', JWT));
     t.check(own.verified &&
             own.claims.sub === helpers.subjectForName('wj-front') &&
@@ -660,6 +675,63 @@ function applicationCredential(t) {
   log.debug("Leaving applicationCredential().");
 }
 
+// T. A credential token's audience (#519).
+function credentialAudience(t) {
+  log.debug("Entering credentialAudience().");
+  const wstrust = require('../ws-trust/wstrust');
+  const saml2 = require('../saml/saml2');
+  const names = require('../common/issuer_names');
+  ['development', 'product'].forEach(function (m) {
+    t.log.info('=== T. a credential token\'s audience, ' + m + ' mode ===');
+    const product = m === 'product';
+    const ask = function (security, appliesTo, tokenType) {
+      log.debug("Entering ask().");
+      log.debug("Leaving ask().");
+      return inMode(m, function () {
+        return wstrust.handleRst(rst(security, appliesTo, '', tokenType),
+                                 'application/soap+xml', { base: AS_BASE });
+      });
+    };
+    // alice's token for wj-front, presented by somebody as alice.
+    let r = ask(saml2.buildSamlAssertion('wj-alice', FRONT, 5), BACK, JWT);
+    if (product) {
+      t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0032' &&
+              /wst:FailedAuthentication</.test(String(r.body)),
+              'T1 (product). a token about wj-alice addressed to wj-front is ' +
+              'not her credential', r.status + ' ' + r.errorCode + ' ' +
+              String(r.body).slice(0, 300));
+    } else {
+      t.check(r.status === 200,
+              'T1 (development). it is accepted: development verifies no ' +
+              'credential', r.status + ' ' + r.errorCode);
+    }
+    const idp = inMode(m, function () {
+      return [names.wstrustIssuer(), IDP,
+              String(require('../oauth-oidc/oauth2').issuerOf(AS_BASE))];
+    });
+    idp.forEach(function (name, i) {
+      const asked = ask(saml2.buildSamlAssertion('wj-alice', IDP, 5), name,
+                        '');
+      const xml = assertionOf(asked);
+      t.check(asked.status === 200 &&
+              xml.indexOf('<saml:Audience>' + name + '</saml:Audience>') > 0,
+              'T2 (' + m + ', ' + ['issuer name', '/sts', 'OAuth issuer'][i] +
+              '). an RST for the IdP\'s own name "' + name + '" is issued',
+              asked.status + ' ' + asked.errorCode + ' ' +
+              String(asked.body).slice(0, 300));
+      if (i === 0) {
+        r = ask(xml, BACK, JWT);
+        t.check(r.status === 200 &&
+                jwtOf(r).claims.sub === helpers.subjectForName('wj-alice'),
+                'T3 (' + m + '). a token about wj-alice addressed to the IdP ' +
+                'is her credential', r.status + ' ' + r.errorCode + ' ' +
+                String(r.body).slice(0, 300));
+      }
+    });
+  });
+  log.debug("Leaving credentialAudience().");
+}
+
 // N. The register's row for each act (#478, #479, #481).
 function registerRows(t) {
   log.debug("Entering registerRows().");
@@ -677,7 +749,7 @@ function registerRows(t) {
       log.debug("Entering ask().");
       log.debug("Leaving ask().");
       return inMode(m, function () {
-        return wstrust.handleRst(rst(signed('wj-front', 'https://sts.test'),
+        return wstrust.handleRst(rst(signed('wj-front', IDP),
                                      BACK, body, tokenType),
                                  'application/soap+xml', { base: AS_BASE });
       });
@@ -753,6 +825,7 @@ function run(t) {
       jwtInside(t);
       jwtCredential(t);
       applicationCredential(t);
+      credentialAudience(t);
       registerRows(t);
     });
   } finally {

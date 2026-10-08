@@ -111,7 +111,7 @@ function issued(appliesTo, tokenType) {
   const body = '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-' +
     'envelope" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-' +
     '200401-wss-wssecurity-secext-1.0.xsd"><s:Header><wsse:Security>' +
-    saml2.buildSamlAssertion('in-alice', 'https://sts.test', 5) +
+    saml2.buildSamlAssertion('in-alice', BASE + '/sts', 5) +
     '</wsse:Security></s:Header><s:Body><wst:RequestSecurityToken ' +
     'xmlns:wst="' + WST + '"><wst:RequestType>' + WST + '/Issue' +
     '</wst:RequestType>' + (tokenType ? '<wst:TokenType>' + tokenType +

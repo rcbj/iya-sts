@@ -653,13 +653,30 @@ and SSF Basic, EST) still read people alone.
   register can follow the token a tier was issued for itself to the act it
   was spent on.
 
-**Not decided, on #519**: nothing checks the AUDIENCE of a token presented
-as the requester's credential (an assertion's never was checked either), so
-a tier holding a token about a person, audienced to the tier, could present
-it in `wsse:Security` and be authenticated as that person. Requiring the
-credential's audience to name the requester would close that, and would
-also refuse a person's own token audienced to the application they signed
-in to. rcbj's call.
+**A TOKEN AS THE CREDENTIAL IS ADDRESSED TO ITS HOLDER OR TO THE IdP**
+(rcbj, 2026-10-08: "A caller's credential AppliesTo element can either be
+the audience registered in the application object or a generic audience that
+references the IdP"). In product, an assertion or a JWT presented in
+`wsse:Security` is accepted only when one of its audiences is
+(`credentialAudienceProblem()`):
+
+* an audience its holder's APPLICATION registers — the subject's
+  application by identifier or client_id (a service account is the
+  application of its name), the audience resolving to it through the
+  AppliesTo lookup (`appliesToApplication()`); this is the token a tier was
+  issued for itself; or
+* one of the names this IdP answers to (`idpAudiences()`): the WS-Trust
+  issuer name GET /sts reports, the realm's SAML entityID, the realm's OAuth
+  issuer, and the `/sts` address at the request's base.
+
+Anything else is `STS-WSTRUST-0032`, `wst:FailedAuthentication`. It closes
+what was open before #519 for an assertion credential too: a tier holding a
+token about a person, addressed to the tier, was authenticated AS that
+person by presenting it. A person who wants a credential of their own asks
+for one addressed to the IdP. **An RST whose AppliesTo is one of the IdP's
+names is issued in product**, beside #496's registered applications
+(`unregisteredApplication()`): the IdP is not an application and is not
+unregistered. Development verifies no credential and enforces none of it.
 
 `tests/wstrust_jwt_claims.js` sections R and S hold it in process in both
 modes; `tests/vendored/sts_wstrust_own_token_chain.js` drives the four-tier

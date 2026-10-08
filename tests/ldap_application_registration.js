@@ -87,7 +87,7 @@ function issue(m, appliesTo) {
   log.debug("Entering issue().");
   const saml2 = require('../saml/saml2');
   const wstrust = require('../ws-trust/wstrust');
-  const security = saml2.buildSamlAssertion('lar-alice', 'https://sts.test',
+  const security = saml2.buildSamlAssertion('lar-alice', BASE + '/sts',
                                             5);
   const body = '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-' +
     'envelope" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-' +

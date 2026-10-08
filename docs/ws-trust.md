@@ -143,6 +143,15 @@ the application: a JWT's `sub` is `urn:sts:client:<client_id>` where the
 token endpoint names clients that way (RFC 9700 mode, which product mode
 implies), and the bare client_id otherwise.
 
+In product mode a token presented as the credential must be addressed to
+its holder — an audience the holder's application registers, which is what
+a token a tier asked for itself carries — or to this identity provider: the
+WS-Trust issuer name `GET /sts` reports, the realm's SAML entityID, the
+realm's OAuth issuer, or the `/sts` address. A person who wants a token to
+present as their own credential asks for one with one of those names as the
+`AppliesTo`; product issues for them as it does for a registered
+application.
+
 The reserved password `invalid` is always refused, so a negative test has
 something to fail on. A successful authentication is recorded like any other
 sign-in — the audit log, the person's directory entry — and starts a session in
@@ -227,7 +236,7 @@ codes, in the request's own trust namespace: on SOAP 1.1 it is the
 | The body is not well-formed XML | `wst:InvalidRequest` |
 | An `AppliesTo` that resolves to no registered application (product) | `wst:InvalidScope` |
 | No `AppliesTo`, or an empty one, on a request that issues (product) | `wst:InvalidRequest` |
-| The requester's credential is incomplete, wrong, or an assertion or JWT that does not verify, is not yet valid or names nobody; no credential at all (product); a delegation with no requester credential (product) | `wst:FailedAuthentication` |
+| The requester's credential is incomplete, wrong, or an assertion or JWT that does not verify, is not yet valid, names nobody or is addressed neither to its holder nor to this IdP (product); no credential at all (product); a delegation with no requester credential (product) | `wst:FailedAuthentication` |
 | An assertion or a JWT, as the credential or inside `OnBehalfOf` / `ActAs`, that has expired | `wst:ExpiredData` |
 | The token inside `OnBehalfOf` / `ActAs` is not an assertion or a JWT this STS issued, or does not verify, is not yet valid or names nobody (product) | `wst:InvalidRequest` |
 | Both `OnBehalfOf` and `ActAs`; `Cancel` in WS-Trust 2004/04; `?encrypt=1` with no recipient certificate (product) | `wst:InvalidRequest` |

@@ -640,7 +640,7 @@ class WsTrust {
   // `seen()` files the application, as it always was.
   // ---------------------------------------------------------------------------
   private unregisteredApplication(op: string, audience: string,
-                                  stated: boolean) {
+                                  stated: boolean, base?: string) {
     const { mode, log } = this.deps;
     log.debug("Entering WsTrust.unregisteredApplication(). op=" + op);
     if (op === 'validate' || op === 'cancel') {
@@ -666,6 +666,13 @@ class WsTrust {
     if (IssuerNames.registeredApplication(
       this.appliesToApplication(wanted))) {
       log.debug("Leaving WsTrust.unregisteredApplication(). Registered.");
+      return null;
+    }
+    // THE IdP ITSELF (#519): a token addressed to this service, which a
+    // requester then presents back to it as its credential. Not an
+    // application, and not unregistered: it is this realm's own name.
+    if (this.isIdpAudience(wanted, base)) {
+      log.debug("Leaving WsTrust.unregisteredApplication(). This IdP.");
       return null;
     }
     log.debug("Leaving WsTrust.unregisteredApplication(). Not registered.");
@@ -1267,7 +1274,7 @@ class WsTrust {
   // except an EXPIRED assertion, which is `wst:ExpiredData`, "The request
   // data is out-of-date", the more exact of the two. The same fault for a
   // wrong password and an unknown user is the enumeration rule below.
-  private requesterCredential(doc, jwtIssuer?): any {
+  private requesterCredential(doc, jwtIssuer?, base?): any {
     const { credentials, mode, log, firstByLocal, textByLocal } = this.deps;
     log.debug("Entering WsTrust.requesterCredential().");
     const scope = this.credentialScope(doc);
@@ -1352,6 +1359,17 @@ class WsTrust {
                    errorCode: checked.errorCode,
                    trustFault: checked.trustFault || 'FailedAuthentication' };
         }
+        const misaddressed = this.credentialAudienceProblem(
+          this.delegatedAudiences(assertion), checked.subject, base);
+        if (misaddressed) {
+          log.info('wstrust: a SAML assertion presented as a credential was ' +
+                   'refused: ' + misaddressed);
+          log.debug("Leaving WsTrust.requesterCredential(). The assertion " +
+                    "is not addressed to its holder.");
+          return { ok: false, reason: misaddressed,
+                   errorCode: 'STS-WSTRUST-0032',
+                   trustFault: 'FailedAuthentication' };
+        }
         log.debug("Leaving WsTrust.requesterCredential(). A verified SAML " +
                   "assertion for " +
                   checked.subject + ".");
@@ -1401,6 +1419,21 @@ class WsTrust {
                  trustFault: read.expired ? 'ExpiredData'
                    : 'FailedAuthentication' };
       }
+      if (mode.verifiesCredentials()) {
+        const aud = read.claims ? read.claims.aud : undefined;
+        const misaddressed = this.credentialAudienceProblem(
+          [].concat(aud === undefined ? [] : aud).map(String),
+          read.subject, base);
+        if (misaddressed) {
+          log.info('wstrust: a JWT presented as a credential was refused: ' +
+                   misaddressed);
+          log.debug("Leaving WsTrust.requesterCredential(). The JWT is not " +
+                    "addressed to its holder.");
+          return { ok: false, reason: misaddressed,
+                   errorCode: 'STS-WSTRUST-0032',
+                   trustFault: 'FailedAuthentication' };
+        }
+      }
       log.debug("Leaving WsTrust.requesterCredential(). A JWT for " +
                 read.subject + ".");
       return { ok: true, subject: read.subject || 'jwt-subject',
@@ -1428,6 +1461,84 @@ class WsTrust {
                       assertion.getAttribute('AssertionID') || '');
     log.debug("Leaving WsTrust.assertionIdOf().");
     return id;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHO A TOKEN PRESENTED AS THE REQUESTER'S CREDENTIAL MAY BE ADDRESSED TO
+  // (#519, rcbj 2026-10-08): "A caller's credential AppliesTo element can
+  // either be the audience registered in the application object or a
+  // generic audience that references the IdP."
+  //
+  // A token is about its subject and FOR its audience. Presented as a
+  // credential it says "I am the subject", and it may say so only to a party
+  // it was addressed to: the subject's own application (an audience that
+  // application registers — the token a tier was issued for itself), or this
+  // IdP. Anything else is a token issued to somebody else: a tier holding a
+  // token about a person, addressed to the tier, would otherwise be
+  // authenticated AS that person by presenting it in wsse:Security. Product
+  // mode, where a credential token is verified at all; '' when it may be
+  // used, else the refusal.
+  // ---------------------------------------------------------------------------
+  private credentialAudienceProblem(audiences: string[], subject, base?):
+      string {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.credentialAudienceProblem(). " + subject);
+    const list = (audiences || []).map(function (one) {
+      return String(one || '').trim();
+    }).filter(function (one) { return !!one; });
+    if (list.some((one) => this.isIdpAudience(one, base))) {
+      log.debug("Leaving WsTrust.credentialAudienceProblem(). This IdP.");
+      return '';
+    }
+    const app: any = this.applicationOf(subject);
+    if (app && list.some((one) => {
+      return this.appliesToApplication(one) === String(app.identifier);
+    })) {
+      log.debug("Leaving WsTrust.credentialAudienceProblem(). The " +
+                "holder's own application.");
+      return '';
+    }
+    log.debug("Leaving WsTrust.credentialAudienceProblem(). Refused.");
+    return 'The token presented as the requester\'s credential is about "' +
+      String(subject) + '" and addressed to ' +
+      (list.length ? JSON.stringify(list) : 'nobody') + '. In product mode a ' +
+      'token is accepted as a credential only when it is addressed to its ' +
+      'holder — an audience the holder\'s application registers — or to ' +
+      'this identity provider (' + JSON.stringify(this.idpAudiences(base)) +
+      ').';
+  }
+
+  // THE NAMES THIS IdP ANSWERS TO AS AN AUDIENCE (#519): the WS-Trust
+  // issuer name GET /sts reports and the realm's SAML entityID (one string
+  // unless somebody set them apart), the realm's OAuth issuer (what a JWT's
+  // `iss` carries), and the WS-Trust endpoint, `<base>/sts`.
+  private idpAudiences(base?: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.idpAudiences().");
+    let at = String(base || '');
+    if (!at) {
+      at = String(config.managementApiBaseUrl() || '')
+        .replace(/\/admin-api$/, '') +
+        String(require('../common/realms').currentPrefix() || '');
+    }
+    const out = [IssuerNames.wstrustIssuer(), IssuerNames.entityIdFor(),
+                 this.oauthIssuer(String(base || '')),
+                 at.replace(/\/+$/, '') + '/sts']
+      .map(function (one) { return String(one || '').trim(); })
+      .filter(function (one, i, all) {
+        return !!one && all.indexOf(one) === i;
+      });
+    log.debug("Leaving WsTrust.idpAudiences(). " + out.length);
+    return out;
+  }
+
+  private isIdpAudience(value, base?: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.isIdpAudience().");
+    const wanted = String(value || '').trim();
+    const yes = !!wanted && this.idpAudiences(base).indexOf(wanted) >= 0;
+    log.debug("Leaving WsTrust.isIdpAudience(). " + yes);
+    return yes;
   }
 
   // The application a UsernameToken's Username names (#519), when it names
@@ -1930,10 +2041,10 @@ class WsTrust {
   // row from, and what the embedded LDAP directory grows a
   // `uid=<name>,ou=users` entry from. A path that accepts a credential without
   // calling it is a person who authenticated here and is in none of the three.
-  private authenticate(doc, jwtIssuer?) {
+  private authenticate(doc, jwtIssuer?, base?) {
     const { stats, delegation, mode, log } = this.deps;
     log.debug("Entering WsTrust.authenticate().");
-    const credential = this.requesterCredential(doc, jwtIssuer);
+    const credential = this.requesterCredential(doc, jwtIssuer, base);
     if (credential && !credential.ok) {
       log.debug("Leaving WsTrust.authenticate(). The credential was refused.");
       return { ok: false, reason: credential.reason,
@@ -2216,7 +2327,9 @@ class WsTrust {
     // `seen()` sighting, nothing issued. Validate and Cancel issue nothing
     // and are not asked. See unregisteredApplication().
     const unregistered = this.unregisteredApplication(op, audience,
-                                                      !!appliesToEl);
+                                                      !!appliesToEl,
+                                                      String(options.base ||
+                                                             ''));
     if (unregistered) {
       log.info('wstrust: refused an RST in product mode — ' +
                unregistered.why);
@@ -2252,7 +2365,7 @@ class WsTrust {
     // the credential verified twice — a second verification would count a
     // refused password twice and spend a nonce twice.
     const auth: any = options.preAuthenticated ||
-      this.authenticate(doc, jwtIssuer);
+      this.authenticate(doc, jwtIssuer, String(options.base || ''));
     if (!auth.ok) {
       log.debug("Leaving WsTrust.handleRst(). Authentication failed, " +
                 "answering with a SOAP Fault.");
@@ -3276,7 +3389,7 @@ class WsTrust {
       return null;
     }
     const auth: any = this.authenticate(doc,
-      this.oauthIssuer(helpers.baseUrlOf(req)));
+      this.oauthIssuer(helpers.baseUrlOf(req)), helpers.baseUrlOf(req));
     if (!auth.ok || !auth.subject || auth.subject === 'anonymous' ||
         auth.kind === 'delegated') {
       log.debug("Leaving WsTrust.doorAssessment(). Nobody signed in.");
