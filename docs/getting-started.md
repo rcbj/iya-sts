@@ -164,8 +164,9 @@ alternative and needs the client pointed at `tcp://host:8092` explicitly.
 `docker compose up` in a checkout builds the image and starts the service the
 way a deployment runs it: **product mode**, its store in **PostgreSQL**, and
 its key-encryption key and database password in an **OpenBao** secret store.
-The same stack can be run from published images alone, with no checkout and
-nothing built:
+[The compose stack](docker-compose.md) describes that file: its services,
+ports, volumes and variables. The same stack can be run from published images
+alone, with no checkout and nothing built:
 
 | Image | From |
 |---|---|

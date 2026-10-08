@@ -13,6 +13,41 @@ itself.
 | `schema.sql` | **builds the schema and the least-privileged role this service dials with.** Plain SQL, idempotent, takes psql variables, and runnable by hand against any database |
 | `apply-schema.sh` | runs `schema.sql` once, on the start that creates the cluster, with the role name and password the stack was given |
 
+## How `docker-compose.yml` runs them
+
+Moved here from the compose file's comments on 2026-10-07, when that file lost
+them all.
+
+* **`postgres:18`, not `-alpine`**: the alpine image has busybox and no bash,
+  and the scripts here are bash. The Debian image already has openssl.
+* **One mount, at `/var/lib/postgresql`, not `.../data`.** From 18 the image
+  keeps the cluster in a version-specific directory (`/var/lib/postgresql/18/docker`)
+  so `pg_upgrade --link` works within one mount, and it REFUSES TO START with
+  a volume at the old `.../data` path ("unused mount/volume", which reads as a
+  warning and is fatal; docker-library/postgres#1259). The TLS pair lives
+  inside that volume (`/var/lib/postgresql/tls`) because a second mount
+  under it is the shape the image refuses.
+* **`generate-tls.sh` runs from a `command` wrapper, not as an initdb
+  script**: `ssl_cert_file` is read when the server boots, and initdb scripts
+  run after a first boot. The wrapper `exec`s `docker-entrypoint.sh` so
+  postgres keeps pid 1 and gets the stop signal.
+* **`require-tls.sh` is `00-` and `apply-schema.sh` is `10-`** in
+  `/docker-entrypoint-initdb.d`, so TLS hardening runs first. `schema.sql`
+  is mounted OUTSIDE that directory on purpose: the entrypoint runs every
+  `*.sql` there itself, with no way to pass the role name and password, so
+  it would run a second time with the defaults and undo `STS_DB_APP_PASSWORD`.
+* **The service waits on `pg_isready` (`service_healthy`), and the wait is
+  not optional**: without it the service starts first about half the time,
+  and since 2026-08-28 a configured store that cannot be opened is fatal
+  (`persistence/CLAUDE.md`), so the stack restart-loops.
+* **5432 is not published**, for the reason 389 and 636 are not: a host
+  already running postgres fails to start the stack on a port nobody was
+  thinking about.
+* **`sts_app` is spelt twice in the compose file** — `STS_DB_APP_USER` and
+  inside `STS_DATABASE_URL` — because a connection string is one string and
+  building it from the parts would make an override of the whole string
+  ambiguous. `tests/postgres_schema.js` notices when they disagree.
+
 ## The schema is built by an OWNER and used by somebody who cannot change it
 
 **Until 2026-09-06 the service's own database role had to be able to `CREATE

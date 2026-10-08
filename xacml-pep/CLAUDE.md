@@ -383,6 +383,20 @@ console.
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | Not the poll timer, deliberately: that one is the policy contract. |
 | `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | |
 
+**The compose service, beyond the table** (moved from `docker-compose.yml`'s
+comments on 2026-10-07): it is under `profiles: [xacml]`, so a plain `up` never
+starts it; `XACML_PEP_IMAGE` is set per run for `STS_IMAGE`'s reason (an image
+tag is machine-wide); the HTTPS listener is published on **9444**, not 9443,
+which collided with the service's mutual-TLS listener until that was deleted
+on 2026-09-16 — the default stays because every launcher, kept stack and
+`XACML_PEP_HTTPS_URL` names it; `PEP_HTTPS_CERT`/`KEY` default EMPTY because a
+default inside `xacml-pep/certs` would invite a private key into the source
+tree; `PEP_HEARTBEAT_INTERVAL_MS` is a substitution because
+`tests/vendored/sts_xacml_remote_pep.js` reads the counters the heartbeat
+carries and cannot wait a minute; and the plain-http `PEP_NOTIFY_URL` is
+refused by the PDP by default (`xacml.pepNotifyAllowHttp`, and always in
+product, #171), so the demonstration converges on its poll.
+
 **The compose service ships with no certificate**, so out of the box it
 registers unauthenticated and the mock refuses it — which is the honest default
 rather than a broken one. **SINCE 2026-09-06 THAT REFUSAL IS THE ACCESS POLICY'S
