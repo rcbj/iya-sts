@@ -16906,11 +16906,14 @@ const REALM_LISTENER_REPLACED = ' It was removed on 2026-10-07 (#472): a ' +
   'where its listeners.applications maps * (or an application) to it.';
 
 // What #527's two rows say when either is still named.
-const PASSKEY = ' It was removed on 2026-10-08 (#527): the passkey policy on ' +
-  'Directory → Policies decides it now, per realm and inherited from the ' +
-  'default realm — POST /admin-api/policies/save-passkey-policy, or the ' +
-  'console. Usernameless sign-in is off by default, and while it is off a ' +
-  'security key is asked for a discoverable credential.';
+// Each row's sentence names the row that replaced the setting first, as
+// every other refusal names its replacement (`tests/outbound_tls.js` holds
+// each to `now[0]`), and then says this.
+const PASSKEY = ' decides it now — the passkey policy on Directory → ' +
+  'Policies, per realm and inherited from the default realm — POST ' +
+  '/admin-api/policies/save-passkey-policy, or the console. Usernameless ' +
+  'sign-in is off by default, and while it is off a security key is asked ' +
+  'for a discoverable credential.';
 
 // What every one of #523's rows says when it is still named.
 const ONE_ISSUER = ' It was removed on 2026-10-08 (#523): every SAML Issuer, ' +
@@ -17019,9 +17022,13 @@ const REPLACED_SETTINGS = [
   // policy, a directory entry per realm rather than a setting, so `now`
   // names the policy and its row rather than a setting key.
   { key: 'webauthn.residentKey', env: 'STS_WEBAUTHN_RESIDENT_KEY',
-    now: ['the passkey policy\'s securityKeyResidentKey'], why: PASSKEY },
+    now: ['the passkey policy\'s securityKeyResidentKey'],
+    why: ' It was removed on 2026-10-08 (#527): the passkey policy\'s ' +
+         'securityKeyResidentKey' + PASSKEY },
   { key: 'webauthn.usernameless', env: 'STS_WEBAUTHN_USERNAMELESS',
-    now: ['the passkey policy\'s allowUsernameless'], why: PASSKEY },
+    now: ['the passkey policy\'s allowUsernameless'],
+    why: ' It was removed on 2026-10-08 (#527): the passkey policy\'s ' +
+         'allowUsernameless' + PASSKEY },
   { key: 'saml.issuer', env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER',
     now: ['global.publicBaseUrl'], why: ONE_ISSUER },
   { key: 'saml2.entityId', env: 'STS_SAML2_ENTITY_ID',
