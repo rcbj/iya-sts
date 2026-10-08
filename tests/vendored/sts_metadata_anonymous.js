@@ -610,8 +610,13 @@ const DOCUMENTS = [
       }
       if (!/entityID="[^"]+"/.test(text)) { bad.push("no entityID"); }
       if (!/<md:IDPSSODescriptor[\s>]/.test(text)) {
-        bad.push("no IDPSSODescriptor — which is the element CLAUDE.md says " +
-                 "lives here and not in the WS-Federation document");
+        bad.push("no IDPSSODescriptor");
+      }
+      // #524: the SAML view carries no WS-Federation role, whose xsi:type a
+      // SAML-only consumer that validates strictly cannot resolve.
+      if (/fed:SecurityTokenServiceType/.test(text)) {
+        bad.push("a fed:SecurityTokenServiceType RoleDescriptor — that is " +
+                 "the WS-Federation view's (#524)");
       }
       // #523: one document for both SAML versions, so the enumeration is a
       // list that names 2.0 among others.
@@ -652,17 +657,22 @@ const DOCUMENTS = [
     must: function (text) {
       log.debug("Entering must().");
       const bad = [];
-      if (!/<EntityDescriptor[\s>]/.test(text)) {
+      if (!/<(?:md:)?EntityDescriptor[\s>]/.test(text)) {
         bad.push("no EntityDescriptor");
       }
       if (!/fed:SecurityTokenServiceType/.test(text)) {
         bad.push("no RoleDescriptor of type fed:SecurityTokenServiceType, " +
-                 "which is what makes this a WS-Federation document rather " +
-                 "than a SAML one");
+                 "which is what a WS-Federation relying party reads");
       }
       if (!/PassiveRequestorEndpoint/.test(text)) {
         bad.push("no PassiveRequestorEndpoint, so a relying party reading " +
                  "this has nowhere to send anybody");
+      }
+      // ONE ENTITY, TWO VIEWS (iya-sts #524): the WS-Federation view is
+      // the SAML document with this role added, under the same entityID.
+      if (!/<md:IDPSSODescriptor[\s>]/.test(text)) {
+        bad.push("no IDPSSODescriptor — since #524 this view carries the " +
+                 "realm's SAML roles too");
       }
       if (!/<ds:Signature[\s>]/.test(text)) { bad.push("UNSIGNED"); }
       log.debug("Leaving must().");

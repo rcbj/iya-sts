@@ -5253,10 +5253,13 @@ class Saml2Sso {
   //
   // It answers for ANY {sp}. See decision 1 — the ask is what registers it.
   //
-  // AND IT IS THE ONE DOCUMENT FOR BOTH SAML VERSIONS (#523): the realm's one
-  // entity, its IDPSSODescriptor and AttributeAuthorityDescriptor naming SAML
-  // 2.0, SAML 1.1 and Shibboleth's protocol together, with each profile's
-  // endpoints. `/saml11/metadata[/{rp}]` serves it too.
+  // AND IT DESCRIBES THE REALM'S ONE ENTITY (#523, #524): its
+  // IDPSSODescriptor and AttributeAuthorityDescriptor name SAML 2.0, SAML 1.1
+  // and Shibboleth's protocol together with each profile's endpoints, and
+  // `/saml11/metadata[/{rp}]` serves the same document. The WS-Federation
+  // paths serve the same document with that profile's
+  // `fed:SecurityTokenServiceType` RoleDescriptor added (`withWsFederation`,
+  // below says why only there).
   // ---------------------------------------------------------------------------
   /**
    * Builds this identity provider's metadata for a service provider — both
@@ -5265,16 +5268,21 @@ class Saml2Sso {
    *
    * @param base - the realm's base URL
    * @param spEntityId - the service provider's entityID
+   * @param withWsFederation - #524: true for the WS-Federation view, which
+   * also carries that profile's RoleDescriptor
    * @returns the metadata document, unsigned only when signing failed
    */
-  metadataFor(base, spEntityId) {
+  metadataFor(base, spEntityId, withWsFederation?) {
     const { documentSettings, errorCodes, listenerKeys,
             requestSignature } = this.deps;
     const { STS, genId, log, logArtifact, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.metadataFor(). sp=" +
               (spEntityId || '(unscoped)'));
     const id = genId();
-    const idpEntityId = this.idpEntityId();
+    // At the base the document is built for — the request's in every route,
+    // and the one a caller hands in otherwise — so the entityID and the
+    // endpoints beside it cannot be read at two different bases (#524).
+    const idpEntityId = IssuerNames.issuer(base);
     const where = this.endpointsFor(base, spEntityId);
     // ONE ENTITY, ONE DOCUMENT (#523). The SAML 1.1 profile names itself by
     // the same issuer, so its roles are this document's too: its fragments
@@ -5282,6 +5290,18 @@ class Saml2Sso {
     // shape), scoped to the same application's endpoints — the two profiles
     // share one slug. Lazily: that module is loaded after this one.
     const v11 = require('./saml11_sso').metadataParts(base, spEntityId);
+    // And WS-Federation's role (#524), in the WS-FEDERATION VIEW only. The
+    // same entity, so it belongs in the same EntityDescriptor — but its
+    // `xsi:type="fed:SecurityTokenServiceType"` resolves only with the
+    // WS-Federation schema, and a SAML-only consumer that validates strictly
+    // has none: SimpleSAMLphp's validator refuses the whole document over it
+    // (an abstract RoleDescriptor whose type does not resolve). So the SAML
+    // paths serve the SAML roles and the WS-Federation paths serve those AND
+    // its role, rcbj's "two views, one entity": one entityID, one signer,
+    // consistent, the WS-Federation view a superset. Lazily, for the same
+    // reason as above; it has no per-provider form.
+    const wsfedRole = withWsFederation
+      ? require('../ws-federation/wsfed').roleDescriptor(base) : '';
     const nameIdFormats = NAMEID_FORMATS.concat(
       v11.nameIdFormats.filter(function (one: string): boolean {
         return NAMEID_FORMATS.indexOf(one) < 0;
@@ -5363,6 +5383,10 @@ class Saml2Sso {
           'urn:iya:sts:crypto-metadata:1">' +
           xmlEscape(helpers.rebaseTo(base, 'pki') + '/crypto/metadata.xml') +
           '</cm:CryptoMetadataLocation></md:Extensions>' +
+        // The role descriptors are a choice the schema lets come in any
+        // order; WS-Federation's first, where a WS-Federation relying party
+        // looks for it.
+        wsfedRole +
         '<md:IDPSSODescriptor' +
           // WantAuthnRequestsSigned FOLLOWS WHAT IS ENFORCED (#37). It was the
           // literal "false" while nothing verified a request signature, and

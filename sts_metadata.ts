@@ -7218,9 +7218,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'AD FS\'s path because WS-Federation names none and that is where ' +
           'relying parties look. The signature is the FIRST child of ' +
           'EntityDescriptor, where the SAML metadata schema requires it. ' +
-          'There is deliberately no IDPSSODescriptor: this service has no ' +
-          'SAML 2.0 Web SSO profile, and advertising one would be a relying ' +
-          'party\'s first configuration attempt and its first 404.' },
+          'Since #524 it is the WS-Federation VIEW of the realm\'s one ' +
+          'entity: the SAML IDPSSODescriptor and AttributeAuthorityDescriptor ' +
+          '(SAML 2.0 and 1.1) beside the WS-Federation role. ' +
+          '/saml2/metadata and /saml11/metadata serve the same document ' +
+          'without that role, whose xsi:type a SAML-only validator cannot ' +
+          'resolve.' },
   { path: '/wsfed/metadata/:rp', group: 'WS-Federation',
     name: 'Federation metadata for ONE relying party',
     specs: ['ws-federation', 'xmldsig', 'saml11', 'saml2'],

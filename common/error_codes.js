@@ -9275,8 +9275,9 @@ const CODES = [
       'LogoutRequest) could not be signed and was sent unsigned.',
     spec: '' },
   { code: 'STS-SAML-0014',
-    summary: 'The SAML identity provider metadata (one document for SAML 2.0 ' +
-      'and 1.1 since #523) could not be signed and was served unsigned.',
+    summary: 'The realm\'s identity provider metadata (one document for ' +
+      'SAML 2.0, SAML 1.1 and WS-Federation since #523 and #524) could not ' +
+      'be signed and was served unsigned.',
     spec: '' },
   { code: 'STS-SAML-0015',
     summary: 'The body posted to the SAML 2.0 Artifact Resolution Service is ' +
@@ -10007,8 +10008,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-WSFED-0015',
     summary: 'The WS-Federation metadata document could not be signed and ' +
-      'was served unsigned.',
-    spec: '' },
+      'was served unsigned. Retired 2026-10-08 (#524): the realm has one ' +
+      'metadata document, and STS-SAML-0014 names its failure.',
+    spec: '', retired: true },
   { code: 'STS-WSFED-0016',
     summary: 'The mock relying party at /wsfed/rp received a sign-in ' +
       'response that failed one or more of its verification checks.',
