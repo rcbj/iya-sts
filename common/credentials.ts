@@ -3041,17 +3041,20 @@ class Credentials {
       // AND THE KEY'S MINIMUM PIN LENGTH (#529), as it reported it: here for
       // the same reason, and with the same one sentence the sign-in reads.
       this.deps.passkeyPolicy.pinLengthRefusal(
-        (credential || {}).minPinLength, 'registration');
+        (credential || {}).minPinLength, 'registration') ||
+      // AND THE DEVICE SERIAL BOUND TO THE PERSON (#532), off the trusted
+      // attestation's record.
+      this.deps.passkeyPolicy.enterpriseSerialRefusal(name,
+        ((credential || {}).attestation || {}).deviceSerial);
     if (synced) {
-      const pin = synced.code === 'STS-AUTHN-0314';
+      const reason = synced.code === 'STS-AUTHN-0314' ? 'pin-length'
+        : (synced.code === 'STS-AUTHN-0312' ? 'backup-eligible'
+                                            : 'device-serial');
       log.info('credentials: a passkey was NOT enrolled for ' + name +
-               ' (' + synced.code + '): the passkey policy ' +
-               (pin ? 'requires a longer minimum PIN.'
-                    : 'takes only device-bound ones.'));
+               ' (' + synced.code + ', ' + reason + '): ' + synced.why);
       log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
                 "policy.");
-      return coded(synced.code, { ok: false,
-                                  reason: pin ? 'pin-length' : 'backup-eligible',
+      return coded(synced.code, { ok: false, reason: reason,
                                   errors: [synced.why] });
     }
     // HOW MANY. Several keys is the ordinary case and the specification expects

@@ -373,6 +373,11 @@ class WebauthnPolicy {
       ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus'], 'none');
     const requireFips = config.value('webauthn.attestationRequireFips') ===
                         true;
+    // A SERIAL BOUND TO THE PERSON (#532) is only worth what the certificate
+    // naming it is worth, so the passkey policy's attribute demands a
+    // trusted statement as an AAGUID list does.
+    const enterpriseSerialAttribute =
+      passkeyPolicy.enterpriseSerialAttribute();
     const out = {
       configured: configured,
       policy: policy,
@@ -385,9 +390,11 @@ class WebauthnPolicy {
                       true,
       androidSoftwareKeys:
         config.value('webauthn.attestationAndroidSoftwareKeys') === true,
+      enterpriseSerialAttribute: enterpriseSerialAttribute,
       demandsTrust: policy === 'require-trusted' ||
                     allowedAaguids.length > 0 ||
-                    minCertificationLevel !== 'none' || requireFips
+                    minCertificationLevel !== 'none' || requireFips ||
+                    !!enterpriseSerialAttribute
     };
     log.debug('Leaving WebauthnPolicy.attestationSettings(). policy=' +
               out.policy + ', demandsTrust=' + out.demandsTrust);

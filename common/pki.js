@@ -12195,6 +12195,75 @@ function attestationCertificateFacts(der) {
            subjectAltName: String(node.subjectAltName || '') };
 }
 
+// THE DEVICE SERIAL AN ENTERPRISE ATTESTATION CERTIFICATE CARRIES (#532).
+// WebAuthn Level 3 section 5.4.7 and CTAP 2.1 section 7.1 say enterprise
+// attestation may carry "uniquely identifying information" and leave where
+// to the vendor. Two places are read, in this order:
+//
+//   * the subject's serialNumber attribute (2.5.4.5, RFC 4519 section 2.31),
+//     the X.500 attribute for exactly this, which a vendor that follows the
+//     certificate profiles uses;
+//   * Yubico's device serial extension, 1.3.6.1.4.1.41482.13.1, a DER
+//     INTEGER (Yubico's enterprise attestation documentation), written in
+//     decimal as the key's printed serial is.
+//
+// Any other vendor's location is not read, and the certificate answers null,
+// which the passkey policy refuses where it binds serials — a serial this
+// service cannot read cannot be bound to anybody.
+const YUBICO_SERIAL_OID = '1.3.6.1.4.1.41482.13.1';
+/**
+ * Reads the device serial from an enterprise attestation certificate.
+ *
+ * @param der - the certificate's DER
+ * @returns `{ serial, source }` — `subject-serialNumber` or
+ *   `yubico-extension` — or null when neither place holds one
+ */
+function attestationDeviceSerial(der) {
+  log.debug("Entering attestationDeviceSerial().");
+  let cert = null;
+  try {
+    cert = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(der || [])));
+  } catch (e) {
+    log.debug("Caught in attestationDeviceSerial(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving attestationDeviceSerial(). Not a certificate.");
+    return null;
+  }
+  const named = (cert.subject.typesAndValues || []).filter(function (tv) {
+    return tv.type === '2.5.4.5';
+  })[0];
+  const text = named ? String(named.value.valueBlock.value || '').trim() : '';
+  if (text && /^[\x21-\x7e]{1,64}$/.test(text)) {
+    log.debug("Leaving attestationDeviceSerial(). The subject's.");
+    return { serial: text, source: 'subject-serialNumber' };
+  }
+  const ext = (cert.extensions || []).filter(function (one) {
+    return one.extnID === YUBICO_SERIAL_OID;
+  })[0];
+  if (ext) {
+    try {
+      const raw = Buffer.from(ext.extnValue.valueBlock.valueHexView);
+      const parsed = asn1js.fromBER(new Uint8Array(raw));
+      const block = parsed.result;
+      if (parsed.offset !== -1 && block instanceof asn1js.Integer) {
+        const bytes = Buffer.from(block.valueBlock.valueHexView);
+        // A non-negative INTEGER of at most 16 octets, in decimal.
+        if (bytes.length && !(bytes[0] & 0x80) && bytes.length <= 16) {
+          log.debug("Leaving attestationDeviceSerial(). Yubico's.");
+          return { serial: BigInt('0x' + bytes.toString('hex')).toString(10),
+                   source: 'yubico-extension' };
+        }
+      }
+    } catch (e) {
+      log.debug("Caught in attestationDeviceSerial(): " +
+                ((e && e.message) || e));
+      // An extension that does not decode carries no serial; null below.
+    }
+  }
+  log.debug("Leaving attestationDeviceSerial(). None.");
+  return null;
+}
+
 // An attestation certificate's key identifier as the FIDO Metadata Service
 // lists it (`attestationCertificateKeyIdentifiers`, FIDO Metadata Statement
 // section 4): the hex SHA-1 of the subjectPublicKey BIT STRING's value,
@@ -13240,6 +13309,7 @@ module.exports = {
   pathRuleProblem: pathRuleProblem,
   // --- WebAuthn attestation certificates (#105) ---
   attestationCertificateFacts: attestationCertificateFacts,
+  attestationDeviceSerial: attestationDeviceSerial,
   certificateSerialHex: certificateSerialHex,
   attestationKeyIdentifier: attestationKeyIdentifier,
   // --- the FIDO MDS3 BLOB (#62 P5) ---
