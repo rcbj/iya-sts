@@ -1265,7 +1265,9 @@ class AdminApi {
               'the WebAuthn hints each ceremony sends, in order, or `none`. ' +
               '`enterpriseSerialAttribute` (empty) names the attribute of ' +
               'a person\'s entry holding their security-key serials, which ' +
-              'a registration\'s trusted enterprise attestation must name.',
+              'a registration\'s trusted enterprise attestation must name. ' +
+              '`userDisplayName`, `rpNameExtras` and `credentialLabel` ' +
+              'are the names a passkey prompt and a new key show.',
         example: { allowUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
@@ -1274,7 +1276,9 @@ class AdminApi {
                    enforceAttestationAtSignIn: false,
                    passkeyHints: 'client-device,hybrid',
                    securityKeyHints: 'security-key', signInHints: 'none',
-                   enterpriseSerialAttribute: '' }
+                   enterpriseSerialAttribute: '',
+                   userDisplayName: 'displayName, givenName sn',
+                   rpNameExtras: 'none', credentialLabel: '' }
       }
     };
     const cap = function (text) {
@@ -1306,6 +1310,9 @@ class AdminApi {
           : field.type === 'enum'
             ? { type: 'string', enum: field.values,
                 description: field.what + ' Default `' + field.dflt + '`.' }
+          : field.type === 'attributes' || field.type === 'text'
+            ? { type: 'string',
+                description: field.what + ' Default empty.' }
           : field.type === 'attribute'
             ? { type: 'string',
                 description: field.what + ' A directory attribute name, or ' +

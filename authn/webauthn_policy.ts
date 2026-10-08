@@ -99,6 +99,9 @@ import authnPolicy = require('../common/authn_policy');
 // #527: the passkey policy, a leaf, which since 2026-10-08 decides the
 // usernameless sign-in and a security key's resident key.
 import passkeyPolicy = require('../common/passkey_policy');
+// The ambient realm's name, which the passkey policy may append to rp.name
+// (#533). A leaf here: `config` and `helpers` already require it.
+import realms = require('../common/realms');
 
 // JOSE spelling -> COSE identifier, INVERTED from the verifier's own table
 // rather than written out. That table is what decides whether a signature can
@@ -283,8 +286,13 @@ class WebauthnPolicy {
     const passkeys = passkeyPolicy.read();
     const out = {
       enabled: config.value('webauthn.enabled') !== false,
-      rpName: String(config.value('webauthn.rpName') || 'Mock authorization ' +
-                                                        'server'),
+      // THE SERVICE'S NAME A PROMPT SHOWS, with the realm's name and/or the
+      // organisation's where the passkey policy appends them (#533).
+      rpName: passkeyPolicy.rpNameFor(
+        String(config.value('webauthn.rpName') || 'Mock authorization ' +
+                                                  'server'),
+        String((realms.current() || {}).name || realms.currentId() || ''),
+        String(config.value('saml.organizationName') || ''), passkeys),
       rpId: String(config.value('webauthn.rpId') || '').trim(),
       algorithms: this.algorithmsOffered(),
       userVerification: this.oneOf(config.value('webauthn.userVerification'),

@@ -457,6 +457,14 @@ class PoliciesPage {
             (String(field.value) === String(value) ? ' selected' : '') +
             '>' + kit.esc(value) + '</option>';
         }).join('') + '</select>';
+    } else if (field.type === 'attributes' || field.type === 'text') {
+      // A LIST OF ATTRIBUTES, OR A LABEL (#533), typed.
+      control = '<input type="text" id="' + kit.esc(id) + '" name="' +
+        kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
+        hint + '> <span class="sub">' + (field.type === 'text'
+          ? 'text, {provider} and {kind} filled in; empty for the default'
+          : 'attributes, commas between, spaces to join; empty for the ' +
+            'default') + '</span>';
     } else if (field.type === 'attribute') {
       // A DIRECTORY ATTRIBUTE NAME, or empty (#532).
       control = '<input type="text" id="' + kit.esc(id) + '" name="' +

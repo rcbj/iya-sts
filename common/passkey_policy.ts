@@ -104,6 +104,18 @@
 // recorded on the key. It is read through a fourth directory hook,
 // `personAttributeValues()`, which never answers a secret attribute.
 //
+// #533 (2026-10-08) added the names a ceremony shows: `userDisplayName`
+// (empty), an ordered list of up to six directory attributes or
+// space-separated groups of them, the first with every value present
+// becoming `user.displayName` (the username stays `user.name`); `rpNameExtras`
+// (`none`), appending the realm's name and/or `saml.organizationName` to
+// `rp.name`; and `credentialLabel` (empty), the label a new key is given,
+// `{provider}` and `{kind}` filled in. Every value shown passes
+// `displaySafe()`: no control or bidirectional-formatting characters,
+// whitespace collapsed, at most 64 characters. The ticket's message key
+// translated per language is NOT built: the portal has no translations.
+// Empty is what each did before.
+//
 // #530 (2026-10-08) added `enforceAttestationAtSignIn`, off: on, every
 // passkey sign-in holds the key's RECORDED attestation to the attestation
 // rules in force now (`webauthn_attestation.ts`'s `signInVerdict()`), so a
@@ -150,7 +162,8 @@ const { log } = helpers;
 interface PolicyField {
   key: string;
   attribute: string;
-  type: 'bool' | 'enum' | 'int' | 'list' | 'attribute';
+  type: 'bool' | 'enum' | 'int' | 'list' | 'attribute' | 'attributes' |
+        'text';
   dflt: boolean | string | number;
   values?: string[];
   min?: number;
@@ -232,6 +245,11 @@ const HINT_ATTACHMENT: Record<string, string> = {
   'client-device': 'platform'
 };
 const NO_HINTS = 'none';
+/**
+ * What `rpNameExtras` may be (#533).
+ */
+const RP_NAME_EXTRAS = ['none', 'realm', 'organisation',
+                        'realm-and-organisation'];
 
 /**
  * The policy's fields: one table read as the schema, the console form, the API
@@ -343,7 +361,32 @@ const FIELDS: PolicyField[] = [
           'webauthn.attestation set to enterprise, and the vendor or ' +
           'platform configured to release enterprise attestation to this ' +
           'RP ID; without that the browser sends ordinary attestation and ' +
-          'every registration is refused.' }
+          'every registration is refused.' },
+  { key: 'userDisplayName', attribute: 'stsPasskeyUserDisplayName',
+    type: 'attributes', dflt: '',
+    label: 'The name a passkey prompt shows for the person',
+    what: 'EMPTY BY DEFAULT: the name the sign-in knows, else the ' +
+          'username. Otherwise up to six directory attributes in order, ' +
+          'separated by commas; a group of attributes separated by spaces ' +
+          '(givenName sn) joins their values. The first whose every ' +
+          'attribute has a value becomes user.displayName (WebAuthn Level 3 ' +
+          'section 5.4.3), with control and direction-changing characters ' +
+          'removed and at most 64 characters. The username is always ' +
+          'user.name.' },
+  { key: 'rpNameExtras', attribute: 'stsPasskeyRpNameExtras', type: 'enum',
+    values: RP_NAME_EXTRAS.slice(), dflt: 'none',
+    label: 'What a passkey prompt adds to the service\'s name',
+    what: '`none` (the default) shows webauthn.rpName alone. `realm`, ' +
+          '`organisation` or `realm-and-organisation` append the realm\'s ' +
+          'name and/or saml.organizationName, so a person with accounts ' +
+          'in several realms can tell the prompts apart.' },
+  { key: 'credentialLabel', attribute: 'stsPasskeyCredentialLabel',
+    type: 'text', dflt: '',
+    label: 'The name a new passkey is given',
+    what: 'EMPTY BY DEFAULT: the provider\'s name, else "Passkey" or ' +
+          '"Security key". Otherwise this text, with {provider} and {kind} ' +
+          'filled in, at most 60 characters. The person may rename it ' +
+          'afterwards, as always.' }
 ];
 
 /**
@@ -504,6 +547,41 @@ class PasskeyPolicy {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.parseField().");
     const text = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (field.type === 'attributes') {
+      // UP TO SIX ITEMS, COMMAS BETWEEN THEM, each one to three attribute
+      // names separated by spaces (#533).
+      const items = text ? text.split(',').map(function (one) {
+        return one.trim().split(/\s+/).filter(Boolean);
+      }) : [];
+      const bad = items.length > 6 || items.some(function (group) {
+        return !group.length || group.length > 3 || group.some(function (n) {
+          return !/^[A-Za-z][A-Za-z0-9-]{0,63}$/.test(n);
+        });
+      });
+      if (bad) {
+        log.debug("Leaving PasskeyPolicy.parseField(). Not attributes.");
+        return { problem: field.label + ' must be up to six attribute ' +
+                          'names or space-separated groups of up to three, ' +
+                          'separated by commas; "' + text.slice(0, 60) +
+                          '" is not.' };
+      }
+      log.debug("Leaving PasskeyPolicy.parseField().");
+      return { value: items.map(function (group) {
+        return group.join(' ');
+      }).join(', ') };
+    }
+    if (field.type === 'text') {
+      // A LABEL (#533): what displaySafe() keeps, at most 60 characters.
+      const kept = PasskeyPolicy.displaySafe(text, 60);
+      if (kept !== text.replace(/\s+/g, ' ')) {
+        log.debug("Leaving PasskeyPolicy.parseField(). Not displayable.");
+        return { problem: field.label + ' may hold no control or ' +
+                          'direction-changing characters and at most 60 ' +
+                          'characters.' };
+      }
+      log.debug("Leaving PasskeyPolicy.parseField().");
+      return { value: kept };
+    }
     if (field.type === 'attribute') {
       // A DIRECTORY ATTRIBUTE NAME (#532), RFC 4512 section 1.4's descr, or
       // empty for none.
@@ -889,6 +967,116 @@ class PasskeyPolicy {
   }
 
   /**
+   * A value as a passkey prompt may show it (#533): no control (Cc) or
+   * bidirectional-formatting characters, whitespace collapsed and trimmed,
+   * at most `max` characters (code points).
+   *
+   * @param value - the text
+   * @param max - the longest it may be
+   * @returns the text, safe to show
+   */
+  static displaySafe(value: unknown, max: number): string {
+    log.debug("Entering PasskeyPolicy.displaySafe().");
+    const out = Array.from(String(value === undefined || value === null ? ''
+                                                                        : value)
+      // Whitespace first, so a tab or a line break becomes a space rather
+      // than vanishing with the other control characters.
+      .replace(/\s+/g, ' ')
+      .replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
+      .replace(/\s+/g, ' ').trim()).slice(0, max).join('').trim();
+    log.debug("Leaving PasskeyPolicy.displaySafe().");
+    return out;
+  }
+
+  /**
+   * The `user.displayName` a ceremony sends for a person (#533): the first
+   * configured attribute group whose every attribute has a value, made
+   * display-safe, or the fallback (what the door sent before) where none is
+   * configured or none has a value.
+   *
+   * @param username - the person
+   * @param fallback - what to send otherwise
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the display name, at most 64 characters
+   */
+  displayNameFor(username: string, fallback: string,
+                 profile?: PasskeyProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.displayNameFor().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    const groups = String(rules.userDisplayName || '').split(',')
+      .map(function (one) {
+        return one.trim().split(/\s+/).filter(Boolean);
+      }).filter(function (group) {
+        return group.length > 0;
+      });
+    const hook = this.directory && this.directory.personAttributeValues;
+    let found = '';
+    groups.some((group) => {
+      const parts = group.map((attribute) => {
+        const values = typeof hook === 'function'
+          ? (hook.call(this.directory, username, attribute) || []) : [];
+        return PasskeyPolicy.displaySafe(values[0], 64);
+      });
+      if (parts.every(Boolean)) {
+        found = PasskeyPolicy.displaySafe(parts.join(' '), 64);
+      }
+      return !!found;
+    });
+    log.debug("Leaving PasskeyPolicy.displayNameFor(). " +
+              (found ? 'Configured.' : 'The fallback.'));
+    return found || PasskeyPolicy.displaySafe(fallback || username, 64) ||
+           username;
+  }
+
+  /**
+   * `rp.name` with the extras the policy appends (#533).
+   *
+   * @param base - webauthn.rpName
+   * @param realmName - the realm's name
+   * @param organisation - saml.organizationName
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the name a prompt shows for the service
+   */
+  rpNameFor(base: string, realmName: string, organisation: string,
+            profile?: PasskeyProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.rpNameFor().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    const extras = String(rules.rpNameExtras || 'none');
+    const parts = [PasskeyPolicy.displaySafe(base, 64)];
+    if (extras === 'realm' || extras === 'realm-and-organisation') {
+      parts.push(PasskeyPolicy.displaySafe(realmName, 64));
+    }
+    if (extras === 'organisation' || extras === 'realm-and-organisation') {
+      parts.push(PasskeyPolicy.displaySafe(organisation, 64));
+    }
+    log.debug("Leaving PasskeyPolicy.rpNameFor().");
+    return parts.filter(Boolean).join(' — ');
+  }
+
+  /**
+   * The label a new key is given (#533): the policy's `credentialLabel` with
+   * `{provider}` and `{kind}` filled in, or '' for the default.
+   *
+   * @param provider - the provider's name, or ''
+   * @param kind - `Passkey` or `Security key`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the label, or '' where the policy sets none
+   */
+  credentialLabelFor(provider: string, kind: string,
+                     profile?: PasskeyProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.credentialLabelFor().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    const template = String(rules.credentialLabel || '');
+    log.debug("Leaving PasskeyPolicy.credentialLabelFor().");
+    return !template ? '' : PasskeyPolicy.displaySafe(template
+      .replace(/\{provider\}/g, provider || kind)
+      .replace(/\{kind\}/g, kind), 60);
+  }
+
+  /**
    * The attribute holding a person's security-key serials, or empty (#532).
    *
    * @param profile - a profile already read; read afresh when omitted
@@ -1080,7 +1268,13 @@ class PasskeyPolicy {
         ? 'a security key registers only with a trusted enterprise ' +
           'attestation naming a serial in the person\'s ' +
           rules.enterpriseSerialAttribute
-        : 'no security-key serial is checked'
+        : 'no security-key serial is checked',
+      'a passkey prompt shows ' + (rules.userDisplayName
+        ? 'the person\'s ' + rules.userDisplayName
+        : 'the person\'s name as the sign-in knows it') +
+        (rules.rpNameExtras && rules.rpNameExtras !== 'none'
+          ? ', and the service\'s name with its ' + rules.rpNameExtras
+          : '')
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -1314,6 +1508,10 @@ export = {
   enforcesAttestationAtSignIn: slot.forward('enforcesAttestationAtSignIn'),
   hintsFor: slot.forward('hintsFor'),
   enterpriseSerialAttribute: slot.forward('enterpriseSerialAttribute'),
+  displayNameFor: slot.forward('displayNameFor'),
+  rpNameFor: slot.forward('rpNameFor'),
+  credentialLabelFor: slot.forward('credentialLabelFor'),
+  displaySafe: PasskeyPolicy.displaySafe,
   enterpriseSerialRefusal: slot.forward('enterpriseSerialRefusal'),
   listOf: PasskeyPolicy.listOf,
   pinLengthRefusal: slot.forward('pinLengthRefusal'),

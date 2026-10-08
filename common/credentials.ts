@@ -3170,7 +3170,13 @@ class Credentials {
         ? String(credential.providerSource) : ''
     };
     if (!record.label) {
-      record.label = Credentials.defaultKeyName(record);
+      // THE PASSKEY POLICY'S LABEL FIRST (#533), with {provider} and {kind}
+      // filled in; else the provider's or the group's name, as before.
+      record.label = this.deps.passkeyPolicy.credentialLabelFor(
+        Credentials.keyProvider(record),
+        Credentials.keyGroup(record) === 'security-key' ? 'Security key'
+                                                        : 'Passkey') ||
+        Credentials.defaultKeyName(record);
     }
     let written = false;
     try {
