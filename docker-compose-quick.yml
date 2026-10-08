@@ -1,19 +1,12 @@
-# IYA STS with its PostgreSQL store and an OpenBao secret store, from
-# published images only: no checkout and nothing built.
-#
-# The files the database and OpenBao need (postgres/ and openbao/ in the
-# repository) are inside the iya-sts image, so two one-shot containers of
-# that image copy them into named volumes before anything else starts.
-#
-# Set three secrets in a .env file beside this one first (see the page).
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
 name: iya-sts
 
 services:
-  # Copies the database's TLS, require-TLS and schema scripts into volumes.
   postgres-init:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     restart: "no"
-    user: "0"        # the image runs as uid 10001; this writes into volumes
+    user: "0"
     volumes:
       - db-initdb:/out/initdb
       - db-share:/out/share
@@ -57,11 +50,10 @@ services:
       timeout: 5s
       retries: 10
 
-  # OpenBao's listener certificate and its configuration file.
   openbao-tls:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     restart: "no"
-    user: "0"        # writes into OpenBao's volume and hands it to its user
+    user: "0"
     environment:
       STS_BAO_TLS_DIR: /openbao/file/tls
       STS_BAO_TLS_NAMES: openbao,localhost
@@ -92,15 +84,10 @@ services:
       - bao-file:/openbao/file
     command: ["server", "-config=/openbao/file/config/bao.hcl"]
 
-  # Initialises OpenBao, writes the database password and the Transit
-  # key-encryption key, and issues iya-sts its read-only client certificate.
-  # Also keeps the management API secret at secret/sts-admin, writes the
-  # service a single-use start-up token for it, prints an operator token,
-  # and revokes OpenBao's root token when it is done.
   openbao-seed:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     restart: "no"
-    user: "0"        # writes the client key for uid 10001, the token for root
+    user: "0"
     depends_on:
       openbao:
         condition: service_started
@@ -110,7 +97,6 @@ services:
       STS_BAO_POLICY_FILE: /usr/src/sts/openbao/read-only.hcl
       STS_BAO_CLIENT_CN: sts
       STS_DB_APP_PASSWORD: ${STS_DB_APP_PASSWORD:?set STS_DB_APP_PASSWORD in .env}
-      # Empty: the seeder generates the management API secret once.
       STS_ADMIN_API_CLIENT_SECRET: ${ADMIN_API_CLIENT_SECRET:-}
       STS_BAO_STARTUP_NODES: sts
       STS_BAO_STARTUP_DIR: /openbao/startup
@@ -124,11 +110,7 @@ services:
   sts:
     image: iyasec/iya-sts:${IYA_STS_TAG:-latest}
     hostname: sts
-    # Starts as root only to take the start-up secret, then drops to
-    # uid 10001 with every capability gone (the command below).
     user: "0"
-    # Lets uid 10001 bind 88, 389 and 636. Docker sets it already; this
-    # says so.
     sysctls:
       - net.ipv4.ip_unprivileged_port_start=0
     depends_on:
@@ -137,8 +119,8 @@ services:
       openbao-seed:
         condition: service_completed_successfully
     ports:
-      - "${STS_PORT:-8081}:8081"   # every HTTP protocol, /admin, /portal, /admin-api
-      - "${PKI_PORT:-8082}:8082"   # plain HTTP /pki/: CRLs, OCSP, CA certificates
+      - "${STS_PORT:-8081}:8081"
+      - "${PKI_PORT:-8082}:8082"
     environment:
       STS_MODE: product
       STS_PERSISTENCE_MODE: postgres
@@ -153,25 +135,18 @@ services:
       STS_KEYS_VAULT_CLIENT_KEY: /run/secrets/openbao/client.key
       STS_KEYS_VAULT_CA_CERT: /run/secrets/openbao/bao-ca.crt
       PKI_DISTRIBUTION_PORT: "${PKI_PORT:-8082}"
-      # The first console password; empty, one is generated and logged once.
       STS_ADMIN_BOOTSTRAP_PASSWORD: ${STS_ADMIN_BOOTSTRAP_PASSWORD:-}
     volumes:
       - bao-client:/run/secrets/openbao:ro
       - bao-startup:/run/secrets/openbao-startup
       - sts-data:/usr/src/sts/data
-    # Where the start-up secret is handed over: memory, read once and
-    # deleted by the service.
     tmpfs:
       - /run/sts-startup:mode=0700,uid=10001,gid=10001
     command:
       - sh
       - -c
       - |
-        # A data volume made before the image ran as uid 10001 is root's.
         find /usr/src/sts/data ! -user 10001 -exec chown 10001:10001 {} +
-        # Unwrap this node's single-use token, read the management API
-        # secret, revoke the token, and leave the secret in a file on the
-        # tmpfs. Only `export ..._FILE=<path>` lines are printed.
         STARTUP="$$(node openbao/startup-secrets.js)" || exit 1
         eval "$$STARTUP"
         exec setpriv --reuid=10001 --regid=10001 --clear-groups \
@@ -190,6 +165,4 @@ volumes:
   bao-file:
   bao-client:
   bao-startup:
-
-
   sts-data:
