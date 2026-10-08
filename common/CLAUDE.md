@@ -11340,6 +11340,19 @@ refused in two places, both funnels:
 `backupEligibleRefusal()` is the one sentence for both, and `/portal/keys`
 asks it to mark a held key that will no longer sign its owner in.
 
+**#529 ADDED A MINIMUM SECURITY-KEY PIN LENGTH (2026-10-08)**:
+`enforcePinLength` (off), `minPinLength` (4 to 63, the policy's first `int`
+row) and `pinLengthOnlyIfSupported` (off). While enforcing,
+`creationOptions()` carries `minPinLength: true`, the browser script turns it
+into CTAP 2.1's `minPinLength` extension input, `webauthn.js` returns the
+authenticator data's extension outputs (`extensions`), and
+`Credentials.reportedMinPinLength()` puts the reported value on the key row
+(`minPinLength`, null where none). The same two funnels as #528 refuse it:
+`addKey()` (`STS-AUTHN-0314`) and `startSessionHere()` (`STS-AUTHN-0315`,
+which reads the RECORDED value off the key row — decided on the ticket, so a
+raised minimum stops a key enrolled under a lower one). `pinLengthRefusal()`
+is the one sentence; `/portal/keys` shows it on such a key.
+
 **Why the module and not an issuance-policy rule.** The ticket asked for the
 refusal "where the decision belongs", and rcbj's rule is that every
 authorization decision is policy. This is an AUTHENTICATION policy row on

@@ -295,6 +295,9 @@ it on the console or with `POST /admin-api/policies/save-passkey-policy`;
 | `allowUsernameless` | off | Offers a passkey sign-in with **no username**, described below. |
 | `securityKeyResidentKey` | `required` | What *Use a security key* asks the authenticator to store **while usernameless sign-in is on**: `discouraged`, `preferred` or `required`. |
 | `backupEligibility` | `allow` | `disallow` accepts only **device-bound** passkeys, refusing a synced one at registration and at sign-in (below). |
+| `enforcePinLength` | off | Requires a minimum **security-key PIN length**, as the key reports it (below). |
+| `minPinLength` | 4 | The minimum, 4 to 63 characters, while `enforcePinLength` is on. |
+| `pinLengthOnlyIfSupported` | off | On, a key that does not report its PIN length is accepted. |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
 a passkey* always asks `residentKey: required`. *Use a security key* asks
@@ -333,6 +336,32 @@ While it is `disallow`:
 
 The console lists a person's keys with what the authenticator said about
 backup: *device-bound*, *eligible, not backed up*, or *backed up*.
+
+**A minimum PIN length** (`enforcePinLength`, `minPinLength`,
+`pinLengthOnlyIfSupported`). User verification on a security key is usually a
+PIN, and a key with a four-digit PIN satisfies `required` user verification
+as well as one with a twelve-character PIN. While `enforcePinLength` is on,
+every registration asks the authenticator for the minimum PIN length it
+enforces, through the CTAP 2.1 `minPinLength` extension (CTAP 2.1 section
+12.4), records the answer on the key, and:
+
+- refuses a key that reports less than `minPinLength`, at registration
+  (`STS-AUTHN-0314`) **and at every sign-in** (`STS-AUTHN-0315`, a
+  `session.refuse` audit row). Raising the minimum therefore stops a key
+  registered under a lower one; `/portal/keys` marks such a key so its owner
+  can replace it;
+- refuses a key that reports nothing, unless `pinLengthOnlyIfSupported` is on.
+
+**A key reports its minimum PIN length only to relying parties it was
+configured to tell.** The key's administrator sets that up with CTAP 2.1's
+`setMinPINLength` command, naming this service's RP ID (the host name it is
+reached at, or `webauthn.rpId`). A key nobody configured, every platform
+authenticator and every synced passkey reports nothing. So with
+`pinLengthOnlyIfSupported` off, the default, only configured security keys
+can be registered at all. With it on, every other key is accepted, and the
+rule then binds only the keys that report: **it is weaker, and is meant for a
+realm moving its keys over one at a time.** The browser must also pass the
+extension on; one that does not is a key that reports nothing.
 
 The policy replaced the settings `webauthn.usernameless` and
 `webauthn.residentKey` (#527); a configuration that still names either is

@@ -26,7 +26,10 @@
 //       page's view and its two actions;
 //   P8. #528's backupEligibility: allowed by default, and under `disallow`
 //       a backup-eligible key refused at registration (STS-AUTHN-0312) and
-//       at sign-in (STS-AUTHN-0313).
+//       at sign-in (STS-AUTHN-0313);
+//   P9. #529's PIN length: not enforced by default; enforced, a reported
+//       minimum above, at and below the rule's, and none reported, with and
+//       without `pinLengthOnlyIfSupported`; the bounds 4 and 63.
 //
 // IN PROCESS: the policy is a library over the directory, and a realm is
 // created and removed here.
@@ -124,7 +127,8 @@ function saves(t) {
           'where several come)', JSON.stringify(other.errors));
   const form = passkeyPolicy.validate({ form: 'console',
                                         securityKeyResidentKey: 'preferred',
-                                        backupEligibility: 'allow' });
+                                        backupEligibility: 'allow',
+                                        minPinLength: '4' });
   t.check(!form.problems.length && form.values.allowUsernameless === false,
           'P2d. an unticked checkbox on the console\'s form is a no',
           JSON.stringify(form));
@@ -200,7 +204,7 @@ function answers(t) {
     });
   });
   const said = passkeyPolicy.describe(passkeyPolicy.read());
-  t.check(said.length === 4 && /names the person first/.test(said[0]) &&
+  t.check(said.length === 5 && /names the person first/.test(said[0]) &&
           /synced \(backup-eligible\) passkeys are accepted/.test(said[3]),
           'P4c. the rules in sentences', JSON.stringify(said));
   log.debug('Leaving answers().');
@@ -256,6 +260,53 @@ function synced(t) {
   log.debug('Leaving synced().');
 }
 
+function pinLength(t) {
+  log.debug('Entering pinLength().');
+  t.check(passkeyPolicy.pinLengthRule().enforce === false &&
+          passkeyPolicy.pinLengthRefusal(2, 'registration') === null,
+          'P9. #529: no PIN length is enforced by default');
+  passkeyPolicy.save('default', withDefaults({ enforcePinLength: true,
+                                                minPinLength: 6 }));
+  try {
+    const at = function (reported) {
+      log.debug('Entering pinLength() at().');
+      const out = passkeyPolicy.pinLengthRefusal(reported, 'registration');
+      log.debug('Leaving pinLength() at().');
+      return out ? out.code : 'ok';
+    };
+    t.check(at(8) === 'ok' && at(6) === 'ok' &&
+            at(5) === 'STS-AUTHN-0314' && at(null) === 'STS-AUTHN-0314' &&
+            at('8') === 'STS-AUTHN-0314',
+            'P9b. enforced at 6: 8 and 6 pass, 5 and none reported are ' +
+            'refused (a string is not a reported length)',
+            [at(8), at(6), at(5), at(null), at('8')].join(','));
+    const later = passkeyPolicy.pinLengthRefusal(5, 'sign-in');
+    t.check(!!later && later.code === 'STS-AUTHN-0315' &&
+            /requires at least 6/.test(later.why),
+            'P9c. at sign-in the code is STS-AUTHN-0315, saying why',
+            JSON.stringify(later));
+    passkeyPolicy.save('default', withDefaults({
+      enforcePinLength: true, minPinLength: 6,
+      pinLengthOnlyIfSupported: true }));
+    t.check(at(null) === 'ok' && at(5) === 'STS-AUTHN-0314',
+            'P9d. pinLengthOnlyIfSupported: a key that reports nothing ' +
+            'passes, a short reported minimum still does not');
+    const low = passkeyPolicy.save('default', withDefaults({
+      minPinLength: 3 }));
+    const high = passkeyPolicy.save('default', withDefaults({
+      minPinLength: 64 }));
+    const edge = passkeyPolicy.save('default', withDefaults({
+      minPinLength: 63 }));
+    t.check(!low.ok && !high.ok && edge.ok &&
+            errorCodes.codeOf(low) === 'STS-AUTHN-0309',
+            'P9e. the minimum is held to 4..63', JSON.stringify([low.errors,
+                                                                 high.errors]));
+  } finally {
+    passkeyPolicy.reset('default');
+  }
+  log.debug('Leaving pinLength().');
+}
+
 function retired(t) {
   log.debug('Entering retired().');
   const keys = ['webauthn.usernameless', 'webauthn.residentKey'];
@@ -284,7 +335,7 @@ function kind(t) {
           'P7. the fourth kind on Directory → Policies, with its two ' +
           'actions', JSON.stringify(policyKinds.actions()));
   const view = adminViews.policiesView({});
-  t.check(!!view.passkey && view.passkey.fields.length === 3 &&
+  t.check(!!view.passkey && view.passkey.fields.length === 6 &&
           view.passkey.fields.some(function (field) {
             return field.key === 'securityKeyResidentKey' &&
                    field.type === 'enum' && field.values.length === 3;
@@ -315,6 +366,7 @@ module.exports = {
     answers(t);
     door(t);
     synced(t);
+    pinLength(t);
     retired(t);
     kind(t);
     log.debug('Leaving run().');

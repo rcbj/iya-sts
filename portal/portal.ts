@@ -3136,6 +3136,12 @@ class Portal {
           'passkeys, so it will not sign you in. Remove it and register a ' +
           'security key or a passkey kept on one device.</div>'
         : '') +
+      // AND ONE WHOSE MINIMUM PIN THE REALM NO LONGER ACCEPTS (#529).
+      (passkeyPolicy.pinLengthRefusal(one.minPinLength, 'sign-in')
+        ? '<div class="meta" id="passkey-pin-refused">' +
+          self.esc(passkeyPolicy.pinLengthRefusal(one.minPinLength,
+                                                  'sign-in').why) + '</div>'
+        : '') +
       self.renameForm(one, csrf, false) +
       '<details><summary>Details</summary><table>' +
       '<tr><th>Used</th><td>' + self.esc(one.role === 'primary'

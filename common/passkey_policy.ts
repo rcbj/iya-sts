@@ -59,6 +59,29 @@
 //                            them is a realm's deliberate choice of
 //                            device-bound keys (docs/authentication.md).
 //
+// #529 (2026-10-08) added three rows for a security key's PIN, CTAP 2.1
+// section 12.4's minPinLength extension:
+//
+//   enforcePinLength         off. On, a registration asks the authenticator
+//                            for its minimum PIN length (`extensions:
+//                            { minPinLength: true }`), the reported value is
+//                            recorded on the key (`minPinLength`), and a key
+//                            below `minPinLength` is refused at registration
+//                            (STS-AUTHN-0314) AND AT SIGN-IN (STS-AUTHN-0315).
+//                            Decided on the ticket: the value is recorded and
+//                            re-checked at every sign-in, so raising the
+//                            minimum stops a key enrolled under a lower one,
+//                            as #528 does for BE. A PIN can only be changed
+//                            on the key, which re-registering records.
+//   minPinLength             4 (CTAP 2.1's own floor), at most 63.
+//   pinLengthOnlyIfSupported off: a key that does not report — every key not
+//                            configured with this RP ID through CTAP 2.1
+//                            `setMinPINLength`, and every platform or synced
+//                            passkey — is refused while enforcing. On, such a
+//                            key is accepted and only a REPORTED minimum is
+//                            held to the rule; the docs warn that it is then
+//                            unenforced for most keys.
+//
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
 //
@@ -95,9 +118,12 @@ const { log } = helpers;
 interface PolicyField {
   key: string;
   attribute: string;
-  type: 'bool' | 'enum';
-  dflt: boolean | string;
+  type: 'bool' | 'enum' | 'int';
+  dflt: boolean | string | number;
   values?: string[];
+  min?: number;
+  max?: number;
+  unit?: string;
   label: string;
   what: string;
 }
@@ -157,6 +183,12 @@ const RESIDENT_KEY_VALUES = ['discouraged', 'preferred', 'required'];
  * What `backupEligibility` may be (#528).
  */
 const BACKUP_ELIGIBILITY_VALUES = ['allow', 'disallow'];
+/**
+ * The bounds of `minPinLength` (#529): CTAP 2.1 section 6.5.1's minimum PIN
+ * length is 4 Unicode code points and a PIN is at most 63 bytes.
+ */
+const MIN_PIN_LENGTH = 4;
+const MAX_PIN_LENGTH = 63;
 
 /**
  * The policy's fields: one table read as the schema, the console form, the API
@@ -195,7 +227,34 @@ const FIELDS: PolicyField[] = [
           'may be backed up or synced (the BE flag, WebAuthn Level 3 ' +
           'section 6.1) is refused when it is registered and when it signs ' +
           'somebody in, so a synced passkey enrolled before the realm said ' +
-          'no stops working too. BE never changes for a credential.' }
+          'no stops working too. BE never changes for a credential.' },
+  { key: 'enforcePinLength', attribute: 'stsPasskeyEnforcePinLength',
+    type: 'bool', dflt: false,
+    label: 'Require a minimum security-key PIN length',
+    what: 'OFF BY DEFAULT. On, registration asks the authenticator for its ' +
+          'minimum PIN length (CTAP 2.1 section 12.4, the minPinLength ' +
+          'extension), records it on the key, and refuses a key whose ' +
+          'minimum is below the next row, at registration and at every ' +
+          'sign-in. A key answers only for relying parties it was ' +
+          'configured to tell (CTAP 2.1 setMinPINLength with this RP ID); ' +
+          'every other key, and every platform or synced passkey, does not ' +
+          'report, and is refused unless the row after next is on.' },
+  { key: 'minPinLength', attribute: 'stsPasskeyMinPinLength',
+    type: 'int', dflt: MIN_PIN_LENGTH, min: MIN_PIN_LENGTH,
+    max: MAX_PIN_LENGTH, unit: 'characters',
+    label: 'Minimum security-key PIN length',
+    what: 'The shortest PIN a security key may be set to accept, as the key ' +
+          'itself reports it, while the row above is on. Between 4 (CTAP ' +
+          '2.1\'s own floor) and 63.' },
+  { key: 'pinLengthOnlyIfSupported',
+    attribute: 'stsPasskeyPinLengthOnlyIfSupported', type: 'bool',
+    dflt: false,
+    label: 'Accept a key that does not report its PIN length',
+    what: 'OFF BY DEFAULT, which is the strict reading: while the PIN ' +
+          'length is enforced, a key that does not report it is refused. ' +
+          'On, such a key is accepted and only a reported minimum is held ' +
+          'to the rule — so the rule then binds only keys configured to ' +
+          'report to this relying party.' }
 ];
 
 /**
@@ -209,11 +268,11 @@ FIELDS.forEach(function (field) {
 /**
  * The built-in value of every field, in force where no entry says otherwise.
  */
-const DEFAULTS: Readonly<Record<string, boolean | string>> =
+const DEFAULTS: Readonly<Record<string, boolean | string | number>> =
   Object.freeze(FIELDS.reduce(function (out, field) {
     out[field.key] = field.dflt;
     return out;
-  }, {} as Record<string, boolean | string>));
+  }, {} as Record<string, boolean | string | number>));
 
 /**
  * The directory schema of `ou=passkeyPolicies`: its container, object class
@@ -351,11 +410,23 @@ class PasskeyPolicy {
   // `service_account_policy.ts`'s parse, with `authn_policy.ts`'s enum.
   // Never guesses.
   private parseField(field: PolicyField,
-                     raw: unknown): { value?: boolean | string;
+                     raw: unknown): { value?: boolean | string | number;
                                       problem?: string } {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.parseField().");
     const text = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (field.type === 'int') {
+      // `service_account_policy.ts`'s whole number, bounded by the row.
+      const value = /^\d{1,6}$/.test(text) ? Number(text) : NaN;
+      if (!(value >= Number(field.min) && value <= Number(field.max))) {
+        log.debug("Leaving PasskeyPolicy.parseField(). Out of bounds.");
+        return { problem: field.label + ' must be a whole number between ' +
+                          field.min + ' and ' + field.max + '; "' +
+                          text.slice(0, 40) + '" is not.' };
+      }
+      log.debug("Leaving PasskeyPolicy.parseField().");
+      return { value: value };
+    }
     if (field.type === 'bool') {
       const lower = text.toLowerCase();
       if (['true', 'on', '1'].indexOf(lower) >= 0) {
@@ -598,6 +669,81 @@ class PasskeyPolicy {
   }
 
   /**
+   * The PIN-length rule in force (#529): whether it is enforced, the
+   * minimum, and whether a key that does not report is accepted.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ enforce, min, onlyIfSupported }`
+   */
+  pinLengthRule(profile?: PasskeyProfile | null):
+      { enforce: boolean; min: number; onlyIfSupported: boolean } {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.pinLengthRule().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    const min = Number(rules.minPinLength);
+    const out = {
+      enforce: rules.enforcePinLength === true,
+      min: min >= MIN_PIN_LENGTH && min <= MAX_PIN_LENGTH ? min
+        : MIN_PIN_LENGTH,
+      onlyIfSupported: rules.pinLengthOnlyIfSupported === true
+    };
+    log.debug("Leaving PasskeyPolicy.pinLengthRule(). enforce=" +
+              out.enforce);
+    return out;
+  }
+
+  /**
+   * The refusal of a key's PIN length, or null (#529): a reported minimum
+   * below the rule's, or none reported where the rule needs one.
+   *
+   * @param reported - the minimum PIN length the key reported; anything but
+   *   a whole number is "not reported"
+   * @param at - `registration` or `sign-in`
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ code, why }` or null
+   */
+  pinLengthRefusal(reported: unknown, at: string,
+                   profile?: PasskeyProfile | null):
+      { code: string; why: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.pinLengthRefusal().");
+    const rule = this.pinLengthRule(profile);
+    if (!rule.enforce) {
+      log.debug("Leaving PasskeyPolicy.pinLengthRefusal(). Not enforced.");
+      return null;
+    }
+    const value = typeof reported === 'number' && Number.isInteger(reported)
+      ? reported : null;
+    if (value === null && rule.onlyIfSupported) {
+      log.debug("Leaving PasskeyPolicy.pinLengthRefusal(). Not reported, " +
+                "and accepted.");
+      return null;
+    }
+    if (value !== null && value >= rule.min) {
+      log.debug("Leaving PasskeyPolicy.pinLengthRefusal(). Long enough.");
+      return null;
+    }
+    const registering = at === 'registration';
+    const out = {
+      code: registering ? 'STS-AUTHN-0314' : 'STS-AUTHN-0315',
+      why: (value === null
+        ? 'That passkey did not report its minimum PIN length, and this ' +
+          'realm requires a PIN of at least ' + rule.min + ' characters ' +
+          '(the passkey policy\'s enforcePinLength). A security key ' +
+          'reports it only to services it was configured to tell. '
+        : 'That passkey accepts a PIN of ' + value + ' characters, and ' +
+          'this realm requires at least ' + rule.min + ' (the passkey ' +
+          'policy\'s minPinLength). ') +
+        (registering
+          ? 'Use a key configured with a longer minimum PIN.'
+          : 'Sign in another way, and register a key whose minimum PIN ' +
+            'is long enough.')
+    };
+    log.debug("Leaving PasskeyPolicy.pinLengthRefusal(). " + out.code);
+    return out;
+  }
+
+  /**
    * Describes the policy in sentences, for the page and a save's answer.
    *
    * @param profile - a profile already read; read afresh when omitted
@@ -623,10 +769,25 @@ class PasskeyPolicy {
       rules.backupEligibility === 'disallow'
         ? 'only device-bound passkeys: a synced (backup-eligible) passkey ' +
           'is refused at registration and at sign-in'
-        : 'synced (backup-eligible) passkeys are accepted'
+        : 'synced (backup-eligible) passkeys are accepted',
+      this.pinLengthSentence(rules)
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
+  }
+
+  // The PIN-length rule in a sentence (#529).
+  private pinLengthSentence(rules: PasskeyProfile): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.pinLengthSentence().");
+    const rule = this.pinLengthRule(rules);
+    log.debug("Leaving PasskeyPolicy.pinLengthSentence().");
+    return !rule.enforce
+      ? 'no minimum PIN length is asked of a security key'
+      : 'a security key must report a minimum PIN of at least ' + rule.min +
+        ' characters, at registration and at sign-in' +
+        (rule.onlyIfSupported ? '; a key that does not report is accepted'
+                              : '; a key that does not report is refused');
   }
 
   // -------------------------------------------------------------------------
@@ -659,7 +820,7 @@ class PasskeyPolicy {
     const { log } = this.deps;
     log.debug('Entering PasskeyPolicy.validate().');
     const body = given || {};
-    const values: Record<string, boolean | string> = {};
+    const values: Record<string, boolean | string | number> = {};
     const problems: string[] = [];
     FIELDS.forEach((field) => {
       let raw = body[field.key];
@@ -826,6 +987,8 @@ export = {
   securityKeyResidentKey: slot.forward('securityKeyResidentKey'),
   refusesBackupEligible: slot.forward('refusesBackupEligible'),
   backupEligibleRefusal: slot.forward('backupEligibleRefusal'),
+  pinLengthRule: slot.forward('pinLengthRule'),
+  pinLengthRefusal: slot.forward('pinLengthRefusal'),
   describe: slot.forward('describe'),
   enforced: slot.forward('enforced')
 };
