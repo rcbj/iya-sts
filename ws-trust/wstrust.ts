@@ -242,6 +242,11 @@ const JWT_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:jwt';
 const SAML11_TOKEN_TYPE =
     'http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV1.1';
 const SAML11_TOKEN_TYPE_ALIAS = 'urn:oasis:names:tc:SAML:1.0:assertion';
+// #522: the SAML 1.1 attribute that names the parties that acted, least to
+// most recent — SAML 1.1's stand-in for the SAML V2.0 Delegation
+// Restriction, which it cannot carry. See buildSaml11Token().
+const DELEGATES_ATTRIBUTE = 'delegates';
+const DELEGATES_NAMESPACE = 'urn:iya:sts:delegation';
 // The SAML Token Profile's reference to a SAML 1.1 assertion by its
 // AssertionID (section 3.4.3).
 const SAML11_ASSERTION_ID_REF = 'http://docs.oasis-open.org/wss/' +
@@ -699,13 +704,15 @@ class WsTrust {
     const jwt = tokenType === JWT_TOKEN_TYPE;
     let out;
     if (tokenType === SAML11_TOKEN_TYPE) {
-      // #487: SAML 1.1 has no element to say who acted — see
+      // #522: SAML 1.1 names who acted in an attribute — see
       // buildSaml11Token().
       out = (via === 'ActAs'
-        ? 'ActAs is COMPOSITE (WS-Trust 1.4 section 9.3), but a SAML 1.1 ' +
-          'assertion has no element to say so: the Delegation Restriction ' +
-          'is a SAML V2.0 condition. The assertion names the subject alone; ' +
-          'this register is the record of who acted.'
+        ? 'ActAs is COMPOSITE (WS-Trust 1.4 section 9.3): the far end can ' +
+          'see that a middle tier is acting, and the token issued says so. ' +
+          'SAML 1.1 has no Delegation Restriction, so the assertion names ' +
+          'every party that acted, least to most recent, in its "delegates" ' +
+          'attribute (namespace ' + DELEGATES_NAMESPACE + '), this requester ' +
+          'last.'
         : 'OnBehalfOf is IMPERSONATION (WS-Trust 1.3 section 9.2): the SAML ' +
           '1.1 assertion names the subject and adds nobody for this ' +
           'requester, so the relying party sees an ordinary sign-in.');
@@ -885,7 +892,8 @@ class WsTrust {
     }
     if (tokenType === SAML11_TOKEN_TYPE) {
       const built11 = this.buildSaml11Token(subject, audience, lifetimeMin,
-                                            authnContextClassRef, application);
+                                            authnContextClassRef, application,
+                                            delegates);
       log.debug("Leaving WsTrust.buildToken(). Issued a SAML 1.1 assertion.");
       return built11;
     }
@@ -938,20 +946,25 @@ class WsTrust {
   // AuthenticationStatement whose method is the SAML 1.1 reading of how the
   // requester authenticated (`authnContextOf()`'s class, mapped).
   //
-  // **NO DELEGATE CHAIN, AND THAT IS AN EXCEPTION.** SAML 1.1 has no
-  // Delegation Restriction: the SAML V2.0 Condition for Delegation
+  // **THE DELEGATES ARE AN ATTRIBUTE (#522, rcbj 2026-10-08).** SAML 1.1 has
+  // no Delegation Restriction: the SAML V2.0 Condition for Delegation
   // Restriction (sstc-saml-delegation-cs-01) is a SAML 2.0 condition type,
-  // derived from SAML 2.0's ConditionAbstractType, and cannot appear in a
-  // SAML 1.1 <saml:Conditions>. SAML 1.1 has no standard element for "this
-  // party acted". WS-Trust 1.4 section 9.3 says what an ActAs token is
-  // EXPECTED to contain (the identity acted as), and names no representation
-  // of the requester. So an ActAs in SAML 1.1 is issued about the subject,
-  // as the profile allows, and names nobody else. The register is where the
-  // chain is, and the act's note says so. A chain a presented token carried
-  // cannot be written into SAML 1.1 either, and is not.
+  // derived from SAML 2.0's ConditionAbstractType, and does not validate in
+  // a SAML 1.1 <saml:Conditions>. A condition of this service's own was the
+  // other way, and was not chosen: a SAML 1.1 relying party that does not
+  // understand a condition treats the assertion as Indeterminate. So the
+  // parties that acted — the same ones, in the same order (least to most
+  // recent), as the SAML 2.0 Delegation Restriction and the JWT's `act` for
+  // the same request — are a SAML 1.1 Attribute, AttributeName `delegates`
+  // in the `urn:iya:sts:delegation` namespace, one AttributeValue each: signed
+  // with the assertion, information for the relying party and not a
+  // condition, ignored by one that does not know it. An assertion with no
+  // delegates (an OnBehalfOf of a token that named none, a token about the
+  // requester itself) carries no such attribute. delegatedDelegates() reads
+  // it back, so a chain of SAML 1.1 tokens keeps it.
   // ---------------------------------------------------------------------------
   private buildSaml11Token(subject, audience, lifetimeMin,
-                           authnContextClassRef, application) {
+                           authnContextClassRef, application, delegates?) {
     const { buildSaml11Assertion, authnContext, log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.buildSaml11Token().");
     const samlApp = application || this.appliesToApplication(audience);
@@ -960,6 +973,12 @@ class WsTrust {
     const assertion = buildSaml11Assertion({
       subject: subject, audience: audience, lifetimeMin: lifetimeMin,
       authnMethod: method, application: samlApp,
+      attributes: (delegates || []).length
+        ? [{ name: DELEGATES_ATTRIBUTE, namespace: DELEGATES_NAMESPACE,
+             values: delegates.map(function (one) {
+               return String(one.nameId);
+             }) }]
+        : [],
       // #480, #494: the same Issuer a SAML 2.0 WS-Trust assertion carries —
       // per application for a registered AppliesTo, as SAML SSO names it.
       issuer: IssuerNames.samlIssuer(samlApp) });
@@ -1998,6 +2017,23 @@ class WsTrust {
                    format: String(nameIds[0].getAttribute('Format') || ''),
                    instant: String(all[i].getAttribute('DelegationInstant') ||
                                    '') });
+      }
+    }
+    // #522: a SAML 1.1 assertion names them in its `delegates` attribute,
+    // which carries no instant — the parties, in order, and nothing more.
+    const attrs = !out.length && element && element.getElementsByTagNameNS
+      ? element.getElementsByTagNameNS('*', 'Attribute') : [];
+    for (let i = 0; i < attrs.length; i += 1) {
+      if (attrs[i].getAttribute('AttributeName') === DELEGATES_ATTRIBUTE &&
+          attrs[i].getAttribute('AttributeNamespace') ===
+            DELEGATES_NAMESPACE) {
+        const values = attrs[i].getElementsByTagNameNS('*', 'AttributeValue');
+        for (let j = 0; j < values.length; j += 1) {
+          const nameId = String(values[j].textContent || '').trim();
+          if (nameId) {
+            out.push({ nameId: nameId, format: '', instant: '' });
+          }
+        }
       }
     }
     log.debug("Leaving WsTrust.delegatedDelegates(). " + out.length);
