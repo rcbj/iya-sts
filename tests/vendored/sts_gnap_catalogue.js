@@ -351,9 +351,16 @@ async function test() {
                        JSON.stringify(claims.act));
     assert.ok(/\/gnap$/.test(String(claims.act.iss)),
               JSON.stringify(claims.act));
+    // Every entry carries the GNAP authorization server's issuer, the
+    // token's own `iss`, and the foot names the client the original token
+    // was issued to — exactly, read off that token's own `client_id`.
+    assert.strictEqual(claims.act.iss, claims.iss,
+                       "each entry's iss is the token's own: " +
+                       JSON.stringify(claims));
     assert.ok(claims.act.act &&
-              /^urn:sts:client:./.test(String(claims.act.act.sub)) &&
-              claims.act.act.iss === claims.act.iss &&
+              claims.act.act.sub === "urn:sts:client:" +
+                claimsOf(original).client_id &&
+              claims.act.act.iss === claims.iss &&
               claims.act.act.act === undefined,
               "the original client at the foot: " +
               JSON.stringify(claims.act));
