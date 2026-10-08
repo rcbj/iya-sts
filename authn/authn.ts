@@ -4941,6 +4941,9 @@ class Authn {
     log.debug("Entering Authn.startSessionHere(). username=" + username + ", acr=" +
               acr);
     const extra = detail || {};
+    // THE PASSKEY POLICY FOR THIS PERSON AND APPLICATION (#535), which the
+    // passkey refusals below read.
+    this.deps.passkeyPolicy.select(username, extra.application);
     // -------------------------------------------------------------------------
     // A REALM BEING REMOVED STARTS NO SESSION (#262, 2026-09-26), from any
     // door, in either mode, authenticated or not — before everything below,
@@ -8584,6 +8587,11 @@ class Authn {
     // below. `/admin/webauthn` is where it is set; handleLogin() checks the
     // same three answers, because markup is what a person sees and the handler
     // is what decides.
+    // THE PASSKEY POLICY FOR THE APPLICATION (#535), where a door has not
+    // already selected one for a person: the screen offers what it says.
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select('', record.application);
+    }
     const keyPolicy = webauthnPolicy.settings();
     // A sign-in as one named person (#109): the name drawn fixed, and nothing
     // offered that is not a password — see beginAuthentication().
@@ -10514,6 +10522,11 @@ class Authn {
     // the page then describes the more cautious of the two roles.
     const passwordless = !!(step && step.passwordless);
     const wantedRole = passwordless ? 'primary' : 'mfa';
+    // THE PASSKEY POLICY FOR THIS PERSON AND APPLICATION (#535): the
+    // ceremony's options read it.
+    this.deps.passkeyPolicy.select(username,
+                                   step && step.authn &&
+                                   step.authn.application);
     const known = credentials.keysOf(username).filter(function (one) {
       return one.role === wantedRole;
     });
@@ -11146,6 +11159,8 @@ class Authn {
       webauthnVerifier } = this.deps;
     log.debug("Entering Authn.passkeySignIn().");
     const SAID = 'That passkey could not sign you in.';
+    // The application's passkey policy until the account is known (#535).
+    this.deps.passkeyPolicy.select('', record.application);
     const offered = this.passkeyOffered(record);
     if (!offered.ok) {
       log.debug("Leaving Authn.passkeySignIn(). Not offered.");
@@ -11199,6 +11214,10 @@ class Authn {
     const handle = String(credential.response.userHandle || '');
     // WHOSE IS IT. A handle this service minted, held by a person's entry.
     const owner = credentials.ownerOfUserHandle(handle);
+    // And the person's, once the handle names them (#535).
+    if (owner) {
+      this.deps.passkeyPolicy.select(owner, record.application);
+    }
     if (!owner) {
       // A KEY REGISTERED BEFORE #474 hands back the username's bytes. Told
       // apart from a credential nobody holds, so its holder is told to type
@@ -13048,6 +13067,11 @@ class Authn {
       }
       const body = posted.value;
       const step = pendingMfa.get(String(body.mfa_id || ''));
+      // The passkey policy for this person and application (#535).
+      if (step) {
+        this.deps.passkeyPolicy.select(step.username,
+                                       step.authn && step.authn.application);
+      }
       if (!step || step.expires < Date.now()) {
         pendingMfa.delete(String(body.mfa_id || ''));
         log.debug("Leaving the WebAuthn endpoint. The step had expired.");

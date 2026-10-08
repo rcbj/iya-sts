@@ -58,9 +58,10 @@ class PoliciesPage {
 
       kit.note('<strong>A policy here is a rule this realm holds a ' +
       'credential to.</strong> Each kind below is a SEPARATE policy with ' +
-      'its own entry in its own container, and each has one profile — ' +
+      'its own entry in its own container, and each has a profile — ' +
       '<code>default</code> — which applies to every person in this ' +
-      'realm. ' +
+      'realm; the passkey policy may also have named profiles, each ' +
+      'applying to the applications and groups it names. ' +
       view.kinds.map(function (kind) {
         return '<a href="#' + kit.esc(kind.id) + '">' +
           kit.esc(kind.label) + '</a> (<code>' +
@@ -80,10 +81,9 @@ class PoliciesPage {
       }).join('') +
 
       '<h2 id="profiles">Profiles</h2>' +
-      kit.note('One profile of each kind today, and the list is paged ' +
-      'like every list in this console. A second profile of a kind cannot ' +
-      'be created yet: nothing assigns a profile to a person, so a second ' +
-      'one would decide nothing while looking exactly like one that does.') +
+      kit.note('One profile of each kind, and the passkey policy\'s named ' +
+      'profiles, which are chosen by application and group (see that ' +
+      'section). The list is paged like every list in this console.') +
       listedNav.head +
       '<table><tr><th>Kind</th><th>Profile</th><th>Stored at</th>' +
       '<th>Problems</th></tr>' +
@@ -215,8 +215,85 @@ class PoliciesPage {
       '<ul>' + member.rules.map(function (rule) {
         return '<li>' + kit.esc(rule) + '</li>';
       }).join('') + '</ul>' +
+      (Array.isArray(member.named)
+        ? PoliciesPage.namedProfilesSection(kind, member) : '') +
       PoliciesPage.policySchemaTables(member.schema);
     return out;
+  }
+
+  /**
+   * Draws a kind's NAMED profiles (#535, the passkey policy): one form per
+   * profile with its selectors, and a form to add one. The one that applies
+   * to a sign-in is the matching profile with the lowest precedence.
+   *
+   * @param kind - the policy kind
+   * @param member - the kind's member of the policies view
+   * @returns the section as HTML
+   */
+  static namedProfilesSection(kind, member) {
+    const selectorRows = function (named, prefix) {
+      return '<tr><td><label for="' + kit.esc(prefix) + 'apps">' +
+        'Applications</label></td><td colspan="4"><input type="text" id="' +
+        kit.esc(prefix) + 'apps" name="selectApplications" size="60" ' +
+        'value="' + kit.esc((named.selectApplications || []).join(', ')) +
+        '" placeholder="identifier or client_id, comma-separated"></td>' +
+        '</tr><tr><td><label for="' + kit.esc(prefix) + 'groups">Groups' +
+        '</label></td><td colspan="4"><input type="text" id="' +
+        kit.esc(prefix) + 'groups" name="selectGroups" size="60" value="' +
+        kit.esc((named.selectGroups || []).join(', ')) + '" placeholder=' +
+        '"group cn or DN, comma-separated"></td></tr><tr><td><label for="' +
+        kit.esc(prefix) + 'precedence">Precedence</label></td><td ' +
+        'colspan="4"><input type="number" id="' + kit.esc(prefix) +
+        'precedence" name="precedence" min="1" max="1000" value="' +
+        kit.esc(named.precedence || 100) + '"> <span class="sub">the ' +
+        'lowest matching one applies</span></td></tr>';
+    };
+    const form = function (named, prefix, adding) {
+      return '<form method="post" action="/admin/policies">' +
+        '<input type="hidden" name="action" value="' +
+        kit.esc(kind.actions[0]) + '">' +
+        (adding
+          ? '<p><label for="' + kit.esc(prefix) + 'name">Name</label> ' +
+            '<input type="text" id="' + kit.esc(prefix) + 'name" ' +
+            'name="profile" pattern="[a-z0-9][a-z0-9-]{0,63}" required ' +
+            'placeholder="administrators"></p>'
+          : '<input type="hidden" name="profile" value="' +
+            kit.esc(named.name) + '">') +
+        '<table><tr><th>Rule</th><th>Value</th><th>Attribute</th>' +
+        '<th>Built-in default</th><th>Source</th></tr>' +
+        selectorRows(named, prefix) +
+        named.fields.map(function (field) {
+          return PoliciesPage.policyFieldRow(field, prefix);
+        }).join('') + '</table>' +
+        '<p><button>' + (adding ? 'Add the profile' : 'Save the profile') +
+        '</button></p></form>' +
+        (adding ? ''
+          : '<form method="post" action="/admin/policies" class="inline">' +
+            '<input type="hidden" name="action" value="' +
+            kit.esc(kind.actions[1]) + '"><input type="hidden" ' +
+            'name="profile" value="' + kit.esc(named.name) + '"><button ' +
+            'class="secondary">Remove this profile</button></form>');
+    };
+    const blank = { name: '', selectApplications: [], selectGroups: [],
+                    precedence: 100, fields: member.fields.map(function (f) {
+                      return Object.assign({}, f, { value: f.default,
+                                                    source: 'built-in' });
+                    }) };
+    return '<h3 id="' + kit.esc(kind.id) + '-named">Named profiles</h3>' +
+      kit.note('A named profile applies, instead of the default, to a ' +
+      'sign-in for one of its applications or by a member of one of its ' +
+      'groups; where several match, the one with the lowest precedence ' +
+      'applies. A realm\'s named profiles are its own and are not ' +
+      'inherited.') +
+      (member.named.length ? member.named.map(function (named) {
+        return '<h4>' + kit.esc(named.name) + ' (precedence ' +
+          kit.esc(named.precedence) + ')</h4>' +
+          form(named, kind.id + '-' + named.name + '-', false) +
+          '<ul>' + named.rules.map(function (rule) {
+            return '<li>' + kit.esc(rule) + '</li>';
+          }).join('') + '</ul>';
+      }).join('') : '<p>None yet.</p>') +
+      '<h4>Add a named profile</h4>' + form(blank, kind.id + '-new-', true);
   }
 
   /**

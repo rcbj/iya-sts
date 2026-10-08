@@ -8351,6 +8351,16 @@ if (typeof passkeyPolicy.setDirectory === 'function') {
     // THE VALUES OF ONE ATTRIBUTE OF A PERSON'S ENTRY (#532): the serials of
     // the security keys issued to them, which the passkey policy binds a
     // registration to. Never a secret attribute, whatever is asked.
+    // THE GROUPS A PERSON IS IN (#535), which a named passkey policy may
+    // select by cn or DN.
+    personGroups: function (key) {
+      log.debug("Entering personGroups().");
+      const found = groupsOfUser(key);
+      log.debug("Leaving personGroups().");
+      return (found.groups || []).map(function (group) {
+        return { cn: String(group.cn || ''), dn: String(group.dn || '') };
+      });
+    },
     personAttributeValues: function (key, attribute) {
       log.debug("Entering personAttributeValues().");
       const name = String(attribute || '').toLowerCase();

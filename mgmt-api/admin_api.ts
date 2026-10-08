@@ -1297,13 +1297,40 @@ class AdminApi {
               '`, REPLACING what is there.',
         example: {}
       };
-      const properties = {
-        profile: { type: 'string', enum: [module.DEFAULT_PROFILE],
-                   description: 'Which profile. Only `default` exists.' },
+      // A KIND WITH NAMED PROFILES (#535, the passkey policy) takes any
+      // profile name and the selectors; the others have `default` only.
+      const named = Array.isArray(module.SELECTORS);
+      const profileSchema = named
+        ? { type: 'string', pattern: '^(default|[a-z0-9][a-z0-9-]{0,63})$',
+            description: 'Which profile: `default`, or a named profile ' +
+                         '(lower-case letters, digits and hyphens), which ' +
+                         'is created by its first save.' }
+        : { type: 'string', enum: [module.DEFAULT_PROFILE],
+            description: 'Which profile. Only `default` exists.' };
+      const properties: Record<string, any> = {
+        profile: profileSchema,
         description: { type: 'string',
                        description: 'What the profile is for, for the next ' +
                                     'person. Optional.' }
       };
+      if (named) {
+        properties.selectApplications = {
+          oneOf: [{ type: 'array', items: { type: 'string' } },
+                  { type: 'string' }],
+          description: 'A named profile only: the applications it applies ' +
+                       'to (identifier or client_id), a list or comma-' +
+                       'separated.' };
+        properties.selectGroups = {
+          oneOf: [{ type: 'array', items: { type: 'string' } },
+                  { type: 'string' }],
+          description: 'A named profile only: the groups (cn or DN) whose ' +
+                       'members it applies to.' };
+        properties.precedence = {
+          oneOf: [{ type: 'integer', minimum: 1, maximum: 1000 },
+                  { type: 'string' }],
+          description: 'A named profile only: the lowest matching ' +
+                       'precedence wins. Default 100.' };
+      }
       module.FIELDS.forEach(function (field) {
         properties[field.key] = field.type === 'bool'
           ? { oneOf: [{ type: 'boolean' }, { type: 'string' }],
@@ -1367,8 +1394,13 @@ class AdminApi {
         requestBody: {
           type: 'object',
           properties: {
-            profile: { type: 'string', enum: [module.DEFAULT_PROFILE],
-                       description: 'Which profile. Only `default` exists.' }
+            profile: Array.isArray(module.SELECTORS)
+              ? { type: 'string',
+                  pattern: '^(default|[a-z0-9][a-z0-9-]{0,63})$',
+                  description: 'Which profile: `default` goes back to ' +
+                               'inheriting; a named one is removed.' }
+              : { type: 'string', enum: [module.DEFAULT_PROFILE],
+                  description: 'Which profile. Only `default` exists.' }
           },
           examples: [{ profile: module.DEFAULT_PROFILE }],
           additionalProperties: false

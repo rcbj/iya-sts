@@ -11419,6 +11419,36 @@ step for a person holding a PRIMARY key, and still never the enrolment
 ceremony. `keyForAssertion()` still decides which key an assertion is
 checked against, so nothing about acceptance changed.
 
+**#535 MADE THE POLICY NAMED (2026-10-08)**: `cn=<name>` beside
+`cn=default`, each with the rows and three SELECTORS
+(`stsPasskeySelectApplication`, `stsPasskeySelectGroup`,
+`stsPasskeyPrecedence`), not inherited across realms. `selectionFor()` picks
+the lowest precedence among the profiles matching the application or one of
+the person's groups (a fifth directory hook, `personGroups()`, over
+`groupsOfUser()`), else `default`. **The selection is AMBIENT**:
+`select(username, application)` keeps it on the request object that
+`audit.js` holds for the request (`currentRequest()`), in a WeakMap, so it
+dies with the request. An AsyncLocalStorage `enterWith()` would carry it
+into the next request on a kept-alive connection. `withSelection()` runs a
+function with one, and `select()` outside any request uses a loose
+AsyncLocalStorage. `read()` with no name reads the selected profile, so every
+answer, `webauthn_policy.ts`'s options and `credentials.addKey()` (which
+selects for the person where no door did) follow it.
+
+These doors select:
+- `startSessionHere()` (the person and the application);
+- `webauthnPage()` and `POST /authn/webauthn` (the step's person and
+  application);
+- `loginPage()` (the application, where nothing selected yet);
+- `passkeySignIn()` (the application, then the owner);
+- `/portal/keys` and activation (the person).
+
+Selection is code, not the issuance policy, by the decision on the ticket.
+It chooses which rows apply, and the rows' refusals decide. The Policies page
+draws a form per named profile and an add form (`namedProfilesSection()`).
+The API's `profile` became a pattern for this kind, and it takes the
+selectors.
+
 **Why the module and not an issuance-policy rule.** The ticket asked for the
 refusal "where the decision belongs", and rcbj's rule is that every
 authorization decision is policy. This is an AUTHENTICATION policy row on

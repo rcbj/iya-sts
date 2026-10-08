@@ -104,6 +104,39 @@
 // recorded on the key. It is read through a fourth directory hook,
 // `personAttributeValues()`, which never answers a secret attribute.
 //
+// #535 (2026-10-08) made the policy NAMED: beside `cn=default` a realm may
+// keep profiles of its own (`cn=<name>`, lower-case letters, digits and
+// hyphens), each with the same rows and three SELECTORS — the applications
+// it applies to (`stsPasskeySelectApplication`), the groups (by cn or DN,
+// `stsPasskeySelectGroup`) and a precedence (`stsPasskeyPrecedence`, 1 to
+// 1000, lower first). Decided on the ticket:
+//
+//   * WHICH APPLIES is the matching profile with the LOWEST precedence — a
+//     profile matches when the application the sign-in is for is one of its
+//     applications, or the person is in one of its groups — ties broken by
+//     name, and `default` when none matches. An application and a person
+//     are not ranked against each other by kind: the administrator orders
+//     the profiles, and a strict application profile wins over a lenient
+//     person profile by being given the lower number.
+//   * IT IS SELECTION, NOT AUTHORIZATION, and stays in this module rather
+//     than the issuance policy: it decides which rows apply, and the rows'
+//     refusals are what decide; a synchronous read at the doors cannot wait
+//     on a PDP.
+//   * IT IS AMBIENT: `select(username, application)` keeps the choice for
+//     the rest of the request — on the REQUEST object `audit.js` holds for
+//     every request (`currentRequest()`), so it can never outlive it into
+//     the next request on a kept-alive connection, which an
+//     AsyncLocalStorage `enterWith()` would — and `read()` with no
+//     name reads the selected profile, so every answer above — the doors,
+//     `webauthn_policy.ts`'s options, `credentials.addKey()` — reads the
+//     profile for the person and application in hand without a parameter.
+//     A door that selects nothing reads `default`.
+//   * NAMED PROFILES ARE NOT INHERITED: a realm's named profiles are its
+//     own, and only `default` follows the default realm's.
+//   * Registration selects for the person and, where it is known (the
+//     sign-in screen), the application; `/portal/keys` and activation know
+//     no application, so only group selectors apply there.
+//
 // #534 (2026-10-08) added `aggregateDevices`, ON — what the sign-in did
 // before: one "Use passkey" ceremony whose `allowCredentials` lists every
 // key of the step's role, the authenticator choosing. Off, a person holding
@@ -162,6 +195,8 @@ import InstanceSlot = require('./instance_slot');
 // The attachment setting a hint is held to (#531). `config` is below every
 // module here; `helpers` already requires it.
 import config = require('./config');
+// THE AMBIENT SELECTION (#535), for the rest of a request.
+import { AsyncLocalStorage } from 'async_hooks';
 
 const { log } = helpers;
 
@@ -187,6 +222,7 @@ interface DirectoryHooks {
                       attributes: Record<string, unknown>): unknown;
   deletePasskeyPolicy?(name: string): unknown;
   personAttributeValues?(username: string, attribute: string): string[];
+  personGroups?(username: string): { cn?: string; dn?: string }[];
   [hook: string]: unknown;
 }
 
@@ -227,6 +263,70 @@ interface PasskeyPolicyDeps {
  * The name of the one passkey policy profile, `default`.
  */
 const DEFAULT_PROFILE = 'default';
+/**
+ * A named profile's name (#535): what a cn may be here.
+ */
+const PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
+/**
+ * The selectors a named profile carries (#535), stored beside its rows.
+ */
+const SELECTORS = [
+  { key: 'selectApplications', attribute: 'stsPasskeySelectApplication',
+    what: 'The applications (identifier or client_id) a named passkey ' +
+          'policy applies to, at a sign-in for one of them.' },
+  { key: 'selectGroups', attribute: 'stsPasskeySelectGroup',
+    what: 'The groups (cn or DN) whose members a named passkey policy ' +
+          'applies to.' },
+  { key: 'precedence', attribute: 'stsPasskeyPrecedence',
+    what: 'Which named passkey policy wins where several match: the lowest, ' +
+          'from 1 to 1000.' }
+];
+const DEFAULT_PRECEDENCE = 100;
+/**
+ * A selection (#535).
+ */
+interface Selection { name: string; username: string; application: string }
+/**
+ * The selection of each request in hand, keyed by the request object, so it
+ * dies with the request (#535).
+ */
+const byRequest = new WeakMap<object, Selection>();
+/**
+ * `withSelection()`'s, for exactly the function it runs (#535).
+ */
+const scoped = new AsyncLocalStorage<Selection>();
+/**
+ * `select()`'s outside any request — a test, a job — where there is no
+ * request object to keep it on (#535).
+ */
+const loose = new AsyncLocalStorage<Selection>();
+
+// THESE TWO CARRY NO Entering/Leaving PAIR: every read of the policy asks
+// them, several times per ceremony, and a pair would drown the log (the
+// style's hot-path exception).
+//
+// The request this code runs for, from `audit.js`'s ambient source, or null.
+// Required LAZILY: `audit.js` is a leaf below this module, and nothing here
+// needs it at load.
+function ambientRequest(): object | null {
+  try {
+    return require('./audit').currentRequest() || null;
+  } catch (e) {
+    log.debug("Caught in ambientRequest(): " + ((e && e.message) || e));
+    return null;
+  }
+}
+
+// The selection in force: `withSelection()`'s, else this request's, else
+// one made outside a request.
+function currentSelection(): Selection | undefined {
+  const inScope = scoped.getStore();
+  if (inScope) {
+    return inScope;
+  }
+  const req = ambientRequest();
+  return req ? byRequest.get(req) : loose.getStore();
+}
 
 /**
  * The resident-key requirements WebAuthn Level 3 section 5.4.6 defines.
@@ -434,7 +534,9 @@ const SCHEMA = {
   ],
   attributes: FIELDS.map(function (field) {
     return { name: field.attribute, what: field.what };
-  }).concat([
+  }).concat(SELECTORS.map(function (field) {
+    return { name: field.attribute, what: field.what };
+  })).concat([
     { name: 'description',
       what: 'What the profile is for, for the next person.' }
   ])
@@ -665,6 +767,153 @@ class PasskeyPolicy {
     return { value: text };
   }
 
+  // Every value of an attribute, as strings (#535's selectors are lists).
+  private allValues(attributes: Record<string, unknown>,
+                    name: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.allValues().");
+    const found = attributes[name] !== undefined ? attributes[name]
+      : attributes[name.toLowerCase()];
+    log.debug("Leaving PasskeyPolicy.allValues().");
+    return (Array.isArray(found) ? found : (found === undefined ||
+                                            found === null || found === ''
+                                              ? [] : [found]))
+      .map(String).filter(Boolean);
+  }
+
+  // -------------------------------------------------------------------------
+  // WHICH PROFILE APPLIES (#535).
+  // -------------------------------------------------------------------------
+  // `selectedName()` and `hasSelection()` carry NO Entering/Leaving pair:
+  // every answer above calls one on every read, several times per ceremony,
+  // and a pair here would drown the log (the style's hot-path exception).
+  /**
+   * The name of the profile selected for the rest of this request, or
+   * `default` where nothing selected one.
+   *
+   * @returns the profile name
+   */
+  selectedName(): string {
+    const store = currentSelection();
+    return store && store.name ? store.name : DEFAULT_PROFILE;
+  }
+
+  /**
+   * Says whether this request has selected a profile.
+   *
+   * @returns true once `select()` ran in this request
+   */
+  hasSelection(): boolean {
+    return !!currentSelection();
+  }
+
+  /**
+   * Works out which profile applies to a person signing in to an
+   * application, without selecting it: the matching named profile with the
+   * lowest precedence (ties by name), else `default`.
+   *
+   * @param username - the person, or '' where not yet known
+   * @param application - the application, or '' where none is known
+   * @returns the profile name
+   */
+  selectionFor(username: string, application: string): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.selectionFor().");
+    if (!this.haveDirectory()) {
+      log.debug("Leaving PasskeyPolicy.selectionFor(). No directory.");
+      return DEFAULT_PROFILE;
+    }
+    const named = this.directory.allPasskeyPolicies().filter(function (one) {
+      return String(one.name || '').toLowerCase() !== DEFAULT_PROFILE;
+    });
+    if (!named.length) {
+      log.debug("Leaving PasskeyPolicy.selectionFor(). None named.");
+      return DEFAULT_PROFILE;
+    }
+    const app = String(application || '').trim().toLowerCase();
+    const hook = this.directory.personGroups;
+    const groups = username && typeof hook === 'function'
+      ? (hook.call(this.directory, username) || []).map(function (g: any) {
+        return [String(g.cn || '').toLowerCase(),
+                String(g.dn || '').toLowerCase()];
+      }).reduce(function (all: string[], two: string[]) {
+        return all.concat(two);
+      }, []).filter(Boolean)
+      : [];
+    const matching = named.map((entry) => {
+      const at = entry.attributes || {};
+      const p = Number(this.firstValue(at, 'stsPasskeyPrecedence'));
+      return {
+        name: String(entry.name).toLowerCase(),
+        precedence: p >= 1 && p <= 1000 ? p : DEFAULT_PRECEDENCE,
+        apps: this.allValues(at, 'stsPasskeySelectApplication')
+          .map(function (one) { return one.trim().toLowerCase(); }),
+        groups: this.allValues(at, 'stsPasskeySelectGroup')
+          .map(function (one) { return one.trim().toLowerCase(); })
+      };
+    }).filter(function (one) {
+      return (!!app && one.apps.indexOf(app) >= 0) ||
+             one.groups.some(function (g) { return groups.indexOf(g) >= 0; });
+    }).sort(function (a, b) {
+      return a.precedence - b.precedence || (a.name < b.name ? -1 : 1);
+    });
+    const out = matching.length ? matching[0].name : DEFAULT_PROFILE;
+    log.debug("Leaving PasskeyPolicy.selectionFor(). " + out);
+    return out;
+  }
+
+  /**
+   * Selects the profile for a person and an application for the rest of
+   * this request: every `read()` without a name reads it from here on.
+   *
+   * @param username - the person, or '' where not yet known
+   * @param application - the application, or ''
+   * @returns the profile name selected
+   */
+  select(username: unknown, application: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.select().");
+    let name = DEFAULT_PROFILE;
+    try {
+      name = this.selectionFor(String(username || ''),
+                               String(application || ''));
+    } catch (e) {
+      // A directory that cannot be asked selects the default: the default
+      // profile is a realm's baseline, never weaker than nothing.
+      log.debug("Caught in PasskeyPolicy.select(): " +
+                ((e && e.message) || e));
+      name = DEFAULT_PROFILE;
+    }
+    const chosen = { name: name, username: String(username || ''),
+                     application: String(application || '') };
+    const req = ambientRequest();
+    if (req) {
+      byRequest.set(req, chosen);
+    } else {
+      loose.enterWith(chosen);
+    }
+    log.debug("Leaving PasskeyPolicy.select(). " + name);
+    return name;
+  }
+
+  /**
+   * Runs `fn` with a profile selected for it, and only for it.
+   *
+   * @param username - the person
+   * @param application - the application
+   * @param fn - what to run
+   * @returns what `fn` returns
+   */
+  withSelection<T>(username: unknown, application: unknown, fn: () => T): T {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.withSelection().");
+    const name = this.selectionFor(String(username || ''),
+                                   String(application || ''));
+    log.debug("Leaving PasskeyPolicy.withSelection(). " + name);
+    return scoped.run({ name: name, username: String(username || ''),
+                        application: String(application || '') }, fn);
+  }
+
   private entryIn(name: string) {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.entryIn().");
@@ -719,7 +968,12 @@ class PasskeyPolicy {
   read(name?: string): PasskeyProfile {
     const { log } = this.deps;
     log.debug('Entering PasskeyPolicy.read(). name=' + name);
-    const profile = String(name || DEFAULT_PROFILE);
+    // NO NAME IS THE SELECTED PROFILE (#535); a named profile that is not
+    // there (removed since it was selected) is the default.
+    const asked = String(name || this.selectedName()).toLowerCase();
+    const profile = asked !== DEFAULT_PROFILE &&
+                    (!this.haveDirectory() || !this.entryIn(asked))
+      ? DEFAULT_PROFILE : asked;
     const found = this.entryFor(profile);
     const entry = found.entry;
     const values: Record<string, unknown> = Object.assign({}, DEFAULTS);
@@ -748,8 +1002,18 @@ class PasskeyPolicy {
           : 'default realm';
       });
     }
+    const at = entry ? (entry.attributes || {}) : {};
+    const precedence = Number(this.firstValue(at, 'stsPasskeyPrecedence'));
     const out = Object.assign({
       name: profile,
+      // THE SELECTORS (#535): empty for `default`, which needs none.
+      selectApplications: profile === DEFAULT_PROFILE ? []
+        : this.allValues(at, 'stsPasskeySelectApplication'),
+      selectGroups: profile === DEFAULT_PROFILE ? []
+        : this.allValues(at, 'stsPasskeySelectGroup'),
+      precedence: profile === DEFAULT_PROFILE ? 0
+        : (precedence >= 1 && precedence <= 1000 ? precedence
+                                                 : DEFAULT_PRECEDENCE),
       stored: found.from === 'realm',
       inherited: found.from === 'default-realm',
       from: found.from,
@@ -777,7 +1041,7 @@ class PasskeyPolicy {
     log.debug("Entering PasskeyPolicy.profileFor().");
     void username;
     log.debug("Leaving PasskeyPolicy.profileFor().");
-    return this.read(DEFAULT_PROFILE);
+    return this.read();
   }
 
   /**
@@ -788,7 +1052,19 @@ class PasskeyPolicy {
   list(): PasskeyProfile[] {
     const { log } = this.deps;
     log.debug('Entering PasskeyPolicy.list().');
-    const rows = [this.read(DEFAULT_PROFILE)];
+    // `default` first, then this realm's named profiles by precedence
+    // (#535).
+    const named = this.haveDirectory()
+      ? this.directory.allPasskeyPolicies().map(function (one) {
+        return String(one.name || '').toLowerCase();
+      }).filter(function (one) {
+        return one && one !== DEFAULT_PROFILE;
+      }) : [];
+    const rows = [this.read(DEFAULT_PROFILE)].concat(named.map((one) => {
+      return this.read(one);
+    }).sort(function (a, b) {
+      return a.precedence - b.precedence || (a.name < b.name ? -1 : 1);
+    }));
     log.debug('Leaving PasskeyPolicy.list(). ' + rows.length +
               ' profile(s).');
     return rows;
@@ -807,7 +1083,7 @@ class PasskeyPolicy {
   allowsUsernameless(profile?: PasskeyProfile | null): boolean {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.allowsUsernameless().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     log.debug("Leaving PasskeyPolicy.allowsUsernameless().");
     return rules.allowUsernameless === true;
   }
@@ -824,7 +1100,7 @@ class PasskeyPolicy {
   securityKeyResidentKey(profile?: PasskeyProfile | null): string {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.securityKeyResidentKey().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     const asked = String(rules.securityKeyResidentKey);
     const out = rules.allowUsernameless !== true ? 'required'
       : (RESIDENT_KEY_VALUES.indexOf(asked) >= 0 ? asked : 'required');
@@ -842,7 +1118,7 @@ class PasskeyPolicy {
   refusesBackupEligible(profile?: PasskeyProfile | null): boolean {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.refusesBackupEligible().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     log.debug("Leaving PasskeyPolicy.refusesBackupEligible().");
     return rules.backupEligibility === 'disallow';
   }
@@ -964,7 +1240,7 @@ class PasskeyPolicy {
       log.debug("Leaving PasskeyPolicy.hintsFor(). No kind.");
       return [];
     }
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     const list = PasskeyPolicy.listOf(rules[key]);
     const bad = kind === 'sign-in' ? []
       : this.contradicting(list, this.attachmentFor(kind));
@@ -1017,7 +1293,7 @@ class PasskeyPolicy {
                  profile?: PasskeyProfile | null): string {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.displayNameFor().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     const groups = String(rules.userDisplayName || '').split(',')
       .map(function (one) {
         return one.trim().split(/\s+/).filter(Boolean);
@@ -1056,7 +1332,7 @@ class PasskeyPolicy {
             profile?: PasskeyProfile | null): string {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.rpNameFor().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     const extras = String(rules.rpNameExtras || 'none');
     const parts = [PasskeyPolicy.displaySafe(base, 64)];
     if (extras === 'realm' || extras === 'realm-and-organisation') {
@@ -1082,7 +1358,7 @@ class PasskeyPolicy {
                      profile?: PasskeyProfile | null): string {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.credentialLabelFor().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     const template = String(rules.credentialLabel || '');
     log.debug("Leaving PasskeyPolicy.credentialLabelFor().");
     return !template ? '' : PasskeyPolicy.displaySafe(template
@@ -1100,7 +1376,7 @@ class PasskeyPolicy {
   aggregatesDevices(profile?: PasskeyProfile | null): boolean {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.aggregatesDevices().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     log.debug("Leaving PasskeyPolicy.aggregatesDevices().");
     return rules.aggregateDevices !== false;
   }
@@ -1114,7 +1390,7 @@ class PasskeyPolicy {
   enterpriseSerialAttribute(profile?: PasskeyProfile | null): string {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.enterpriseSerialAttribute().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     log.debug("Leaving PasskeyPolicy.enterpriseSerialAttribute().");
     return String(rules.enterpriseSerialAttribute || '');
   }
@@ -1178,7 +1454,7 @@ class PasskeyPolicy {
   enforcesAttestationAtSignIn(profile?: PasskeyProfile | null): boolean {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.enforcesAttestationAtSignIn().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     log.debug("Leaving PasskeyPolicy.enforcesAttestationAtSignIn().");
     return rules.enforceAttestationAtSignIn === true;
   }
@@ -1194,7 +1470,7 @@ class PasskeyPolicy {
       { enforce: boolean; min: number; onlyIfSupported: boolean } {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.pinLengthRule().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     const min = Number(rules.minPinLength);
     const out = {
       enforce: rules.enforcePinLength === true,
@@ -1267,7 +1543,7 @@ class PasskeyPolicy {
   describe(profile?: PasskeyProfile | null): string[] {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.describe().");
-    const rules = profile || this.read(DEFAULT_PROFILE);
+    const rules = profile || this.read();
     const securityKey = this.securityKeyResidentKey(rules);
     const out = [
       rules.allowUsernameless === true
@@ -1342,16 +1618,65 @@ class PasskeyPolicy {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.checkProfileName().");
     const text = String(name || DEFAULT_PROFILE).trim();
-    if (text.toLowerCase() !== DEFAULT_PROFILE) {
+    // `default`, or a named profile (#535): lower-case letters, digits and
+    // hyphens, which is what a cn here may be.
+    if (text !== DEFAULT_PROFILE && !PROFILE_NAME.test(text)) {
       log.debug("Leaving PasskeyPolicy.checkProfileName().");
-      return 'There is one passkey policy profile, "' + DEFAULT_PROFILE +
-             '", and it applies to every person in this realm. "' +
-             text.slice(0, 64) + '" cannot be created: nothing assigns a ' +
-             'profile to a person yet (#535), so a second one would decide ' +
-             'nothing while looking exactly like one that does.';
+      return 'A passkey policy profile is "' + DEFAULT_PROFILE + '" or a ' +
+             'name of lower-case letters, digits and hyphens, at most 64; "' +
+             text.slice(0, 64) + '" is neither.';
     }
     log.debug("Leaving PasskeyPolicy.checkProfileName().");
     return null;
+  }
+
+  // A named profile's selectors as sent (#535): lists by comma, line or
+  // array, each value at most 256 characters with no control character, at
+  // most 32 of each, and a precedence from 1 to 1000 (100 when omitted).
+  private checkSelectors(given: Record<string, any>):
+      { applications: string[]; groups: string[]; precedence: number;
+        problems: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.checkSelectors().");
+    const problems: string[] = [];
+    const listOf = function (raw: unknown, what: string): string[] {
+      log.debug("Entering checkSelectors() listOf().");
+      const items = (Array.isArray(raw) ? raw : String(raw === undefined ||
+                                                       raw === null ? ''
+                                                                    : raw)
+        .split(/[,\n]/)).map(function (one) {
+          return String(one).trim();
+        }).filter(Boolean);
+      if (items.length > 32 || items.some(function (one) {
+        return one.length > 256 || /[\u0000-\u001f\u007f]/.test(one);
+      })) {
+        problems.push(what + ' must be at most 32 values of at most 256 ' +
+                      'characters each, with no control character.');
+      }
+      log.debug("Leaving checkSelectors() listOf().");
+      return items.slice(0, 32);
+    };
+    const applications = listOf(given.selectApplications,
+                                'The applications a named profile applies to');
+    const groups = listOf(given.selectGroups,
+                          'The groups a named profile applies to');
+    const raw = given.precedence;
+    const precedence = raw === undefined || raw === null || raw === ''
+      ? DEFAULT_PRECEDENCE : Number(raw);
+    if (!(Number.isInteger(precedence) && precedence >= 1 &&
+          precedence <= 1000)) {
+      problems.push('The precedence of a named profile is a whole number ' +
+                    'from 1 to 1000; "' + String(raw).slice(0, 20) +
+                    '" is not.');
+    }
+    if (!applications.length && !groups.length) {
+      problems.push('A named profile with no application and no group ' +
+                    'would apply to nobody; name at least one.');
+    }
+    log.debug("Leaving PasskeyPolicy.checkSelectors(). " + problems.length +
+              " problem(s).");
+    return { applications: applications, groups: groups,
+             precedence: precedence, problems: problems };
   }
 
   /**
@@ -1415,7 +1740,16 @@ class PasskeyPolicy {
       return errorCodes.mark({ ok: false, errors: [refused] },
                              'STS-AUTHN-0308');
     }
+    const which = String(name || DEFAULT_PROFILE).trim().toLowerCase();
     const checked = this.validate(given);
+    // A NAMED PROFILE'S SELECTORS (#535), refused with the rows.
+    const selectors = which === DEFAULT_PROFILE ? null
+      : this.checkSelectors(given || {});
+    if (selectors) {
+      selectors.problems.forEach(function (one) {
+        checked.problems.push(one);
+      });
+    }
     if (checked.problems.length) {
       log.debug('Leaving PasskeyPolicy.save(). The values were refused.');
       return errorCodes.mark({ ok: false, errors: checked.problems },
@@ -1441,8 +1775,12 @@ class PasskeyPolicy {
     if (!attributes.description) {
       delete attributes.description;
     }
-    const written = this.directory.writePasskeyPolicy(DEFAULT_PROFILE,
-                                                      attributes);
+    if (selectors) {
+      attributes.stsPasskeySelectApplication = selectors.applications;
+      attributes.stsPasskeySelectGroup = selectors.groups;
+      attributes.stsPasskeyPrecedence = String(selectors.precedence);
+    }
+    const written = this.directory.writePasskeyPolicy(which, attributes);
     if (!written) {
       log.debug('Leaving PasskeyPolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,
@@ -1451,7 +1789,7 @@ class PasskeyPolicy {
                              'STS-AUTHN-0311');
     }
     log.debug('Leaving PasskeyPolicy.save(). Stored.');
-    return { ok: true, profile: this.read(DEFAULT_PROFILE) };
+    return { ok: true, profile: this.read(which) };
   }
 
   /**
@@ -1470,15 +1808,18 @@ class PasskeyPolicy {
       return errorCodes.mark({ ok: false, errors: [refused] },
                              'STS-AUTHN-0308');
     }
+    const which = String(name || DEFAULT_PROFILE).trim().toLowerCase();
     if (!this.haveDirectory()) {
       log.debug('Leaving PasskeyPolicy.reset(). No directory.');
-      return { ok: true, removed: false, profile: this.read(DEFAULT_PROFILE) };
+      return { ok: true, removed: false, profile: this.read(which) };
     }
-    const removed = !!this.directory.deletePasskeyPolicy(DEFAULT_PROFILE);
+    // A NAMED PROFILE IS REMOVED WHOLE (#535); `default` goes back to
+    // inheriting.
+    const removed = !!this.directory.deletePasskeyPolicy(which);
     log.debug('Leaving PasskeyPolicy.reset(). ' +
               (removed ? 'Removed.' : 'Nothing stored.'));
     return { ok: true, removed: removed,
-             profile: this.read(DEFAULT_PROFILE) };
+             profile: this.read(which) };
   }
 
   /**
@@ -1539,6 +1880,12 @@ export = {
   pinLengthRule: slot.forward('pinLengthRule'),
   enforcesAttestationAtSignIn: slot.forward('enforcesAttestationAtSignIn'),
   hintsFor: slot.forward('hintsFor'),
+  select: slot.forward('select'),
+  selectionFor: slot.forward('selectionFor'),
+  selectedName: slot.forward('selectedName'),
+  hasSelection: slot.forward('hasSelection'),
+  withSelection: slot.forward('withSelection'),
+  SELECTORS: SELECTORS,
   enterpriseSerialAttribute: slot.forward('enterpriseSerialAttribute'),
   displayNameFor: slot.forward('displayNameFor'),
   aggregatesDevices: slot.forward('aggregatesDevices'),

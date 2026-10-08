@@ -6590,7 +6590,8 @@ class AdminActions {
     const module = kind.module;
     const noun = kind.label.toLowerCase() + ' profile';
     const profileName = String(body.profile || module.DEFAULT_PROFILE).trim();
-    const before = module.read(module.DEFAULT_PROFILE);
+    // The profile the act is about (#535: a named passkey profile too).
+    const before = module.read(profileName || module.DEFAULT_PROFILE);
     const valuesOf = function (profile) {
       log.debug("Entering valuesOf().");
       const out: Record<string, any> = {};
