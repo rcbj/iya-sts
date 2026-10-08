@@ -379,6 +379,69 @@ function childMain() {
             a.err);
       stranger.close();
 
+      // ---- an SVID OpenSSL cannot chain (grpc-js 1.14.5) -----------------
+      // grpc-js 1.14.5's getAuthContext() hides a certificate the handshake
+      // did not authorize, and a FEDERATED SVID is always one: the listener's
+      // roots are this realm's anchors. `spiffe_auth.ts` reads it off the
+      // socket and verifies it against the federated bundle itself, so a
+      // federated stranger is PERMISSION_DENIED like the realm's own — and an
+      // SVID under an authority nobody federated is UNAUTHENTICATED for not
+      // verifying, never "none was presented".
+      const x509 = require(ROOT + '/common/vendored/x509.js');
+      const keys = require(ROOT + '/common/vendored/key_material.js');
+      const testCa = require(ROOT + '/tests/vendored/outbound_test_ca.js');
+      const foreignSvid = async function (foreignCa, id) {
+        const pair = await keys.generateKeyPair('ec-p256');
+        const leaf = await x509.issueCertificate({
+          subject: [{ name: 'O', value: 'sts test broker' }],
+          subjectPublicKey: pair.publicPem, signatureAlg: 'sha256-rsa',
+          profile: 'tls-client',
+          issuer: { certificatePem: foreignCa.certPem,
+                    privateKeyPem: foreignCa.privatePem, keyAlg: 'rsa-2048' },
+          extensions: {
+            basicConstraints: { present: true, critical: true, ca: false },
+            keyUsage: { present: true, critical: true,
+                        usages: ['digitalSignature'] },
+            extKeyUsage: { present: true, critical: false,
+                           usages: ['clientAuth', 'serverAuth'] },
+            subjectAltName: { present: true, critical: false,
+                              names: [{ kind: 'uri', value: id }] } } });
+        return { privateKeyPem: pair.privatePem, chainPem: [leaf.pem] };
+      };
+      const nodeCrypto = require('crypto');
+      const federatedCa = await testCa.makeCa();
+      const federatedTd = 'broker-federated.test';
+      const jwk = nodeCrypto.createPublicKey(federatedCa.certPem)
+        .export({ format: 'jwk' });
+      const der = new nodeCrypto.X509Certificate(federatedCa.certPem).raw;
+      const federated = inRealm(function () {
+        return ca.setFederatedBundle(federatedTd, {
+          keys: [Object.assign(jwk, { use: 'x509-svid',
+                                      x5c: [der.toString('base64')] })],
+          spiffe_sequence: 1, spiffe_refresh_hint: 300 }, { realm: REALM });
+      });
+      check(federated.ok, 'a federated trust domain in the realm', federated);
+      const farStranger = connect(await foreignSvid(federatedCa,
+        'spiffe://' + federatedTd + '/stranger'));
+      a = await unary(farStranger, 'FetchJWTSVID', jwtRequest(pidRef(
+        process.pid)));
+      farStranger.close();
+      check(a.err && a.err.code === grpc.status.PERMISSION_DENIED &&
+            /not an authorized broker/.test(a.err.details),
+            'a FEDERATED SVID that names no broker: PERMISSION_DENIED, not ' +
+            'UNAUTHENTICATED (grpc-js 1.14.5 hides it from the auth context)',
+            a.err);
+      const unknownCa = await testCa.makeCa();
+      const unknown = connect(await foreignSvid(unknownCa,
+        'spiffe://' + federatedTd + '/stranger'));
+      a = await unary(unknown, 'FetchJWTSVID', jwtRequest(pidRef(
+        process.pid)));
+      unknown.close();
+      check(a.err && a.err.code === grpc.status.UNAUTHENTICATED &&
+            !/none was presented/.test(a.err.details),
+            'an SVID under an authority nobody federated: UNAUTHENTICATED ' +
+            'for not verifying, not for presenting nothing', a.err);
+
       // ---- the reference -------------------------------------------------
       a = await unary(client, 'FetchJWTSVID',
                       { reference: null, audience: ['a'] });
