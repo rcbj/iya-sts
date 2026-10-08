@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4217** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4212** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -2153,7 +2153,7 @@ Raised from: saml/.
 | `STS-SAML-0001` | A SAML 2.0 sign-in resumed with a held-request id that is unknown or has expired (saml2.requestTtlMin), so there is no AuthnRequest to answer. | HTTP 400 page |
 | `STS-SAML-0002` | The SAMLRequest at the SAML 2.0 Single Sign-On service is not a readable <samlp:AuthnRequest>: malformed XML, or another message. | HTTP 400 page |
 | `STS-SAML-0003` | A SAML 2.0 AuthnRequest names no <saml:Issuer> and the path names no service provider, so there is no audience to issue for. | HTTP 400 page |
-| `STS-SAML-0004` | saml2.entityId is empty in a product-mode realm, so the SAML 2.0 identity provider has no name to issue or publish metadata under. | HTTP 503 (a page at the SSO service, text/plain at the metadata endpoint) |
+| `STS-SAML-0004` *(retired)* | saml2.entityId is empty in a product-mode realm, so the SAML 2.0 identity provider has no name to issue or publish metadata under. Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 (a page at the SSO service, text/plain at the metadata endpoint) |
 | `STS-SAML-0005` | In product mode, a SAML 2.0 AuthnRequest's AssertionConsumerServiceURL is not a samlAssertionConsumerService registered on the service provider's entry, or none is registered. | HTTP 400 page |
 | `STS-SAML-0006` | The SAML 2.0 assertion consumer service URL is not an absolute http(s) URL. | HTTP 400 page |
 | `STS-SAML-0007` | A SAML 2.0 AuthnRequest asked for a ProtocolBinding this identity provider does not implement (for example PAOS). | HTTP 400 page |
@@ -2163,7 +2163,7 @@ Raised from: saml/.
 | `STS-SAML-0011` | In product mode, a SAML 2.0 assertion configured to be encrypted could not be encrypted (no usable certificate), so none was sent. | samlp:Response with status Responder and no assertion |
 | `STS-SAML-0012` | A SAML 2.0 assertion or logout NameID could not be encrypted to the service provider's certificate (usually a non-RSA key) and went out in clear. | — |
 | `STS-SAML-0013` | A SAML 2.0 protocol message (Response, LogoutResponse or LogoutRequest) could not be signed and was sent unsigned. | — |
-| `STS-SAML-0014` | The SAML 2.0 identity provider metadata could not be signed and was served unsigned. | — |
+| `STS-SAML-0014` | The SAML identity provider metadata (one document for SAML 2.0 and 1.1 since #523) could not be signed and was served unsigned. | — |
 | `STS-SAML-0015` | The body posted to the SAML 2.0 Artifact Resolution Service is not XML. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
 | `STS-SAML-0016` | The SOAP body posted to the SAML 2.0 Artifact Resolution Service carries no <samlp:ArtifactResolve>. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
 | `STS-SAML-0017` | A SAML 2.0 ArtifactResolve carries no <samlp:Artifact>. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
@@ -2176,14 +2176,14 @@ Raised from: saml/.
 | `STS-SAML-0024` | A SAML 1.1 assertion could not be signed and was returned unsigned. | — |
 | `STS-SAML-0025` | A SAML 1.1 browser flow resumed with a held-flow id that is unknown or has expired (saml11.requestTtlMin). | HTTP 400 page |
 | `STS-SAML-0026` | A SAML 1.1 flow named a profile other than post or artifact in the non-spec profile parameter. | HTTP 400 page |
-| `STS-SAML-0027` | saml11.providerId is empty in a product-mode realm, so the SAML 1.1 identity provider has no name to issue or publish metadata under. | HTTP 503 page or text/plain at the inter-site transfer service and metadata; samlp:Response status Responder at the SAML responder |
+| `STS-SAML-0027` *(retired)* | saml11.providerId is empty in a product-mode realm, so the SAML 1.1 identity provider has no name to issue or publish metadata under. Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 page or text/plain at the inter-site transfer service and metadata; samlp:Response status Responder at the SAML responder |
 | `STS-SAML-0028` | In product mode, a SAML 1.1 flow's shire is not a samlAssertionConsumerService registered on the relying party's entry, or none is registered. | HTTP 400 page |
 | `STS-SAML-0029` | The SAML 1.1 assertion consumer URL is not an absolute http(s) URL. | HTTP 400 page |
 | `STS-SAML-0030` | A SAML 1.1 flow names no relying party: no providerId, no path segment and no TARGET origin to take one from. | HTTP 400 page |
 | `STS-SAML-0031` | The sign-in screen reported that a SAML 1.1 sign-in was cancelled or failed. | HTTP 400 page |
 | `STS-SAML-0032` | The issuance policy refused a SAML 1.1 assertion for this person to this relying party. | HTTP 403 page |
 | `STS-SAML-0033` | A SAML 1.1 <samlp:Response> could not be signed and was sent unsigned. | — |
-| `STS-SAML-0034` | The SAML 1.1 identity provider metadata could not be signed and was served unsigned. | — |
+| `STS-SAML-0034` *(retired)* | The SAML 1.1 identity provider metadata could not be signed and was served unsigned. Retired 2026-10-08 (#523): there is one document for both SAML versions, and STS-SAML-0014 names its failure. | — |
 | `STS-SAML-0035` | The body posted to the SAML 1.1 SAML responder is not XML. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0036` | The SOAP body posted to the SAML 1.1 SAML responder carries no <samlp:Request>. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0037` | A SAML 1.1 artifact does not resolve: never issued here, expired (saml11.artifactTtlS), or already resolved once. | SOAP samlp:Response with status samlp:Success and no assertion (HTTP 200) — saml-bindings-1.1 4.1.1.6 (#160) |
@@ -2247,7 +2247,7 @@ Raised from: saml/.
 | `STS-SAML-0095` | The SAML 2.0 attribute authority received no <samlp:AttributeQuery>, or one naming no Issuer. #189. | SOAP samlp:Response, Requester (HTTP 200) |
 | `STS-SAML-0096` | A SAML 1.1 AttributeQuery or AuthenticationQuery in product mode named a subject no live session here gave the asking relying party (by the NameIdentifier it was issued). #189. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0097` | The TLS certificate the SAML back channel presents (this process's main-port leaves, or another cluster node's off its membership row) could not be read while a SAML 2.0 or SAML 1.1 metadata document was built, so the document went out without that KeyDescriptor and a service provider authenticating the back channel from metadata will refuse the node it names none for. #248. | none — the metadata is served (HTTP 200) without the key |
-| `STS-SAML-0098` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request reached a resolver whose entityID (providerID) the artifact's SourceID does not name — with saml2.perApplicationEntityId or saml11.perApplicationProviderId on, an artifact minted for one party presented at the unscoped resolver or at another party's. The artifact is not spent; it stays resolvable at its own resolver. #160. | SOAP response with status Success and nothing embedded (HTTP 200) — the empty response |
+| `STS-SAML-0098` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request reached a resolver whose entityID (providerID) the artifact's SourceID does not name — since #523 every artifact of a realm is minted under its one issuer, so an artifact of another realm, or one minted at another base URL. The artifact is not spent; it stays resolvable at its own resolver. #160. | SOAP response with status Success and nothing embedded (HTTP 200) — the empty response |
 | `STS-SAML-0099` | A SAML 2.0 sign-in reached a session whose sign-in mechanism the service provider does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-SAML-0100` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a sign-in mechanism the service provider does not allow (appAuthnMechanism, #457). | Responder / RequestDenied |
 | `STS-SAML-0101` | A SAML 1.1 sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
@@ -2296,7 +2296,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0026` | Product mode: a JWT inside OnBehalfOf/ActAs (#477), or presented as the requester's credential (#519), does not verify with this STS's own key, or was not issued by this realm (its iss is not the realm's OAuth issuer, #480). | SOAP Fault wst:InvalidRequest for a delegated JWT, wst:FailedAuthentication for the requester's (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0027` | Product mode: a JWT inside OnBehalfOf/ActAs (#477), or presented as the requester's credential (#519), has expired. | SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0028` | Product mode: a JWT inside OnBehalfOf/ActAs (#477), or presented as the requester's credential (#519), names, in its sub, nobody this directory holds. | SOAP Fault wst:InvalidRequest for a delegated JWT, wst:FailedAuthentication for the requester's (HTTP 500), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0029` | A SAML token was asked for with no name to sign it under: product mode, saml2.entityId empty and saml.issuer unset (#494). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0029` *(retired)* | A SAML token was asked for with no name to sign it under: product mode, saml2.entityId empty and saml.issuer unset (#494). Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0030` | Product mode: an RST asked for a token for an AppliesTo that resolves to no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidScope (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0031` | Product mode: an RST asked for a token and carried no AppliesTo, so it names no application a token could be for; refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0032` | Product mode: a SAML assertion or JWT presented as the requester's credential is addressed neither to its holder (an audience the holder's application registers) nor to this IdP (its WS-Trust issuer name, SAML entityID, OAuth issuer or /sts address) (#519). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
@@ -2328,7 +2328,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0017` | A WS-Federation sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-WSFED-0018` | A WS-Federation request back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
 | `STS-WSFED-0019` | /wsfed/metadata/{rp} named no registered relying party, which has no metadata of its own: an unregistered wtrealm is issued under the shared entityID (#494). | HTTP 404, text/plain |
-| `STS-WSFED-0020` | A WS-Federation sign-in or metadata document had no name to issue or publish under: product mode, saml2.entityId empty and saml.issuer or wsfed.entityId unset (#494). | HTTP 503 page or text/plain |
+| `STS-WSFED-0020` *(retired)* | A WS-Federation sign-in or metadata document had no name to issue or publish under: product mode, saml2.entityId empty and saml.issuer or wsfed.entityId unset (#494). Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 page or text/plain |
 | `STS-WSFED-0021` | Product mode: a wsignin1.0 named a wtrealm that is no registered relying party (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the sign-in screen and before anything was issued or recorded (#496). | HTTP 404 error page (the profile defines no error response) |
 | `STS-WSFED-0022` | A WS-Federation sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-WSFED-0023` | A WS-Federation request back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |

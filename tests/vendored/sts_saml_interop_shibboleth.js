@@ -115,8 +115,6 @@ async function makeWorld(realmMode) {
   // security-policy.xml refuses a DoNotCacheCondition (#189; the setting's
   // own description says so).
   await kit.ensureRealm(realm, realmMode, {
-    "saml2.entityId": rb + "/saml2/idp",
-    "saml11.providerId": rb + "/saml11/idp",
     "saml11.doNotCacheCondition": false
   });
   await kit.createPerson(realm, w.person, PASSWORD);
@@ -142,21 +140,34 @@ async function makeWorld(realmMode) {
            m11.status + " " + kit.squash(w.idp11Metadata));
   w.idp2 = (/entityID="([^"]+)"/.exec(w.idp2Metadata) || [])[1];
   w.idp11 = (/entityID="([^"]+)"/.exec(w.idp11Metadata) || [])[1];
+  // ONE ENTITY, ONE DOCUMENT (iya-sts #523): both paths name the realm's
+  // OAuth issuer and describe both SAML versions, so the SP is handed one.
+  const asMeta = await fetch(rb + "/.well-known/oauth-authorization-server");
+  const issuer = asMeta.status === 200 ? (await asMeta.json()).issuer : "";
+  kit.must(issuer && w.idp2 === issuer && w.idp11 === issuer,
+           "the SAML 2.0 (" + w.idp2 + ") and SAML 1.1 (" + w.idp11 + ") " +
+           "metadata should both name the realm's OAuth issuer (" + issuer +
+           ")");
+  for (const doc of [w.idp2Metadata, w.idp11Metadata]) {
+    kit.must(doc.indexOf(NS.saml2p) >= 0 &&
+             doc.indexOf("urn:oasis:names:tc:SAML:1.1:protocol") >= 0,
+             "each metadata document should describe both SAML versions: " +
+             kit.squash(doc).slice(0, 300));
+  }
 
   // THE METADATA AND NOTHING ELSE (#248): no TLS anchor goes with it.
-  await configure(w.idp2Metadata, w.idp11Metadata);
+  await configure(w.idp2Metadata);
   log.info("realm " + realm + " (" + realmMode + "): SP " + w.sp +
            "; identity providers " + w.idp2 + " and " + w.idp11);
   log.debug("Leaving makeWorld().");
   return w;
 }
 
-// Hands the peer its two identity provider documents and restarts shibd.
-async function configure(idp2Xml, idp11Xml) {
+// Hands the peer the identity provider's one document and restarts shibd.
+async function configure(idpXml) {
   log.debug("Entering configure().");
   const configured = await control("/configure", { files: {
-    "idp-saml2.xml": idp2Xml,
-    "idp-saml11.xml": idp11Xml } });
+    "idp.xml": idpXml } });
   kit.must(configured.status === 200 && configured.body &&
            configured.body.ok, "the Shibboleth peer would not take the " +
            "identity provider's metadata: " + configured.text.slice(0, 600));
@@ -473,8 +484,7 @@ async function backChannel(w) {
     log.debug("Leaving backChannel(). Plain HTTP.");
     return;
   }
-  for (const doc of [["SAML 2.0", w.idp2Metadata],
-                     ["SAML 1.1", w.idp11Metadata]]) {
+  for (const doc of [["identity provider", w.idp2Metadata]]) {
     for (const role of ["IDPSSODescriptor", "AttributeAuthorityDescriptor"]) {
       await kit.check(w.mode + ": the " + doc[0] + " metadata's " + role +
                       " publishes the certificate the back channel presents, " +
@@ -490,7 +500,7 @@ async function backChannel(w) {
     log.debug("Leaving backChannel(). The control runs once, in development.");
     return;
   }
-  // THE CONTROL: the same two documents without the listener's descriptor.
+  // THE CONTROL: the same document without the listener's descriptor.
   const strip = function (xml) {
     log.debug("Entering strip().");
     log.debug("Leaving strip().");
@@ -501,13 +511,12 @@ async function backChannel(w) {
                        });
   };
   const bare2 = strip(w.idp2Metadata);
-  const bare11 = strip(w.idp11Metadata);
-  await kit.check(w.mode + ": the control's documents no longer name the " +
+  await kit.check(w.mode + ": the control's document no longer names the " +
                   "listener certificate", async function () {
-    kit.assert(bare2.indexOf(presented) < 0 && bare11.indexOf(presented) < 0,
+    kit.assert(bare2.indexOf(presented) < 0,
                "the listener's KeyDescriptor was not taken out");
   });
-  await configure(bare2, bare11);
+  await configure(bare2);
   try {
     const watch = kit.logWatch("shibboleth", LOGS, isProblem);
     const b = kit.browser();
@@ -543,7 +552,7 @@ async function backChannel(w) {
       kit.assert(lines.length > 0, "no warning or error was logged");
     });
   } finally {
-    await configure(w.idp2Metadata, w.idp11Metadata);
+    await configure(w.idp2Metadata);
   }
   log.debug("Leaving backChannel().");
 }

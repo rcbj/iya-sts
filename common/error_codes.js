@@ -9229,9 +9229,10 @@ const CODES = [
   { code: 'STS-SAML-0004',
     summary: 'saml2.entityId is empty in a product-mode realm, so the SAML ' +
       '2.0 identity provider has no name to issue or publish metadata ' +
-      'under.',
+      'under. Retired 2026-10-08 (#523): the name is the realm\'s OAuth ' +
+      'issuer, which is never empty.',
     spec: 'HTTP 503 (a page at the SSO service, text/plain at the ' +
-      'metadata endpoint)' },
+      'metadata endpoint)', retired: true },
   { code: 'STS-SAML-0005',
     summary: 'In product mode, a SAML 2.0 AuthnRequest\'s ' +
       'AssertionConsumerServiceURL is not a ' +
@@ -9274,8 +9275,8 @@ const CODES = [
       'LogoutRequest) could not be signed and was sent unsigned.',
     spec: '' },
   { code: 'STS-SAML-0014',
-    summary: 'The SAML 2.0 identity provider metadata could not be signed ' +
-      'and was served unsigned.',
+    summary: 'The SAML identity provider metadata (one document for SAML 2.0 ' +
+      'and 1.1 since #523) could not be signed and was served unsigned.',
     spec: '' },
   { code: 'STS-SAML-0015',
     summary: 'The body posted to the SAML 2.0 Artifact Resolution Service is ' +
@@ -9328,10 +9329,11 @@ const CODES = [
   { code: 'STS-SAML-0027',
     summary: 'saml11.providerId is empty in a product-mode realm, so the ' +
       'SAML 1.1 identity provider has no name to issue or publish ' +
-      'metadata under.',
+      'metadata under. Retired 2026-10-08 (#523): the name is the ' +
+      'realm\'s OAuth issuer, which is never empty.',
     spec: 'HTTP 503 page or text/plain at the inter-site transfer service ' +
       'and metadata; samlp:Response status Responder at the SAML ' +
-      'responder' },
+      'responder', retired: true },
   { code: 'STS-SAML-0028',
     summary: 'In product mode, a SAML 1.1 flow\'s shire is not a ' +
       'samlAssertionConsumerService registered on the relying party\'s ' +
@@ -9359,8 +9361,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-SAML-0034',
     summary: 'The SAML 1.1 identity provider metadata could not be signed ' +
-      'and was served unsigned.',
-    spec: '' },
+      'and was served unsigned. Retired 2026-10-08 (#523): there is one ' +
+      'document for both SAML versions, and STS-SAML-0014 names its failure.',
+    spec: '', retired: true },
   { code: 'STS-SAML-0035',
     summary: 'The body posted to the SAML 1.1 SAML responder is not XML.',
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
@@ -9695,11 +9698,10 @@ const CODES = [
   { code: 'STS-SAML-0098',
     summary: 'A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request ' +
       'reached a resolver whose entityID (providerID) the artifact\'s ' +
-      'SourceID does not name — with saml2.perApplicationEntityId or ' +
-      'saml11.perApplicationProviderId on, an artifact minted for one ' +
-      'party presented at the unscoped resolver or at another party\'s. ' +
-      'The artifact is not spent; it stays resolvable at its own resolver. ' +
-      '#160.',
+      'SourceID does not name — since #523 every artifact of a realm is ' +
+      'minted under its one issuer, so an artifact of another realm, or ' +
+      'one minted at another base URL. The artifact is not spent; it ' +
+      'stays resolvable at its own resolver. #160.',
     spec: 'SOAP response with status Success and nothing embedded ' +
       '(HTTP 200) — the empty response' },
   { code: 'STS-SAML-0099',
@@ -9917,9 +9919,11 @@ const CODES = [
       '1.4 section 11' },
   { code: 'STS-WSTRUST-0029',
     summary: 'A SAML token was asked for with no name to sign it under: ' +
-      'product mode, saml2.entityId empty and saml.issuer unset (#494).',
+      'product mode, saml2.entityId empty and saml.issuer unset (#494). ' +
+      'Retired 2026-10-08 (#523): the name is the realm\'s OAuth issuer, ' +
+      'which is never empty.',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section ' +
-      '11' },
+      '11', retired: true },
   { code: 'STS-WSTRUST-0030',
     summary: 'Product mode: an RST asked for a token for an AppliesTo that ' +
       'resolves to no registered application (no appRegisteredBy; an entry ' +
@@ -10027,8 +10031,9 @@ const CODES = [
   { code: 'STS-WSFED-0020',
     summary: 'A WS-Federation sign-in or metadata document had no name to ' +
       'issue or publish under: product mode, saml2.entityId empty and ' +
-      'saml.issuer or wsfed.entityId unset (#494).',
-    spec: 'HTTP 503 page or text/plain' },
+      'saml.issuer or wsfed.entityId unset (#494). Retired 2026-10-08 ' +
+      '(#523): the name is the realm\'s OAuth issuer, which is never empty.',
+    spec: 'HTTP 503 page or text/plain', retired: true },
   { code: 'STS-WSFED-0021',
     summary: 'Product mode: a wsignin1.0 named a wtrealm that is no ' +
       'registered relying party (no appRegisteredBy; an entry a sighting ' +

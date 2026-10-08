@@ -47,12 +47,13 @@
 // ---------------------------------------------------------------------------
 // SIX DECISIONS HERE ARE NOT OBVIOUS FROM THE SPECIFICATIONS.
 //
-// 1. **THE METADATA IS UNIQUE PER SERVICE PROVIDER, and in DEVELOPMENT it is
-//    minted for any entityID that is asked for.** `/saml2/metadata/{sp}` names
-//    an identity provider of its own — `urn:sts:idp:{sp}` — with its own SSO,
-//    SLO and artifact endpoints under that same `{sp}` segment, which is what
-//    Okta and Ping do and what a service provider integrating with one of them
-//    expects. In development it 404s for nothing: an entityID nobody has
+// 1. **THE METADATA IS PER SERVICE PROVIDER, and in DEVELOPMENT it is
+//    minted for any entityID that is asked for.** `/saml2/metadata/{sp}`
+//    publishes this identity provider with its own SSO, SLO and artifact
+//    endpoints under that same `{sp}` segment. **Its entityID is the ONE
+//    name of this realm since #523 — the realm's OAuth issuer, every JWT's
+//    `iss` — for every service provider** (`idpEntityId()`); until then it
+//    was `urn:sts:idp:{sp}`, an identity provider per service provider. In development it 404s for nothing: an entityID nobody has
 //    registered is registered BY THE ASK, so a service provider can be pointed
 //    at this service before anything at all has been provisioned. **IN
 //    PRODUCT (#112, 2026-09-23) EVERY `{sp}` PATH IS A 404 FOR A NAME THAT IS
@@ -63,11 +64,9 @@
 //    is this service vouching for something an operator never decided. A
 //    per-SP document is this service's own extension (SAML Metadata 2.0
 //    section 4.1 defines one document per entity), so the 404 breaks no
-//    specification. `saml2.perApplicationEntityId` turns
-//    the per-application entityID off for a service provider library that keys
-//    its trust store off the entityID and is surprised to find a new one per
-//    application; the ENDPOINTS stay per-application either way, because that
-//    is what makes the documents worth having separately.
+//    specification. The ENDPOINTS are per application, which is what makes
+//    the documents worth having separately; the name is not
+//    (`saml2.perApplicationEntityId` is retired, #523).
 //
 // 2. **THERE IS NO SIGN-IN SCREEN IN THIS FILE, and that was once the
 //    deliberate difference from `ws-federation/wsfed.ts`.** That module had
@@ -181,6 +180,8 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 // The one assertion writer. See decision 4.
 import saml2 = require('./saml2');
+// #523: this identity provider's one name, the realm's OAuth issuer.
+import IssuerNames = require('../common/issuer_names');
 import spMetadata = require('./sp_metadata');
 // The TLS client certificate a SOAP caller presented (#37 follow-up), read the
 // one way the service reads it. A library of `helpers`, `config` and
@@ -639,7 +640,7 @@ class Saml2Sso {
       self.sendPage(res, 200, 'SAML 2.0 — Web Browser SSO',
              '<h1>SAML 2.0 — Web Browser SSO, all four bindings</h1>' +
              '<p class="sub">Identity provider <code>' +
-               xmlEscape(self.idpEntityIdFor('')) +
+               xmlEscape(self.idpEntityId()) +
              '</code> ' +
              'at <code>' + xmlEscape(base) + '</code></p><p>A full SAML 2.0 ' +
              'identity provider: HTTP Redirect, HTTP POST and HTTP POST ' +
@@ -684,18 +685,16 @@ class Saml2Sso {
                'service, and where a response can be verified check by check ' +
                'without a second ' +
                'service.</td></tr></tbody></table><h2>Per-service-provider ' +
-               'metadata</h2><p>Every service provider gets its own identity ' +
-               'provider, the way Okta and Ping do it. Ask for <code>' +
+               'metadata</h2><p>Every service provider gets its own ' +
+               'endpoints under its own path, with this identity provider\'s ' +
+               'one entityID, the realm\'s OAuth issuer. Ask for <code>' +
                  METADATA_PATH + '/{anything}</code> and ' +
              'it is minted — the entityID may be a percent-encoded URL or a ' +
              'plain name:</p><ul><li><a ' +
              'href="' + METADATA_PATH + '/example-sp">' + METADATA_PATH +
              '/example-sp</a></li><li><code>' + METADATA_PATH + '/' +
              encodeURIComponent('https://sp.example.com/saml') +
-             '</code></li></ul><p><code>saml2.perApplicationEntityId</code> ' +
-             'turns the per-application entityID off; the endpoints stay ' +
-             'per-application either way, which is what makes the documents ' +
-             'worth having separately.</p><div class="meta"><div>The generic ' +
+             '</code></li></ul><div class="meta"><div>The generic ' +
              'endpoints are <code>' + xmlEscape(where.sso) +
              '</code>, <code>' + xmlEscape(where.slo) + '</code> and <code>' +
              xmlEscape(where.ars) +
@@ -1019,64 +1018,28 @@ class Saml2Sso {
     return true;
   }
 
-  // This identity provider's own entityID, for a given service provider. See
-  // decision 1 for why there is more than one of them, and
-  // `saml2.perApplicationEntityId` for turning that off.
-  //
-  // **AN EMPTY `saml2.entityId` IS NOT FILLED IN WITH AN INVENTED NAME IN
-  // PRODUCT MODE (2026-09-12).** Development still falls back to `urn:sts:idp`,
-  // as it always did. A product realm answers '' instead, and
-  // `idpEntityIdProblem()` is what the SSO service and the metadata endpoint
-  // ask before issuing anything — an identity provider signing assertions under
-  // a name nobody configured is publishing an identity nobody can check it
-  // against, and `urn:sts:idp` is a development placeholder in a product's
-  // signed documents. The predicate is `inventsClaimValues()` because that is
-  // the question: may a value be invented where the configuration holds none.
+  // THIS IDENTITY PROVIDER'S entityID (#523): the realm's OAuth issuer, at
+  // the base of the request being answered — the <saml:Issuer> of every
+  // Response and assertion, the metadata's entityID and the artifact
+  // SourceID's input, one string for every service provider and the same one
+  // every JWT carries as `iss`. It was `saml2.entityId`, per service provider
+  // as `<entityId>:<sp>` with `saml2.perApplicationEntityId` (#494, decision
+  // 1), both retired with no override (rcbj). There is always a name, so
+  // nothing here refuses for want of one (STS-SAML-0004 is retired).
   /**
-   * Answers this identity provider's own entityID for a service provider:
-   * `saml2.entityId`, with the service provider's segment appended when
-   * `saml2.perApplicationEntityId` is on.
+   * Answers this identity provider's entityID: the realm's OAuth issuer at
+   * the ambient request's base (#523).
    *
-   * An empty `saml2.entityId` falls back to `urn:sts:idp` in development and
-   * answers '' in product.
-   * @param spEntityId - the service provider's entityID; none for the shared
-   * one
-   * @returns the entityID, or ''
+   * @returns the entityID
    */
-  idpEntityIdFor(spEntityId) {
-    const { config, mode } = this.deps;
+  idpEntityId() {
     const { log } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.idpEntityIdFor().");
-    const configured = String(config.value('saml2.entityId') || '').trim();
-    const base = configured || (mode.inventsClaimValues() ? 'urn:sts:idp' : '');
-    if (!base) {
-      log.debug("Leaving Saml2Sso.idpEntityIdFor().");
-      return '';
-    }
-    if (!spEntityId || !config.value('saml2.perApplicationEntityId')) {
-      log.debug("Leaving Saml2Sso.idpEntityIdFor().");
-      return base;
-    }
-    log.debug("Leaving Saml2Sso.idpEntityIdFor().");
-    return base + ':' + this.slugOf(spEntityId);
+    log.debug("Entering Saml2Sso.idpEntityId().");
+    const out = IssuerNames.issuer();
+    log.debug("Leaving Saml2Sso.idpEntityId(). " + out);
+    return out;
   }
 
-  // The sentence a refusal carries when there is no entityID to issue under, or
-  // '' when there is one. See idpEntityIdFor().
-  private idpEntityIdProblem() {
-    const { log } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.idpEntityIdProblem().");
-    if (this.idpEntityIdFor('')) {
-      log.debug("Leaving Saml2Sso.idpEntityIdProblem().");
-      return '';
-    }
-    log.debug("Leaving Saml2Sso.idpEntityIdProblem().");
-    return 'saml2.entityId is empty, and this realm is in PRODUCT mode, ' +
-           'where this identity provider does not invent a name to sign ' +
-           'assertions under. Set saml2.entityId (the SAML 2.0 console page, ' +
-           'POST /admin-api/config/set, or the appconfig file) to the ' +
-           'entityID service providers are configured with.';
-  }
 
   // Where this service provider's endpoints live. One function so that the
   // metadata document and the handlers cannot disagree about a URL — the
@@ -2231,10 +2194,9 @@ class Saml2Sso {
   // different code path is an error response nobody ever looks at. `opts.sp` is
   // the SERVICE PROVIDER'S entityID and is what makes the signature switch per
   // application — NOT `opts.issuer`, which is this identity provider's own
-  // entityID and is a DIFFERENT string per service provider when
-  // `saml2.perApplicationEntityId` is on. Passing the issuer here would have
-  // looked right, found no application entry under it, and silently used the
-  // service-wide default every time.
+  // entityID (the realm's OAuth issuer since #523, one string for every
+  // service provider). Passing the issuer here would find no application
+  // entry under it, and silently use the service-wide default every time.
   private buildResponse(opts) {
     const { errorCodes } = this.deps;
     const { genId, iso, log, logArtifact, xmlEscape } = this.deps.helpers;
@@ -2527,11 +2489,11 @@ class Saml2Sso {
   }
 
   // IS THIS A TYPE 0x0004 ARTIFACT WHOSE SourceID NAMES AN ENTITY OTHER THAN
-  // the resolver at `scopedEntityId` (#160)? A value that is not a 44-byte
+  // this realm's one issuer (#160, #523)? A value that is not a 44-byte
   // type 0x0004 artifact names no SourceID at all, and `mintArtifact()` never
   // stored one, so it is not answered here — it is the unknown artifact it
   // looks like, and `resolveArtifact()` says so as it always did.
-  private isForeignArtifact(artifact, scopedEntityId): boolean {
+  private isForeignArtifact(artifact): boolean {
     const { stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.isForeignArtifact().");
@@ -2541,8 +2503,7 @@ class Saml2Sso {
                 "artifact.");
       return false;
     }
-    const own = stsCrypto.samlArtifactSourceId(
-      this.idpEntityIdFor(scopedEntityId));
+    const own = stsCrypto.samlArtifactSourceId(this.idpEntityId());
     const foreign = !own.equals(bytes.subarray(4, 24));
     log.debug("Leaving Saml2Sso.isForeignArtifact(). " + foreign);
     return foreign;
@@ -3037,17 +2998,7 @@ class Saml2Sso {
         '<p>There is a mock service provider here that sends a complete ' +
         'request: <a href="' + SP_PATH + '">' + SP_PATH + '</a>.</p>');
     }
-    const issuerProblem = this.idpEntityIdProblem();
-    if (issuerProblem) {
-      log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
-                "There is no entityID to " +
-                "issue under.");
-      errorCodes.mark(res, 'STS-SAML-0004');
-      log.debug("Leaving Saml2Sso.singleSignOnChecked().");
-      return this.samlError(res, 503, 'This identity provider has no entityID',
-                            issuerProblem);
-    }
-    const idpEntityId = this.idpEntityIdFor(spEntityId);
+    const idpEntityId = this.idpEntityId();
     const known = this.fieldsOf(spEntityId);
     // The assertion consumer service URL, in the order a real identity provider
     // would take it — except that the middle step, SP metadata, is one this
@@ -3646,13 +3597,6 @@ class Saml2Sso {
       log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Unregistered.");
       return;
     }
-    const issuerProblem = this.idpEntityIdProblem();
-    if (issuerProblem) {
-      errorCodes.mark(res, 'STS-SAML-0004');
-      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). No entityID.");
-      return this.samlError(res, 503, 'This identity provider has no ' +
-                                      'entityID', issuerProblem);
-    }
     const askedFor = String(params.binding || '').toLowerCase();
     const asked = askedFor === 'artifact' || askedFor === BINDING_ARTIFACT
       ? BINDING_ARTIFACT
@@ -3669,7 +3613,7 @@ class Saml2Sso {
         'HTTP-Redirect, which saml-profiles-2.0-os section 4.1.2 forbids ' +
         'for a Response.');
     }
-    const idpEntityId = this.idpEntityIdFor(spEntityId);
+    const idpEntityId = this.idpEntityId();
     const known = this.fieldsOf(spEntityId);
     const shire = String(params.shire || '');
     const consumed = this.registeredAcsFor({ acsIndex: '', acsUrl: shire,
@@ -3864,7 +3808,7 @@ class Saml2Sso {
                  '": ' + (code ? 'refused — ' + message : 'answered')
       });
       const response = self.buildResponse({
-        issuer: self.idpEntityIdFor(spEntityId || scoped.entityId),
+        issuer: self.idpEntityId(),
         sp: spEntityId, destination: '', inResponseTo: inResponseTo,
         status: status,
         subStatus: subStatus, statusMessage: message, assertion: assertion
@@ -4017,7 +3961,7 @@ class Saml2Sso {
                (!one.nameFormat || one.nameFormat === a.nameFormat);
       });
     });
-    const idpEntityId = this.idpEntityIdFor(spEntityId);
+    const idpEntityId = this.idpEntityId();
     const lifetimeMin = Number(this.settingFor(spEntityId,
                                                'saml2.assertionLifetimeMin')) ||
                                                  60;
@@ -4314,7 +4258,7 @@ class Saml2Sso {
     const answer = function (status, message, payload, inResponseTo) {
       log.debug("Entering answer().");
       const envelope = self.soapEnvelope(self.buildArtifactResponse(
-        self.idpEntityIdFor(scoped.entityId), inResponseTo, status, message,
+        self.idpEntityId(), inResponseTo, status, message,
           payload));
       logArtifact('SAML 2.0 ArtifactResponse', 'as returned over SOAP',
                   envelope);
@@ -4386,20 +4330,22 @@ class Saml2Sso {
       return undefined;
     }
     // ANOTHER ENTITY'S ARTIFACT (#160): this resolver answers only for an
-    // artifact whose SourceID is the SHA-1 of ITS OWN entityID. With
-    // `saml2.perApplicationEntityId` on, every service provider's artifacts
-    // are minted under `urn:sts:idp:app-…` and belong to `/saml2/ars/{sp}`;
-    // until this check the unscoped `/saml2/ars` resolved them too, under an
-    // envelope naming `urn:sts:idp` around a Response naming the other —
-    // answering for someone else, and spending the artifact so that the
-    // right resolver, asked next, had nothing. Section 3.6.4 has the SourceID
+    // artifact whose SourceID is the SHA-1 of ITS OWN entityID. Until #523
+    // every service provider's artifacts were minted under its own
+    // `urn:sts:idp:app-…`, and the unscoped `/saml2/ars` resolved them under an
+    // envelope naming another name; since #523 every artifact of this realm
+    // is minted under the realm's one issuer, so what this refuses is another
+    // ENTITY's — another realm's, or one minted at another base. The issuer
+    // is read at the resolving request's base, which is why a deployment
+    // pins `global.publicBaseUrl`: a back channel arriving under another host
+    // name would otherwise compute another name. Section 3.6.4 has the SourceID
     // name the issuer so that a requester can find that issuer's resolver;
     // the answer here is the empty ArtifactResponse with Success of
     // saml-core-2.0-os section 3.5.3, and the artifact is LEFT ALONE.
-    if (this.isForeignArtifact(artifact, scoped.entityId)) {
+    if (this.isForeignArtifact(artifact)) {
       log.warn(errorCodes.tag('STS-SAML-0098') + 'saml2: artifact ' +
                String(artifact).slice(0, 12) + '… was presented at the ' +
-               'resolver of "' + this.idpEntityIdFor(scoped.entityId) +
+               'resolver of "' + this.idpEntityId() +
                '", but its SourceID names another entity. Answered empty, ' +
                'and the artifact is left for the resolver it belongs to.');
       log.debug("Leaving Saml2Sso.resolveArtifact(). Another entity's " +
@@ -5027,7 +4973,7 @@ class Saml2Sso {
     const nameIdFormat = nameIdEl ?
                          (nameIdEl.getAttribute('Format') || '') : '';
     const sessionIndex = textByLocal(root, 'SessionIndex');
-    const idpEntityId = this.idpEntityIdFor(spEntityId);
+    const idpEntityId = this.idpEntityId();
     const arrivedBy = req.method !== 'POST' ? BINDING_REDIRECT
       : (params.Signature ? BINDING_SIMPLESIGN : BINDING_POST);
 
@@ -5209,7 +5155,7 @@ class Saml2Sso {
     const out = Object.keys(signedInto).map(function (name) {
       const back = self.logoutReturnAddressFor(name);
       const idpEntityId = signedInto[name].idpEntityId ||
-                          self.idpEntityIdFor(name);
+                          self.idpEntityId();
       // The NameID that service provider was GIVEN (#192), where the
       // session recorded one; the username in the configured format for a
       // session from before that was recorded.
@@ -5306,10 +5252,16 @@ class Saml2Sso {
   // federation metadata, which is the same argument for the same reason.
   //
   // It answers for ANY {sp}. See decision 1 — the ask is what registers it.
+  //
+  // AND IT IS THE ONE DOCUMENT FOR BOTH SAML VERSIONS (#523): the realm's one
+  // entity, its IDPSSODescriptor and AttributeAuthorityDescriptor naming SAML
+  // 2.0, SAML 1.1 and Shibboleth's protocol together, with each profile's
+  // endpoints. `/saml11/metadata[/{rp}]` serves it too.
   // ---------------------------------------------------------------------------
   /**
-   * Builds this identity provider's metadata for a service provider, signed
-   * with the signature first inside the EntityDescriptor.
+   * Builds this identity provider's metadata for a service provider — both
+   * SAML versions, one entity (#523) — signed with the signature first inside
+   * the EntityDescriptor.
    *
    * @param base - the realm's base URL
    * @param spEntityId - the service provider's entityID
@@ -5322,8 +5274,18 @@ class Saml2Sso {
     log.debug("Entering Saml2Sso.metadataFor(). sp=" +
               (spEntityId || '(unscoped)'));
     const id = genId();
-    const idpEntityId = this.idpEntityIdFor(spEntityId);
+    const idpEntityId = this.idpEntityId();
     const where = this.endpointsFor(base, spEntityId);
+    // ONE ENTITY, ONE DOCUMENT (#523). The SAML 1.1 profile names itself by
+    // the same issuer, so its roles are this document's too: its fragments
+    // join each descriptor (`saml11_sso.ts`'s `metadataParts()` argues the
+    // shape), scoped to the same application's endpoints — the two profiles
+    // share one slug. Lazily: that module is loaded after this one.
+    const v11 = require('./saml11_sso').metadataParts(base, spEntityId);
+    const nameIdFormats = NAMEID_FORMATS.concat(
+      v11.nameIdFormats.filter(function (one: string): boolean {
+        return NAMEID_FORMATS.indexOf(one) < 0;
+      }));
     // THE BACK CHANNEL'S TLS CERTIFICATE (#248), last among each role's
     // KeyDescriptors: the ArtifactResolutionService is the IdP role's and
     // the AttributeService the attribute authority's, and a service provider
@@ -5413,7 +5375,8 @@ class Saml2Sso {
             (requestSignature.wantsSignedRequests(
               spEntityId ? this.fieldsOf(spEntityId) : {}) ? 'true'
                                                           : 'false') + '"' +
-          ' protocolSupportEnumeration="' + NS_SAMLP + '">' +
+          ' protocolSupportEnumeration="' +
+            [NS_SAMLP].concat(v11.ssoProtocols).join(' ') + '">' +
           keyDescriptor('signing') +
           // AN ENCRYPTION KEY, published since 2026-08-27, and it is the SAME
           // certificate as the signing one because this service has one key. A
@@ -5436,19 +5399,24 @@ class Saml2Sso {
           // NameIDFormat before SingleSignOnService. A document in any other
           // order is one a generated parser rejects, and hand-written parsers
           // were written against this.
+          // Index 0, the default, is SAML 2.0's — the EndpointIndex every
+          // artifact `mintArtifact()` makes carries; SAML 1.1's is index 1 on
+          // its own SOAP binding (#523).
           service('ArtifactResolutionService', BINDING_SOAP, where.ars, ' ' +
               'index="0" isDefault="true"') +
+          v11.artifactResolution +
           service('SingleLogoutService', BINDING_REDIRECT, where.slo) +
           service('SingleLogoutService', BINDING_POST, where.slo) +
           service('SingleLogoutService', BINDING_SIMPLESIGN, where.slo) +
           alsoAt('SingleLogoutService', where.slo) +
-          NAMEID_FORMATS.map(function (format) {
+          nameIdFormats.map(function (format) {
             return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
           }).join('') +
           service('SingleSignOnService', BINDING_REDIRECT, where.sso) +
           service('SingleSignOnService', BINDING_POST, where.sso) +
           service('SingleSignOnService', BINDING_SIMPLESIGN, where.sso) +
           alsoAt('SingleSignOnService', where.sso) +
+          v11.singleSignOn +
           // NO HTTP-Artifact SingleSignOnService (#191). A SingleSignOnService
           // names a binding an AuthnRequest may ARRIVE on, and HTTP-Artifact
           // as a request binding means an artifact this service would resolve
@@ -5466,11 +5434,12 @@ class Saml2Sso {
         // keys are the same generations; the NameID formats the ones it can
         // be asked about (whatever a sign-in here gave).
         '<md:AttributeAuthorityDescriptor protocolSupportEnumeration="' +
-          NS_SAMLP + '">' +
+          [NS_SAMLP].concat(v11.aaProtocols).join(' ') + '">' +
           keyDescriptor('signing') +
           backChannelKeys +
           service('AttributeService', BINDING_SOAP, where.aa) +
-          NAMEID_FORMATS.map(function (format) {
+          v11.attributeService +
+          nameIdFormats.map(function (format) {
             return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
           }).join('') +
         '</md:AttributeAuthorityDescriptor>' +
@@ -5479,10 +5448,10 @@ class Saml2Sso {
         // omitted entirely when the name is emptied. See document_settings.ts.
         documentSettings.organizationElement(base) +
       '</md:EntityDescriptor>';
-    logArtifact('SAML 2.0 IdP metadata', 'before signing', xml);
+    logArtifact('SAML IdP metadata', 'before signing', xml);
     try {
       const signed = this.signDocument(xml, 'EntityDescriptor', id, 'prepend');
-      logArtifact('SAML 2.0 IdP metadata', 'after signing', signed);
+      logArtifact('SAML IdP metadata', 'after signing', signed);
       log.debug("Leaving Saml2Sso.metadataFor(). Signed.");
       return signed;
     } catch (e) {
@@ -5505,19 +5474,6 @@ class Saml2Sso {
     const scoped = this.entityIdFromSegment(req.params.sp);
     if (this.refusedUnregistered(res, scoped, METADATA_PATH + '/{sp}')) {
       log.debug("Leaving the SAML 2.0 metadata endpoint. Not registered.");
-      return;
-    }
-    // A document with entityID="" is one no service provider can be configured
-    // from; say why instead. See idpEntityIdFor().
-    const issuerProblem = this.idpEntityIdProblem();
-    if (issuerProblem) {
-      errorCodes.mark(res, 'STS-SAML-0004');
-      res.status(503)
-         .type('text/plain')
-         .set('Cache-Control', 'no-store')
-         .send(issuerProblem + '\n');
-      log.debug("Leaving the SAML 2.0 metadata endpoint. There is no " +
-                "entityID.");
       return;
     }
     if (scoped.entityId) {
@@ -5558,7 +5514,7 @@ class Saml2Sso {
     log.debug("Leaving Saml2Sso.describeSsoPage().");
     return '<h1>SAML 2.0 — Single Sign-On service</h1>' +
       '<p class="sub">Identity provider <code>' +
-      xmlEscape(this.idpEntityIdFor(scoped.entityId)) +
+      xmlEscape(this.idpEntityId()) +
       '</code> at <code>' + xmlEscape(where.sso) + '</code></p><p>This ' +
       'endpoint takes a <code>SAMLRequest</code> carrying a ' +
       '<code>&lt;samlp:AuthnRequest&gt;</code>, on the HTTP Redirect binding ' +
@@ -5778,9 +5734,9 @@ class Saml2Sso {
 
     const issuer = textByLocal(root, 'Issuer');
     add('the issuer is this identity provider',
-        issuer === this.idpEntityIdFor(spEntityId),
-        issuer + (issuer === this.idpEntityIdFor(spEntityId) ? ''
-          : ', expected ' + this.idpEntityIdFor(spEntityId)));
+        issuer === this.idpEntityId(),
+        issuer + (issuer === this.idpEntityId() ? ''
+          : ', expected ' + this.idpEntityId()));
 
     const destination = root.getAttribute('Destination') || '';
     add('Destination names this assertion consumer service',
@@ -6114,7 +6070,7 @@ export = {
   // and must not reimplement any of it — the same division /admin/groups keeps
   // with ldap_server.js.
   slugOf: slot.forward('slugOf'),
-  idpEntityIdFor: slot.forward('idpEntityIdFor'),
+  idpEntityId: slot.forward('idpEntityId'),
   endpointsFor: slot.forward('endpointsFor'),
   artifactCount: slot.forward('artifactCount'),
   pendingRequestCount: slot.forward('pendingRequestCount'),

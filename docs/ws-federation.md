@@ -77,7 +77,7 @@ metadata's `fed:TokenTypesOffered`.
 
 The assertion is built by the same builders as the
 [SAML 1.1](saml11.md) and [SAML 2.0](saml2-sso.md) identity providers: its
-issuer is `saml.issuer`, it is signed with `saml.signatureAlgorithm`, its
+issuer is the realm's OAuth 2.0 issuer (#523), it is signed with `saml.signatureAlgorithm`, its
 validity window is widened by `saml.clockSkewS`, and it carries the matching
 set of [custom SAML attributes](saml2-sso.md#custom-saml-attributes) — the
 SAML 1.1 set by default, whose attributes default to the claim namespace
@@ -176,8 +176,8 @@ protocol-independent `/logout` sends the same cleanups; see
 
 `/FederationMetadata/2007-06/FederationMetadata.xml` is at **AD FS's path**,
 because WS-Federation names none and that is where every relying party in this
-ecosystem looks first. It is signed, names this identity provider by
-`wsfed.entityId`, and holds a `fed:SecurityTokenServiceType` `RoleDescriptor`
+ecosystem looks first. It is signed, names this identity provider by the
+realm's OAuth 2.0 issuer (#523), and holds a `fed:SecurityTokenServiceType` `RoleDescriptor`
 with `fed:TokenTypesOffered`, `fed:ClaimTypesOffered`, the
 `PassiveRequestorEndpoint` and the `SecurityTokenServiceEndpoint` — the latter
 at `/sts`, the same service answering the active profile
@@ -185,31 +185,18 @@ at `/sts`, the same service answering the active profile
 actually emits. It carries no SAML `IDPSSODescriptor` — that is at
 `/saml2/metadata`.
 
-**`wsfed.entityId` and `saml.issuer` are two settings**: the metadata names the
-identity provider by one, and every assertion is issued by the other. Unset —
-the default, in either mode (#480, #494) — both are the realm's SAML 2.0
-entityID, `saml2.entityId`; when somebody sets them apart, `GET /wsfed` and the
-startup log say so, because a relying party's issuer registry would refuse the
-token.
+**One name, in every protocol** (#523). The metadata's `entityID` and every
+assertion's Issuer are the realm's OAuth 2.0 issuer — the string
+`/.well-known/oauth-authorization-server` publishes, which SAML SSO and
+WS-Trust name themselves by too — for every relying party, registered or not.
+It is not a setting; pin `global.publicBaseUrl` so it does not follow the host
+a request arrived on.
 
-**Each registered relying party has a name of its own** (#494). A sign-in to a
-`wtrealm` that is a REGISTERED application — one an administrator, dynamic
-registration or this service's seeding put in the registry, not one it has
-merely seen — carries that application's own entityID as the assertion's
-Issuer: `<saml2.entityId>:<application>` while `saml2.perApplicationEntityId`
-is on. It is the name SAML 2.0 SSO (`/saml2/metadata/{sp}`) and WS-Trust give
-the same application, so one application sees one entityID in all three
-protocols. Its own document, `/wsfed/metadata/{rp}` — `{rp}` the application's
-identifier (its `wtrealm`) or its slug, as on `/admin/saml2` — is the shared
-document with that entityID, so a relying party is configured from metadata
-that names its own issuer. A segment naming no registered relying party is a
-404 (`STS-WSFED-0019`) in both modes: an unregistered `wtrealm` is issued under
-the shared entityID, which the shared document already publishes. The mock
-relying party checks the issuer against the name for its own realm.
-
-In product, with `saml2.entityId` emptied and neither setting set, there is no
-name to sign under, and the sign-in and both metadata documents answer 503
-(`STS-WSFED-0020`) rather than publish an empty one.
+`/wsfed/metadata/{rp}` — `{rp}` the application's identifier (its `wtrealm`)
+or its slug, as on `/admin/saml2` — is the same document, for a relying party
+that is configured per application. A segment naming no registered relying
+party is a 404 (`STS-WSFED-0019`) in both modes. The mock relying party checks
+the issuer against that one name.
 
 ### The mock relying party
 
@@ -249,7 +236,6 @@ same in both modes. See [What is not checked](what-is-not-checked.md).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `wsfed.entityId` | `STS_WSFED_ENTITY_ID` (or `STS_ISSUER`) | *(empty)*: `saml2.entityId`, per application for a registered one | yes | The entityID in the federation metadata; the assertions' issuer is `saml.issuer`. Unset, in either mode (#480, #494), both are the SAML 2.0 entityID — a registered relying party's own in its assertions and in `/wsfed/metadata/{rp}` — so they agree. |
 | `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | The lifetime of the assertion and of the RSTR's `wsu:Lifetime`; per relying party with `wsfedAssertionLifetimeMin`. |
 | `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the mock relying party remembers a `wctx` it minted. |
 

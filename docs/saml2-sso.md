@@ -55,24 +55,24 @@ at `/admin/sts-metadata`.
 
 ### Metadata, one document per service provider
 
-`/saml2/metadata/{sp}` publishes an identity provider **of its own for that
-service provider** — its entityID is `saml2.entityId` followed by `:{sp}`, and
-its SSO, SLO and artifact endpoints sit under the same `{sp}` segment. That is
-what Okta and Ping give each application, and it means two service providers
-are configured from two documents that share nothing but a signing
-certificate. `saml2.perApplicationEntityId` off gives every document the one
-entityID — for a service provider library that keys its trust store off the
-entityID and is surprised to find a new one per application; the endpoints stay
-per application either way.
+`/saml2/metadata/{sp}` publishes this identity provider with **endpoints of
+that service provider's own** — its SSO, SLO and artifact endpoints sit under
+the same `{sp}` segment. The entityID is the same in every document: **the
+realm's OAuth 2.0 issuer** (#523), the string
+`/.well-known/oauth-authorization-server` publishes and every JWT carries as
+`iss`. It is not a setting; it follows the public base URL, so pin
+`global.publicBaseUrl` in a deployment.
 
-**The same entityID signs WS-Trust's and WS-Federation's assertions for that
-application** (#480, #494), in either mode. A WS-Trust token whose AppliesTo a
-REGISTERED application answers to, and a WS-Federation sign-in to a
-registered `wtrealm`, carry `saml2.entityId:{sp}` as their Issuer unless
-`saml.issuer` is set; the application's own WS-Federation metadata,
-`/wsfed/metadata/{rp}`, names it too. One application, one name, in all three
-protocols. An AppliesTo or `wtrealm` nobody registered (one this service has
-merely seen) gets the shared `saml2.entityId`.
+**It is one document for SAML 2.0 and SAML 1.1** (#523): one entity, one
+`<EntityDescriptor>`. Its `IDPSSODescriptor` names both protocols (and
+Shibboleth's) with both profiles' endpoints — the SAML 2.0 artifact resolver at
+index 0, the SAML 1.1 responder at index 1 on its own SOAP binding — and its
+`AttributeAuthorityDescriptor` both attribute services.
+`/saml11/metadata/{rp}` serves the same document.
+
+**The same name signs WS-Trust's and WS-Federation's assertions** in either
+mode, for every application, registered or not, and the WS-Federation
+metadata names it too. One realm, one name, in every protocol.
 
 `{sp}` is the service provider's entityID percent-encoded, or a **slug** — the
 entityID where it is safe in a URL path, otherwise `app-` and twelve hex
@@ -564,7 +564,6 @@ being answered.
 | `saml2.signAssertion` off, or an application's `saml2SignAssertion` FALSE | the assertion is unsigned | ignored (logged once, `STS-CORE-0106`), and writing it is refused (`STS-CORE-0103`, `STS-REG-0193`) |
 | `saml.signatureAlgorithm` `rsa-sha1`, `saml2.keyTransportAlgorithm` `rsa-1_5` | used | ignored — `rsa-sha256`, `rsa-oaep-mgf1p` — and writing either is refused |
 | Given name, surname, mail, display name | invented | read off the directory entry, or omitted |
-| Empty `saml2.entityId` | replaced with `urn:sts:idp` | SSO and metadata refuse, naming the setting |
 | Artifact resolver authentication | not required (follows `requireSignedAuthnRequests`) | required |
 
 A present signature, metadata expiry, a consumed ACS endpoint list and the
@@ -577,7 +576,6 @@ one-shot artifact are enforced in **both** modes. See
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `saml.issuer` | `STS_SAML_ISSUER` (or `STS_ISSUER`) | *(empty)*: `saml2.entityId`, per application for a registered one | yes | Who signed an assertion: the issuer of the SAML assertions WS-Trust and WS-Federation carry, and what `/wsfed/rp` checks one against. The browser profiles name themselves with `saml2.entityId` and `saml11.providerId`. Unset, in either mode (#480, #494), it is the entityID — `saml2.entityId:{sp}` for a token to a registered application, the shared one otherwise. Set, it is every such assertion's Issuer. |
 | `saml.clockSkewS` | `STS_SAML_CLOCK_SKEW_S` | `0` | yes | Seconds added to both ends of every issued assertion's validity window (at most 300). |
 | `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The XML signature algorithm and Redirect `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. `rsa-sha1` is development mode only: product signs with `rsa-sha256` instead and refuses setting it (#181). **In a realm with `keys.signerModel = hybrid-groups` (#68)** it may also be `ecdsa-sha256` or `ecdsa-sha384` (the XML signer group's P-256 or P-384 key) or `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87` or `slh-dsa-sha2-128s` (the group's post-quantum keys, each with its own certificate, under the W3C xmldsig-more **draft** identifiers — few service providers verify them yet). Elsewhere, or before that key is certified, the realm signs `rsa-sha256` and says so once. |
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`; inclusive c14n is not offered. |
@@ -590,8 +588,6 @@ one-shot artifact are enforced in **both** modes. See
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `saml2.entityId` | `STS_SAML2_ENTITY_ID` | `urn:sts:idp` | yes | The identity provider's entityID and the `Issuer` of every Response and assertion this profile issues. |
-| `saml2.perApplicationEntityId` | `STS_SAML2_PER_APPLICATION_ENTITY_ID` | `true` | yes | Give each service provider its own entityID, `<entityID>:{sp}`. |
 | `saml2.assertionLifetimeMin` | `STS_SAML2_ASSERTION_LIFETIME_MIN` | `60` | yes | Assertion lifetime; per application with `saml2AssertionLifetimeMin`. |
 | `saml2.signAssertion` | `STS_SAML2_SIGN_ASSERTION` | `true` | yes | Sign the assertion; per application with `saml2SignAssertion`. Off is development mode only: product signs every assertion, and turning it off is refused, here and per application (#181). |
 | `saml2.signResponse` | `STS_SAML2_SIGN_RESPONSE` | `true` | yes | Sign the Response (the query string on the Redirect binding); per application with `saml2SignResponse`. |

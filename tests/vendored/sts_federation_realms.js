@@ -749,10 +749,9 @@ async function partnerOidc() {
   return { issuer: discovery.issuer, discovery: discovery, jwks: jwks };
 }
 
-// The IdP realm's SAML 2.0 metadata FOR one service provider: with
-// `saml2.perApplicationEntityId` the entityID differs per service provider, so
-// a document fetched without that name would name an issuer the assertions
-// will not carry.
+// The IdP realm's SAML 2.0 metadata FOR one service provider: its endpoints
+// are that service provider's own; its entityID is the realm's one issuer,
+// its OAuth issuer, since #523.
 async function partnerSaml(spEntityId) {
   log.debug("Entering partnerSaml().");
   const url = realmBase(IDP) + "/saml2/metadata/" +

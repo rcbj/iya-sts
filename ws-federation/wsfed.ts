@@ -107,11 +107,8 @@
 // `common/protocol_stack.ts` calls it exactly where rule 1 had the routes
 // registered before. Since R2 that root also builds the instance and
 // installs it, and the exported functions are FACADES that forward to it.
-// `WsFederation.wire()` makes the startup check (`warnAtStartup()`) that used
-// to run as a top-level expression after the routes — when the root installs
-// the instance, so still BEFORE the routes are registered, which changes
-// nothing it reports; a process without the root builds a default instance
-// and makes the check at load. The per-realm store and the vocabulary stay
+// `WsFederation.wire()` made a startup check of two issuer names until #523,
+// when they became one; it is kept, empty, as the root's hook. The per-realm store and the vocabulary stay
 // module-level constants, declared as they were.
 // ---------------------------------------------------------------------------
 
@@ -122,14 +119,9 @@ import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
-// TWO settings here, and they are not the same one. wsfed.entityId names
-// THIS identity provider in the federation metadata; saml.issuer is who
-// signed an assertion, which is what the relying party below checks a
-// presented one against. They shared a value until config.js split them, and
-// unset both are the SAML entityID (#494) — per application for a registered
-// relying party (`common/issuer_names.ts`).
 import config = require('../common/config');
-// #480: the names this service signs under, in one place (a library).
+// #523: the one name this service issues under — the metadata's entityID
+// and every assertion's Issuer, the realm's OAuth issuer (a library).
 import IssuerNames = require('../common/issuer_names');
 // THE ROLE GATE. A LEAF (rule 3) requiring only `helpers`, `config` and
 // `error_codes`, so a require from 10 moves no route and closes no cycle. See
@@ -421,17 +413,15 @@ class WsFederation {
     };
   }
 
-  // The work loading this module did with its own instance before R2,
-  // run once for whichever instance is installed.
+  // The root's hook for this module's load-time work. Since #523 there is
+  // none: the startup check of the two issuer names went with the second.
   /**
-   * Logs, once, whether the metadata's entityID and the assertions' Issuer
-   * disagree: the work loading this module did before R2.
+   * Nothing to do since #523.
    *
    * @param instance - the instance installed
    */
   static wire(instance: WsFederation): void {
-    helpers.log.debug("Entering WsFederation.wire().");
-    instance.warnAtStartup();
+    helpers.log.debug("Entering WsFederation.wire(). " + typeof instance);
     helpers.log.debug("Leaving WsFederation.wire().");
   }
 
@@ -1393,19 +1383,6 @@ class WsFederation {
         'holds a role is on <a href="/admin/roles">/admin/roles</a>.</p>');
     }
 
-    // NO NAME TO SIGN UNDER (#494): product, `saml2.entityId` empty and
-    // `saml.issuer` unset. SAML SSO refuses the same state (STS-SAML-0004);
-    // an assertion with an empty Issuer is one no relying party can match
-    // to the metadata it was configured from. Asked before the registry
-    // records an issuance that did not happen.
-    const issuerProblem = IssuerNames.problem('saml.issuer');
-    if (issuerProblem) {
-      errorCodes.mark(res, 'STS-WSFED-0020');
-      log.debug("Leaving WsFederation.issueSignInResponse(). No issuer.");
-      return this.wsfedError(res, 503, 'This identity provider has no name',
-                             issuerProblem);
-    }
-
     // THE APPLICATION. wtrealm is WS-Federation's name for the relying party,
     // and this is the point at which this service has decided to issue it a
     // token — every refusal above answered instead. It is recorded here rather
@@ -1454,15 +1431,10 @@ class WsFederation {
     const user = session.user;
     const methods = this.authnMethodsFor(session);
     const authnInstant = new Date((session.authTime || 0) * 1000).toISOString();
-    // THE ISSUER THIS RELYING PARTY SEES (#494): its own entityID where its
-    // wtrealm is a REGISTERED application — `<entityID>:<application>`, the
-    // name SAML SSO and WS-Trust give the same application, and the one its
-    // `/wsfed/metadata/{rp}` publishes — and the shared entityID for a
-    // wtrealm nobody registered. One function decides it for all three
-    // protocols (`common/issuer_names.ts`). The application is the entry
-    // filed under the wtrealm itself, as everything else on this path
-    // (return addresses, the lifetime override, the role gate) reads it.
-    const issuer = IssuerNames.samlIssuer(realm);
+    // THE ISSUER (#523): the realm's one name, its OAuth issuer, for every
+    // relying party — the name its metadata publishes, and the one SAML SSO,
+    // WS-Trust and every JWT carry (`common/issuer_names.ts`).
+    const issuer = IssuerNames.issuer();
     // THE ASSERTION LIFETIME, which was this literal `60` until 2026-08-27 and
     // is now a setting with a per-relying-party override. `realm` is the
     // wtrealm — the string this registry files a WS-Federation application
@@ -1745,52 +1717,6 @@ class WsFederation {
       'with 501 and an explanation</li></ul>');
   }
 
-  // ---------------------------------------------------------------------------
-  // THE TWO NAMES THIS PROFILE GOES BY, AND WHETHER THEY AGREE (2026-09-12).
-  //
-  // The federation metadata's entityID is `wsfed.entityId`; the Issuer of every
-  // assertion a sign-in response carries is `saml.issuer`, because both
-  // builders read it. They were split deliberately (config.js argues it: one
-  // names the identity provider, the other whoever signed an assertion) and
-  // they default to the same string. A relying party configured from the
-  // metadata, though — WIF's and OWIN's issuer name registry is exactly this —
-  // trusts the ENTITYID and then reads the assertion's Issuer, so a deployment
-  // that changed one and not the other has a relying party refusing every token
-  // with a message about an unknown issuer, and nothing here said the two had
-  // drifted.
-  //
-  // So it is SAID, rather than reconciled: in the log once at startup (for the
-  // process-wide values), and on this profile's own description page for the
-  // realm the request is in. Reconciling silently — making one follow the other
-  // — would take away the split the settings exist for. Returns '' when they
-  // agree.
-  // ---------------------------------------------------------------------------
-  /**
-   * Tells whether `wsfed.entityId` (the metadata's entityID) and `saml.issuer`
-   * (every assertion's Issuer) disagree in the ambient realm.
-   *
-   * @returns '' when they agree, otherwise a sentence saying how
-   */
-  issuerDisagreement() {
-    const { config, log } = this.deps;
-    log.debug("Entering WsFederation.issuerDisagreement().");
-    // #480: the names as signed and published (`common/issuer_names.ts`).
-    const entityId = String(IssuerNames.wsfedEntityId() || '');
-    const issuer = String(IssuerNames.samlIssuer() || '');
-    if (entityId === issuer) {
-      log.debug("Leaving WsFederation.issuerDisagreement().");
-      return '';
-    }
-    log.debug("Leaving WsFederation.issuerDisagreement().");
-    return 'wsfed.entityId ("' + entityId + '") and saml.issuer ("' + issuer +
-           '") differ. The federation metadata names this identity provider ' +
-           'by the first and every assertion in a sign-in response names its ' +
-           'issuer by the second, so a relying party configured from the ' +
-           'metadata will refuse the tokens as coming from an unknown ' +
-           'issuer. Set them to the same value unless that split is what is ' +
-           'being tested.';
-  }
-
   // What GET /wsfed says when it is followed bare, which is what a reader
   // clicking it from /admin/sts-metadata does. GET /sts answers the same way
   // for the same reason: an endpoint that 400s at a person who wanted to know
@@ -1799,13 +1725,10 @@ class WsFederation {
   private descriptionPage(base) {
     const { config, log, mode, xmlEscape } = this.deps;
     log.debug("Entering WsFederation.descriptionPage().");
-    const disagreement = this.issuerDisagreement();
     const inner = '<h1>WS-Federation 1.2 — passive requestor endpoint</h1>' +
-      '<p class="sub">Issuer <code>' + xmlEscape(IssuerNames.samlIssuer()) +
+      '<p class="sub">Issuer <code>' + xmlEscape(IssuerNames.issuer()) +
         '</code> at <code>' + xmlEscape(base) +
       PASSIVE_PATH + '</code></p>' +
-      (disagreement ? '<div class="err">' + xmlEscape(disagreement) + '</div>' :
-       '') +
       '<p>This endpoint takes a <code>wa</code> parameter, by GET or by form ' +
       'POST, and signs a browser in to a relying party by POSTing it a token ' +
       '(section 13.2.2). It authenticates nobody: the username typed at the ' +
@@ -1917,21 +1840,10 @@ class WsFederation {
   }
 
   // THE METADATA ROUTES' ONE ANSWER (#494): the document — the shared one
-  // for no application — or a 503 where there is no name to publish under
-  // (STS-WSFED-0020: product, `saml2.entityId` empty and `wsfed.entityId`
-  // unset; an `entityID=""` document is one no relying party can be
-  // configured from, which is SAML SSO's STS-SAML-0004 reasoning).
+  // for no application.
   private sendMetadata(req, res, application?) {
     const { baseUrlOf, errorCodes, log } = this.deps;
     log.debug("Entering WsFederation.sendMetadata().");
-    const problem = IssuerNames.problem('wsfed.entityId');
-    if (problem) {
-      errorCodes.mark(res, 'STS-WSFED-0020');
-      res.status(503).type('text/plain').set('Cache-Control', 'no-store')
-         .send(problem + '\n');
-      log.debug("Leaving WsFederation.sendMetadata(). No entityID.");
-      return;
-    }
     // no-store like every other document here that carries the signing key:
     // in development mode the key is regenerated on every start, so a cached
     // copy describes a key that is gone and the failure looks like a broken
@@ -2006,7 +1918,7 @@ class WsFederation {
       '<?xml version="1.0" encoding="UTF-8"?>' +
       '<EntityDescriptor xmlns="' + SAML_METADATA_NS + '" ID="' + id + '"' +
         ' entityID="' +
-        xmlEscape(IssuerNames.wsfedEntityId(application)) + '">' +
+        xmlEscape(IssuerNames.issuer(base)) + '">' +
         '<RoleDescriptor ' +
         'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' +
           ' xmlns:fed="' + WSFED_NS + '"' +
@@ -2264,11 +2176,9 @@ class WsFederation {
 
     const issuer = isSaml11 ? (assertion.getAttribute('Issuer') || '') :
                    textByLocal(assertion, 'Issuer');
-    // #494: the name this service gives THIS relying party — its own
-    // entityID if its realm is a registered application, else the shared
-    // one — so the check is the one a relying party configured from its own
-    // metadata makes.
-    const expectedIssuer = IssuerNames.samlIssuer(realm);
+    // #523: the realm's one name, which the metadata publishes — the check a
+    // relying party configured from the metadata makes.
+    const expectedIssuer = IssuerNames.issuer();
     add('the issuer is this service', issuer === expectedIssuer,
         (issuer || '(none)') +
         (issuer === expectedIssuer ? '' : ', expected ' + expectedIssuer));
@@ -2380,14 +2290,10 @@ class WsFederation {
     });
 
     // ONE REGISTERED RELYING PARTY'S OWN DOCUMENT (#494). The same
-    // document as the shared one but for its entityID, which is the name
-    // this relying party's assertions carry — `<entityID>:<application>`
-    // while `saml2.perApplicationEntityId` is on. A segment naming no
-    // REGISTERED application is a 404 in BOTH modes, where SAML's
-    // `/saml2/metadata/{sp}` answers for anything in development: an
-    // unregistered wtrealm is issued under the shared entityID, so a
-    // per-application document for it would publish a name no assertion
-    // carries. The 404 is sent here, text/plain and no-store, not Express's
+    // document as the shared one — since #523 the entityID is the realm's one
+    // issuer for every relying party too. A segment naming no REGISTERED
+    // application is a 404 in BOTH modes, where SAML's `/saml2/metadata/{sp}`
+    // answers for anything in development. The 404 is sent here, text/plain and no-store, not Express's
     // own body — the path IS routed (the root CLAUDE.md).
     app.get(METADATA_PATH + '/:rp', (req, res) => {
       log.debug("Entering the per-relying-party WS-Federation metadata " +
@@ -2560,22 +2466,6 @@ class WsFederation {
     });
     log.debug("Leaving WsFederation.registerRoutes().");
   }
-
-  // THE STARTUP HALF OF issuerDisagreement(): once, at require time, for the
-  // process-wide values. A realm's own overrides are reported on its
-  // description page, because at require time no realm is ambient.
-  /**
-   * Logs `issuerDisagreement()` once, for the process-wide values.
-   */
-  warnAtStartup(): void {
-    const { log } = this.deps;
-    log.debug("Entering WsFederation.warnAtStartup().");
-    const disagreement = this.issuerDisagreement();
-    if (disagreement) {
-      log.warn('wsfed: ' + disagreement);
-    }
-    log.debug("Leaving WsFederation.warnAtStartup().");
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2615,7 +2505,6 @@ export = {
   installInstance: (instance: WsFederation): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   SAML11_TOKEN_TYPE: SAML11_TOKEN_TYPE,
-  issuerDisagreement: slot.forward('issuerDisagreement'),
   SAML2_TOKEN_TYPE: SAML2_TOKEN_TYPE,
   federationMetadata: slot.forward('federationMetadata'),
   verifySignInResponse: slot.forward('verifySignInResponse'),

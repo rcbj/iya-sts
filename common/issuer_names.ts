@@ -6,68 +6,52 @@
 // File: issuer_names.ts
 //
 // ---------------------------------------------------------------------------
-// THE NAMES THIS SERVICE SIGNS UNDER AS A SAML ISSUER, A WS-TRUST STS AND A
-// WS-FEDERATION IDENTITY PROVIDER, DECIDED IN ONE PLACE (#480, #494).
+// THE ONE NAME THIS SERVICE ISSUES UNDER, IN EVERY PROTOCOL (#523).
 //
-// Three settings name this service outside the SAML 2.0 browser profile:
-// `saml.issuer` (the <saml:Issuer> of an assertion WS-Trust or WS-Federation
-// builds), `wstrust.issuer` (the STS's name on GET /sts) and `wsfed.entityId`
-// (the FederationMetadata entityID). All three shipped `urn:wstrust:mock:sts`,
-// a development placeholder, and a product deployment signed with it — beside
-// `/saml2/metadata`, which publishes `saml2.entityId`. A relying party
-// configured from that metadata saw an issuer it was never told about.
+// rcbj, 2026-10-08: "Shouldn't we have consistency between OAuth2 Token
+// Exchange JWT Access Token iss claim and WS-Trust Issue RST OBO/ActAs
+// Issuer elements?" Until #523 this file decided three names (#480, #494):
+// `saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, each defaulting to
+// the SAML 2.0 entityID `saml2.entityId`, which with
+// `saml2.perApplicationEntityId` was `urn:sts:idp:<sp>` per service provider
+// — while every JWT carried the realm's OAuth issuer. One STS answering one
+// request named itself two ways.
 //
-// **rcbj's decision on #480, extended to development on #494: ALIGN WITH THE
-// SAML ENTITYID, IN BOTH MODES.** Each of the three, where nobody set it, is
-// the realm's `saml2.entityId` — what `/saml2/metadata` publishes as this
-// identity provider. #480 did that in product only, behind
-// `mode.namesIssuersByEntityId()`, and kept the placeholder in development;
-// #494 retired the predicate and the placeholder with it, so a development
-// run exercises the rule a product deployment signs under. There is no mode
-// question left here. A value somebody SET still wins:
+// **rcbj's decisions on #523: ONE ISSUER PER REALM, THE REALM'S OAUTH
+// ISSUER URL, EVERYWHERE, WITH NO OVERRIDE.** The <saml:Issuer> of every SAML
+// 2.0 and SAML 1.1 assertion (SAML SSO, WS-Federation, WS-Trust), the
+// `entityID` of every identity provider metadata document (`/saml2/metadata`
+// and `/saml2/metadata/{sp}`, SAML 1.1's, WS-Federation's), the WS-Trust STS's
+// name and every JWT's `iss` are the one string
+// `/.well-known/oauth-authorization-server` publishes. The four settings and
+// the per-application names are retired. To change the name, change the
+// public base URL (`global.publicBaseUrl`), which moves every protocol
+// together.
 //
-//   * "set" means an operator's layer: a runtime override, the environment,
-//     the operator's appconfig file. The shipped defaults (`env/defaults.js`
-//     and the table's `dflt`, both empty since #494) are not a choice anybody
-//     made;
-//   * and a realm's SEEDED name is not one either. A realm is created with
-//     `urn:<domain>:sts` on all three (`realms.js` NAMED_BY_REALM) so that two
-//     realms never share a name; that seed is a default made distinct, and
-//     reading it as an operator's choice would leave every realm misaligned.
-//     A realm value equal to its seed is read as a default; any other realm
-//     value is somebody's choice and wins.
+// **IT IS THE REQUEST'S, AS THE OAUTH ISSUER IS.** The OAuth issuer is read
+// at the base of the request that asked (`oauth2.issuerOf()`, moved to where
+// `oauth-oidc` is advertised, #472), so in a deployment with no pinned base it
+// follows the host a client used. The SAML name must be read the same way or
+// the two disagree whenever the base is not pinned: `issuer(base)` takes the
+// caller's base, else the AMBIENT request's (`audit.currentRequest()`, which
+// every HTTP request runs inside), else the configured management base with
+// the realm's prefix — the order `wstrust.ts`'s `oauthIssuer()` used, which
+// now asks here.
 //
-// **ONE NAME PER APPLICATION (#494).** The SAML SSO profile names itself to
-// each service provider by `<entityID>:<sp>` (`saml2_sso.idpEntityIdFor()`,
-// governed by `saml2.perApplicationEntityId`), in the assertion's Issuer and
-// in `/saml2/metadata/{sp}`. WS-Trust and WS-Federation take the same name
-// for the same application, through that same function and nothing else:
-// a WS-Trust assertion (SAML 2.0 or 1.1) for a registered AppliesTo, and a
-// WS-Federation assertion and per-application metadata for a registered
-// wtrealm, carry the application's own entityID. So an application declared
-// for all three protocols sees one entityID in each — the key is its
-// registry identifier, which is what SAML SSO's `{sp}` names too.
+// **WHAT IT IS NOT.** An application's own SAML entityID (`samlEntityId`, the
+// SP side) is what an incoming AuthnRequest, LogoutRequest, ArtifactResolve or
+// AttributeQuery is matched against, by its own <Issuer> or the `{sp}` path
+// segment. That is untouched: this file names THIS service only.
 //
-// **"REGISTERED" IS `appRegisteredBy`** (the view's `registeredBy`): an
-// application an administrator, RFC 7591, an OpenID Federation or this
-// service's own seeding put here. An entry that merely TURNED UP — every
-// AppliesTo and wtrealm is filed by the protocol's `seen()` the first time a
-// token is issued for it — is not one, or the second token for an address
-// nobody registered would carry a different Issuer from the first. Such an
-// address, and no application at all, gets the SHARED entityID.
+// **"REGISTERED" IS `appRegisteredBy`** (`registeredApplication()`, #494's
+// word, still asked by #496's refusals): an application an administrator,
+// RFC 7591, an OpenID Federation or this service's own seeding put here, as
+// opposed to an entry a protocol's `seen()` filed.
 //
-// **A JWT's `iss` is not decided here**: it is the realm's OAuth issuer
-// (rcbj's decision on #480, kept on #494), `wstrust.ts`'s `oauthIssuer()`.
-//
-// **NO NAME AT ALL** is possible only in product with `saml2.entityId`
-// emptied and nothing set: the SSO profile invents no entityID there
-// (`saml2_sso.idpEntityIdFor()`), and neither does this file. `problem()`
-// says so, and WS-Trust and WS-Federation refuse to sign under an empty name
-// (STS-WSTRUST-0029, STS-WSFED-0020) as SAML SSO does (STS-SAML-0004).
-//
-// A STATIC UTILITY CLASS (rule 3: a library, no route, no state). `realms`,
-// `applications` and `saml/saml2_sso` are reached LAZILY: the SAML assertion
-// builders require this file, and the SSO module loads later in the stack.
+// A STATIC UTILITY CLASS (rule 3: a library, no route, no state). `audit`,
+// `realms`, `applications` and `oauth-oidc/oauth2` are reached LAZILY: the
+// SAML assertion builders require this file, and the authorization server
+// loads later in the stack.
 // ---------------------------------------------------------------------------
 
 import config = require('./config');
@@ -75,60 +59,52 @@ import helpers = require('./helpers');
 
 const log = helpers.log;
 
-// The layers an operator writes. Everything else is a shipped default.
-const SET_LAYERS = ['realm', 'override', 'env', 'env-legacy', 'appconfig'];
-
 /**
- * The names this service signs under as a SAML issuer, a WS-Trust STS and a
- * WS-Federation identity provider (#480, #494).
+ * The one name this service issues under (#523).
  */
 export = class IssuerNames {
   /**
-   * Returns the value somebody SET for a naming setting, or '' where it holds
-   * a default — the shipped one, or a realm's seeded `urn:<domain>:sts`.
+   * Returns this realm's issuer: its OAuth issuer at `base`, which is the
+   * SAML Issuer, the identity provider metadata's entityID, the WS-Trust
+   * STS's name and every JWT's `iss` (#523).
    *
-   * @param key - `saml.issuer`, `wstrust.issuer` or `wsfed.entityId`
-   * @returns the configured value, or ''
+   * @param base - the base URL of the request that asked, the realm prefix
+   * included; omitted, the ambient request's, else the configured base
+   * @returns the issuer
    */
-  static configured(key: string): string {
-    log.debug("Entering IssuerNames.configured(). " + key);
-    const source = String(config.sourceOf(key) || '');
-    const value = String(config.value(key) || '').trim();
-    if (SET_LAYERS.indexOf(source) < 0 || !value) {
-      log.debug("Leaving IssuerNames.configured(). A default.");
-      return '';
+  static issuer(base?: string): string {
+    log.debug("Entering IssuerNames.issuer().");
+    let at = String(base || '');
+    if (!at) {
+      let req: any = null;
+      try {
+        req = require('./audit').currentRequest();
+      } catch (e) {
+        // No audit module loaded (a library tested on its own): no request.
+        log.debug("Caught in IssuerNames.issuer(): " +
+                  ((e && e.message) || e));
+        req = null;
+      }
+      at = req ? String(helpers.baseUrlOf(req) || '') : '';
     }
-    if (source === 'realm' && value === IssuerNames.realmSeed()) {
-      log.debug("Leaving IssuerNames.configured(). The realm's seed.");
-      return '';
+    if (!at) {
+      at = String(config.managementApiBaseUrl() || '')
+        .replace(/\/admin-api$/, '') +
+        String(require('./realms').currentPrefix() || '');
     }
-    log.debug("Leaving IssuerNames.configured(). Set (" + source + ").");
-    return value;
-  }
-
-  /**
-   * Returns the name a realm is seeded with for the three settings,
-   * `urn:<domain>:sts`, or '' outside a realm.
-   *
-   * @returns the seeded name
-   */
-  static realmSeed(): string {
-    log.debug("Entering IssuerNames.realmSeed().");
-    let seed = '';
+    // Where `oauth-oidc` is advertised (#472), whichever base asked.
+    at = helpers.rebaseTo(at, 'oauth-oidc');
+    let out = at;
     try {
-      const realms = require('./realms');
-      const realm = realms.current();
-      const domain = realm && !realms.isDefault(realm)
-        ? String(realms.domainOf(realm) || '') : '';
-      seed = domain ? 'urn:' + domain + ':sts' : '';
+      out = String(require('../oauth-oidc/oauth2').issuerOf(at) || at);
     } catch (e) {
-      // No realm registry loaded (a module tested on its own): no seed.
-      log.debug("Caught in IssuerNames.realmSeed(): " +
-                ((e && e.message) || e));
-      seed = '';
+      // No authorization server loaded (a library tested on its own): the
+      // base is what it would have answered with no pinned issuer.
+      log.debug("Caught in IssuerNames.issuer(): " + ((e && e.message) || e));
+      out = at;
     }
-    log.debug("Leaving IssuerNames.realmSeed().");
-    return seed;
+    log.debug("Leaving IssuerNames.issuer(). " + out);
+    return out;
   }
 
   /**
@@ -159,121 +135,5 @@ export = class IssuerNames {
     log.debug("Leaving IssuerNames.registeredApplication(). " +
               (registered ? wanted : 'Not registered.'));
     return registered ? wanted : '';
-  }
-
-  /**
-   * Returns this identity provider's SAML 2.0 entityID for an application,
-   * as the SSO profile names itself to it: the per-SP entityID where
-   * `saml2.perApplicationEntityId` is on and an application is named, else
-   * the shared one. '' where none is configured in product.
-   *
-   * @param application - the application's identifier; '' for the shared one
-   * @returns the entityID
-   */
-  static entityIdFor(application?: string): string {
-    log.debug("Entering IssuerNames.entityIdFor().");
-    let out = '';
-    try {
-      const sso = require('../saml/saml2_sso');
-      // ASKED, NEVER BUILT. Before the composition root has installed the
-      // SSO module's instance, a facade call would build a DEFAULT one, and
-      // the root's own install would then refuse and stop the start — which
-      // is what WS-Trust's startup warning did in product mode (fix on
-      // develop, 4cc56ad0). Since #494 every mode reads the entityID here, so
-      // development would reach it too. Until the root has installed it, the
-      // shared setting is read directly, below.
-      if (sso.instanceOrigin() === 'none') {
-        throw new Error('the SAML 2.0 SSO module is not installed yet');
-      }
-      out = String(sso.idpEntityIdFor(String(application || '')) || '');
-    } catch (e) {
-      // The SSO module is not loaded (a library tested on its own) or not
-      // installed yet (a startup read): the shared setting, read directly.
-      log.debug("Caught in IssuerNames.entityIdFor(): " +
-                ((e && e.message) || e));
-      out = String(config.value('saml2.entityId') || '').trim();
-    }
-    log.debug("Leaving IssuerNames.entityIdFor(). " + out);
-    return out;
-  }
-
-  // One of the three: set, or the SAML entityID — the application's own
-  // where a REGISTERED one is named, else the shared one. '' only where
-  // there is no entityID either (product, `saml2.entityId` empty).
-  private static named(key: string, application?: string): string {
-    log.debug("Entering IssuerNames.named(). " + key);
-    const set = IssuerNames.configured(key);
-    if (set) {
-      log.debug("Leaving IssuerNames.named(). Set.");
-      return set;
-    }
-    const out = IssuerNames.entityIdFor(
-      IssuerNames.registeredApplication(application));
-    log.debug("Leaving IssuerNames.named(). The SAML entityID: " + out);
-    return out;
-  }
-
-  /**
-   * Returns the <saml:Issuer> of an assertion WS-Trust or WS-Federation
-   * builds (`saml.issuer`).
-   *
-   * @param application - the application the assertion is for, whose
-   * per-application entityID applies when it is registered; none for the
-   * shared one
-   * @returns the issuer, or '' where there is no name to sign under
-   */
-  static samlIssuer(application?: string): string {
-    log.debug("Entering IssuerNames.samlIssuer().");
-    log.debug("Leaving IssuerNames.samlIssuer().");
-    return IssuerNames.named('saml.issuer', application);
-  }
-
-  /**
-   * Returns the WS-Trust STS's name, as GET /sts publishes it
-   * (`wstrust.issuer`).
-   *
-   * @returns the name
-   */
-  static wstrustIssuer(): string {
-    log.debug("Entering IssuerNames.wstrustIssuer().");
-    log.debug("Leaving IssuerNames.wstrustIssuer().");
-    return IssuerNames.named('wstrust.issuer');
-  }
-
-  /**
-   * Returns the WS-Federation entityID (`wsfed.entityId`): the shared
-   * FederationMetadata document's, or one registered relying party's.
-   *
-   * @param application - the relying party's registry identifier (its
-   * wtrealm); none for the shared document
-   * @returns the entityID, or '' where there is no name to publish
-   */
-  static wsfedEntityId(application?: string): string {
-    log.debug("Entering IssuerNames.wsfedEntityId().");
-    log.debug("Leaving IssuerNames.wsfedEntityId().");
-    return IssuerNames.named('wsfed.entityId', application);
-  }
-
-  /**
-   * Returns the sentence a refusal carries when this realm has no name to
-   * sign or publish under — product, `saml2.entityId` empty and none of the
-   * three set — or '' when it has one.
-   *
-   * @param key - the setting the refusing surface signs under
-   * @returns the sentence, or ''
-   */
-  static problem(key: string): string {
-    log.debug("Entering IssuerNames.problem(). " + key);
-    if (IssuerNames.named(key)) {
-      log.debug("Leaving IssuerNames.problem(). There is a name.");
-      return '';
-    }
-    log.debug("Leaving IssuerNames.problem(). No name.");
-    return key + ' is not set and saml2.entityId is empty, and this realm ' +
-           'is in PRODUCT mode, where this service does not invent a name ' +
-           'to sign under. Set saml2.entityId (the SAML 2.0 console page, ' +
-           'POST /admin-api/config/set, or the appconfig file) to the ' +
-           'entityID relying parties are configured with, or set ' + key +
-           '.';
   }
 };

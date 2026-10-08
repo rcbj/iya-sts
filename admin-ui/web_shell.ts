@@ -202,9 +202,10 @@ class WebShell {
         // WHAT THIS SERVICE IS AND WHICH REALM YOU ARE IN, rather than the
         // WS-Trust issuer identifier that used to be here.
         //
-        // That identifier is `wstrust.issuer`, and it was never the name of
-        // this service — it is what ONE of the sixteen protocol families puts
-        // in an <Issuer> element. In the corner of a console whose other
+        // That identifier was `wstrust.issuer`, and it was never the name of
+        // this service — it was what ONE of the sixteen protocol families put
+        // in an <Issuer> element (since #523 every family's is one name, the
+        // realm's OAuth issuer, which the title below carries). In the corner of a console whose other
         // fifteen families never mention it, it read as the service's identity
         // and is not; and it is the one line on the page that is drawn before
         // the reader knows what the page is about, so it should say something
@@ -236,11 +237,11 @@ class WebShell {
         '<p class="brandsub" title="' +
           kit.esc('This console is showing the trust realm "' +
                    shell.realm.name +
-                   '" (id: ' + shell.realm.id + '). Its WS-Trust issuer ' +
-                   'identifier ' +
-                   'is ' + shell.wsTrustIssuer + ', which is what ' +
-                   'that protocol puts in an <Issuer> element and is not the ' +
-                   'name of this service.') +
+                   '" (id: ' + shell.realm.id + '). Its issuer ' +
+                   'identifier, in every protocol (#523), ' +
+                   'is ' + shell.wsTrustIssuer + ': every SAML <Issuer>, ' +
+                   'every identity provider entityID and every JWT\'s ' +
+                   'iss.') +
           '">IYA STS &middot; ' + kit.esc(shell.realm.name) + '</p>' +
         WebShell.navBar(shell, page) +
         '</aside>';

@@ -203,8 +203,7 @@ async function run(t) {
     log.debug("Leaving withCookie().");
     return { headers: { host: 'idp.test', cookie: cookie } };
   };
-  const product = { 'global.mode': 'product',
-                    'saml2.entityId': 'https://idp.test/saml2/idp' };
+  const product = { 'global.mode': 'product' };
 
   try {
     // -----------------------------------------------------------------------
@@ -467,7 +466,9 @@ async function run(t) {
     const mdReq = kit.fakeReq('GET', '/saml2/metadata/x', {}, '');
     mdReq.params = { sp: spE };
     metadata(mdReq, md);
-    t.check(/<md:AttributeAuthorityDescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2\.0:protocol">/
+    // #523: one entity, one document — the attribute authority names both
+    // SAML versions.
+    t.check(/<md:AttributeAuthorityDescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2\.0:protocol urn:oasis:names:tc:SAML:1\.1:protocol">/
               .test(md.body) &&
             /<md:AttributeService Binding="urn:oasis:names:tc:SAML:2\.0:bindings:SOAP" Location="[^"]*\/saml2\/aa\//
               .test(md.body),
@@ -481,11 +482,22 @@ async function run(t) {
     const md11Req = kit.fakeReq('GET', '/saml11/metadata/x', {}, '');
     md11Req.params = { rp: spE };
     metadata11(md11Req, md11);
-    t.check(/<md:IDPSSODescriptor[^>]*protocolSupportEnumeration="urn:oasis:names:tc:SAML:1\.1:protocol urn:mace:shibboleth:1\.0"/
+    t.check(/<md:IDPSSODescriptor[^>]*protocolSupportEnumeration="urn:oasis:names:tc:SAML:2\.0:protocol urn:oasis:names:tc:SAML:1\.1:protocol urn:mace:shibboleth:1\.0"/
               .test(md11.body),
-            'the SAML 1.1 IDPSSODescriptor names urn:mace:shibboleth:1.0 ' +
-            'beside SAML 1.1, as a Shib1 initiator requires (#189)',
+            'the IDPSSODescriptor names urn:mace:shibboleth:1.0 beside SAML ' +
+            '1.1, as a Shib1 initiator requires (#189) — and SAML 2.0, in ' +
+            'the one document both paths serve (#523)',
             md11.body.slice(0, 300));
+    const entityOf = function (xml) {
+      return (/entityID="([^"]*)"/.exec(xml) || [])[1] || '';
+    };
+    t.check(entityOf(md11.body) === entityOf(md.body) &&
+            /index="1"[^>]*\/saml11\/responder\/|\/saml11\/responder\/[^"]*" index="1"/
+              .test(md11.body) &&
+            /\/saml2\/ars\/[^"]*" index="0" isDefault="true"/.test(md11.body),
+            '/saml11/metadata and /saml2/metadata are one entity: the same ' +
+            'entityID, SAML 2.0\'s resolver at index 0 and SAML 1.1\'s at ' +
+            'index 1 (#523)', entityOf(md11.body) + ' / ' + entityOf(md.body));
 
     // -----------------------------------------------------------------------
     t.log.info('G. SAML 1.1');

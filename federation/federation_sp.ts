@@ -722,10 +722,10 @@ class FederationSp {
   // WS-Federation `wtrealm` and the OAuth `client_id` fallback — and four
   // spellings of it would be four things a partner had to be configured with.
   //
-  // It is PER RELATIONSHIP rather than one constant, which is the same decision
-  // `saml2.perApplicationEntityId` makes in the other direction and for the
-  // same reason: a partner keying its trust store off an entityID must be able
-  // to be given one that is only ours-with-them.
+  // It is PER RELATIONSHIP rather than one constant: a partner keying its
+  // trust store off an entityID must be able to be given one that is only
+  // ours-with-them. (The other direction made the same decision until #523,
+  // when this service as an IDENTITY PROVIDER became one name per realm.)
   // ---------------------------------------------------------------------------
   //
   // **AND IT IS DERIVED FROM THE BASE URL, WHICH IS THE ONE THING TO KNOW ABOUT

@@ -836,8 +836,9 @@ const CONFIG_SETTING = openObject(
       description: 'Where the effective value came from, highest first: a ' +
                    'runtime override set through this API or the console; ' +
                    'the setting\'s own environment variable; the LEGACY ' +
-                   'variable named in `legacyEnv` (STS_ISSUER still feeds ' +
-                   'the three issuers carved out of it); the appconfig file ' +
+                   'variable named in `legacyEnv` (none since #523, when ' +
+                   'STS_ISSUER went with the settings it fed); the ' +
+                   'appconfig file ' +
                    'CONFIG_FILE names; `env/defaults.js`, the DEFAULT ' +
                    'appconfig file that one is unioned on top of. `default` ' +
                    'is the sixth and is reachable only for the three DERIVED ' +
@@ -893,8 +894,8 @@ const SETTINGS_BLOCK = openObject(
     groups: {
       type: 'array',
       description: 'In the order config.js declares them. Usually one; the ' +
-                   'SAML pages draw two, because `saml.issuer` is a group of ' +
-                   'its own governing both profiles.',
+                   'SAML pages draw two, because the group SAML governs ' +
+                   'both profiles.',
       items: openObject('One group\'s settings.', {
         group: { type: 'string' },
         settings: { type: 'array', items: CONFIG_SETTING }
@@ -3214,7 +3215,7 @@ const SCHEMAS = {
                      'and this says which — so a caller can send a person to ' +
                      'the right page instead of to a table of a hundred and ' +
                      'fifty-four rows. A row may name TWO pages: ' +
-                     '`saml.issuer` governs both SAML profiles and ' +
+                     'the group SAML governs both SAML profiles and ' +
                      'WS-Federation, so it is drawn on both SAML pages. ' +
                      'Every one of those forms posts to the same four ' +
                      'actions below, so this changes nothing about how a ' +

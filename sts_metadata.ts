@@ -6855,11 +6855,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/wstrust', group: 'Management API', name: 'WS-Trust ' +
       'settings',
     specs: ['ws-trust', 'openapi'],
-    what: 'GET /admin/wstrust over JSON: the one wstrust.* setting, and ' +
+    what: 'GET /admin/wstrust over JSON: the wstrust.* settings, and ' +
           'where the rest of a WS-Trust response is configured — the ' +
-          'assertion is built by the SAML modules, so its Issuer is ' +
-          'saml.issuer and its attributes are /admin-api/saml-attributes. ' +
-          'Read-only.' },
+          'assertion is built by the SAML modules, so its attributes are ' +
+          '/admin-api/saml-attributes. Its Issuer is the realm\'s OAuth ' +
+          'issuer (#523). Read-only.' },
   { path: '/admin-api/wsfed', group: 'Management API', name: 'WS-Federation ' +
       'settings',
     specs: ['ws-federation', 'openapi'],
@@ -7225,15 +7225,11 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Federation metadata for ONE relying party',
     specs: ['ws-federation', 'xmldsig', 'saml11', 'saml2'],
     what: 'THE SAME DOCUMENT, PER APPLICATION (#494): its entityID is the ' +
-          'name this registered relying party\'s assertions are issued ' +
-          'under — <entityID>:<application> while ' +
-          'saml2.perApplicationEntityId is on, the name SAML 2.0 SSO and ' +
-          'WS-Trust give the same application — so a relying party is ' +
-          'configured from a document naming its own issuer. The segment is ' +
+          'realm\'s one issuer, its OAuth issuer, as everywhere (#523). ' +
+          'The segment is ' +
           'the application\'s identifier (its wtrealm) or its slug. A ' +
           'segment naming no REGISTERED application is a 404 in both modes ' +
-          '(STS-WSFED-0019): an unregistered wtrealm is issued under the ' +
-          'shared entityID, which the shared document publishes. no-store.' },
+          '(STS-WSFED-0019). no-store.' },
   { path: '/wsfed/rp', group: 'WS-Federation', name: 'Mock relying party ' +
                                                      '(not a spec endpoint)',
     specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig'],
@@ -7271,18 +7267,16 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/saml2/metadata/:sp', group: 'SAML 2.0',
     name: 'Identity provider metadata for ONE service provider',
     specs: ['saml2-metadata', 'xmldsig'],
-    what: 'THE SAME DOCUMENT, PER APPLICATION: a distinct identity provider ' +
-          'entityID and endpoints scoped to that service provider, which is ' +
-          'what Okta and Ping publish. IN DEVELOPMENT IT 404s FOR NOTHING — ' +
+    what: 'THE SAME DOCUMENT, PER APPLICATION: endpoints scoped to that ' +
+          'service provider, under the realm\'s one entityID, its OAuth ' +
+          'issuer (#523). IN DEVELOPMENT IT 404s FOR NOTHING — ' +
           'an entityID nobody registered is registered BY THE ASK, so a ' +
           'service provider can be pointed here before anything is ' +
           'provisioned. IN PRODUCT (#112) it is a 404 for anything that is ' +
           'not a registered SAML 2.0 service provider, and so is every ' +
           'other {sp} path (STS-SAML-0082). The segment ' +
           'is the percent-encoded entityID, or a slug (app-<12 hex>) where ' +
-          'the entityID is not safe in a path. saml2.perApplicationEntityId ' +
-          'turns the separate entityID off; the endpoints stay ' +
-          'per-application.' },
+          'the entityID is not safe in a path.' },
   { path: '/saml2/sso', group: 'SAML 2.0', name: 'Single Sign-On service',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
     effect: 'starts a browser sign-on session — the SAME session OAuth 2.0 / ' +
@@ -7457,9 +7451,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'relying party (STS-SAML-0083). The segment is the ' +
           'percent-encoded identifier or a slug, and the slug is THE SAME ' +
           'ONE /saml2 uses — one application has one handle across both ' +
-          'profiles, or the console would show one entry as two. ' +
-          'saml11.perApplicationProviderId turns the separate providerID ' +
-          'off; the endpoints stay per-application.' },
+          'profiles, or the console would show one entry as two. The ' +
+          'providerID is the realm\'s one issuer (#523).' },
   { path: '/saml11/sso', group: 'SAML 1.1', name: 'Inter-site transfer service',
     specs: ['saml11', 'saml11-bindings', 'saml11-profiles', 'xmldsig'],
     effect: 'starts a browser sign-on session — the SAME session OAuth 2.0 / ' +
@@ -10135,7 +10128,7 @@ class StsMetadata {
         stamped: APP_VERSION.stamped === true
       },
       issuer: base,
-      wsTrustIssuer: IssuerNames.wstrustIssuer(),
+      wsTrustIssuer: IssuerNames.issuer(),
       port: port,
       testDouble: true,
       endpoints: report.rows.map(function (r) {

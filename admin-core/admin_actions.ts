@@ -7221,7 +7221,7 @@ class AdminActions {
     if (action === 'create') {
       // `overrides` IS PASSED THROUGH, and until 2026-08-25 it was not. The
       // management API documents the field, gives it an example
-      // (`{"saml2.entityId": "urn:acme:idp"}`) and says it wins over the six
+      // (`{"saml.organizationName": "Acme"}`) and says it wins over the
       // seeded names — and this function built its argument out of three
       // properties and dropped the fourth, so a create carrying overrides
       // answered 200 and made a realm configured differently from the one that

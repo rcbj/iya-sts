@@ -429,7 +429,7 @@ class RealmsPage {
         '<input type="hidden" name="id" value="' + kit.esc(realm.id) +
         '"><div class="formrow"><label for="skey">Key</label><input ' +
         'type="text" id="skey" name="key" size="30" ' +
-        'placeholder="saml2.entityId" required><label ' +
+        'placeholder="saml.organizationName" required><label ' +
         'for="sval">Value</label><input type="text" id="sval" name="value" ' +
         'size="30"><button type="submit">Set it ' +
         'here</button></div></form><h2>Name and description</h2><form ' +

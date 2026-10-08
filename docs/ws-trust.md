@@ -23,7 +23,7 @@ the request used.
 | Path | What it is |
 |---|---|
 | `POST /sts` | the `RequestSecurityToken` endpoint, SOAP 1.1 or SOAP 1.2 |
-| `GET /sts` | what the endpoint is, the issuer it uses, and whether that disagrees with `saml.issuer` |
+| `GET /sts` | what the endpoint is, and the issuer every token it issues names: the realm's OAuth 2.0 issuer (#523) |
 | `GET /sts/cert` | the signing certificate, the key a relying party verifies an assertion with |
 
 In a trust realm every path is under `/realm/{id}`. The full, current list is
@@ -64,7 +64,8 @@ Cancel too.
 | anything else, or none | a signed SAML 2.0 assertion, the default |
 
 **The SAML assertion** comes from the same builder the
-[SAML 2.0 identity provider](saml2-sso.md) uses, so its issuer is `saml.issuer`,
+[SAML 2.0 identity provider](saml2-sso.md) uses; its issuer is the realm's OAuth
+2.0 issuer, the `iss` a JWT from the same request carries (#523),
 its audience is the `AppliesTo`, its validity window is widened by
 `saml.clockSkewS`, and it carries the SAML 2.0
 [custom SAML attributes](saml2-sso.md#custom-saml-attributes). Its
@@ -271,7 +272,6 @@ The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `wstrust.issuer` | `STS_WSTRUST_ISSUER` (or `STS_ISSUER`) | *(empty)*: the SAML 2.0 entityID | yes | The name `GET /sts` publishes; unset, in either mode, the realm's `saml2.entityId` (#480, #494). A SAML token carries `saml.issuer` — for a registered AppliesTo, that application's own entityID — and a JWT the realm's OAuth issuer. |
 | `wstrust.tokenLifetimeMin` | `STS_WSTRUST_TOKEN_LIFETIME_MIN` | `60` | yes | Token lifetime when the RST carries no `wst:Lifetime`. |
 | `wstrust.maxTokenLifetimeMin` | `STS_WSTRUST_MAX_TOKEN_LIFETIME_MIN` | `1440` | yes | The ceiling a requested `wst:Lifetime` is clamped to, in both modes. |
 | `wstrust.jwtAlgorithm` | `STS_WSTRUST_JWT_ALGORITHM` | `RS256` | yes | The JWT's `alg`: `RS256`–`RS512`, `PS256`–`PS512`, `ES256`–`ES512` or `EdDSA`. |
@@ -312,16 +312,12 @@ changed on `/admin/wstrust` or with `POST /admin-api/config/set`.
 * **The smallest honest answer to "which issuer is trusted".** In product a
   SAML credential must be one this STS signed — the key it already publishes —
   rather than any assertion at all.
-* **Two issuer settings, and disagreement is reported rather than
-  reconciled.** `wstrust.issuer` names the STS and `saml.issuer` the signer of
-  an assertion; `GET /sts` and the startup log say when they differ. **Unset,
-  in either mode, both are the SAML 2.0 entityID** (#480, #494). A WS-Trust
-  assertion — SAML 2.0 or SAML 1.1 — whose AppliesTo a REGISTERED
-  application answers to carries that application's own entityID where
-  `saml2.perApplicationEntityId` is on: the one its `/saml2/metadata/{sp}`
-  and `/wsfed/metadata/{rp}` name, so SAML SSO, WS-Trust and WS-Federation
-  give one application one name. An AppliesTo nobody registered gets the
-  shared entityID. The JWT's `iss` stays the realm's OAuth issuer.
+* **One issuer, in every token** (#523). A SAML 2.0 or SAML 1.1 assertion's
+  Issuer and a JWT's `iss` are the realm's OAuth 2.0 issuer, for every
+  AppliesTo — the name SAML SSO and WS-Federation publish as their entityID.
+  Who asked is named by the delegation itself (the last `del:Delegate`, the
+  SAML 1.1 `delegates` attribute, the JWT's `act`), never by the Issuer. The
+  issuer settings (`wstrust.issuer`, `saml.issuer`) are retired.
 * **A JWT needs a directory entry.** A bare name as `sub` would be inherited by
   a person created later under that name.
 

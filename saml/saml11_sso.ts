@@ -213,6 +213,7 @@ import InstanceSlot = require('../common/instance_slot');
 // Read per request rather than captured at require time, so that /admin/config
 // and /admin-api can change what the next response says and how it is signed.
 import config = require('../common/config');
+import IssuerNames = require('../common/issuer_names');
 // The error-code registry, a leaf: every refusal below is marked with its code
 // on the response object, never in anything the relying party is sent.
 import errorCodes = require('../common/error_codes');
@@ -832,54 +833,22 @@ class Saml11Sso {
     return { id: '', from: '', guessed: false };
   }
 
-  // This identity provider's own providerID, for a given relying party. The
-  // same device `saml2_sso.ts` uses and a SEPARATE setting, because a relying
-  // party that trusts this service for 1.1 and not for 2.0 is the ordinary case
-  // — see `saml11.providerId`.
-  //
-  // An EMPTY `saml11.providerId` is not filled in with `urn:sts:idp:saml11` in
-  // product mode (2026-09-12), for the reason saml2_sso.ts's idpEntityIdFor()
-  // gives; `providerIdProblem()` is what the inter-site transfer service, the
-  // responder and the metadata endpoint ask before issuing anything.
+  // This identity provider's own providerID: the realm's ONE issuer, its OAuth
+  // issuer URL, the same name SAML 2.0, WS-Federation, WS-Trust and every
+  // JWT's `iss` carry (#523, `common/issuer_names.ts`). Until #523 it was
+  // `saml11.providerId`, `urn:sts:idp:saml11:{rp}` per relying party with
+  // `saml11.perApplicationProviderId`; both settings are retired, and so is
+  // the product-mode refusal of an empty one, which nothing can be now.
   /**
-   * Answers this identity provider's own providerID for a relying party, from
-   * `saml11.providerId`.
-   *
-   * An empty setting falls back to `urn:sts:idp:saml11` in development and
-   * answers '' in product.
-   * @param rpId - the relying party's identifier
-   * @returns the providerID, or ''
+   * Answers this identity provider's own providerID (#523).
+   * @returns the realm's issuer
    */
-  providerIdFor(rpId) {
-    const { config, log, mode, slugOf } = this.deps;
-    log.debug("Entering Saml11Sso.providerIdFor().");
-    const configured = String(config.value('saml11.providerId') || '').trim();
-    const base = configured ||
-                 (mode.inventsClaimValues() ? 'urn:sts:idp:saml11' : '');
-    if (!base) {
-      log.debug("Leaving Saml11Sso.providerIdFor().");
-      return '';
-    }
-    if (!rpId || !config.value('saml11.perApplicationProviderId')) {
-      log.debug("Leaving Saml11Sso.providerIdFor().");
-      return base;
-    }
-    log.debug("Leaving Saml11Sso.providerIdFor().");
-    return base + ':' + slugOf(rpId);
-  }
-
-  private providerIdProblem() {
+  providerId() {
     const { log } = this.deps;
-    log.debug("Entering Saml11Sso.providerIdProblem().");
-    if (this.providerIdFor('')) {
-      log.debug("Leaving Saml11Sso.providerIdProblem().");
-      return '';
-    }
-    log.debug("Leaving Saml11Sso.providerIdProblem().");
-    return 'saml11.providerId is empty, and this realm is in PRODUCT mode, ' +
-           'where this identity provider does not invent a name to sign ' +
-           'assertions under. Set saml11.providerId (the SAML 1.1 console ' +
-           'page, POST /admin-api/config/set, or the appconfig file).';
+    log.debug("Entering Saml11Sso.providerId().");
+    const out = IssuerNames.issuer();
+    log.debug("Leaving Saml11Sso.providerId(). " + out);
+    return out;
   }
 
   // Where this relying party's endpoints live. One function so that the
@@ -1214,8 +1183,8 @@ class Saml11Sso {
   // and it is the ONLY one available.
   //
   // `opts.rpId` and never `opts.providerId`: the second is THIS identity
-  // provider's own name for that relying party, which differs per relying party
-  // when `saml11.perApplicationProviderId` is on and would find no entry.
+  // provider's own name (the realm's issuer, #523), which is no relying
+  // party's and would find no entry.
   private settingFor(rpId, key) {
     const { applications, config, log } = this.deps;
     log.debug("Entering Saml11Sso.settingFor().");
@@ -1451,15 +1420,14 @@ class Saml11Sso {
   }
 
   // IS THIS A TYPE 0x0001 ARTIFACT WHOSE SourceID NAMES A PROVIDER OTHER THAN
-  // the responder at `scopedId` (#160)? saml-bindings-1.1 section 4.1.1.6:
+  // this realm's one issuer (#160, #523)? saml-bindings-1.1 section 4.1.1.6:
   // the SourceID is how a destination site finds the responder of the source
   // site that issued the artifact, so a responder answers only for its own
-  // providerID — with `saml11.perApplicationProviderId` on, an artifact
-  // minted for a relying party belongs to `/saml11/responder/{rp}`, not to
-  // the unscoped responder or another party's. A value that is not a 42-byte
+  // providerID — the realm's one issuer since #523, so what this refuses is
+  // another ENTITY's (another realm's, or one minted at another base). A value that is not a 42-byte
   // type 0x0001 artifact names no SourceID, and is the unknown artifact it
   // looks like. `saml2_sso.ts`'s `isForeignArtifact()` is the 2.0 form.
-  private isForeignArtifact(artifact, scopedId): boolean {
+  private isForeignArtifact(artifact): boolean {
     const { log } = this.deps;
     log.debug("Entering Saml11Sso.isForeignArtifact().");
     const bytes = Buffer.from(String(artifact || ''), 'base64');
@@ -1468,7 +1436,7 @@ class Saml11Sso {
                 "artifact.");
       return false;
     }
-    const own = stsCrypto.samlArtifactSourceId(this.providerIdFor(scopedId));
+    const own = stsCrypto.samlArtifactSourceId(this.providerId());
     const foreign = !own.equals(bytes.subarray(2, 22));
     log.debug("Leaving Saml11Sso.isForeignArtifact(). " + foreign);
     return foreign;
@@ -1726,16 +1694,6 @@ class Saml11Sso {
         'exists so both can be exercised by hand.');
     }
 
-    const issuerProblem = this.providerIdProblem();
-    if (issuerProblem) {
-      log.debug("Leaving Saml11Sso.interSiteTransfer(). There is no " +
-                "providerID to issue under.");
-      errorCodes.mark(res, 'STS-SAML-0027');
-      log.debug("Leaving Saml11Sso.interSiteTransfer().");
-      return this.samlError(res, 503, 'This identity provider has no ' +
-                                      'providerID',
-                            issuerProblem);
-    }
 
     // --- step 2: where does the answer go ------------------------------------
     // `shire` is Shibboleth's name for the assertion consumer service, and it
@@ -1847,7 +1805,7 @@ class Saml11Sso {
         'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>');
     }
     const rpId = who.id;
-    const providerId = this.providerIdFor(rpId);
+    const providerId = this.providerId();
 
     // THE RELYING PARTY, recorded now that the request has been understood and
     // before anything can go wrong at the sign-in screen. `counts: false`
@@ -2451,10 +2409,10 @@ class Saml11Sso {
       }
       // ANOTHER PROVIDER'S ARTIFACT (#160), asked before anything is looked
       // up or spent — see isForeignArtifact().
-      if (this.isForeignArtifact(artifact, scoped.id)) {
+      if (this.isForeignArtifact(artifact)) {
         log.warn(errorCodes.tag('STS-SAML-0098') + 'saml11: artifact ' +
                  String(artifact).slice(0, 12) + '… was presented at the ' +
-                 'responder of "' + this.providerIdFor(scoped.id) + '", but ' +
+                 'responder of "' + this.providerId() + '", but ' +
                  'its SourceID names another provider. Answered empty, and ' +
                  'the artifact is left for the responder it belongs to.');
         log.debug("Leaving Saml11Sso.respond(). Another provider's artifact.");
@@ -2703,14 +2661,6 @@ class Saml11Sso {
                     'nobody to answer about.',
                     '', requestId, '');
     }
-    const issuerProblem = this.providerIdProblem();
-    if (issuerProblem) {
-      log.debug("Leaving Saml11Sso.answerQuery(). There is no providerID to " +
-                "issue under.");
-      errorCodes.mark(res, 'STS-SAML-0027');
-      log.debug("Leaving Saml11Sso.answerQuery().");
-      return answer(STATUS_RESPONDER, issuerProblem, '', requestId, '');
-    }
     // The `Resource` attribute is the relying party the query is on behalf
     // of, and it is the only thing in a SAML 1.1 query that names one.
     // Falling back to the path segment keeps a scoped responder's audience
@@ -2718,7 +2668,7 @@ class Saml11Sso {
     const resource = attributeQuery ?
                      (attributeQuery.getAttribute('Resource') || '') : '';
     const rpId = resource || scoped.id || '';
-    const providerId = this.providerIdFor(rpId);
+    const providerId = this.providerId();
     const user = userFor(username);
     // **NO CREDENTIAL WAS CHECKED TO GET HERE**, and this is the line that
     // says so. A real attribute authority authenticates the caller over
@@ -2850,128 +2800,85 @@ class Saml11Sso {
   }
 
   // ---------------------------------------------------------------------------
-  // THE METADATA — decision 5. A SAML 2.0 metadata document describing a SAML
-  // 1.1 identity provider, which is what every SAML 1.1 relying party actually
-  // consumes.
+  // THE METADATA — decision 5, and since #523 ONE DOCUMENT FOR BOTH VERSIONS.
   //
-  // SIGNED, with ds:Signature FIRST inside EntityDescriptor, which the metadata
-  // schema requires — and which is NOT where this profile's own Response puts
-  // it even though both are 'prepend'. They agree by coincidence rather than by
-  // rule, and the rule is in each schema separately.
+  // The providerID is the realm's one issuer, the same string SAML 2.0's
+  // entityID is, so the two profiles describe ONE ENTITY and saml-metadata-
+  // 2.0-os gives one entity one <EntityDescriptor>. Two documents under one
+  // entityID are a duplicate a relying party that reads both has to resolve
+  // (a chaining metadata provider keeps one and loses the other profile), so
+  // `saml2_sso.ts`'s `metadataFor()` builds the one document and this profile
+  // contributes its fragments to it: its protocols to the IDPSSODescriptor's
+  // and the AttributeAuthorityDescriptor's `protocolSupportEnumeration`, its
+  // ArtifactResolutionService (index 1, the SAML 1.0 SOAP binding — the
+  // binding is what tells a relying party which resolver is which), its
+  // three SingleSignOnService profile URIs, its AttributeService and its
+  // NameID formats. `/saml11/metadata[/{rp}]` serves that same document.
   // ---------------------------------------------------------------------------
   /**
-   * Builds the SAML 2.0 metadata document describing this SAML 1.1 identity
-   * provider, signed with the signature first inside the EntityDescriptor.
+   * The SAML 1.1 fragments of the realm's one identity provider metadata
+   * document (#523), scoped to a relying party's endpoints when one is named.
+   *
+   * @param base - the realm's base URL
+   * @param rpId - the relying party's identifier, or '' for the unscoped
+   * endpoints
+   * @returns the protocols and the endpoint elements, in schema order
+   */
+  metadataParts(base, rpId) {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering Saml11Sso.metadataParts(). rp=" +
+              (rpId || '(unscoped)'));
+    const where = this.endpointsFor(base, rpId);
+    const service = (element, binding, location, extra?) => {
+      log.debug("Entering service().");
+      log.debug("Leaving service().");
+      return '<md:' + element + ' Binding="' + binding + '" Location="' +
+             xmlEscape(location) + '"' + (extra || '') + '/>';
+    };
+    const out = {
+      // Shibboleth's own protocol beside 1.1's: its SP looks for the Shib1
+      // AuthnRequest endpoint only in a role naming it (#189).
+      ssoProtocols: [PROTOCOL_SAML11, PROTOCOL_SHIB1],
+      aaProtocols: [PROTOCOL_SAML11],
+      artifactResolution: service('ArtifactResolutionService', BINDING_SOAP,
+                                  where.responder, ' index="1"'),
+      // No SingleLogoutService: SAML 1.1 has no Single Logout.
+      // The two browser profiles, named by their PROFILE URIs — in a SAML
+      // 1.1 endpoint the Binding attribute carries a profile identifier, the
+      // 1.1 profiles bundling their binding — and Shibboleth's request
+      // profile (decision 1).
+      singleSignOn: service('SingleSignOnService', PROFILE_POST, where.sso) +
+        service('SingleSignOnService', PROFILE_ARTIFACT, where.sso) +
+        service('SingleSignOnService', PROFILE_SHIB_AUTHN_REQUEST,
+                where.sso),
+      // The responder is the attribute authority's AttributeService as well
+      // as the ArtifactResolutionService: a Shibboleth SP reads the
+      // AttributeAuthorityDescriptor for it and will not look elsewhere.
+      attributeService: service('AttributeService', BINDING_SOAP,
+                                where.responder),
+      nameIdFormats: NAMEID_FORMATS.slice()
+    };
+    log.debug("Leaving Saml11Sso.metadataParts().");
+    return out;
+  }
+
+  /**
+   * The realm's one identity provider metadata document (#523): the same
+   * document `/saml2/metadata` serves, with this relying party's SAML 1.1
+   * and SAML 2.0 endpoints.
    *
    * @param base - the realm's base URL
    * @param rpId - the relying party's identifier
    * @returns the metadata document
    */
   metadataFor(base, rpId) {
-    const { STS, documentSettings, errorCodes, genId, listenerKeys, log,
-            logArtifact, xmlEscape } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Saml11Sso.metadataFor(). rp=" + (rpId || '(unscoped)'));
-    const id = genId();
-    const providerId = this.providerIdFor(rpId);
-    const where = this.endpointsFor(base, rpId);
-    // THE BACK CHANNEL'S TLS CERTIFICATE (#248), in both roles, because the
-    // responder is both: the IdP role's ArtifactResolutionService and the
-    // attribute authority's AttributeService. saml/listener_keys.ts argues
-    // `use="signing"` and why it goes last.
-    const backChannelKeys = listenerKeys.keyDescriptors();
-    const keyDescriptor = (use) => {
-      log.debug("Entering keyDescriptor().");
-      log.debug("Leaving keyDescriptor().");
-      // One per live generation of the XML key (#42), for signing.
-      if (use === 'signing') {
-        return helpers.ownXmlSigningCertificates().map(function (one: any) {
-          return '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
-            NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
-            stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +
-            '</ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
-        }).join('');
-      }
-      return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo xmlns:ds="' +
-        NS_DS + '"><ds:X509Data><ds:X509Certificate>' + STS.xml.certB64 +
-        '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
-    };
-
-    const service = (element, binding, location, extra?) => {
-      log.debug("Entering service().");
-      log.debug("Leaving service().");
-      return '<md:' + element + ' Binding="' + binding + '" Location="' +
-             xmlEscape(location) + '"' +
-        (extra || '') + '/>';
-    };
-    const xml =
-      '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ID="' + id + '"' +
-        ' entityID="' + xmlEscape(providerId) + '">' +
-        // TWO descriptors, and this is the shape of the document that matters.
-        // An IDPSSODescriptor describes the browser profiles; an
-        // AttributeAuthorityDescriptor describes the responder's query half
-        // (decision 4). A Shibboleth service provider reads the second one to
-        // find its attribute authority and will not look for it inside the
-        // first — which is why the responder's address appears twice, once as
-        // an ArtifactResolutionService and once as an AttributeService.
-        '<md:IDPSSODescriptor' +
-          ' WantAuthnRequestsSigned="false"' +
-          ' protocolSupportEnumeration="' + PROTOCOL_SAML11 + ' ' +
-            PROTOCOL_SHIB1 + '">' +
-          keyDescriptor('signing') +
-          backChannelKeys +
-          // The metadata schema's sequence: ArtifactResolutionService, then
-          // SingleLogoutService, then NameIDFormat, then SingleSignOnService.
-          // There is no SingleLogoutService here at all — SAML 1.1 has no
-          // Single Logout, which is stated in issueSignIn() rather than implied
-          // by this absence.
-          service('ArtifactResolutionService', BINDING_SOAP, where.responder,
-                  ' index="0" isDefault="true"') +
-          NAMEID_FORMATS.map((format) => {
-            return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
-          }).join('') +
-          // The two browser profiles, named by their PROFILE URIs. In a SAML
-          // 1.1 descriptor the Binding attribute carries a profile identifier
-          // rather than a binding one, which reads wrong and is what
-          // Shibboleth's own metadata does — the 1.1 profiles bundle their
-          // binding into the profile.
-          service('SingleSignOnService', PROFILE_POST, where.sso) +
-          service('SingleSignOnService', PROFILE_ARTIFACT, where.sso) +
-          // Shibboleth's request profile — decision 1. Advertised so a service
-          // provider that builds its endpoint list from this document can send
-          // the one request SAML 1.1 deployments actually use.
-          service('SingleSignOnService', PROFILE_SHIB_AUTHN_REQUEST,
-                  where.sso) +
-        '</md:IDPSSODescriptor>' +
-        '<md:AttributeAuthorityDescriptor' +
-          ' protocolSupportEnumeration="' + PROTOCOL_SAML11 + '">' +
-          keyDescriptor('signing') +
-          backChannelKeys +
-          service('AttributeService', BINDING_SOAP, where.responder) +
-          NAMEID_FORMATS.map((format) => {
-            return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
-          }).join('') +
-        '</md:AttributeAuthorityDescriptor>' +
-        // `saml.organizationName` and its siblings since 2026-09-12; omitted
-        // when the name is emptied. See saml/document_settings.ts.
-        documentSettings.organizationElement(base) +
-      '</md:EntityDescriptor>';
-    logArtifact('SAML 1.1 IdP metadata', 'before signing', xml);
-    try {
-      const signed = this.signDocument(xml, 'EntityDescriptor', id, 'prepend');
-      logArtifact('SAML 1.1 IdP metadata', 'after signing', signed);
-      log.debug("Leaving Saml11Sso.metadataFor(). Signed.");
-      return signed;
-    } catch (e) {
-      log.debug("Caught in Saml11Sso.metadataFor(): " +
-                ((e && e.message) || e));
-      log.error(errorCodes.tag('STS-SAML-0034') + 'the SAML 1.1 metadata ' +
-                                                  'could ' +
-                                                  'not be signed, serving it ' +
-                                                  'unsigned: ' + e.message);
-      log.debug("Leaving Saml11Sso.metadataFor(). Unsigned.");
-      return xml;
-    }
+    // Lazily: `saml2_sso` is loaded before this module (10a, 10b), and a
+    // require at the top would only restate that order.
+    const out = require('./saml2_sso').metadataFor(base, rpId);
+    log.debug("Leaving Saml11Sso.metadataFor().");
+    return out;
   }
 
   private serveMetadata(req, res) {
@@ -2981,18 +2888,6 @@ class Saml11Sso {
     const scoped = this.relyingPartyFromSegment(req.params.rp);
     if (this.refusedUnregistered(res, scoped, METADATA_PATH + '/{rp}')) {
       log.debug("Leaving the SAML 1.1 metadata endpoint. Not registered.");
-      return;
-    }
-    // A document with entityID="" configures nobody; say why instead.
-    const issuerProblem = this.providerIdProblem();
-    if (issuerProblem) {
-      errorCodes.mark(res, 'STS-SAML-0027');
-      res.status(503)
-         .type('text/plain')
-         .set('Cache-Control', 'no-store')
-         .send(issuerProblem + '\n');
-      log.debug("Leaving the SAML 1.1 metadata endpoint. There is no " +
-                "providerID.");
       return;
     }
     if (scoped.id) {
@@ -3033,7 +2928,7 @@ class Saml11Sso {
     log.debug("Leaving Saml11Sso.describeSsoPage().");
     return '<h1>SAML 1.1 — inter-site transfer service</h1>' +
       '<p class="sub">Identity provider <code>' +
-      xmlEscape(this.providerIdFor(scoped.id)) +
+      xmlEscape(this.providerId()) +
       '</code> at <code>' + xmlEscape(where.sso) +
       '</code></p><p><strong>SAML ' +
       '1.1 has no request message.</strong> There is no ' +
@@ -3331,13 +3226,13 @@ class Saml11Sso {
     // nothing.
     const issuer = assertion.getAttribute('Issuer') || '';
     add('the issuer is this identity provider',
-        issuer === this.providerIdFor(rpId),
+        issuer === this.providerId(),
         (issuer || '(none)') +
-        (issuer === this.providerIdFor(rpId) ? ' — read from the Issuer ' +
+        (issuer === this.providerId() ? ' — read from the Issuer ' +
                                           'ATTRIBUTE, ' +
                                           'which is where SAML 1.1 puts it'
                                         : ', expected ' +
-                                            this.providerIdFor(rpId)));
+                                            this.providerId()));
 
     const conditions = firstByLocal(assertion, 'Conditions');
     const audience = conditions ? textByLocal(conditions, 'Audience') : '';
@@ -3856,9 +3751,10 @@ export = {
   NAMEID_FORMATS: NAMEID_FORMATS,
   RP_KIND: RP_KIND,
   slugOf: saml2Sso.slugOf,
-  providerIdFor: slot.forward('providerIdFor'),
+  providerId: slot.forward('providerId'),
   endpointsFor: slot.forward('endpointsFor'),
   metadataFor: slot.forward('metadataFor'),
+  metadataParts: slot.forward('metadataParts'),
   artifactCount: slot.forward('artifactCount'),
   cachedAssertionCount: slot.forward('cachedAssertionCount'),
   pendingFlowCount: slot.forward('pendingFlowCount'),

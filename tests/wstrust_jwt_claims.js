@@ -706,8 +706,9 @@ function credentialAudience(t) {
               'credential', r.status + ' ' + r.errorCode);
     }
     const idp = inMode(m, function () {
-      return [names.wstrustIssuer(), IDP,
-              String(require('../oauth-oidc/oauth2').issuerOf(AS_BASE))];
+      // #523: the IdP's one name IS the OAuth issuer; `/sts` beside it.
+      return [IDP, String(require('../oauth-oidc/oauth2').issuerOf(AS_BASE)),
+              names.issuer(AS_BASE)];
     });
     idp.forEach(function (name, i) {
       const asked = ask(saml2.buildSamlAssertion('wj-alice', IDP, 5), name,
@@ -715,11 +716,12 @@ function credentialAudience(t) {
       const xml = assertionOf(asked);
       t.check(asked.status === 200 &&
               xml.indexOf('<saml:Audience>' + name + '</saml:Audience>') > 0,
-              'T2 (' + m + ', ' + ['issuer name', '/sts', 'OAuth issuer'][i] +
+              'T2 (' + m + ', ' + ['/sts', 'OAuth issuer',
+                                    'IssuerNames.issuer()'][i] +
               '). an RST for the IdP\'s own name "' + name + '" is issued',
               asked.status + ' ' + asked.errorCode + ' ' +
               String(asked.body).slice(0, 300));
-      if (i === 0) {
+      if (i === 1) {
         r = ask(xml, BACK, JWT);
         t.check(r.status === 200 &&
                 jwtOf(r).claims.sub === helpers.subjectForName('wj-alice'),
