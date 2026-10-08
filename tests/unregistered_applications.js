@@ -550,6 +550,10 @@ async function oauth(t, seenOnlyClient) {
     return r.status === 401 && r.code === 'STS-OAUTH-0949' &&
       /invalid_client/.test(r.body);
   }) && before && after &&
+          // What a refused request would have written is a sighting, and a
+          // sighting goes to the OBSERVED list, never the declared one (#289).
+          JSON.stringify(after.fields.oauthGrantTypeObserved || null) ===
+            JSON.stringify(before.fields.oauthGrantTypeObserved || null) &&
           JSON.stringify(after.fields.oauthGrantType || null) ===
             JSON.stringify(before.fields.oauthGrantType || null) &&
           after.lastAt === before.lastAt && !applications.get(unknown),
@@ -863,8 +867,10 @@ function fixtures(t) {
     return applications.seen({ identifier: seenClient,
                                kind: 'oauth2-client',
                                protocol: 'OAuth 2.0 / OIDC',
+                               // OBSERVED, as the service files it (#289).
                                fields: { oauthClientId: seenClient,
-                                         oauthGrantType: 'authorization_code',
+                                         oauthGrantTypeObserved:
+                                           'authorization_code',
                                          oauthRedirectUri:
                                            'https://ua-client.example/cb' },
                                note: 'filed by ' + __filename });

@@ -8097,12 +8097,14 @@ const CODES = [
     spec: 'HTTP 401 {error: invalid_token}' },
   { code: 'STS-OAUTH-0597',
     summary: 'An authorization request asked for a response_type the ' +
-      'client did not register in response_types (OpenID Connect ' +
-      'Registration section 2) (#120).',
+      'client did not declare in oauthResponseType — registered as ' +
+      'response_types (OpenID Connect Registration section 2) or written ' +
+      'by an administrator (#120, #289).',
     spec: 'redirect {error: unauthorized_client}' },
   { code: 'STS-OAUTH-0598',
-    summary: 'A token request used a grant_type the client did not register ' +
-      'in grant_types (RFC 7591 section 2) (#120).',
+    summary: 'A token request used a grant_type the client did not declare ' +
+      'in oauthGrantType — registered as grant_types (RFC 7591 section 2) ' +
+      'or written by an administrator (#120, #289).',
     spec: 'HTTP 400 {error: unauthorized_client}' },
   { code: 'STS-OAUTH-0599',
     summary: 'A client\'s registered jwks_uri could not be read: the ' +
@@ -8111,8 +8113,9 @@ const CODES = [
       'or encryption that needed the key is refused with its own code.',
     spec: 'none (log only)' },
   { code: 'STS-OAUTH-0600',
-    summary: 'A client that registered grant_types without refresh_token ' +
-      'was answered with no refresh token (RFC 7591 section 2) (#120). ' +
+    summary: 'A client that declares grant_types without refresh_token ' +
+      'was answered with no refresh token (RFC 7591 section 2) (#120, ' +
+      '#289). ' +
       'Recorded, not refused.',
     spec: 'none (the token response omits refresh_token)' },
   { code: 'STS-OAUTH-0601',
@@ -8540,8 +8543,8 @@ const CODES = [
       'authenticate as it registered to (RFC 8628 section 3.1, #150).',
     spec: 'HTTP 401 {error: invalid_client}' },
   { code: 'STS-OAUTH-0692',
-    summary: 'A client that did not register the device_code grant ' +
-      'asked the device authorization endpoint for codes (#150).',
+    summary: 'A client whose declared grant types omit device_code ' +
+      'asked the device authorization endpoint for codes (#150, #289).',
     spec: 'HTTP 400 {error: unauthorized_client}' },
   { code: 'STS-OAUTH-0693',
     summary: 'The DPoP proof on a device authorization request did ' +

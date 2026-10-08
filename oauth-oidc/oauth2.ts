@@ -8406,7 +8406,8 @@ class OAuth2Server {
         // this says where it has been.
         appAuthorizationServer: self.profileOf(req),
         appRedirectUriObserved: redirectUri,
-        oauthResponseType: types.join(' '),
+        // What it ASKED for, apart from what it DECLARED (#289).
+        oauthResponseTypeObserved: types.join(' '),
         oauthScope: scope.split(/\s+/).filter(Boolean)
       }
     });
@@ -9956,19 +9957,21 @@ class OAuth2Server {
     // Note where this sits: above the session check, so it is answered on the
     // first pass and the person is never sent to sign in for a request that was
     // going to be refused when they came back.
-    // RFC 7591 SECTION 2 (#120, in every mode): a client that REGISTERED its
-    // response_types is held to them — unauthorized_client, RFC 6749 section
-    // 4.1.2.1's word for a client not allowed this method.
-    const registeredFlows = applications.registeredFlowsOf(q.client_id);
+    // RFC 7591 SECTION 2 (#120, in every mode): a client that DECLARED its
+    // response_types — by registering them or, since #289, by an
+    // administrator writing `oauthResponseType` — is held to them:
+    // unauthorized_client, RFC 6749 section 4.1.2.1's word for a client not
+    // allowed this method. An empty list restricts nothing.
+    const declaredFlows = applications.declaredFlowsOf(q.client_id);
     const askedType = String(q.response_type || '').split(/\s+/)
       .filter(Boolean).sort().join(' ');
-    if (registeredFlows && registeredFlows.response_types &&
-        registeredFlows.response_types.indexOf(askedType) < 0) {
+    if (declaredFlows && declaredFlows.response_types &&
+        declaredFlows.response_types.indexOf(askedType) < 0) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A response " +
-                "type the client did not register.");
+                "type the client did not declare.");
       return redirectable('STS-OAUTH-0597', 'unauthorized_client',
-        'Client "' + q.client_id + '" registered response_types ' +
-        JSON.stringify(registeredFlows.response_types) + ', and this ' +
+        'Client "' + q.client_id + '" declares response_types ' +
+        JSON.stringify(declaredFlows.response_types) + ', and this ' +
         'request asks for "' + q.response_type + '" (RFC 7591 section 2).');
     }
     const requestCheck = bcp.checkAuthorizationRequest({ query: q, types: types,
@@ -13238,7 +13241,11 @@ class OAuth2Server {
         counts: false,
         note: 'presented a Token Request',
         fields: Object.assign(
-          { oauthClientId: String(client.client_id), oauthGrantType: grant,
+          // The grant goes on as OBSERVED, never as oauthGrantType (#289):
+          // that list is what the client may use, and the check above
+          // reads it.
+          { oauthClientId: String(client.client_id),
+            oauthGrantTypeObserved: grant,
             appAuthorizationServer: self.profileOf(req) },
           // THE SCOPE, WHERE THIS REQUEST CARRIES ONE, and it is recorded here
           // as well as at the authorization endpoint because for three grants
@@ -13534,20 +13541,21 @@ class OAuth2Server {
       return self.oauthError(res, 401, fapiAuth.error, fapiAuth.description);
     }
     // RFC 7591 SECTION 2 (#120, in every mode, rcbj's decision): a client
-    // that REGISTERED its grant_types is held to them. A client_id nobody
-    // registered, and a registration naming no list, are not.
-    const registeredFlows = client.client_id
-      ? applications.registeredFlowsOf(client.client_id) : null;
-    if (registeredFlows && registeredFlows.grant_types &&
-        registeredFlows.grant_types.indexOf(
+    // that DECLARED its grant_types is held to them — by registering them or,
+    // since #289, by an administrator writing `oauthGrantType`. A client_id
+    // that declares no list is not.
+    const declaredFlows = client.client_id
+      ? applications.declaredFlowsOf(client.client_id) : null;
+    if (declaredFlows && declaredFlows.grant_types &&
+        declaredFlows.grant_types.indexOf(
           String(body.grant_type || '')) < 0) {
       log.debug("Leaving the token endpoint. A grant type the client did " +
-                "not register.");
+                "not declare.");
       errorCodes.mark(res, 'STS-OAUTH-0598');
       log.debug("Leaving OAuth2Server.tokenGrant().");
       return self.oauthError(res, 400, 'unauthorized_client',
-        'Client "' + client.client_id + '" registered grant_types ' +
-        JSON.stringify(registeredFlows.grant_types) + ', and this request ' +
+        'Client "' + client.client_id + '" declares grant_types ' +
+        JSON.stringify(declaredFlows.grant_types) + ', and this request ' +
         'is the ' + String(body.grant_type || '') + ' grant (RFC 7591 ' +
         'section 2).');
     }
@@ -13860,16 +13868,16 @@ class OAuth2Server {
                  'the client redeeming it.');
         opts.withRefresh = false;
       }
-      // RFC 7591 SECTION 2 (#120): a client that registered its grant_types
-      // without `refresh_token` gets no refresh token — RECORDED AND NOT
-      // REFUSED, for 0298's reason. Issuing one it could never redeem (the
-      // grant is refused above, 0598) is the half a token set #34 refuses to
-      // hand out.
-      if (opts.withRefresh !== false && registeredFlows &&
-          registeredFlows.grant_types &&
-          registeredFlows.grant_types.indexOf('refresh_token') < 0) {
+      // RFC 7591 SECTION 2 (#120): a client that declared its grant_types
+      // (registered, or since #289 written by an administrator) without
+      // `refresh_token` gets no refresh token — RECORDED AND NOT REFUSED, for
+      // 0298's reason. Issuing one it could never redeem (the grant is
+      // refused above, 0598) is the half a token set #34 refuses to hand out.
+      if (opts.withRefresh !== false && declaredFlows &&
+          declaredFlows.grant_types &&
+          declaredFlows.grant_types.indexOf('refresh_token') < 0) {
         log.info(errorCodes.tag('STS-OAUTH-0600') + 'oauth2: "' +
-                 client.client_id + '" registered no refresh_token grant, ' +
+                 client.client_id + '" declares no refresh_token grant, ' +
                  'so the ' + grant + ' grant is answered with no refresh ' +
                  'token.');
         opts.withRefresh = false;
@@ -18109,13 +18117,13 @@ class OAuth2Server {
       return undefined;
     }
     const clientId = String(caller.clientId);
-    const flows = applications.registeredFlowsOf(clientId);
+    const flows = applications.declaredFlowsOf(clientId);
     if (flows && flows.grant_types && flows.grant_types.length &&
         flows.grant_types.indexOf(deviceAuthorization.GRANT_TYPE) < 0) {
       log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). Not " +
-                "a registered grant.");
+                "a declared grant.");
       return refuse('STS-OAUTH-0692', 400, 'unauthorized_client', 'client "' +
-                    clientId + '" did not register the device_code grant ' +
+                    clientId + '" did not declare the device_code grant ' +
                     '(RFC 7591 section 2).');
     }
     const scope = String(body.scope || '').trim();

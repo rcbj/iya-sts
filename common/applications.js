@@ -1213,10 +1213,34 @@ const SCHEMA = {
             'AND `sub` in every Logout Token it sends, so the flag is always ' +
             'honoured; it is recorded because "false" and "not stated" are ' +
             'different facts about a client, as for the front-channel flag.' },
+    // DECLARED, AND ENFORCED (#289, 2026-10-07). Until then both lists were
+    // also where a sighting wrote what a client USED, so they grew with use
+    // and could restrict nothing, and only a registration document held a
+    // client to its flows. The sightings moved to the two *Observed rows
+    // below, as appRedirectUriObserved sits beside oauthRedirectUri.
     { name: 'oauthGrantType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'Grant types registered or observed at the token endpoint.' },
+      what: 'The grant types this client may use — RFC 7591 section 2\'s ' +
+            'grant_types, from a registration or written by an ' +
+            'administrator. The token endpoint refuses any other grant ' +
+            '(unauthorized_client), in every mode; an empty list restricts ' +
+            'nothing. What the client has actually used is ' +
+            'oauthGrantTypeObserved.' },
     { name: 'oauthResponseType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'response_type values seen at the authorization endpoint.' },
+      what: 'The response_type values this client may ask for — RFC 7591 ' +
+            'section 2\'s response_types, from a registration or written by ' +
+            'an administrator, each value one response type ("code", ' +
+            '"code id_token"). The authorization endpoint refuses any other ' +
+            '(unauthorized_client), in every mode; an empty list restricts ' +
+            'nothing. What the client has actually asked for is ' +
+            'oauthResponseTypeObserved.' },
+    { name: 'oauthGrantTypeObserved', kind: 'multi', from: 'OAuth 2.0 / OIDC',
+      what: 'A grant type this client was seen using at the token endpoint. ' +
+            'A record, not a permission: oauthGrantType is what it may use.' },
+    { name: 'oauthResponseTypeObserved', kind: 'multi',
+      from: 'OAuth 2.0 / OIDC',
+      what: 'A response_type this client was seen asking for at the ' +
+            'authorization endpoint. A record, not a permission: ' +
+            'oauthResponseType is what it may ask for.' },
     { name: 'oauthScope', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'Scopes this application has ASKED FOR, accumulated as it asks. ' +
             'SIGHTED, never declared: nothing is allowed or refused by it. ' +
@@ -5073,9 +5097,12 @@ const BOOLEAN_ATTRIBUTES = [
 // ML-KEM and HPKE algorithms follow keys.*) and two live in modules that
 // require this one (read when asked, never at load).
 //
-// `oauthGrantType` and `oauthResponseType` are not here: they are what a
-// client was SEEN using, an open record. The setting overrides take their
-// lists from their setting (`config.js`'s enumValues), in the console.
+// `oauthGrantType` and `oauthResponseType` are not here, although they are
+// declared and enforced since #289: an extension grant is a URI nobody lists
+// in advance (RFC 6749 section 4.5), so the field stays open text, and the
+// token endpoint refuses what the client did not declare. The setting
+// overrides take their lists from their setting (`config.js`'s
+// enumValues), in the console.
 // ---------------------------------------------------------------------------
 // THE TWO DELEGATION SEMANTICS (#108, #186), one list for the two places that
 // need it: the field grid's choices below — so the Configuration tab offers a
@@ -11620,6 +11647,12 @@ function applyRegistrationFields(record, registration, statement) {
   // what a registration SAID, and homePageOf() refuses to draw a link to
   // anything that is not http or https when it reads.
   setField(record, 'appHomePageUrl', meta.client_uri);
+  // REPLACED, NOT ADDED TO (#289): the endpoints hold the client to these two
+  // lists, and RFC 7592 section 2.2 replaces the whole registration, so an
+  // update that narrows grant_types must narrow what the client may use. A
+  // `multi` setField() only adds.
+  delete record.fields.oauthGrantType;
+  delete record.fields.oauthResponseType;
   setField(record, 'oauthGrantType', meta.grant_types);
   setField(record, 'oauthResponseType', meta.response_types);
   // RFC 7591 section 2's `scope` is a DECLARATION — "the list that the
@@ -12160,7 +12193,9 @@ function declaredClient(record, fields, redirectCount) {
      'oauthJwksUri', 'oauthAssertionJwks', 'oauthAssertionIssuer',
      'oauthSamlAssertionIssuer', 'oauthSamlAssertionSigningCertificate',
      'oauthSamlAssertionCertificate',
-     'oauthTlsClientCertificateThumbprint', TLS_BOUND_TOKENS_ATTRIBUTE]
+     'oauthTlsClientCertificateThumbprint', TLS_BOUND_TOKENS_ATTRIBUTE,
+     // Declarations since #289, when the sightings moved to *Observed.
+     'oauthGrantType', 'oauthResponseType']
       .concat(TLS_SUBJECT_ATTRIBUTES).some(has) ||
     allowed.indexOf('oauth2') >= 0 || allowed.indexOf('oidc') >= 0 ||
     allowed.indexOf('oid4vci') >= 0;
@@ -12231,11 +12266,11 @@ function clientConfigOf(identifier) {
     // declares nothing, and "has an entry" cannot be the test: every client_id
     // that ever reached an endpoint here has one, written by `seen()`. What a
     // sighting writes for OAuth is `oauthClientId`, `appAuthorizationServer`,
-    // `oauthScope`, `oauthResponseType`, `oauthGrantType` and
+    // `oauthScope`, `oauthResponseTypeObserved`, `oauthGrantTypeObserved` and
     // `appRedirectUriObserved` — so declared is anything else that says what
     // this client IS: a registration, a redirect URI of its own, an
-    // authentication method, a credential, an assertion issuer, or a declared
-    // OAuth protocol family.
+    // authentication method, a credential, an assertion issuer, the grant or
+    // response types it may use (#289), or a declared OAuth protocol family.
     declared: declaredClient(loaded.record, fields,
                              redirects.registered.length +
                              redirects.unconfirmed.length),
@@ -15452,53 +15487,53 @@ function fieldsWithDescription(fields, record) {
 }
 
 // ---------------------------------------------------------------------------
-// WHAT A CLIENT REGISTERED IT WOULD USE (#120): the `grant_types` and
-// `response_types` of its REGISTRATION DOCUMENT, which the token and
-// authorization endpoints hold it to in every mode (rcbj's decision). Read
-// from `appRegistrationJson` and NOT from `oauthGrantType` /
-// `oauthResponseType`, because those two also record what was OBSERVED — a
-// list that grows with use is no restriction. A client with no registration
-// document, or one that names neither list (registered before #120 applied
-// RFC 7591's defaults), answers null and is held to nothing, as a client_id
-// nobody registered is.
+// WHAT A CLIENT DECLARED IT WOULD USE: its `oauthGrantType` and
+// `oauthResponseType`, which the token and authorization endpoints hold it to
+// in every mode. #120 held a client that REGISTERED (rcbj's decision) to the
+// `grant_types` and `response_types` of its registration document; #289
+// (rcbj, 2026-10-07) holds every client to the same two lists however they
+// were written — a registration writes them (applyRegistrationFields()), and
+// so does an administrator on the console or `/admin-api`. That became
+// possible only when a sighting stopped writing them: it writes
+// `oauthGrantTypeObserved` and `oauthResponseTypeObserved` now, because a list
+// that grows with use is no restriction. An EMPTY list restricts nothing
+// (rcbj's answer), as for a client_id nobody declared anything about.
 // ---------------------------------------------------------------------------
 /**
- * Returns the grant and response types a client's registration document
- * declares, which the endpoints hold it to in every mode.
+ * Returns the grant and response types a client declares, which the endpoints
+ * hold it to in every mode.
  *
  * @param clientId - the client id
- * @returns the two lists, or null when the client has no document or it names
- *   neither
+ * @returns the two lists, each null when the client declares none; null when
+ *   it declares neither
  */
-function registeredFlowsOf(clientId) {
-  log.debug("Entering registeredFlowsOf().");
+function declaredFlowsOf(clientId) {
+  log.debug("Entering declaredFlowsOf().");
   const loaded = load(String(clientId || ''));
-  if (!loaded.known || !loaded.record.registered) {
-    log.debug("Leaving registeredFlowsOf(). Not registered.");
+  if (!loaded.known) {
+    log.debug("Leaving declaredFlowsOf(). Not known.");
     return null;
   }
-  let document = null;
-  try {
-    document = JSON.parse(loaded.record.fields.appRegistrationJson || 'null');
-  } catch (e) {
-    log.debug("Caught in registeredFlowsOf(): " + ((e && e.message) || e));
-    // Unreadable: registrationOf() reports it; nothing to hold the client to.
-    document = null;
-  }
-  if (!document || (!Array.isArray(document.grant_types) &&
-                    !Array.isArray(document.response_types))) {
-    log.debug("Leaving registeredFlowsOf(). Nothing registered.");
-    return null;
-  }
-  log.debug("Leaving registeredFlowsOf().");
-  return {
-    grant_types: Array.isArray(document.grant_types)
-      ? document.grant_types.map(String) : null,
-    response_types: Array.isArray(document.response_types)
-      ? document.response_types.map(function (one) {
+  const listOf = function (name) {
+    log.debug("Entering listOf(). " + name);
+    const values = valuesOf(loaded.record.fields[name])
+      .map(function (one) {
         return String(one).split(/\s+/).filter(Boolean).sort().join(' ');
-      }) : null
+      })
+      .filter(function (one) {
+        return one !== '';
+      });
+    log.debug("Leaving listOf().");
+    return values.length ? values : null;
   };
+  const grants = listOf('oauthGrantType');
+  const responses = listOf('oauthResponseType');
+  if (!grants && !responses) {
+    log.debug("Leaving declaredFlowsOf(). Nothing declared.");
+    return null;
+  }
+  log.debug("Leaving declaredFlowsOf().");
+  return { grant_types: grants, response_types: responses };
 }
 
 // RFC 7592 SECTION 2 (#120): a registration access token presented for a
@@ -17613,7 +17648,7 @@ module.exports = {
   cibaOf: cibaOf,
   oidcRegistrationProblem: oidcRegistrationProblem,
   revokeRegistrationAccessToken: revokeRegistrationAccessToken,
-  registeredFlowsOf: registeredFlowsOf,
+  declaredFlowsOf: declaredFlowsOf,
   grantsAndResponseTypesOf: grantsAndResponseTypesOf,
   OIDC_SUBJECT_ATTRIBUTES: OIDC_SUBJECT_ATTRIBUTES,
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,
