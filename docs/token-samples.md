@@ -20,10 +20,15 @@ reading, so **a pretty-printed signed document no longer verifies**; the
 signature covers the bytes as sent. The OAuth access token and the ID Token
 are the exceptions: they are given encoded in full as well.
 
-**Two starts.** Most samples come from one start of the service. The
+**Three starts.** Most samples come from one start of the service. The
 ones marked *second start* were added later from a fresh start of the same
 image, so their signing keys (`kid`), certificates and serial numbers
-differ from the rest.
+differ from the rest. The ones marked *third start* — the SAML 2.0 and SAML
+1.1 samples, the WS-Federation sign-in response, the two WS-Trust RSTRs and
+the WS-Trust JWT — were recaptured on 2026-10-08 from a later build,
+after every SAML `Issuer` and identity provider `entityID` became the realm's
+OAuth 2.0 issuer (#523, #524). Their keys, certificates, session and
+timestamps differ again, and alice signed in afresh for them.
 
 **None of these verify today.** In development mode every key, certificate
 authority and session is made again at each start, so the keys that signed
@@ -461,19 +466,22 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6ImxvZ291dCtqd3QiLCJraWQiOiJzdHMt…ccHV_s7joyrUJCx-7
 
 ### WS-Trust JWT
 
+*From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
+
 WS-Trust issues a JWT when the `RequestSecurityToken` asks for
 `TokenType` `urn:ietf:params:oauth:token-type:jwt`. It comes back as a
 `wsse:BinarySecurityToken`; the whole response is under
-[WS-Trust](#ws-trust-rstr-carrying-a-jwt), below. **This sample predates
-#476 and #480.** Since then the header carries `typ: at+jwt`, and `iss` is
-the realm's OAuth 2.0 issuer, here `https://127.0.0.1:38081`, not
-`wstrust.issuer`. The JWT also carries `client_id` (the requester's
-application) and, for an ActAs, `act` (ws-trust/CLAUDE.md).
+[WS-Trust](#ws-trust-rstr-carrying-a-jwt), below. The header carries
+`typ: at+jwt` (#476), and `iss` is the realm's OAuth 2.0 issuer, here
+`https://127.0.0.1:38081` (#480), which since #523 is also every WS-Trust SAML
+assertion's `Issuer`. A requester that is an application is named in
+`client_id`, and an ActAs adds `act` (ws-trust/CLAUDE.md); this one is alice
+asking for herself with a `UsernameToken`, so it carries neither.
 
 *Encoded (shortened):*
 
 ```text
-eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0…pOEKlLtol60lc225EQkQ
+eyJhbGciOiJSUzI1NiIsInR5cCI6ImF0K2p3dCIsImtpZCI6InN0cy01ZThj…oCeClrcUIJnk0EXQo9rw
 ```
 
 *Header:*
@@ -481,9 +489,9 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0…pOEKlLtol60lc225E
 ```json
 {
   "alg": "RS256",
-  "typ": "JWT",
-  "kid": "sts-f7045241e6b0",
-  "x5u": "https://127.0.0.1:38081/pki/chain/default/8f1e19cfeec3d56c499825b1ef7094961166198463b14e301914bef595c199dc.pem"
+  "typ": "at+jwt",
+  "kid": "sts-5e8cc0c8cb44",
+  "x5u": "https://127.0.0.1:38081/pki/chain/default/9bb29ace4cad9ecca069ff3eaa369d3a3b2f0200822ba32c8fbd44e734f7e91b.pem"
 }
 ```
 
@@ -491,12 +499,15 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0…pOEKlLtol60lc225E
 
 ```json
 {
-  "iss": "urn:wstrust:mock:sts",
+  "groups": [
+    "developers"
+  ],
+  "iss": "https://127.0.0.1:38081",
   "sub": "urn:uuid:016dc8f1-1bc4-55d9-9657-9b2ebb3cd4d2",
   "name": "alice",
-  "iat": 1790110586,
-  "exp": 1790114186,
-  "jti": "NMoXwR8cHHDGDpd62DzFQFxy",
+  "iat": 1791479775,
+  "exp": 1791483375,
+  "jti": "JIUV0JEQaso3XxWQ1kpozvcE",
   "aud": "https://rp.example.org/"
 }
 ```
@@ -772,6 +783,8 @@ its long values shortened.
 
 ## SAML 2.0 assertion
 
+*From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
+
 A Web Browser SSO `Response` over the HTTP-POST binding, answering an
 unsigned `AuthnRequest` from `https://sp.example.org`, which development mode
 serves without registration. The request was sent over the HTTP-Redirect
@@ -792,65 +805,65 @@ Both the `Response` and the `Assertion` are signed (RSA-SHA256, exclusive
 C14N). The `KeyInfo` certificate is issued by the realm's *XML signing* CA.
 
 ```xml
-<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_2114a1cac6ec1cd39be48fe07f4e79e8" Version="2.0" IssueInstant="2026-09-22T20:55:15.421Z" Destination="https://sp.example.org/saml/acs" InResponseTo="_docs1">
-  <saml:Issuer>urn:sts:idp:app-aaf6073df227</saml:Issuer>
+<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_173373961ea68169d94c4ef3e85c688c" Version="2.0" IssueInstant="2026-10-08T17:13:29.449Z" Destination="https://sp.example.org/saml/acs" InResponseTo="_docs1">
+  <saml:Issuer>https://127.0.0.1:38081</saml:Issuer>
   <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
     <ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
       <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
       <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
-      <ds:Reference URI="#_2114a1cac6ec1cd39be48fe07f4e79e8">
+      <ds:Reference URI="#_173373961ea68169d94c4ef3e85c688c">
         <ds:Transforms>
           <ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
           <ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
         </ds:Transforms>
         <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
-        <ds:DigestValue>Jx7BjK6Qhm1icmXBod2sPRj4…</ds:DigestValue>
+        <ds:DigestValue>jIOXC2bjj4UERhcle1vEFW0x…</ds:DigestValue>
       </ds:Reference>
     </ds:SignedInfo>
-    <ds:SignatureValue>T5XUiqmpn//Z3ob0j+ycklUK…</ds:SignatureValue>
+    <ds:SignatureValue>WwGvlRbT97lfBZrRAK+SPcho…</ds:SignatureValue>
     <ds:KeyInfo>
       <ds:X509Data>
-        <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQN+qz…</ds:X509Certificate>
+        <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQewVh…</ds:X509Certificate>
       </ds:X509Data>
     </ds:KeyInfo>
   </ds:Signature>
   <samlp:Status>
     <samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/>
   </samlp:Status>
-  <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_1005fb4d063d2743146fe26e759c3f7f" Version="2.0" IssueInstant="2026-09-22T20:55:15.389Z">
-    <saml:Issuer>urn:sts:idp:app-aaf6073df227</saml:Issuer>
+  <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_db171abf3e2941f863841c4422e5d290" Version="2.0" IssueInstant="2026-10-08T17:13:29.407Z">
+    <saml:Issuer>https://127.0.0.1:38081</saml:Issuer>
     <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
       <ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
         <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
         <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
-        <ds:Reference URI="#_1005fb4d063d2743146fe26e759c3f7f">
+        <ds:Reference URI="#_db171abf3e2941f863841c4422e5d290">
           <ds:Transforms>
             <ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
             <ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
           </ds:Transforms>
           <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
-          <ds:DigestValue>MD48zmHiaCpDZYVpoYQA+rsO…</ds:DigestValue>
+          <ds:DigestValue>B4/l7+wcwpCUBkUEKN7y/sp+…</ds:DigestValue>
         </ds:Reference>
       </ds:SignedInfo>
-      <ds:SignatureValue>Qo+L6c3i1ArA24fKyMBYIqhe…</ds:SignatureValue>
+      <ds:SignatureValue>NY2ISfYsjfbCwERdtric2vRZ…</ds:SignatureValue>
       <ds:KeyInfo>
         <ds:X509Data>
-          <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQN+qz…</ds:X509Certificate>
+          <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQewVh…</ds:X509Certificate>
         </ds:X509Data>
       </ds:KeyInfo>
     </ds:Signature>
     <saml:Subject>
       <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameID>
       <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
-        <saml:SubjectConfirmationData NotOnOrAfter="2026-09-22T21:55:15.388Z" Recipient="https://sp.example.org/saml/acs" InResponseTo="_docs1"/>
+        <saml:SubjectConfirmationData NotOnOrAfter="2026-10-08T18:13:29.406Z" Recipient="https://sp.example.org/saml/acs" InResponseTo="_docs1"/>
       </saml:SubjectConfirmation>
     </saml:Subject>
-    <saml:Conditions NotBefore="2026-09-22T20:55:15.389Z" NotOnOrAfter="2026-09-22T21:55:15.389Z">
+    <saml:Conditions NotBefore="2026-10-08T17:13:29.407Z" NotOnOrAfter="2026-10-08T18:13:29.407Z">
       <saml:AudienceRestriction>
         <saml:Audience>https://sp.example.org</saml:Audience>
       </saml:AudienceRestriction>
     </saml:Conditions>
-    <saml:AuthnStatement AuthnInstant="2026-09-22T20:54:36.000Z" SessionIndex="sHiKmHBkOJ6bjKXM-TnFoHzZPEPIzHS7">
+    <saml:AuthnStatement AuthnInstant="2026-10-08T17:13:29.000Z" SessionIndex="JbbX6nARTH6QEzwnwHLHJ5RXS59YuY2G">
       <saml:AuthnContext>
         <saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef>
       </saml:AuthnContext>
@@ -909,20 +922,25 @@ C14N). The `KeyInfo` certificate is issued by the realm's *XML signing* CA.
 </samlp:Response>
 ```
 
-* The `Issuer` is `urn:sts:idp:app-…`, a per-application entityID
-  (`saml2.perApplicationEntityId`).
-* `SessionIndex` is the session's `sid`, the value in the ID Token.
+* The `Issuer` is the realm's OAuth 2.0 issuer, `https://127.0.0.1:38081`:
+  the same string as every JWT's `iss`, and the same for every service
+  provider and every protocol (#523).
+* `SessionIndex` is the session's `sid`, the claim of that name in an ID Token
+  from the same session (this sample is from a later start than the ID Token
+  above, so the two values differ).
 * `NameID` is the user name in the `unspecified` format by default. A
   `NameIDPolicy` or `saml2.nameIdFormat` picks another format; see
   [SAML 2.0 Web Browser SSO](saml2-sso.md).
 
 ### SAML 2.0 artifact
 
+*From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
+
 The same request with `ProtocolBinding` set to the HTTP-Artifact binding
 sends the browser back with a `SAMLart` instead of the response:
 
 ```text
-https://sp.example.org/saml/acs?SAMLart=AAQAAEsd2WlW%2BnW3m3q9nHN8CjaKwK8UyoXV8nBHbKGykNSjAAb3M7iWzg0%3D
+https://sp.example.org/saml/acs?SAMLart=AAQAACBhc4ptUDDbnVGcHCo8LG8IUsL1kwcPvkPKcNam%2FbRZcT01jmx9Pz0%3D
 ```
 
 Decoded, it is the 44 bytes of SAML 2.0 Bindings section 3.6.4:
@@ -931,20 +949,20 @@ Decoded, it is the 44 bytes of SAML 2.0 Bindings section 3.6.4:
 |---|---|---|
 | 0–1 | `0004` | TypeCode 4 |
 | 2–3 | `0000` | EndpointIndex of the artifact resolution service |
-| 4–23 | `4b1dd96956fa75b79b7abd9c737c0a368ac0af14` | SourceID: SHA-1 of the entityID `urn:sts:idp:app-aaf6073df227` |
-| 24–43 | `ca85d5f270476ca1b290d4a30006f733b896ce0d` | MessageHandle: random, one use |
+| 4–23 | `2061738a6d5030db9d519c1c2a3c2c6f0852c2f5` | SourceID: SHA-1 of the entityID `https://127.0.0.1:38081`, the realm's issuer |
+| 24–43 | `93070fbe43ca70d6a6fdb459713d358e6c7d3f3d` | MessageHandle: random, one use |
 
 The service provider exchanges it with a SOAP `ArtifactResolve` at
-`POST /saml2/ars` and receives a signed `ArtifactResponse` wrapping the
+`POST /saml2/ars` (or its own `POST /saml2/ars/{sp}`) and receives a signed `ArtifactResponse` wrapping the
 `Response` shown above. Resolving an artifact destroys it, so a second
 resolve gets nothing.
 
 ### SAML 2.0 ArtifactResponse
 
-*From the second start of the service (see the note at the top), so its keys differ from the samples above.*
+*From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
 
-The service provider resolves the artifact over the SOAP
-binding at the resolver its metadata names, `POST /saml2/ars/{sp}`:
+The service provider resolves the artifact above over the SOAP
+binding at its own resolver, `POST /saml2/ars/{sp}`:
 
 ```xml
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>
@@ -952,7 +970,7 @@ binding at the resolver its metadata names, `POST /saml2/ars/{sp}`:
       xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_docsres2" Version="2.0"
       IssueInstant="…" Destination="https://127.0.0.1:38081/saml2/ars/app-aaf6073df227">
     <saml:Issuer>https://sp.example.org</saml:Issuer>
-    <samlp:Artifact>AAQAAEsd2WlW+nW3m3q9nHN8CjaKwK8UHnFtwio5G+yW3v04/DVHF7U/zgI=</samlp:Artifact>
+    <samlp:Artifact>AAQAACBhc4ptUDDbnVGcHCo8LG8IUsL1kwcPvkPKcNam/bRZcT01jmx9Pz0=</samlp:Artifact>
   </samlp:ArtifactResolve>
 </soap:Body></soap:Envelope>
 ```
@@ -960,39 +978,40 @@ binding at the resolver its metadata names, `POST /saml2/ars/{sp}`:
 The `ArtifactResponse` itself is unsigned on purpose: what the service
 provider verifies is the signed `Response` inside it, and the back channel
 is protected by TLS. The inner signatures are shortened to one line.
-Resolving the same artifact at the unscoped `/saml2/ars` also works, and
-answers with a different `Issuer`. That is a bug,
-[#160](https://github.com/rcbj/iya-sts/issues/160).
+Since #523 the artifact's SourceID is the realm's one issuer, so the unscoped
+`/saml2/ars` would answer it the same way, under the same `Issuer`; a resolver
+answers an artifact whose SourceID names another entity with an empty
+response and leaves it unspent ([#160](https://github.com/rcbj/iya-sts/issues/160)).
 
 ```xml
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
-    <samlp:ArtifactResponse xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_5747603c71e8bb2bec676132012de9e2" Version="2.0" IssueInstant="2026-09-22T21:14:19.493Z" InResponseTo="_docsres2">
-      <saml:Issuer>urn:sts:idp:app-aaf6073df227</saml:Issuer>
+    <samlp:ArtifactResponse xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_be7e1cdf1d194a76a4fe6d2a7307c5c3" Version="2.0" IssueInstant="2026-10-08T17:13:45.459Z" InResponseTo="_docsres2">
+      <saml:Issuer>https://127.0.0.1:38081</saml:Issuer>
       <samlp:Status>
         <samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/>
       </samlp:Status>
-      <samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_c730984c573bb5dc9bcb17c5b7779bf1" Version="2.0" IssueInstant="2026-09-22T21:14:19.303Z" Destination="https://sp.example.org/saml/acs" InResponseTo="_docs4">
-        <saml:Issuer>urn:sts:idp:app-aaf6073df227</saml:Issuer>
+      <samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_93b9a3597cbcc0ff6d1771049d83ad0e" Version="2.0" IssueInstant="2026-10-08T17:13:45.410Z" Destination="https://sp.example.org/saml/acs" InResponseTo="_docs2">
+        <saml:Issuer>https://127.0.0.1:38081</saml:Issuer>
         <ds:Signature>…enveloped signature, as in the SAML 2.0 sample…</ds:Signature>
         <samlp:Status>
           <samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/>
         </samlp:Status>
-        <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_4fac291f0a1b510f377062fa43971ac3" Version="2.0" IssueInstant="2026-09-22T21:14:19.230Z">
-          <saml:Issuer>urn:sts:idp:app-aaf6073df227</saml:Issuer>
+        <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_2165e1a28b7ffa3075e124c044a1af01" Version="2.0" IssueInstant="2026-10-08T17:13:45.369Z">
+          <saml:Issuer>https://127.0.0.1:38081</saml:Issuer>
           <ds:Signature>…enveloped signature, as in the SAML 2.0 sample…</ds:Signature>
           <saml:Subject>
             <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameID>
             <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
-              <saml:SubjectConfirmationData NotOnOrAfter="2026-09-22T22:14:19.229Z" Recipient="https://sp.example.org/saml/acs" InResponseTo="_docs4"/>
+              <saml:SubjectConfirmationData NotOnOrAfter="2026-10-08T18:13:45.369Z" Recipient="https://sp.example.org/saml/acs" InResponseTo="_docs2"/>
             </saml:SubjectConfirmation>
           </saml:Subject>
-          <saml:Conditions NotBefore="2026-09-22T21:14:19.230Z" NotOnOrAfter="2026-09-22T22:14:19.230Z">
+          <saml:Conditions NotBefore="2026-10-08T17:13:45.369Z" NotOnOrAfter="2026-10-08T18:13:45.369Z">
             <saml:AudienceRestriction>
               <saml:Audience>https://sp.example.org</saml:Audience>
             </saml:AudienceRestriction>
           </saml:Conditions>
-          <saml:AuthnStatement AuthnInstant="2026-09-22T21:13:14.000Z" SessionIndex="16g7q765xwycim_M3yhkyzpjDFSrlzFx">
+          <saml:AuthnStatement AuthnInstant="2026-10-08T17:13:45.000Z" SessionIndex="C2We9vXNpd0f7f2NJ_Q7TUy-OS9AFZZT">
             <saml:AuthnContext>
               <saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef>
             </saml:AuthnContext>
@@ -1056,84 +1075,109 @@ answers with a different `Issuer`. That is a bug,
 
 ### SAML 2.0 identity provider metadata
 
-*From the second start of the service (see the note at the top), so its keys differ from the samples above.*
+*From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
 
-`GET /saml2/metadata/{sp}`: the per-application
-`EntityDescriptor`, signed (the signature comes first, as the metadata
-schema requires). `GET /saml2/metadata` is the service-wide one
-(`urn:sts:idp`). The WS-Federation equivalent is at
-`/FederationMetadata/2007-06/FederationMetadata.xml`, and SAML 1.1's is at
-`/saml11/metadata`.
+`GET /saml2/metadata`: the realm's `EntityDescriptor`, signed (the signature
+comes first, as the metadata schema requires). Its `entityID` is the realm's
+OAuth 2.0 issuer, and it describes SAML 2.0 and SAML 1.1 together — one entity,
+one document (#523): SAML 2.0's artifact resolver at index 0, SAML 1.1's
+responder at index 1 on its own SOAP binding. `/saml11/metadata` serves the same
+document, and `/saml2/metadata/{sp}` the same with that service provider's
+endpoints. `/FederationMetadata/2007-06/FederationMetadata.xml` is the same
+entity with WS-Federation's `fed:SecurityTokenServiceType` `RoleDescriptor`
+added (#524), which a SAML-only validator cannot resolve and is left out of
+this view.
 
 ```xml
-<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" ID="_912703adb9b5af5facf10294115ac77e" entityID="urn:sts:idp:app-aaf6073df227">
+<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" ID="_65b54223ccfc79345d97b5cf8c2fe182" entityID="https://127.0.0.1:38081">
   <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
     <ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
       <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
       <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
-      <ds:Reference URI="#_912703adb9b5af5facf10294115ac77e">
+      <ds:Reference URI="#_65b54223ccfc79345d97b5cf8c2fe182">
         <ds:Transforms>
           <ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
           <ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
         </ds:Transforms>
         <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
-        <ds:DigestValue>CCvPLvOLH0Rpr9GVhJuirUdl…</ds:DigestValue>
+        <ds:DigestValue>LouyOT5BlBwmpPZB4DmIeGi/…</ds:DigestValue>
       </ds:Reference>
     </ds:SignedInfo>
-    <ds:SignatureValue>ezB/v041j6Jpm8qbyOVCIjZb…</ds:SignatureValue>
+    <ds:SignatureValue>TrCSD+KSW200JzLVm6/nVdAL…</ds:SignatureValue>
     <ds:KeyInfo>
       <ds:X509Data>
-        <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQMztF…</ds:X509Certificate>
+        <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQewVh…</ds:X509Certificate>
       </ds:X509Data>
     </ds:KeyInfo>
   </ds:Signature>
   <md:Extensions>
     <cm:CryptoMetadataLocation xmlns:cm="urn:iya:sts:crypto-metadata:1">https://127.0.0.1:38081/crypto/metadata.xml</cm:CryptoMetadataLocation>
   </md:Extensions>
-  <md:IDPSSODescriptor WantAuthnRequestsSigned="false" protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+  <md:IDPSSODescriptor WantAuthnRequestsSigned="false" protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol urn:oasis:names:tc:SAML:1.1:protocol urn:mace:shibboleth:1.0">
     <md:KeyDescriptor use="signing">
       <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
         <ds:X509Data>
-          <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQMztF…</ds:X509Certificate>
+          <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQewVh…</ds:X509Certificate>
         </ds:X509Data>
       </ds:KeyInfo>
     </md:KeyDescriptor>
     <md:KeyDescriptor use="encryption">
       <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
         <ds:X509Data>
-          <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQMztF…</ds:X509Certificate>
+          <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQewVh…</ds:X509Certificate>
         </ds:X509Data>
       </ds:KeyInfo>
     </md:KeyDescriptor>
-    <md:ArtifactResolutionService Binding="urn:oasis:names:tc:SAML:2.0:bindings:SOAP" Location="https://127.0.0.1:38081/saml2/ars/app-aaf6073df227" index="0" isDefault="true"/>
-    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://127.0.0.1:38081/saml2/slo/app-aaf6073df227"/>
-    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://127.0.0.1:38081/saml2/slo/app-aaf6073df227"/>
-    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign" Location="https://127.0.0.1:38081/saml2/slo/app-aaf6073df227"/>
-    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified</md:NameIDFormat>
-    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>
-    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:persistent</md:NameIDFormat>
-    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</md:NameIDFormat>
-    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:X509SubjectName</md:NameIDFormat>
-    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:entity</md:NameIDFormat>
-    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://127.0.0.1:38081/saml2/sso/app-aaf6073df227"/>
-    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://127.0.0.1:38081/saml2/sso/app-aaf6073df227"/>
-    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign" Location="https://127.0.0.1:38081/saml2/sso/app-aaf6073df227"/>
-  </md:IDPSSODescriptor>
-  <md:AttributeAuthorityDescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
     <md:KeyDescriptor use="signing">
       <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
         <ds:X509Data>
-          <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQMztF…</ds:X509Certificate>
+          <ds:X509Certificate>MIIEwDCCA6qgAwIBAgIQULCX…</ds:X509Certificate>
         </ds:X509Data>
       </ds:KeyInfo>
     </md:KeyDescriptor>
-    <md:AttributeService Binding="urn:oasis:names:tc:SAML:2.0:bindings:SOAP" Location="https://127.0.0.1:38081/saml2/aa/app-aaf6073df227"/>
+    <md:ArtifactResolutionService Binding="urn:oasis:names:tc:SAML:2.0:bindings:SOAP" Location="https://127.0.0.1:38081/saml2/ars" index="0" isDefault="true"/>
+    <md:ArtifactResolutionService Binding="urn:oasis:names:tc:SAML:1.0:bindings:SOAP-binding" Location="https://127.0.0.1:38081/saml11/responder" index="1"/>
+    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://127.0.0.1:38081/saml2/slo"/>
+    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://127.0.0.1:38081/saml2/slo"/>
+    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign" Location="https://127.0.0.1:38081/saml2/slo"/>
     <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified</md:NameIDFormat>
     <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>
     <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:persistent</md:NameIDFormat>
     <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</md:NameIDFormat>
     <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:X509SubjectName</md:NameIDFormat>
     <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:entity</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:WindowsDomainQualifiedName</md:NameIDFormat>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://127.0.0.1:38081/saml2/sso"/>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://127.0.0.1:38081/saml2/sso"/>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign" Location="https://127.0.0.1:38081/saml2/sso"/>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:1.0:profiles:browser-post" Location="https://127.0.0.1:38081/saml11/sso"/>
+    <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:1.0:profiles:artifact-01" Location="https://127.0.0.1:38081/saml11/sso"/>
+    <md:SingleSignOnService Binding="urn:mace:shibboleth:1.0:profiles:AuthnRequest" Location="https://127.0.0.1:38081/saml11/sso"/>
+  </md:IDPSSODescriptor>
+  <md:AttributeAuthorityDescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol urn:oasis:names:tc:SAML:1.1:protocol">
+    <md:KeyDescriptor use="signing">
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:X509Data>
+          <ds:X509Certificate>MIIEbjCCA1igAwIBAgIQewVh…</ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </md:KeyDescriptor>
+    <md:KeyDescriptor use="signing">
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:X509Data>
+          <ds:X509Certificate>MIIEwDCCA6qgAwIBAgIQULCX…</ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </md:KeyDescriptor>
+    <md:AttributeService Binding="urn:oasis:names:tc:SAML:2.0:bindings:SOAP" Location="https://127.0.0.1:38081/saml2/aa"/>
+    <md:AttributeService Binding="urn:oasis:names:tc:SAML:1.0:bindings:SOAP-binding" Location="https://127.0.0.1:38081/saml11/responder"/>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:persistent</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:transient</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:X509SubjectName</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:entity</md:NameIDFormat>
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:WindowsDomainQualifiedName</md:NameIDFormat>
   </md:AttributeAuthorityDescriptor>
   <md:Organization>
     <md:OrganizationName xml:lang="en">sts</md:OrganizationName>
@@ -1145,6 +1189,8 @@ schema requires). `GET /saml2/metadata` is the service-wide one
 
 ## SAML 1.1 assertion
 
+*From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
+
 The SAML 1.1 Browser/POST profile, started at the inter-site transfer service
 with Shibboleth's request parameters:
 
@@ -1152,27 +1198,28 @@ with Shibboleth's request parameters:
 GET https://127.0.0.1:38081/saml11/sso?TARGET=https://sp11.example.org/app&shire=https://sp11.example.org/saml11/acs&providerId=https://sp11.example.org
 ```
 
-SAML 1.1 puts the `Issuer` on the assertion as an attribute. The subject
-appears once per statement. Attributes are named by `AttributeName` and
+SAML 1.1 puts the `Issuer` on the assertion as an attribute; it is the
+realm's OAuth 2.0 issuer, the same providerID as every relying party's
+(#523), and so is each `NameQualifier`. The subject appears once per
+statement. Attributes are named by `AttributeName` and
 `AttributeNamespace` rather than a URI. The two signatures are the same shape
 as SAML 2.0's, so they are shortened to one line here.
 
 ```xml
-<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:1.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" ResponseID="_2e010a46f60a0dd5a4111e29c784d800" MajorVersion="1" MinorVersion="1" IssueInstant="2026-09-22T20:55:22.196Z" Recipient="https://sp11.example.org/saml11/acs">
+<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:1.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" ResponseID="_ae1a563e12c5ad93d38cbc3ff18f680a" MajorVersion="1" MinorVersion="1" IssueInstant="2026-10-08T17:14:27.213Z" Recipient="https://sp11.example.org/saml11/acs">
   <ds:Signature>…enveloped signature, as in the SAML 2.0 sample…</ds:Signature>
   <samlp:Status>
     <samlp:StatusCode Value="samlp:Success"/>
   </samlp:Status>
-  <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" MajorVersion="1" MinorVersion="1" AssertionID="_b481af8c611fa47bc18bfce50b154976" Issuer="urn:sts:idp:saml11:app-2b946c3616bd" IssueInstant="2026-09-22T20:55:22.167Z">
-    <saml:Conditions NotBefore="2026-09-22T20:55:22.167Z" NotOnOrAfter="2026-09-22T21:55:22.167Z">
+  <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" MajorVersion="1" MinorVersion="1" AssertionID="_269e2709503e5537c7b602655f05261f" Issuer="https://127.0.0.1:38081" IssueInstant="2026-10-08T17:14:27.169Z">
+    <saml:Conditions NotBefore="2026-10-08T17:14:27.169Z" NotOnOrAfter="2026-10-08T18:14:27.169Z">
       <saml:AudienceRestrictionCondition>
         <saml:Audience>https://sp11.example.org</saml:Audience>
       </saml:AudienceRestrictionCondition>
-      <saml:DoNotCacheCondition/>
     </saml:Conditions>
-    <saml:AuthenticationStatement AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password" AuthenticationInstant="2026-09-22T20:54:36.000Z">
+    <saml:AuthenticationStatement AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password" AuthenticationInstant="2026-10-08T17:14:27.000Z">
       <saml:Subject>
-        <saml:NameIdentifier NameQualifier="urn:sts:idp:saml11:app-2b946c3616bd" Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameIdentifier>
+        <saml:NameIdentifier NameQualifier="https://127.0.0.1:38081" Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameIdentifier>
         <saml:SubjectConfirmation>
           <saml:ConfirmationMethod>urn:oasis:names:tc:SAML:1.0:cm:bearer</saml:ConfirmationMethod>
         </saml:SubjectConfirmation>
@@ -1181,7 +1228,7 @@ as SAML 2.0's, so they are shortened to one line here.
     </saml:AuthenticationStatement>
     <saml:AttributeStatement>
       <saml:Subject>
-        <saml:NameIdentifier NameQualifier="urn:sts:idp:saml11:app-2b946c3616bd" Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameIdentifier>
+        <saml:NameIdentifier NameQualifier="https://127.0.0.1:38081" Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameIdentifier>
         <saml:SubjectConfirmation>
           <saml:ConfirmationMethod>urn:oasis:names:tc:SAML:1.0:cm:bearer</saml:ConfirmationMethod>
         </saml:SubjectConfirmation>
@@ -1208,7 +1255,7 @@ as SAML 2.0's, so they are shortened to one line here.
         <saml:AttributeValue>urn:oasis:names:tc:SAML:1.0:am:password</saml:AttributeValue>
       </saml:Attribute>
       <saml:Attribute AttributeName="authenticationinstant" AttributeNamespace="http://schemas.microsoft.com/ws/2008/06/identity/claims">
-        <saml:AttributeValue>2026-09-22T20:54:36.000Z</saml:AttributeValue>
+        <saml:AttributeValue>2026-10-08T17:14:27.000Z</saml:AttributeValue>
       </saml:Attribute>
       <saml:Attribute AttributeName="urn:mace:dir:attribute-def:uid" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
         <saml:AttributeValue>alice</saml:AttributeValue>
@@ -1236,14 +1283,14 @@ as SAML 2.0's, so they are shortened to one line here.
 
 ### SAML 1.1 artifact
 
-*From the second start of the service (see the note at the top), so its keys differ from the samples above.*
+*From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
 
 The non-standard `profile=artifact` parameter on
 `/saml11/sso` selects Browser/Artifact. The browser comes back to the
 `shire` with `SAMLart` and `TARGET`:
 
 ```text
-https://sp11.example.org/saml11/acs?SAMLart=AAHNn0I4HwELxDxT1HpT8xKvnqiFCvT+rOVvV7fnvs29s7DYFfaG2eht&TARGET=https://sp11.example.org/app
+https://sp11.example.org/saml11/acs?SAMLart=AAEgYXOKbVAw251RnBwqPCxvCFLC9aNYI/wNmzJYBS7QLUgN92d1peX/&TARGET=https://sp11.example.org/app
 ```
 
 A SAML 1.1 type 0x0001 artifact is 42 bytes:
@@ -1251,8 +1298,8 @@ A SAML 1.1 type 0x0001 artifact is 42 bytes:
 | Bytes | Value | Meaning |
 |---|---|---|
 | 0–1 | `0001` | TypeCode 1 |
-| 2–21 | `cd9f42381f010bc43c53d47a53f312af9ea8850a` | SourceID: SHA-1 of the providerID `urn:sts:idp:saml11:app-2b946c3616bd` |
-| 22–41 | `f4feace56f57b7e7becdbdb3b0d815f686d9e86d` | AssertionHandle: random, one use |
+| 2–21 | `2061738a6d5030db9d519c1c2a3c2c6f0852c2f5` | SourceID: SHA-1 of the providerID `https://127.0.0.1:38081`, the realm's issuer — the same SourceID as a SAML 2.0 artifact's |
+| 22–41 | `a35823fc0d9b3258052ed02d480df76775a5e5ff` | AssertionHandle: random, one use |
 
 The relying party resolves it with a SOAP `samlp:Request` at
 `POST /saml11/responder`:
@@ -1261,7 +1308,7 @@ The relying party resolves it with a SOAP `samlp:Request` at
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>
   <samlp:Request xmlns:samlp="urn:oasis:names:tc:SAML:1.0:protocol" MajorVersion="1"
       MinorVersion="1" RequestID="_docsreq1" IssueInstant="…">
-    <samlp:AssertionArtifact>AAHNn0I4HwELxDxT1HpT8xKvnqiFCvT+rOVvV7fnvs29s7DYFfaG2eht</samlp:AssertionArtifact>
+    <samlp:AssertionArtifact>AAEgYXOKbVAw251RnBwqPCxvCFLC9aNYI/wNmzJYBS7QLUgN92d1peX/</samlp:AssertionArtifact>
   </samlp:Request>
 </soap:Body></soap:Envelope>
 ```
@@ -1272,20 +1319,20 @@ resolved. Its subject confirmation is `cm:artifact`, not `cm:bearer`:
 ```xml
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
-    <samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:1.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" ResponseID="_b13e05e3715e09ec927a61d1be712bd3" MajorVersion="1" MinorVersion="1" IssueInstant="2026-09-22T21:13:23.222Z" Recipient="https://sp11.example.org" InResponseTo="_docsreq1">
+    <samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:1.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" ResponseID="_501b5e660dd02b6e210c1ebd0999d1af" MajorVersion="1" MinorVersion="1" IssueInstant="2026-10-08T17:14:27.350Z" Recipient="https://sp11.example.org" InResponseTo="_docsreq1">
       <ds:Signature>…enveloped signature, as in the SAML 2.0 sample…</ds:Signature>
       <samlp:Status>
         <samlp:StatusCode Value="samlp:Success"/>
       </samlp:Status>
-      <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" MajorVersion="1" MinorVersion="1" AssertionID="_70bb85d350e7c93f40e7174d5553b687" Issuer="urn:sts:idp:saml11:app-2b946c3616bd" IssueInstant="2026-09-22T21:13:14.852Z">
-        <saml:Conditions NotBefore="2026-09-22T21:13:14.852Z" NotOnOrAfter="2026-09-22T22:13:14.852Z">
+      <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" MajorVersion="1" MinorVersion="1" AssertionID="_764b0343511a5871224e443b195c7e8c" Issuer="https://127.0.0.1:38081" IssueInstant="2026-10-08T17:14:27.282Z">
+        <saml:Conditions NotBefore="2026-10-08T17:14:27.282Z" NotOnOrAfter="2026-10-08T18:14:27.282Z">
           <saml:AudienceRestrictionCondition>
             <saml:Audience>https://sp11.example.org</saml:Audience>
           </saml:AudienceRestrictionCondition>
         </saml:Conditions>
-        <saml:AuthenticationStatement AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password" AuthenticationInstant="2026-09-22T21:13:14.000Z">
+        <saml:AuthenticationStatement AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password" AuthenticationInstant="2026-10-08T17:14:27.000Z">
           <saml:Subject>
-            <saml:NameIdentifier NameQualifier="urn:sts:idp:saml11:app-2b946c3616bd" Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameIdentifier>
+            <saml:NameIdentifier NameQualifier="https://127.0.0.1:38081" Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameIdentifier>
             <saml:SubjectConfirmation>
               <saml:ConfirmationMethod>urn:oasis:names:tc:SAML:1.0:cm:artifact</saml:ConfirmationMethod>
             </saml:SubjectConfirmation>
@@ -1294,7 +1341,7 @@ resolved. Its subject confirmation is `cm:artifact`, not `cm:bearer`:
         </saml:AuthenticationStatement>
         <saml:AttributeStatement>
           <saml:Subject>
-            <saml:NameIdentifier NameQualifier="urn:sts:idp:saml11:app-2b946c3616bd" Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameIdentifier>
+            <saml:NameIdentifier NameQualifier="https://127.0.0.1:38081" Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameIdentifier>
             <saml:SubjectConfirmation>
               <saml:ConfirmationMethod>urn:oasis:names:tc:SAML:1.0:cm:artifact</saml:ConfirmationMethod>
             </saml:SubjectConfirmation>
@@ -1321,7 +1368,7 @@ resolved. Its subject confirmation is `cm:artifact`, not `cm:bearer`:
             <saml:AttributeValue>urn:oasis:names:tc:SAML:1.0:am:password</saml:AttributeValue>
           </saml:Attribute>
           <saml:Attribute AttributeName="authenticationinstant" AttributeNamespace="http://schemas.microsoft.com/ws/2008/06/identity/claims">
-            <saml:AttributeValue>2026-09-22T21:13:14.000Z</saml:AttributeValue>
+            <saml:AttributeValue>2026-10-08T17:14:27.000Z</saml:AttributeValue>
           </saml:Attribute>
           <saml:Attribute AttributeName="urn:mace:dir:attribute-def:uid" AttributeNamespace="urn:mace:shibboleth:1.0:attributeNamespace:uri">
             <saml:AttributeValue>alice</saml:AttributeValue>
@@ -1353,9 +1400,15 @@ resolved. Its subject confirmation is `cm:artifact`, not `cm:bearer`:
 
 ### WS-Federation sign-in response
 
+*From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
+
 The passive requestor profile answers `wa=wsignin1.0` with a form that posts
 `wresult`, a `RequestSecurityTokenResponse` carrying a signed SAML 1.1
-assertion (the same builder as [SAML 1.1](#saml-11-assertion)):
+assertion (the same builder as [SAML 1.1](#saml-11-assertion)). Its `Issuer`
+is the realm's OAuth 2.0 issuer, the `entityID` of
+`/FederationMetadata/2007-06/FederationMetadata.xml` — the realm's SAML
+metadata with WS-Federation's `fed:SecurityTokenServiceType` role added
+(#523, #524):
 
 ```text
 GET https://127.0.0.1:38081/wsfed?wa=wsignin1.0&wtrealm=urn:rp:docs&wreply=https://rp.example.org/wsfed&wctx=docs
@@ -1364,8 +1417,8 @@ GET https://127.0.0.1:38081/wsfed?wa=wsignin1.0&wtrealm=urn:rp:docs&wreply=https
 ```xml
 <t:RequestSecurityTokenResponse xmlns:t="http://schemas.xmlsoap.org/ws/2005/02/trust">
   <t:Lifetime>
-    <wsu:Created xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">2026-09-22T20:55:28.975Z</wsu:Created>
-    <wsu:Expires xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">2026-09-22T21:55:28.975Z</wsu:Expires>
+    <wsu:Created xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">2026-10-08T17:14:27.453Z</wsu:Created>
+    <wsu:Expires xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">2026-10-08T18:14:27.453Z</wsu:Expires>
   </t:Lifetime>
   <wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy">
     <wsa:EndpointReference xmlns:wsa="http://www.w3.org/2005/08/addressing">
@@ -1373,13 +1426,13 @@ GET https://127.0.0.1:38081/wsfed?wa=wsignin1.0&wtrealm=urn:rp:docs&wreply=https
     </wsa:EndpointReference>
   </wsp:AppliesTo>
   <t:RequestedSecurityToken>
-    <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" MajorVersion="1" MinorVersion="1" AssertionID="_97cbca81dcb4d15fc59d635bb9ae5cb9" Issuer="urn:wstrust:mock:sts" IssueInstant="2026-09-22T20:55:28.946Z">
-      <saml:Conditions NotBefore="2026-09-22T20:55:28.946Z" NotOnOrAfter="2026-09-22T21:55:28.946Z">
+    <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:1.0:assertion" MajorVersion="1" MinorVersion="1" AssertionID="_d0905d69f7871331e9e1399d2a9862e5" Issuer="https://127.0.0.1:38081" IssueInstant="2026-10-08T17:14:27.413Z">
+      <saml:Conditions NotBefore="2026-10-08T17:14:27.413Z" NotOnOrAfter="2026-10-08T18:14:27.413Z">
         <saml:AudienceRestrictionCondition>
           <saml:Audience>urn:rp:docs</saml:Audience>
         </saml:AudienceRestrictionCondition>
       </saml:Conditions>
-      <saml:AuthenticationStatement AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password" AuthenticationInstant="2026-09-22T20:54:36.000Z">
+      <saml:AuthenticationStatement AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:password" AuthenticationInstant="2026-10-08T17:14:27.000Z">
         <saml:Subject>
           <saml:NameIdentifier Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameIdentifier>
           <saml:SubjectConfirmation>
@@ -1416,7 +1469,7 @@ GET https://127.0.0.1:38081/wsfed?wa=wsignin1.0&wtrealm=urn:rp:docs&wreply=https
           <saml:AttributeValue>urn:oasis:names:tc:SAML:1.0:am:password</saml:AttributeValue>
         </saml:Attribute>
         <saml:Attribute AttributeName="authenticationinstant" AttributeNamespace="http://schemas.microsoft.com/ws/2008/06/identity/claims">
-          <saml:AttributeValue>2026-09-22T20:54:36.000Z</saml:AttributeValue>
+          <saml:AttributeValue>2026-10-08T17:14:27.000Z</saml:AttributeValue>
         </saml:Attribute>
         <saml:Attribute AttributeName="groups" AttributeNamespace="http://schemas.xmlsoap.org/ws/2005/05/identity/claims">
           <saml:AttributeValue>developers</saml:AttributeValue>
@@ -1433,9 +1486,12 @@ GET https://127.0.0.1:38081/wsfed?wa=wsignin1.0&wtrealm=urn:rp:docs&wreply=https
 
 ### WS-Trust RSTR carrying a SAML 2.0 assertion
 
+*From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
+
 A WS-Trust 1.3 `Issue` over SOAP 1.2 with a `UsernameToken`. With no
 `TokenType`, the token is a signed SAML 2.0 assertion from the SAML 2.0
-identity provider's builder:
+identity provider's builder, issued under the realm's OAuth 2.0 issuer — the
+`iss` a WS-Trust JWT carries too (#523):
 
 ```xml
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
@@ -1467,19 +1523,19 @@ identity provider's builder:
       <wst:RequestSecurityTokenResponse>
         <wst:TokenType>http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0</wst:TokenType>
         <wst:RequestedSecurityToken>
-          <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_516945cce8286656b15e95873ea73743" Version="2.0" IssueInstant="2026-09-22T20:56:26.019Z">
-            <saml:Issuer>urn:wstrust:mock:sts</saml:Issuer>
+          <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_e75c6099ea574f94b104022c11fc2de5" Version="2.0" IssueInstant="2026-10-08T17:14:27.652Z">
+            <saml:Issuer>https://127.0.0.1:38081</saml:Issuer>
             <ds:Signature>…enveloped signature, as in the SAML 2.0 sample…</ds:Signature>
             <saml:Subject>
               <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">alice</saml:NameID>
               <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"/>
             </saml:Subject>
-            <saml:Conditions NotBefore="2026-09-22T20:56:26.019Z" NotOnOrAfter="2026-09-22T21:56:26.019Z">
+            <saml:Conditions NotBefore="2026-10-08T17:14:27.652Z" NotOnOrAfter="2026-10-08T18:14:27.652Z">
               <saml:AudienceRestriction>
                 <saml:Audience>https://rp.example.org/</saml:Audience>
               </saml:AudienceRestriction>
             </saml:Conditions>
-            <saml:AuthnStatement AuthnInstant="2026-09-22T20:56:26.019Z" SessionIndex="_516945cce8286656b15e95873ea73743">
+            <saml:AuthnStatement AuthnInstant="2026-10-08T17:14:27.652Z" SessionIndex="_e75c6099ea574f94b104022c11fc2de5">
               <saml:AuthnContext>
                 <saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef>
               </saml:AuthnContext>
@@ -1489,7 +1545,7 @@ identity provider's builder:
                 <saml:AttributeValue>alice</saml:AttributeValue>
               </saml:Attribute>
               <saml:Attribute Name="issuedBy">
-                <saml:AttributeValue>urn:wstrust:mock:sts</saml:AttributeValue>
+                <saml:AttributeValue>https://127.0.0.1:38081</saml:AttributeValue>
               </saml:Attribute>
               <saml:Attribute Name="groups">
                 <saml:AttributeValue>developers</saml:AttributeValue>
@@ -1503,13 +1559,13 @@ identity provider's builder:
           </wsa:EndpointReference>
         </wsp:AppliesTo>
         <wst:Lifetime xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
-          <wsu:Created>2026-09-22T20:56:26.058Z</wsu:Created>
-          <wsu:Expires>2026-09-22T21:56:26.058Z</wsu:Expires>
+          <wsu:Created>2026-10-08T17:14:27.691Z</wsu:Created>
+          <wsu:Expires>2026-10-08T18:14:27.691Z</wsu:Expires>
         </wst:Lifetime>
         <wst:KeyType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer</wst:KeyType>
         <wst:RequestedAttachedReference>
           <wsse:SecurityTokenReference xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
-            <wsse:KeyIdentifier ValueType="http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLID">_516945cce8286656b15e95873ea73743</wsse:KeyIdentifier>
+            <wsse:KeyIdentifier ValueType="http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLID">_e75c6099ea574f94b104022c11fc2de5</wsse:KeyIdentifier>
           </wsse:SecurityTokenReference>
         </wst:RequestedAttachedReference>
       </wst:RequestSecurityTokenResponse>
@@ -1519,6 +1575,8 @@ identity provider's builder:
 ```
 
 ### WS-Trust RSTR carrying a JWT
+
+*From the third start of the service (see the note at the top), recaptured after #523 and #524, so its keys differ from the samples above.*
 
 The same request with
 `<wst:TokenType>urn:ietf:params:oauth:token-type:jwt</wst:TokenType>`. The
@@ -1534,7 +1592,7 @@ JWT is decoded under [Other JWTs](#ws-trust-jwt).
       <wst:RequestSecurityTokenResponse>
         <wst:TokenType>urn:ietf:params:oauth:token-type:jwt</wst:TokenType>
         <wst:RequestedSecurityToken>
-          <wsse:BinarySecurityToken xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ValueType="urn:ietf:params:oauth:token-type:jwt">eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0MWU2YjAiLCJ4NXUiOiJodHRwczovLzEyNy4wLjAuMTozODA4MS9wa2kvY2hhaW4vZGVmYXVsdC84ZjFlMTljZmVlYzNkNTZjNDk5ODI1YjFlZjcwOTQ5NjExNjYxOTg0NjNiMTRlMzAxOTE0YmVmNTk1YzE5OWRjLnBlbSJ9.eyJpc3MiOiJ1cm46d3N0cnVzdDptb2NrOnN0cyIsInN1YiI6InVybjp1dWlkOjAxNmRjOGYxLTFiYzQtNTVkOS05NjU3LTliMmViYjNjZDRkMiIsIm5hbWUiOiJhbGljZSIsImlhdCI6MTc5MDExMDU4NiwiZXhwIjoxNzkwMTE0MTg2LCJqdGkiOiJOTW9Yd1I4Y0hIREdEcGQ2MkR6RlFGeHkiLCJhdWQiOiJodHRwczovL3JwLmV4YW1wbGUub3JnLyJ9.aYT6_coGff_o0wyWwCVBDEnGX3Jwdeh5GgrkigIOTsEZ-WOMvbkOk--emI4g6DTHhE4RLOq5l3ikvOLv4xoCIQQrubEQkPYNVFQlT_BAOUSaH2o79UhcU2T5-rminWuuUcl8H7eZqCoxfXs55hwV3kzkvpJuQ6Vm0SJCWPgZ3Ujvgu5ZvYGzknZMHLImOApwAraZ1N2l0IJF1eIIv0muykMbJPU_tg9szynaiVd1fWFTseYrX518C8svsQ_3p8iTSIgmGYEdwCf7G_pkG-UQwL2M0HYrJXwBZ2uUyGgL_nzTgxOjzxq_ph4kN0FuP2Da6JpOEKlLtol60lc225EQkQ</wsse:BinarySecurityToken>
+          <wsse:BinarySecurityToken xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ValueType="urn:ietf:params:oauth:token-type:jwt">eyJhbGciOiJSUzI1NiIsInR5cCI6ImF0K2p3dCIsImtpZCI6InN0cy01ZThjYzBjOGNiNDQiLCJ4NXUiOiJodHRwczovLzEyNy4wLjAuMTozODA4MS9wa2kvY2hhaW4vZGVmYXVsdC85YmIyOWFjZTRjYWQ5ZWNjYTA2OWZmM2VhYTM2OWQzYTNiMmYwMjAwODIyYmEzMmM4ZmJkNDRlNzM0ZjdlOTFiLnBlbSJ9.eyJncm91cHMiOlsiZGV2ZWxvcGVycyJdLCJpc3MiOiJodHRwczovLzEyNy4wLjAuMTozODA4MSIsInN1YiI6InVybjp1dWlkOjAxNmRjOGYxLTFiYzQtNTVkOS05NjU3LTliMmViYjNjZDRkMiIsIm5hbWUiOiJhbGljZSIsImlhdCI6MTc5MTQ3OTc3NSwiZXhwIjoxNzkxNDgzMzc1LCJqdGkiOiJKSVVWMEpFUWFzbzNYeFdRMWtwb3p2Y0UiLCJhdWQiOiJodHRwczovL3JwLmV4YW1wbGUub3JnLyJ9.BU6suB85mee1RoLVHMpi6iC35SSrK4CfVXgrKNRUk6HxjQr2Cj9JNIQZr7U5EPgptzFO5F1H3J3G0jrBvweCZT2KFwg65naiefsk9NJvzE3aOa0mZaq45q9W0gwQVVe8qjJ0gj4MBvbQrkTLfKDGl5pdLY7IWqNu9AToaj-pJ3oXhcPHX1LmC5Htt2OY0qvTN2QMFT7EixgVzPqbGUq1yXVEK4jg7pUBFxKXU4fjWctpYB_dVRF63D4ybvI5QRWJv5BQo-FTDgKT8dQKTmqibgSp9LXjb3xZ_or7HmdREFtFLtKjz82KeH-o8egBHqo0dXoCeClrcUIJnk0EXQo9rw</wsse:BinarySecurityToken>
         </wst:RequestedSecurityToken>
         <wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy" xmlns:wsa="http://www.w3.org/2005/08/addressing">
           <wsa:EndpointReference>
@@ -1542,8 +1600,8 @@ JWT is decoded under [Other JWTs](#ws-trust-jwt).
           </wsa:EndpointReference>
         </wsp:AppliesTo>
         <wst:Lifetime xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
-          <wsu:Created>2026-09-22T20:56:26.089Z</wsu:Created>
-          <wsu:Expires>2026-09-22T21:56:26.090Z</wsu:Expires>
+          <wsu:Created>2026-10-08T17:16:15.924Z</wsu:Created>
+          <wsu:Expires>2026-10-08T18:16:15.924Z</wsu:Expires>
         </wst:Lifetime>
         <wst:KeyType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer</wst:KeyType>
       </wst:RequestSecurityTokenResponse>
