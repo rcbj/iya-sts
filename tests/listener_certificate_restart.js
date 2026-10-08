@@ -6,38 +6,56 @@
 // File: listener_certificate_restart.js
 //
 // ===========================================================================
-// A LISTENER CERTIFICATE RE-ISSUED AT RESTART IS ANNOUNCED (#264).
+// THE LISTENER KEY IS KEPT PER NODE, AND A CHANGED CERTIFICATE IS ANNOUNCED
+// (2026-10-08; #264).
 //
-// `tls-certificate-changed` (#245) was sent only when a certificate the
-// RUNNING process had issued was replaced. The listener key is made again at
-// every start, so a restart presented a certificate nobody was told about and
-// a receiver that pinned it learned nothing. `tls/tls_server.js` now keeps
+// Two things about one listener, both visible only ACROSS A RESTART, which is
+// `tests/CLAUDE.md`'s clause for an in-process file: no HTTP job can restart
+// the service it is talking to.
+//
+// **THE KEY IS KEPT.** Where minted state persists, each node makes its
+// listener key once and keeps it sealed in its own row of `tls.listenerKeys`
+// (`unit@node`), with the certificate it last took; a plain restart presents
+// the same key AND the same certificate (`tls/CLAUDE.md`, *THE LISTENER KEY
+// IS KEPT PER NODE*). Until that date every product restart made a new key.
+//
+// **A CHANGED CERTIFICATE IS ANNOUNCED (#264).** `tls/tls_server.js` keeps
 // what the SERVICE last announced in a persisted shared store
-// (`tls.listenerAnnounced`) and compares at `listen()`.
+// (`tls.listenerAnnounced`) and compares at `listen()`; a start that presents
+// something else sends `tls-certificate-changed`, `restarted`.
 //
-// **THE FAILURE IS ONLY VISIBLE ACROSS A RESTART**, which is
-// `tests/CLAUDE.md`'s clause for an in-process file: no HTTP job can restart the service it is
-// talking to. So three child processes, one after another, share a store the
-// way two lives of one service do:
+// Child processes, one after another, share a store the way the lives of one
+// service — and its nodes — do:
 //
-//   1. FIRST START, over an empty store: the listener's certificate is
-//      recorded and nothing is announced — nothing was announced before it.
-//   2. SECOND START, over the store the first one left: its certificate is a
-//      new one (a new key), and it is announced once, from `listen()`, to
-//      every realm, reason `restarted`, naming the first start's fingerprint
-//      as `from` and its own as `to`. The record moves to it.
-//   3. A START WITH NO STORE (memory mode): the record is gone with the
-//      process, so nothing is announced — which is what the documentation
-//      says memory mode cannot do.
+//   1. FIRST START as node-a, over an empty store: its key is stored (sealed),
+//      its certificate recorded, nothing announced.
+//   2. SECOND START as node-a: the SAME key and the SAME certificate, under the
+//      same Root, and nothing announced — the restart rcbj named.
+//   3. A START AS node-b: a key of its own (a different one), a new
+//      certificate under the same Root, announced once from `listen()` as
+//      `restarted` from node-a's fingerprint; and it holds node-b's row ALONE,
+//      never node-a's.
+//   4. node-a AGAIN WITH tls.selfSignedKeyBits=3072: the 2048-bit key it kept
+//      no longer fits, so a new 3072-bit key replaces it (STS-TLS-0048) and the
+//      new certificate is announced; it holds node-a's row alone.
+//   5. TWO STARTS WITH NO STORE (memory mode): nothing kept, a key per start,
+//      nothing announced — which is what the documentation says memory mode
+//      cannot do.
 //
 // The store is `tests/minted_persistence.js`'s stub driver backed by a file,
 // in PRODUCT mode with a key-encryption key read from a file shared by the
 // children, and the signing keys and certificate authority kept in a second
-// file — so the second start has the same Root and only a new listener key.
-// (An EPHEMERAL key, a dispatched development pool's, is no use here:
-// `persistence_minted.js` clears every row such a run finds, by design.)
-// Postgres itself is the parent suite's job; everything asserted here is
-// above the SQL.
+// file — so every start has the same Root. (An EPHEMERAL key, a dispatched
+// development pool's, is no use here: `persistence_minted.js` clears every row
+// such a run finds, by design.) Postgres itself is the parent suite's job;
+// everything asserted here is above the SQL.
+//
+// **What would make it fail**: a `settleListenerKey()` that ignores the stored
+// row fails 2a and 4c's opposite (the key moves at every start); a
+// `heldCertificate` that offers nothing, or a `certifyRegistered()` that does
+// not ask it, fails 2b and 2c (a new leaf, announced); a reconciler that
+// admits every row fails 3c and 4b; a fit check that ignores the size fails
+// 4a.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -171,8 +189,21 @@ function childMain() {
     if (ROWS) {
       await minted.flush();
     }
-    report.fingerprint = String(new (require('crypto').X509Certificate)(
-      tls.serverCertificate().certPem).fingerprint256).toUpperCase();
+    const presented = new (require('crypto').X509Certificate)(
+      tls.serverCertificate().certPem);
+    report.fingerprint = String(presented.fingerprint256).toUpperCase();
+    // The KEY, as the certificate carries it and as the socket's own private
+    // key derives it — the two must be one key.
+    report.keyFingerprint = require('crypto').createHash('sha256')
+      .update(presented.publicKey.export({ type: 'spki', format: 'der' }))
+      .digest('hex');
+    report.keyMatches = require('crypto').createPublicKey(
+      tls.serverCertificate().privateKeyPem)
+      .export({ type: 'spki', format: 'der' })
+      .equals(presented.publicKey.export({ type: 'spki', format: 'der' }));
+    report.keyBits = Number((presented.publicKey.asymmetricKeyDetails || {})
+      .modulusLength || 0);
+    report.heldKeys = tls.heldListenerKeys();
     report.held = tls.lastAnnouncedListenerCertificates();
     report.root = String((pki.serviceRoot() || {}).serialHex || '');
     fs.writeFileSync(OUT, JSON.stringify(report));
@@ -184,7 +215,7 @@ function childMain() {
   });
 }
 
-function startOnce(t, dir, label, rowsFile, kek) {
+function startOnce(t, dir, label, rowsFile, kek, extra) {
   log.debug("Entering startOnce(). " + label);
   const out = path.join(dir, label + '.json');
   const clean = {};
@@ -202,7 +233,7 @@ function startOnce(t, dir, label, rowsFile, kek) {
         STS_KEYS_KEK_PROVIDER: 'file', STS_KEYS_KEK_FILE: kek
       } : {}, { LOG_LEVEL: 'fatal', LCR_ROOT: ROOT,
                 LCR_OUT: out, LCR_ROWS: rowsFile || '',
-                SPIFFE_GRPC_PORT: '0' }),
+                SPIFFE_GRPC_PORT: '0' }, extra || {}),
       encoding: 'utf8', timeout: 300000, cwd: ROOT
     });
   let report = null;
@@ -244,52 +275,107 @@ async function run(t) {
   fs.writeFileSync(kek, nodeCrypto.randomBytes(32).toString('base64'),
                    { encoding: 'utf8', mode: 0o600 });
   try {
-    const first = startOnce(t, dir, 'first', rows, kek);
     const j = JSON.stringify;
+    const nodeA = { STS_CLUSTER_NODE_NAME: 'node-a' };
+    const nodeB = { STS_CLUSTER_NODE_NAME: 'node-b' };
+
+    const first = startOnce(t, dir, 'first', rows, kek, nodeA);
     t.check(first.keys && first.keys.persisting === true &&
             tlsNotices(first).length === 0 &&
-            first.fingerprint && heldRsa(first) === first.fingerprint,
+            first.fingerprint && heldRsa(first) === first.fingerprint &&
+            first.keyMatches === true,
             '1. A FIRST START over an empty store records its listener ' +
-            'certificate and announces nothing',
+            'certificate, presents it with its own key, and announces nothing',
             j([first.keys, tlsNotices(first), first.fingerprint,
-               first.held]));
-    t.check(fs.existsSync(rows) &&
-            fs.readFileSync(rows, 'utf8').indexOf('tls.listenerAnnounced') >=
-              0 &&
-            fs.readFileSync(rows, 'utf8').indexOf(first.fingerprint) < 0,
-            '1b. the record is written to the store as a sealed row of ' +
-            'tls.listenerAnnounced');
+               first.held, first.keyMatches]));
+    const stored = fs.existsSync(rows) ? fs.readFileSync(rows, 'utf8') : '';
+    t.check(stored.indexOf('tls.listenerAnnounced') >= 0 &&
+            stored.indexOf('tls.listenerKeys') >= 0 &&
+            stored.indexOf(first.fingerprint) < 0 &&
+            stored.indexOf('PRIVATE KEY') < 0 &&
+            j(Object.keys(first.heldKeys || {})) === j(['rsa@node-a']) &&
+            first.heldKeys['rsa@node-a'].certified === true,
+            '1b. the record and node-a\'s key are written to the store as ' +
+            'SEALED rows — no fingerprint, no PEM private key in the clear — ' +
+            'and the key row carries the certificate it was issued',
+            j(first.heldKeys));
 
-    const second = startOnce(t, dir, 'second', rows, kek);
-    const sent = tlsNotices(second);
-    t.check(heldRsa({ held: second.heldAtStart }) === first.fingerprint,
-            '2a. the second start RESTORED the fingerprint the first one ' +
-            'announced', j(second.heldAtStart));
-    t.check(second.fingerprint && second.fingerprint !== first.fingerprint &&
-            first.root && second.root === first.root,
-            '2b. and presents a different certificate (a key made at start) ' +
-            'under the SAME Root, kept in the store — a product restart',
-            j([first.fingerprint, second.fingerprint, first.root,
+    const second = startOnce(t, dir, 'second', rows, kek, nodeA);
+    t.check(second.keyFingerprint && second.root === first.root &&
+            second.keyFingerprint === first.keyFingerprint &&
+            second.keyMatches === true,
+            '2a. A SECOND START OF THE SAME NODE presents the SAME KEY under ' +
+            'the same Root — generated once, not at every restart',
+            j([first.keyFingerprint, second.keyFingerprint, first.root,
                second.root]));
-    t.check(second.beforeListen === 0 && sent.length === 1 &&
+    t.check(second.fingerprint === first.fingerprint,
+            '2b. and the SAME CERTIFICATE: the one it kept is still current, ' +
+            'so it is presented again rather than re-issued',
+            j([first.fingerprint, second.fingerprint]));
+    t.check(heldRsa({ held: second.heldAtStart }) === first.fingerprint &&
+            tlsNotices(second).length === 0 &&
+            heldRsa(second) === first.fingerprint,
+            '2c. so nothing is announced: the certificate is the one the ' +
+            'service last announced', j([second.heldAtStart,
+                                         tlsNotices(second)]));
+
+    const other = startOnce(t, dir, 'node-b', rows, kek, nodeB);
+    const sent = tlsNotices(other);
+    t.check(other.keyFingerprint &&
+            other.keyFingerprint !== first.keyFingerprint &&
+            other.fingerprint !== first.fingerprint &&
+            other.root === first.root && other.keyMatches === true,
+            '3a. ANOTHER NODE NAME makes a key of its own — no listener key ' +
+            'is shared between nodes — under the same Root',
+            j([first.keyFingerprint, other.keyFingerprint, other.root]));
+    t.check(other.beforeListen === 0 && sent.length === 1 &&
             sent[0].realm === '*' && sent[0].reason === 'restarted' &&
             sent[0].rotated.some(function (r) {
               return String(r).toUpperCase() === 'RSA ' + first.fingerprint +
-                ' -> ' + second.fingerprint;
-            }),
-            '2c. SO IT IS ANNOUNCED, once, from listen() and not before, to ' +
-            'every realm, reason "restarted", from the first start\'s ' +
-            'fingerprint to its own', j([second.beforeListen, sent]));
-    t.check(heldRsa(second) === second.fingerprint,
-            '2d. and the record moves to the certificate it announced',
-            j(second.held));
+                ' -> ' + other.fingerprint;
+            }) && heldRsa(other) === other.fingerprint,
+            '3b. and its certificate, which is not the one the service last ' +
+            'announced, is announced once, from listen() and not before, to ' +
+            'every realm, reason "restarted", from node-a\'s fingerprint; ' +
+            'the record moves to it', j([other.beforeListen, sent]));
+    t.check(j(Object.keys(other.heldKeys || {})) === j(['rsa@node-b']),
+            '3c. node-b HOLDS ITS OWN ROW ALONE: node-a\'s key is in the ' +
+            'store and was restored into no memory but node-a\'s',
+            j(other.heldKeys));
 
-    const memory = startOnce(t, dir, 'memory', '', kek);
+    const resized = startOnce(t, dir, 'node-a-3072', rows, kek,
+      Object.assign({ STS_TLS_SELF_SIGNED_KEY_BITS: '3072' }, nodeA));
+    t.check(resized.keyBits === 3072 &&
+            resized.keyFingerprint !== first.keyFingerprint &&
+            resized.keyMatches === true &&
+            ((resized.heldKeys || {})['rsa@node-a'] || {}).bits === 3072,
+            '4a. A STORED KEY THAT NO LONGER FITS (2048 bits, and ' +
+            'tls.selfSignedKeyBits is 3072) is replaced by a new key, and ' +
+            'the new one is what is stored',
+            j([resized.keyBits, resized.heldKeys]));
+    t.check(j(Object.keys(resized.heldKeys || {})) === j(['rsa@node-a']),
+            '4b. node-a, too, holds its own row alone after node-b wrote ' +
+            'one', j(resized.heldKeys));
+    t.check(tlsNotices(resized).length === 1 &&
+            tlsNotices(resized)[0].reason === 'restarted',
+            '4c. and its new certificate is announced as a restart',
+            j(tlsNotices(resized)));
+
+    const memory = startOnce(t, dir, 'memory', '', kek, nodeA);
+    const memoryAgain = startOnce(t, dir, 'memory-again', '', kek, nodeA);
     t.check(tlsNotices(memory).length === 0 &&
-            Object.keys(memory.heldAtStart || {}).length === 0,
-            '3. A START WITH NO STORE (memory mode) has no record to ' +
+            tlsNotices(memoryAgain).length === 0 &&
+            Object.keys(memory.heldAtStart || {}).length === 0 &&
+            Object.keys(memoryAgain.heldAtStart || {}).length === 0,
+            '5a. A START WITH NO STORE (memory mode) has no record to ' +
             'compare with, and announces nothing',
             j([memory.heldAtStart, tlsNotices(memory)]));
+    t.check(memory.keyFingerprint && memoryAgain.keyFingerprint &&
+            memory.keyFingerprint !== memoryAgain.keyFingerprint &&
+            memory.keyFingerprint !== first.keyFingerprint,
+            '5b. and keeps no key: two starts with no store make two keys, ' +
+            'as development always has',
+            j([memory.keyFingerprint, memoryAgain.keyFingerprint]));
   } finally {
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -303,10 +389,13 @@ async function run(t) {
 
 module.exports = {
   name: 'listener_certificate_restart',
-  describe: 'A listener certificate re-issued at restart is announced ' +
-            '(#264): what the service last announced survives in a ' +
-            'persisted shared store, a second start presenting another ' +
-            'certificate sends tls-certificate-changed (restarted) from ' +
-            'listen(), and a start with no store announces nothing.',
+  describe: 'The listener key is kept per node where minted state persists ' +
+            '(2026-10-08): a restart of the same node presents the same key ' +
+            'and certificate and announces nothing; another node name makes ' +
+            'its own key, holds only its own row, and its certificate is ' +
+            'announced (tls-certificate-changed, restarted, #264) from ' +
+            'listen(); a key that no longer fits the size is replaced; and ' +
+            'a start with no store makes a key per start and announces ' +
+            'nothing.',
   run: run
 };

@@ -22,8 +22,10 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   their order in `common/protocol_stack.ts` (rule 6); the other two need no
   require order, because `server.js` and `debugger_server.js` already have this
   module in hand by the time they listen. The private key crosses a module boundary and no
-  network one: it is generated per start, held in memory, and
-  `GET /tls/server-certificate` publishes the certificate alone.
+  network one: it is held in memory, written down only as this node's sealed
+  row of `tls.listenerKeys` where minted state persists (*THE LISTENER KEY IS
+  KEPT PER NODE*, below), and `GET /tls/server-certificate` publishes the
+  certificate alone.
 * **The client truststore.** The anchors every listener in this process verifies
   a CLIENT certificate against — one array, applied to whatever registered
   through `trustClientCertificatesOn()`. It starts EMPTY, and every section
@@ -918,9 +920,12 @@ that arrived a moment ahead of its branch logged `STS-PKI-0046` and
 `STS-TLS-0026` about a leaf re-issued correctly one row later). Each node still
 presents a leaf over its OWN listener key; what the cluster agrees is the
 hierarchy it chains to. The `tls:server` certificate slot therefore holds one
-node's record at a time, and only a CONCURRENT displacement is kept in the
-issued register (`common/pki_merge.js`) — a node's listener serial written over
-sequentially is not, which is a slot-per-node question this work did not take.
+node's record at a time. A CONCURRENT displacement is kept in the issued
+register by the merge (`common/pki_merge.js`), and since #185 (2026-09-23) a
+sequential one is too (`certify()` keeps the serial it displaces), so the
+responder knows every node's listener. What a node presents again after a
+restart is therefore read from its OWN row of `tls.listenerKeys`, never off
+the slot (*THE LISTENER KEY IS KEPT PER NODE*, below).
 
 ## THE SOCKETS THIS MODULE DOES NOT HOLD ARE TOLD TOO (2026-09-21)
 
@@ -1016,9 +1021,13 @@ each claim.
 
 ## A RESTART IS ANNOUNCED TOO: WHAT THE SERVICE LAST ANNOUNCED IS KEPT (2026-09-26, #264)
 
-Until #264, a restart was never announced. The listener KEY is made at every
+Until #264, a restart was never announced. The listener KEY was made at every
 start (`makeServerCertificate()`), so even a product restart with the Root
-kept presents a new leaf. A receiver that pinned the old one learned nothing.
+kept presented a new leaf. A receiver that pinned the old one learned nothing.
+**Since 2026-10-08 the key and, while it is current, the certificate are kept
+per node where minted state persists** (next section), so a plain restart of
+one node presents the leaf it presented before and announces nothing; what
+this section announces is a start that presents something else.
 
 **The record.** `tls.listenerAnnounced` is a `realms.sharedMap()`
 (`scope: 'shared'`, `retain: 'keep'`). It is keyed by algorithm unit (`rsa`,
@@ -1046,10 +1055,11 @@ reason `restarted`. That reason is for this type only (`ssf_events.js`'s
 - So the record is shared through the store and any node compares against
   it, which is #162's arrangement for the process CA.
 - It also catches a node that JOINS with a leaf nobody was told of.
-- **The cost, stated in `docs/`**: every node's start is announced, because
-  each node has a listener key of its own. `from` is the certificate the
-  SERVICE last announced, which another live node may still present.
-  Receivers behind a balancer should pin the Root.
+- **The cost, stated in `docs/`**: in a cluster a node's start is announced
+  whenever another node announced after it, because each node has a listener
+  key of its own. `from` is the certificate the SERVICE last announced, which
+  another live node may still present. Receivers behind a balancer should pin
+  the Root.
 
 **It persists only where minted state does**: product mode on postgres, a
 cluster, or a dispatched pool with a real KEK (`persistence_minted.js`'s
@@ -1065,10 +1075,11 @@ cluster, or a dispatched pool with a real KEK (`persistence_minted.js`'s
 certificate (`tls.certificateFile`) and a request worker's handed-in copy.
 
 **Tests:**
-- `tests/listener_certificate_restart.js` runs three starts over one stub
-  store, in product mode with a file KEK and persisted keys. The same Root
-  and a new leaf are announced once, from `listen()`. With no store, nothing
-  is announced. A mutant that drops `persist` fails three assertions.
+- `tests/listener_certificate_restart.js` runs five starts over one stub
+  store, in product mode with a file KEK and persisted keys (next section
+  says what each proves). A start under another node name presents a new
+  leaf under the same Root and is announced once, from `listen()`. With no
+  store, nothing is announced.
 - `tests/service_key_signals.js` E2–E7 covers the rest in one process.
 - No HTTP job can restart the service it talks to, so none covers this.
 
@@ -1086,6 +1097,86 @@ the branch AGAIN, leaving two Intermediates of one name and one CRL address
 chain comes from what `issueUnder()` returns, and `common/pki.js`'s
 `repairBranch()` re-asks "is it stale?" inside the build queue. **An observer
 that ISSUES must not assume the realm branches are current when it runs.**
+
+## THE LISTENER KEY IS KEPT PER NODE (2026-10-08)
+
+**rcbj: "#162 was supposed to generate a key pair if one didn't already exist
+in the database. Not recreate it on every restart with a persisted volume."**
+The Root and the process branch were kept; the listener's own key was made at
+require time (`makeServerCertificate()`, `makeMlDsaServerCertificate()`) and
+certified afresh at every start, so every restart of a product container
+presented a new key pair and a new certificate. #162's decision 2 still binds:
+**each node keeps its OWN listener key**, no listener private key is shared
+between nodes, the process CA is one shared authority, and no node address is
+published anywhere. The header *THE LISTENER KEY IS KEPT PER NODE* in
+`tls_server.js` is the argument; the short version:
+
+* **Where.** `tls.listenerKeys`, a `realms.sharedMap()` (`scope: 'shared'`,
+  `retain: 'keep'` by default), so it persists exactly where
+  `tls.listenerAnnounced` does: product mode on postgres, a cluster, a
+  dispatched pool with a real KEK (`persistence_minted.js`'s `enabled()`).
+  Every row is sealed under the KEK like every minted row. Not a table of its
+  own, for `common/CLAUDE.md`'s *where does this service keep a private key*
+  reason. Elsewhere (development, `memory`, `ldif`) the map dies with the
+  process and the key is made per start, as before; an ephemeral-KEK pool
+  clears the rows it finds. It is a CELL-tier store (`persistence/tiers.js`).
+* **Keyed `unit@node`** — `rsa@node-a`, `ml-dsa-65@node-a`, #264's units —
+  the node being `cluster.nodeName`, else the host name (`cluster.js`'s
+  `nodeName()`). **Two nodes given ONE name would share a key**: the cluster
+  stacks name theirs (`node-a`/`node-b`), AWS, GCP and Azure set
+  `STS_CLUSTER_NODE_NAME` per node, and the compose stack's single node is
+  `hostname: sts`. A RENAMED node makes a key of its own; the old row stays,
+  unread.
+* **Each node holds only its own row.** The store is replicated, so the
+  map's `reconcile.restore` admits a row only when it names this node, at a
+  start's restore and at replication alike. Another node's row is opened by
+  the persistence layer and dropped; it is never held in this node's memory.
+* **When.** Settled the first time `common/pki.js` asks the registration for
+  the public key (`settleListenerKey()`), inside `pki.start()` — after the
+  minted rows are restored, before anything binds. The record keeps the key
+  its self-signed bootstrap is over until `takeIssuedCertificate()` takes a
+  certificate over the settled key and swaps both in one step, so a socket
+  never holds a key without its certificate. With `pki.autoBuild` off nothing
+  is certified, so nothing is settled or stored, and the self-signed
+  certificate is per start as it always was.
+* **A stored key that no longer fits** — another algorithm, an RSA modulus
+  other than `tls.selfSignedKeyBits`, a row that will not parse — is replaced
+  by the key made at this start, `STS-TLS-0048`.
+* **THE CERTIFICATE IS KEPT TOO.** The row also holds the certificate this
+  node last took over that key, its chain and what it was issued for (the
+  name, key usage and extensions — `listenerIssuance()`). At the next start
+  the registration offers it (`heldCertificate`), and `pki.js`'s
+  `heldCertificateCurrent()` presents it again when it is over the same key,
+  its chain is the process branch held NOW (the Issuing CA and the
+  Intermediate, certificate for certificate, and the branch chains to the
+  Root), more than a third of its validity remains, and the register still
+  records its serial unrevoked. Otherwise a new one is issued over the same
+  key. It is read from the node's row and not the `tls:server` slot because
+  that slot holds one node's record at a time (#162).
+* **So a plain restart presents the same leaf**, and #264's comparison finds
+  nothing to announce. `takeIssuedCertificate()` returns early for the
+  certificate it already presents, so a second `certifyRegistered()` in one
+  life re-keys no socket and tells no observer.
+* **What still changes the leaf, over the SAME key**: `build-root`, a rebuilt
+  process branch or a reissued TLS Issuing CA (the chain is no longer the
+  one held, and the observers — LDAPS, SPIFFE, the debugger, the request
+  workers' bundle — are told exactly as before); a changed `tls.hostnames` or
+  `tls.ips`; a revoked or nearly expired leaf. **What changes the KEY**: a
+  wiped volume (or KEK), a renamed node, a changed key size or algorithm, and
+  every start where minted state does not persist.
+* **Everything that holds the key agrees.** The swap happens in the front
+  process before `server.js` hands `serverCertificate()` to the request pool,
+  so workers are handed the kept key at fork; a later re-issue is over the same
+  key, so the bundle that carries no key (`reconcileTheListener()`) is still
+  right. LDAPS, SPIFFE and the debugger listener bind after `pki.start()` and
+  read the record; `onServerCertificateChange` is unchanged. A worker
+  (handed in) and a supplied certificate settle nothing.
+
+`tests/listener_certificate_restart.js` holds it: a second start over the same
+store presents the same key and certificate and announces nothing; another
+node name gets a key of its own (and is announced as a restart, from the
+service's last announcement); a changed `tls.selfSignedKeyBits` makes a new
+key; a start with no store makes a key per start.
 
 ## WHAT THE SOCKET PRESENTS, ASKED FROM ANY PROCESS (2026-09-26, #248)
 

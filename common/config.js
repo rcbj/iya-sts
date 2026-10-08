@@ -15932,9 +15932,13 @@ const SETTINGS = [
     restartReason: 'the name is written on the membership row when the node ' +
                    'joins',
     description: 'What /admin/cluster calls this node. Empty means the host ' +
-                 'name, which in a container is the container id. It ' +
-                 'identifies nothing: membership is a UUID made at every ' +
-                 'start, so two nodes given one name are still two nodes.' },
+                 'name, which in a container is the container id. ' +
+                 'Membership is a UUID made at every start, so two nodes ' +
+                 'given one name are still two members — but the name is ' +
+                 'what this node\'s TLS listener key is kept under where ' +
+                 'minted state persists (tls.listenerKeys), so two nodes ' +
+                 'given one name would share that key, and a renamed node ' +
+                 'makes a new one.' },
 
   { key: 'cluster.nodeSnapshotRetentionHours', group: 'Cluster',
     label: 'Keep a gone node\'s snapshot (hours)',
