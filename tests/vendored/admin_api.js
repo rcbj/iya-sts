@@ -1166,10 +1166,11 @@ async function configurationCanBeChangedAndPutBack(doc) {
   }, []);
 
   // Every property the row schema documents must appear on at least ONE row.
-  // Per-row rather than per-property, because three of them are legitimately
+  // Per-row rather than per-property, because two of them are legitimately
   // conditional — only enums carry enumValues, only restart-only rows carry
-  // restartReason, and only the three issuers carved out of STS_ISSUER carry
-  // legacyEnv — and a misspelt name would still appear on none of them.
+  // restartReason — and a misspelt name would still appear on none of them.
+  // (`legacyEnv` was a third until #523 retired the last row carrying it;
+  // the schema stopped documenting it then.)
   const rowSchema = doc.components.schemas.Config
     .properties.groups.items.properties.settings.items;
   const never = Object.keys(rowSchema.properties).filter(function (name) {

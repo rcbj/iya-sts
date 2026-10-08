@@ -836,8 +836,9 @@ const CONFIG_SETTING = openObject(
       description: 'Where the effective value came from, highest first: a ' +
                    'runtime override set through this API or the console; ' +
                    'the setting\'s own environment variable; the LEGACY ' +
-                   'variable named in `legacyEnv` (none since #523, when ' +
-                   'STS_ISSUER went with the settings it fed); the ' +
+                   'variable a row names in `legacyEnv` (no row has one ' +
+                   'since #523, when STS_ISSUER went with the settings it ' +
+                   'fed); the ' +
                    'appconfig file ' +
                    'CONFIG_FILE names; `env/defaults.js`, the DEFAULT ' +
                    'appconfig file that one is unioned on top of. `default` ' +
@@ -862,9 +863,9 @@ const CONFIG_SETTING = openObject(
                      description: 'Why it is not editable. Present exactly ' +
                                   'when `editable` is false.' },
     env: { type: 'string', description: 'Its environment variable.' },
-    legacyEnv: { type: 'string',
-                 description: 'An older variable that still feeds it. Only ' +
-                              'the three issuers have one.' },
+    // `legacyEnv` is not documented while no setting carries one (#523
+    // retired the last, STS_ISSUER): `describe()` still sends it for a row
+    // that has one, and the next such row puts the property back here.
     appconfigPath: { type: 'string' },
     default: { description: 'The built-in default — the `dflt` column of ' +
                             'config.js\'s table, which `env/defaults.js` is ' +
