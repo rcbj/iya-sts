@@ -71,7 +71,9 @@ needs `PA-PAC-OPTIONS`), and a **forwarded ticket-granting ticket**.
 WS-Trust's `OnBehalfOf` / `ActAs` and the OAuth 2.0 token exchange, from the
 same controls on the same directory entries — see
 [Delegation and impersonation](delegation.md). A Kerberos service is the
-application entry whose identifier is its `SPN@REALM`:
+application entry whose identifier is its `SPN@REALM` — not a
+[service account](service-accounts.md#a-service-account-is-not-a-kerberos-service-principal),
+which in iya-sts is a person entry that can only be a Kerberos client:
 
 | Active Directory | Here, on the entry |
 |---|---|
@@ -214,7 +216,9 @@ it on is refused until it has a `krb5.realm` no other realm answers to
   kvno; Delete removes it. The KDC issues tickets for that SPN under the stored
   key in both modes, and the acceptor prefers a stored key for its own SPN over
   `krb5.servicePassword` — which is how the acceptor in product mode gets a key
-  without a password printed anywhere.
+  without a password printed anywhere. A service principal is an application,
+  not a [service account](service-accounts.md#a-service-account-is-not-a-kerberos-service-principal),
+  which is a person entry keyed from its password.
 * **A password change or a Rotate keeps the previous key version** —
   `krb5.retainedKeyVersions` of them, each for `krb5.retainedKeyTtlS` — so a
   ticket issued under it is still accepted, while pre-authentication and
