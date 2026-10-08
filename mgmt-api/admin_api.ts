@@ -1267,7 +1267,9 @@ class AdminApi {
               'a person\'s entry holding their security-key serials, which ' +
               'a registration\'s trusted enterprise attestation must name. ' +
               '`userDisplayName`, `rpNameExtras` and `credentialLabel` ' +
-              'are the names a passkey prompt and a new key show.',
+              'are the names a passkey prompt and a new key show. ' +
+              '`aggregateDevices` (on) offers a person\'s passkeys as one ' +
+              'sign-in choice; off, one per passkey.',
         example: { allowUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
@@ -1278,7 +1280,8 @@ class AdminApi {
                    securityKeyHints: 'security-key', signInHints: 'none',
                    enterpriseSerialAttribute: '',
                    userDisplayName: 'displayName, givenName sn',
-                   rpNameExtras: 'none', credentialLabel: '' }
+                   rpNameExtras: 'none', credentialLabel: '',
+                   aggregateDevices: true }
       }
     };
     const cap = function (text) {

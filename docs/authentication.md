@@ -305,6 +305,7 @@ it on the console or with `POST /admin-api/policies/save-passkey-policy`;
 | `userDisplayName` | empty | The directory attributes a passkey prompt shows as the person's name (below). |
 | `rpNameExtras` | `none` | `realm`, `organisation` or `realm-and-organisation`: appended to the service's name in a passkey prompt. |
 | `credentialLabel` | empty | The name a new passkey is given; `{provider}` and `{kind}` are filled in. |
+| `aggregateDevices` | on | A person's passkeys are one sign-in choice; off, one per passkey (below). |
 | `enterpriseSerialAttribute` | empty | The attribute of a person's entry holding the serials of the security keys issued to them; set, a key registers only if its enterprise attestation names one of them (below). |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
@@ -466,6 +467,16 @@ edit their own `displayName` therefore cannot make a prompt read right to
 left, or hide part of it. The service's name is built only from settings an
 administrator controls. A label is not translated per language, because the
 portal has no translations.
+
+**One choice, or one per passkey** (`aggregateDevices`). By default a person
+with several passkeys is shown one *Use passkey* button, and the request lists
+all of them so the browser offers whichever is present. With
+`aggregateDevices` off, somebody with more than one first chooses which to use
+from a list of their passkeys by name, and the request then names only that
+one, with a link back to choose another. The choice is a list of links and
+needs no script. The rule applies to the passwordless step and to the passkey
+asked for after a password. Either way the assertion is checked against the
+passkey it names; only the request changes.
 
 The policy replaced the settings `webauthn.usernameless` and
 `webauthn.residentKey` (#527); a configuration that still names either is

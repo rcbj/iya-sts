@@ -1264,7 +1264,10 @@ const PASSWORD_FACTOR_FORM = vz.object({
 });
 
 const MFA_STEP_QUERY = vz.object({
-  mfa: vt.opt(vt.base64url)
+  mfa: vt.opt(vt.base64url),
+  // THE ONE PASSKEY A PERSON CHOSE (#534), where the passkey policy offers
+  // them one by one: a credential id, base64url.
+  key: vt.opt(vt.base64url)
 });
 
 const BACKUP_CODE_FORM = vz.object({
@@ -10486,7 +10489,7 @@ class Authn {
     return (props && typeof props.rk === 'boolean') ? props.rk : null;
   }
 
-  private webauthnPage(base, mfaId, username, error) {
+  private webauthnPage(base, mfaId, username, error, chosenKey?) {
     const { log, xmlEscape, credentials, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.webauthnPage(). username=" + username);
     // ---------------------------------------------------------------------
@@ -10515,6 +10518,17 @@ class Authn {
       return one.role === wantedRole;
     });
     const mode = known.length ? 'get' : 'create';
+    // ONE CHOICE PER PASSKEY (#534), where the passkey policy says so and
+    // there is more than one to choose from: until one is chosen the page
+    // lists them, and once one is, the ceremony names only it. A chosen id
+    // that is not one of this step's keys is not a choice.
+    const separate = mode === 'get' && known.length > 1 &&
+                     !this.deps.passkeyPolicy.aggregatesDevices();
+    const chosen = separate ? known.filter(function (one) {
+      return one.credentialId === String(chosenKey || '');
+    })[0] || null : null;
+    const choosing = separate && !chosen;
+    const allowed = chosen ? [chosen] : known;
     // THE USER HANDLE THE CREDENTIAL IS CREATED UNDER (#474), on the step so
     // the registration branch records the one the browser was given. The
     // person's own where their entry holds or can hold one; a fresh one for
@@ -10564,6 +10578,22 @@ class Authn {
           'your passkey') +
         '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
+      (choosing
+        // THE CHOICE (#534): a link per passkey, which draws this page again
+        // for that one. Links, so no script is needed to choose.
+        ? '<p>Choose the passkey to use:</p><ul id="wa-choices">' +
+          known.map(function (one) {
+            return '<li><a href="' + WEBAUTHN_PATH + '?mfa=' +
+              encodeURIComponent(mfaId) + '&amp;key=' +
+              encodeURIComponent(one.credentialId) + '">' +
+              xmlEscape(credentials.keyName(one)) + '</a></li>';
+          }).join('') + '</ul>'
+        : (chosen
+          ? '<p class="sub">Using <strong>' +
+            xmlEscape(credentials.keyName(chosen)) + '</strong> &middot; ' +
+            '<a href="' + WEBAUTHN_PATH + '?mfa=' +
+            encodeURIComponent(mfaId) + '">choose another</a></p>'
+          : '') +
       '<button id="wa-go" type="button">' +
       (mode === 'create' ? 'Create passkey' : 'Use passkey') +
       '</button><form ' +
@@ -10595,7 +10625,7 @@ class Authn {
       // EVERY key of this role, comma-separated, because a person may hold
       // several and the authenticator picks. Empty on the enrolment path, where
       // there is nothing to allow.
-      ' data-allow="' + xmlEscape(known.map(function (one) {
+      ' data-allow="' + xmlEscape(allowed.map(function (one) {
         return one.credentialId;
       }).join(',')) + '"' +
       // EVERY key they hold, of EITHER role, so an authenticator already
@@ -10619,7 +10649,7 @@ class Authn {
       ' data-options="' + xmlEscape(JSON.stringify(
           mode === 'create' ? webauthnPolicy.creationOptions(rpId)
                             : webauthnPolicy.requestOptions(rpId))) + '"' +
-      ' data-mode="' + mode + '"></div>' +
+      ' data-mode="' + mode + '"></div>') +
       // THE TECHNICAL LINES FOLDED (#470): a person signing in reads the
       // heading, the button and the ways out; somebody debugging opens the
       // fold. A `<details>` is markup and needs no script.
@@ -12975,7 +13005,14 @@ class Authn {
           'This second-factor step has expired. Start the request again from ' +
           'the application that sent you here.');
       }
-      if (credentials.mechanismsFor(step.username).mfaKeys < 1) {
+      // THE KEYS OF THE STEP'S ROLE (#534): a passwordless step, whose
+      // per-passkey choice is a link here too, is drawn for somebody holding
+      // a PRIMARY key; a second-factor step for somebody holding an mfa key.
+      // Neither draws the ENROLMENT ceremony, which this GET never did.
+      const held = step.passwordless
+        ? credentials.mechanismsFor(step.username).primaryKeys
+        : credentials.mechanismsFor(step.username).mfaKeys;
+      if (held < 1) {
         log.info('authn: a security-key screen was asked for "' +
                  step.username +
                  '", who holds no key marked as a second factor. Refused.');
@@ -12996,7 +13033,8 @@ class Authn {
       }
       return this.sendWebauthnPage(res, this.webauthnPage(baseUrlOf(req), mfaId,
                                                           step.username,
-                                                          rpProblem));
+                                                          rpProblem,
+                                                          asked.value.key));
     });
 
     app.post(WEBAUTHN_PATH, (req, res) => {

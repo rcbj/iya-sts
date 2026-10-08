@@ -139,7 +139,8 @@ function saves(t) {
                                         enterpriseSerialAttribute: '',
                                         userDisplayName: '',
                                         rpNameExtras: 'none',
-                                        credentialLabel: '' });
+                                        credentialLabel: '',
+                                        aggregateDevices: 'TRUE' });
   t.check(!form.problems.length && form.values.allowUsernameless === false,
           'P2d. an unticked checkbox on the console\'s form is a no',
           JSON.stringify(form));
@@ -215,7 +216,7 @@ function answers(t) {
     });
   });
   const said = passkeyPolicy.describe(passkeyPolicy.read());
-  t.check(said.length === 9 && /names the person first/.test(said[0]) &&
+  t.check(said.length === 10 && /names the person first/.test(said[0]) &&
           /synced \(backup-eligible\) passkeys are accepted/.test(said[3]),
           'P4c. the rules in sentences', JSON.stringify(said));
   log.debug('Leaving answers().');
@@ -412,7 +413,7 @@ function kind(t) {
           'P7. the fourth kind on Directory → Policies, with its two ' +
           'actions', JSON.stringify(policyKinds.actions()));
   const view = adminViews.policiesView({});
-  t.check(!!view.passkey && view.passkey.fields.length === 14 &&
+  t.check(!!view.passkey && view.passkey.fields.length === 15 &&
           view.passkey.fields.some(function (field) {
             return field.key === 'securityKeyResidentKey' &&
                    field.type === 'enum' && field.values.length === 3;

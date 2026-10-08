@@ -11408,6 +11408,17 @@ and caps the length; a `text` row that would change under it is refused at
 save. The per-language message key the ticket mentions is not built (no
 portal translations).
 
+**#534 ADDED `aggregateDevices` (2026-10-08)**, on by default, which is what
+the passkey step did before: one ceremony with every key of the step's role
+in `allowCredentials`. Off, `authn.ts`'s `webauthnPage()` draws a list of
+links for a person holding more than one key. Each link is
+`/authn/webauthn?mfa=<step>&key=<credential id>`, and the page drawn for a
+chosen key names only that key in `data-allow`. A chosen id that is not one
+of the step's keys draws the list again. The GET now draws a passwordless
+step for a person holding a PRIMARY key, and still never the enrolment
+ceremony. `keyForAssertion()` still decides which key an assertion is
+checked against, so nothing about acceptance changed.
+
 **Why the module and not an issuance-policy rule.** The ticket asked for the
 refusal "where the decision belongs", and rcbj's rule is that every
 authorization decision is policy. This is an AUTHENTICATION policy row on
