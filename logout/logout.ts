@@ -3091,8 +3091,11 @@ class Logout {
     // ends, because it is what nearly everybody arriving here came to press
     // and the inventory runs to a dozen tables. It is the default too — a
     // POST that selects nothing does the same — so the page leads with what
-    // the endpoint does when asked nothing. The ticked-items form stays
-    // under the tables it reads from. Every paragraph of explanation goes
+    // the endpoint does when asked nothing. The ticked-items button is up
+    // there with it, as the FIRST thing in its own form — the form has to
+    // wrap the tables whose checkboxes it posts, so the button opens it
+    // rather than closing it, and nobody has to scroll past a dozen tables
+    // to press it. Every paragraph of explanation goes
     // through the console's fold (`kit.note()` / `kit.warn()`): one line
     // until somebody opens it, the amber box keeping its colour closed.
     const globalForm = '<form method="post" ' +
@@ -3111,20 +3114,20 @@ class Logout {
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       (message ? '<div class="ok">' + xmlEscape(message) + '</div>' : '') +
       globalForm +
+      '<form method="post" action="' + xmlEscape(LOGOUT_PATH) + '">' +
+      '<input type="hidden" name="username" value="' + xmlEscape(username) +
+      '"><div class="actions"><button type="submit" name="scope" ' +
+      'value="selected">End the ticked items</button><span ' +
+      'class="sub">Tick them in the tables below. Nothing ticked ends ' +
+      'nothing.</span></div>' +
       kit.warn('<strong>' + inventory.total + ' live item(s)</strong> in ' +
         familiesHeld + ' famil' + (familiesHeld === 1 ? 'y' : 'ies') +
         '. Some of them cannot be ended by anybody — they are listed with ' +
         'the reason, because a sign-out that hid them would look complete ' +
         'when it is not.') +
-      '<form method="post" action="' + xmlEscape(LOGOUT_PATH) + '">' +
-      '<input type="hidden" name="username" value="' + xmlEscape(username) +
-      '">' +
       inventory.families.map((family) => {
         return this.familyTable(family);
-      }).join('') +
-      '<div class="actions"><button type="submit" name="scope" ' +
-      'value="selected">End the ticked items</button><span ' +
-      'class="sub">Nothing ticked ends nothing.</span></div></form>' +
+      }).join('') + '</form>' +
       // BUILT FROM THE MODE, because "this service checks no password anywhere"
       // was printed on a product-mode page for as long as that mode existed.
       kit.note(
