@@ -1788,6 +1788,10 @@ class Portal {
       ' data-challenge="' + self.esc(pending.challenge) + '"' +
       ' data-rpid="' + self.esc(rpId) + '"' +
       ' data-user="' + self.esc(username) + '"' +
+      // The name the prompt shows (#533), the policy's userDisplayName first.
+      ' data-display="' + self.esc(passkeyPolicy.displayNameFor(username,
+                                                                 username)) +
+      '"' +
       ' data-userid="' + self.esc(pending.userHandle || '') + '"' +
       ' data-allow=""' +
       ' data-exclude="' + self.esc((pending.exclude || []).join(',')) + '"' +
@@ -3282,7 +3286,10 @@ class Portal {
         return one.credentialId;
       }).join(',')) + '"' +
       ' data-name="' + self.esc(username) + '"' +
-      ' data-display="' + self.esc(String(session.user.name || username)) +
+      ' data-display="' +
+      // The name the prompt shows (#533), the policy's userDisplayName first.
+      self.esc(passkeyPolicy.displayNameFor(username,
+        String(session.user.name || username))) +
       '"></div>' +
       '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>';
     log.debug('Leaving Portal.signalBlock().');
@@ -3443,7 +3450,10 @@ class Portal {
         ' data-rpid="' + self.esc(rpId) + '"' +
         ' data-user="' + self.esc(username) + '"' +
         ' data-userid="' + self.esc(pending.userHandle || '') + '"' +
-        ' data-display="' + self.esc(String(session.user.name || username)) +
+        ' data-display="' +
+      // The name the prompt shows (#533), the policy's userDisplayName first.
+      self.esc(passkeyPolicy.displayNameFor(username,
+        String(session.user.name || username))) +
         '"' +
         ' data-allow=""' +
         ' data-exclude="' + self.esc(pending.exclude.join(',')) + '"' +

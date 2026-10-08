@@ -302,6 +302,9 @@ it on the console or with `POST /admin-api/policies/save-passkey-policy`;
 | `passkeyHints` | `client-device,hybrid` | The WebAuthn hints *Create a passkey* sends, in order (below). |
 | `securityKeyHints` | `security-key` | The hints *Use a security key* sends. |
 | `signInHints` | `none` | The hints a passkey sign-in sends. |
+| `userDisplayName` | empty | The directory attributes a passkey prompt shows as the person's name (below). |
+| `rpNameExtras` | `none` | `realm`, `organisation` or `realm-and-organisation`: appended to the service's name in a passkey prompt. |
+| `credentialLabel` | empty | The name a new passkey is given; `{provider}` and `{kind}` are filled in. |
 | `enterpriseSerialAttribute` | empty | The attribute of a person's entry holding the serials of the security keys issued to them; set, a key registers only if its enterprise attestation names one of them (below). |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
@@ -438,6 +441,31 @@ the platform (a managed browser policy, or the vendor's RP ID list) for
 enterprise attestation to be released to this service's RP ID. Without that,
 the browser quietly sends ordinary attestation, which carries no serial, and
 every registration is refused.
+
+**The names a passkey prompt shows** (`userDisplayName`, `rpNameExtras`,
+`credentialLabel`). When a browser or phone asks somebody to create or use a
+passkey, it shows the service's name (`rp.name`) and the person's
+(`user.displayName`; the username is always `user.name`).
+
+- `userDisplayName` lists up to six directory attributes in order, separated
+  by commas, for example `displayName, givenName sn, mail`. A group joined
+  by spaces combines its values. The first group whose every attribute has a
+  value becomes the display name. Empty, the default, keeps the name the
+  sign-in already knows, or the username.
+- `rpNameExtras` appends the realm's name and/or `saml.organizationName` to
+  `webauthn.rpName`, so somebody with accounts in several realms can tell
+  the prompts apart.
+- `credentialLabel` is what a new passkey is called on `/portal/keys` and the
+  console, for example `Work {kind}`. Empty keeps the default: the provider's
+  name, or *Passkey* or *Security key*. The person can still rename it.
+
+Every value shown goes through the same cleaning: control characters and
+characters that change text direction are removed, whitespace is collapsed,
+and the result is at most 64 characters (60 for a label). A person who can
+edit their own `displayName` therefore cannot make a prompt read right to
+left, or hide part of it. The service's name is built only from settings an
+administrator controls. A label is not translated per language, because the
+portal has no translations.
 
 The policy replaced the settings `webauthn.usernameless` and
 `webauthn.residentKey` (#527); a configuration that still names either is

@@ -11394,6 +11394,20 @@ values come through a fourth directory hook on the policy's slot,
 `personAttributeValues()`, filled by `ldap_server.js` and never answering a
 secret attribute. The serial is on the console's and the portal's key rows.
 
+**#533 ADDED THE NAMES A PROMPT SHOWS (2026-10-08)**: `userDisplayName` (an
+`attributes` row: up to six comma-separated groups of up to three attribute
+names), `rpNameExtras` (an enum) and `credentialLabel` (a `text` row).
+`displayNameFor()` reads values through the #532 hook and answers the first
+group fully present. Every door that draws a ceremony asks it: the sign-in
+screen, `/portal/keys`, activation and the Signal API block.
+`webauthn_policy.ts`'s `settings().rpName` comes from `rpNameFor()`, with the
+ambient realm's name and `saml.organizationName`. `addKey()` labels a new
+key with `credentialLabelFor()` before the default. `displaySafe()` turns
+whitespace into spaces, removes Cc and bidirectional-formatting characters,
+and caps the length; a `text` row that would change under it is refused at
+save. The per-language message key the ticket mentions is not built (no
+portal translations).
+
 **Why the module and not an issuance-policy rule.** The ticket asked for the
 refusal "where the decision belongs", and rcbj's rule is that every
 authorization decision is policy. This is an AUTHENTICATION policy row on

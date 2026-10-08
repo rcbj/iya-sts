@@ -10587,6 +10587,10 @@ class Authn {
       ' data-challenge="' + xmlEscape(step ? step.challenge : '') + '"' +
       ' data-rpid="' + xmlEscape(rpId) + '"' +
       ' data-user="' + xmlEscape(username) + '"' +
+      // THE NAME THE PROMPT SHOWS (#533): the passkey policy's
+      // userDisplayName, else the username, as it always was here.
+      ' data-display="' + xmlEscape(this.deps.passkeyPolicy.displayNameFor(
+        username, username)) + '"' +
       ' data-userid="' + xmlEscape(step && step.userHandle || '') + '"' +
       // EVERY key of this role, comma-separated, because a person may hold
       // several and the authenticator picks. Empty on the enrolment path, where
