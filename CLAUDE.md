@@ -227,8 +227,15 @@ home:
   container `unhealthy`. It uses `node -e` rather than curl so that it needs
   only the runtime, and it fails on a non-200, not just on a closed port.
 * **The `sts` build context is the repository root with the default
-  Dockerfile** (`COPY . ./`, `.dockerignore` deciding what goes in). `image:`
-  is `rcbj/sts`, the parent project's name, so the two build one image.
+  Dockerfile** (`COPY . ./`, `.dockerignore` deciding what goes in).
+  **`image:` defaults to the PUBLISHED name, `iyasec/iya-sts`** (and
+  `iyasec/iya-sts-xacml-pep` for the PEP), since 2026-10-07, so a bare
+  `docker compose up` on a machine without the image PULLS it from Docker Hub
+  and builds only when the pull fails; `--build` builds from the checkout. A
+  local build therefore carries the registry's name, and a later pull replaces
+  it without a word — `docs/docker-compose.md` tells a user to set
+  `STS_IMAGE` to a name no registry has. Until then it was `rcbj/sts`, the
+  parent project's name, which no registry serves.
 * **`tests/delivered_secrets.js`, `tests/postgres_schema.js` and
   `tests/stack_network.js` read this file's values**, never its comments.
 

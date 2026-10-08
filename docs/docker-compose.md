@@ -21,7 +21,8 @@ published images, without a checkout, see
 [Getting started](getting-started.md#with-postgresql-and-openbao-from-published-images).
 
 ```bash
-docker compose up --build        # build and start
+docker compose up --build        # build from this checkout and start
+docker compose up                # start; pulls the published image if there is none
 docker compose up -d --wait      # start in the background, return when healthy
 docker compose down              # stop, keeping every volume
 docker compose down -v           # stop and delete all data
@@ -35,6 +36,36 @@ curl -k https://localhost:8081/tls/server-certificate > /tmp/sts.pem
 curl --cacert /tmp/sts.pem https://localhost:8081/healthcheck
 ```
 
+## Building from this checkout, or pulling the published image
+
+The three services built from this repository (`openbao-tls`, `openbao-seed`
+and `sts`) name the image `iyasec/iya-sts`, the one published on Docker Hub,
+and also say how to build it. Which one you get depends on the command:
+
+| Command | What runs |
+|---|---|
+| `docker compose up` | An `iyasec/iya-sts:latest` already on this machine, whatever it was built from. If there is none, Compose pulls it from Docker Hub, and builds only if the pull fails. |
+| `docker compose up --build` | A build of this checkout, made before the containers start |
+| `docker compose build`, then `docker compose up` | The same, in two steps |
+| `docker compose pull`, then `docker compose up` | The newest published image |
+
+**A local build is tagged with the published name.** A later
+`docker compose pull` replaces it without a word, and the reverse is true too:
+`docker images` cannot tell you which of the two you have. To keep a build of
+this checkout apart from the published image, give it a name no registry has:
+
+```bash
+STS_IMAGE=iya-sts:local docker compose up --build
+STS_IMAGE=iya-sts:local docker compose up        # later starts, same name
+```
+
+Put `STS_IMAGE=iya-sts:local` in a `.env` file beside `docker-compose.yml` to
+make it the default. The remote PEP works the same way, with
+`XACML_PEP_IMAGE` (published as `iyasec/iya-sts-xacml-pep`).
+
+To check which build a running container is, see
+[Which build am I running?](getting-started.md#which-build-am-i-running).
+
 ## Services
 
 | Service | Image | What it does |
@@ -43,8 +74,8 @@ curl --cacert /tmp/sts.pem https://localhost:8081/healthcheck
 | `openbao-tls` | this repository's | One-shot. Mints the certificate for OpenBao's listener before OpenBao starts. |
 | `openbao` | `openbao/openbao` | The secret store. Unseals itself at every start (`seal "static"`), and runs with `IPC_LOCK` so its memory is never swapped. |
 | `openbao-seed` | this repository's | One-shot, idempotent. Initialises the store, writes the secrets, creates the Transit key `sts-kek`, issues the service its client certificate, and hands each node a single-use start-up token. |
-| `sts` | this repository's (`rcbj/sts`) | The service. It waits until the database is healthy and the seeder has finished. |
-| `xacml-pep` | `rcbj/xacml-pep` | The [remote XACML PEP](remote-pep.md). It is only started with `--profile xacml`. |
+| `sts` | this repository's (`iyasec/iya-sts`) | The service. It waits until the database is healthy and the seeder has finished. |
+| `xacml-pep` | `iyasec/iya-sts-xacml-pep`, built from `xacml-pep/Dockerfile` | The [remote XACML PEP](remote-pep.md). It is only started with `--profile xacml`. |
 
 The `sts` container starts as root for three steps:
 
@@ -161,7 +192,7 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_BAO_PRINT_CREDENTIALS` | `true` | Whether the seeder prints the operator token, and on the first run the recovery key |
 | `STS_KEYS_KEK_PROVIDER` | `vault-transit` | `vault` reads the key from KV (`STS_KEYS_KEK_REF=secret/data/sts`) instead of using the Transit key |
 | `OPENBAO_TAG` | `latest` | The OpenBao image tag |
-| `STS_IMAGE`, `XACML_PEP_IMAGE` | `rcbj/sts`, `rcbj/xacml-pep` | Image names |
+| `STS_IMAGE`, `XACML_PEP_IMAGE` | `iyasec/iya-sts`, `iyasec/iya-sts-xacml-pep` | Image names. Set them to a name no registry has to keep a local build apart from the published image ([above](#building-from-this-checkout-or-pulling-the-published-image)) |
 | `BUILD_NUMBER`, `GIT_COMMIT`, `DEBUGGER_IMAGE` | empty | Build arguments: see [Which build am I running?](getting-started.md#which-build-am-i-running) and the embedded debugger |
 | `*_CONTAINER_NAME` | `sts`, `sts-postgres`, `sts-openbao`, … | Container names, which are machine-wide; change them to run a second stack beside this one |
 
