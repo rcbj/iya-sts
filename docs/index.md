@@ -69,6 +69,7 @@ configuration recipes, in the console and through the API, for each
 [Signals received](signals-received.md)
 
 **Operating it** —
+[The compose stack](docker-compose.md) ·
 [Persistence](persistence.md) ·
 [PostgreSQL schema](postgres-schema.md) ·
 [LDAP schema](ldap-schema.md) ·

@@ -215,8 +215,9 @@ this service connecting as the restricted `sts_app` rather than as the owner.
 **A volume created by an earlier version has the tables and no such role**, and the
 service container then restart-loops with `password authentication failed for
 user "sts_app"`. `docker compose down -v` is the fix, and what it removes is the
-directory, the realm registry and the appconfig overrides — never anything this
-service minted.
+directory, the realm registry and the appconfig overrides — and, in product mode
+(the stack's default), the sealed signing keys and everything minted under them.
+[The compose stack](docker-compose.md) lists every volume and variable.
 
 ```bash
 docker compose up            # start; the directory is there again next time
@@ -242,8 +243,8 @@ database whose certificate chains to something `NODE_EXTRA_CA_CERTS` names.
 `postgres:18` now, and a major version will not read a data directory written by
 the previous one — nor will it accept the old `/var/lib/postgresql/data` mount,
 which is a single mount at `/var/lib/postgresql` from 18 onwards. Throwing the
-volume away costs only what somebody typed: the directory, the realm registry
-and the setting overrides. Nothing this service mints was ever in there.
+volume away costs the directory, the realm registry and the setting overrides,
+and in product mode the sealed signing keys and everything minted under them.
 
 ## The settings
 

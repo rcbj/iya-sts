@@ -194,6 +194,44 @@ anywhere stops the service from starting: `common/CLAUDE.md` argues the five
 levels, `env/CLAUDE.md` lists the files, and `docs/configuration.md`'s *Every
 setting* lists every setting.
 
+## `docker-compose.yml` carries no comments (2026-10-07)
+
+**rcbj removed all of them: 994 of the file's 1234 lines were comments, and the
+file was unreadable.** Keep it that way. Only the two SPDX lines stay. What a
+user needs is in `docs/docker-compose.md`; the reasoning about a service is in
+its directory's file (`postgres/`, `openbao/`, `xacml-pep/`, `spiffe/`,
+`tests/tools/compose.sh` for the launchers). A change to the file that needs
+explaining goes into one of those, not into a comment. These rules have no other
+home:
+
+* **`version: '2.4'` stays.** It matches the parent project's files and keeps
+  docker-compose v1 parsing `healthcheck` and `depends_on: condition:`. The
+  "obsolete" warning from v2 is the whole cost.
+* **A value is `${VAR:-default}` unless an EMPTY value would be wrong; then it
+  is BARE** (`- STS_LOG_LEVEL`, `- STS_KEYS_SOURCE`, `- ADMIN_API_*`), which
+  passes it only when the host has it. `STS_LOG_LEVEL=""` makes bunyan throw
+  `unknown level name` before anything listens. A variable that is in neither
+  form never reaches the container, whatever a launcher exports: that is how
+  the first dispatch run ran with an ephemeral key-encryption key.
+* **A new substitution a launcher sets needs a row in that launcher's
+  `COMPOSE_ENV`**, because `sudo` empties the environment
+  (`tests/tools/compose.sh`). Without the row the default is used and nothing
+  says so.
+* **`container_name`, image tags and the subnet are machine-wide**, which is
+  why each is a variable (`STS_IMAGE`, `*_CONTAINER_NAME`,
+  `STS_NETWORK_SUBNET`). `tests/stack_network.js` holds the subnet default
+  outside every launcher's range.
+* **The `sts` healthcheck picks its scheme** from `STS_HTTPS`, or from
+  `STS_OAUTH2_RFC9700` / `STS_OAUTH2_OAUTH21` when that is unset, and does not
+  verify the certificate. A probe speaking the wrong scheme marks a working
+  container `unhealthy`. It uses `node -e` rather than curl so that it needs
+  only the runtime, and it fails on a non-200, not just on a closed port.
+* **The `sts` build context is the repository root with the default
+  Dockerfile** (`COPY . ./`, `.dockerignore` deciding what goes in). `image:`
+  is `rcbj/sts`, the parent project's name, so the two build one image.
+* **`tests/delivered_secrets.js`, `tests/postgres_schema.js` and
+  `tests/stack_network.js` read this file's values**, never its comments.
+
 ## Architecture, and the rules that hold it together
 
 `server.js` is a shell: it requires the modules and listens. What each directory
