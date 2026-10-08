@@ -3421,14 +3421,15 @@ class ApplicationsPage {
       'oauthPermissionBaseUri') || '';
     // THE RESOURCE HALF'S HIDDEN FIELDS (2026-10-01). `resource` is this
     // entry, so no form on this tab can configure another application's
-    // permissions; `page` brings the reader back here even when the action
-    // names a different `client` (permissionsReturnTo()).
+    // permissions. There was a `page` field too, which brought the
+    // server-rendered console back here (permissionsReturnTo()); nothing
+    // reads it since #446, and the operations' closed schemas dropped it
+    // (`console_web_bundle` F1b, 2026-10-08).
     const resourceHidden = function (action) {
       return carryBack +
         '<input type="hidden" name="action" value="' + action + '">' +
         '<input type="hidden" name="from" value="/admin/applications">' +
-        '<input type="hidden" name="page" value="' + kit.esc(identifier) +
-        '"><input type="hidden" name="resource" value="' +
+        '<input type="hidden" name="resource" value="' +
         kit.esc(identifier) + '">';
     };
     // Its own permissions that a client could ask for — those with an
@@ -3494,8 +3495,7 @@ class ApplicationsPage {
           carryBack + '<div class="formrow">' +
           '<input type="hidden" name="action" value="revoke-permission">' +
           '<input type="hidden" name="from" value="/admin/applications">' +
-          '<input type="hidden" name="page" value="' + kit.esc(identifier) +
-          '"><input type="hidden" name="client" value="' +
+          '<input type="hidden" name="client" value="' +
           kit.esc(one.client) + '"><input type="hidden" ' +
           'name="permission" value="' + kit.esc(one.permissionId) + '">' +
           '<button type="submit" class="danger">Revoke</button>' +
