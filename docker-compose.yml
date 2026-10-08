@@ -34,7 +34,7 @@ services:
 
   openbao-tls:
     container_name: ${STS_BAO_TLS_CONTAINER_NAME:-sts-openbao-tls}
-    image: ${STS_IMAGE:-rcbj/sts}
+    image: ${STS_IMAGE:-iyasec/iya-sts}
     build:
       context: .
     restart: "no"
@@ -73,7 +73,7 @@ services:
 
   openbao-seed:
     container_name: ${STS_BAO_SEED_CONTAINER_NAME:-sts-openbao-seed}
-    image: ${STS_IMAGE:-rcbj/sts}
+    image: ${STS_IMAGE:-iyasec/iya-sts}
     build:
       context: .
     restart: "no"
@@ -104,7 +104,7 @@ services:
   sts:
     container_name: ${STS_CONTAINER_NAME:-sts}
     hostname: sts
-    image: ${STS_IMAGE:-rcbj/sts}
+    image: ${STS_IMAGE:-iyasec/iya-sts}
     user: "0"
     sysctls:
       - net.ipv4.ip_unprivileged_port_start=0
