@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4215** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4216** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 146
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 47
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 48
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 47
@@ -3217,6 +3217,7 @@ Raised from: tls/.
 | `STS-TLS-0045` | A TLS listener's own trustAnchorsFile (listener<Id>.trustAnchorsFile, #429) could not be read or holds no certificate, so that listener's client truststore would be empty while configured to be filled. | the service does not start |
 | `STS-TLS-0046` | This node offers no TLSSocket.prototype._init, so the TLS session cache cannot see the server name a ClientHello offers and cannot hold a resumption to the name its session was made under (RFC 6066 section 3). | logged; no TLS 1.2 session is resumed by ID (every such client gets a full handshake); tickets are unaffected |
 | `STS-TLS-0047` | A request asked a listener for a path of a hosted application that is not mapped to it (listeners.applications, #472): the console on a listener it was moved off, the management API on one that answers only the sign-in service. The answer names where the application is. | 404 |
+| `STS-TLS-0048` | The listener key stored for this node and algorithm unit (tls.listenerKeys) cannot be used: another algorithm, an RSA modulus other than tls.selfSignedKeyBits, or a key that will not parse. The key made at this start replaces it. | logged; a new certificate is issued over the new key, and the restart is announced (tls-certificate-changed, restarted) |
 
 ## STS-VC
 

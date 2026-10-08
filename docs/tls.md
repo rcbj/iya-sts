@@ -208,16 +208,29 @@ offered signature schemes by policy.
   re-issued under this service's Root.
 * **A random 128-bit serial**, so a browser that trusted a previous start's
   certificate does not meet `SEC_ERROR_REUSED_ISSUER_AND_SERIAL`.
-* **A new key and certificate at every start, announced over Shared
-  Signals.** The listener's key is made at start, so every restart presents
-  a new leaf, even where the Root survives. A receiver subscribed to
-  `tls-certificate-changed` is told once the port is bound
-  (`reason: restarted`), and whenever the certificate is re-issued while the
+* **The key is kept across restarts, per node, where minted state is.** In
+  product mode on postgres, and in a cluster, each node makes its listener key
+  once and keeps it in the database, encrypted under the key-encryption key
+  like every other stored secret, under its node name (`cluster.nodeName`, or
+  the host name; `STS_CLUSTER_NODE_NAME`). A node never holds another node's
+  key. A restart presents the same key and, while it is still current, the
+  same certificate. The certificate is re-issued over the same key when the
+  Root or the TLS Issuing CA is rebuilt, when `tls.hostnames` or `tls.ips`
+  change, and when less than a third of its validity is left. A new key is
+  made when the database volume is wiped, when the node is renamed, when
+  `tls.selfSignedKeyBits` or `tls.certificateAlgorithms` changes the key, and
+  at every start in development, `memory` or `ldif` mode. **Give every node a
+  name of its own**: two nodes with one name would share a listener key.
+* **A changed certificate is announced over Shared Signals.** A receiver
+  subscribed to `tls-certificate-changed` is told once the port is bound
+  (`reason: restarted`) when a start presents a certificate other than the
+  one last announced, and whenever the certificate is re-issued while the
   service runs. The last certificate announced is kept in the store, so this
   works only where minted state survives a restart (product mode on
-  postgres, a cluster). In a cluster, each node's start is announced, because
-  each node has its own listener key. **Pin the Root, not the leaf.**
-  [Shared Signals](shared-signals.md) has the event.
+  postgres, a cluster). In a cluster a node's start is announced whenever
+  another node announced after it, because each node has its own listener
+  key. **Pin the Root, not the leaf.** [Shared Signals](shared-signals.md)
+  has the event.
 
 ### When a browser refuses the certificate
 
