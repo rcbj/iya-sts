@@ -19,6 +19,11 @@
 //      and phone scopes and their claims.
 //   b. at_hash AND c_hash WITH THE HASH OF THE ID TOKEN'S alg — RS256, RS384,
 //      PS512, ES512, EdDSA and ML-DSA-44 — computed here independently.
+//  b2. THE SAME METADATA ON A CLIENT /admin-api CREATED (#290): an ES256 ID
+//      Token and an ES256-signed UserInfo response for a client no
+//      registration made, from `oauthIdTokenSignedResponseAlg` and
+//      `oauthUserinfoSignedResponseAlg`; an unsigned ID Token refused at the
+//      write, naming the attribute.
 //   c. ERRORS IN THE FRAGMENT for a hybrid request, in the query for code.
 //   d. POST AT THE AUTHORIZATION ENDPOINT.
 //   e. THE REQUEST RULES: openid for an ID Token, prompt=none alone, nonce for
@@ -466,6 +471,56 @@ async function test() {
                          "an ID Token carries no typ claim");
     });
   }
+
+  log.info("=== b2. the response algorithms on a client /admin-api made " +
+           "(#290) ===");
+  const made = { client_id: "oidccore-api-" + STAMP.toLowerCase()
+                   .replace(/[^a-z0-9-]/g, ""),
+                 client_secret: nodeCrypto.randomBytes(24).toString("hex") };
+  await ok(realmApi + "/applications/create", { identifier: made.client_id,
+    kind: "oauth2-client", name: made.client_id,
+    protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [made.client_id],
+              oauthClientSecret: made.client_secret,
+              oauthTokenEndpointAuthMethod: "client_secret_basic",
+              oauthRedirectUri: [REDIRECT],
+              oauthGrantType: ["authorization_code"],
+              oauthResponseType: ["code"],
+              oauthAllowedScope: ["openid"],
+              oauthIdTokenSignedResponseAlg: "ES256",
+              oauthUserinfoSignedResponseAlg: "ES256" } },
+    "created a client with an ES256 ID Token and UserInfo response");
+  await ok(realmApi + "/consent/grant-global-consent",
+           { client: made.client_id, scope: "openid" },
+           "consented openid for everybody on " + made.client_id);
+  const madeTokens = await codeTokens(alice, made, {}, ALICE);
+  check("AN ID TOKEN FOR A CLIENT NO REGISTRATION MADE IS SIGNED WITH ITS " +
+        "oauthIdTokenSignedResponseAlg (ES256)", function () {
+    assert.strictEqual(decode(madeTokens.id_token).header.alg, "ES256",
+                       JSON.stringify(decode(madeTokens.id_token).header));
+  });
+  r = await send(base + R + "/oauth2/userinfo",
+                 { headers: { Authorization: "Bearer " +
+                              madeTokens.access_token } });
+  check("and its UserInfo response is a JWT signed with its " +
+        "oauthUserinfoSignedResponseAlg (ES256)", function () {
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+    const signed = decode(r.raw.trim());
+    assert.strictEqual(signed.header.alg, "ES256",
+                       JSON.stringify(signed.header));
+    assert.strictEqual(signed.claims.aud, made.client_id,
+                       JSON.stringify(signed.claims));
+  });
+  r = await postJson(realmApi + "/applications/set", {
+    application: made.client_id, attribute: "oauthIdTokenSignedResponseAlg",
+    value: "none" });
+  check("an unsigned ID Token is refused at the write, as a registration " +
+        "refuses it, naming the attribute", function () {
+    assert.ok(r.status !== 200 || (r.body && r.body.ok === false),
+              r.status + " " + r.raw.slice(0, 300));
+    assert.ok(/oauthIdTokenSignedResponseAlg/.test(r.raw),
+              r.raw.slice(0, 300));
+  });
 
   log.info("=== c. errors where the response would have gone ===");
   r = await authorize(alice, { response_type: "code id_token",

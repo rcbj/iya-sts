@@ -20473,6 +20473,25 @@ const CODES = [
     summary: 'A Kerberos PAC claim row\'s fixed value is not its type: not ' +
       'an integer in range, not true or false, or an empty string (#493).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0339',
+    summary: 'A registration\'s UserInfo encryption members were malformed: ' +
+      'userinfo_encrypted_response_alg not one of the asymmetric families ' +
+      'this service encrypts a response with, an enc it does not have, or ' +
+      'an enc without an alg (OpenID Connect Registration section 2, #290).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0340',
+    summary: 'A console or /admin-api write put a value a registration ' +
+      'would refuse on one of the ID Token, UserInfo or JARM signing and ' +
+      'encryption attributes (oauthIdToken*, oauthUserinfo*, ' +
+      'oauthAuthorization*ResponseAlg / Enc) or on oauthDefaultAcrValues / ' +
+      'oauthDefaultMaxAge, or an enc onto an entry with no alg (#290).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0341',
+    summary: 'An application entry holds an oauthDefaultAcrValues or ' +
+      'oauthDefaultMaxAge value the registration grammar refuses (only an ' +
+      'ldapmodify can leave one); it is ignored rather than required of ' +
+      'every sign-in (#290).',
+    spec: 'none — logged; the request is answered without the default' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

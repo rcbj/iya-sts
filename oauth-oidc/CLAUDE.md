@@ -682,10 +682,11 @@ so must `admin-ui/admin.ts`.
    `authorization_signed_response_alg` — RS256 by default, PS256 under
    Advanced, an HMAC keyed by the client secret — and encrypted where the
    client registered `authorization_encrypted_response_alg` / `_enc`, to its
-   inline `jwks`, exactly as an ID Token is. The three members live in
-   `appRegistrationJson`; `applications.jarmMetadataProblem()` owns the
-   grammar (`STS-REG-0179`) and `jarm.registrationKeyProblem()` the key
-   (`STS-REG-0180`). Discovery lists the four modes and the three
+   inline `jwks`, exactly as an ID Token is. The three members are
+   attributes since #290 (`oauthAuthorization*`, read through
+   `clientConfigOf()` — common/CLAUDE.md);
+   `applications.jarmMetadataProblem()` owns the grammar (`STS-REG-0179`)
+   and `jarm.registrationKeyProblem()` the key (`STS-REG-0180`). Discovery lists the four modes and the three
    `authorization_*_values_supported` members.
 
    **NOT DONE**: JARM for the device and CIBA flows (not built here). The
@@ -2306,8 +2307,10 @@ that declares grants without `refresh_token` is issued no refresh token
 (`0600`, recorded in `issue()`, for #34's half-a-token-set reason).
 
 **`default_acr_values` and `default_max_age`** are `step_up.ts`'s
-`requirementOf(query, registered)`, each overridden by the request's own —
-`acr_values` or an essential `acr` for the first, `max_age` for the second
+`requirementOf(query, clientConfigOf(...))` — attributes since #290
+(`oauthDefaultAcrValues`, `oauthDefaultMaxAge`) — each overridden by the
+request's own — `acr_values` or an essential `acr` for the first, `max_age`
+for the second
 (OpenID Connect Registration section 2). `require_auth_time` needs
 nothing new — `auth_time` is carried whenever a sign-in is behind the token.
 
@@ -3201,9 +3204,9 @@ produced is one good for a day and renewable.
    encapsulation — the signature inside may be ML-DSA or SLH-DSA, the JWE
    around it is what this service can encrypt with, and adding an ML-KEM family
    would be a change to every encrypted surface at once rather than to this
-   one. `applications.js` owns the grammar (`idTokenEncryptionMetadataProblem()`,
-   the members live in `appRegistrationJson` beside
-   `id_token_signed_response_alg`, which has no attribute either); this file
+   one. `applications.js` owns the grammar (`idTokenEncryptionMetadataProblem()`;
+   the members, and `id_token_signed_response_alg`, are attributes since
+   #290 — common/CLAUDE.md); this file
    owns the key and the envelope, taking `recipientKey()` from
    `introspection_jwt.ts` so all three encrypted responses pick a key the same
    way.

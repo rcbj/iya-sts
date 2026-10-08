@@ -3780,8 +3780,30 @@ with `Cannot find module` naming a file the operator never mentioned.
    the RFC 9700 checks in `oauth2.js` pass `clientConfigOf()`, which is built
    from the ATTRIBUTES; `appRegistered` records how an application got here and
    not whether what it holds counts. `registrationOf()` is still what RFC 7592
-   and the UserInfo signing algorithm read, because those are genuinely
-   questions about the registration.
+   reads, because that is genuinely a question about the registration.
+
+   **HOW A RESPONSE TO A CLIENT IS SIGNED AND ENCRYPTED IS AN ATTRIBUTE, AND
+   SO ARE ITS REQUEST DEFAULTS (#290, 2026-10-08).** Eleven members lived only
+   in `appRegistrationJson` — the ID Token's and UserInfo's
+   `*_signed_response_alg` / `*_encrypted_response_alg` / `_enc`, JARM's three
+   and `default_acr_values` / `default_max_age` — so a client created on the
+   console could not have an ES256 ID Token without registering again, a hole
+   in rule 7. `CLIENT_RESPONSE_ATTRIBUTES` maps each to an attribute
+   (`oauthIdToken*`, `oauthUserinfo*`, `oauthAuthorization*`,
+   `oauthDefaultAcrValues` as ONE ordered value, `oauthDefaultMaxAge`). Three
+   rules. ONE GRAMMAR: `clientResponseMetadataProblem()` is the
+   registration's own checks (the ID Token and UserInfo encryption, JARM, the
+   two signing algorithms and the defaults split out of
+   `oidcRegistrationProblem()`), and `clientResponseAttributeProblem()` holds
+   a console or API write to it (`STS-REG-0340`). REPLACED by a registration
+   (`applyRegistrationFields()`), an absent member cleared. ONE READING:
+   `clientConfigOf()` carries them under their registration names and every
+   reader — `idToken()`, UserInfo, `jarmUrl()` and `vetAuthorizationRequest()`,
+   the Logout and Command Tokens, step-up's defaults, the `jwks_uri` prefetch
+   — reads that rather than `registrationOf()`, which returns null for a
+   client nobody registered. A registration stored before #290 holds them in
+   its document only and is read without them until it registers again; no
+   migration (rcbj's standing rule).
 
    **THE TWO APPLICATIONS THAT ARE THIS PROCESS ARE SEEDED AT STARTUP, AND
    THEY ARE REGISTRATIONS RATHER THAN LABELS.** Every other entry arrives

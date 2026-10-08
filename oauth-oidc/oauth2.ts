@@ -4638,7 +4638,9 @@ class OAuth2Server {
     // hash of the algorithm this token is SIGNED with (OIDC Core 3.1.3.6 and
     // 3.3.2.11), so it has to be known before they are. The refusal of an
     // unsupported one stays where it was, below.
-    const registered = applications.registrationOf(opts.client_id) || {};
+    // FROM THE ATTRIBUTES (#290), so a client the console created with no
+    // registration behind it is signed — and encrypted — as it says.
+    const registered: Json = applications.clientConfigOf(opts.client_id);
     // PS256 under FAPI 1.0 Advanced when the client registered none (section
     // 8.6, #139); RS256 otherwise, as Core section 3.1.3.7 says.
     const idAlg = String(registered.id_token_signed_response_alg ||
@@ -9000,7 +9002,8 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.jarmUrl(). " + mode);
     const held = (res.locals && res.locals.stsJarm) || {};
     const clientId = String(held.clientId || '');
-    const registered = applications.registrationOf(clientId) || {};
+    // From the attributes (#290), whether or not a registration made them.
+    const registered: Json = applications.clientConfigOf(clientId);
     log.debug("Leaving OAuth2Server.jarmUrl(). Signing.");
     return jarm.respond(fields, { clientId: clientId, issuer: issuer,
                                   registered: registered })
@@ -9264,9 +9267,10 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.authorizationReturnQuery().");
     const jar = req.stsJar;
-    // With the client's registered defaults (#120).
+    // With the client's registered defaults (#120), from its attributes
+    // (#290).
     const stepping = stepUp.requirementOf(q,
-      this.deps.applications.registrationOf(q.client_id)).present ||
+      this.deps.applications.clientConfigOf(q.client_id)).present ||
       this.detailAcrsOf(q, req).length > 0;
     if (!jar) {
       log.debug("Leaving OAuth2Server.authorizationReturnQuery(). A plain " +
@@ -10541,9 +10545,10 @@ class OAuth2Server {
     // and is answered `login_required`. `step_up.ts` decides all four.
     // -------------------------------------------------------------------------
     // OpenID Connect Registration section 2's default_max_age and
-    // default_acr_values apply where the request names neither (#120).
+    // default_acr_values apply where the request names neither (#120) — read
+    // from the client's attributes (#290), whoever set them.
     const stepUpNeed = stepUp.requirementOf(q,
-      applications.registrationOf(q.client_id));
+      applications.clientConfigOf(q.client_id));
     // AND EVERY AUTHORIZATION DETAIL TYPE'S acr (#432 phase 6): the
     // access-type catalogue GNAP shares declares the level a right of a type
     // needs, and a grant of two types is a grant of both — so each is
@@ -11819,7 +11824,9 @@ class OAuth2Server {
     // client already did here, so the two features meet where they should:
     // register asking for a signed or encrypted response and this endpoint
     // starts producing one for that client. See protectUserinfo() above.
-    const registered = applications.registrationOf(claims.client_id) || {};
+    // Read from the ATTRIBUTES since #290, so a client the console or the
+    // management API configured is answered the same way.
+    const registered: Json = applications.clientConfigOf(claims.client_id);
     // A PROMISE CHAIN RATHER THAN AN `async` HANDLER, deliberately. Everything
     // above this line throws synchronously on a defect and express catches a
     // synchronous throw out of a handler; an `async function` turns every one
@@ -19303,6 +19310,7 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.userinfoEncryptionMetadataProblem(metadata) ||
       applications.jarmMetadataProblem(metadata) ||
       self.deps.jarm.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
@@ -19487,6 +19495,7 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.userinfoEncryptionMetadataProblem(metadata) ||
       applications.jarmMetadataProblem(metadata) ||
       self.deps.jarm.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
@@ -19705,6 +19714,7 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.userinfoEncryptionMetadataProblem(metadata) ||
       // JARM, as the POST checks it (#284): until then an update could
       // store an authorization_*_response_alg a registration refuses.
       applications.jarmMetadataProblem(metadata) ||

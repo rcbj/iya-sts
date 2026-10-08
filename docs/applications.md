@@ -105,7 +105,10 @@ The checks read the **attributes**, never the registration document, through
 one function (`clientConfigOf()`). The exact-match redirect-URI check, whether
 a client is public or confidential, the client-secret check, the scopes a
 client may be issued (`oauthAllowedScope`), consent, delegated permissions and
-the CORS allowlist all resolve to attributes on an entry. It does not matter
+the CORS allowlist all resolve to attributes on an entry — and so do how its
+ID Tokens, UserInfo responses and JARM responses are signed and encrypted and
+its `default_acr_values` / `default_max_age` (#290; [the
+table](configure-oidc-flows.md#two-things-to-know-first)). It does not matter
 whether a registration, a console form, the management API or `ldapmodify` put
 them there. `appRegistered` records *how* an application got here, not whether
 what it holds counts.
