@@ -741,7 +741,8 @@ SAME `adminActions.realmsAction()` the form posts to.
 
 **AND THAT SHARED FUNCTION IS WHERE `createRealm` LOST ITS `overrides` FOR
 MONTHS.** The operation documents the field, gives it an example
-(`{"saml2.entityId": "urn:acme:idp"}`) and says it wins over the six seeded
+(`{"saml.organizationName": "Acme"}` since #523 retired the entityID setting it
+used to show) and says it wins over the seeded
 names; `realms.create()` validates and merges it properly. In between,
 `realmsAction()` built its argument out of `id`, `name` and `description` and
 dropped the fourth property, so a create carrying overrides answered 200 and

@@ -71,7 +71,7 @@ const DELEGATED_METHOD = 'OnBehalfOf / ActAs (delegated)';
 function idpAudience() {
   log.debug("Entering idpAudience().");
   log.debug("Leaving idpAudience().");
-  return require('../common/issuer_names').wstrustIssuer();
+  return require('../common/issuer_names').issuer();
 }
 
 function inMode(m, fn) {

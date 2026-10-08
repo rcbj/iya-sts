@@ -217,13 +217,9 @@ class SamlPage {
 
     const endpointRows = [
       ['entityID of the identity provider', facts.idpEntityId,
-       json.perApplicationEntityId
-         ? 'Unique to this service provider. saml2.perApplicationEntityId ' +
-           'turns that off, and then every document names the same identity ' +
-           'provider.'
-         : 'The same for every service provider, because ' +
-           'saml2.perApplicationEntityId is off. The ENDPOINTS below are ' +
-           'still this service provider\'s own.'],
+       'The realm\'s one issuer, its OAuth issuer, the same for every ' +
+       'service provider and every protocol (#523). The ENDPOINTS below ' +
+       'are this service provider\'s own.'],
       ['Metadata', facts.metadataUrl, 'Signed, and served no-store, as ' +
        'every document carrying a key is: the signing key can rotate (and ' +
        'is regenerated on every start in development mode). This is the ' +
@@ -734,14 +730,10 @@ class SamlPage {
     const profiles = json.profiles;
     const endpointRows = [
       ['providerID of the identity provider', facts.idpProviderId,
-       json.perApplicationProviderId
-         ? 'Unique to this relying party. saml11.perApplicationProviderId ' +
-           'turns that off, and then every document names the same identity ' +
-           'provider — and every artifact carries the same SourceID, because ' +
-           'that is a hash of this value.'
-         : 'The same for every relying party, because ' +
-           'saml11.perApplicationProviderId is off. The ENDPOINTS below are ' +
-           'still this relying party\'s own.'],
+       'The realm\'s one issuer, its OAuth issuer, the same for every ' +
+       'relying party and every protocol (#523) — and so every artifact ' +
+       'carries the same SourceID, a hash of this value. The ENDPOINTS ' +
+       'below are this relying party\'s own.'],
       ['Metadata', facts.metadataUrl,
        'Signed, and served no-store because the signing key is regenerated ' +
        'on every start. This is the URL to configure the relying party from. ' +

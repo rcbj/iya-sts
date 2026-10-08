@@ -2043,12 +2043,11 @@ class AdminApi {
       { path: '/wstrust', console: '/admin/wstrust', tag: 'WS-Trust',
         operationId: 'getWsTrustSettings',
         summary: 'The security token service\'s own settings',
-        description: 'The `wstrust.*` settings: who a WS-Trust JWT says ' +
-                     'issued it, the token lifetime and its ceiling, and ' +
-                     'the JWT signing algorithm. `wstrust.issuer` is a ' +
-                     'different setting from `saml.issuer`, which is the ' +
-                     'Issuer INSIDE an assertion; they share a default and ' +
-                     'were one setting until they had to differ.\n\n' +
+        description: 'The `wstrust.*` settings: the token lifetime and its ' +
+                     'ceiling, and the JWT signing algorithm. Who a token ' +
+                     'says issued it is not a setting (#523): it is the ' +
+                     'realm\'s OAuth issuer, a JWT\'s `iss` and an ' +
+                     'assertion\'s Issuer alike.\n\n' +
                      'WS-Trust here issues a JWT when the request\'s ' +
                      'TokenType is `urn:ietf:params:oauth:token-type:jwt` ' +
                      'and a SAML 2.0 assertion for any other TokenType, ' +
@@ -2058,12 +2057,12 @@ class AdminApi {
       { path: '/wsfed', console: '/admin/wsfed', tag: 'WS-Federation',
         operationId: 'getWsFedSettings',
         summary: 'The passive requestor profile\'s own setting',
-        description: 'One setting — the entity ID this service names itself ' +
-                     'by in the WS-Federation metadata and in a sign-in ' +
-                     'response.\n\nThe assertion it carries is a SAML 1.1 ' +
-                     'one, so its Issuer is `saml.issuer` (on `GET /saml2` ' +
-                     'and `GET /saml11`) and its contents are `GET ' +
-                     '/saml-attributes`. A `wauth` the session cannot meet ' +
+        description: 'One setting — how long the mock relying party keeps ' +
+                     'a wctx. The entity ID this service names itself by ' +
+                     'in the metadata and a sign-in response is the ' +
+                     'realm\'s OAuth issuer, not a setting (#523).\n\nThe ' +
+                     'assertion it carries is a SAML 1.1 one, whose ' +
+                     'contents are `GET /saml-attributes`. A `wauth` the session cannot meet ' +
                      'is a step-up through the sign-in screen, and ' +
                      '`wreqptr` is never dereferenced; neither is a ' +
                      'setting, and the page says so rather than implying a ' +
@@ -9713,7 +9712,7 @@ class AdminApi {
               required: ['id'],
               examples: [{ id: 'acme', name: 'Acme Corporation',
                            domain: 'acme.example.com',
-                           overrides: { 'saml2.entityId': 'urn:acme:idp' } }],
+                           overrides: { 'saml.organizationName': 'Acme' } }],
               additionalProperties: false
             },
             responseDescription: 'The realm id, in `realm`.' },
@@ -9761,8 +9760,8 @@ class AdminApi {
               properties: { id: { type: 'string' }, key: { type: 'string' },
                             value: {} },
               required: ['id', 'key', 'value'],
-              examples: [{ id: 'acme', key: 'saml2.entityId',
-                           value: 'urn:acme:idp' }],
+              examples: [{ id: 'acme', key: 'saml.organizationName',
+                           value: 'Acme' }],
               additionalProperties: false
             },
             responseDescription:
@@ -9782,7 +9781,7 @@ class AdminApi {
               type: 'object',
               properties: { id: { type: 'string' }, key: { type: 'string' } },
               required: ['id', 'key'],
-              examples: [{ id: 'acme', key: 'saml2.entityId' }],
+              examples: [{ id: 'acme', key: 'saml.organizationName' }],
               additionalProperties: false
             },
             responseDescription:
@@ -9910,7 +9909,7 @@ class AdminApi {
                                       'is accepted where the type takes one.' }
               },
               required: ['key', 'value'],
-              examples: [{ key: 'saml.issuer', value: 'urn:example:idp' }],
+              examples: [{ key: 'saml.organizationName', value: 'Example' }],
               additionalProperties: false
             },
             responseDescription:
@@ -9958,7 +9957,7 @@ class AdminApi {
               type: 'object',
               properties: { key: { type: 'string' } },
               required: ['key'],
-              examples: [{ key: 'saml.issuer' }],
+              examples: [{ key: 'saml.organizationName' }],
               additionalProperties: false
             },
             responseDescription:

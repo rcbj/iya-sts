@@ -31,8 +31,8 @@
 //                                  persistence.realms for a realm's own),
 //                                  gone on restart with persistence.mode=memory
 //   2. the setting's ENV VAR       STS_PORT, KRB5_REALM, ...
-//   3. its LEGACY env var, if any  STS_ISSUER still feeds the three issuers
-//                                  that were carved out of it
+//   3. its LEGACY env var, if any  none since #523, when STS_ISSUER went
+//                                  with the three issuers it fed
 //   4. the APPCONFIG file          the CONFIG_FILE module, e.g. env/local.js
 //   5. env/defaults.js             the DEFAULT appconfig file, which 4 is
 //                                  unioned on top of
@@ -8268,22 +8268,15 @@ const SETTINGS = [
                  'window drops the older one.' },
 
   // --- SAML ----------------------------------------------------------------
-  { key: 'saml.issuer', group: 'SAML', label: 'Assertion issuer',
-    env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: '', runtime: true,
-    description: 'The <saml:Issuer> of every SAML 2.0 assertion and the Issuer ' +
-                 'attribute of every SAML 1.1 one that WS-Trust and ' +
-                 'WS-Federation build (the SAML SSO profile names itself by ' +
-                 'saml2.entityId), and what /wsfed/rp checks a presented ' +
-                 'assertion against. Unset, in either mode (#480, #494), it ' +
-                 'is the realm\'s SAML 2.0 entityID - and for a token to a ' +
-                 'REGISTERED application (a WS-Trust AppliesTo, a ' +
-                 'WS-Federation wtrealm) that application\'s own entityID, ' +
-                 '<entityID>:<application> where ' +
-                 'saml2.perApplicationEntityId is on, the name SAML SSO and ' +
-                 '/saml2/metadata/{sp} give it. An address nobody registered ' +
-                 'gets the shared entityID. Set, it is every assertion\'s ' +
-                 'Issuer.' },
+  // ---------------------------------------------------------------------
+  // `saml.issuer`, `saml2.entityId`, `saml2.perApplicationEntityId`,
+  // `saml11.providerId`, `saml11.perApplicationProviderId`, `wstrust.issuer`
+  // and `wsfed.entityId` WERE HERE until #523 (2026-10-08). Every SAML
+  // Issuer, every identity provider entityID and providerID, and the WS-Trust
+  // STS's name are the realm's OAuth issuer, the `iss` of every JWT —
+  // `common/issuer_names.ts`. There is no override: the name follows
+  // `global.publicBaseUrl`. There is no shim: every install is rebuilt.
+  // ---------------------------------------------------------------------
 
   // The one setting on this page that changes what goes INTO an assertion's
   // validity window rather than how long that window is. It is deliberately
@@ -8430,44 +8423,12 @@ const SETTINGS = [
 
   // --- SAML 2.0 Web Browser SSO --------------------------------------------
   // The profile arrived on 2026-08-24 and brought its own group, which is a
-  // decision rather than a formality: `saml.issuer` above governs what SIGNED
-  // an assertion and is shared by WS-Trust and WS-Federation, and every row
+  // decision rather than a formality: the group SAML above governs the
+  // assertions WS-Trust and WS-Federation share, and every row
   // here governs how this service behaves as an IDENTITY PROVIDER in a browser
   // profile. Folding the two together would have made a change to one of these
   // look like a change to the assertions WS-Trust hands out, which it is not.
-  { key: 'saml2.entityId', group: 'SAML 2.0', label: 'Identity provider ' +
-                                                     'entityID',
-    env: 'STS_SAML2_ENTITY_ID', type: 'string', dflt: 'urn:sts:idp',
-    runtime: true,
-    description: 'The entityID this identity provider publishes in its SAML ' +
-                 '2.0 metadata, and the <saml:Issuer> of every Response and ' +
-                 'Assertion the Web Browser SSO profile issues. It is NOT ' +
-                 'the SAML issuer above, which is a setting of its own; but ' +
-                 'where saml.issuer, wstrust.issuer and wsfed.entityId are ' +
-                 'unset (#494, both modes), they are this entityID - per ' +
-                 'application for a registered one, as here - so WS-Trust ' +
-                 'and WS-Federation sign under the name this metadata ' +
-                 'publishes.' },
 
-  { key: 'saml2.perApplicationEntityId', group: 'SAML 2.0',
-    label: 'An entityID per service provider',
-    env: 'STS_SAML2_PER_APPLICATION_ENTITY_ID', type: 'bool', dflt: true,
-    runtime: true,
-    description: 'ON by default, and it is what makes the metadata at ' +
-                 '/saml2/metadata/{sp} UNIQUE PER APPLICATION: the identity ' +
-                 'provider names itself <entityID>:{sp} in that document and ' +
-                 'in everything it issues to that service provider, the way ' +
-                 'Okta and Ping give each application its own identity ' +
-                 'provider. OFF makes every document carry the entityID ' +
-                 'above and differ only in its endpoint URLs, which is what ' +
-                 'a service provider library that keys its trust store off ' +
-                 'the entityID expects. Both are real deployments, which is ' +
-                 'why it is a setting and not a decision. It governs ' +
-                 'WS-Trust and WS-Federation too (#494): a registered ' +
-                 'application gets the same <entityID>:{sp} as the Issuer of ' +
-                 'a WS-Trust or WS-Federation assertion, and in its own ' +
-                 '/wsfed/metadata/{rp}, unless saml.issuer or wsfed.entityId ' +
-                 'is set.' },
 
   { key: 'saml2.assertionLifetimeMin', group: 'SAML 2.0 assertions',
     label: 'Assertion lifetime (minutes)',
@@ -8858,8 +8819,8 @@ const SETTINGS = [
 
   // --- SAML 1.1 browser profiles -------------------------------------------
   // A group of its own, for the reason the SAML 2.0 rows above have one and for
-  // one more besides. The shared reason: `saml.issuer` (group SAML) governs who
-  // SIGNED an assertion and is read by WS-Trust and WS-Federation, and these
+  // one more besides. The shared reason: the group SAML governs the
+  // assertions WS-Trust and WS-Federation share, and these
   // rows govern how this service behaves as an identity provider in a BROWSER
   // profile. The reason peculiar to this group: SAML 1.1 and SAML 2.0 are
   // different specifications rather than two dialects, their profiles differ in
@@ -8867,37 +8828,7 @@ const SETTINGS = [
   // make `signResponse` mean two things — over there it is an XML signature or
   // a signed query string depending on the binding, and here there is no
   // redirect binding for a response at all.
-  { key: 'saml11.providerId', group: 'SAML 1.1', label: 'Identity provider ' +
-                                                        'providerID',
-    env: 'STS_SAML11_PROVIDER_ID', type: 'string', dflt: 'urn:sts:idp:saml11',
-    runtime: true,
-    description: 'What this identity provider calls itself in the SAML 1.1 ' +
-                 'browser profiles: the `Issuer` ATTRIBUTE of every ' +
-                 'assertion they issue, the `entityID` of the metadata ' +
-                 'document at /saml11/metadata, and the string whose SHA-1 ' +
-                 'becomes the SourceID inside every type 0x0001 artifact. ' +
-                 'SAML 1.1 calls it a providerID and SAML 2.0 metadata calls ' +
-                 'the same thing an entityID; they are one value and this ' +
-                 'row is it. It is deliberately NOT saml2.entityId — a ' +
-                 'relying party that trusts this service for 1.1 and not for ' +
-                 '2.0 is the ordinary case, and one value would make that ' +
-                 'unexpressible.' },
 
-  { key: 'saml11.perApplicationProviderId', group: 'SAML 1.1',
-    label: 'A providerID per relying party',
-    env: 'STS_SAML11_PER_APPLICATION_PROVIDER_ID', type: 'bool', dflt: true,
-    runtime: true,
-    description: 'Give every relying party its own providerID — ' +
-                 '`{providerID}:{slug}` — and its own endpoints under the ' +
-                 'same path segment, which is what /saml11/metadata/{rp} ' +
-                 'publishes. Turn it off for a relying party whose trust ' +
-                 'store is keyed off the providerID and which is surprised ' +
-                 'to meet a new one per application. THE ENDPOINTS STAY ' +
-                 'PER-APPLICATION either way, because that is what makes the ' +
-                 'documents worth having separately. It also changes every ' +
-                 'artifact this service mints: the SourceID is a hash of the ' +
-                 'providerID, so turning this off makes one SourceID where ' +
-                 'there were many.' },
 
   { key: 'saml11.assertionLifetimeMin', group: 'SAML 1.1 assertions',
     label: 'Assertion lifetime (minutes)',
@@ -9047,17 +8978,6 @@ const SETTINGS = [
                  'ASSERTION_CACHE_MAX in saml11_sso.js.' },
 
   // --- WS-Trust ------------------------------------------------------------
-  { key: 'wstrust.issuer', group: 'WS-Trust', label: 'Token issuer',
-    env: 'STS_WSTRUST_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: '', runtime: true,
-    description: 'The name this STS publishes on GET /sts. Unset, in either ' +
-                 'mode (#480, #494), it is the realm\'s SAML 2.0 entityID. A ' +
-                 'SAML assertion this STS issues carries saml.issuer - for a ' +
-                 'registered AppliesTo, that application\'s own entityID - ' +
-                 'and a JWT the realm\'s OAuth 2.0 issuer, the one ' +
-                 '/.well-known/oauth-authorization-server publishes, which GET ' +
-                 '/sts names on a line of its own. When this and saml.issuer ' +
-                 'differ GET /sts says so and the process logs it at startup.' },
 
   { key: 'wstrust.tokenLifetimeMin', group: 'WS-Trust',
     label: 'Token lifetime (minutes)',
@@ -9105,9 +9025,8 @@ const SETTINGS = [
   // --- WS-Federation assertions --------------------------------------------
   // A GROUP OF ONE, and it earns that the way the two SAML assertion groups do:
   // it is a DEFAULT an application may overrule, and the page it is drawn on is
-  // the page that says so. `wsfed.entityId` beside it is this service's own
-  // name and no application can have an opinion about it, which is the line
-  // between the two groups.
+  // the page that says so. `wsfed.entityId` beside it, this service's own
+  // name, was the other group until #523 retired it.
   //
   // IT IS DRAWN ON /admin/saml-assertions rather than on /admin/wsfed, and that
   // is not filing it under the wrong protocol: a WS-Federation sign-in response
@@ -9136,16 +9055,6 @@ const SETTINGS = [
                  'the page it signed them into. An application may overrule ' +
                  'it with wsfedAssertionLifetimeMin on its entry.' },
 
-  { key: 'wsfed.entityId', group: 'WS-Federation', label: 'Entity ID',
-    env: 'STS_WSFED_ENTITY_ID', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: '', runtime: true,
-    description: 'The entityID in the federation metadata at ' +
-                 '/FederationMetadata/2007-06/FederationMetadata.xml. Unset, ' +
-                 'in either mode (#480, #494), it is the realm\'s SAML 2.0 ' +
-                 'entityID, and a registered relying party\'s own document, ' +
-                 '/wsfed/metadata/{rp}, names that application\'s entityID - ' +
-                 'the Issuer of the assertions it is sent - so the metadata ' +
-                 'and the SAML issuer agree unless one of them is set.' },
 
   { key: 'wsfed.mockRpContextTtlMin', group: 'WS-Federation',
     label: 'Mock relying party wctx lifetime (minutes)',
@@ -17022,6 +16931,12 @@ const REALM_LISTENER_REPLACED = ' It was removed on 2026-10-07 (#472): a ' +
   'tls block of the per-listener settings), and the realm is served on it ' +
   'where its listeners.applications maps * (or an application) to it.';
 
+// What every one of #523's rows says when it is still named.
+const ONE_ISSUER = ' It was removed on 2026-10-08 (#523): every SAML Issuer, ' +
+  'identity provider entityID and providerID, and the WS-Trust STS\'s name ' +
+  'are the realm\'s OAuth issuer, the iss of every JWT, which follows ' +
+  'global.publicBaseUrl. There is no per-protocol or per-application name.';
+
 /**
  * The settings that were replaced, and what replaced them; one still named
  * anywhere stops the service starting.
@@ -17113,7 +17028,28 @@ const REPLACED_SETTINGS = [
     now: ['oidfed.authorityHints'],
     why: ' It was removed on 2026-09-23 (#132) and replaced by ' +
          'oidfed.authorityHints: the realm is an OpenID Federation entity in ' +
-         'every role now, not only as a verifier.' }
+         'every role now, not only as a verifier.' },
+  // #523 (2026-10-08): ONE ISSUER PER REALM. Every SAML Issuer, identity
+  // provider entityID and providerID, and the WS-Trust STS's name are the
+  // realm's OAuth issuer (`common/issuer_names.ts`), which follows the public
+  // base URL; the seven names that set them apart are gone, and so is the
+  // one legacy environment variable, `STS_ISSUER`, that fed three of them.
+  { key: 'saml.issuer', env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml2.entityId', env: 'STS_SAML2_ENTITY_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml2.perApplicationEntityId',
+    env: 'STS_SAML2_PER_APPLICATION_ENTITY_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml11.providerId', env: 'STS_SAML11_PROVIDER_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml11.perApplicationProviderId',
+    env: 'STS_SAML11_PER_APPLICATION_PROVIDER_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'wstrust.issuer', env: 'STS_WSTRUST_ISSUER',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'wsfed.entityId', env: 'STS_WSFED_ENTITY_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER }
 ];
 
 // The sentence for a replaced key, or '' for any other.
@@ -18775,12 +18711,16 @@ function refuseReplacedSettings() {
                  'the appconfig file') + ') is now ' + row.now.join(', ') +
                  '.' + replacedBy(row.key));
     }
-    if (process.env[row.env] !== undefined) {
-      named.push('  ' + row.env + ' (in the environment) is now ' +
-                 row.now.map(function (key) {
-                   return byKey[key].env;
-                 }).join(', ') + '.' + replacedBy(row.key));
-    }
+    // `legacyEnv` (#523): the one legacy variable, `STS_ISSUER`, went with
+    // the settings it fed.
+    [row.env, row.legacyEnv].forEach(function (name) {
+      if (name && process.env[name] !== undefined) {
+        named.push('  ' + name + ' (in the environment) is now ' +
+                   row.now.map(function (key) {
+                     return byKey[key].env;
+                   }).join(', ') + '.' + replacedBy(row.key));
+      }
+    });
   });
   if (!named.length) {
     log.debug("Leaving refuseReplacedSettings(). None named.");

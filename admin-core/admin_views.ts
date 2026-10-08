@@ -8071,11 +8071,7 @@ class AdminViews {
             String(fields.samlObservedSigningCertificate || ''),
           signedRequestsRequired: requestSignature.requiresSignedRequests(
             fields),
-          metadata: self.consumedMetadataOf(fields, identifier),
-          // Whether the identity provider names itself per service
-          // provider, which the page's first row explains (#446).
-          perApplicationEntityId:
-            !!config.value('saml2.perApplicationEntityId')
+          metadata: self.consumedMetadataOf(fields, identifier)
       });
       }())
     };
@@ -8231,7 +8227,7 @@ class AdminViews {
     return {
       identifier: identifier,
       slug: saml2.slugOf(identifier),
-      idpEntityId: saml2.idpEntityIdFor(identifier),
+      idpEntityId: saml2.idpEntityId(),
       metadataUrl: where.metadata,
       ssoUrl: where.sso,
       sloUrl: where.slo,
@@ -8370,11 +8366,7 @@ class AdminViews {
           authentications: row ? row.authentications : 0,
           assertionConsumerServices: acs,
           nameIdFormats: self.valuesFor(fields.samlNameIdFormat),
-          profiles: profiles,
-          // Whether the identity provider names itself per relying party,
-          // which the page's first row explains (#446).
-          perApplicationProviderId:
-            !!config.value('saml11.perApplicationProviderId')
+          profiles: profiles
       });
       }())
     };
@@ -8447,7 +8439,7 @@ class AdminViews {
     return {
       identifier: identifier,
       slug: saml11.slugOf(identifier),
-      idpProviderId: saml11.providerIdFor(identifier),
+      idpProviderId: saml11.providerId(),
       metadataUrl: where.metadata,
       ssoUrl: where.sso,
       responderUrl: where.responder

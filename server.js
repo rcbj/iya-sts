@@ -30,13 +30,12 @@
 // it came from, and `GET /admin-api/config` answers the same thing over JSON.
 //
 // An ENVIRONMENT VARIABLE STILL BEATS THE FILE, which is what keeps every
-// container and test that set one working unchanged: STS_PORT, STS_ISSUER,
-// KRB5_REALM and the rest all still do exactly what they did. STS_ISSUER is the
-// one that grew: it was a single value serving as the SAML assertion issuer,
-// the WS-Trust token issuer and the WS-Federation entityID, which are three
-// different things that shared a default. They are now saml.issuer,
-// wstrust.issuer and wsfed.entityId, all three still fed by STS_ISSUER when it
-// is set.
+// container and test that set one working unchanged: STS_PORT,
+// KRB5_REALM and the rest all still do exactly what they did. STS_ISSUER was
+// the one that went: it served as the SAML assertion issuer, the WS-Trust
+// token issuer and the WS-Federation entityID, and since #523 all three are
+// the realm's OAuth issuer, which is not a setting. A start that still names
+// it is refused, saying so.
 //
 // Logging: everything this mock does is written to the log at DEBUG level —
 // every endpoint call (path, request headers and body, response headers and
@@ -299,8 +298,8 @@ function announce() {
            version.buildInfo(APP_VERSION) + ').');
   log.info('WS-Trust STS mock listening on ' + (useHttps ? 'https' : 'http') +
            '://' + HOST + ':' + PORT +
-           ' (WS-Trust issuer ' +
-           require('./common/issuer_names').wstrustIssuer() +
+           ' (issuer ' +
+           require('./common/issuer_names').issuer() +
            '); POST SOAP RST to /sts');
   if (useHttps) {
     log.info('This port is HTTPS (global.https' +

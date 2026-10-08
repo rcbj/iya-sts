@@ -70,7 +70,7 @@ class StsMetadataPage {
       'endpoint list is read from the running Express router on each ' +
       'request, not from a list kept by hand, so it cannot claim an endpoint ' +
       'that is not there or miss one that is. Issuer identifier <code>' +
-      esc(base) + '</code>; WS-Trust issuer <code>' +
+      esc(base) + '</code>; the realm\'s issuer, in every protocol, <code>' +
       esc(json.wsTrustIssuer) + '</code>.' +
       // The build, in the lead paragraph rather than only in the console's
       // footer, because this is the page somebody reads to answer "what does

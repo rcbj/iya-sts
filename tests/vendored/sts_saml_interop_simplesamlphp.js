@@ -80,9 +80,7 @@ async function makeWorld(realmMode) {
   const rb = kit.realmBase(realm);
   const w = { mode: realmMode, realm: realm, rb: rb, sp: {},
               person: names.usernameFor("ssp" + tag) };
-  await kit.ensureRealm(realm, realmMode, {
-    "saml2.entityId": rb + "/saml2/idp"
-  });
+  await kit.ensureRealm(realm, realmMode, {});
   await kit.createPerson(realm, w.person, PASSWORD);
   const idpDocs = [];
   for (const source of SOURCES) {

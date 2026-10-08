@@ -82,10 +82,8 @@
 import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
-// saml.issuer — the same setting the 2.0 assertions carry, because it names
-// the same signer.
 import config = require('../common/config');
-// #480: the names this service signs under, in one place (a library).
+// #523: the one name this service issues under, in one place (a library).
 import IssuerNames = require('../common/issuer_names');
 // The error-code registry, a leaf; the signing failure below is tagged with its
 // code.
@@ -302,13 +300,13 @@ class Saml11Assertions {
   // signature over this document, and a single added attribute changes the
   // digest.
   //
-  //   issuer              the Issuer attribute, when it is not `saml.issuer`.
-  //                       The browser profiles MUST override it: they publish a
-  //                       providerID per relying party, and a relying party
-  //                       checks the assertion's Issuer against the one in the
-  //                       metadata it was configured from. An assertion issued
-  //                       under a name that is not in that document is refused,
-  //                       and the refusal reads as a trust-store problem.
+  //   issuer              the Issuer attribute. It defaults to the realm's one
+  //                       issuer, its OAuth issuer (#523); a caller that read
+  //                       it for its request passes it, so the metadata and
+  //                       the assertion name the same string. A relying party
+  //                       refuses an assertion issued under a name its
+  //                       metadata does not carry, and the refusal reads as a
+  //                       trust-store problem.
   //   nameIdFormat        the NameIdentifier's Format. The two older callers
   //                       want `unspecified` — nothing consumes it — and a
   //                       relying party configured for an email address is
@@ -500,7 +498,7 @@ class Saml11Assertions {
       '<saml:Assertion xmlns:saml="' + SAML11_NS + '"' +
         ' MajorVersion="1" MinorVersion="1"' +
         ' AssertionID="' + id + '"' +
-        ' Issuer="' + xmlEscape(opts.issuer || IssuerNames.samlIssuer()) +
+        ' Issuer="' + xmlEscape(opts.issuer || IssuerNames.issuer()) +
         '" ' +
         'IssueInstant="' + now + '">' +
         '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +

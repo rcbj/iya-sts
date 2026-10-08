@@ -465,10 +465,10 @@ placement made in twenty-one route handlers:
   somebody means by "the Kerberos settings". A page that wanted half a group
   would be asking for the group to be SPLIT in `config.js`, where the reasoning
   for what belongs with what lives.
-* **A row may name two pages, and exactly one does.** `saml.issuer` is the
-  Issuer of every assertion this service builds — SAML 2.0's, SAML 1.1's and
+* **A row may name two pages, and exactly one does.** The `SAML` group governs
+  every assertion this service builds — SAML 2.0's, SAML 1.1's and
   WS-Federation's, out of the same two builders — so there is no one page it
-  belongs to. It is drawn on both SAML pages and `configFormsFor()` says so on
+  belongs to (`saml.issuer`, the row that argued it, was retired by #523). It is drawn on both SAML pages and `configFormsFor()` says so on
   each, because a value that silently appeared somewhere else would be the
   worst version of this. The WS-Federation page LINKS to it instead: three
   forms onto one setting is where "shown where it is relevant" stops being
@@ -3961,8 +3961,8 @@ whole design). Four consequences for this file, and the third is the one that
 would cost an afternoon:
 
 * **THE SIDEBAR'S SECOND LINE NAMES THE REALM, and it used to name the WS-Trust
-  issuer.** `wstrust.issuer` was never the name of this service — it is what ONE
-  of sixteen families puts in an `<Issuer>` element — and in the corner of a
+  issuer.** `wstrust.issuer` (retired by #523) was never the name of this
+  service — it was what ONE of sixteen families put in an `<Issuer>` element — and in the corner of a
   console the other fifteen never mention it read as this service's identity.
   It is `IYA STS · <realm name>` now, which is true of the whole page and is
   the fact a reader most needs before they act, since `/admin/config` writes the

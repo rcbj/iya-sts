@@ -2804,12 +2804,11 @@ existing container and test working: nothing in the parent project sets these
 variables in compose, but
 `tests/krb5_spnego_http.js` sets `KRB5_REALM`, `KRB5_KDC_PORT` and
 `KRB5_SERVICE_PORT` before requiring the KDC in-process, and that still wins. The
-legacy level has exactly one occupant: `STS_ISSUER`, which used to be a single value
-serving as the SAML assertion issuer, the WS-Trust token issuer AND the
-WS-Federation entityID. Those are three different things that shared a default — an
-entityID names the identity provider, an Issuer names whoever signed an assertion —
-so they are now `saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, all three still
-fed by `STS_ISSUER` when it is set.
+legacy level has NO occupant since #523 (2026-10-08): its one, `STS_ISSUER`, fed
+`saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, and all four went when every
+name became the realm's OAuth issuer (`issuer_names.ts`). A start that still names
+one is refused (`REPLACED_SETTINGS`, `STS-CORE-0105`). The level, and `legacyEnv`,
+stay for the next one.
 
 **AND THERE IS NO SIXTH LEVEL — `requireComplete()` REFUSES TO START INSTEAD.**
 A setting with no value in either appconfig file and no environment variable

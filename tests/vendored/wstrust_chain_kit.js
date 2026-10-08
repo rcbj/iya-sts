@@ -1202,10 +1202,10 @@ async function jwks(base) {
   return r.json.keys;
 }
 
-// THE ISSUER OF A WS-TRUST JWT (#480): the realm's OAuth 2.0 issuer, what
-// `/.well-known/oauth-authorization-server` publishes — RFC 9068 section 4's
-// check — and what `GET /sts` names on its `JWT issuer:` line. Both are
-// read, and must agree.
+// THE ISSUER OF A WS-TRUST TOKEN (#480, #523): the realm's OAuth 2.0 issuer,
+// what `/.well-known/oauth-authorization-server` publishes — RFC 9068
+// section 4's check — and what `GET /sts` names on its `Issuer:` line. Both
+// are read, and must agree.
 async function publishedIssuer(base) {
   log.debug("Entering publishedIssuer().");
   const meta = await call("GET", base +
@@ -1214,41 +1214,41 @@ async function publishedIssuer(base) {
             "the authorization server metadata at " + base + ": " +
             meta.status + " " + meta.text.slice(0, 200));
   const r = await call("GET", base + "/sts", undefined, { Accept: "*/*" });
-  const named = (/JWT issuer:\s*(\S+)/.exec(r.text) || [])[1] || "";
+  const named = (/^Issuer:\s*(\S+)/m.exec(r.text) || [])[1] || "";
   assert.strictEqual(named, meta.json.issuer, "GET /sts should name the " +
-    "JWT issuer as the authorization server metadata does (#480): " +
+    "issuer as the authorization server metadata does (#480, #523): " +
     r.text.slice(0, 300));
   log.debug("Leaving publishedIssuer(). " + named);
   return named;
 }
 
-// THE ISSUER A WS-TRUST SAML ASSERTION FOR `tier` CARRIES (#480, #494), in
-// EITHER mode since #494: the entityID this identity provider publishes to
-// that registered application in its own `/saml2/metadata/{sp}` — the
-// per-SP entityID SAML SSO names itself by, where
-// `saml2.perApplicationEntityId` is on. And ONE NAME PER APPLICATION: the
-// application's own WS-Federation metadata, `/wsfed/metadata/{rp}`, must
-// name the same entityID. `product` is kept for the callers and no longer
-// changes the answer.
+// THE ISSUER A WS-TRUST SAML ASSERTION FOR `tier` CARRIES (#523): the
+// realm's one issuer, its OAuth issuer, in either mode and for every
+// application. Read three ways, which must agree — the authorization server
+// metadata's `issuer` (and `GET /sts`, `publishedIssuer()`), the entityID of
+// the application's own `/saml2/metadata/{sp}`, and of its own
+// `/wsfed/metadata/{rp}` — so a chain job checks every assertion's Issuer
+// against the name a relying party configured from ANY of them would trust.
+// `product` is kept for the callers and does not change the answer.
 async function samlIssuerFor(base, tier, product) {
   log.debug("Entering samlIssuerFor(). " + tier.identifier +
             (product ? " (product)" : ""));
+  const issuer = await publishedIssuer(base);
   const r = await call("GET", base + "/saml2/metadata/" +
                        encodeURIComponent(tier.identifier), undefined,
                        { Accept: "application/samlmetadata+xml, */*" });
   const out = (/entityID="([^"]+)"/.exec(r.text) || [])[1] || "";
   assert.ok(r.status === 200 && out, "/saml2/metadata/" + tier.identifier +
             ": " + r.status + " " + r.text.slice(0, 200));
-  assert.notStrictEqual(out, "urn:wstrust:mock:sts", "the service " +
-                        "publishes the development placeholder as its " +
-                        "entityID (#494 retired it)");
+  assert.strictEqual(out, issuer, "/saml2/metadata/" + tier.identifier +
+                     " should name the realm's OAuth issuer as its " +
+                     "entityID (#523)");
   const f = await call("GET", base + "/wsfed/metadata/" +
                        encodeURIComponent(tier.identifier), undefined,
                        { Accept: "application/xml, */*" });
   const wsfed = (/entityID="([^"]+)"/.exec(f.text) || [])[1] || "";
-  assert.strictEqual(wsfed, out, "/wsfed/metadata/" + tier.identifier +
-                     " should name the application's one entityID, as " +
-                     "/saml2/metadata/" + tier.identifier + " does (#494): " +
+  assert.strictEqual(wsfed, issuer, "/wsfed/metadata/" + tier.identifier +
+                     " should name the realm's OAuth issuer too (#523): " +
                      f.status + " " + f.text.slice(0, 200));
   log.debug("Leaving samlIssuerFor(). " + out);
   return out;

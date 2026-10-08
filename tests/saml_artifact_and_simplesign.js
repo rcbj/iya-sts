@@ -21,12 +21,12 @@
 //      unsigned caller by default. On /saml11/responder: the same for a
 //      SAML 1.1 <samlp:Request>, and a responder path naming another
 //      relying party is refused (STS-SAML-0078).
-//   B1b. A RESOLVER ANSWERS ONLY FOR ITS OWN SourceID (#160). An artifact
-//      minted under a per-application entityID, presented at the unscoped
-//      /saml2/ars or at another service provider's resolver, is answered
-//      with Success and no message (STS-SAML-0098) and NOT spent; its own
-//      resolver then resolves it under an envelope naming the same entity.
-//      With saml2.perApplicationEntityId off, the unscoped resolver answers.
+//   B1b. A RESOLVER ANSWERS ONLY FOR ITS OWN SourceID (#160). Since #523
+//      every artifact of the realm is minted under its one issuer, so one
+//      minted under the realm's name resolves at the unscoped /saml2/ars and
+//      at its service provider's, under an envelope naming that issuer; one
+//      whose SourceID names ANOTHER entity is answered with Success and no
+//      message (STS-SAML-0098) at both, and NOT spent.
 //      Every refusal above and below is that same EMPTY response (section
 //      3.5.3; saml-bindings-1.1 4.1.1.6 for the responder) — never Requester —
 //      and SAML 1.1's responder holds the same SourceID rule.
@@ -343,50 +343,43 @@ async function run(t) {
       log.debug("Leaving resolveScoped().");
       return res;
     };
-    const ownIdp = direct.idpEntityIdFor(sp);
-    t.check(ownIdp !== direct.idpEntityIdFor(''),
-            'with saml2.perApplicationEntityId on (the default) the service ' +
-            'provider has an entityID of its own', ownIdp);
-    const perApp = direct['mintArtifact'](ownIdp, 0);
-    artifacts2.restore(realms.DEFAULT_ID, perApp,
+    const ownIdp = direct.idpEntityId();
+    const foreign = direct['mintArtifact']('urn:another:entity:idp', 0);
+    artifacts2.restore(realms.DEFAULT_ID, foreign,
                        Object.assign(held2(sp, '_m7'), { issuer: ownIdp }));
-    const atUnscoped = await resolve2(soap(artifactResolve(sp, perApp,
+    const atUnscoped = await resolve2(soap(artifactResolve(sp, foreign,
                                                            '_f1')));
     t.check(atUnscoped.empty && !/_m7/.test(atUnscoped.body) &&
             codeOf(atUnscoped) === 'STS-SAML-0098',
-            'an artifact whose SourceID is a per-application entity, ' +
-            'presented at the UNSCOPED /saml2/ars, is answered with Success ' +
-            'and no message, STS-SAML-0098',
+            'an artifact whose SourceID names ANOTHER entity, presented at ' +
+            'the unscoped /saml2/ars, is answered with Success and no ' +
+            'message, STS-SAML-0098',
             codeOf(atUnscoped) + ' ' + atUnscoped.body.slice(0, 300));
-    const otherSlug = direct.slugOf(stranger);
-    const atStranger = await resolveScoped(otherSlug,
-      soap(artifactResolve(sp, perApp, '_f2')));
-    t.check(atStranger.empty && !/_m7/.test(atStranger.body) &&
-            codeOf(atStranger) === 'STS-SAML-0098',
-            'and so is one presented at ANOTHER service provider\'s resolver',
-            codeOf(atStranger));
+    const atScoped = await resolveScoped(direct.slugOf(sp),
+      soap(artifactResolve(sp, foreign, '_f2')));
+    t.check(atScoped.empty && !/_m7/.test(atScoped.body) &&
+            codeOf(atScoped) === 'STS-SAML-0098' &&
+            artifacts2.read(realms.DEFAULT_ID, foreign).present,
+            'and so it is at the service provider\'s own resolver, and NEITHER ' +
+            'SPENT IT', codeOf(atScoped));
+    const mine = direct['mintArtifact'](ownIdp, 0);
+    artifacts2.restore(realms.DEFAULT_ID, mine,
+                       Object.assign(held2(sp, '_m8'), { issuer: ownIdp }));
     const atOwn = await resolveScoped(direct.slugOf(sp),
-      soap(artifactResolve(sp, perApp, '_f3')));
-    t.check(atOwn.success && /_m7/.test(atOwn.body) &&
+      soap(artifactResolve(sp, mine, '_f3')));
+    t.check(atOwn.success && /_m8/.test(atOwn.body) &&
             atOwn.body.indexOf('<saml:Issuer>' + ownIdp + '</saml:Issuer>') >=
               0,
-            'NEITHER SPENT IT: its own resolver then resolves it, under an ' +
-            'ArtifactResponse naming the same entity',
-            codeOf(atOwn) + ' ' + atOwn.body.slice(0, 300));
-    await kit.withSettings(config,
-      { 'saml2.perApplicationEntityId': false },
-      async function () {
-        log.debug("Entering the shared-entityID control.");
-        const shared = direct['mintArtifact'](direct.idpEntityIdFor(sp), 0);
-        artifacts2.restore(realms.DEFAULT_ID, shared, held2(sp, '_m8'));
-        const atShared = await resolve2(soap(artifactResolve(sp, shared,
-                                                             '_f4')));
-        t.check(atShared.success && /_m8/.test(atShared.body),
-                'with it off, every service provider shares the one ' +
-                'entityID and the unscoped resolver answers (the control)',
-                codeOf(atShared));
-        log.debug("Leaving the shared-entityID control.");
-      });
+            'an artifact under the realm\'s one issuer resolves at the ' +
+            'service provider\'s resolver, under an ArtifactResponse naming ' +
+            'that issuer (#523)', codeOf(atOwn) + ' ' + atOwn.body.slice(0, 300));
+    const mineToo = direct['mintArtifact'](ownIdp, 0);
+    artifacts2.restore(realms.DEFAULT_ID, mineToo, held2(sp, '_m9'));
+    const atShared = await resolve2(soap(artifactResolve(sp, mineToo,
+                                                         '_f4')));
+    t.check(atShared.success && /_m9/.test(atShared.body),
+            'and at the unscoped resolver: one entity, one SourceID',
+            codeOf(atShared));
 
     // -----------------------------------------------------------------------
     t.log.info('B2. the SAML 1.1 responder');
@@ -466,22 +459,25 @@ async function run(t) {
     // A RESPONDER ANSWERS ONLY FOR ITS OWN SourceID (#160), SAML 1.1.
     const direct11 = new saml11sso.Saml11Sso(
       saml11sso.Saml11Sso.defaultDeps());
-    const own11 = direct11.providerIdFor(rp);
-    t.check(own11 !== direct11.providerIdFor(''),
-            'SAML 1.1: with saml11.perApplicationProviderId on (the default) ' +
-            'the relying party has a providerID of its own', own11);
-    const perApp11 = direct11['mintArtifact'](own11);
-    artifacts11.restore(realms.DEFAULT_ID, perApp11, held11('_s6'));
-    const unscoped11 = await resolve11(soap(request11(perApp11, '_q6c')));
-    t.check(unscoped11.empty && codeOf(unscoped11) === 'STS-SAML-0098',
-            'SAML 1.1: an artifact under a per-relying-party providerID at ' +
-            'the UNSCOPED responder is answered with no assertion, ' +
-            'STS-SAML-0098', codeOf(unscoped11));
-    const own11Res = await resolve11(soap(request11(perApp11, '_q6d')),
+    const foreign11 = direct11['mintArtifact']('urn:another:entity:idp');
+    artifacts11.restore(realms.DEFAULT_ID, foreign11, held11('_s6'));
+    const unscoped11 = await resolve11(soap(request11(foreign11, '_q6c')));
+    const scoped11 = await resolve11(soap(request11(foreign11, '_q6d')),
                                      saml2sso.slugOf(rp));
-    t.check(own11Res.success && /_s6/.test(own11Res.body),
-            'SAML 1.1: NOT SPENT — its own responder then resolves it',
-            codeOf(own11Res) + ' ' + own11Res.body.slice(0, 200));
+    t.check(unscoped11.empty && codeOf(unscoped11) === 'STS-SAML-0098' &&
+            scoped11.empty && codeOf(scoped11) === 'STS-SAML-0098' &&
+            artifacts11.read(realms.DEFAULT_ID, foreign11).present,
+            'SAML 1.1: an artifact whose SourceID names ANOTHER entity is ' +
+            'answered with no assertion at the unscoped and the scoped ' +
+            'responder, STS-SAML-0098, and NOT SPENT',
+            codeOf(unscoped11) + ' ' + codeOf(scoped11));
+    const mine11 = direct11['mintArtifact'](direct11.providerId());
+    artifacts11.restore(realms.DEFAULT_ID, mine11, held11('_s7'));
+    const own11Res = await resolve11(soap(request11(mine11, '_q6e')),
+                                     saml2sso.slugOf(rp));
+    t.check(own11Res.success && /_s7/.test(own11Res.body),
+            'SAML 1.1: an artifact under the realm\'s one issuer resolves ' +
+            '(#523)', codeOf(own11Res) + ' ' + own11Res.body.slice(0, 200));
 
     // -----------------------------------------------------------------------
     // A RELYING PARTY WITH TWO NAMES, which is the ordinary case for anything

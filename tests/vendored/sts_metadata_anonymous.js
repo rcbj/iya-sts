@@ -613,7 +613,9 @@ const DOCUMENTS = [
         bad.push("no IDPSSODescriptor — which is the element CLAUDE.md says " +
                  "lives here and not in the WS-Federation document");
       }
-      if (!/protocolSupportEnumeration="urn:oasis:names:tc:SAML:2\.0:protocol"/
+      // #523: one document for both SAML versions, so the enumeration is a
+      // list that names 2.0 among others.
+      if (!/protocolSupportEnumeration="[^"]*urn:oasis:names:tc:SAML:2\.0:protocol[\s"]/
           .test(text)) {
         bad.push("the IDPSSODescriptor does not claim SAML 2.0");
       }
@@ -633,10 +635,10 @@ const DOCUMENTS = [
       if (!/<md:EntityDescriptor[\s>]/.test(text)) {
         bad.push("no EntityDescriptor");
       }
-      if (!/protocolSupportEnumeration="urn:oasis:names:tc:SAML:1\.1:protocol"/
+      if (!/protocolSupportEnumeration="[^"]*urn:oasis:names:tc:SAML:1\.1:protocol[\s"]/
           .test(text)) {
-        bad.push("the IDPSSODescriptor does not claim SAML 1.1, which is the " +
-                 "one member that tells this document from /saml2/metadata");
+        bad.push("the IDPSSODescriptor does not claim SAML 1.1 — since #523 " +
+                 "the one document describes both versions");
       }
       if (!/<ds:Signature[\s>]/.test(text)) { bad.push("UNSIGNED"); }
       log.debug("Leaving must().");

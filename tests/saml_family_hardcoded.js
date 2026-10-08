@@ -59,7 +59,7 @@ const log = require('bunyan').createLogger({ name: 'saml_family_hardcoded',
 function idpAudience() {
   log.debug("Entering idpAudience().");
   log.debug("Leaving idpAudience().");
-  return require('../common/issuer_names').wstrustIssuer();
+  return require('../common/issuer_names').issuer();
 }
 
 function fakeReq(method, path, query, body, cookie) {
@@ -734,26 +734,15 @@ function run(t) {
           'PRODUCT: an unregistered wreply is refused, naming wsfedReplyUrl',
           prodWsfed.statusCode + ' ' + prodWsfed.body.slice(0, 200));
 
-  try {
-    config.setOverride('saml2.entityId', '');
-    t.equal(withMode(config, 'development',
-                     function () { return saml2sso.idpEntityIdFor(''); }),
-            'urn:sts:idp', 'development: an empty saml2.entityId still falls ' +
-                           'back');
-    const metadata = handlerFor(app, 'get', '/saml2/metadata');
-    const prodMeta = withMode(config, 'product', function () {
-      const res = fakeRes();
-      metadata(fakeReq('GET', '/saml2/metadata', {}), res);
-      return res;
+  // #523: the identity provider's entityID is the realm's OAuth issuer in
+  // both modes, never empty, never invented — there is no setting to empty.
+  t.check(['development', 'product'].every(function (m) {
+    return withMode(config, m, function () {
+      return saml2sso.idpEntityId() ===
+             require('../common/issuer_names').issuer();
     });
-    t.check(prodMeta.statusCode === 503 &&
-            /saml2\.entityId/.test(prodMeta.body),
-            'PRODUCT: an empty saml2.entityId publishes no metadata under an ' +
-            'invented name',
-            prodMeta.statusCode + ' ' + prodMeta.body);
-  } finally {
-    config.clearOverride('saml2.entityId');
-  }
+  }), 'the SAML 2.0 entityID is the realm\'s one issuer in both modes ' +
+      '(#523)', saml2sso.idpEntityId());
 
   // -------------------------------------------------------------------------
   t.log.info('I. outbound switch and metadata honesty');

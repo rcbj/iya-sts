@@ -6,40 +6,31 @@
 // File: issuer_names.js
 //
 // ===========================================================================
-// THE NAMES THIS SERVICE SIGNS UNDER (#480, #494): `saml.issuer`,
-// `wstrust.issuer` and `wsfed.entityId`, through `common/issuer_names.ts`,
-// in BOTH modes since #494 — and one name per application across SAML 2.0,
-// WS-Trust and WS-Federation.
+// ONE ISSUER PER REALM, IN EVERY PROTOCOL (#523): the realm's OAuth issuer,
+// through `common/issuer_names.ts`, is every name this service issues under.
 //
-//   I1. nothing set, either mode: all three are saml2.entityId;
-//   I2. a REGISTERED application, either mode: its per-application
-//       entityID, `saml2_sso.idpEntityIdFor()`'s; an application nobody
-//       registered (absent, or an entry that merely turned up) gets the
-//       shared one; `saml2.perApplicationEntityId` off gives the shared one;
-//   I3. a value somebody set wins, in either mode;
-//   I4. in a realm, the SEEDED `urn:<domain>:sts` is read as a default in
-//       both modes; a realm value that is not the seed wins;
-//   I5. the mode predicate and its requirement row are gone (no shim);
-//   I6. WS-Trust, both modes: a SAML 2.0 and a SAML 1.1 assertion for a
-//       registered AppliesTo carry the application's own entityID; a JWT's
-//       `iss` is still the realm's OAuth issuer; in development an
-//       AppliesTo nobody registered gets the shared name, on the first
-//       request and on the second, after `seen()` has filed an entry for
-//       it, and in product it is refused (#496, STS-WSTRUST-0030);
-//   I7. WS-Federation, both modes: the assertion for a registered wtrealm
-//       carries the application's own entityID, and the mock relying
-//       party's issuer check holds it to that name; an unregistered wtrealm
-//       gets the shared name;
-//   I8. WS-Federation metadata: /wsfed/metadata/{rp} — by identifier and by
-//       slug — names the registered application's entityID; the shared
-//       document names the shared one; an unregistered segment is a 404
-//       (STS-WSFED-0019) in both modes;
-//   I9. one name per application: the SAML 2.0 SSO name, the WS-Trust SAML
-//       2.0 and 1.1 Issuers, the WS-Federation Issuer and its metadata
-//       entityID are the same string;
-//   I10. product with saml2.entityId emptied and nothing set: no name, and
-//       WS-Trust (STS-WSTRUST-0029) and the WS-Federation metadata
-//       (STS-WSFED-0020) refuse rather than sign under an empty one.
+//   U1. `issuer(base)` is `oauth2.issuerOf(base)`, in both modes; with no
+//       base and no request it is the configured base's, the realm's
+//       prefix included;
+//   U2. the seven settings are gone from the table and refused if named
+//       (REPLACED_SETTINGS, naming global.publicBaseUrl), and the four
+//       "no name" error codes are retired;
+//   U3. WS-Trust, both modes: a SAML 2.0 Issuer, a SAML 1.1 Issuer and a
+//       JWT's `iss` for a registered AppliesTo are the same string, the
+//       OAuth issuer at the request's base; in development an AppliesTo
+//       nobody registered gets the same name, and in product it is refused
+//       (#496, STS-WSTRUST-0030);
+//   U4. WS-Federation, both modes: the assertion (SAML 2.0 and 1.1) carries
+//       the issuer, and the mock relying party's issuer check holds it to
+//       that name, for a registered wtrealm and for one nobody registered;
+//   U5. WS-Federation metadata, both modes: the shared document and
+//       /wsfed/metadata/{rp} (by identifier and by slug) name the issuer
+//       at the request's base; an unregistered segment is a 404
+//       (STS-WSFED-0019);
+//   U6. SAML 2.0 SSO's entityID and SAML 1.1's providerID are the issuer,
+//       and the same string for every service provider;
+//   U7. in a realm, the issuer carries the realm's prefix and is not the
+//       default realm's.
 //
 // IN PROCESS: the modes and the layers are set here, which a job over HTTP
 // cannot do.
@@ -52,7 +43,6 @@ const realms = require('../common/realms');
 require('../common/app');
 const applications = require('../common/applications');
 const dir = require('../ldap/ldap_server');
-const mode = require('../common/mode');
 const IssuerNames = require('../common/issuer_names');
 // Arms the issuance gate, which a WS-Trust Issue asks.
 require('../xacml/xacml_role_pep');
@@ -86,13 +76,6 @@ function bothModes(fn) {
   return ['development', 'product'].map(function (m) {
     return inMode(m, fn);
   });
-}
-
-function three() {
-  log.debug("Entering three().");
-  log.debug("Leaving three().");
-  return [IssuerNames.samlIssuer(), IssuerNames.wstrustIssuer(),
-          IssuerNames.wsfedEntityId()];
 }
 
 function unescapeXml(text) {
@@ -226,79 +209,53 @@ function metadataRoutes() {
 
 function defaultRealm(t) {
   log.debug("Entering defaultRealm().");
-  const entityId = String(config.value('saml2.entityId'));
-  const got = bothModes(three);
-  t.check(entityId && got.every(function (names) {
-    return names.every(function (one) { return one === entityId; });
-  }), 'I1. nothing set, in development AND product: all three are ' +
-      'saml2.entityId (' + entityId + ')', JSON.stringify(got));
-  config.setOverride('saml.issuer', 'urn:example:chosen');
-  try {
-    const set = bothModes(function () {
-      return IssuerNames.samlIssuer('anything');
-    });
-    t.check(set.every(function (one) { return one === 'urn:example:chosen'; }),
-            'I3. a value somebody set wins, in either mode',
-            JSON.stringify(set));
-  } finally {
-    config.clearOverride('saml.issuer');
-  }
-  t.check(typeof mode.namesIssuersByEntityId === 'undefined' &&
-          !mode.report().requirements.some(function (r) {
-            return r.id === 'issuer-names';
-          }),
-          'I5. mode.namesIssuersByEntityId() and the issuer-names ' +
-          'requirement are retired, with no shim', '');
+  const oauth2 = require('../oauth-oidc/oauth2');
+  const got = bothModes(function () {
+    return [IssuerNames.issuer(BASE), oauth2.issuerOf(BASE)];
+  });
+  t.check(got.every(function (pair) {
+    return pair[0] && pair[0] === pair[1];
+  }), 'U1. issuer(base) is the realm\'s OAuth issuer at that base, in ' +
+      'development AND product', JSON.stringify(got));
+  const configured = String(config.managementApiBaseUrl() || '')
+    .replace(/\/admin-api$/, '');
+  const bare = IssuerNames.issuer();
+  t.check(bare && bare === IssuerNames.issuer(configured),
+          'U1b. with no base and no request: the configured base\'s (' +
+          bare + ')', configured);
+  const retired = ['saml.issuer', 'saml2.entityId',
+                   'saml2.perApplicationEntityId', 'saml11.providerId',
+                   'saml11.perApplicationProviderId', 'wstrust.issuer',
+                   'wsfed.entityId'];
+  const inTable = config.SETTINGS.filter(function (row) {
+    return retired.indexOf(row.key) >= 0;
+  }).map(function (row) { return row.key; });
+  const replaced = config.REPLACED_SETTINGS.filter(function (row) {
+    return retired.indexOf(row.key) >= 0 &&
+           row.now.indexOf('global.publicBaseUrl') >= 0;
+  }).map(function (row) { return row.key; });
+  const legacy = config.REPLACED_SETTINGS.some(function (row) {
+    return row.legacyEnv === 'STS_ISSUER';
+  });
+  t.check(!inTable.length && replaced.length === retired.length && legacy,
+          'U2. the seven issuer settings are gone and refused if named, ' +
+          'naming global.publicBaseUrl; STS_ISSUER with them',
+          JSON.stringify({ inTable: inTable, replaced: replaced }));
+  const codes = require('../common/error_codes');
+  const stillLive = ['STS-SAML-0004', 'STS-SAML-0027', 'STS-WSTRUST-0029',
+                     'STS-WSFED-0020'].filter(function (code) {
+    const row = codes.CODES.filter(function (one) {
+      return one.code === code;
+    })[0];
+    return !(row && row.retired);
+  });
+  t.check(!stillLive.length, 'U2b. the four "no name to issue under" ' +
+          'codes are retired', JSON.stringify(stillLive));
   log.debug("Leaving defaultRealm().");
 }
 
-function names(t, seed) {
-  log.debug("Entering names().");
-  const sso = require('../saml/saml2_sso');
-  const shared = String(config.value('saml2.entityId'));
-  const own = sso.idpEntityIdFor('in-app');
-  const got = bothModes(three);
-  t.check(seed && got.every(function (names) {
-    return names.every(function (one) { return one === shared; });
-  }) && shared !== seed,
-          'I4. in a realm, the seeded ' + seed + ' is a default in both ' +
-          'modes: all three are the realm\'s entityID (' + shared + ')',
-          JSON.stringify(got));
-  const reg = bothModes(function () {
-    return [IssuerNames.samlIssuer('in-app'),
-            IssuerNames.wsfedEntityId('in-app')];
-  });
-  t.check(own === shared + ':in-app' && reg.every(function (pair) {
-    return pair[0] === own && pair[1] === own;
-  }), 'I2. a registered application, both modes: its own entityID (' +
-      own + ')', JSON.stringify(reg));
-  const unreg = bothModes(function () {
-    return [IssuerNames.samlIssuer('in-nobody'),
-            IssuerNames.samlIssuer(UNREG_REALM)];
-  });
-  t.check(unreg.every(function (pair) {
-    return pair[0] === shared && pair[1] === shared;
-  }), 'I2b. an application nobody registered: the shared entityID',
-          JSON.stringify(unreg));
-  config.setOverride('saml2.perApplicationEntityId', false);
-  try {
-    const off = bothModes(function () {
-      return IssuerNames.samlIssuer('in-app');
-    });
-    t.check(off.every(function (one) { return one === shared; }),
-            'I2c. saml2.perApplicationEntityId off: the shared entityID ' +
-            'for a registered application too', JSON.stringify(off));
-  } finally {
-    config.clearOverride('saml2.perApplicationEntityId');
-  }
-  log.debug("Leaving names().");
-  return { shared: shared, own: own };
-}
-
-function wstrustIssuers(t, n) {
+function wstrustIssuers(t, expected) {
   log.debug("Entering wstrustIssuers().");
-  const oauth2 = require('../oauth-oidc/oauth2');
-  const out = {};
   ['development', 'product'].forEach(function (m) {
     inMode(m, function () {
       const s2 = issued(SP_URL);
@@ -306,67 +263,59 @@ function wstrustIssuers(t, n) {
       const jwt = issued(SP_URL, JWT);
       const first = issued(UNREG_URL);
       const second = issued(UNREG_URL);
-      out[m] = { s2: s2.issuer, s11: s11.issuer };
-      t.check(s2.status === 200 && s2.issuer === n.own &&
-              s11.status === 200 && s11.issuer === n.own,
-              'I6. ' + m + ': a WS-Trust SAML 2.0 and SAML 1.1 assertion ' +
-              'for the registered AppliesTo carry the application\'s own ' +
-              'entityID', JSON.stringify([s2, s11]));
-      t.check(jwt.status === 200 && jwt.iss === oauth2.issuerOf(BASE) &&
-              jwt.iss !== n.own,
-              'I6b. ' + m + ': a WS-Trust JWT\'s iss is still the realm\'s ' +
-              'OAuth issuer', JSON.stringify(jwt));
+      t.check(s2.status === 200 && s2.issuer === expected &&
+              s11.status === 200 && s11.issuer === expected &&
+              jwt.status === 200 && jwt.iss === expected,
+              'U3. ' + m + ': WS-Trust\'s SAML 2.0 Issuer, SAML 1.1 Issuer ' +
+              'and JWT iss are one string, the OAuth issuer (' + expected +
+              ')', JSON.stringify([s2, s11, jwt]));
       // #496: only DEVELOPMENT issues for an AppliesTo nobody registered.
       // Product refuses it — and development, which runs first, has filed
       // an entry for it by then, so product's refusal is of a seen-only one.
       t.check(m === 'development'
-        ? first.status === 200 && first.issuer === n.shared &&
-          second.status === 200 && second.issuer === n.shared
+        ? first.status === 200 && first.issuer === expected &&
+          second.status === 200 && second.issuer === expected
         : first.status === 500 && first.errorCode === 'STS-WSTRUST-0030' &&
           second.status === 500 && second.errorCode === 'STS-WSTRUST-0030',
-              'I6c. ' + m + ': an AppliesTo nobody registered gets the ' +
+              'U3b. ' + m + ': an AppliesTo nobody registered gets ' +
               (m === 'development'
-                ? 'shared name, before and after seen() files it'
+                ? 'the same name, before and after seen() files it'
                 : 'refusal STS-WSTRUST-0030 even after a sighting (#496)'),
               JSON.stringify([first, second]));
     });
   });
   log.debug("Leaving wstrustIssuers().");
-  return out;
 }
 
-function wsfedIssuers(t, n) {
+function wsfedIssuers(t) {
   log.debug("Entering wsfedIssuers().");
   const wsfed = require('../ws-federation/wsfed');
-  const out = {};
   ['development', 'product'].forEach(function (m) {
     inMode(m, function () {
+      // No request is ambient here, so the name is the configured base's.
+      const expected = IssuerNames.issuer();
       const s2 = wsfedIssued('in-app', wsfed.SAML2_TOKEN_TYPE);
       const s11 = wsfedIssued('in-app', wsfed.SAML11_TOKEN_TYPE);
       const unreg = wsfedIssued(UNREG_REALM, wsfed.SAML2_TOKEN_TYPE);
-      out[m] = { s2: s2.issuer, s11: s11.issuer };
-      t.check(s2.status === 200 && s2.issuer === n.own &&
-              s11.status === 200 && s11.issuer === n.own &&
-              s2.rpIssuerCheck && s11.rpIssuerCheck,
-              'I7. ' + m + ': a WS-Federation assertion (SAML 2.0 and 1.1) ' +
-              'for the registered wtrealm carries its own entityID, and the ' +
-              'mock relying party\'s issuer check holds it to that name',
-              JSON.stringify([s2, s11]));
-      t.check(unreg.status === 200 && unreg.issuer === n.shared &&
+      t.check(s2.status === 200 && s2.issuer === expected &&
+              s11.status === 200 && s11.issuer === expected &&
+              s2.rpIssuerCheck && s11.rpIssuerCheck &&
+              unreg.status === 200 && unreg.issuer === expected &&
               unreg.rpIssuerCheck,
-              'I7b. ' + m + ': a wtrealm nobody registered gets the shared ' +
-              'name', JSON.stringify(unreg));
+              'U4. ' + m + ': a WS-Federation assertion (SAML 2.0 and 1.1), ' +
+              'registered wtrealm or not, carries the issuer, and the mock ' +
+              'relying party\'s issuer check holds it to that name',
+              JSON.stringify([s2, s11, unreg]));
     });
   });
   log.debug("Leaving wsfedIssuers().");
-  return out;
 }
 
-function wsfedMetadata(t, n) {
+function wsfedMetadata(t, prefix) {
   log.debug("Entering wsfedMetadata().");
   const sso = require('../saml/saml2_sso');
   const routes = metadataRoutes();
-  const out = {};
+  const expected = IssuerNames.issuer(BASE + prefix);
   ['development', 'product'].forEach(function (m) {
     inMode(m, function () {
       const own = routes.of('in-app');
@@ -376,57 +325,38 @@ function wsfedMetadata(t, n) {
       // An entry that merely turned up (the wtrealm the sign-in above
       // filed) is not registered either.
       const seenOnly = routes.of(UNREG_REALM);
-      out[m] = own.entityId;
-      t.check(own.status === 200 && own.entityId === n.own &&
-              /no-store/.test(own.cache) && bySlug.entityId === n.own &&
-              shared.status === 200 && shared.entityId === n.shared,
-              'I8. ' + m + ': /wsfed/metadata/{rp} names the registered ' +
-              'application\'s entityID, by identifier and by slug; the ' +
-              'shared document names the shared one',
-              JSON.stringify([own, bySlug, shared]));
+      t.check(own.status === 200 && own.entityId === expected &&
+              /no-store/.test(own.cache) && bySlug.entityId === expected &&
+              shared.status === 200 && shared.entityId === expected,
+              'U5. ' + m + ': the shared document and /wsfed/metadata/{rp}, ' +
+              'by identifier and by slug, name the issuer at the request\'s ' +
+              'base (' + expected + ')', JSON.stringify([own, bySlug, shared]));
       t.check(unreg.status === 404 && seenOnly.status === 404 &&
               unreg.code === 'STS-WSFED-0019' &&
-              /no-store/.test(unreg.cache) &&
-              /not|no WS-Federation relying party registered/.test(
-                unreg.body),
-              'I8b. ' + m + ': an unregistered segment is a 404 ' +
+              /no-store/.test(unreg.cache),
+              'U5b. ' + m + ': an unregistered segment is a 404 ' +
               '(STS-WSFED-0019)', JSON.stringify([unreg, seenOnly]));
     });
   });
   log.debug("Leaving wsfedMetadata().");
-  return out;
 }
 
-function noName(t) {
-  log.debug("Entering noName().");
-  const routes = metadataRoutes();
-  config.setOverride('saml2.entityId', '');
-  try {
-    const got = inMode('product', function () {
-      return { names: three(), problem: IssuerNames.problem('saml.issuer'),
-               wstrust: issued(SP_URL), jwt: issued(SP_URL, JWT),
-               metadata: routes.shared() };
-    });
-    t.check(got.names.every(function (one) { return one === ''; }) &&
-            /saml2\.entityId is empty/.test(got.problem) &&
-            got.wstrust.status === 500 &&
-            got.wstrust.errorCode === 'STS-WSTRUST-0029' &&
-            got.jwt.status === 200 && got.metadata.status === 503 &&
-            got.metadata.code === 'STS-WSFED-0020',
-            'I10. product, saml2.entityId empty, nothing set: no name, and ' +
-            'WS-Trust SAML and the WS-Federation metadata refuse; a JWT is ' +
-            'unaffected', JSON.stringify(got));
-    const dev = inMode('development', three);
-    t.check(dev.every(function (one) { return one === 'urn:sts:idp'; }),
-            'I10b. development, saml2.entityId empty: the SSO profile\'s ' +
-            'own fallback, for all three', JSON.stringify(dev));
-  } finally {
-    config.clearOverride('saml2.entityId');
-  }
-  log.debug("Leaving noName().");
+function browserProfiles(t) {
+  log.debug("Entering browserProfiles().");
+  const sso = require('../saml/saml2_sso');
+  const sso11 = require('../saml/saml11_sso');
+  const got = bothModes(function () {
+    return [IssuerNames.issuer(), sso.idpEntityId(), sso11.providerId()];
+  });
+  t.check(got.every(function (three) {
+    return three[0] && three[1] === three[0] && three[2] === three[0];
+  }), 'U6. SAML 2.0 SSO\'s entityID and SAML 1.1\'s providerID are the ' +
+      'issuer, one string for every party, in both modes',
+          JSON.stringify(got));
+  log.debug("Leaving browserProfiles().");
 }
 
-function inRealm(t) {
+function inRealm(t, defaultIssuer) {
   log.debug("Entering inRealm().");
   const id = 'in-' + process.pid;
   const made = realms.create({ id: id, name: id, domain: id + '.example.net',
@@ -439,7 +369,11 @@ function inRealm(t) {
   }
   try {
     realms.run(made.realm, function () {
-      const seed = 'urn:' + id + '.example.net:sts';
+      const prefix = String(realms.currentPrefix() || '');
+      const own = IssuerNames.issuer();
+      t.check(prefix && own.indexOf(prefix) >= 0 && own !== defaultIssuer,
+              'U7. in a realm the issuer carries its prefix (' + own +
+              ') and is not the default realm\'s', defaultIssuer);
       dir.createUser('in-alice', { invent: false });
       const app = applications.createApplication({
         identifier: 'in-app', protocols: ['wstrust', 'wsfed', 'saml2'],
@@ -447,32 +381,11 @@ function inRealm(t) {
                   wsfedReplyUrl: [BASE + '/wsfed/rp'] } });
       t.check(app && app.ok, 'precondition: the application was registered',
               JSON.stringify(app));
-      const n = names(t, seed);
-      const ws = wstrustIssuers(t, n);
-      const wf = wsfedIssuers(t, n);
-      const md = wsfedMetadata(t, n);
-      const sso = require('../saml/saml2_sso');
-      const all = [sso.idpEntityIdFor('in-app')];
-      ['development', 'product'].forEach(function (m) {
-        all.push(ws[m].s2, ws[m].s11, wf[m].s2, wf[m].s11, md[m]);
-      });
-      t.check(all.every(function (one) { return one === all[0]; }) &&
-              all[0] === n.own,
-              'I9. one name per application: SAML 2.0 SSO, the WS-Trust ' +
-              'SAML 2.0 and 1.1 Issuers, the WS-Federation Issuers and its ' +
-              'metadata entityID agree, in both modes', JSON.stringify(all));
-      noName(t);
-      const wrote = realms.setOverride(id, 'wsfed.entityId',
-                                       'urn:example:realm-chosen');
-      const chosen = bothModes(function () {
-        return IssuerNames.wsfedEntityId('in-app');
-      });
-      t.check(wrote && wrote.ok !== false &&
-              chosen.every(function (one) {
-                return one === 'urn:example:realm-chosen';
-              }),
-              'I4b. a realm value that is not the seed wins, in both modes ' +
-              'and for every application', JSON.stringify(chosen));
+      // handleRst() is handed BASE itself, as a caller with no request.
+      wstrustIssuers(t, IssuerNames.issuer(BASE));
+      wsfedIssuers(t);
+      wsfedMetadata(t, prefix);
+      browserProfiles(t);
     });
   } finally {
     realms.remove(id);
@@ -483,16 +396,16 @@ function inRealm(t) {
 function run(t) {
   log.debug("Entering run().");
   defaultRealm(t);
-  inRealm(t);
+  browserProfiles(t);
+  inRealm(t, IssuerNames.issuer());
   log.debug("Leaving run().");
   return undefined;
 }
 
 module.exports = {
   name: 'issuer_names',
-  describe: 'the SAML issuer, the WS-Trust STS name and the WS-Federation ' +
-            'entityID: the SAML entityID in both modes, one per registered ' +
-            'application across SAML 2.0, WS-Trust and WS-Federation, a set ' +
-            'value always (#480, #494)',
+  describe: 'one issuer per realm (#523): every SAML Issuer, identity ' +
+            'provider entityID and providerID, the WS-Trust STS name and ' +
+            'every JWT iss are the realm\'s OAuth issuer, in both modes',
   run: run
 };

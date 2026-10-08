@@ -275,8 +275,8 @@ what to present:**
   `/admin/delegation` can now name what a JWT exchange produced.
 * **`?encrypt=1` honours `saml2.encryptionAlgorithm` / `saml2.keyTransportAlgorithm`**,
   answered for the AppliesTo as `/saml2` answers them for a service provider.
-* **`wstrust.issuer` and `saml.issuer` disagreeing is SAID** — on `GET /sts` and
-  in the startup log — rather than reconciled, because the split is deliberate.
+* ~~`wstrust.issuer` and `saml.issuer` disagreeing is SAID~~ — **both retired
+  by #523**: there is one name, so nothing can disagree (below).
 
 `tests/saml_family_hardcoded.js` section E pins all of it in process.
 
@@ -521,50 +521,41 @@ the requester's.
 application, in both modes. The #473 chain jobs assert all of it at every
 hop.
 
-## THE NAMES IT SIGNS UNDER ARE THE SAML ENTITYID (#480, #494, 2026-10-06)
+## ONE ISSUER PER REALM: THE REALM'S OAUTH ISSUER, IN EVERY TOKEN (#523, 2026-10-08)
 
-rcbj: "Align with SAML entityID" (#480, product only), then on #494 "in
-development as well as product", with the placeholder dropped from
-`env/docker-tests.js` and `env/test.js` so the suites run the rule. Three
-settings name this service outside the SAML browser profile: `saml.issuer`
-(a WS-Trust or WS-Federation assertion's Issuer), `wstrust.issuer` (the
-STS's name on GET /sts) and `wsfed.entityId` (the FederationMetadata
-entityID). Each shipped the development placeholder `urn:wstrust:mock:sts`;
-since #494 their shipped default is EMPTY, meaning "the entityID".
+rcbj, on #523: "Shouldn't we have consistency between OAuth2 Token Exchange
+JWT Access Token iss claim and WS-Trust Issue RST OBO/ActAs Issuer
+elements?" — and then, for every protocol, "The OAuth issuer URL", with no
+override. It replaced #480/#494's rule, under which a SAML assertion from
+this STS carried the SAML 2.0 entityID (`urn:sts:idp:<sp>` per registered
+application) while a JWT from the SAME request carried the OAuth issuer: one
+STS, one request, two names.
 
-`common/issuer_names.ts` reads all three, and every reader goes through it.
-The rules, in order, the same in both modes (`mode.namesIssuersByEntityId()`
-and its `issuer-names` requirement were retired by #494, no shim):
+* **A SAML 2.0 Issuer, a SAML 1.1 Issuer and a JWT's `iss` are one string**,
+  `oauthIssuer(base)` — which now asks `common/issuer_names.ts`'s
+  `issuer(base)` — read at the request's base and handed to `buildToken()`
+  as `jwtIssuer` for all three token types, so the three cannot be read at
+  different bases. It is the name SAML SSO and WS-Federation publish as
+  their entityID, and what `GET /sts` reports on its one `Issuer:` line.
+* **Not the AppliesTo's.** The Issuer says who ISSUED; who ASKED is the
+  delegation's own record — the last `del:Delegate` (SAML 2.0), the
+  `delegates` attribute (SAML 1.1, #522), `act` (JWT). An OnBehalfOf token
+  names nobody, as before.
+* **Nothing to refuse for want of a name.** `STS-WSTRUST-0029` (product,
+  no entityID) is retired; the OAuth issuer is never empty.
+* **The IdP audiences of #519** — what a caller's own credential may be
+  addressed to besides its registered audience — are that issuer and
+  `<base>/sts` (`idpAudiences()`).
+* `wstrust.issuer`, `saml.issuer`, `issuerDisagreement()` and the startup
+  `warnAtStartup()` are gone; `wire()` is kept, empty, as the root's hook.
+* **Pin `global.publicBaseUrl`** in a deployment: unpinned, the issuer is
+  the host a request arrived on, and a relying party configured from one
+  host's name refuses a token issued under another.
 
-* **A value somebody set wins.** That means a realm value, a runtime
-  override, the environment or the operator's appconfig. A realm's SEEDED
-  `urn:<domain>:sts` is not somebody's choice, and is read as a default.
-* **Otherwise the realm's `saml2.entityId`**, what `/saml2/metadata`
-  publishes — per application for a REGISTERED one, below.
-* **No name at all** only in product with `saml2.entityId` emptied:
-  a SAML token is then refused (`STS-WSTRUST-0029`) as SAML SSO refuses
-  (`STS-SAML-0004`); a JWT is unaffected.
-
-**Per application, one name across three protocols (#494).** The SAML SSO
-profile names itself to each service provider by `<entityID>:<sp>` where
-`saml2.perApplicationEntityId` is on (`saml2_sso.idpEntityIdFor()`), in the
-assertion's Issuer and in `/saml2/metadata/{sp}`. A WS-Trust assertion,
-SAML 2.0 or SAML 1.1, whose AppliesTo a REGISTERED application answers to
-(`appliesToApplication()`: `forAppliesTo()`, then the entry of that very
-identifier) carries THAT application's entityID, keyed by its registry
-identifier; WS-Federation does the same for a registered `wtrealm`, and
-publishes it at `/wsfed/metadata/{rp}` (`../ws-federation/CLAUDE.md`). SSO's
-function decides all of it, so the three cannot differ.
-
-**"Registered" is `appRegisteredBy`** — an administrator, RFC 7591, an
-OpenID Federation or this service's seeding. `handleRst()`'s own `seen()`
-files every AppliesTo it issues for; counting that entry would give the
-second token for an unregistered AppliesTo a different Issuer from the
-first. An AppliesTo nobody registered carries the shared entityID, on every
-request. Until #494 any entry counted, which is that bug, in product.
-
-`wstrust.issuer` and `wsfed.entityId`'s shared form have no per-application
-reading on GET /sts: the STS has one name.
+`tests/issuer_names.js` holds it in process (U3: SAML 2.0, SAML 1.1 and JWT
+alike, both modes); `kit.samlIssuerFor()` holds every chain job's
+assertions to the authorization server metadata's `issuer`, which the
+application's `/saml2/metadata/{sp}` and `/wsfed/metadata/{rp}` must name too.
 
 ## An application nobody registered gets nothing, in product (#496, 2026-10-06)
 
@@ -574,10 +565,10 @@ but its protocol's own "unknown application" error — and **an RST with no
 behind `mode.issuesToUnregisteredApplications()` (the
 `unregistered-applications` row on `/admin/mode`):
 
-* **"Registered" is the #494 word above**: `appRegisteredBy` on the entry
+* **"Registered" is #494's word**: `appRegisteredBy` on the entry
   `appliesToApplication()` resolves the AppliesTo to, through
   `IssuerNames.registeredApplication()`. So the application refused and the
-  one whose entityID an issued assertion would carry are one; an entry a
+  one the registry files the issuance under are one; an entry a
   development `seen()` filed is a sighting and is refused like no entry, so a
   realm switched from development keeps nothing development learnt.
 * **`wst:InvalidScope`, `STS-WSTRUST-0030`** for an unregistered AppliesTo;
