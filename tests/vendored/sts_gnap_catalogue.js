@@ -342,7 +342,21 @@ async function test() {
     const claims = claimsOf(r.json.access_token.value);
     assert.deepStrictEqual([].concat(claims.aud), [RS2],
                            JSON.stringify(claims));
-    assert.deepStrictEqual(claims.act, { sub: RS });
+    // #526: the act chain follows RFC 8693's rules — the deriving resource
+    // server as a client of the grant endpoint, the original client at the
+    // foot, each entry naming its issuer.
+    assert.ok(claims.act && typeof claims.act === "object",
+              JSON.stringify(claims));
+    assert.strictEqual(claims.act.sub, "urn:sts:client:" + RS,
+                       JSON.stringify(claims.act));
+    assert.ok(/\/gnap$/.test(String(claims.act.iss)),
+              JSON.stringify(claims.act));
+    assert.ok(claims.act.act &&
+              /^urn:sts:client:./.test(String(claims.act.act.sub)) &&
+              claims.act.act.iss === claims.act.iss &&
+              claims.act.act.act === undefined,
+              "the original client at the foot: " +
+              JSON.stringify(claims.act));
     assert.strictEqual(claims.access[0].type, REFUND);
   });
   r = await derive([{ type: OTHER }]);
