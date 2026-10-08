@@ -94,8 +94,11 @@ function fullModel(extra) {
     exp: NOW + 3600,
     label: 'photos token',
     // #432: a token derived twice (RFC 9767 section 4) — the most recent
-    // deriving resource server outermost, RFC 8693 section 4.1's nesting.
-    act: { sub: 'rs-downstream "b"', act: { sub: 'https://rs1.example/api' } },
+    // deriving resource server outermost, RFC 8693 section 4.1's nesting;
+    // since #526 each entry may carry the issuer that wrote it, and one
+    // here does not, so both shapes round-trip through every format.
+    act: { sub: 'rs-downstream "b"', iss: 'https://as.example/gnap',
+           act: { sub: 'https://rs1.example/api' } },
     // #432 phase 5: the grant the limits are counted against.
     grant: 'grant-"9"'
   }, extra || {});
@@ -260,19 +263,26 @@ function accessCases(t) {
 
   t.log.info('=== the actor chain (act, #432) ===');
   t.equal(JSON.stringify(gnapAccess.actorChain(fullModel().act)),
-          JSON.stringify(['rs-downstream "b"', 'https://rs1.example/api']),
-          'actorChain() flattens act, the most recent actor first');
-  t.equal(JSON.stringify(gnapAccess.nestActors(['b', 'a'])),
-          JSON.stringify({ sub: 'b', act: { sub: 'a' } }),
+          JSON.stringify([{ sub: 'rs-downstream "b"',
+                            iss: 'https://as.example/gnap' },
+                          { sub: 'https://rs1.example/api' }]),
+          'actorChain() flattens act into its entries, the most recent ' +
+          'actor first, an iss kept where there is one (#526)');
+  t.equal(JSON.stringify(gnapAccess.nestActors([{ sub: 'b', iss: 'i' },
+                                                { sub: 'a' }])),
+          JSON.stringify({ sub: 'b', iss: 'i', act: { sub: 'a' } }),
           'nestActors() nests them back, RFC 8693 section 4.1\'s way');
   t.equal(gnapAccess.nestActors([]), null, 'no actors is no act');
   refused(t, gnapAccess.validateModel(Object.assign(fullModel(),
                                                     { act: { sub: '' } })),
           'STS-GNAP-0303', 'an act with an empty sub is not a model');
   refused(t, gnapAccess.validateModel(Object.assign(fullModel(),
-    { act: { sub: 'a', iss: 'https://elsewhere' } })), 'STS-GNAP-0303',
-          'an act with a member other than sub and act is not a model — no ' +
-          'format could write it back');
+    { act: { sub: 'a', client_id: 'x' } })), 'STS-GNAP-0303',
+          'an act with a member other than sub, iss and act is not a model ' +
+          '— no format could write it back');
+  refused(t, gnapAccess.validateModel(Object.assign(fullModel(),
+    { act: { sub: 'a', iss: '' } })), 'STS-GNAP-0303',
+          'an act entry with an empty iss is not a model (#526)');
   let deep = null;
   for (let i = 0; i <= gnapAccess.MAX_ACTOR_CHAIN; i++) {
     deep = deep ? { sub: 'rs' + i, act: deep } : { sub: 'rs' + i };

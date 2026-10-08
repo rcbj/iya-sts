@@ -252,6 +252,20 @@ async function test() {
   r = await impersonate(IMP, [right([RS.a, RS.b, RS.c])]);
   const original = r.json && r.json.access_token
     ? r.json.access_token.value : "";
+  // #526: an act chain as the authorization server writes it, the most
+  // recent actor first and IMP — the original client — at its foot, each
+  // entry `urn:sts:client:<id>` with the GNAP issuer (the grant endpoint).
+  const chainOf = function () {
+    let out = null;
+    for (let i = arguments.length - 1; i >= 0; i--) {
+      const one = { sub: "urn:sts:client:" + arguments[i], iss: h.GRANT };
+      if (out) {
+        one.act = out;
+      }
+      out = one;
+    }
+    return out;
+  };
   check("I3. impersonation in the client's semantics and R on its " +
         "appAllowedToDelegateTo: issued in either mode, the token the " +
         "owner's and naming no actor", function () {
@@ -322,13 +336,13 @@ async function test() {
     const claims = claimsOf(derived);
     assert.strictEqual(claims.sub, ownerSubject);
     assert.strictEqual(claims.aud, B);
-    assert.deepStrictEqual(claims.act, { sub: A });
+    assert.deepStrictEqual(claims.act, chainOf(A, IMP));
   });
   r = await keys[B].send("POST", h.realmBase + "/gnap/introspect", { json: {
     access_token: derived, resource_server: { key: keys[B].keyObject() } } });
   check("II4. introspection by B returns the chain", function () {
     assert.strictEqual(r.json.active, true, r.text);
-    assert.deepStrictEqual(r.json.act, { sub: A });
+    assert.deepStrictEqual(r.json.act, chainOf(A, IMP));
   });
   act = await newestAct("gnap-derivation");
   check("II5. …an issued derivation row naming the token it produced",
@@ -356,7 +370,7 @@ async function test() {
         function () {
     assert.strictEqual(r.status, 200, r.text);
     assert.deepStrictEqual(claimsOf(r.json.access_token.value).act,
-                           { sub: B, act: { sub: A } });
+                           chainOf(B, A, IMP));
   });
 
   // =========================================================================

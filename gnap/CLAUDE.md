@@ -244,8 +244,31 @@ right still goes to the issuance policy (approval `derived`) and to the
 delegation question for its resource server.
 
 **THE ACTOR CHAIN** is RFC 8693 section 4.1's `act` on the token MODEL
-(`gnap_access.ts`: `{ sub, act? }`, nothing else, at most 16 deep as input),
-the deriving resource server outermost over the original's chain. Every
+(`gnap_access.ts`: `{ sub, iss?, act? }`, nothing else, at most 16 deep as
+input), the deriving resource server outermost over the original's chain.
+**Since #526 it follows the OAuth2 token exchange's rules** (#443, #471;
+`../oauth-oidc/CLAUDE.md`), rcbj's four decisions on that issue:
+
+* **The chain begins with the original client.** The first derivation of a
+  token with no `act` nests that token's client instance under the deriving
+  resource server, except when they are the same party. That holds after a
+  user-assertion impersonation too, because every derivation is a delegation.
+  `grant_id` still names the original grant as well.
+* **Every entry carries `iss`: THE GNAP AUTHORIZATION SERVER'S issuer**, the
+  grant endpoint, which is the token's own `iss`. It is not the realm's OAuth
+  issuer (#523). GNAP keeps its own issuer, so a GNAP JWT and an OAuth JWT
+  under the realm's one JOSE key differ in `iss` as well as `typ`, and a
+  resource server that checks `iss` and skips `typ` cannot take one for the
+  other.
+* **An actor is `urn:sts:client:<instance identifier>` in every mode**: the
+  token exchange's form, which the delegation register's map already resolves
+  to the application, so a GNAP chain joins an OAuth one on the map. The
+  register's rows still name the application.
+* **`gnap.maxDerivationDepth` counts DERIVATIONS.** The chain's foot is always
+  the original client: its own entry, or the client itself where it derived
+  from its own token first and no entry was added. The foot is never counted.
+
+Every
 derivation adds a link, a self one included — the deriving resource server
 still holds a token about the person that is not the person's client's.
 Each format carries it in its own vocabulary, and always where only the
@@ -256,7 +279,7 @@ whoever it liked:
 |---|---|
 | `jwt-signed`, `jwt-encrypted` | the `act` claim, as it is |
 | `macaroon` | `gnap:act=<b64url JSON>` in the AUTHORITY section, before the `gnap:access=` boundary; appended after it, refused (0316) |
-| `biscuit` | `actor(i, sub)` facts in the authority block, 0 the most recent; a resource server's own attenuation block can test them |
+| `biscuit` | `actor(i, sub)` facts in the authority block, 0 the most recent, and `actor_iss(i, iss)` beside them (#526; a fact of its own, so a check written against `actor(i, sub)` keeps working); a resource server's own attenuation block can test them |
 | `zcap` | a `gnapActor` member (`@json` in the pinned GNAP context) of the capability the authorization server signs — not a second ZCAP delegation, which would need the deriving resource server's key |
 
 Rotation and modification keep the chain (`grant.actorChain`, and the rotated

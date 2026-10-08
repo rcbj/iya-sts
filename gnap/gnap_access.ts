@@ -125,6 +125,13 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 
+// One entry of an actor chain (#526): the actor's subject and, where the
+// writer named one, the issuer that wrote it.
+interface ActorEntry {
+  sub: string;
+  iss?: string;
+}
+
 interface GnapAccessDeps {
   log: { debug(message: string): void };
   nowSec(): number;
@@ -168,14 +175,16 @@ const CONTROL_RE = /[\x00-\x1f\x7f]/;
 // THE ACTOR CHAIN (#432 phase 1). A token DERIVED under RFC 9767 section 4
 // names who acted: the deriving resource server, and under it every resource
 // server that derived the token it was derived from. The model carries it as
-// RFC 8693 section 4.1's `act` — `{ sub, act? }`, the outermost the most
-// recent actor — because that is the one standard spelling of a delegation
-// chain and the two JWT formats write it as it is; the three library formats
-// spell the same chain in their own vocabulary (`token_macaroon.ts`,
-// `token_biscuit.ts`, `token_zcap.ts`). A member other than `sub` and `act`
-// is refused rather than carried: a model is what every format must be able
-// to write back exactly, and an `iss` or a `client_id` in one format's chain
-// would be lost by another's.
+// RFC 8693 section 4.1's `act` — `{ sub, iss?, act? }`, the outermost the
+// most recent actor — because that is the one standard spelling of a
+// delegation chain and the two JWT formats write it as it is; the three
+// library formats spell the same chain in their own vocabulary
+// (`token_macaroon.ts`, `token_biscuit.ts`, `token_zcap.ts`). Since #526
+// every entry this authorization server writes carries `iss`, as the token
+// exchange's do (#471), so every format carries it too (the biscuit as an
+// `actor_iss` fact beside `actor`). Any OTHER member is refused rather than
+// carried: a model is what every format must be able to write back exactly,
+// and a `client_id` in one format's chain would be lost by another's.
 //
 // MAX_ACTOR_CHAIN is what a MODEL may hold, a bound on hostile input (a
 // presented macaroon or biscuit is read back into a model). How deep a chain
@@ -684,54 +693,65 @@ class GnapAccess {
   }
 
   // -------------------------------------------------------------------------
-  // THE ACTOR CHAIN, FLATTENED: the actors' identifiers, the most recent
-  // first, or null when `act` is not a chain this model may carry (a member
-  // other than `sub` and `act`, an empty or control-bearing `sub`, deeper than
-  // MAX_ACTOR_CHAIN). `null` and `undefined` are the empty chain.
+  // THE ACTOR CHAIN, FLATTENED: one `{ sub, iss? }` per actor, the most
+  // recent first, or null when `act` is not a chain this model may carry (a
+  // member other than `sub`, `iss` and `act`, an empty or control-bearing
+  // `sub` or `iss`, deeper than MAX_ACTOR_CHAIN). `null` and `undefined` are
+  // the empty chain.
   // -------------------------------------------------------------------------
   /**
-   * Flattens an RFC 8693 section 4.1 `act` chain into the actors'
-   * identifiers, the most recent first.
+   * Flattens an RFC 8693 section 4.1 `act` chain into its entries, the most
+   * recent first.
    *
-   * @param act - the nested `{ sub, act? }` chain, or null
-   * @returns the identifiers (empty for no chain), or null when it is not a
+   * @param act - the nested `{ sub, iss?, act? }` chain, or null
+   * @returns the entries (empty for no chain), or null when it is not a
    *   chain a token model may carry
    */
-  actorChain(act: unknown): string[] | null {
+  actorChain(act: unknown): ActorEntry[] | null {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.actorChain().");
-    const out: string[] = [];
+    const out: ActorEntry[] = [];
     let level: any = act;
     while (level !== null && level !== undefined) {
       if (!this.isObject(level) || out.length >= MAX_ACTOR_CHAIN ||
           Object.keys(level).some(function (k) {
-            return k !== 'sub' && k !== 'act';
-          }) || !this.plainString(level.sub)) {
+            return k !== 'sub' && k !== 'iss' && k !== 'act';
+          }) || !this.plainString(level.sub) ||
+          (level.iss !== undefined && !this.plainString(level.iss))) {
         log.debug("Leaving GnapAccess.actorChain(). Not a chain.");
         return null;
       }
-      out.push(level.sub);
+      out.push(level.iss === undefined ? { sub: level.sub }
+                                       : { sub: level.sub, iss: level.iss });
       level = level.act;
     }
     log.debug("Leaving GnapAccess.actorChain(). " + out.length + ".");
     return out;
   }
 
-  // The reverse: identifiers, the most recent first, nested as `act`. Null
-  // for none.
+  // The reverse: entries, the most recent first, nested as `act` with the
+  // members in one order (`sub`, `iss`, `act`), so every format writes the
+  // same JSON back. Null for none.
   /**
-   * Nests actors' identifiers, the most recent first, as an RFC 8693
-   * section 4.1 `act` chain.
+   * Nests actor entries, the most recent first, as an RFC 8693 section 4.1
+   * `act` chain.
    *
-   * @param actors - the identifiers, the most recent first
+   * @param actors - the entries, the most recent first
    * @returns the nested chain, or null when there are none
    */
-  nestActors(actors: string[]): any {
+  nestActors(actors: ActorEntry[]): any {
     const { log } = this.deps;
     log.debug("Entering GnapAccess.nestActors().");
     let out: any = null;
     for (let i = (actors || []).length - 1; i >= 0; i--) {
-      out = out ? { sub: actors[i], act: out } : { sub: actors[i] };
+      const one: any = { sub: actors[i].sub };
+      if (actors[i].iss !== undefined) {
+        one.iss = actors[i].iss;
+      }
+      if (out) {
+        one.act = out;
+      }
+      out = one;
     }
     log.debug("Leaving GnapAccess.nestActors().");
     return out;
@@ -875,8 +895,9 @@ class GnapAccess {
     const actors = this.actorChain(model.act);
     if (!actors) {
       log.debug("Leaving GnapAccess.validateModel().");
-      return bad('"act" must be null or a chain of { sub, act? } at most ' +
-                 MAX_ACTOR_CHAIN + ' deep, each sub a non-empty string');
+      return bad('"act" must be null or a chain of { sub, iss?, act? } at ' +
+                 'most ' + MAX_ACTOR_CHAIN + ' deep, each sub (and iss) a ' +
+                 'non-empty string');
     }
     // THE GRANT A RIGHT'S LIMITS ARE COUNTED AGAINST (#432 phase 5): a
     // string the authorization server writes, or null for a model that
