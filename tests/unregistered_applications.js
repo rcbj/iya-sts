@@ -134,7 +134,7 @@ function signed(name, audience) {
   log.debug("Entering signed().");
   const saml2 = require('../saml/saml2');
   log.debug("Leaving signed().");
-  return saml2.buildSamlAssertion(name, audience || 'https://sts.test', 5);
+  return saml2.buildSamlAssertion(name, audience || BASE + '/sts', 5);
 }
 
 function usernameToken(user) {

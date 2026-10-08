@@ -53,6 +53,15 @@ const log = require('bunyan').createLogger({ name: 'saml_family_hardcoded',
 
 // --- plumbing ----------------------------------------------------------------
 
+// THE IdP'S OWN NAME (#519): a token presented as the requester's
+// credential is addressed to its holder or to this IdP, and the realm's
+// WS-Trust issuer name is one of the names it answers to.
+function idpAudience() {
+  log.debug("Entering idpAudience().");
+  log.debug("Leaving idpAudience().");
+  return require('../common/issuer_names').wstrustIssuer();
+}
+
 function fakeReq(method, path, query, body, cookie) {
   log.debug("Entering fakeReq().");
   const headers = { host: 'idp.test' };
@@ -402,7 +411,7 @@ function run(t) {
           'present',
           prodAnon.body.slice(0, 300));
 
-  const issued = saml2.buildSamlAssertion('carol', 'https://rp.test', 5);
+  const issued = saml2.buildSamlAssertion('carol', idpAudience(), 5);
   const prodAssertion = withMode(config, 'product', function () {
     return wstrust.handleRst(rst('', issued), 'application/soap+xml');
   });

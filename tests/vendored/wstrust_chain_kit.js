@@ -123,6 +123,16 @@
 // roles claim, and the values are always the person's: the requesters are
 // in neither the group nor the role.
 //
+// **8. OR EACH REQUESTER IS ITS APPLICATION ALONE** (#519, rcbj: "I don't
+// really want to use a user object service account along side the
+// application object"). `provisionCast(…, { applicationSecrets: true })`
+// makes no service account: each requester's application is given a fresh
+// client secret (`regenerate-secret`, `tier.secret`), a UsernameToken naming
+// the application authenticates with it, and the tier can first ask for a
+// token about ITSELF, for itself (`selfToken()`), and present that token in
+// `wsse:Security` on its OnBehalfOf / ActAs (`exchangeWith()`, `securityOf()`)
+// in place of the UsernameToken.
+//
 // Each job passes a TAG (`wsimp`, `wsdel`, `wjimp`, `wjdel`) and gets
 // entries of its own. The
 // two jobs differ in the semantics their tiers allow, and
@@ -380,8 +390,11 @@ async function provisionGroupAndRole(base, cast) {
   log.debug("Leaving provisionGroupAndRole().");
 }
 
-async function provisionCast(base, cast, semantics) {
+// `opts.applicationSecrets` (#519, decision 8): no service account; each
+// requester's application is given a fresh client secret instead.
+async function provisionCast(base, cast, semantics, opts) {
   log.debug("Entering provisionCast(). " + cast.tag + " " + semantics);
+  const appSecrets = !!(opts && opts.applicationSecrets);
   await provisionGroupAndRole(base, cast);
   log.info("=== Provisioning the four applications and three service " +
            "accounts (" + semantics + ") ===");
@@ -400,7 +413,15 @@ async function provisionCast(base, cast, semantics) {
       fields: fieldsFor(tier, semantics),
       why: "the " + tier.name + " of the WS-Trust " + semantics + " chain"
     });
-    if (tier.next) {
+    if (tier.next && appSecrets) {
+      const minted = await adminOk(base, "/applications/regenerate-secret",
+                                   { application: tier.identifier },
+                                   "minting " + tier.identifier + "'s client " +
+                                   "secret");
+      tier.secret = String(minted.clientSecret || "");
+      assert.ok(tier.secret, "regenerate-secret handed back no secret for " +
+                tier.identifier + ": " + JSON.stringify(minted).slice(0, 200));
+    } else if (tier.next) {
       await ensureServiceAccount(base, tier, owner);
     }
   }
@@ -429,8 +450,9 @@ async function provisionCast(base, cast, semantics) {
     }
     log.info("[registry] " + tier.identifier + ": AppliesTo and entityID " +
              tier.appliesTo + (tier.next ? "; " + semantics + " to " +
-             tier.next + ", authenticating as the service account " +
-             tier.identifier : "; calls nothing"));
+             tier.next + (appSecrets ? ", authenticating as the application, " +
+             "with its own client secret" : ", authenticating as the " +
+             "service account " + tier.identifier) : "; calls nothing"));
   }
   log.debug("Leaving provisionCast().");
 }
@@ -458,6 +480,15 @@ function usernameToken(user, password) {
 // none) — an assertion, or the BinarySecurityToken a JWT came in.
 function rst(user, password, tokenType, appliesTo, element, assertion) {
   log.debug("Entering rst(). " + user + " " + (element || "Issue"));
+  log.debug("Leaving rst().");
+  return rstWith(usernameToken(user, password), tokenType, appliesTo,
+                 element, assertion);
+}
+
+// The same Issue with any credential in `wsse:Security` (#519): a
+// UsernameToken, an assertion, or the BinarySecurityToken a JWT came in.
+function rstWith(security, tokenType, appliesTo, element, assertion) {
+  log.debug("Entering rstWith(). " + (element || "Issue"));
   let inner = "";
   if (element === "ActAs") {
     inner = '<wst14:ActAs xmlns:wst14="' + WST14_NS + '">' + assertion +
@@ -465,10 +496,10 @@ function rst(user, password, tokenType, appliesTo, element, assertion) {
   } else if (element === "OnBehalfOf") {
     inner = "<wst:OnBehalfOf>" + assertion + "</wst:OnBehalfOf>";
   }
-  log.debug("Leaving rst().");
+  log.debug("Leaving rstWith().");
   return '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" ' +
     'xmlns:wsse="' + WSSE_NS + '"><s:Header><wsse:Security>' +
-    usernameToken(user, password) + "</wsse:Security></s:Header><s:Body>" +
+    security + "</wsse:Security></s:Header><s:Body>" +
     '<wst:RequestSecurityToken xmlns:wst="' + WST_NS + '">' +
     "<wst:RequestType>" + WST_NS + "/Issue</wst:RequestType>" +
     "<wst:TokenType>" + tokenType + "</wst:TokenType>" +
@@ -558,6 +589,62 @@ async function exchange(base, cast, tier, element, inner) {
     notes: tier.identifier + " authenticated with its service account's " +
       "UsernameToken; AppliesTo " + next.appliesTo });
   log.debug("Leaving exchange().");
+  return out;
+}
+
+// A TIER'S OWN TOKEN (#519): its application's UsernameToken (identifier
+// and client secret) in an Issue for its OWN registered identifier, of
+// `tokenType` (the cast's by default) — the token it then presents as its
+// credential.
+async function selfToken(base, cast, tier, tokenType) {
+  log.debug("Entering selfToken(). " + tier.identifier);
+  const type = tokenType || cast.tokenType;
+  assert.ok(tier.secret, tier.identifier + " holds no client secret; " +
+            "provisionCast() was not asked for applicationSecrets.");
+  const out = await sts(base, rst(tier.identifier, tier.secret, type,
+                                  tier.appliesTo, "", ""),
+                        tier.identifier + "'s own token, for " +
+                        tier.appliesTo, type);
+  captureToken(cast, out, {
+    hop: capture.hop(chain.stemOf(cast, tier.identifier),
+                     chain.stemOf(cast, tier.identifier)),
+    requester: tier.identifier, target: tier.identifier,
+    mechanism: "WS-Trust Issue (UsernameToken, client secret)",
+    notes: tier.identifier + " authenticated with its application's client " +
+      "secret, for itself; AppliesTo " + tier.appliesTo });
+  log.debug("Leaving selfToken().");
+  return out;
+}
+
+// What an RSTR handed back, as a credential for `wsse:Security`: the
+// assertion as it came, or the BinarySecurityToken a JWT came in.
+function securityOf(answer) {
+  log.debug("Entering securityOf().");
+  log.debug("Leaving securityOf().");
+  return answer.jwt ? answer.inner : answer.assertion;
+}
+
+// ONE HOP WITH A TOKEN AS THE CREDENTIAL (#519): `exchange()`'s hop, with
+// `own` — the tier's own token from selfToken() — in `wsse:Security` where
+// the UsernameToken was, and `tokenType` (the cast's by default) asked for.
+async function exchangeWith(base, cast, tier, element, inner, own,
+                            tokenType) {
+  log.debug("Entering exchangeWith(). " + tier.identifier + " " + element);
+  const next = tierNamed(cast, tier.next);
+  const type = tokenType || cast.tokenType;
+  const out = await sts(base, rstWith(securityOf(own), type,
+                                      next.appliesTo, element, inner),
+                        tier.identifier + "'s <" + element + "> for " +
+                        next.appliesTo + " with its own token",
+                        type);
+  captureToken(cast, out, {
+    hop: capture.hop(chain.stemOf(cast, tier.identifier),
+                     chain.stemOf(cast, next.identifier)),
+    requester: tier.identifier, target: next.identifier,
+    mechanism: "WS-Trust " + element + " (own token as the credential)",
+    notes: tier.identifier + " presented its own " + (own.jwt ? "JWT" :
+      "assertion") + " in wsse:Security; AppliesTo " + next.appliesTo });
+  log.debug("Leaving exchangeWith().");
   return out;
 }
 
@@ -1402,6 +1489,16 @@ function assertAct(cast, act, expect) {
     return one.kind === "WS-Security credential";
   }), "the act does not record the requester's own credential: " +
     JSON.stringify(consumed));
+  // #519: a requester whose credential was its own token, which this STS
+  // issued — the act names that token, so the register can follow it.
+  if (expect.requesterTokenId) {
+    assert.ok(consumed.some(function (one) {
+      return one.kind === "WS-Security credential" &&
+        one.identifier === expect.requesterTokenId;
+    }), "the act should record the requester's own token " +
+      expect.requesterTokenId + " as its credential and records " +
+      JSON.stringify(consumed));
+  }
   const produced = act.produced || [];
   assert.ok(produced.length === 1 &&
             produced[0].kind === (expect.producedKind ||
@@ -1503,6 +1600,13 @@ module.exports = {
   provisionCast: provisionCast,
   signIn: signIn,
   exchange: exchange,
+  rstWith: rstWith,
+  usernameToken: usernameToken,
+  sts: sts,
+  selfToken: selfToken,
+  exchangeWith: exchangeWith,
+  securityOf: securityOf,
+  SAML2_TOKEN_TYPE: SAML2_TOKEN_TYPE,
   read: read,
   assertChainAssertion: assertChainAssertion,
   signingCertificate: signingCertificate,

@@ -55,6 +55,10 @@ const SAML11_ALIAS = 'urn:oasis:names:tc:SAML:1.0:assertion';
 const BACK = 'https://w11-back.example';
 const NS = 'http://example.com/claims';
 
+// A requester's credential is addressed to this IdP (#519): its WS-Trust
+// endpoint at the base the RSTs are handed.
+const IDP = 'https://sts.w11.example/sts';
+
 function inMode(m, fn) {
   log.debug("Entering inMode(). " + m);
   config.setOverride('global.mode', m);
@@ -218,7 +222,7 @@ function cases(t) {
                                                   audience: 'w11-front',
                                                   lifetimeMin: 5 });
     const r = ask(m, saml11.buildSaml11Assertion({ subject: 'w11-front',
-                                                   audience: 'https://x',
+                                                   audience: IDP,
                                                    lifetimeMin: 5 }),
                   wrap('OnBehalfOf', subject), SAML11);
     const got = attributesOf(assertionOf(r));
@@ -238,7 +242,7 @@ function cases(t) {
   });
   // T3. Product refuses an unsigned or expired SAML 1.1 assertion inside.
   const front = saml11.buildSaml11Assertion({ subject: 'w11-front',
-                                              audience: 'https://x',
+                                              audience: IDP,
                                               lifetimeMin: 5 });
   [['T3a', saml11.buildSaml11Assertion({ subject: 'w11-alice',
                                           audience: 'w11-front',
