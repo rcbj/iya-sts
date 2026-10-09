@@ -139,6 +139,8 @@ import xacmlRequest = require('./xacml_request');
 import scopeVerdicts = require('./xacml_scope_verdicts');
 // THE TRANSFER QUESTIONS (#98 D4), asked the one way the gate asks them too.
 import transferVerdicts = require('./xacml_transfer_verdicts');
+// THE PASSKEY QUESTIONS (#536), asked the one way the gate asks them too.
+import passkeyVerdicts = require('./xacml_passkey_verdicts');
 // #186: who may act for whom, asked the same way by the gate.
 import exchangeVerdicts = require('./xacml_exchange_verdicts');
 // #432 phase 3: one question per GNAP access right, asked the same way by
@@ -214,6 +216,11 @@ interface IssuanceQuestion {
   // `common/cell_transfer.ts` through `issuance_gate.checkTransfer()`, and
   // answered with a verdict (`decideTransfer()`).
   transferQuestion?: Record<string, any> | null;
+  // THE PASSKEY QUESTION (#536): present, this is `register-passkey` or
+  // `use-passkey`, asked by `common/passkey_policy.ts` through
+  // `issuance_gate.checkPasskey()`, and answered with a verdict
+  // (`decidePasskey()`).
+  passkeyQuestion?: Record<string, any> | null;
   // THE PER-RIGHT GNAP QUESTION (#432 phase 3): present, one question per
   // GNAP access right, answered with a verdict each
   // (`decideGnapRights()`).
@@ -296,6 +303,8 @@ interface IssuanceAnswer {
   // The verdict on a transfer question (#98): `hold` / `relay`, `serve` /
   // `refuse` or `release` / `withhold`, and which document decided.
   transfer?: { verdict: string; decidedBy: string } | null;
+  passkey?: { verdict: string; code: string; reason: string;
+              decidedBy: string } | null;
   // The exchange verdict (#186), `xacml_exchange_verdicts.js`'s shape.
   exchange?: Record<string, any> | null;
   // The per-right verdicts, for a GNAP right question (#432).
@@ -957,6 +966,11 @@ class XacmlRolePep {
       return this.decideTransfer(asked);
     }
 
+    if (asked.passkeyQuestion) {
+      log.debug('Leaving XacmlRolePep.decideNow(). A passkey question.');
+      return this.decidePasskey(asked);
+    }
+
     if (asked.gnapRightQuestion) {
       log.debug('Leaving XacmlRolePep.decideNow(). A GNAP right question.');
       return this.decideGnapRights(asked);
@@ -1492,6 +1506,44 @@ class XacmlRolePep {
                       : 'the built-in issuance policy') + '.',
              roles: [], required: [],
              policy: (loaded && loaded.name) || '', transfer: found };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE PASSKEY QUESTION (#536): `register-passkey` or `use-passkey`, the
+  // facts `passkey_policy.ts` gathered, and one verdict out of the policy's
+  // passkey obligation. The transfer question's arrangement exactly: the
+  // realm's issuance policy first, with the repository and the PIP, and the
+  // BUILT-IN policy where that gives no verdict — so a realm's override
+  // built before these rules never silently stops refusing. Nothing is
+  // audited or counted here: the door records the refusal.
+  // -------------------------------------------------------------------------
+  private decidePasskey(asked: IssuanceQuestion): IssuanceAnswer {
+    const { log, config, store, pip } = this.deps;
+    log.debug('Entering XacmlRolePep.decidePasskey().');
+    const question = asked.passkeyQuestion as Record<string, any>;
+    const loaded = config.value('xacml.enabled') === false
+      ? null : this.issuancePolicy();
+    const found = passkeyVerdicts.decide(Object.assign({}, question, {
+      policyName: this.issuancePolicyName()
+    }), loaded && loaded.policy ? loaded : null, function (request: any): any {
+      return { repository: store.repository(),
+               resolver: pip.resolverFor(request) };
+    });
+    log.debug('Leaving XacmlRolePep.decidePasskey(). ' + found.verdict);
+    return { allowed: found.verdict === 'allow',
+             decision: 'Permit',
+             why: 'The passkey verdict is ' + found.verdict +
+                  (found.reason ? ' (' + found.reason + ')' : '') +
+                  ', decided by ' +
+                  (found.decidedBy === 'policy'
+                    ? 'the issuance policy "' +
+                      ((loaded && loaded.name) || '') + '"'
+                    : found.decidedBy === 'none'
+                      ? 'the passkey rules read from the facts, because no ' +
+                        'policy answered'
+                      : 'the built-in issuance policy') + '.',
+             roles: [], required: [],
+             policy: (loaded && loaded.name) || '', passkey: found };
   }
 
   private reasonFor(answer: any, held: string[], required: string[],

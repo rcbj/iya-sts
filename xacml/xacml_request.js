@@ -259,7 +259,50 @@ const VOCABULARY = Object.freeze({
   GNAP_DEVICE_STATUS: 'urn:sts:xacml:gnap:device-status',
   GNAP_DEVICE_COMPLIANCE: 'urn:sts:xacml:gnap:device-compliance',
   GNAP_DEVICE_ATTESTATION: 'urn:sts:xacml:gnap:device-attestation',
-  GNAP_DEVICE_OWNER_MATCHES: 'urn:sts:xacml:gnap:device-owner-matches'
+  GNAP_DEVICE_OWNER_MATCHES: 'urn:sts:xacml:gnap:device-owner-matches',
+  // THE FACTS OF A PASSKEY QUESTION (#536): a passkey being registered
+  // (`register-passkey`) or signing somebody in (`use-passkey`), gathered by
+  // `common/passkey_policy.ts`. Nothing here decides; the built-in issuance
+  // policy's passkey rules read these.
+  //
+  // environment: which groups of facts this question carries —
+  // `backup-eligible`, `pin-length`, `serial`, `attestation`. Each built-in
+  // rule fires only on a question that carries its group, so a question
+  // asked at one door never trips a rule another door asks.
+  PASSKEY_FACTS: 'urn:sts:xacml:passkey:facts',
+  // resource, a boolean: the authenticator data's BE flag (#528).
+  PASSKEY_BACKUP_ELIGIBLE: 'urn:sts:xacml:passkey:backup-eligible',
+  // resource, an integer: the minimum PIN length the key reported (CTAP
+  // 2.1's minPinLength extension, #529); absent when it reported none.
+  PASSKEY_MIN_PIN_LENGTH: 'urn:sts:xacml:passkey:min-pin-length',
+  // resource: the device serial a trusted attestation certificate named
+  // (#532), and a boolean saying whether it is one of the person's (their
+  // entry holds it in the attribute the passkey policy names).
+  PASSKEY_SERIAL: 'urn:sts:xacml:passkey:serial',
+  PASSKEY_SERIAL_HELD: 'urn:sts:xacml:passkey:serial-held',
+  // resource: what the key's RECORDED attestation says (#530) — whether it
+  // was verified and trusted, and its AAGUID (lower case, no hyphens).
+  PASSKEY_ATTESTATION_VERIFIED: 'urn:sts:xacml:passkey:attestation-verified',
+  PASSKEY_ATTESTATION_TRUSTED: 'urn:sts:xacml:passkey:attestation-trusted',
+  PASSKEY_AAGUID: 'urn:sts:xacml:passkey:aaguid',
+  // resource: what the FIDO Metadata Service says of the model NOW —
+  // whether it lists it, whether it is compromised, its certification level
+  // as a RANK (0 none, 1 L1, 2 L1plus, 3 L2, 4 L2plus, 5 L3, 6 L3plus) so a
+  // rule can compare it, and whether it holds a FIPS 140 certification.
+  // Absent unless the metadata was asked; `metadata-unchecked` true when it
+  // was asked and could not be read.
+  PASSKEY_MODEL_LISTED: 'urn:sts:xacml:passkey:model-listed',
+  PASSKEY_MODEL_COMPROMISED: 'urn:sts:xacml:passkey:model-compromised',
+  PASSKEY_CERTIFICATION_RANK: 'urn:sts:xacml:passkey:certification-rank',
+  PASSKEY_FIPS: 'urn:sts:xacml:passkey:fips',
+  PASSKEY_METADATA_UNCHECKED: 'urn:sts:xacml:passkey:metadata-unchecked',
+  // environment: the SELECTED passkey policy profile's rows (#527, #535),
+  // each after this prefix under its own name
+  // (`urn:sts:xacml:passkey-policy:backupEligibility`).
+  PASSKEY_POLICY_PREFIX: 'urn:sts:xacml:passkey-policy:',
+  // environment, an integer: the rank of
+  // `webauthn.attestationMinCertificationLevel`, absent when it is `none`.
+  PASSKEY_REQUIRED_RANK: 'urn:sts:xacml:passkey:required-certification-rank'
 });
 
 // The principal types a request may name. Anything else is a person, which
@@ -557,6 +600,107 @@ class AuthorizationRequest {
     this.environment(V.EXCHANGE_MAY_ACT_NAMES_ACTOR,
                      [!!given.mayActNamesActor], model.TYPE.BOOLEAN);
     this.environment(V.EXCHANGE_PROTECTED_GROUP, list(given.protectedGroups));
+    return this;
+  }
+
+  // THE FACTS OF A PASSKEY QUESTION (#536). `facts` (each optional):
+  //   groups          the fact groups carried (see PASSKEY_FACTS)
+  //   backupEligible  a boolean; sent only with `backup-eligible`
+  //   minPinLength    a whole number; sent only with `pin-length`, and left
+  //                   out when the key reported none
+  //   serial, serialHeld                       with `serial`
+  //   attestation { verified, trusted, aaguid, listed, compromised, rank,
+  //                 fips, unchecked }          with `attestation`
+  //   policy { backupEligibility, enforcePinLength, minPinLength,
+  //            pinLengthOnlyIfSupported, enforceAttestationAtSignIn,
+  //            enterpriseSerialAttribute }     always
+  //   settings { attestationPolicy, allowedAaguids, requiredRank,
+  //              requireFips }                 with `attestation`
+  // An empty string and an unknown value are left out, never sent as '', so
+  // no rule reads an absent fact as a value.
+  passkey(facts) {
+    log.debug("Entering AuthorizationRequest.passkey().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    const T = model.TYPE;
+    const groups = (given.groups || []).map(String);
+    const has = function (group) {
+      log.debug("Entering has().");
+      log.debug("Leaving has().");
+      return groups.indexOf(group) >= 0;
+    };
+    const whole = function (value) {
+      log.debug("Entering whole().");
+      log.debug("Leaving whole().");
+      return typeof value === 'number' && Number.isInteger(value)
+        ? [value] : [];
+    };
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value === undefined || value === null || String(value) === ''
+        ? [] : [String(value)];
+    };
+    this.environment(V.PASSKEY_FACTS, groups);
+    if (has('backup-eligible') && typeof given.backupEligible === 'boolean') {
+      this.resource(V.PASSKEY_BACKUP_ELIGIBLE, [given.backupEligible],
+                    T.BOOLEAN);
+    }
+    if (has('pin-length')) {
+      this.resource(V.PASSKEY_MIN_PIN_LENGTH, whole(given.minPinLength),
+                    T.INTEGER);
+    }
+    if (has('serial')) {
+      this.resource(V.PASSKEY_SERIAL, one(given.serial));
+      this.resource(V.PASSKEY_SERIAL_HELD, [!!given.serialHeld], T.BOOLEAN);
+    }
+    const att = given.attestation || null;
+    if (has('attestation') && att) {
+      this.resource(V.PASSKEY_ATTESTATION_VERIFIED, [!!att.verified],
+                    T.BOOLEAN);
+      this.resource(V.PASSKEY_ATTESTATION_TRUSTED, [!!att.trusted],
+                    T.BOOLEAN);
+      this.resource(V.PASSKEY_AAGUID, one(att.aaguid));
+      const flag = function (value) {
+        log.debug("Entering flag().");
+        log.debug("Leaving flag().");
+        return typeof value === 'boolean' ? [value] : [];
+      };
+      this.resource(V.PASSKEY_MODEL_LISTED,
+                    flag(att.listed), T.BOOLEAN);
+      this.resource(V.PASSKEY_MODEL_COMPROMISED,
+                    flag(att.compromised), T.BOOLEAN);
+      this.resource(V.PASSKEY_CERTIFICATION_RANK, whole(att.rank), T.INTEGER);
+      this.resource(V.PASSKEY_FIPS, flag(att.fips), T.BOOLEAN);
+      this.resource(V.PASSKEY_METADATA_UNCHECKED, att.unchecked ? [true] : [],
+                    T.BOOLEAN);
+    }
+    const policy = given.policy || {};
+    const P = V.PASSKEY_POLICY_PREFIX;
+    this.environment(P + 'backupEligibility', one(policy.backupEligibility));
+    this.environment(P + 'enforcePinLength', [policy.enforcePinLength === true],
+                     T.BOOLEAN);
+    this.environment(P + 'minPinLength', whole(policy.minPinLength),
+                     T.INTEGER);
+    this.environment(P + 'pinLengthOnlyIfSupported',
+                     [policy.pinLengthOnlyIfSupported === true], T.BOOLEAN);
+    this.environment(P + 'enforceAttestationAtSignIn',
+                     [policy.enforceAttestationAtSignIn === true], T.BOOLEAN);
+    this.environment(P + 'enterpriseSerialAttribute',
+                     one(policy.enterpriseSerialAttribute));
+    const settings = given.settings || null;
+    if (has('attestation') && settings) {
+      this.setting('webauthn.attestationPolicy',
+                   String(settings.attestationPolicy || ''));
+      this.environment(V.SETTING_PREFIX + 'webauthn.attestationAllowedAaguids',
+                       (settings.allowedAaguids || []).map(String));
+      this.environment(V.PASSKEY_REQUIRED_RANK,
+                       Number(settings.requiredRank) > 0
+                         ? [Number(settings.requiredRank)] : [], T.INTEGER);
+      this.setting('webauthn.attestationRequireFips',
+                   settings.requireFips === true);
+    }
+    log.debug("Leaving AuthorizationRequest.passkey().");
     return this;
   }
 

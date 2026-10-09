@@ -184,8 +184,10 @@
 // modes: it decides how a person signs in.
 //
 // IT IS A LIBRARY (rule 3) AND A LEAF: `helpers`, `realms`, `error_codes`,
-// the instance slot, and the directory through a slot `ldap/ldap_server.js`
-// fills. `authn/webauthn_policy.ts` requires it.
+// the instance slot, the issuance gate (#536 — itself a leaf over `helpers`,
+// `config` and `error_codes`, which reaches the engine lazily), and the
+// directory through a slot `ldap/ldap_server.js` fills.
+// `authn/webauthn_policy.ts` requires it.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -195,6 +197,9 @@ import InstanceSlot = require('./instance_slot');
 // The attachment setting a hint is held to (#531). `config` is below every
 // module here; `helpers` already requires it.
 import config = require('./config');
+// THE ISSUANCE GATE (#536): whether a passkey may be registered or may sign
+// somebody in is a question to the issuance policy, asked through it.
+import issuanceGate = require('./issuance_gate');
 // THE AMBIENT SELECTION (#535), for the rest of a request.
 import { AsyncLocalStorage } from 'async_hooks';
 
@@ -251,11 +256,19 @@ interface PasskeyPolicyDeps {
   realms: {
     isDefault(realm?: unknown): boolean;
     run<T>(realm: unknown, fn: () => T): T;
+    currentId?(): string;
     DEFAULT_REALM: unknown;
   };
   errorCodes: {
     mark<T>(target: T, code: string): T;
     tag(code: string): string;
+  };
+  // The issuance gate's passkey question (#536).
+  gate: {
+    checkPasskey(request: Record<string, any>): {
+      verdict: string; code?: string; reason?: string; decidedBy?: string;
+      why?: string;
+    };
   };
 }
 
@@ -593,7 +606,8 @@ class PasskeyPolicy {
   static defaultDeps(): PasskeyPolicyDeps {
     log.debug("Entering PasskeyPolicy.defaultDeps().");
     log.debug("Leaving PasskeyPolicy.defaultDeps().");
-    return { log: log, realms: realms, errorCodes: errorCodes };
+    return { log: log, realms: realms, errorCodes: errorCodes,
+             gate: issuanceGate };
   }
 
   /**
@@ -1136,25 +1150,18 @@ class PasskeyPolicy {
    */
   backupEligibleRefusal(backupEligible: unknown, at: string,
                         profile?: PasskeyProfile | null):
-      { code: string; why: string } | null {
+      { code: string; why: string; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.backupEligibleRefusal().");
-    if (backupEligible !== true || !this.refusesBackupEligible(profile)) {
-      log.debug("Leaving PasskeyPolicy.backupEligibleRefusal(). Allowed.");
+    // A flag never read is not a fact: nothing is asked about it.
+    if (typeof backupEligible !== 'boolean') {
+      log.debug("Leaving PasskeyPolicy.backupEligibleRefusal(). No flag.");
       return null;
     }
-    const registering = at === 'registration';
-    const out = {
-      code: registering ? 'STS-AUTHN-0312' : 'STS-AUTHN-0313',
-      why: 'That passkey can be synced or backed up (its authenticator ' +
-           'set the backup-eligible flag), and this realm accepts only ' +
-           'device-bound passkeys (the passkey ' +
-           'policy\'s backupEligibility is disallow). ' +
-           (registering
-             ? 'Use a security key, or a passkey kept on this device only.'
-             : 'Sign in another way, and register a device-bound key.')
-    };
-    log.debug("Leaving PasskeyPolicy.backupEligibleRefusal(). " + out.code);
+    const out = this.refusalFor(at, { backupEligible: backupEligible },
+                                profile);
+    log.debug("Leaving PasskeyPolicy.backupEligibleRefusal(). " +
+              (out ? out.code : 'allowed'));
     return out;
   }
 
@@ -1407,41 +1414,15 @@ class PasskeyPolicy {
    */
   enterpriseSerialRefusal(username: string, serial: unknown,
                           profile?: PasskeyProfile | null):
-      { code: string; why: string } | null {
+      { code: string; why: string; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.enterpriseSerialRefusal().");
-    const attribute = this.enterpriseSerialAttribute(profile);
-    if (!attribute) {
-      log.debug("Leaving PasskeyPolicy.enterpriseSerialRefusal(). Not bound.");
-      return null;
-    }
-    const given = String(serial === undefined || serial === null ? ''
-                                                                 : serial)
-      .trim();
-    if (!given) {
-      log.debug("Leaving PasskeyPolicy.enterpriseSerialRefusal(). None.");
-      return { code: 'STS-AUTHN-0321',
-               why: 'That security key\'s attestation names no device ' +
-                    'serial this service can read, and this realm binds ' +
-                    'security keys to the serials issued to each person ' +
-                    '(the passkey policy\'s enterpriseSerialAttribute). ' +
-                    'Use a key from your organisation, registered where ' +
-                    'enterprise attestation is enabled.' };
-    }
-    const hook = this.directory && this.directory.personAttributeValues;
-    const held = typeof hook === 'function'
-      ? (hook.call(this.directory, username, attribute) || []) : [];
-    const mine = held.some(function (one) {
-      return String(one).trim().toLowerCase() === given.toLowerCase();
-    });
+    const out = this.refusalFor('registration',
+                                { username: username, serial: serial },
+                                profile);
     log.debug("Leaving PasskeyPolicy.enterpriseSerialRefusal(). " +
-              (mine ? 'Bound.' : 'Not this person\'s.'));
-    return mine ? null : {
-      code: 'STS-AUTHN-0320',
-      why: 'That security key (serial ' + given.slice(0, 64) + ') is not ' +
-           'one issued to you: its serial is not on your directory entry ' +
-           '(' + attribute + '). Use the key your organisation issued you.'
-    };
+              (out ? out.code : 'allowed'));
+    return out;
   }
 
   /**
@@ -1495,43 +1476,208 @@ class PasskeyPolicy {
    */
   pinLengthRefusal(reported: unknown, at: string,
                    profile?: PasskeyProfile | null):
-      { code: string; why: string } | null {
+      { code: string; why: string; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.pinLengthRefusal().");
-    const rule = this.pinLengthRule(profile);
-    if (!rule.enforce) {
-      log.debug("Leaving PasskeyPolicy.pinLengthRefusal(). Not enforced.");
+    const out = this.refusalFor(at, { minPinLength: reported }, profile);
+    log.debug("Leaving PasskeyPolicy.pinLengthRefusal(). " +
+              (out ? out.code : 'allowed'));
+    return out;
+  }
+
+  // =========================================================================
+  // THE PASSKEY QUESTION (#536). The rows above CONFIGURE how a realm's
+  // passkeys behave; whether a given passkey may be registered or may sign
+  // somebody in is DECIDED by the issuance policy (rcbj's rule that every
+  // authorization decision is policy): `question()` gathers the facts and
+  // the selected profile's rows, `issuance_gate.checkPasskey()` asks, and
+  // `refusalFor()` turns the verdict back into the sentence the door has
+  // always said, by the REASON the rule gave. Which profile applies (#535)
+  // stays here: it chooses the settings and decides nothing.
+  //
+  // A fact group is carried only when its fact was GIVEN, so each door asks
+  // about what it holds and no rule fires on a fact nobody sent:
+  //   backupEligible  -> backup-eligible     minPinLength -> pin-length
+  //   serial          -> serial (with whether the person holds it)
+  //   attestation     -> attestation (with `attestationSettings`)
+  // =========================================================================
+  /**
+   * Builds the passkey question (#536) for the issuance policy: the facts a
+   * door holds and the selected profile's rows.
+   *
+   * @param at - `registration` or `sign-in`
+   * @param facts - `{ username, backupEligible, minPinLength, serial,
+   *   attestation, attestationSettings, enforceAttestation }`, each optional
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the question `issuance_gate.checkPasskey()` takes
+   */
+  question(at: string, facts: Record<string, any>,
+           profile?: PasskeyProfile | null): Record<string, any> {
+    const { log, realms } = this.deps;
+    log.debug("Entering PasskeyPolicy.question().");
+    const given = facts || {};
+    const rules = profile || this.read();
+    const has = function (key: string): boolean {
+      log.debug("Entering has().");
+      log.debug("Leaving has().");
+      return Object.prototype.hasOwnProperty.call(given, key);
+    };
+    const groups: string[] = [];
+    const out: Record<string, any> = {
+      action: at === 'registration' ? 'register-passkey' : 'use-passkey',
+      subject: String(given.username || ''),
+      realm: String(typeof realms.currentId === 'function'
+        ? realms.currentId() || '' : ''),
+      profile: String(rules.name || PasskeyPolicy.DEFAULT_PROFILE)
+    };
+    if (has('backupEligible')) {
+      groups.push('backup-eligible');
+      out.backupEligible = typeof given.backupEligible === 'boolean'
+        ? given.backupEligible : undefined;
+    }
+    if (has('minPinLength')) {
+      groups.push('pin-length');
+      out.minPinLength = typeof given.minPinLength === 'number' &&
+        Number.isInteger(given.minPinLength) ? given.minPinLength : null;
+    }
+    const attribute = this.enterpriseSerialAttribute(rules);
+    if (has('serial')) {
+      groups.push('serial');
+      const serial = String(given.serial === undefined ||
+                            given.serial === null ? '' : given.serial).trim();
+      out.serial = serial;
+      out.serialHeld = !!serial && !!attribute &&
+        this.personHoldsSerial(String(given.username || ''), attribute,
+                               serial);
+    }
+    if (has('attestation') && given.attestation) {
+      groups.push('attestation');
+      out.attestation = given.attestation;
+      out.settings = given.attestationSettings || {};
+    }
+    out.groups = groups;
+    const pin = this.pinLengthRule(rules);
+    out.policy = {
+      backupEligibility: String(rules.backupEligibility || 'allow'),
+      enforcePinLength: pin.enforce,
+      minPinLength: pin.min,
+      pinLengthOnlyIfSupported: pin.onlyIfSupported,
+      enforceAttestationAtSignIn: typeof given.enforceAttestation ===
+        'boolean' ? given.enforceAttestation
+                  : this.enforcesAttestationAtSignIn(rules),
+      enterpriseSerialAttribute: attribute
+    };
+    log.debug("Leaving PasskeyPolicy.question(). " + out.action + ' [' +
+              groups.join(', ') + ']');
+    return out;
+  }
+
+  // Whether the person's entry holds the serial in the named attribute
+  // (#532), case-insensitively: the fact the serial rule is decided on.
+  private personHoldsSerial(username: string, attribute: string,
+                            serial: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.personHoldsSerial().");
+    const hook = this.directory && this.directory.personAttributeValues;
+    const held = typeof hook === 'function'
+      ? (hook.call(this.directory, username, attribute) || []) : [];
+    const mine = held.some(function (one) {
+      return String(one).trim().toLowerCase() === serial.toLowerCase();
+    });
+    log.debug("Leaving PasskeyPolicy.personHoldsSerial(). " + mine);
+    return mine;
+  }
+
+  /**
+   * Asks the issuance policy whether a passkey may be registered or may sign
+   * somebody in (#536), and words its refusal.
+   *
+   * @param at - `registration` or `sign-in`
+   * @param facts - what the door holds (see `question()`)
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ code, why, reason }`, or null where the policy allows it
+   */
+  refusalFor(at: string, facts: Record<string, any>,
+             profile?: PasskeyProfile | null):
+      { code: string; why: string; reason: string } | null {
+    const { log, gate } = this.deps;
+    log.debug("Entering PasskeyPolicy.refusalFor().");
+    const rules = profile || this.read();
+    const asked = this.question(at, facts, rules);
+    const answer = gate.checkPasskey(asked);
+    if (!answer || answer.verdict !== 'refuse') {
+      log.debug("Leaving PasskeyPolicy.refusalFor(). Allowed.");
       return null;
     }
-    const value = typeof reported === 'number' && Number.isInteger(reported)
-      ? reported : null;
-    if (value === null && rule.onlyIfSupported) {
-      log.debug("Leaving PasskeyPolicy.pinLengthRefusal(). Not reported, " +
-                "and accepted.");
-      return null;
-    }
-    if (value !== null && value >= rule.min) {
-      log.debug("Leaving PasskeyPolicy.pinLengthRefusal(). Long enough.");
-      return null;
-    }
-    const registering = at === 'registration';
     const out = {
-      code: registering ? 'STS-AUTHN-0314' : 'STS-AUTHN-0315',
-      why: (value === null
+      code: String(answer.code || 'STS-AUTHN-0322'),
+      reason: String(answer.reason || ''),
+      why: this.sentenceFor(String(answer.reason || ''), at, asked,
+                            facts || {})
+    };
+    log.debug("Leaving PasskeyPolicy.refusalFor(). " + out.code + ' (' +
+              (out.reason || 'no reason') + ', ' +
+              String(answer.decidedBy || '') + ')');
+    return out;
+  }
+
+  // The one sentence each reason has always had, so the portal, the sign-in
+  // screen and the audit row say the same thing whoever decided. A reason
+  // the built-in rules do not give — a realm's own rule — gets a sentence
+  // naming the issuance policy.
+  private sentenceFor(reason: string, at: string, asked: Record<string, any>,
+                      facts: Record<string, any>): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.sentenceFor(). " + reason);
+    const registering = at === 'registration';
+    const policy = asked.policy || {};
+    let why: string;
+    if (reason === 'backup-eligible') {
+      why = 'That passkey can be synced or backed up (its authenticator ' +
+            'set the backup-eligible flag), and this realm accepts only ' +
+            'device-bound passkeys (the passkey ' +
+            'policy\'s backupEligibility is disallow). ' +
+            (registering
+              ? 'Use a security key, or a passkey kept on this device only.'
+              : 'Sign in another way, and register a device-bound key.');
+    } else if (reason === 'pin-length') {
+      const value = asked.minPinLength;
+      why = (value === null || value === undefined
         ? 'That passkey did not report its minimum PIN length, and this ' +
-          'realm requires a PIN of at least ' + rule.min + ' characters ' +
-          '(the passkey policy\'s enforcePinLength). A security key ' +
-          'reports it only to services it was configured to tell. '
+          'realm requires a PIN of at least ' + policy.minPinLength +
+          ' characters (the passkey policy\'s enforcePinLength). A ' +
+          'security key reports it only to services it was configured to ' +
+          'tell. '
         : 'That passkey accepts a PIN of ' + value + ' characters, and ' +
-          'this realm requires at least ' + rule.min + ' (the passkey ' +
-          'policy\'s minPinLength). ') +
+          'this realm requires at least ' + policy.minPinLength +
+          ' (the passkey policy\'s minPinLength). ') +
         (registering
           ? 'Use a key configured with a longer minimum PIN.'
           : 'Sign in another way, and register a key whose minimum PIN ' +
-            'is long enough.')
-    };
-    log.debug("Leaving PasskeyPolicy.pinLengthRefusal(). " + out.code);
-    return out;
+            'is long enough.');
+    } else if (reason === 'serial-missing') {
+      why = 'That security key\'s attestation names no device ' +
+            'serial this service can read, and this realm binds ' +
+            'security keys to the serials issued to each person ' +
+            '(the passkey policy\'s enterpriseSerialAttribute). ' +
+            'Use a key from your organisation, registered where ' +
+            'enterprise attestation is enabled.';
+    } else if (reason === 'serial-not-held') {
+      why = 'That security key (serial ' +
+            String(asked.serial || '').slice(0, 64) + ') is not ' +
+            'one issued to you: its serial is not on your directory entry ' +
+            '(' + policy.enterpriseSerialAttribute + '). Use the key your ' +
+            'organisation issued you.';
+    } else {
+      const sentences = (facts.attestationSentences || {}) as
+        Record<string, string>;
+      why = sentences[reason] ||
+        'This realm\'s issuance policy ' + (registering
+          ? 'does not let that passkey be registered here.'
+          : 'no longer lets that passkey sign you in. Sign in another way.');
+    }
+    log.debug("Leaving PasskeyPolicy.sentenceFor().");
+    return why;
   }
 
   /**
@@ -1895,6 +2041,8 @@ export = {
   enterpriseSerialRefusal: slot.forward('enterpriseSerialRefusal'),
   listOf: PasskeyPolicy.listOf,
   pinLengthRefusal: slot.forward('pinLengthRefusal'),
+  question: slot.forward('question'),
+  refusalFor: slot.forward('refusalFor'),
   describe: slot.forward('describe'),
   enforced: slot.forward('enforced')
 };

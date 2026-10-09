@@ -926,6 +926,107 @@ function strictTransferReading(asked) {
   return verdict;
 }
 
+// ---------------------------------------------------------------------------
+// THE PASSKEY QUESTIONS (#536): action-ids `register-passkey` and
+// `use-passkey`, asked by `common/passkey_policy.ts` when a passkey is about
+// to be written onto a person's entry and when one has answered a sign-in.
+// The passkey policy (Directory -> Policies) CONFIGURES them; the issuance
+// policy DECIDES them, from the facts and the selected profile's rows.
+//
+// **NOT MEMBERS OF `ISSUANCE`**, for `TRANSFER`'s reason: registering a key
+// and signing in with one issue nothing, and every reader of `KINDS` lists
+// issuances.
+//
+// `request`: `{ action, subject, realm, groups, backupEligible, minPinLength,
+// serial, serialHeld, attestation, policy, settings }` — FACTS, gathered by
+// `passkey_policy.ts`; the answer is `{ verdict, code, reason, decidedBy,
+// why }`, verdict `allow` or `refuse`, a refusal carrying the error code the
+// door records and the reason it words its sentence by.
+//
+// **WITH NO DECIDER THE BUILT-IN POLICY STILL DECIDES**, the transfer
+// question's arrangement: the engine's libraries are loaded here lazily and
+// asked the built-in document; a process that cannot load them falls to the
+// same rules read from the facts (`passkey_rules.js`), STS-AUTHN-0324 —
+// never to something looser.
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids of the two passkey questions (#536). Not members of
+ * `ISSUANCE`.
+ */
+const PASSKEY = {
+  REGISTER: 'register-passkey',
+  USE: 'use-passkey'
+};
+
+function builtInPasskeyVerdict(asked, why) {
+  log.debug('Entering builtInPasskeyVerdict().');
+  let out;
+  try {
+    const verdicts = require('../xacml/xacml_passkey_verdicts');
+    out = verdicts.decide(asked, null, {});
+  } catch (error) {
+    log.error(errorCodes.tag('STS-AUTHN-0324') + 'issuance_gate: the ' +
+              'built-in issuance policy could not be evaluated for ' +
+              String(asked.action) + '; the passkey rules read from the ' +
+              'facts decide. ' + ((error && error.message) || error));
+    out = Object.assign({ decidedBy: 'none' },
+                        require('./passkey_rules').strictReading(asked));
+  }
+  log.debug('Leaving builtInPasskeyVerdict(). ' + out.verdict);
+  return Object.assign({ why: why }, out);
+}
+
+/**
+ * Puts a passkey question (#536) to the issuance policy: `register-passkey`
+ * or `use-passkey`, with the facts `common/passkey_policy.ts` gathered.
+ *
+ * Never throws and never returns a promise. With no decider, or a decider
+ * that throws or answers nothing, the built-in policy decides.
+ *
+ * @param request - the passkey question
+ * @returns `{ verdict, code, reason, decidedBy, why }`
+ */
+function checkPasskey(request) {
+  log.debug('Entering checkPasskey().');
+  const asked = Object.assign({}, request || {});
+  if (!decider) {
+    log.debug('Leaving checkPasskey(). No decider: the built-in policy.');
+    return builtInPasskeyVerdict(asked, 'No XACML family is loaded in this ' +
+                                 'process; the built-in policy decided.');
+  }
+  let answer;
+  try {
+    answer = decider({
+      kind: asked.action,
+      application: '',
+      subject: { kind: 'user', name: String(asked.subject || ''),
+                 authenticated: true },
+      claims: null,
+      risk: null,
+      rolesWaived: true,
+      passkeyQuestion: asked
+    });
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw on a passkey question; the ' +
+              'built-in policy decides instead. This is a defect in the ' +
+              'embedded PEP rather than a decision. ' + error.message);
+    log.debug('Leaving checkPasskey(). The decider threw.');
+    return builtInPasskeyVerdict(asked, 'The embedded PEP threw: ' +
+                                 error.message);
+  }
+  const passkey = answer && answer.passkey;
+  if (!passkey || !passkey.verdict) {
+    log.debug('Leaving checkPasskey(). The PEP answered no verdict.');
+    return builtInPasskeyVerdict(asked, 'The embedded PEP answered no ' +
+                                 'passkey verdict.');
+  }
+  log.debug('Leaving checkPasskey(). ' + passkey.verdict);
+  return { verdict: passkey.verdict, code: passkey.code || '',
+           reason: passkey.reason || '',
+           decidedBy: passkey.decidedBy || '', why: answer.why || '' };
+}
+
 /**
  * Puts a transfer question (#98) to the issuance policy: `hold-session`,
  * `serve-request` or `release-attributes`, with the facts
@@ -1139,5 +1240,7 @@ module.exports = {
   checkExchange: checkExchange,
   TRANSFER: TRANSFER,
   checkTransfer: checkTransfer,
+  PASSKEY: PASSKEY,
+  checkPasskey: checkPasskey,
   strictTransferReading: strictTransferReading
 };

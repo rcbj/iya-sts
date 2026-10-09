@@ -11449,10 +11449,35 @@ draws a form per named profile and an add form (`namedProfilesSection()`).
 The API's `profile` became a pattern for this kind, and it takes the
 selectors.
 
-**Why the module and not an issuance-policy rule.** The ticket asked for the
-refusal "where the decision belongs", and rcbj's rule is that every
-authorization decision is policy. This is an AUTHENTICATION policy row on
-Directory → Policies, enforced at the doors as `authn_policy.ts`'s rows are
-(3bd: `startSession()` refuses a mechanism the policy does not accept). The
-issuance policy is not asked at a session that names no application, and
-`gated: true` doors ask it before the ceremony, when BE is not yet known.
+**#536 (2026-10-09) MOVED THE REFUSALS INTO THE ISSUANCE POLICY.** rcbj first
+accepted them as code, then reversed: "move them into XACML policy, but
+continue to have all functionality available in the Passkey policy be
+available and configurable there." So the rows above still CONFIGURE, and the
+issuance policy DECIDES:
+
+* **`question(at, facts)` gathers, `refusalFor()` asks.** A door hands over
+  what it holds — `backupEligible`, `minPinLength`, `serial`, or an
+  `attestation` with its settings and sentences — and each becomes a FACT
+  GROUP (`urn:sts:xacml:passkey:facts`). The selected profile's rows go in as
+  `urn:sts:xacml:passkey-policy:<row>`. `issuance_gate.checkPasskey()` asks,
+  as action `register-passkey` (`credentials.addKey()`, one question) or
+  `use-passkey` (`authn.ts`'s `passkeySignInRefusal()` at the session's start,
+  and `webauthn_attestation.ts`'s `signInVerdict()` at the two assertion
+  doors).
+* **The built-in rules are `xacml_templates.ts`'s passkey rules** (template
+  parameter `decidePasskeys`), in the order the code asked. Each Deny carries
+  the same code as before (0312-0317, 0320, 0321) and a REASON. The door words
+  its sentence by the reason, so every page and audit row reads as it did.
+  A realm's own refusal with no code records `STS-AUTHN-0322`.
+* **Where no document answers**, `common/passkey_rules.js` reads the same
+  rules from the facts (`STS-AUTHN-0323`, `0324`). `tests/passkey_xacml.js`
+  holds it and the document to one truth table.
+* **The old functions are still exported** (`backupEligibleRefusal()`,
+  `pinLengthRefusal()`, `enterpriseSerialRefusal()`). Each asks the policy
+  about its one fact group, which is how the portal's warnings stay true to
+  the decision.
+* **The FIDO metadata is looked up only while `enforceAttestationAtSignIn` is
+  on.** That lookup per sign-in is the cost. The recorded facts (trusted,
+  AAGUID) are sent either way, so a realm's own policy can rule on them.
+* **#535's selection of which profile applies stays code.** It chooses the
+  settings and decides nothing.

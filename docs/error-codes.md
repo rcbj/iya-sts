@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4225** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4228** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 281
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 284
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 708
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1438,6 +1438,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0319` | A passkey-policy hint list contradicts webauthn.authenticatorAttachment, which changed after the policy was saved (#531): client-device implies platform, security-key and hybrid cross-platform. The contradicting hints are not sent; save the policy again to fix it. | none — logged; the ceremony is sent without them |
 | `STS-AUTHN-0320` | A security key was not registered: the realm binds keys to the serials issued to each person (the passkey policy's enterpriseSerialAttribute, #532), and the serial its trusted enterprise attestation names is not among the person's values. | the ceremony's page, drawn again with the reason |
 | `STS-AUTHN-0321` | A security key was not registered: the realm binds keys to serials (#532), and the key's attestation names no device serial this service can read — no subject serialNumber and no Yubico serial extension, or no trusted enterprise attestation at all. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0322` | A passkey was refused by a rule of the realm's own issuance policy (#536) that named no error code of its own and gave a reason the built-in passkey rules do not give. | the ceremony's page or the sign-in screen, with the reason |
+| `STS-AUTHN-0323` | No issuance policy, not even the built-in one, gave a verdict on a passkey question (#536); the passkey rules read from the facts answered instead. A defect: the built-in document should always answer. | none: the passkey is decided by the same rules |
+| `STS-AUTHN-0324` | The engine could not be loaded to ask the built-in issuance policy a passkey question (#536); the passkey rules read from the facts decided instead. | none: the passkey is decided by the same rules |
 
 ## STS-OAUTH
 
