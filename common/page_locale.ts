@@ -303,7 +303,12 @@ class PageLocale {
    * offered locales by their own names, and a submit button.
    *
    * @param t - the page's translator
-   * @param base - the realm's path prefix (`''`, or `/realm/acme`)
+   * @param base - the realm's path prefix (`''`, or `/realm/acme`). NOT put
+   *   on the form's action: `app.js` adds the realm's prefix to every
+   *   root-relative action in a page drawn inside a realm, so prefixing it
+   *   here posted to `/realm/acme/realm/acme/authn/language`. Kept so the
+   *   callers did not change; the return path carries its own prefix,
+   *   because a value is not rewritten.
    * @param returnTo - the path to come back to; held to a local one
    * @returns the chooser as HTML
    */
@@ -329,7 +334,7 @@ class PageLocale {
         PageLocale.esc(one.name) + '</option>';
     }).join('');
     const out = '<form class="language-chooser" method="post" action="' +
-      PageLocale.esc(String(base || '') + '/authn/language') + '">' +
+      PageLocale.esc('/authn/language') + '">' +
       '<input type="hidden" name="return" value="' + PageLocale.esc(here) +
       '"><label for="sts-language">' + t.html('chooser.label') +
       '</label> <select id="sts-language" name="lang">' + drawn +
