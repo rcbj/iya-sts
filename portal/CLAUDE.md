@@ -795,10 +795,14 @@ Every signed-in page draws **Refresh** to the left of Sign out
 is a GET form, and what it reloads is decided on the server from the ambient
 request (`audit.currentRequest()`):
 
-* **a GET of the page's own path** reloads that path with the same query, so a
-  paged list comes back on the same page, **less `done`**: that is the one-time
-  message a redirect after a write carries, and reloading it would announce the
-  write again;
+* **a GET of the page's own path** reloads that path with the parameters a
+  portal page reads to draw itself — `page`, `per`, `<list>Page`, `stepup`,
+  `gnapstepup`, `enrolled`, `named` (`Portal.REFRESH_KEPT`) — so a paged list
+  comes back on the same page. **Nothing else is carried**: not `done`, the
+  one-time message a redirect after a write carries, which would announce the
+  write again, and not a parameter no page reads. Carrying the whole query drew
+  `?user=<somebody>` back into the page, which `sts_portal_sessions`' check that
+  a signed-in page never names another account caught in its first full run;
 * **a page drawn in answer to a POST** (a refused write re-drawn with its
   reason) loads its own path afresh and carries nothing. The browser's own
   reload would repeat the POST, which a Refresh button must not do;

@@ -1505,9 +1505,14 @@ class Portal {
   // decided here:
   //
   //   * a page drawn for a GET of its own path reloads that path with the
-  //     same query — so a paged list comes back on the same page — less
-  //     `done`, the one-time message a redirect after a write carries, which
-  //     would otherwise announce the write again;
+  //     parameters a portal page reads to draw itself — the paging ones
+  //     (`page`, `per`, `<list>Page`) and the step markers (`stepup`,
+  //     `gnapstepup`, `enrolled`, `named`) — so a paged list comes back on
+  //     the same page. Nothing else is carried: not `done`, the one-time
+  //     message a redirect after a write carries, which would announce the
+  //     write again, and not a parameter no page reads. A query a link put on
+  //     the URL (`?user=somebody`) is otherwise drawn back into the page,
+  //     which `sts_portal_sessions` holds a signed-in page to never do;
   //   * a page drawn in answer to a POST (a refused write re-drawn with its
   //     reason) loads its own path afresh: repeating the POST is the browser's
   //     own reload, and is exactly what a Refresh button must not do.
@@ -1522,6 +1527,10 @@ class Portal {
    * @param active - the page's path
    * @returns the form's HTML
    */
+  // The parameters the Refresh button carries besides `<list>Page`.
+  static readonly REFRESH_KEPT = ['page', 'per', 'stepup', 'gnapstepup',
+                                  'enrolled', 'named'];
+
   refreshForm(active) {
     const self = this;
     const { log, audit } = this.deps;
@@ -1533,7 +1542,8 @@ class Portal {
       if (url.pathname === active) {
         fields = Array.from(url.searchParams.entries())
           .filter(function (pair) {
-            return pair[0] !== 'done';
+            return Portal.REFRESH_KEPT.indexOf(pair[0]) >= 0 ||
+              /^[a-z][A-Za-z]*Page$/.test(pair[0]);
           });
       }
     }
