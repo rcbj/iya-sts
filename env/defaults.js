@@ -671,7 +671,7 @@ var config = {
     organizationUrl: ""                                     // Metadata OrganizationURL
   },
 
-  // --- SAML 2.0 --------------------------------------------------------
+  // --- SAML 2.0 assertions ---------------------------------------------
   saml2: {
     assertionLifetimeMin: 60,                                              // Assertion lifetime (minutes)
     signAssertion: true,                                                   // Sign the assertion
@@ -697,7 +697,7 @@ var config = {
     mdqImportWithoutAnchors: false                                         // Allow an MDQ import with no trust anchor (product mode)
   },
 
-  // --- SAML 1.1 --------------------------------------------------------
+  // --- SAML 1.1 assertions ---------------------------------------------
   saml11: {
     assertionLifetimeMin: 60,                                              // Assertion lifetime (minutes)
     signAssertion: true,                                                   // Sign the assertion
