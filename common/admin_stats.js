@@ -2848,7 +2848,11 @@ function recordAuthentication(detail) {
         // The attributes inside it are ALREADY MAPPED to this directory's own
         // names — federation_map.js owns that vocabulary — so nothing here or
         // in ldap_server.js has to know what a `urn:oid:` name is.
-        federation: info.federation || null
+        federation: info.federation || null,
+        // THE APPLICATION THE SIGN-IN WAS FOR (#539): an OAuth client_id or a
+        // relationship's application, where the door named one. A person
+        // this sign-in creates is given the locale policy's language for it.
+        application: String(info.application || '')
       });
     } catch (e) {
       log.error(errorCodes.tag('STS-REG-0039') +

@@ -1,0 +1,21 @@
+{
+  "title": "¿Permitir el acceso? — servidor de autorización simulado",
+  "heading": "¿Permitir el acceso?",
+  "signedInAs": "Sesión iniciada como <code>{username}</code> en <code>{base}</code>",
+  "asking": "<strong>{client}</strong> solicita acceso en tu nombre.",
+  "scope.permission": "{description} — expuesto por <code>{identifier}</code>; el token de acceso irá dirigido a <code>{baseUri}</code>",
+  "scope.permissionNamed": "el permiso «{name}»",
+  "scope.ordinary": "un ámbito ordinario: este servicio no le atribuye ningún significado y lo pondrá tal cual en el claim scope del token",
+  "detail.understood": "entendido por <code>{resource}</code>; el token de acceso irá dirigido a <code>{audience}</code>",
+  "detail.described": "{description} — entendido por <code>{resource}</code>; el token de acceso irá dirigido a <code>{audience}</code>",
+  "detailsNote": "Esta solicitud incluye <strong>{count, plural, one {# detalle de autorización} other {# detalles de autorización}}</strong> (RFC 9396). Se te preguntará por ellos cada vez: Permitir acepta exactamente lo que aparece en la lista, solo para esta solicitud.",
+  "already.summary": "{count} ámbito(s) que ya aceptaste para esta aplicación",
+  "already.global": "consentido para todos en la entrada de esta aplicación (<code>oauthGlobalConsent</code>) — nunca se te preguntó",
+  "already.byYou": "aceptado por ti",
+  "already.byYouAt": "aceptado por ti el {at}",
+  "allow": "Permitir",
+  "deny": "Denegar",
+  "meta.allow": "Permitir escribe un valor <code>{attribute}</code> por ámbito en tu entrada bajo <code>ou=users</code>, para que no se te vuelva a preguntar por ellos. Denegar devuelve <code>access_denied</code> a la aplicación y no registra nada.",
+  "meta.nothingIssued": "Todavía no se ha emitido nada. Esta pantalla es <code>oauth2.consentRequired</code>, activada de forma predeterminada; en /admin/consent se puede consultar y revocar cada respuesta dada aquí.",
+  "meta.consentingFor": "Consentimiento para: <code>{protocol}</code>"
+}

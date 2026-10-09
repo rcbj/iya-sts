@@ -338,6 +338,17 @@ const SUBSYSTEMS = [
           'ceilings, and the uses — self-service password reset, address ' +
           'verification, an administrator\'s links mailed, and the security ' +
           'notices. No code here is ever sent to a recipient.' },
+  // LANGUAGES (#539, 2026-10-09): the catalogs, the locale policy and the
+  // language chooser. Its own subsystem because it is no protocol's and no
+  // surface's: every page a person reads asks it.
+  { id: 'I18N', label: 'Languages and locales',
+    where: 'common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, ' +
+           'authn/authn.ts (the language chooser)',
+    what: 'The catalogs a page is drawn from, the negotiation of a ' +
+          'reader\'s languages against them, the locale policy (#539) and ' +
+          'the language chooser. Refusals and errors are never translated ' +
+          '(rcbj\'s decision on #539), so nothing here changes what a ' +
+          'refusal says.' },
   { id: 'GNAP', label: 'GNAP (RFC 9635 / RFC 9767)',
     where: 'gnap/',
     what: 'The grant request and continuation endpoints; interaction ' +
@@ -15368,6 +15379,51 @@ const CODES = [
       'approval on the portal could not be queued; the request still waits ' +
       'there (#432 phase 6).',
     spec: 'log only' },
+  // ===== I18N ==============================================================
+  { code: 'STS-I18N-0001',
+    summary: 'A catalog file under common/locales could not be read or ' +
+      'parsed (or catalogs.json itself, in which case every page is drawn ' +
+      'in English); the messages it held fall back along their chain to ' +
+      'English, and the problem is listed on Directory > Policies (#539).',
+    spec: 'none — an error in the log' },
+  { code: 'STS-I18N-0002',
+    summary: 'A page asked for a message no catalog has, or one whose text ' +
+      'is malformed; the key itself, or the text as written, was drawn. ' +
+      'tests/i18n_catalogs.js is what keeps this from shipping (#539).',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-I18N-0003',
+    summary: 'A locale policy profile name was refused: it is neither ' +
+      '`default` nor a name of lower-case letters, digits and hyphens of ' +
+      'at most 64 (#539).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0004',
+    summary: 'A locale policy save was refused: a field was missing, the ' +
+      'default language was not a BCP 47 tag, a yes-or-no field was ' +
+      'neither, or a named profile named no application or too many (#539).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0005',
+    summary: 'A locale policy could not be saved: this process has no ' +
+      'embedded directory, so there is no ou=localePolicies (#539).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0006',
+    summary: 'A locale policy could not be saved: the directory is at its ' +
+      'maximum number of entries (#539).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0007',
+    summary: 'A named locale policy save was refused: an application it ' +
+      'names is already on another named locale profile, and an ' +
+      'application is on one at most (#539).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0008',
+    summary: 'The language chooser was posted a value that is not a BCP 47 ' +
+      'tag a catalog answers, or a malformed form; nothing was set (#539).',
+    spec: 'HTTP 400' },
+  { code: 'STS-I18N-0009',
+    summary: 'The language chooser set its cookie but could not write the ' +
+      'signed-in person\'s preferredLanguage; the person editor refused or ' +
+      'could not be asked. Their entry still names the old language, which ' +
+      'outranks the cookie (#539).',
+    spec: 'none — a warning in the log' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

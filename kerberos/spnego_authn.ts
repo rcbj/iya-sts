@@ -153,6 +153,13 @@ import spnegoPage = require('./spnego.js');
 // ERROR CODES, a leaf. A negotiation's refusal is marked by
 // exchange.applyVerdict(); the three marked here are this door's own.
 import errorCodes = require('../common/error_codes');
+// THE LANGUAGE OF THE PAGE (#539). Libraries: the catalogs, the request's
+// language and the chooser, and the realm prefix the chooser posts under.
+import i18n = require('../common/i18n');
+import PageLocale = require('../common/page_locale');
+import realms = require('../common/realms');
+
+type Translator = InstanceType<typeof i18n.Translator>;
 
 const page = spnegoPage.page;
 const checksTable = spnegoPage.checksTable;
@@ -442,27 +449,72 @@ class SpnegoAuthn {
    * @param record - the pending sign-in record, or null
    * @returns the HTML
    */
-  fallbackHtml(record) {
+  fallbackHtml(record, translator?: Translator) {
     const { log, xmlEscape, authn } = this.deps;
     log.debug('Entering SpnegoAuthn.fallbackHtml().');
+    // A REFUSAL PAGE draws it in English (#539: refusals are not translated),
+    // from the English catalog, so its words are written once.
+    const t = translator || this.english();
     if (!record) {
       log.debug('Leaving SpnegoAuthn.fallbackHtml(). Nothing was interrupted.');
-      return '<p class="sub">Nothing sent you here, so there is nothing to ' +
-             'go ' +
-        'back to. This door can be used on its own — a client that holds a ' +
-        'ticket gets a session and no application had to ask.</p>';
+      return '<p class="sub">' + t.html('spnego.fallback.none') + '</p>';
     }
     const html = '<p><a href="' + xmlEscape(authn.LOGIN_PATH) + '?authn=' +
-      encodeURIComponent(record.id) + '"><strong>Sign in with a username ' +
-      'instead</strong></a> &mdash; the request that sent you here is still ' +
-      'waiting, and it will carry on either way.</p>' +
-      '<p class="sub">Signing in for: <code>' +
-      xmlEscape(record.protocol || '') + '</code>' +
+      encodeURIComponent(record.id) + '">' +
+      t.html('spnego.fallback.instead') + '</a> ' +
+      t.html('spnego.fallback.stillWaiting') + '</p>' +
+      '<p class="sub">' + t.html('spnego.fallback.signingInFor',
+                                 { protocol: record.protocol || '' }) +
       (record.application
          ? ' &middot; <code>' + xmlEscape(record.application) + '</code>'
          : '') + '</p>';
     log.debug('Leaving SpnegoAuthn.fallbackHtml(). Offered the screen.');
     return html;
+  }
+
+  // THE TWO TRANSLATORS (#539). English, from the English catalog, for a
+  // refusal page and a caller that names none; and the request's, with the
+  // `framing` `spnego.js`'s page() draws it in — `lang` and `dir`, the
+  // language chooser returning to this same GET, and the chooser's CSS.
+  /**
+   * Returns a translator that always answers in English.
+   *
+   * @returns the translator
+   */
+  private english(): Translator {
+    const { log } = this.deps;
+    log.debug('Entering SpnegoAuthn.english().');
+    log.debug('Leaving SpnegoAuthn.english().');
+    return i18n.translator([i18n.SOURCE]);
+  }
+
+  /**
+   * Returns the request's translator, and the framing `page()` draws a
+   * translated page with.
+   *
+   * @param record - the interrupted sign-in, or null
+   * @param username - the person signed in, where one is
+   * @returns `{ t, framing }`
+   */
+  private framed(record, username?: string): { t: Translator;
+                                                framing: any } {
+    const { log } = this.deps;
+    log.debug('Entering SpnegoAuthn.framed().');
+    const t = PageLocale.forPage({
+      application: record ? String(record.application || '') : '',
+      uiLocales: record ? String(record.uiLocales || '') : '',
+      username: username || ''
+    });
+    const prefix = realms.currentPrefix();
+    const framing = {
+      htmlAttributes: PageLocale.htmlAttributes(t),
+      top: PageLocale.chooser(t, prefix, PageLocale.herePath(prefix +
+        SPNEGO_PATH + (record ? '?authn=' + encodeURIComponent(record.id)
+                              : ''))),
+      style: CHOOSER_CSS
+    };
+    log.debug('Leaving SpnegoAuthn.framed(). ' + t.locale);
+    return { t: t, framing: framing };
   }
 
   /**
@@ -471,16 +523,19 @@ class SpnegoAuthn {
    *
    * @returns the HTML
    */
-  spnFacts() {
+  spnFacts(translator?: Translator) {
     const { log, xmlEscape, exchange, principals } = this.deps;
     log.debug('Entering SpnegoAuthn.spnFacts().');
+    const t = translator || this.english();
     const html = '<table>' +
-      '<tr><th>What</th><th>Value</th></tr>' +
-      '<tr><td>Service principal name</td><td><code>' +
+      '<tr><th>' + t.html('spnego.facts.what') + '</th><th>' +
+      t.html('spnego.facts.value') + '</th></tr>' +
+      '<tr><td>' + t.html('spnego.facts.spn') + '</td><td><code>' +
         xmlEscape(exchange.SPN + '@' + principals.REALM) + '</code></td></tr>' +
-      '<tr><td>Realm</td><td><code>' + xmlEscape(principals.REALM) +
+      '<tr><td>' + t.html('spnego.facts.realm') + '</td><td><code>' +
+        xmlEscape(principals.REALM) +
         '</code></td></tr>' +
-      '<tr><td>Also answers for hosts</td><td><code>' +
+      '<tr><td>' + t.html('spnego.facts.hosts') + '</td><td><code>' +
         xmlEscape(principals.SERVICE_DOMAINS.join(', ')) + '</code></td></tr>' +
       '</table>';
     log.debug('Leaving SpnegoAuthn.spnFacts().');
@@ -566,31 +621,38 @@ class SpnegoAuthn {
       // fix something that is working.
       const waiting = !exchange.OUTCOMES[verdict.code] ||
                       !exchange.OUTCOMES[verdict.code].terminal;
+      // THE FIRST 401 AND A CONTINUATION ARE TRANSLATED (#539); a terminal
+      // refusal is not — rcbj's decision on #539 — so it is drawn in English,
+      // as it was, with no chooser. The acceptor's own reason and the checks
+      // table are the negotiation's diagnostics, and stay as they are.
+      const refused = !first && !waiting;
+      const framed = refused ? { t: this.english(), framing: undefined }
+        : this.framed(record);
+      const t = framed.t;
       res.type('html').send(page(
-        first ? 'Sign in with Kerberos'
-              : waiting ? 'Kerberos: one more round trip'
+        first ? t.text('spnego.first.title')
+              : waiting ? t.text('spnego.waiting.title')
                         : 'Kerberos sign-in refused',
         '<h1>' + (first
-          ? 'Sign in with a Kerberos ticket'
+          ? t.html('spnego.first.heading')
           : waiting
-            ? '401 &mdash; the negotiation is not finished'
+            ? t.html('spnego.waiting.heading')
             : '401 &mdash; that ticket did not sign you in') + '</h1>' +
         (first
-          ? '<p>This service asked your client for a Kerberos ticket ' +
-            '(<code>WWW-Authenticate: Negotiate</code>, RFC 4559). If it has ' +
-            'one, or can get one, it will repeat this request with it and ' +
-            'you will be signed in without typing anything.</p>'
+          ? '<p>' + t.html('spnego.first.lead') + '</p>'
           : '<div class="' + (waiting ? 'ok' : 'err') + '">' +
             xmlEscape(verdict.reason) + '</div>') +
         (waiting && !first
-          ? '<p>Your client should answer this reply with another token. If ' +
-            'you are reading this page, it did not &mdash; the exchange is ' +
-            'unfinished rather than refused.</p>'
+          ? '<p>' + t.html('spnego.waiting.note') + '</p>'
           : '') +
-        (verdict.checks ? '<h2>What this service checked</h2>' +
+        (verdict.checks ? '<h2>' + t.html('spnego.checked') + '</h2>' +
           checksTable(verdict.checks) : '') +
-        this.fallbackHtml(record) +
-        (first ? BROWSER_NOTE + this.spnFacts() : '')));
+        this.fallbackHtml(record, t) +
+        (first ? '<h2>' + t.html('spnego.ifNothing.heading') + '</h2><p>' +
+                 t.html('spnego.ifNothing.browsers') + '</p><p class="sub">' +
+                 t.html('spnego.ifNothing.program') + '</p>' +
+                 this.spnFacts(t) : ''),
+        framed.framing));
       log.debug('Leaving SpnegoAuthn.handleSignIn(). ' + verdict.code + '.');
       return;
     }
@@ -696,46 +758,47 @@ class SpnegoAuthn {
     // Nothing was interrupted, so this is the whole of it: a page saying who
     // you now are. The same shape federation's own entry point draws when it is
     // reached without a `returnTo`.
-    res.type('html').send(page('Signed in',
-      '<h1>200 &mdash; you are signed in</h1>' +
-      '<div class="ok">Signed in as <strong>' + xmlEscape(username) +
-      '</strong>, from the Kerberos principal <code>' +
-      xmlEscape(verdict.client) + '</code>.</div>' +
-      '<p>The session cookie is set. Every protocol this service speaks ' +
-      'reads the same session, so an <code>/oauth2/authorize</code>, a ' +
-      '<code>wsignin1.0</code>, a SAML AuthnRequest or the admin console ' +
-      'will now complete without asking you for anything.</p>' +
+    // In the signed-in person's language (#539): their entry now answers.
+    const framed = this.framed(null, username);
+    const t = framed.t;
+    res.type('html').send(page(t.text('spnego.signedIn.title'),
+      '<h1>' + t.html('spnego.signedIn.heading') + '</h1>' +
+      '<div class="ok">' + t.html('spnego.signedIn.as',
+        { name: username, principal: verdict.client }) + '</div>' +
+      '<p>' + t.html('spnego.signedIn.cookie') + '</p>' +
       '<table>' +
-      '<tr><th>What</th><th>Value</th></tr>' +
-      '<tr><td>Session</td><td><code>' + xmlEscape(session.id) +
-        '</code></td></tr>' +
-      '<tr><td>Subject</td><td><code>' + xmlEscape(session.user.sub) +
-        '</code></td></tr>' +
-      '<tr><td>Ticket flags</td><td><code>' +
+      '<tr><th>' + t.html('spnego.facts.what') + '</th><th>' +
+      t.html('spnego.facts.value') + '</th></tr>' +
+      '<tr><td>' + t.html('spnego.signedIn.session') + '</td><td><code>' +
+        xmlEscape(session.id) + '</code></td></tr>' +
+      '<tr><td>' + t.html('spnego.signedIn.subject') + '</td><td><code>' +
+        xmlEscape(session.user.sub) + '</code></td></tr>' +
+      '<tr><td>' + t.html('spnego.signedIn.flags') + '</td><td><code>' +
         xmlEscape((verdict.ticketFlags || []).join(', ') || 'none') +
         '</code></td></tr>' +
-      '<tr><td>Authentication indicators (RFC 8129)</td><td><code>' +
+      '<tr><td>' + t.html('spnego.signedIn.indicators') + '</td><td><code>' +
         xmlEscape((verdict.authIndicators || []).join(', ') || 'none') +
         '</code></td></tr>' +
       '<tr><td>amr</td><td><code>' +
         xmlEscape(factors.amr.join(', ') || '(none claimed)') + '</code>' +
-        (factors.amr.length ? '' : ' &mdash; the ticket claims no ' +
-          'pre-authentication, so this service claims no authentication ' +
-          'method') +
+        (factors.amr.length ? '' : ' ' + t.html('spnego.signedIn.noAmr')) +
         '</td></tr>' +
       '<tr><td>acr</td><td><code>' + xmlEscape(factors.acr) +
-      '</code></td></tr><tr><td>Mechanism</td><td><code>' +
+      '</code></td></tr><tr><td>' + t.html('spnego.signedIn.mechanism') +
+        '</td><td><code>' +
         xmlEscape(spnego.mechName(verdict.selected)) + '</code>' +
-        (verdict.rawKerberos ? ' &mdash; a bare Kerberos token, no negotiation'
-                             : '') + '</td></tr>' +
+        (verdict.rawKerberos ? ' ' + t.html('spnego.signedIn.bare') : '') +
+        '</td></tr>' +
       '<tr><td>mechListMIC</td><td>' + (verdict.micVerified
-        ? '<span class="pass">verified</span>'
-        : '<span class="fail">not sent</span>') + '</td></tr></table>' +
-      (verdict.checks ? '<h2>What this service checked</h2>' +
+        ? '<span class="pass">' + t.html('spnego.signedIn.verified') +
+          '</span>'
+        : '<span class="fail">' + t.html('spnego.signedIn.notSent') +
+          '</span>') + '</td></tr></table>' +
+      (verdict.checks ? '<h2>' + t.html('spnego.checked') + '</h2>' +
         checksTable(verdict.checks) : '') +
-      '<p class="sub"><a href="/admin/users">/admin/users</a> now has a row ' +
-      'for this person, and the embedded directory has an entry. <a ' +
-      'href="/logout">/logout</a> ends it.</p>'));
+      '<p class="sub"><a href="/admin/users">/admin/users</a> ' +
+      t.html('spnego.signedIn.usersRow') + ' <a href="/logout">/logout</a> ' +
+      t.html('spnego.signedIn.logoutEnds') + '</p>', framed.framing));
     log.debug('Leaving SpnegoAuthn.handleSignIn(). Signed in with nothing to ' +
               'return to.');
   }
@@ -792,17 +855,15 @@ const slot = new InstanceSlot<SpnegoAuthn>(
 // What a browser that cannot do Negotiate is looking at, said once. It is on
 // the first challenge only: the later pages are refusals of a token that WAS
 // sent, so the client evidently can.
-const BROWSER_NOTE =
-  '<h2>If nothing happened</h2><p>Most browsers send <code>Negotiate</code> ' +
-  'only to hosts on an explicit allow-list, and the machine needs a Kerberos ' +
-  'credential cache in this realm besides. In Chrome that is ' +
-  '<code>--auth-server-allowlist</code>; in Firefox it is ' +
-  '<code>network.negotiate-auth.trusted-uris</code>. Without both, what you ' +
-  'see is this page and no ticket is ever requested &mdash; which is not a ' +
-  'failure of anything here, and is why the link above exists.</p><p ' +
-  'class="sub">A program does not have this problem: get a ticket for the ' +
-  'service principal named below and send it as <code>Authorization: ' +
-  'Negotiate &lt;base64&gt;</code>. That is all this endpoint is.</p>';
+// "If nothing happened", which was a constant here, is three messages of the
+// `spnego` catalog since #539 (`spnego.ifNothing.*`).
+
+// The language chooser's look on this page (#539): the shell's own CSS knows
+// nothing of it, and its `button` and `select` would otherwise be unstyled.
+const CHOOSER_CSS = 'form.language-chooser{float:right;font-size:.8em;' +
+  'margin:0 0 6px 8px}form.language-chooser select,form.language-chooser ' +
+  'button{font-size:1em;padding:2px 6px}form.language-chooser label{margin:' +
+  '0 4px 0 0}';
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the

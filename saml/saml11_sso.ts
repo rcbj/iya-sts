@@ -260,6 +260,9 @@ import documentSettings = require('./document_settings');
 import listenerKeys = require('./listener_keys');
 import returnAddress = require('./return_address');
 import personAttributes = require('./person_attributes');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
+// no route and closes no cycle. Only the Browser/POST hand-off page uses it.
+import PageLocale = require('../common/page_locale');
 // THE CLUSTER CLAIM (2026-09-14, #46), which an artifact is spent through so
 // two nodes against one store cannot both resolve it — the same arrangement as
 // saml2_sso.ts's spendArtifact(), whose comment argues it. A library that
@@ -925,11 +928,16 @@ class Saml11Sso {
   // because app.js sets `default-src 'none'` with `style-src 'unsafe-inline'`,
   // so a stylesheet as a separate resource would need its own exception to buy
   // nothing.
-  private page(title, inner) {
+  //
+  // `t` is the page's translator (#539), for the page a person passes
+  // through; without one the page is English, exactly as it always was.
+  private page(title, inner, t?) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering Saml11Sso.page().");
     log.debug("Leaving Saml11Sso.page().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<title>' + xmlEscape(title) +
       '</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
@@ -1330,10 +1338,15 @@ class Saml11Sso {
   // same rule applies to it: echoed byte for byte and never interpreted. An
   // identity provider that decoded and re-encoded it produces the same symptom
   // as a lost session.
+  //
+  // IN THE PERSON'S LANGUAGE (#539), the words only: `note.t` is the page's
+  // translator. No language chooser: the page is drawn mid-flow and no GET
+  // redraws it without issuing again — it is on screen for an instant.
   private postProfilePage(destination, message, target, note) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering Saml11Sso.postProfilePage(). destination=" +
               destination);
+    const t = note.t;
     const inner = '<h1>' + xmlEscape(note.title) + '</h1>' +
       '<p class="sub">' + note.sub + '</p>' +
       '<form method="post" action="' + xmlEscape(destination) + '" ' +
@@ -1343,32 +1356,28 @@ class Saml11Sso {
          '<input type="hidden" name="TARGET" value="' + xmlEscape(target) +
          '">' :
          '') +
-        '<div class="row"><button type="submit">Continue to ' +
-      xmlEscape(note.who) +
+        '<div class="row"><button type="submit">' +
+        t.html('handoff.common.continueToRp') +
         '</button></div>' +
       '</form>' +
       '<div class="meta">' +
-      '<div>posting to: <code>' + xmlEscape(destination) + '</code></div>' +
-      '<div>field: <code>SAMLResponse</code>, ' + message.length + ' base64 ' +
-      'characters</div><div>TARGET: ' +
-      (target ? '<code>' + xmlEscape(target) + '</code>, ' +
-          'echoed byte for byte'
-                                : 'none was supplied, so none is returned') +
-      '</div><div>The ' +
-      'form submits itself from <code>' + BASE_PATH + '/autopost.js</code>. ' +
-      'It is a separate resource because this service sets <code>script-src ' +
-      '\'none\'</code> on every response and this page relaxes it to ' +
-      '<code>\'self\'</code> — an inline script would not run, and the ' +
-      'button ' +
-      'would be the only thing that worked. With scripting off, the button ' +
-      'IS ' +
-      'the mechanism.</div></div><script ' +
+      '<div>' + t.html('handoff.common.postingTo',
+                       { destination: destination }) + '</div>' +
+      '<div>' + t.html('handoff.common.field',
+                       { field: 'SAMLResponse', length: message.length }) +
+      '</div><div>' +
+      (target ? t.html('handoff.saml11.targetEchoed', { target: target })
+              : t.html('handoff.saml11.targetNone')) +
+      '</div><div>' +
+      t.html('handoff.common.autopost',
+             { script: BASE_PATH + '/autopost.js' }) +
+      '</div></div><script ' +
       'src="' + BASE_PATH + '/autopost.js"></script>';
     log.debug("Leaving Saml11Sso.postProfilePage().");
     return inner;
   }
 
-  private sendPostProfile(res, title, inner) {
+  private sendPostProfile(res, title, inner, t) {
     const { app, log } = this.deps;
     log.debug("Entering Saml11Sso.sendPostProfile().");
     res.set('Content-Security-Policy',
@@ -1376,7 +1385,7 @@ class Saml11Sso {
     res.status(200)
        .type('text/html')
        .set('Cache-Control', 'no-store')
-       .send(this.page(title, inner));
+       .send(this.page(title, inner, t));
     log.debug("Leaving Saml11Sso.sendPostProfile().");
   }
 
@@ -1512,11 +1521,20 @@ class Saml11Sso {
       recipient: opts.destination,
       assertion: opts.assertion
     });
-    this.sendPostProfile(res, opts.note.title,
+    // THE PAGE'S LANGUAGE (#539): the relying party's (its providerId is the
+    // application a locale policy names) and the person's. A note with
+    // `words` is translated by them.
+    const t = PageLocale.forPage({ application: opts.providerId ||
+                                     opts.rpId || '',
+                                   username: opts.subject || '' });
+    const note = Object.assign({}, opts.note,
+                               opts.note.words ? opts.note.words(t) : {},
+                               { t: t });
+    this.sendPostProfile(res, note.title,
                          this.postProfilePage(opts.destination,
                                               Buffer.from(response.xml, 'utf8')
                                                     .toString('base64'),
-                                              opts.target, opts.note));
+                                              opts.target, note), t);
     log.debug("Leaving Saml11Sso.deliver(). By form POST.");
   }
 
@@ -2107,12 +2125,12 @@ class Saml11Sso {
       target: ctx.target,
       providerId: ctx.providerId, rpId: ctx.rpId, scopedId: ctx.scopedId,
       subject: (session.user && session.user.username) || '',
-      note: { title: 'Signing in — SAML 1.1', who: 'the relying party',
-                   sub: 'saml-profile-1.1 section 4.2, the Browser/POST ' +
-                        'profile — the assertion travels in the body of a ' +
-                        'form POST, so it is not length-limited and never ' +
-                        'appears in a URL, a log or a ' +
-                        'Referer header.' }
+      // In the person's language (#539): deliver() hands `words` the page's
+      // translator.
+      note: { words: function (t) {
+        return { title: t.text('handoff.saml11.signingIn.title'),
+                 sub: t.html('handoff.saml11.signingIn.sub') };
+      } }
     });
     log.debug("Leaving Saml11Sso.issueSignIn(). " +
               ((session.user && session.user.username) || '?') +

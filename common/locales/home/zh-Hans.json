@@ -1,0 +1,22 @@
+{
+  "logoAlt": "IYA STS — 安全令牌服务",
+  "sub": "一个宽松的模拟身份服务，支持十六个协议族。它的存在是为了测试客户端。",
+  "version": "版本 {version}",
+  "warn": "它不检查密码、不验证访问令牌，也不证明工作负载。请勿将此端口暴露在公共地址上。",
+  "repoLabel": "GitHub 上的项目",
+  "repoNote": "源代码、README，以及十六个协议族的完整说明。",
+  "issuesLabel": "问题",
+  "issuesNote": "已知的问题，以及报告尚未发现的问题的地方。",
+  "docsLabel": "文档",
+  "docsNote": "GitHub Pages 站点：入门、配置，以及刻意不检查的内容。",
+  "consoleLabel": "此实例上的管理控制台",
+  "consoleNote": "此进程所做的一切，以及改变其协议端点行为的设置。",
+  "consoleRoles": "它还要求您具有两个角色之一。",
+  "consoleOpen": "它在此实例上是开放的。",
+  "consoleMetadata": "此服务注册的每个端点都列在其中，位于 /admin/sts-metadata。",
+  "portalLabel": "此实例上的用户门户",
+  "portalNote": "属于正在查看的人的账户页面：您如何登录此服务、它保存了您的哪些信息，以及它会将您登录到哪里。",
+  "portalNoRole": "它不要求任何角色，这正是它与上面控制台的全部区别：它的每个页面都与正在查看的人有关，因此说明您是谁就是唯一的问题。",
+  "signInProduct": "它会要求您登录，而此实例处于产品模式，因此会根据账户检查密码。",
+  "signInDevelopment": "它会要求您登录——任意用户名均可，且不检查密码。"
+}

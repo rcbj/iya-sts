@@ -2541,6 +2541,20 @@ const SPECS: Spec[] = [
               'covered: counter-based HOTP as an authentication mechanism — ' +
               'nothing here holds a counter that advances on use, because ' +
               'the only caller is the time-based construction below.' },
+  // #539 (2026-10-09): the language a page is drawn in. Two RFCs that make
+  // up BCP 47, one row, because nothing here uses either without the other.
+  { id: 'bcp47', name: 'BCP 47 — RFC 5646 Tags for Identifying Languages ' +
+                       'and RFC 4647 Matching of Language Tags',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/info/bcp47',
+    coverage: 'partial: every tag is canonicalised and checked for being ' +
+              'well-formed by Intl (RFC 5646), and a reader\'s list is ' +
+              'matched against the catalogs by RFC 4647 section 3.4 lookup ' +
+              'with the script made explicit (likely subtags), so zh-HK ' +
+              'never falls to Simplified Chinese. NOT the extended filtering ' +
+              'of section 3.3.2, and no extension or private-use subtag ' +
+              'chooses a catalog. Refusals and error text are English in ' +
+              'every locale, by design.' },
   { id: 'rfc6238', name: 'RFC 6238 — TOTP: Time-Based One-Time Password ' +
                          'Algorithm',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6238',
@@ -8104,6 +8118,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'checks the browser binding, the token\'s scrypt hash, the expiry ' +
           'and the single-use claim, and signs in. Opened in another browser ' +
           'it spends nothing and says where to open it.' },
+  { path: '/authn/language', group: 'Authentication',
+    name: 'Language chooser',
+    specs: ['bcp47', 'oidc'],
+    effect: 'sets the chooser cookie, writes a signed-in person\'s ' +
+            'preferredLanguage, and returns to the page with a 303',
+    what: 'THE LANGUAGE CHOOSER (#539, 2026-10-09). Every user-facing page ' +
+          'carries a form posting `lang` and `return` here; a tag no catalog ' +
+          'answers is refused (STS-I18N-0008), `return` is held to a local ' +
+          'path, and a signed-in person\'s own preferredLanguage is written ' +
+          'too, because it outranks the cookie. A page\'s language is ' +
+          'ui_locales, then preferredLanguage, then this cookie, then ' +
+          'Accept-Language, then the locale policy\'s default.' },
   { path: '/authn/password-change', group: 'Authentication',
     name: 'Forced password change step',
     specs: ['oidc'],

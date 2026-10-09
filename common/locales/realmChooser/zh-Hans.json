@@ -1,0 +1,10 @@
+{
+  "title": "选择您的领域",
+  "heading": "选择您的领域",
+  "lead": "请选择一个领域以继续前往{surface, select, portal {您的账户} other {管理控制台}}。在您选择之前，此处的其他功能均无法使用。",
+  "explain": "此服务托管多个信任领域，每个领域都有自己的用户和管理员。请选择您所属的领域，随后将要求您在该领域登录。",
+  "realm": "领域",
+  "continue": "继续前往{surface, select, portal {您的账户} other {管理控制台}}",
+  "defaultRealm": "（默认领域）",
+  "idNote": "您的管理员可以告诉您所属领域的 ID。默认领域的 ID 是 <code>{id}</code>。"
+}

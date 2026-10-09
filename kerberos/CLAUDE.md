@@ -458,6 +458,17 @@ commit that bumps the `sts/` gitlink across the change, or the four jobs die at
 load with `Cannot find module` naming a file nobody edited. See
 `docs/parent-project-migration.md`.
 
+**`kerberos/spnego.js` WAS EDITED HERE ON 2026-10-09 (#539), with rcbj's leave**
+("go ahead and update the kerberos sign-in page. I'll deal with the drift from
+the parent project"). `page()` takes an optional third argument, `framing`,
+holding the `<html>` attributes, a block drawn first in the card, and extra
+CSS. With it, `spnego_authn.ts` draws `/authn/spnego`'s first 401, its
+continuation and its "Signed in" page in the reader's language with the
+language chooser. Without it, the output is byte-for-byte what it was, so the
+parent's own `/spnego/protected` is unchanged. It added **no require**, so the
+COPY closure did not grow. rcbj reconciles the difference with the parent
+project; until then the next `--sync` of the parent's copy would undo it.
+
 **AND OWED AGAIN AS OF 2026-10-03 (#186): `kerberos/krb5_delegation.ts` and
 what it reaches.** `krb5_kdc.js` requires it LAZILY — on the first request
 that asks about delegation (an AS-REQ for a forwardable TGT is one) — and it

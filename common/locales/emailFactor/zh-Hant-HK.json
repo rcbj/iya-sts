@@ -1,0 +1,9 @@
+{
+  "checkEmail": "請查看電郵",
+  "ask.title": "電郵",
+  "ask.codeHeading": "以電郵傳送驗證碼給我",
+  "ask.linkHeading": "以電郵傳送登入連結給我",
+  "code.title": "您的電郵驗證碼",
+  "code.label": "電郵中的驗證碼",
+  "wait.title": "請查看電郵"
+}

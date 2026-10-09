@@ -2259,8 +2259,9 @@ re-authentication in between voids it. `SameSite=Lax` keeps the sign-on cookie
 off a cross-site POST, so such a POST is ASKED rather than answered — answering
 it would clear a cookie it never saw. No script: a button needs none.
 
-**NOT DONE**: `ui_locales` is accepted and every page is English, the only
-language here (section 2 permits that). `tests/rp_initiated_logout.js` holds
+**`ui_locales` is honoured on the sign-out pages since #539**: the
+confirmation and signed-out pages are drawn in it (namespace `oauthPages`),
+and a refusal stays English. `tests/rp_initiated_logout.js` holds
 it in a child process; `tests/vendored/sts_rp_initiated_logout.js` over HTTP.
 
 ## OPENID CONNECT REGISTRATION, AND THE `jwks_uri` (#120, 2026-09-22)

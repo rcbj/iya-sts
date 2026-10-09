@@ -1,0 +1,3 @@
+{
+  "signedIn.cookie": "Le témoin de session est posé. Chaque protocole de ce service lit la même session : un <code>/oauth2/authorize</code>, un <code>wsignin1.0</code>, une AuthnRequest SAML ou la console d’administration aboutiront désormais sans rien vous demander."
+}

@@ -1,0 +1,10 @@
+{
+  "title": "選擇您的領域",
+  "heading": "選擇您的領域",
+  "lead": "請選擇一個領域以繼續前往{surface, select, portal {您的帳戶} other {管理主控台}}。在您選擇之前，此處的其他功能皆無法使用。",
+  "explain": "此服務代管多個信任領域，每個領域都有自己的使用者與管理員。請選擇您所屬的領域，接著系統會要求您在該領域登入。",
+  "realm": "領域",
+  "continue": "繼續前往{surface, select, portal {您的帳戶} other {管理主控台}}",
+  "defaultRealm": "（預設領域）",
+  "idNote": "您的管理員可以告訴您所屬領域的 ID。預設領域的 ID 是 <code>{id}</code>。"
+}

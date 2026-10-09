@@ -131,6 +131,13 @@ import version = require('../common/version');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 
+// THE LANGUAGE (#539). A LIBRARY (rule 3): it requires `i18n`,
+// `locale_policy`, `helpers` and `config`, and no route module, so requiring
+// it from here moves no route.
+import PageLocale = require('../common/page_locale');
+
+type Translator = ReturnType<typeof PageLocale.forPage>;
+
 const APP_VERSION = version.load();
 
 const VERSION = APP_VERSION.version;
@@ -410,36 +417,45 @@ class Home {
   // page reads every other conditional fact about the running service that way:
   // it is a front door, and it is drawn from what is true now.
   // ---------------------------------------------------------------------------
-  private signInMeans() {
+  // Translated (#539): the sentence is drawn in the page's language, so it
+  // takes the page's translator and answers HTML.
+  private signInMeans(t: Translator) {
     const { mode } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Home.signInMeans().");
     log.debug("Leaving Home.signInMeans().");
     return mode.verifiesCredentials()
-      ? 'It asks you to sign in, and this instance is in product mode, so ' +
-        'the password is checked against the account.'
-      : 'It asks you to sign in — any username, and no password is checked.';
+      ? t.html('home.signInProduct')
+      : t.html('home.signInDevelopment');
   }
 
+  // `label` and `note` are HTML since #539: each is a translated message from
+  // `t.html()`, which escapes its own parameters, so escaping them again here
+  // would draw an apostrophe as `&#39;`.
   private linkRow(href, label, external, note) {
     const { log, xmlEscape } = this.deps.helpers;
     log.debug("Entering Home.linkRow().");
     log.debug("Leaving Home.linkRow().");
     return '<li><a href="' + xmlEscape(href) + '"' +
       (external ? ' target="_blank" rel="noopener noreferrer"' : '') + '>' +
-      xmlEscape(label) + '</a><span class="note">' + xmlEscape(note) +
-      '</span></li>';
+      label + '</a><span class="note">' + note + '</span></li>';
   }
 
   private homePage() {
     const { mode } = this.deps;
     const { log, xmlEscape } = this.deps.helpers;
+    const { realms } = this.deps;
     log.debug('Entering Home.homePage().');
+    // THE LANGUAGE (#539). The front door is drawn for no application, and it
+    // reads no session — it would have to require `authn` for one, and the
+    // person's own choice already reaches it through the chooser's cookie.
+    const t = PageLocale.forPage({});
     const logo = logoBytes
       ? '<div class="hero"><img src="' + LOGO_ROUTE + '" width="906" ' +
-        'height="269" alt="IYA STS — Security Token Service"></div>'
+        'height="269" alt="' + xmlEscape(t.text('home.logoAlt')) + '"></div>'
       : '';
-    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    const html = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+      '><head><meta ' +
       'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
       'initial-scale=1"><title>IYA STS</title><style>' +
       'body{font-family:system-ui,-apple-system,"Segoe ' +
@@ -465,46 +481,41 @@ class Home {
       'a:hover{text-decoration:underline}' +
       '.note{display:block;color:#666;font-size:.8em;font-weight:400;' +
       'margin-top:2px}' +
+      'form.language-chooser{float:right;font-size:.78em;margin:0 0 6px 8px}' +
+      'form.language-chooser label{margin-right:4px}' +
       '</style></head><body><div class="card">' + logo + '<div class="body">' +
+      // A GET always draws this page, so the chooser comes back to it.
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + '/')) +
       '<h1>IYA STS</h1>' +
-      '<p class="sub">A permissive mock identity service that speaks sixteen ' +
-      'protocol families. It exists to exercise CLIENTS.</p>' +
+      '<p class="sub">' + t.html('home.sub') + '</p>' +
       // THE VERSION, WITH ITS PROVENANCE IN THE TOOLTIP. The number is what a
       // person quotes in a bug report; the build instant, the commit and
       // whether this is a stamped artifact or a checkout are what somebody
       // needs when two instances of the same M.N do different things. A title
       // attribute rather than a second line because this is the front door and
       // the version is not what anybody came for.
-      '<p class="ver" title="' + xmlEscape(BUILD_INFO) + '">version ' +
-      xmlEscape(VERSION) + '</p>' +
-      '<div class="warn">It checks no password, validates no access token ' +
-      'and attests no workload. Do not put this port on a public ' +
-      'address.</div><ul>' +
-      this.linkRow(REPO_URL, 'The project on GitHub', true,
-                   'The source, the README, and the sixteen families in ' +
-                   'full.') +
-      this.linkRow(ISSUES_URL, 'Issues', true,
-                   'What is known to be wrong, and where to say what is not.') +
-      this.linkRow(DOCS_URL, 'Documentation', true,
-                   'The GitHub Pages site: getting started, configuration, ' +
-                   'and what is deliberately not checked.') +
-      this.linkRow(CONSOLE_PATH, 'The admin console on this instance', false,
-                   'Everything this process has done, and the settings that ' +
-                   'change what its protocol endpoints do. ' +
+      '<p class="ver" title="' + xmlEscape(BUILD_INFO) + '">' +
+      t.html('home.version', { version: VERSION }) + '</p>' +
+      '<div class="warn">' + t.html('home.warn') + '</div><ul>' +
+      this.linkRow(REPO_URL, t.html('home.repoLabel'), true,
+                   t.html('home.repoNote')) +
+      this.linkRow(ISSUES_URL, t.html('home.issuesLabel'), true,
+                   t.html('home.issuesNote')) +
+      this.linkRow(DOCS_URL, t.html('home.docsLabel'), true,
+                   t.html('home.docsNote')) +
+      // The note is still assembled from sentences, as it was: which ones
+      // depend on the mode, and each is a message of its own.
+      this.linkRow(CONSOLE_PATH, t.html('home.consoleLabel'), false,
+                   t.html('home.consoleNote') + ' ' +
                    (mode.gatesConsole()
-                     ? this.signInMeans() +
-                       ' It also asks for one of two roles.'
-                     : 'It is open on this instance.') +
-                   ' Every endpoint this service registered is listed inside ' +
-                   'it, at /admin/sts-metadata.') +
-      this.linkRow(PORTAL_PATH, 'The user portal on this instance', false,
-                   'The account pages of whoever is looking at them: how ' +
-                   'they sign in to this service, what it holds about them, ' +
-                   'and where it will sign them in. ' + this.signInMeans() +
-                   ' It asks for no role, which is the whole difference from ' +
-                   'the console above: every page of it is about the person ' +
-                   'looking at it, so saying who you are is the entire ' +
-                   'question.') +
+                     ? this.signInMeans(t) + ' ' +
+                       t.html('home.consoleRoles')
+                     : t.html('home.consoleOpen')) +
+                   ' ' + t.html('home.consoleMetadata')) +
+      this.linkRow(PORTAL_PATH, t.html('home.portalLabel'), false,
+                   t.html('home.portalNote') + ' ' + this.signInMeans(t) +
+                   ' ' + t.html('home.portalNoRole')) +
       '</ul></div></div></body></html>\n';
     log.debug('Leaving Home.homePage().');
     return html;

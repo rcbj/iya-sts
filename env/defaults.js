@@ -1339,7 +1339,6 @@ var config = {
     transport: "default",                // Mail transport
     from: "",                            // From address
     fromName: "",                        // From display name
-    defaultLanguage: "en",               // Default message language
     smtpPreset: "custom",                // SMTP preset
     smtpHost: "",                        // SMTP host
     smtpPort: 587,                       // SMTP port

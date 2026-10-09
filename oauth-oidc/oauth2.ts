@@ -408,6 +408,10 @@ import clientJwks = require('./client_jwks');
 // A library: what "registered" means for an application (#494, #496). It
 // reaches the registry lazily, so this require closes no cycle.
 import IssuerNames = require('../common/issuer_names');
+// The catalogs (#539), for `ui_locales_supported`. A leaf.
+import i18n = require('../common/i18n');
+// The language of the pages drawn here for a browser (#539). A library.
+import PageLocale = require('../common/page_locale');
 // A library: what an RFC 8707 resource may name in product (#505). It reaches
 // the registry, the access-token profile and the management API lazily, at
 // request time, so this require closes no cycle.
@@ -2111,13 +2115,16 @@ class OAuth2Server {
       token_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
       service_documentation: helpers.rebaseTo(base, 'home') + '/docs',
-      // One locale, because there is one: the login screen is the only UI this
-      // server renders and it is written in English. A request's ui_locales
-      // is accepted and answered in English, which section 3.1.2.1 permits
-      // ("An error SHOULD NOT result if some or all of the requested locales
-      // are not supported"). The list used to name four, which a client is
-      // entitled to read as "ask for fr-CA and you will get it".
-      ui_locales_supported: ['en-US'],
+      // THE LOCALES THE LANGUAGE CHOOSER OFFERS (#539), each answered by a
+      // catalog: a request's ui_locales naming one gets the sign-in and
+      // consent screens in it (`common/page_locale.ts`). A tag no catalog
+      // answers is passed over without an error, which section 3.1.2.1
+      // permits ("An error SHOULD NOT result if some or all of the requested
+      // locales are not supported"). Until #539 the list was `en-US` alone,
+      // because every page was English.
+      ui_locales_supported: i18n.offered().map(function (one) {
+        return one.tag;
+      }),
       op_policy_uri: helpers.rebaseTo(base, 'home') + '/policy',
       op_tos_uri: helpers.rebaseTo(base, 'home') + '/tos',
       revocation_endpoint: at + '/oauth2/revoke',
@@ -8177,7 +8184,8 @@ class OAuth2Server {
                   self.authorizationReturnQuery(req, query),
         hint: String(user.username || ''),
         protocol: 'OAuth 2.0 / OIDC',
-        application: String(query.client_id || '')
+        application: String(query.client_id || ''),
+        uiLocales: String(query.ui_locales || '')
       }));
     }
     // -----------------------------------------------------------------------
@@ -8206,7 +8214,8 @@ class OAuth2Server {
         forceMfa: roleAnswer.risk.factor === 'second-factor',
         forceKey: roleAnswer.risk.factor === 'security-key',
         protocol: 'OAuth 2.0 / OIDC',
-        application: String(query.client_id || '')
+        application: String(query.client_id || ''),
+        uiLocales: String(query.ui_locales || '')
       }));
     }
     if (!roleAnswer.allowed) {
@@ -8611,6 +8620,24 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
   }
 
+  // THE LANGUAGE OF A PAGE THIS MODULE DRAWS FOR A BROWSER (#539): the
+  // form_post handoff and the RP-initiated sign-out pages. `ui_locales` first
+  // (OpenID Connect Core 1.0 section 3.1.2.1, RP-Initiated Logout 1.0
+  // section 2), then the person, the chooser's cookie, the browser and the
+  // client's locale policy — `common/page_locale.ts`'s order. The error
+  // pages are not drawn with it: every refusal stays English.
+  private pageTranslator(req: Req, application: string, uiLocales: string,
+                         username: string):
+                         ReturnType<typeof PageLocale.forPage> {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.pageTranslator().");
+    const out = PageLocale.translatorFor(req, { application: application,
+                                                uiLocales: uiLocales,
+                                                username: username });
+    log.debug("Leaving OAuth2Server.pageTranslator(). " + out.locale);
+    return out;
+  }
+
   /**
    * Sends a `response_mode=form_post` page: the fields as hidden inputs, a real
    * submit button, and the one script that submits it.
@@ -8620,7 +8647,8 @@ class OAuth2Server {
    * @param fields - the response fields
    */
   formPostResponse(res: Res, redirectUri: Json, fields: Json): Json {
-    const { app, log, xmlEscape } = this.deps;
+    const { app, log, xmlEscape, sessionOf } = this.deps;
+    const self = this;
     log.debug("Entering OAuth2Server.formPostResponse(). fields=" +
               Object.keys(fields).join(', '));
     const inputs = Object.keys(fields).map(function (name) {
@@ -8636,30 +8664,41 @@ class OAuth2Server {
              xmlEscape(String(fields[name])) +
              '</code></div>';
     }).join('');
-    const html = '<!doctype html><html lang="en"><head><meta ' +
-      'charset="utf-8"><title>Returning to the client</title><style>' +
+    // THE LANGUAGE (#539): the authorization request's `ui_locales`, its
+    // client and the person signed in, as the sign-in and consent screens
+    // read them. NO LANGUAGE CHOOSER, unlike every other page converted: the
+    // page submits itself the moment it loads, and the only GET that would
+    // redraw it is the authorization request, which a second pass would
+    // answer with a second code (or refuse as a replay) rather than redraw.
+    const req: Req = res.req || {};
+    const held = (res.locals && res.locals.stsJarm) || {};
+    const session = sessionOf(req);
+    const t = self.pageTranslator(req,
+      String(held.clientId || (req.query || {}).client_id || ''),
+      String((req.query || {}).ui_locales || ''),
+      String((session && session.user && session.user.username) || ''));
+    const html = '<!doctype html><html' + PageLocale.htmlAttributes(t) +
+      '><head><meta ' +
+      'charset="utf-8"><title>' +
+      xmlEscape(t.text('oauthPages.formPost.title')) + '</title><style>' +
       'body{font-family:system-ui,sans-serif;margin:2rem;max-width:52rem;' +
       'color:#222}code{font-family:ui-monospace,Menlo,monospace;' +
       'font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;' +
       'border-radius:3px;word-break:break-all}.sub{color:#666}' +
       '.meta{margin-top:1.5rem;font-size:.9rem;color:#444}' +
       'button{font:inherit;padding:.4rem .9rem}</style></head><body>' +
-      '<h1>Returning to the ' +
-      'client</h1><p class="sub">OAuth 2.0 Form Post Response Mode — the ' +
-      'authorization response travels in a form POST rather than in a ' +
-      'redirect, so it never appears in a URL, in browser history or in a ' +
-      '<code>Referer</code> header (RFC 9700 section 4.3).</p><form ' +
+      '<h1>' + t.html('oauthPages.formPost.heading') + '</h1>' +
+      '<p class="sub">' + t.html('oauthPages.formPost.sub') + '</p><form ' +
       'method="post" action="' + xmlEscape(redirectUri) + '" ' +
           'id="oauth2-form">' + inputs +
-      '<div><button type="submit">Continue to the client</button></div>' +
+      '<div><button type="submit">' + t.html('oauthPages.formPost.continue') +
+      '</button></div>' +
       '</form>' +
-      '<div class="meta"><div>posting to: <code>' + xmlEscape(redirectUri) +
-      '</code></div>' +
+      '<div class="meta"><div>' +
+      t.html('oauthPages.formPost.postingTo', { uri: redirectUri }) +
+      '</div>' +
       rows +
-      '<div>The form submits itself from <code>/oauth2/autopost.js</code>. ' +
-      'It is a separate resource because this service sets <code>script-src ' +
-      '\'none\'</code> on every response and this page relaxes it to ' +
-      '<code>\'self\'</code>; with scripting off the button IS the mechanism.' +
+      '<div>' + t.html('oauthPages.formPost.scriptNote') +
       '</div></div><script ' +
       'src="/oauth2/autopost.js"></script></body></html>';
     // The same shape of exception the WebAuthn and WS-Federation pages take,
@@ -10767,6 +10806,11 @@ class OAuth2Server {
             return decision.outstanding.indexOf(one) < 0;
           }),
           protocol: 'OAuth 2.0 / OIDC',
+          // OpenID Connect Core 1.0 section 3.1.2.1 (#539): the consent
+          // screen is drawn in the languages the relying party asked for,
+          // as the sign-in screen is — from `q`, which for a request object
+          // is what was signed and not what is on the return path.
+          uiLocales: String(q.ui_locales || ''),
           details: [
             { label: 'client_id', value: q.client_id || '' },
             { label: 'scope', value: q.scope || '(none requested)' },
@@ -10889,6 +10933,10 @@ class OAuth2Server {
       // identifier exactly as a protocol presented it, and one this service has
       // never heard of simply has no entry, which is not an error.
       application: q.client_id || '',
+      // OpenID Connect Core 1.0 section 3.1.2.1 (#539): the languages the
+      // relying party asks the sign-in screen to be drawn in. Honoured, where
+      // until #539 it was accepted and every page was English.
+      uiLocales: q.ui_locales || '',
       // Enterprise Extensions section 3.1 (#148): home-realm discovery.
       domainHint: q.domain_hint || ''
     }));
@@ -10904,14 +10952,22 @@ class OAuth2Server {
   // requiring that module from here would invert rule 5.
   // `head` is markup for the <head>, already escaped — the one caller that
   // passes it is the front-channel return's <meta> refresh (#122).
-  private logoutPage(inner: Json, head?: string): Json {
-    const { log } = this.deps;
+  // `t` is the page's translator (#539), and `title` the <title> as text; a
+  // refusal page passes neither and is drawn as it always was, in English.
+  private logoutPage(inner: Json, head?: string,
+                     t?: ReturnType<typeof PageLocale.forPage>,
+                     title?: string): Json {
+    const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutPage().");
     log.debug("Leaving OAuth2Server.logoutPage().");
-    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta ' +
+    return '<!doctype html><html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8"><meta ' +
       'name="viewport" content="width=device-width, ' +
-      'initial-scale=1"><title>Signed ' +
-      'out</title>' + (head || '') +
+      'initial-scale=1"><title>' +
+      xmlEscape(title ||
+                (t ? t.text('oauthPages.signedOut.title') : 'Signed out')) +
+      '</title>' + (head || '') +
       '<style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Roboto,sans-serif;margin:2rem auto;max-width:52rem;padding:0 1rem;' +
       'line-height:1.5;color:#111}h1{font-size:1.4rem}h2{font-size:1.1rem;' +
@@ -10958,14 +11014,18 @@ class OAuth2Server {
 
   // A sign-out answer that is a PAGE for the person (#124, gap 8): a refusal
   // was a JSON `oauthError` shown to a browser. `status` 400 for a refusal.
+  // A page that is not a refusal passes its translator and the language
+  // chooser (#539), drawn above the heading; a refusal passes neither and
+  // stays English.
   private logoutAnswer(res: Res, status: number, title: string,
-                       body: string): Json {
+                       body: string,
+                       t?: ReturnType<typeof PageLocale.forPage>,
+                       chooser?: string): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutAnswer(). " + status);
     res.status(status).type('text/html').set('Cache-Control', 'no-store')
-       .send(this.logoutPage('<h1>' + xmlEscape(title) + '</h1>' + body)
-         .replace('<title>Signed out</title>',
-                  '<title>' + xmlEscape(title) + '</title>'));
+       .send(this.logoutPage((chooser || '') + '<h1>' + xmlEscape(title) +
+                             '</h1>' + body, '', t, title));
     log.debug("Leaving OAuth2Server.logoutAnswer().");
     return undefined;
   }
@@ -11050,8 +11110,9 @@ class OAuth2Server {
   //      a cookie clear. The page has a real button and no script;
   //   5. only then the session ends, and the return carries `state`.
   //
-  // `ui_locales` is accepted and English is the only language this service
-  // has, so every page is `lang="en"`, which section 2 permits.
+  // `ui_locales` is honoured since #539 (section 2's "End-User's preferred
+  // languages and scripts for the user interface"): the confirmation and
+  // signed-out pages are drawn in it; a refusal stays English.
   // ---------------------------------------------------------------------------
   private logoutEndpoint(req: Req, res: Res): Json {
     const { log, validation, errorCodes, xmlEscape } = this.deps;
@@ -11172,12 +11233,26 @@ class OAuth2Server {
       String((req.headers || {}).cookie || ''));
     const confirmed = req.method === 'POST' && q.confirm === 'yes' &&
       String(q.confirm_for || '') === self.logoutConfirmFor(session);
+    // THE LANGUAGE (#539): RP-Initiated Logout 1.0 section 2's `ui_locales`,
+    // the client (named, or the id_token_hint's), and the person signed in.
+    // Built before the session ends, so the page after it still knows whose
+    // language it was.
+    const t = self.pageTranslator(req, clientId, String(q.ui_locales || ''),
+      String((session && session.user && session.user.username) || ''));
+    // The chooser on a page drawn once the request has been ACTED on returns
+    // to the front door: asking for the sign-out again would act again (a
+    // second pass of a declined one is a fresh confirmation, of a finished
+    // one a redirect to the client), not redraw the page.
+    const frontDoor = PageLocale.chooser(t, realms.currentPrefix(),
+                                         realms.currentPrefix() + '/');
     if (req.method === 'POST' && q.confirm === 'no') {
       log.debug("Leaving OAuth2Server.logoutRequest(). Declined.");
-      return self.logoutAnswer(res, 200, 'You are still signed in',
-        '<p>Nothing was ended.</p>' + (returnTo
-          ? '<p><a href="' + xmlEscape(returnTo) + '">Return to the ' +
-            'application</a></p>' : ''));
+      return self.logoutAnswer(res, 200,
+        t.text('oauthPages.logout.stillTitle'),
+        '<p>' + t.html('oauthPages.logout.nothingEnded') + '</p>' + (returnTo
+          ? '<p><a href="' + xmlEscape(returnTo) + '">' +
+            t.html('oauthPages.logout.returnToApp') + '</a></p>' : ''),
+        t, frontDoor);
     }
     const hintIsThisSession = !!(hinted && session && hinted.sid &&
                                  String(hinted.sid) === String(session.id));
@@ -11187,7 +11262,7 @@ class OAuth2Server {
       (!session && req.method === 'POST' && !cookiePresented));
     if (mustAsk) {
       log.debug("Leaving OAuth2Server.logoutRequest(). Asking.");
-      return self.logoutConfirmPage(res, q, session, client);
+      return self.logoutConfirmPage(req, res, q, session, client, t);
     }
     // --- 5. the sign-out ---------------------------------------------------
     // The same session WS-Federation's wsignout1.0 ends, through the same
@@ -11196,50 +11271,70 @@ class OAuth2Server {
     const backchannelMark = backchannel.mark();
     const ended = endSession(req, res);
     return self.logoutFinish(req, res, ended, backchannelMark, returnTo,
-                             refusedNote);
+                             refusedNote, t, frontDoor);
   }
 
   // The page that asks (#124, #115). A real form that POSTs back here with
   // the request's own parameters and the value only this session's page can
   // carry; no script (the root CLAUDE.md: a form needs none).
-  private logoutConfirmPage(res: Res, q: Json, session: Json,
-                            client: Json): Json {
+  private logoutConfirmPage(req: Req, res: Res, q: Json, session: Json,
+                            client: Json,
+                            t: ReturnType<typeof PageLocale.forPage>): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutConfirmPage().");
-    const carried = ['post_logout_redirect_uri', 'client_id',
-                     'id_token_hint', 'state', 'logout_hint', 'ui_locales']
+    const names = ['post_logout_redirect_uri', 'client_id',
+                   'id_token_hint', 'state', 'logout_hint', 'ui_locales']
       .filter(function (name: string): boolean {
         return q[name] !== undefined && q[name] !== '';
-      }).map(function (name: string): string {
+      });
+    const carried = names.map(function (name: string): string {
         return '<input type="hidden" name="' + name + '" value="' +
                xmlEscape(String(q[name])) + '">';
       }).join('');
     const who = session && session.user ? session.user.username : '';
     const app = client && client.known
       ? (client.client_name || client.client_id) : (q.client_id || '');
+    // THE CHOOSER'S RETURN (#539): a GET of the same request redraws this
+    // page, since nothing has been ended yet. A page drawn by a POST (a
+    // cross-site form without the cookie) names the GET with the same
+    // parameters, which section 2 allows as well.
+    const query = new URLSearchParams();
+    names.forEach(function (name: string): void {
+      query.set(name, String(q[name]));
+    });
+    const chooser = PageLocale.chooser(t, realms.currentPrefix(),
+      PageLocale.herePath(realms.currentPrefix() + this.asPathOf(req) +
+                          '/oauth2/logout' +
+                          (names.length ? '?' + query.toString() : '')));
+    // Four sentences rather than one assembled from pieces: word order
+    // differs between the languages.
+    const params = { app: String(app), who: who };
+    const ask = app
+      ? (who ? t.html('oauthPages.logout.askAppWho', params)
+             : t.html('oauthPages.logout.askApp', params))
+      : (who ? t.html('oauthPages.logout.askWho', params)
+             : t.html('oauthPages.logout.ask'));
     log.debug("Leaving OAuth2Server.logoutConfirmPage().");
-    return this.logoutAnswer(res, 200, 'Sign out?',
-      '<p>' + (app
-        ? 'The application <code>' + xmlEscape(String(app)) + '</code> '
-        : 'An application ') + 'asked to sign you out' +
-      (who ? ' of <strong>' + xmlEscape(who) + '</strong>' : '') +
-      '. This ends your session here, and every application signed in ' +
-      'through it is told.</p>' +
+    return this.logoutAnswer(res, 200, t.text('oauthPages.logout.confirmTitle'),
+      '<p>' + ask + '</p>' +
       '<form method="post" action="logout">' + carried +
       '<input type="hidden" name="confirm_for" value="' +
       xmlEscape(this.logoutConfirmFor(session)) + '">' +
-      '<button type="submit" name="confirm" value="yes">Sign out</button> ' +
-      '<button type="submit" name="confirm" value="no">Stay signed in' +
-      '</button></form><p class="sub">Asked because the request did not ' +
-      'prove it came from an application you are signed in to with this ' +
-      'session (RP-Initiated Logout 1.0 section 2).</p>');
+      '<button type="submit" name="confirm" value="yes">' +
+      t.html('oauthPages.logout.signOut') + '</button> ' +
+      '<button type="submit" name="confirm" value="no">' +
+      t.html('oauthPages.logout.stay') +
+      '</button></form><p class="sub">' + t.html('oauthPages.logout.why') +
+      '</p>', t, chooser);
   }
 
   // After the session has ended: the front-channel page, the return, or a
   // page saying it is done.
   private logoutFinish(req: Req, res: Res, session: Json,
                        backchannelMark: Json, returnTo: string,
-                       refusedNote: string): Json {
+                       refusedNote: string,
+                       t: ReturnType<typeof PageLocale.forPage>,
+                       chooser: string): Json {
     const { log, xmlEscape, frontchannel, backchannel, config } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.logoutFinish().");
@@ -11259,29 +11354,27 @@ class OAuth2Server {
       // unregistered URI and then printed it as a link on its own sign-out
       // page would be splitting a hair at the reader's expense.
       const checked = returnTo;
-      const inner = '<h1>Signed out</h1><p class="sub">OpenID Connect ' +
-        'RP-Initiated Logout 1.0, with Front-Channel Logout 1.0</p><div ' +
+      // The front- and back-channel tables are those modules' own markup,
+      // and English (#539).
+      const inner = chooser + '<h1>' +
+        t.html('oauthPages.signedOut.heading') + '</h1><p class="sub">' +
+        t.html('oauthPages.signedOut.frontSub') + '</p><div ' +
         'class="ok">' + (session
-          ? 'The session for ' + xmlEscape(session.user.username) + ' has ' +
-            'ended. It is the session WS-Federation and SAML 2.0 share, so ' +
-            'those are signed out too.'
-          : 'There was no session to end. The cookie has been cleared ' +
-            'anyway.') +
+          ? t.html('oauthPages.signedOut.frontEnded',
+                   { username: session.user.username })
+          : t.html('oauthPages.signedOut.frontNone')) +
         '</div>' + refusedNote +
         frontchannel.render(notifications) +
         backchannel.render(backchannelRows) +
         (checked
-          ? '<h2>Return to the relying party</h2><p><a href="' +
+          ? '<h2>' + t.html('oauthPages.signedOut.returnHeading') +
+            '</h2><p><a href="' +
             xmlEscape(checked) + '">' +
             xmlEscape(checked) + '</a></p><p class="sub">' +
             (waitS > 0
-              ? 'This page returns there by itself after ' + waitS +
-                ' second' + (waitS === 1 ? '' : 's') + ', once the ' +
-                'notifications above have had time to load; the link is ' +
-                'for a browser that does not follow a refresh.'
-              : 'A link and not a redirect: the notifications above load ' +
-                'with this page, and a 302 would abandon them before they ' +
-                'were sent.') + '</p>'
+              ? t.html('oauthPages.signedOut.returnAuto',
+                       { seconds: waitS })
+              : t.html('oauthPages.signedOut.returnLink')) + '</p>'
           : '');
       // SECTION 4's RETURN (#122, 2026-09-22). The specification has the
       // provider send the browser on to post_logout_redirect_uri once the
@@ -11298,7 +11391,7 @@ class OAuth2Server {
       res.status(200)
          .type('text/html')
          .set('Cache-Control', 'no-store')
-         .send(self.logoutPage(inner, refresh));
+         .send(self.logoutPage(inner, refresh, t));
       log.debug("Leaving OAuth2Server.logoutFinish(). " + notifiable.length + " " +
                 "relying part" +
                 (notifiable.length === 1 ? 'y was' : 'ies were') +
@@ -11310,13 +11403,13 @@ class OAuth2Server {
       return res.redirect(302, returnTo);
     }
     log.debug("Leaving OAuth2Server.logoutFinish().");
-    return self.logoutAnswer(res, 200, 'Signed out',
+    return self.logoutAnswer(res, 200, t.text('oauthPages.signedOut.title'),
       '<div class="ok">' + (session
-        ? 'The session for ' + xmlEscape(session.user.username) + ' has ' +
-          'ended, and every application signed in through it is told.'
-        : 'There was no session to end.') + '</div>' + refusedNote +
+        ? t.html('oauthPages.signedOut.ended',
+                 { username: session.user.username })
+        : t.html('oauthPages.signedOut.none')) + '</div>' + refusedNote +
       backchannel.render(backchannel.deliveriesFor(
-        session ? [session.id] : [], backchannelMark)));
+        session ? [session.id] : [], backchannelMark)), t, chooser);
   }
 
   // ---------------------------------------------------------------------------

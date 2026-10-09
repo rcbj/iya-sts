@@ -37,6 +37,7 @@ import passwordPolicy = require('../common/password_policy');
 import authnPolicy = require('../common/authn_policy');
 import serviceAccountPolicy = require('../common/service_account_policy');
 import passkeyPolicy = require('../common/passkey_policy');
+import localePolicy = require('../common/locale_policy');
 
 const { log } = helpers;
 
@@ -270,6 +271,25 @@ PolicyKinds.register({
   auditAction: 'admin.passkey-policy.change',
   appliesTo: 'the NEXT sign-in and the NEXT passkey enrolled in this realm; ' +
              'a passkey already enrolled keeps what its authenticator stored',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in defaults where it has not'
+});
+
+// #539: the fifth kind, rcbj's "a policy default per realm that automatically
+// populates user locale parameter", with named profiles "assign[ed] ... to
+// application objects".
+PolicyKinds.register({
+  id: 'locale',
+  label: 'Locale policy',
+  container: 'ou=localePolicies',
+  governs: 'the language a page falls back to, the language mail is ' +
+           'written in when a person names none, and the preferredLanguage ' +
+           'a new person is given',
+  module: localePolicy as unknown as PolicyModule,
+  auditAction: 'admin.locale-policy.change',
+  appliesTo: 'the NEXT page drawn and the NEXT person created in this ' +
+             'realm; a person created before keeps the preferredLanguage ' +
+             'they have, or none',
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
                'built-in defaults where it has not'
 });
