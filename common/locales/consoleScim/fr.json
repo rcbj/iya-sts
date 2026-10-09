@@ -12,7 +12,7 @@
   "required": "obligatoire",
   "enterpriseExtension": "(extension entreprise)",
   "readOnly": ", lecture seule",
-  "linkMonitoringScim": "Surveillance → Métriques SCIM",
+  "linkMonitoringScim": "Supervision → Métriques SCIM",
   "linkUsers": "Utilisateurs",
   "linkCredentialClaims": "Revendications des attestations",
   "linkGroups": "Groupes",

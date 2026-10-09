@@ -32,7 +32,7 @@
   "licensedUnder": ", sous licence ",
   "heading": "D’où les personnes se sont connectées",
   "noDataset": "Aucun jeu de données de géolocalisation n’est actif : une connexion évaluée maintenant n’a donc pas de lieu et est comptée sous <em>Lieu inconnu</em>. Chargez-en un sur ",
-  "link.risk": "Surveillance → Risque",
+  "link.risk": "Supervision → Risque",
   "select.world": "Sélectionnez un pays ou un continent pour voir son continent.",
   "select.continent": "Sélectionnez un pays pour voir ses villes.",
   "select.country": "Sélectionnez un pays voisin pour y passer.",

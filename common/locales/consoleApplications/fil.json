@@ -748,7 +748,7 @@
   "a3.lifetimesHeading": "Mga lifetime ng token",
   "a3.colToken": "Token",
   "a3.colOverride": "Override",
-  "a3.lifetimesNote": "Magtakda ng override sa field na may ganoong pangalan sa ibaba at pindutin ang Save; alisan ito ng laman para muling kunin ang value ng realm (Protocols → OAuth2 / OIDC → Token lifetimes). Ang clock skew, {skew}, ay sa realm para sa bawat application.",
+  "a3.lifetimesNote": "Magtakda ng override sa field na may ganoong pangalan sa ibaba at pindutin ang Save; alisan ito ng laman para muling kunin ang value ng realm (Mga protocol → OAuth2 / OIDC → Token lifetimes). Ang clock skew, {skew}, ay sa realm para sa bawat application.",
   "a3.revealTipA": "Ipakita ang ",
   "a3.revealTipB": ". Admin Write na aksyon ang paghingi at ina-audit; ipinapakita ang value sa pahinang sumasagot at hindi kailanman inilalagay sa link.",
   "a3.reveal": "Ipakita",

@@ -86,6 +86,7 @@ import SecretDestinationsPage = require('./web_secret_destinations');
 import SecretsPage = require('./web_secrets');
 import SessionsPage = require('../logout/web_sessions');
 import SettingsForms = require('./web_settings');
+import WebMessages = require('./web_messages');
 import SignalsPage = require('../ssf/web_signals');
 import SpiffePage = require('../spiffe/web_spiffe');
 import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
@@ -836,6 +837,10 @@ class WebPages {
    * `settings` member of that page's operation.
    */
   static readonly settings = SettingsForms;
+  // The message formatter and translator (#539), so a caller that loads the
+  // bundle without the runtime — `tests/console_web_bundle.js` — can give
+  // it the default translator the runtime gives it in a browser.
+  static readonly messages = WebMessages;
 
   /**
    * What a form's answer draws where a notice is not enough

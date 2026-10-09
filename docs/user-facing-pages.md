@@ -103,9 +103,17 @@ Overview has a **Language and region** card: it sets the person's own
 ## The admin console
 
 The console at `/admin` is one application with many pages under Directory,
-Protocols, Server configuration and Monitoring. Its navigation, labels, forms
-and messages are planned for **phase 5**. Its long explanatory prose is
-**phase 6**. The API explorer at `/admin/api-explorer` is part of it.
+Protocols, Server configuration and Monitoring. **Every page is translated**:
+the navigation, page titles, labels, forms and the explanatory prose each page
+writes. Its language chooser sits in the page header, beside the account
+menu, and saves the administrator's own `preferredLanguage`
+(`POST /admin-api/console/language`). The API explorer at
+`/admin/api-explorer` is part of it.
+
+Two kinds of text on a console page stay English for now. The first is error
+and refusal text, as everywhere. The second is text the server writes into a
+page's data: each setting's description, a policy's rule sentences, and the
+explanations some server modules supply.
 
 ## Mail
 

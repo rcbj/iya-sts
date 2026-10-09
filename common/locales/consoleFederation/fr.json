@@ -150,7 +150,7 @@
   "unverified": "non vérifié",
   "observedOnly": "(observé seulement)",
   "everyArrivalA": "Toutes les arrivées de tous les partenaires sont sur ",
-  "everyArrivalLink": "Surveillance → Shared Signals des partenaires",
+  "everyArrivalLink": "Supervision → Shared Signals des partenaires",
   "everyArrivalB": ".",
   "headingSignalsFrom": "Shared Signals de ce partenaire",
   "signalsSignsIn": "Les événements CAEP et RISC du partenaire concernant les personnes qu’il connecte. Un événement vérifié est traité comme la politique <code>signal-response</code> le permet — par défaut en mettant fin aux sessions que CETTE relation a ouvertes pour la personne, et sur <code>account-disabled</code> en bloquant ses connexions de cette personne jusqu’à son <code>account-enabled</code>. Une connexion locale et tous les autres partenaires ne sont pas touchés.",

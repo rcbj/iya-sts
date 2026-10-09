@@ -26,7 +26,7 @@
   "authn.heading": "驗證原則——預設設定檔",
   "authn.lead": "此領域接受哪些登入方式作為第一因素和第二因素，以及何時需要第二因素。在每個登入入口、兩種模式下都會查詢：此原則決定登入畫面提供什麼，而不是是否檢查憑證。",
   "authn.noMail": "<strong>此領域無法傳送郵件</strong>，因此下方的兩種電子郵件機制顯示為停用，且從不提供。請在以下位置設定傳輸方式：",
-  "authn.noMailLink": "伺服器組態 → 郵件",
+  "authn.noMailLink": "伺服器設定 → 郵件",
   "authn.emailWarning": "將電子郵件用作驗證器。",
   "authn.fromRealm": "此領域自己的設定檔<strong>儲存</strong>在 <code>{dn}</code>。移除它會使此領域回復為預設領域的設定檔；若預設領域沒有，則回復為內建預設值。",
   "authn.fromDefaultRealm": "<strong>此領域沒有自己的設定檔，沿用預設領域的設定檔</strong>（<code>{dn}</code>）。儲存此表單會寫入此領域自己的設定檔，它只在此處覆寫預設領域的設定檔。",

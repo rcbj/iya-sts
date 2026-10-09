@@ -11574,6 +11574,28 @@ reasons for the shape:
       not the person's application.
 * **`ui_locales`** is carried on the pending sign-in record, and discovery's
   `ui_locales_supported` lists the offered locales.
+* **The admin console (phases 5 and 6) runs the SAME formatter.**
+  - `admin-ui/web_messages.ts` holds the parser, renderer and translator as
+    a `web_` module. `common/i18n.ts` keeps the catalogs and the
+    negotiation, and builds `WebTranslator`s, so there is one parser.
+  - `GET /admin-api/console` answers a `locale` member: the negotiation for
+    the administrator and `sts-admin-console`, and every `console*`
+    namespace along the chain.
+  - The runtime builds its translator from it, marks `<html lang dir>`, and
+    hands `ctx.t` to every renderer.
+  - The chooser is a `<select>` with **no `<form>`**, so it cannot move the
+    console job's `document.forms[N]`. A change posts
+    `POST /admin-api/console/language`.
+  - A helper given no translator falls back to `WebTranslator.fallback()`:
+    English in node (`common/i18n.ts` sets it), and the page's own in a
+    browser (`applyLocale()` sets it). `tests/console_web_bundle.js` gives
+    the sandboxed bundle node's default, as the runtime would.
+  - English output was held byte-identical when the strings moved. Text the
+    server writes into a view stays English for now.
+* **`PageLocale.herePath()` never copies the request's URL** (the
+  integrator's finding on phase 3). It answers the caller's own path plus
+  the parameters named in `keep`, so nothing a request merely adds is drawn
+  back. `sts_language_chooser` holds it.
 * **Mail is translated too (phase 4).**
   - The built-in templates are DATA in `common/mail_locales/<catalog
     tag>.json`, not under `common/locales/`, because a template's

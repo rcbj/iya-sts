@@ -25,8 +25,9 @@ whether each is translated yet.
 > every second-factor step, the emailed and wallet sign-ins, consent, the
 > hand-off pages, sign-out, the front door, the realm chooser and the GNAP
 > pages, the user portal (with a language field on the person's own
-> account) and the built-in mail. The admin console follows; until it is
-> converted it is drawn in English and has no language chooser.
+> account), the built-in mail and the admin console. On console pages, text
+> the server writes into a page's data (setting descriptions, policy rule
+> sentences) is still English.
 
 > **Every catalog except English was machine-written and has not been
 > reviewed by a native speaker.** Each catalog's status is in

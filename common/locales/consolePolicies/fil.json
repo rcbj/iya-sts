@@ -26,7 +26,7 @@
   "authn.heading": "Authentication policy — ang default na profile",
   "authn.lead": "Kung aling mga paraan ng pag-sign in ang tinatanggap ng realm na ito bilang UNANG factor at bilang PANGALAWA, at kung kailan kailangan ang pangalawang factor. Tinatanong sa bawat pinto ng pag-sign in, sa parehong mode: ang policy na ito ang nagpapasya kung ano ang iniaalok ng sign-in screen, hindi kung sinusuri ang isang credential.",
   "authn.noMail": "<strong>Hindi makapagpadala ng mail ang realm na ito</strong>, kaya naka-disable ang dalawang email mechanism sa ibaba at hindi kailanman iniaalok. Mag-configure ng transport sa ",
-  "authn.noMailLink": "Server configuration → Mail",
+  "authn.noMailLink": "Configuration ng server → Mail",
   "authn.emailWarning": "Email bilang authenticator.",
   "authn.fromRealm": "Ang sariling profile ng realm na ito ay <strong>nakatago</strong> sa <code>{dn}</code>. Kapag inalis ito, babalik ang realm na ito sa profile ng default na realm, o sa mga built-in na default kung wala nito ang default na realm.",
   "authn.fromDefaultRealm": "<strong>Walang sariling profile ang realm na ito, at sinusunod nito ang sa default na realm</strong> (<code>{dn}</code>). Kapag sinave ang form na ito, isusulat ang sariling profile ng realm na ito, na papalit dito rito lang at hindi sa iba.",

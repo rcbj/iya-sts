@@ -90,7 +90,7 @@ class NodeHealthPage {
   }
 
   // "Not available:" and the view's reason, under a section's heading.
-  static unavailable(t: Json, why: unknown): string {
+  static notAvailableHtml(t: Json, why: unknown): string {
     return '<p><strong>' + t.html('consoleNodeHealth.notAvailable') +
       '</strong> ' + kit.esc(why) + '</p>';
   }
@@ -102,7 +102,7 @@ class NodeHealthPage {
     const head = '<h2 id="cpu">' + t.html('consoleNodeHealth.headCpu') +
       '</h2>';
     if (!cpu.available) {
-      return head + this.unavailable(t, cpu.unavailableText);
+      return head + this.notAvailableHtml(t, cpu.unavailableText);
     }
     const thr = cpu.throttling;
     if (cpu.fromEcs) {
@@ -157,7 +157,7 @@ class NodeHealthPage {
     const head = '<h2 id="memory">' +
       t.html('consoleNodeHealth.headMemory') + '</h2>';
     if (!m.available) {
-      return head + this.unavailable(t, m.unavailableText);
+      return head + this.notAvailableHtml(t, m.unavailableText);
     }
     const html = head + '<p>' + kit.esc(m.limitText) + '</p>' +
       this.rows([
@@ -267,7 +267,7 @@ class NodeHealthPage {
     const head = '<h2 id="ecs">' + t.html('consoleNodeHealth.headEcs') +
       '</h2>';
     if (!e.available) {
-      return head + this.unavailable(t, e.unavailableText);
+      return head + this.notAvailableHtml(t, e.unavailableText);
     }
     const s = e.stats || {};
     const limits = e.taskLimits || {};

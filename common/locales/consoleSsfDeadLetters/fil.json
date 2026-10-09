@@ -29,7 +29,7 @@
   "state.deadSince": "patay mula {at}",
   "state.nextProbe": "; susunod na probe {at}",
   "state.failingSince": "pumapalya mula {at}",
-  "streams.cardTip": "Ang card ng stream na ito sa Protocols → Shared Signals, kung nasaan ang Buhayin at Burahin ang mga dead letter nito.",
+  "streams.cardTip": "Ang card ng stream na ito sa Mga protocol → Shared Signals, kung nasaan ang Buhayin at Burahin ang mga dead letter nito.",
   "streams.none": "Naghahatid ang bawat push stream at walang may hawak na dead letter.",
   "find.label": "Hanapin",
   "find.placeholder": "isang jti, STS-SSF-0092, session-revoked, 503",
