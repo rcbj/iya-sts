@@ -956,6 +956,12 @@ const JOBS = [
   // spans those doors and `/oauth2/token` — the replaced key refused, the
   // application's own accepted, the old secret refused in RFC 9700 mode.
   { file: 'sts_application_credentials.js', browser: false, local: true },
+  // AN APPLICATION AS AN LDIF FILE (#546): exported from one throwaway
+  // realm without and with its credentials, imported into another, its
+  // client secret getting a token there, and the same file again and one
+  // carrying a derived attribute refused. `local: true` on the first of
+  // `tests/CLAUDE.md`'s questions: the operations are this API's.
+  { file: 'sts_application_ldif.js',     browser: false, local: true },
   // A PERSON'S RFC 7523 AND RFC 7522 KEY PAIRS (2026-09-13), the same
   // arrangement for the Credentials section of `/admin/users?user=`: issued
   // and uploaded through `/admin-api/pki` with `target=person`, and used at

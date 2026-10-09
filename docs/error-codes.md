@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4241** of them, in **44** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4249** of them, in **44** subsystems.
 
 ## Where a code appears
 
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 81
 * [User portal (`STS-PORTAL`)](#sts-portal) — 84
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 162
+* [Registries (`STS-REG`)](#sts-reg) — 170
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -4819,6 +4819,14 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0342` | A global consent answered for a person at sign-in, and the record of it (oauthConsentApplied, #537) could not be written on their entry, so /portal/consents will not list it. | none — logged; the sign-in goes on |
 | `STS-REG-0343` | A resource server carries an oauthPermissionClaims value that is not a JSON object (only an ldapmodify can leave one); its permissions map no claim onto the access tokens addressed to it. | none — logged; the token is issued without those claims |
 | `STS-REG-0344` | A claim mapping for a resource server's permission was refused: the permission is not one it exposes (oauthPermission), an attribute is not in the claim catalogue, the value is not a JSON object of lists, or the application is not declared for OAuth 2.0 or OpenID Connect. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0345` | An application export was refused: no application with that identifier is recorded in this realm. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0346` | An application export with credential material was refused: a sealed credential on the entry will not open under this process's key-encryption key, so it cannot be written in the clear. Nothing was exported. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0347` | An application import was refused: the file is not LDIF holding exactly one record. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0348` | An application import was refused: the record is not an application entry (its DN is not cn=…,ou=applications,…, or it carries no appIdentifier). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0349` | An application import was refused: an application with that identifier is already recorded in this realm. Nothing is overwritten. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0350` | An application import was refused: the record carries a DERIVED attribute (a counter, a sighting, an observed value), which records what happened to the application this service saw rather than what an administrator configures. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0351` | An application import was refused: the record carries an attribute that is not in the application schema, or a credential that no import can write (a Kerberos service key, an enrollment key or challenge, a GNAP macaroon key). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0352` | An application import created the entry but could not write its client secrets (they would not seal, or the directory refused the write). The application is there without them. | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

@@ -648,6 +648,12 @@ const ACTIONS = [
     label: 'An application was seen for the first time' },
   { action: 'application.secret-revealed', category: 'application',
     label: 'A credential of an application was revealed to an administrator' },
+  // #546: the LDIF file an administrator took away or brought in. The row
+  // says whether credential material went with it, and never a value.
+  { action: 'application.export', category: 'application',
+    label: 'An application was exported to an LDIF file' },
+  { action: 'application.import', category: 'application',
+    label: 'An application was imported from an LDIF file' },
   { action: 'application.update', category: 'application',
     label: 'An application recorded something new' },
   // Only ever from the console or the management API: no protocol path deletes
