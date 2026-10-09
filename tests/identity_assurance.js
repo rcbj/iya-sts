@@ -342,8 +342,9 @@ function body(t) {
   const mfaData = JSON.parse(JSON.stringify(
     require('../admin-core/admin_views')
       .userDetailJson({ query: {}, headers: {} }, 'ida-alice').json.page.mfa));
-  const drawn = UsersPage.mfaSection({ name: 'ida-alice' }, 'ida-alice',
-    require('../admin-ui/web_kit').context({}, true), '', mfaData);
+  const ctxOf = require('../admin-ui/web_kit').context;
+  const drawn = UsersPage.mfaSection(ctxOf({}, true).t,
+    { name: 'ida-alice' }, 'ida-alice', { write: true }, '', mfaData);
   t.check(/<h3>Identity verifications<\/h3>/.test(drawn) &&
           /name="action" value="record-verification"/.test(drawn) &&
           /name="action" value="remove-verification"/.test(drawn) &&

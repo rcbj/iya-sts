@@ -157,7 +157,8 @@ async function run(t) {
   let drawn = '';
   try {
     const RiskPage = require('../admin-ui/web_risk');
-    drawn = RiskPage.assessmentsHtml(require('../admin-ui/web_kit').context({}, false),
+    const ctxOf = require('../admin-ui/web_kit').context;
+    drawn = RiskPage.assessmentsHtml(ctxOf({}, false),
       JSON.parse(JSON.stringify({
         assessments: { rows: [recorded], total: 1 }, subjects: [],
         assessmentsPaging: { page: 1, pages: 1, perPage: 50, firstRow: 1,
@@ -456,9 +457,10 @@ async function unmappedNetwork(t) {
   let drawn = '';
   try {
     const RiskPage = require('../admin-ui/web_risk');
-    drawn = RiskPage.modelCell(freshModel) + ' | ' +
+    const tr = require('../admin-ui/web_kit').context({}, false).t;
+    drawn = RiskPage.modelCell(freshModel, tr) + ' | ' +
       RiskPage.modelCell({ signal: 'model', score: null,
-                           unknown: ['asn', 'country'] });
+                           unknown: ['asn', 'country'] }, tr);
   } catch (e) {
     drawn = 'threw: ' + (e && e.message);
   }

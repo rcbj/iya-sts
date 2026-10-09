@@ -69,7 +69,8 @@ module.exports = {
     const ConsoleRuntime = require('../admin-ui/web_runtime');
     const { view, catalogue } = catalogueView();
 
-    const select = RiskPage.pairSelect(view, 'risk-upload-pair');
+    const select = RiskPage.pairSelect(view, 'risk-upload-pair',
+      require('../admin-ui/web_kit').context({}, true).t);
     t.check(/name="dataset\|format"/.test(select) &&
             !/name="format"/.test(select) && !/name="dataset"/.test(select),
             'A1. one select, named dataset|format, and no separate pair');

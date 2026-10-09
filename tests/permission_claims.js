@@ -175,7 +175,8 @@ function childMain() {
            'E1. the model: each permission, its identifier and attributes; ' +
            'the save dropped the stale mapping', JSON.stringify(model));
       const row = { identifier: 'pc-api', page: { permissionClaims: model } };
-      const html = page.applicationScopeClaimsSection(require('../admin-ui/web_kit').context({}, true), row,
+      const ctxOf = require(ROOT + '/admin-ui/web_kit').context;
+      const html = page.applicationScopeClaimsSection(ctxOf({}, true), row,
                                                       '');
       note(/name="attributes" value="givenName" checked/.test(html) &&
            !/name="attributes" value="mail" checked/.test(html) &&
@@ -184,12 +185,12 @@ function childMain() {
            html.indexOf(HR + 'hr.read') >= 0,
            'E2. the markup: the mapped box ticked, Save and Clear',
            html.slice(0, 400));
-      const readOnly = page.applicationScopeClaimsSection(require('../admin-ui/web_kit').context({}, false),
+      const readOnly = page.applicationScopeClaimsSection(ctxOf({}, false),
                                                           row, '');
       note(readOnly.indexOf('<input type="checkbox"') < 0 &&
            readOnly.indexOf('set-permission-claims') < 0,
            'E3. a reader without write sees no form');
-      const none = page.applicationScopeClaimsSection(require('../admin-ui/web_kit').context({}, true),
+      const none = page.applicationScopeClaimsSection(ctxOf({}, true),
         { identifier: 'x', page: { permissionClaims: { permissions: [],
           stale: [], catalogue: [] } } }, '');
       note(/exposes no permission/.test(none),
