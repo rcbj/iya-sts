@@ -20685,6 +20685,18 @@ const CODES = [
       'record of it (oauthConsentApplied, #537) could not be written on ' +
       'their entry, so /portal/consents will not list it.',
     spec: 'none — logged; the sign-in goes on' },
+  { code: 'STS-REG-0343',
+    summary: 'A resource server carries an oauthPermissionClaims value that ' +
+      'is not a JSON object (only an ldapmodify can leave one); its ' +
+      'permissions map no claim onto the access tokens addressed to it.',
+    spec: 'none — logged; the token is issued without those claims' },
+  { code: 'STS-REG-0344',
+    summary: 'A claim mapping for a resource server\'s permission was ' +
+      'refused: the permission is not one it exposes (oauthPermission), an ' +
+      'attribute is not in the claim catalogue, the value is not a JSON ' +
+      'object of lists, or the application is not declared for OAuth 2.0 ' +
+      'or OpenID Connect.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

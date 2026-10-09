@@ -2798,6 +2798,21 @@ const SCHEMA = {
             'servers only a claim every one of them declared goes in. ' +
             'Absent, the token carries none of these claims from this ' +
             'layer — preferred_username included.' },
+    // CLAIMS MAPPED TO THIS RESOURCE SERVER'S OWN SCOPES (2026-10-09): drawn
+    // and written by the application's Scope claims tab, so kept off the
+    // field grid for the reason the selections above are.
+    { name: 'oauthPermissionClaims', kind: 'single',
+      from: 'the console\'s Scope claims tab',
+      what: 'THE CLAIMS EACH OF THIS RESOURCE SERVER\'S PERMISSIONS ' +
+            'CARRIES, as a JSON object from a permission name (one of its ' +
+            'oauthPermission values) to a list of attribute names from the ' +
+            'realm\'s claim catalogue. An access token addressed to this ' +
+            'application on which a permission was GRANTED carries the ' +
+            'person\'s values of that permission\'s attributes, under the ' +
+            'catalogue\'s claim names; granting the permission is the ' +
+            'grant of those claims, a standard OpenID Connect one included. ' +
+            'Combined with the client\'s claims as ' +
+            'oauthAccessTokenClaimsCombine says.' },
     { name: 'oauthAccessTokenClaimsCombine', kind: 'single',
       from: 'the console, the management API, or by hand',
       what: 'HOW THE CLIENT\'S ACCESS-TOKEN CLAIMS AND THIS RESOURCE ' +
@@ -4488,6 +4503,8 @@ const EDITABLE = {
   saml11ClaimsCombine: 'set',
   oauthAccessTokenClaim: 'multi',
   oauthAccessTokenClaimsCombine: 'set',
+  // The claims mapped to its own scopes, one JSON object (2026-10-09).
+  oauthPermissionClaims: 'set',
   didAlsoKnownAs: 'multi',
   // A secret push destination (#221 P3): each one value, an empty write
   // clearing it. The credential is write-only: sealed on the way in,
@@ -4894,6 +4911,27 @@ function claimSelectionProblem(attribute, value) {
   log.debug("Leaving claimSelectionProblem(). " +
             (checked.ok ? 'ok' : 'refused'));
   return checked.ok ? '' : checked.errors.join(' ');
+}
+
+// A RESOURCE SERVER'S CLAIMS PER PERMISSION (2026-10-09), held at the write:
+// keys are permissions the entry exposes, values catalogue names. Asked of
+// `claim_attributes.ts` lazily, for claimSelectionProblem()'s reason.
+/**
+ * Says whether an `oauthPermissionClaims` value is acceptable for an entry.
+ *
+ * @param value - the JSON text
+ * @param record - the entry it would be written to (record or view)
+ * @returns '' when it is, the refusal sentence otherwise
+ */
+function permissionClaimsProblem(value, record) {
+  log.debug("Entering permissionClaimsProblem().");
+  const exposed = permissionsOf(record).map(function (one) {
+    return one.name;
+  });
+  const out = require('./claim_attributes').permissionClaimsProblem(value,
+                                                                    exposed);
+  log.debug("Leaving permissionClaimsProblem(). " + (out ? 'refused' : 'ok'));
+  return out;
 }
 
 /**
@@ -5685,8 +5723,9 @@ function gridExcludedAttributes() {
                // And the Kerberos PAC claims section (#493).
                'krb5ClaimsPac'].concat(
                  // And their attribute selections (#495), drawn as the
-                 // catalogue's checkboxes.
-                 CLAIM_SELECTION_ATTRIBUTES);
+                 // catalogue's checkboxes — and a resource server's claims
+                 // per permission, drawn on the Scope claims tab.
+                 CLAIM_SELECTION_ATTRIBUTES, ['oauthPermissionClaims']);
   Object.keys(KEY_PAIR_ATTRIBUTES).forEach(function (profile) {
     const row = KEY_PAIR_ATTRIBUTES[profile];
     ['certificate', 'chain', 'privateKey', 'handle', 'expires', 'source',
@@ -13266,6 +13305,8 @@ function createApplication(detail) {
       const problem = didValueProblem(name, one) ||
         claimRowsProblem(name, one) ||
         claimSelectionProblem(name, one) ||
+        (name === 'oauthPermissionClaims'
+          ? permissionClaimsProblem(one, { fields: given.fields }) : '') ||
         didDuplicateProblem(name, one, seen);
       if (problem) {
         didProblems.push(problem);
@@ -13721,6 +13762,14 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). Selection refused.");
       return errorCodes.mark({ ok: false, errors: [selectionProblem] },
                              'STS-REG-0215');
+    }
+    if (attribute === 'oauthPermissionClaims') {
+      const mappingProblem = permissionClaimsProblem(value, loaded.record);
+      if (mappingProblem) {
+        log.debug("Leaving updateApplication(). Permission claims refused.");
+        return errorCodes.mark({ ok: false, errors: [mappingProblem] },
+                               'STS-REG-0344');
+      }
     }
     const notAChoice = choiceProblem(attribute, value);
     if (notAChoice) {

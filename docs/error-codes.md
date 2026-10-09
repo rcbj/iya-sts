@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4238** of them, in **44** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4240** of them, in **44** subsystems.
 
 ## Where a code appears
 
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 81
 * [User portal (`STS-PORTAL`)](#sts-portal) — 84
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 160
+* [Registries (`STS-REG`)](#sts-reg) — 162
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -4816,6 +4816,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0340` | A console or /admin-api write put a value a registration would refuse on one of the ID Token, UserInfo or JARM signing and encryption attributes (oauthIdToken*, oauthUserinfo*, oauthAuthorization*ResponseAlg / Enc) or on oauthDefaultAcrValues / oauthDefaultMaxAge, or an enc onto an entry with no alg (#290). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0341` | An application entry holds an oauthDefaultAcrValues or oauthDefaultMaxAge value the registration grammar refuses (only an ldapmodify can leave one); it is ignored rather than required of every sign-in (#290). | none — logged; the request is answered without the default |
 | `STS-REG-0342` | A global consent answered for a person at sign-in, and the record of it (oauthConsentApplied, #537) could not be written on their entry, so /portal/consents will not list it. | none — logged; the sign-in goes on |
+| `STS-REG-0343` | A resource server carries an oauthPermissionClaims value that is not a JSON object (only an ldapmodify can leave one); its permissions map no claim onto the access tokens addressed to it. | none — logged; the token is issued without those claims |
+| `STS-REG-0344` | A claim mapping for a resource server's permission was refused: the permission is not one it exposes (oauthPermission), an attribute is not in the claim catalogue, the value is not a JSON object of lists, or the application is not declared for OAuth 2.0 or OpenID Connect. | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 
