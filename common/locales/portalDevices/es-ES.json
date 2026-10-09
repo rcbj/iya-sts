@@ -1,0 +1,4 @@
+{
+  "remember.intro": "Funciona en cualquier navegador: este servicio guarda un token firmado y cifrado en una cookie y reconoce el navegador por él la próxima vez. Es el tipo de dispositivo MÁS DÉBIL aquí —cualquiera que copie la cookie es este navegador hasta que se detecte la copia, lo que termina todas sus sesiones—, así que solo evita que los inicios de sesión desde él parezcan nuevos, y nunca cuenta como un dispositivo conforme. No lo uses en un ordenador compartido.",
+  "devices.intro": "Los teléfonos y ordenadores que son tuyos: los que registraste aquí, aquellos en los que iniciaste sesión con una app que comparte su sesión con las demás apps del dispositivo (OpenID Connect Native SSO), aquellos a los que se emitió un certificado y cualquiera que un administrador haya registrado por ti. Quita el que ya no tengas: sus apps ya no podrán compartir una sesión y te pedirán que vuelvas a iniciar sesión."
+}

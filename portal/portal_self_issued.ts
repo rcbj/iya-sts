@@ -60,6 +60,9 @@ interface PortalContext {
   audit: Json;
   errorCodes: Json;
   config: { value(key: string): any };
+  // The portal's translator for a page drawn for this session (#539
+  // phase 3): the portal's application and the person's own language.
+  translatorFor(session: Json): any;
 }
 
 interface PortalSelfIssuedDeps {
@@ -95,38 +98,42 @@ class PortalSelfIssuedPage {
     const { log, shell, esc, websecurity, config } = this.ctx;
     const { siop } = this.deps;
     log.debug("Entering PortalSelfIssuedPage.page().");
+    const t = this.ctx.translatorFor(session);
     const who = String(session.user.username);
     const held = siop.list(who) || [];
     const csrf = websecurity.field(session.id);
     const on = !!config.value('oid4vp.signInSelfIssued');
     const PATH = this.PATH;
     const rows = held.map(function (one: Json) {
+      // The enrolment instant in the reader's own way of writing a date
+      // (#539); `t.date()` gives back anything it cannot read as it was.
       return '<tr><td><code>' + esc(one.subject) + '</code></td><td>' +
-        esc(one.label || '') + '</td><td>' + esc(one.enrolledAt || '') +
+        esc(one.label || '') + '</td><td>' +
+        esc(one.enrolledAt ? t.date(one.enrolledAt) : '') +
         (one.by ? ' (' + esc(one.by) + ')' : '') + '</td><td>' +
         '<form method="post" action="' + esc(PATH) + '">' + csrf +
         '<input type="hidden" name="action" value="remove">' +
         '<input type="hidden" name="subject" value="' + esc(one.subject) +
-        '"><button class="danger" type="submit">Remove</button></form>' +
+        '"><button class="danger" type="submit">' +
+        t.html('portalSelfIssued.remove') + '</button></form>' +
         '</td></tr>';
     });
-    const body = '<div class="card"><h2>Your self-issued IDs</h2>' +
-      '<p class="sub">A wallet can sign you in with an ID Token it signs ' +
-      'with its own key (Self-Issued OpenID Provider v2). Nobody vouches for ' +
-      'that key, so it signs in only the person who enrolled it here.</p>' +
+    const body = '<div class="card"><h2>' +
+      t.html('portalSelfIssued.heading') + '</h2>' +
+      '<p class="sub">' + t.html('portalSelfIssued.sub') + '</p>' +
       (held.length
-        ? '<table><tr><th>Subject</th><th>Label</th><th>Enrolled</th>' +
+        ? '<table><tr><th>' + t.html('portalSelfIssued.subject') +
+          '</th><th>' + t.html('portalSelfIssued.label') + '</th><th>' +
+          t.html('portalSelfIssued.enrolled') + '</th>' +
           '<th></th></tr>' + rows.join('') + '</table>'
-        : '<p id="siop-none">You have enrolled none.</p>') +
+        : '<p id="siop-none">' + t.html('portalSelfIssued.none') + '</p>') +
       (on
         ? '<p><a class="button" id="siop-enrol" href="/authn/wallet?siop=1' +
-          '&amp;enrol=1">Enrol a wallet</a></p><p class="sub">Your wallet ' +
-          'is asked for a self-issued ID Token, and the key that signed it ' +
-          'is enrolled for you — you prove you hold it; nothing is typed.' +
+          '&amp;enrol=1">' + t.html('portalSelfIssued.enrol') +
+          '</a></p><p class="sub">' + t.html('portalSelfIssued.enrolNote') +
           '</p>'
-        : '<p class="sub" id="siop-off">Signing in with a self-issued ID is ' +
-          'turned off here, so no wallet can be enrolled from this page. ' +
-          'The keys above stay enrolled.</p>') + '</div>';
+        : '<p class="sub" id="siop-off">' + t.html('portalSelfIssued.off') +
+          '</p>') + '</div>';
     log.debug("Leaving PortalSelfIssuedPage.page().");
     return shell(this.PATH, session, message, error, body);
   }
@@ -149,7 +156,7 @@ class PortalSelfIssuedPage {
       return ctx.refuseShape(res, asked);
     }
     const message = asked.value.enrolled === '1'
-      ? 'Your wallet\'s key is enrolled. It signs you in from now on.'
+      ? ctx.translatorFor(session).text('portalSelfIssued.doneEnrolled')
       : (asked.value.done || null);
     log.debug('Leaving GET ' + PATH + '.');
     return ctx.send(res, 200, this.page(session, message, null));
@@ -198,8 +205,9 @@ class PortalSelfIssuedPage {
       return ctx.send(res, 400, this.page(session, null, result.error));
     }
     log.debug('Leaving POST ' + PATH + '. Removed.');
+    // In the person's language (#539): the text rides the redirect.
     res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      'That key no longer signs you in.')).end();
+      ctx.translatorFor(session).text('portalSelfIssued.doneRemoved'))).end();
     return undefined;
   }
 

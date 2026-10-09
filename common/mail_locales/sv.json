@@ -1,0 +1,89 @@
+{
+  "templates": {
+    "password-reset": {
+      "subject": "Återställ ditt lösenord för {{service}}",
+      "text": "Någon — {{requestedBy}} — bad om att lösenordet för kontot {{username}} skulle återställas.\n\nÖppna den här länken inom {{expiresMinutes}} minuter för att välja ett nytt lösenord:\n\n{{link}}\n\nDen fungerar en gång. Om det inte var du som bad om det kan du strunta i det här meddelandet: ingenting ändras förrän länken används.\n",
+      "html": "<p>Någon &mdash; {{requestedBy}} &mdash; bad om att lösenordet för kontot <strong>{{username}}</strong> skulle återställas.</p><p><a href=\"{{link}}\">Välj ett nytt lösenord</a> inom {{expiresMinutes}} minuter. Länken fungerar en gång.</p><p>Om det inte var du som bad om det kan du strunta i det här meddelandet: ingenting ändras förrän länken används.</p>"
+    },
+    "account-activation": {
+      "subject": "Aktivera ditt konto för {{service}}",
+      "text": "Ett konto, {{username}}, har skapats åt dig.\n\nÖppna den här länken inom {{expiresMinutes}} minuter för att välja dess lösenord:\n\n{{link}}\n\nDen fungerar en gång.\n",
+      "html": "<p>Ett konto, <strong>{{username}}</strong>, har skapats åt dig.</p><p><a href=\"{{link}}\">Välj dess lösenord</a> inom {{expiresMinutes}} minuter. Länken fungerar en gång.</p>"
+    },
+    "address-verification": {
+      "subject": "Bekräfta din adress för {{service}}",
+      "text": "Kontot {{username}} anger {{address}} som sin e-postadress.\n\nÖppna den här länken inom {{expiresMinutes}} minuter för att bekräfta att det är din adress:\n\n{{link}}\n\nOm det inte är ditt konto kan du strunta i det här meddelandet.\n",
+      "html": "<p>Kontot <strong>{{username}}</strong> anger {{address}} som sin e-postadress.</p><p><a href=\"{{link}}\">Bekräfta att det är din adress</a> inom {{expiresMinutes}} minuter.</p><p>Om det inte är ditt konto kan du strunta i det här meddelandet.</p>"
+    },
+    "password-changed": {
+      "subject": "Ditt lösenord för {{service}} har ändrats",
+      "text": "Lösenordet för kontot {{username}} ändrades {{when}} ({{how}}).\n\nOm det inte var du, kontakta genast den som administrerar ditt konto.\n",
+      "html": "<p>Lösenordet för kontot <strong>{{username}}</strong> ändrades {{when}} ({{how}}).</p><p>Om det inte var du, kontakta genast den som administrerar ditt konto.</p>"
+    },
+    "account-disabled": {
+      "subject": "Ditt konto för {{service}} har inaktiverats",
+      "text": "Kontot {{username}} inaktiverades {{when}}. {{why}}\n\nIngen kan logga in på det förrän det aktiveras igen, och alla dess sessioner har avslutats.\n",
+      "html": "<p>Kontot <strong>{{username}}</strong> inaktiverades {{when}}. {{why}}</p><p>Ingen kan logga in på det förrän det aktiveras igen, och alla dess sessioner har avslutats.</p>"
+    },
+    "sessions-ended": {
+      "subject": "Du har loggats ut från {{service}}",
+      "text": "{{count}} session(er) för kontot {{username}} avslutades {{when}} av {{by}}.\n\nLogga in igen för att fortsätta. Om du inte väntade dig detta, kontakta den som administrerar ditt konto.\n",
+      "html": "<p>{{count}} session(er) för kontot <strong>{{username}}</strong> avslutades {{when}} av {{by}}.</p><p>Logga in igen för att fortsätta. Om du inte väntade dig detta, kontakta den som administrerar ditt konto.</p>"
+    },
+    "credential-compromised": {
+      "subject": "En av dina inloggningsuppgifter för {{service}} har markerats som komprometterad",
+      "text": "{{what}} för kontot {{username}} markerades som komprometterad {{when}}. {{why}}\n\nDen fungerar inte längre. Välj en ny nästa gång du loggar in, eller be den som administrerar ditt konto.\n",
+      "html": "<p>{{what}} för kontot <strong>{{username}}</strong> markerades som komprometterad {{when}}. {{why}}</p><p>Den fungerar inte längre. Välj en ny nästa gång du loggar in, eller be den som administrerar ditt konto.</p>"
+    },
+    "recovery-started": {
+      "subject": "Återställning av ditt konto för {{service}} har startats",
+      "text": "Återställning av kontot {{username}} startades {{when}} av {{by}}.\n\nOm det inte var du eller någon du bett om det, kontakta genast den som administrerar ditt konto.\n",
+      "html": "<p>Återställning av kontot <strong>{{username}}</strong> startades {{when}} av {{by}}.</p><p>Om det inte var du eller någon du bett om det, kontakta genast den som administrerar ditt konto.</p>"
+    },
+    "address-changed": {
+      "subject": "E-postadressen för ditt konto för {{service}} har ändrats",
+      "text": "E-postadressen för kontot {{username}} ändrades {{when}} till {{address}}. Det här meddelandet skickades till den adress kontot hade tidigare.\n\nOm du inte väntade dig detta, kontakta genast den som administrerar ditt konto.\n",
+      "html": "<p>E-postadressen för kontot <strong>{{username}}</strong> ändrades {{when}} till {{address}}. Det här meddelandet skickades till den adress kontot hade tidigare.</p><p>Om du inte väntade dig detta, kontakta genast den som administrerar ditt konto.</p>"
+    },
+    "access-request": {
+      "subject": "{{service}}: ett program ber om åtkomst",
+      "text": "Programmet {{client}} ber om åtkomst för kontot {{username}}: {{rights}}.\n\nIngenting tillåts förrän du godkänner det. Logga in och öppna den här sidan inom {{expiresMinutes}} minuter för att godkänna eller neka:\n\n{{link}}\n\nOm du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.\n",
+      "html": "<p>Programmet <strong>{{client}}</strong> ber om åtkomst för kontot <strong>{{username}}</strong>: {{rights}}.</p><p>Ingenting tillåts förrän du godkänner det. <a href=\"{{link}}\">Godkänn eller neka</a> inom {{expiresMinutes}} minuter.</p><p>Om du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.</p>"
+    },
+    "administrator-alert": {
+      "subject": "{{service}}: {{act}} för {{username}}",
+      "text": "Tjänsten, inte en person, utförde en åtgärd på kontot {{username}} {{when}}: {{act}}.\n\n{{why}}\n\nDu får detta eftersom du har Admin Write i den här sfären.\n",
+      "html": "<p>Tjänsten, inte en person, utförde en åtgärd på kontot <strong>{{username}}</strong> {{when}}: {{act}}.</p><p>{{why}}</p><p>Du får detta eftersom du har Admin Write i den här sfären.</p>"
+    },
+    "sign-in-code": {
+      "subject": "Din inloggningskod för {{service}}: {{code}}",
+      "text": "Din kod för att logga in på {{service}} som {{username}} är:\n\n    {{code}}\n\nDen fungerar en gång, i {{minutes}} minuter. Ingen från {{service}} kommer någonsin att be dig om den.\n\nOm du inte håller på att logga in försöker någon som känner till ditt kontonamn göra det: strunta i den här koden och överväg att byta lösenord.\n",
+      "html": "<p>Din kod för att logga in på {{service}} som <strong>{{username}}</strong> är:</p><p><strong>{{code}}</strong></p><p>Den fungerar en gång, i {{minutes}} minuter. Ingen från {{service}} kommer någonsin att be dig om den.</p><p>Om du inte håller på att logga in försöker någon som känner till ditt kontonamn göra det: strunta i den här koden och överväg att byta lösenord.</p>"
+    },
+    "sign-in-link": {
+      "subject": "Din inloggningslänk för {{service}}",
+      "text": "Öppna den här länken I DEN WEBBLÄSARE DÄR DU BÖRJADE LOGGA IN, inom {{minutes}} minuter, för att slutföra inloggningen på {{service}} som {{username}}:\n\n{{signin}}\n\nDen fungerar en gång, och bara i den webbläsaren.\n\nOm du inte håller på att logga in kan du strunta i det här meddelandet: länken kan inte logga in någon annan.\n",
+      "html": "<p>För att slutföra inloggningen på {{service}} som <strong>{{username}}</strong>, <a href=\"{{signin}}\">öppna den här länken</a> i den webbläsare där du började logga in, inom {{minutes}} minuter.</p><p>Den fungerar en gång, och bara i den webbläsaren.</p><p>Om du inte håller på att logga in kan du strunta i det här meddelandet: länken kan inte logga in någon annan.</p>"
+    },
+    "reset-refused-attempt": {
+      "subject": "Någon försökte återställa ditt lösenord för {{service}}",
+      "text": "{{when}} bad någon om att lösenordet för kontot {{username}} skulle återställas, angav den här adressen och lämnade en återställningskod som inte är någon av dina. Ingenting ändrades och ingen återställningslänk skickades.\n\nOm det var du, försök igen med en oanvänd återställningskod. Om det inte var du känner någon till ditt kontonamn och din adress; kontakta den som administrerar ditt konto.\n",
+      "html": "<p>{{when}} bad någon om att lösenordet för kontot <strong>{{username}}</strong> skulle återställas, angav den här adressen och lämnade en återställningskod som inte är någon av dina. Ingenting ändrades och ingen återställningslänk skickades.</p><p>Om det var du, försök igen med en oanvänd återställningskod. Om det inte var du känner någon till ditt kontonamn och din adress; kontakta den som administrerar ditt konto.</p>"
+    },
+    "test-message": {
+      "subject": "Testmeddelande från {{service}}",
+      "text": "Det här är ett testmeddelande, skickat {{when}} via transporten {{transport}} på begäran av {{username}}.\n",
+      "html": "<p>Det här är ett testmeddelande, skickat {{when}} via transporten {{transport}} på begäran av <strong>{{username}}</strong>.</p>"
+    }
+  },
+  "layout": {
+    "subject": "{{subject}}",
+    "text": "{{content}}\n-- \n{{service}} ({{realm}})\nDu fick detta eftersom det är {{reason}}.\n",
+    "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Du fick detta eftersom det är {{reason}}.</small></p>"
+  },
+  "categories": {
+    "security": { "reason": "ett säkerhetsmeddelande om ditt konto, som inte kan stängas av" },
+    "account": { "reason": "något som du eller en administratör bad om" },
+    "notification": { "reason": "en avisering, som du kan stänga av i din portal" }
+  }
+}

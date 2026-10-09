@@ -1663,7 +1663,10 @@ class AdminActions {
     // refusal rather than as a success that did nothing.
     const done = (result.terminated || []).length;
     const unknown = (result.unknown || []).length;
-    this.mailSessionsEnded(key, done, 'an administrator (the sessions page)');
+    // #539: who ended them, as a message the mail channel words in the
+    // person's own language (`mailValues`), not an English phrase.
+    this.mailSessionsEnded(key, done, { i18n:
+      'mailValues.by.administratorSessionsPage' });
     const said = []
       .concat((result.terminated || []).map(function (
           one) { return one.message; }))
@@ -1766,7 +1769,7 @@ class AdminActions {
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
-                             'an administrator (the admin console at /admin/logout)');
+        { i18n: 'mailValues.by.administratorConsoleLogout' });
       log.debug("Leaving AdminActions.logoutAction(). A global logout ended " +
                 result.terminated.length + ".");
       return { ok: true, result: result, message: result.message +
@@ -1802,7 +1805,7 @@ class AdminActions {
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
-                             'an administrator (the admin console at /admin/logout)');
+        { i18n: 'mailValues.by.administratorConsoleLogout' });
       log.debug("Leaving AdminActions.logoutAction(). Ended " +
                 result.terminated.length +
                 ".");

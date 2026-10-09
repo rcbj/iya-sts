@@ -1,0 +1,15 @@
+{
+  "heading": "Sources de revendications connectées",
+  "sub": "Un autre fournisseur d’identité peut se porter garant de faits vous concernant que ce service ne détient pas. Une fois que vous en avez lié un, une application qui demande ces faits les reçoit tels que ce fournisseur les a signés (revendications agrégées et distribuées OpenID Connect). La liaison vous emmène chez le fournisseur pour vous connecter et donner votre accord.",
+  "none": "Ce service n’a aucune source de revendications à proposer.",
+  "supplies": "Fournit",
+  "distributed": ", en remettant à une application votre jeton auprès de ce fournisseur, pour qu’elle les récupère elle-même.",
+  "aggregated": ", récupérées par ce service et transmises telles que le fournisseur les a signées.",
+  "linked": "Lié le {when}.",
+  "linkedStale": "Lié le {when} — <strong>plus utilisable</strong> ; liez-le à nouveau.",
+  "link": "Lier",
+  "linkAgain": "Lier à nouveau",
+  "unlink": "Délier",
+  "doneUnlinked": "Lien supprimé.",
+  "doneLinked": "« {provider} » est lié."
+}

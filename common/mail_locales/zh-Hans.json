@@ -1,0 +1,89 @@
+{
+  "templates": {
+    "password-reset": {
+      "subject": "重置您的 {{service}} 密码",
+      "text": "有人（{{requestedBy}}）请求重置账户 {{username}} 的密码。\n\n如需设置新密码，请在 {{expiresMinutes}} 分钟内打开此链接：\n\n{{link}}\n\n此链接只能使用一次。如果这不是您的请求，可以忽略此邮件：在链接被使用之前，什么都不会改变。\n",
+      "html": "<p>有人（{{requestedBy}}）请求重置账户 <strong>{{username}}</strong> 的密码。</p><p>请在 {{expiresMinutes}} 分钟内<a href=\"{{link}}\">设置新密码</a>。此链接只能使用一次。</p><p>如果这不是您的请求，可以忽略此邮件：在链接被使用之前，什么都不会改变。</p>"
+    },
+    "account-activation": {
+      "subject": "激活您的 {{service}} 账户",
+      "text": "已为您创建账户 {{username}}。\n\n如需设置其密码，请在 {{expiresMinutes}} 分钟内打开此链接：\n\n{{link}}\n\n此链接只能使用一次。\n",
+      "html": "<p>已为您创建账户 <strong>{{username}}</strong>。</p><p>请在 {{expiresMinutes}} 分钟内<a href=\"{{link}}\">设置其密码</a>。此链接只能使用一次。</p>"
+    },
+    "address-verification": {
+      "subject": "确认您在 {{service}} 的地址",
+      "text": "账户 {{username}} 将 {{address}} 登记为其电子邮件地址。\n\n如需确认这是您的地址，请在 {{expiresMinutes}} 分钟内打开此链接：\n\n{{link}}\n\n如果这不是您的账户，请忽略此邮件。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 将 {{address}} 登记为其电子邮件地址。</p><p>请在 {{expiresMinutes}} 分钟内<a href=\"{{link}}\">确认这是您的地址</a>。</p><p>如果这不是您的账户，请忽略此邮件。</p>"
+    },
+    "password-changed": {
+      "subject": "您的 {{service}} 密码已更改",
+      "text": "账户 {{username}} 的密码已于 {{when}} 更改（{{how}}）。\n\n如果这不是您本人操作，请立即联系您的账户管理员。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 的密码已于 {{when}} 更改（{{how}}）。</p><p>如果这不是您本人操作，请立即联系您的账户管理员。</p>"
+    },
+    "account-disabled": {
+      "subject": "您的 {{service}} 账户已被停用",
+      "text": "账户 {{username}} 已于 {{when}} 被停用。{{why}}\n\n在重新启用之前，任何人都无法登录此账户，并且其所有会话均已结束。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 已于 {{when}} 被停用。{{why}}</p><p>在重新启用之前，任何人都无法登录此账户，并且其所有会话均已结束。</p>"
+    },
+    "sessions-ended": {
+      "subject": "您已从 {{service}} 退出登录",
+      "text": "账户 {{username}} 的 {{count}} 个会话已于 {{when}} 被 {{by}} 结束。\n\n请重新登录以继续。如果您没有预料到这一情况，请联系您的账户管理员。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 的 {{count}} 个会话已于 {{when}} 被 {{by}} 结束。</p><p>请重新登录以继续。如果您没有预料到这一情况，请联系您的账户管理员。</p>"
+    },
+    "credential-compromised": {
+      "subject": "您的一个 {{service}} 凭据已被标记为泄露",
+      "text": "账户 {{username}} 的“{{what}}”已于 {{when}} 被标记为泄露。{{why}}\n\n它已无法使用。请在下次登录时设置新的凭据，或联系您的账户管理员。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 的“{{what}}”已于 {{when}} 被标记为泄露。{{why}}</p><p>它已无法使用。请在下次登录时设置新的凭据，或联系您的账户管理员。</p>"
+    },
+    "recovery-started": {
+      "subject": "您的 {{service}} 账户已开始恢复",
+      "text": "账户 {{username}} 的恢复已于 {{when}} 由 {{by}} 发起。\n\n如果这不是您本人或您委托的人操作，请立即联系您的账户管理员。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 的恢复已于 {{when}} 由 {{by}} 发起。</p><p>如果这不是您本人或您委托的人操作，请立即联系您的账户管理员。</p>"
+    },
+    "address-changed": {
+      "subject": "您的 {{service}} 账户的电子邮件地址已更改",
+      "text": "账户 {{username}} 的电子邮件地址已于 {{when}} 更改为 {{address}}。此邮件发送到了更改前的地址。\n\n如果您没有预料到这一情况，请立即联系您的账户管理员。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 的电子邮件地址已于 {{when}} 更改为 {{address}}。此邮件发送到了更改前的地址。</p><p>如果您没有预料到这一情况，请立即联系您的账户管理员。</p>"
+    },
+    "access-request": {
+      "subject": "{{service}}：有应用程序请求访问权限",
+      "text": "应用程序 {{client}} 请求代表账户 {{username}} 获得访问权限：{{rights}}。\n\n在您批准之前，不会允许任何访问。如需批准或拒绝，请在 {{expiresMinutes}} 分钟内登录并打开此页面：\n\n{{link}}\n\n如果您不认识此请求，请在该页面拒绝，或忽略此邮件：它会自行过期。\n",
+      "html": "<p>应用程序 <strong>{{client}}</strong> 请求代表账户 <strong>{{username}}</strong> 获得访问权限：{{rights}}。</p><p>在您批准之前，不会允许任何访问。请在 {{expiresMinutes}} 分钟内<a href=\"{{link}}\">批准或拒绝</a>。</p><p>如果您不认识此请求，请在该页面拒绝，或忽略此邮件：它会自行过期。</p>"
+    },
+    "administrator-alert": {
+      "subject": "{{service}}：{{username}} 的 {{act}}",
+      "text": "本服务（而非某个人）于 {{when}} 对账户 {{username}} 执行了操作：{{act}}。\n\n{{why}}\n\n您收到此邮件，是因为您在此领域中拥有 Admin Write 权限。\n",
+      "html": "<p>本服务（而非某个人）于 {{when}} 对账户 <strong>{{username}}</strong> 执行了操作：{{act}}。</p><p>{{why}}</p><p>您收到此邮件，是因为您在此领域中拥有 Admin Write 权限。</p>"
+    },
+    "sign-in-code": {
+      "subject": "您的 {{service}} 登录验证码：{{code}}",
+      "text": "您以 {{username}} 身份登录 {{service}} 的验证码是：\n\n    {{code}}\n\n此验证码只能使用一次，有效期 {{minutes}} 分钟。{{service}} 的任何人都不会向您索要它。\n\n如果您没有在登录，说明有知道您账户名的人正在尝试登录：请忽略此验证码，并考虑更改您的密码。\n",
+      "html": "<p>您以 <strong>{{username}}</strong> 身份登录 {{service}} 的验证码是：</p><p><strong>{{code}}</strong></p><p>此验证码只能使用一次，有效期 {{minutes}} 分钟。{{service}} 的任何人都不会向您索要它。</p><p>如果您没有在登录，说明有知道您账户名的人正在尝试登录：请忽略此验证码，并考虑更改您的密码。</p>"
+    },
+    "sign-in-link": {
+      "subject": "您的 {{service}} 登录链接",
+      "text": "如需以 {{username}} 身份完成登录 {{service}}，请在 {{minutes}} 分钟内，在您开始登录的那个浏览器中打开此链接：\n\n{{signin}}\n\n此链接只能使用一次，并且只能在该浏览器中使用。\n\n如果您没有在登录，请忽略此邮件：此链接无法让其他任何人登录。\n",
+      "html": "<p>如需以 <strong>{{username}}</strong> 身份完成登录 {{service}}，请在 {{minutes}} 分钟内，在您开始登录的那个浏览器中<a href=\"{{signin}}\">打开此链接</a>。</p><p>此链接只能使用一次，并且只能在该浏览器中使用。</p><p>如果您没有在登录，请忽略此邮件：此链接无法让其他任何人登录。</p>"
+    },
+    "reset-refused-attempt": {
+      "subject": "有人试图重置您的 {{service}} 密码",
+      "text": "{{when}}，有人请求重置账户 {{username}} 的密码，填写了此地址，并提供了一个不属于您的恢复码。没有任何更改，也没有发送重置链接。\n\n如果是您本人，请使用一个未用过的恢复码重试。如果不是，说明有人知道您的账户名和地址；请联系您的账户管理员。\n",
+      "html": "<p>{{when}}，有人请求重置账户 <strong>{{username}}</strong> 的密码，填写了此地址，并提供了一个不属于您的恢复码。没有任何更改，也没有发送重置链接。</p><p>如果是您本人，请使用一个未用过的恢复码重试。如果不是，说明有人知道您的账户名和地址；请联系您的账户管理员。</p>"
+    },
+    "test-message": {
+      "subject": "{{service}} 测试邮件",
+      "text": "这是一封测试邮件，应 {{username}} 的请求，于 {{when}} 通过 {{transport}} 传输方式发送。\n",
+      "html": "<p>这是一封测试邮件，应 <strong>{{username}}</strong> 的请求，于 {{when}} 通过 {{transport}} 传输方式发送。</p>"
+    }
+  },
+  "layout": {
+    "subject": "{{subject}}",
+    "text": "{{content}}\n-- \n{{service}}（{{realm}}）\n您收到此邮件，是因为它是{{reason}}。\n",
+    "html": "<div>{{content}}</div><hr><p><small>{{service}}（{{realm}}）。您收到此邮件，是因为它是{{reason}}。</small></p>"
+  },
+  "categories": {
+    "security": { "reason": "一封关于您账户的安全通知，无法关闭" },
+    "account": { "reason": "您或管理员请求的内容" },
+    "notification": { "reason": "一条通知，您可以在门户中关闭" }
+  }
+}

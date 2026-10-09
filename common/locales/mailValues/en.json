@@ -1,0 +1,16 @@
+{
+  "requestedBy.recoveryCode": "you, or somebody who knew your account name, your address and one of your recovery codes",
+  "requestedBy.signInScreen": "you, or somebody who knew your account name, on the sign-in screen",
+  "requestedBy.administrator": "an administrator",
+  "requestedBy.administratorNamed": "an administrator ({actor})",
+  "how.by": "by {entity, select, user {user} admin {admin} system {system} policy {policy} someone {someone} other {{entity}}}",
+  "credential.type": "{type, select, password {password} x509 {x509} app {app} fido2-roaming {fido2-roaming} fido2-platform {fido2-platform} other {{type}}}",
+  "by.you": "you",
+  "by.administrator": "an administrator",
+  "by.administratorSessionsPage": "an administrator (the sessions page)",
+  "by.administratorConsoleLogout": "an administrator (the admin console at /admin/logout)",
+  "act.credentialCompromised": "credential marked compromised",
+  "act.accountDisabled": "account disabled",
+  "rights.access": "access",
+  "address.none": "(none)"
+}

@@ -1,0 +1,23 @@
+{
+  "heading": "您最近的登录",
+  "sub": "每次登录您的账户时，都会对照您平时的登录方式，检查它看起来有多不寻常——来自哪里、使用什么设备。如果其中有一次不是您本人，请告诉我们：您账户上的所有会话会立即结束，并且您应当更改密码。",
+  "none": "过去 {days, plural, other {# 天}}内没有评估过您的任何登录。",
+  "when": "时间",
+  "from": "来源",
+  "with": "设备",
+  "through": "途径",
+  "risk": "风险",
+  "wasItYou": "是您本人吗？",
+  "nowhere": "数据集未标明的地点",
+  "deviceOn": "{os} 上的 {family}",
+  "noDevice": "未命名的设备",
+  "level": "{level, select, LOW {低} MEDIUM {中} HIGH {高} UNSCORED {未评分} other {{level}}}",
+  "thisSession": "本次会话",
+  "saidYes": "您已确认这是您本人。",
+  "saidNo": "<strong>您已表示这不是您本人。</strong>",
+  "yes": "是我本人",
+  "no": "不是我",
+  "doneDenied": "谢谢。您账户上的所有会话（包括本次会话）正在结束，您使用的应用也正在收到通知。请重新登录，并在 {path} 更改您的密码。",
+  "doneConfirmed": "谢谢——已记录为您本人。",
+  "doneConfirmedLow": "谢谢——已记录为您本人。您账户的风险已恢复为低。"
+}

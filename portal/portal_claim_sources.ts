@@ -58,6 +58,9 @@ interface PortalContext {
   audit: Json;
   errorCodes: Json;
   config: { value(key: string): any };
+  // The portal's translator for a page drawn for this session (#539
+  // phase 3): the portal's application and the person's own language.
+  translatorFor(session: Json): any;
 }
 
 interface PortalClaimSourcesDeps {
@@ -109,6 +112,7 @@ class PortalClaimSourcesPage {
     });
     const csrf = websecurity.field(session.id);
     const PATH = this.PATH;
+    const t = this.ctx.translatorFor(session);
     const form = function (action: string, id: string, label: string,
                            danger: boolean): string {
       return '<form method="post" action="' + esc(PATH) + '" ' +
@@ -121,34 +125,36 @@ class PortalClaimSourcesPage {
     };
     const rows = claimsProviders.list().map(function (p: Json): string {
       const link = linked[p.id];
+      // THE SENTENCE IS SPLIT AROUND THE LIST OF CLAIMS (#539): each claim
+      // is a <code> the code draws, which a message cannot carry as a
+      // parameter, so the words before and after it are two messages.
       return '<div class="card claim-source" id="claim-source-' +
         esc(p.id) + '"><p><strong>' + esc(p.name) + '</strong> <code>' +
-        esc(p.issuer) + '</code></p><p class="sub">Supplies ' +
+        esc(p.issuer) + '</code></p><p class="sub">' +
+        t.html('portalClaimSources.supplies') + ' ' +
         p.claims.map(function (c: string): string {
           return '<code>' + esc(c) + '</code>';
-        }).join(', ') + ', ' + (p.delivery === 'distributed'
-          ? 'by handing an application your token at this provider, to ' +
-            'fetch them itself'
-          : 'fetched by this service and passed on as the provider ' +
-            'signed them') + '.</p>' +
+        }).join(', ') + (p.delivery === 'distributed'
+          ? t.html('portalClaimSources.distributed')
+          : t.html('portalClaimSources.aggregated')) + '</p>' +
         (link
-          ? '<p class="claim-source-linked">Linked ' +
-            esc(new Date(link.linkedAt).toISOString()) +
-            (link.stale ? ' — <strong>no longer usable</strong>; link it ' +
-              'again' : '') + '.</p>' +
-            (link.stale ? form('link', p.id, 'Link again', false) : '') +
-            form('unlink', p.id, 'Unlink', true)
-          : form('link', p.id, 'Link', false)) + '</div>';
+          ? '<p class="claim-source-linked">' + (link.stale
+              ? t.html('portalClaimSources.linkedStale',
+                       { when: t.date(link.linkedAt) })
+              : t.html('portalClaimSources.linked',
+                       { when: t.date(link.linkedAt) })) + '</p>' +
+            (link.stale ? form('link', p.id,
+              t.html('portalClaimSources.linkAgain'), false) : '') +
+            form('unlink', p.id, t.html('portalClaimSources.unlink'), true)
+          : form('link', p.id, t.html('portalClaimSources.link'), false)) +
+        '</div>';
     });
-    const body = '<div class="card"><h2>Connected claim sources</h2>' +
-      '<p class="sub">Another identity provider can vouch for facts about ' +
-      'you that this service does not hold. Once you link one, an ' +
-      'application that asks for those facts receives them as that ' +
-      'provider signed them (OpenID Connect aggregated and distributed ' +
-      'claims). Linking takes you to the provider to sign in and agree.' +
-      '</p></div>' + (rows.length ? rows.join('') :
-      '<div class="card"><p id="claim-sources-none">This service has no ' +
-      'claim sources to offer.</p></div>');
+    const body = '<div class="card"><h2>' +
+      t.html('portalClaimSources.heading') + '</h2>' +
+      '<p class="sub">' + t.html('portalClaimSources.sub') + '</p></div>' +
+      (rows.length ? rows.join('') :
+      '<div class="card"><p id="claim-sources-none">' +
+      t.html('portalClaimSources.none') + '</p></div>');
     log.debug("Leaving PortalClaimSourcesPage.page().");
     return shell(this.PATH, session, message, error, body);
   }
@@ -211,8 +217,10 @@ class PortalClaimSourcesPage {
                                             'link to that provider.'));
       }
       log.debug('Leaving POST ' + PATH + '. Unlinked.');
+      // In the person's language (#539): the text rides the redirect.
       res.status(303).set('Location', ctx.baseUrlOf(req) + PATH + '?done=' +
-                          encodeURIComponent('Unlinked.')).end();
+        encodeURIComponent(ctx.translatorFor(session)
+          .text('portalClaimSources.doneUnlinked'))).end();
       return undefined;
     }
     const started = claimsProviders.beginLink(who, String(body.id),
@@ -261,8 +269,11 @@ class PortalClaimSourcesPage {
     log.debug('Leaving GET ' + this.CALLBACK + '. Linked.');
     // ABSOLUTE, ON THE REALM'S OWN BASE: a bare `/portal/...` Location is
     // answered by the default realm, which is not where this person linked.
+    // In the person's language (#539); the provider is data, a parameter.
     res.status(303).set('Location', ctx.baseUrlOf(req) + PATH + '?done=' +
-      encodeURIComponent('Linked "' + finished.provider + '".')).end();
+      encodeURIComponent(ctx.translatorFor(session).text(
+        'portalClaimSources.doneLinked',
+        { provider: finished.provider }))).end();
     return undefined;
   }
 

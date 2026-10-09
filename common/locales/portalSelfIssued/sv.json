@@ -1,0 +1,14 @@
+{
+  "heading": "Dina självutfärdade id",
+  "sub": "En plånbok kan logga in dig med en ID-token som den signerar med sin egen nyckel (Self-Issued OpenID Provider v2). Ingen går i god för den nyckeln, så den loggar bara in den person som registrerade den här.",
+  "subject": "Subjekt",
+  "label": "Etikett",
+  "enrolled": "Registrerad",
+  "remove": "Ta bort",
+  "none": "Du har inte registrerat några.",
+  "enrol": "Registrera en plånbok",
+  "enrolNote": "Din plånbok ombeds om en självutfärdad ID-token, och nyckeln som signerade den registreras åt dig – du bevisar att du har den; inget skrivs in.",
+  "off": "Inloggning med ett självutfärdat id är avstängd här, så ingen plånbok kan registreras från den här sidan. Nycklarna ovan förblir registrerade.",
+  "doneEnrolled": "Din plånboks nyckel är registrerad. Den loggar in dig från och med nu.",
+  "doneRemoved": "Den nyckeln loggar inte längre in dig."
+}

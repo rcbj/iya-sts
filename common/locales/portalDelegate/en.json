@@ -1,0 +1,14 @@
+{
+  "heading": "Who may act for you",
+  "sub": "An application or a person you name here may ask this service for a token in your name by exchanging one of yours (RFC 8693 token exchange). Every access token issued about you says so in its <code>may_act</code> claim, and an exchange of one by anybody ELSE is refused. You may name one party.",
+  "currentPerson": "The party who may act for you is <code>{dn}</code> (a person).",
+  "currentApplication": "The party who may act for you is <code>{dn}</code> (an application).",
+  "currentStale": "The party who may act for you is <code>{dn}</code> — which names nothing in this directory now, so your tokens carry no <code>may_act</code>.",
+  "nobody": "You have named nobody. Your access tokens carry no <code>may_act</code> claim.",
+  "notDelegated": "An administrator has marked your account as one that cannot be delegated, so nobody may act for you whatever you name here.",
+  "dnLabel": "Their directory name (DN)",
+  "name": "Name them",
+  "clear": "Name nobody",
+  "doneSet": "Your delegate is set.",
+  "doneCleared": "You have named nobody."
+}

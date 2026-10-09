@@ -4832,6 +4832,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'control characters; an empty name restores the default (the ' +
           'provider\'s or the group\'s). Audited; no CAEP event, because a ' +
           'name says nothing about what the key proves.' },
+  { path: '/portal/language', group: 'User portal',
+    name: 'Set or remove the language on your own entry',
+    specs: [],
+    effect: 'writes or removes preferredLanguage on the person\'s entry',
+    what: 'NON-SPEC (#539). The Overview\'s Language and region card posts ' +
+          'here: signed in, CSRF, and the USERNAME from the session, ' +
+          '/portal/remove-key\'s rule. A BCP 47 tag a catalog answers is ' +
+          'written to preferredLanguage (RFC 2798 section 2.7) through the ' +
+          'person editor and set as the language chooser\'s cookie; an ' +
+          'empty one removes the attribute, so the browser\'s ' +
+          'Accept-Language decides again. A tag no catalog answers is ' +
+          'refused (STS-I18N-0008). Answers 303 to /portal?done=language.' },
   { path: '/portal/mfa', group: 'User portal',
     name: 'Your authenticator app',
     specs: ['rfc6238', 'rfc4226'],

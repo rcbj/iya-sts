@@ -45,6 +45,9 @@ import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
 import mail = require('../common/mail');
 import mailUses = require('../common/mail_uses');
+// THE LANGUAGE OF THESE PAGES (#539 phase 3): the chooser, on the pages
+// nobody is signed in to (the shell draws it on the signed-in one).
+import PageLocale = require('../common/page_locale');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -66,7 +69,9 @@ interface PortalContext {
   shell(path: string, session: Json, message: unknown, error: unknown,
         body: string): string;
   send(res: Res, status: number, body: string): unknown;
-  bare(title: string, inner: string): string;
+  bare(title: string, inner: string, translator?: any): string;
+  // The portal's translator (#539): `null` on a page nobody is signed in to.
+  translatorFor(session: Json): any;
   requireSignIn(req: Req, res: Res, path: string, action: unknown): Json;
   // error-code: none — the portal helper's type, not a call to it.
   refuseShape(res: Res, result: Json): unknown;
@@ -143,6 +148,7 @@ class PortalMailPage {
     const { log, shell, esc, websecurity } = this.ctx;
     const { mail } = this.deps;
     log.debug("Entering PortalMailPage.emailPage().");
+    const t = this.ctx.translatorFor(session);
     const who = String(session.user.username);
     const person = mail.recipient(who) || { address: '', verified: false };
     const csrf = websecurity.field(session.id);
@@ -156,65 +162,101 @@ class PortalMailPage {
     const changing = pending && person.address &&
                      pending.toLowerCase() !== person.address.toLowerCase()
       ? pending : (pending && !person.address ? pending : '');
-    cards.push('<div class="card"><h2>Your address</h2><table>' +
-      '<tr><th>Email address</th><td>' + (person.address
+    cards.push('<div class="card"><h2>' + t.html('portalMail.email.heading') +
+      '</h2><table>' +
+      '<tr><th>' + t.html('portalMail.email.address') + '</th><td>' +
+      (person.address
         ? '<code>' + esc(person.address) + '</code>'
-        : 'none') +
-      '</td></tr><tr><th>Verified</th><td>' + (person.verified
-        ? '<strong>yes</strong>'
-        : 'no') + '</td></tr>' +
-      (changing ? '<tr><th>Changing to</th><td><code>' + esc(changing) +
-                  '</code> — follow the link sent there</td></tr>' : '') +
+        : t.html('portalMail.email.none')) +
+      '</td></tr><tr><th>' + t.html('portalMail.email.verified') +
+      '</th><td>' + (person.verified
+        ? '<strong>' + t.html('portalMail.email.yes') + '</strong>'
+        : t.html('portalMail.email.no')) + '</td></tr>' +
+      (changing ? '<tr><th>' + t.html('portalMail.email.changingTo') +
+                  '</th><td>' + t.html('portalMail.email.changingToValue',
+                                       { address: changing }) +
+                  '</td></tr>' : '') +
       '</table>' +
       (person.address && !person.verified && available
         ? '<form method="post" action="' + this.EMAIL + '">' + csrf +
           '<input type="hidden" name="action" value="verify">' +
-          '<p><button type="submit">Send me a verification link</button></p>' +
-          '</form><p class="note">A verified address is where a ' +
-          'forgotten-password link can be sent. Changing the address ' +
-          'unverifies it.</p>'
+          '<p><button type="submit">' + t.html('portalMail.email.sendVerify') +
+          '</button></p></form><p class="note">' +
+          t.html('portalMail.email.verifyNote') + '</p>'
         : '') +
-      (!available ? '<p class="note">This service has no way to send mail ' +
-                    'here at the moment.</p>' : '') +
+      (!available ? '<p class="note">' +
+                    t.html('portalMail.email.noMail') + '</p>' : '') +
       // CHANGING IT (#64, D5). Drawn disabled, with the reason, where mail
       // cannot be sent: the change is only ever made by following a link.
-      '<h3>Change it</h3><form method="post" action="' + this.EMAIL + '">' +
+      '<h3>' + t.html('portalMail.email.changeHeading') +
+      '</h3><form method="post" action="' + this.EMAIL + '">' +
       csrf + '<input type="hidden" name="action" value="change">' +
-      '<label for="address">New address</label><input type="email" ' +
+      '<label for="address">' + t.html('portalMail.email.newAddress') +
+      '</label><input type="email" ' +
       'id="address" name="address" maxlength="254" autocomplete="email"' +
       (available ? ' required' : ' disabled') + '>' +
       '<p><button type="submit" id="email-change"' +
-      (available ? '' : ' disabled') + '>Send a link to the new ' +
-      'address</button></p></form><p class="note">Your address changes when ' +
-      'you follow the link sent to the NEW address. Until then everything ' +
-      'still goes to the address above, and it is told when the change is ' +
-      'made.' + (available ? '' : ' <strong>Not available: this service ' +
-      'cannot send mail at the moment.</strong>') + '</p></div>');
+      (available ? '' : ' disabled') + '>' +
+      t.html('portalMail.email.sendChange') + '</button></p></form>' +
+      '<p class="note">' + t.html('portalMail.email.changeNote') +
+      (available ? '' : ' <strong>' +
+        t.html('portalMail.email.changeUnavailable') + '</strong>') +
+      '</p></div>');
     const declined = mail.declined(who);
+    // A CATEGORY'S WORDS (#539): its label and description in this page's
+    // language, by its id — literal keys, so the catalog test sees them. A
+    // category this page does not know keeps the English the table holds.
+    const wordsOf = function (cat: Json): { label: string; what: string } {
+      if (cat.id === 'security') {
+        return { label: t.html('portalMail.category.security.label'),
+                 what: t.html('portalMail.category.security.what') };
+      }
+      if (cat.id === 'account') {
+        return { label: t.html('portalMail.category.account.label'),
+                 what: t.html('portalMail.category.account.what') };
+      }
+      if (cat.id === 'notification') {
+        return { label: t.html('portalMail.category.notification.label'),
+                 what: t.html('portalMail.category.notification.what') };
+      }
+      return { label: esc(cat.label), what: esc(cat.what) };
+    };
     const rows = mail.CATEGORIES.map(function (cat: Json) {
-      return '<tr><td>' + esc(cat.label) + '</td><td>' + esc(cat.what) +
+      const words = wordsOf(cat);
+      return '<tr><td>' + words.label + '</td><td>' + words.what +
         '</td><td>' + (cat.optional
           ? '<label><input type="checkbox" name="' + esc(cat.id) +
             '" value="on"' + (declined.indexOf(cat.id) < 0 ? ' checked' : '') +
-            '> send me these</label>'
-          : 'always sent') + '</td></tr>';
+            '> ' + t.html('portalMail.sends.sendMe') + '</label>'
+          : t.html('portalMail.sends.always')) + '</td></tr>';
     }).join('');
-    cards.push('<div class="card"><h2>What this service sends you</h2>' +
+    cards.push('<div class="card"><h2>' + t.html('portalMail.sends.heading') +
+      '</h2>' +
       '<form method="post" action="' + this.EMAIL + '">' + csrf +
       '<input type="hidden" name="action" value="preferences">' +
-      '<table><tr><th>Messages</th><th>What they are</th><th></th></tr>' +
-      rows + '</table><p><button type="submit">Save</button></p></form>' +
-      '<p class="note">Security notices cannot be declined: you are always ' +
-      'told when something happens to your account.</p></div>');
+      '<table><tr><th>' + t.html('portalMail.sends.messages') + '</th><th>' +
+      t.html('portalMail.sends.what') + '</th><th></th></tr>' +
+      rows + '</table><p><button type="submit">' +
+      t.html('portalMail.sends.save') + '</button></p></form>' +
+      '<p class="note">' + t.html('portalMail.sends.note') + '</p></div>');
     const sent = mail.list({ username: who }).slice(0, 20);
-    cards.push('<div class="card"><h2>Recently sent to you</h2>' + (sent.length
-      ? '<table><tr><th>When</th><th>Message</th><th>To</th><th>State</th>' +
+    // The subject, the address and the delivery state are data, drawn as
+    // they are; the time is a human date in the page's language (#539).
+    cards.push('<div class="card"><h2>' + t.html('portalMail.sent.heading') +
+      '</h2>' + (sent.length
+      ? '<table><tr><th>' + t.html('portalMail.sent.when') + '</th><th>' +
+        t.html('portalMail.sent.message') + '</th><th>' +
+        t.html('portalMail.sent.to') + '</th><th>' +
+        t.html('portalMail.sent.state') + '</th>' +
         '</tr>' + sent.map(function (row: Json) {
-          return '<tr><td>' + esc(row.queuedAt) + '</td><td>' +
+          return '<tr><td>' +
+            esc(row.queuedAt ? t.date(Number(row.queuedAt)) : '') +
+            '</td><td>' +
             esc(row.subject) + '</td><td><code>' + esc(row.to) +
             '</code></td><td>' + esc(row.state) + '</td></tr>';
         }).join('') + '</table>'
-      : '<p class="sub">Nothing.</p>') + '</div>');
+      : '<p class="sub">' + t.html('portalMail.sent.nothing') + '</p>') +
+      '</div>');
     log.debug("Leaving PortalMailPage.emailPage().");
     return shell(this.EMAIL, session, message, error, cards.join(''));
   }
@@ -311,8 +353,46 @@ class PortalMailPage {
     }
     log.debug('Leaving POST ' + this.EMAIL + '. Done.');
     res.status(303).set('Location', this.EMAIL + '?done=' +
-      encodeURIComponent(result.message || 'Done.')).end();
+      encodeURIComponent(this.doneText(session, body, result))).end();
     return undefined;
+  }
+
+  // THE SUCCESS SENTENCE IN THE PERSON'S LANGUAGE (#539). `mail` and
+  // `mailUses` answer an English `message`, which other callers (the console,
+  // the API) still show; here the same facts are put in the page's words
+  // instead, at the redirect, since the sentence travels in `?done=`. A
+  // result this cannot place keeps its English, or `Done.`.
+  private doneText(session: Json, body: Json, result: Json): string {
+    const { log, config } = this.ctx;
+    const { mail } = this.deps;
+    log.debug("Entering PortalMailPage.doneText().");
+    const t = this.ctx.translatorFor(session);
+    const who = String(session.user.username);
+    const minutes = Number(config.value('mail.verificationTtlMinutes'));
+    let out = '';
+    if (body.action === 'verify') {
+      const person = mail.recipient(who) || { address: '' };
+      out = result.verified
+        ? t.text('portalMail.done.alreadyVerified',
+                 { address: person.address })
+        : t.text('portalMail.done.verifySent',
+                 { address: person.address, minutes: minutes });
+    } else if (body.action === 'change') {
+      const person = mail.recipient(who) || { address: '' };
+      const wanted = String(body.address || '').trim();
+      out = person.address
+        ? t.text('portalMail.done.changeSent',
+                 { address: wanted, minutes: minutes,
+                   current: person.address })
+        : t.text('portalMail.done.changeSentUnset',
+                 { address: wanted, minutes: minutes });
+    } else if (body.action === 'preferences') {
+      out = saysYes(body.notification)
+        ? t.text('portalMail.done.notificationsOn')
+        : t.text('portalMail.done.notificationsOff');
+    }
+    log.debug("Leaving PortalMailPage.doneText().");
+    return out || result.message || t.text('portalMail.done.done');
   }
 
   // -------------------------------------------------------------------------
@@ -359,71 +439,96 @@ class PortalMailPage {
       return this.verifyRefused(res, 400, 'STS-MAIL-0024',
                                 (checked.errors || [''])[0]);
     }
+    // THE LANGUAGE (#539): nobody is signed in to this page, so the
+    // portal's translator for nobody, and a chooser of its own. The
+    // refusals above stay English, as every refusal does.
+    const t = ctx.translatorFor(null);
     if (spend) {
       log.debug('Leaving POST ' + this.VERIFY + '. Verified.');
-      return ctx.send(res, 200, ctx.bare('Address verified',
-        '<div class="card"><h1>Address verified</h1><p><code>' +
-        esc(checked.address) + '</code> is the verified address of ' +
-        '<strong>' + esc(username) + '</strong>.</p><p><a href="' +
-        ctx.BASE + '">Go to your account</a></p></div>'));
+      // No GET draws this page again — the link is spent, and opening it
+      // now is refused — so the chooser returns to the account it links to.
+      return ctx.send(res, 200, ctx.bare(t.text('portalMail.verified.title'),
+        '<div class="card">' +
+        PageLocale.chooser(t, realms.currentPrefix(),
+                           PageLocale.herePath(realms.currentPrefix() +
+                                               ctx.BASE)) +
+        '<h1>' + t.html('portalMail.verified.heading') + '</h1><p>' +
+        t.html('portalMail.verified.body',
+               { address: checked.address, name: username }) +
+        '</p><p><a href="' + ctx.BASE + '">' +
+        t.html('portalMail.verified.toAccount') + '</a></p></div>', t));
     }
     log.debug('Leaving GET ' + this.VERIFY + '. Drawing the button.');
-    return ctx.send(res, 200, ctx.bare('Verify your address',
-      '<div class="card"><h1>Verify your address</h1><p>Confirm that ' +
-      '<code>' + esc(checked.address) + '</code> is the address of ' +
-      '<strong>' + esc(username) + '</strong>.</p>' +
+    return ctx.send(res, 200, ctx.bare(t.text('portalMail.verify.title'),
+      '<div class="card">' +
+      // Drawn by a GET only: the link itself redraws it.
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + this.VERIFY +
+          '?user=' + encodeURIComponent(username) +
+          '&token=' + encodeURIComponent(token))) +
+      '<h1>' + t.html('portalMail.verify.heading') + '</h1><p>' +
+      t.html('portalMail.verify.confirm',
+             { address: checked.address, name: username }) + '</p>' +
       '<form method="post" action="' + this.VERIFY + '">' +
       // THE TOKEN RIDES IN THE FORM, for the activation form's reason.
       '<input type="hidden" name="user" value="' + esc(username) + '">' +
       '<input type="hidden" name="token" value="' + esc(token) + '">' +
-      '<button type="submit">Verify this address</button></form></div>'));
+      '<button type="submit">' + t.html('portalMail.verify.button') +
+      '</button></form></div>', t));
   }
 
   // -------------------------------------------------------------------------
   // /portal/forgot-password
   // -------------------------------------------------------------------------
+  // THE LANGUAGE (#539): nobody is signed in to this page, so the portal's
+  // translator for nobody, and a chooser of its own that returns to the
+  // form's GET — after the POST too, which answers with the same form.
   private forgotForm(note: string): string {
     const { log, esc, bare } = this.ctx;
     log.debug("Entering PortalMailPage.forgotForm().");
+    const t = this.ctx.translatorFor(null);
+    const chooser = PageLocale.chooser(t, realms.currentPrefix(),
+      PageLocale.herePath(realms.currentPrefix() + this.FORGOT));
     // THREE FIELDS WHERE A RECOVERY CODE IS ASKED FOR (#64, D4).
     if (this.deps.mailUses.resetNeedsRecoveryCode()) {
       log.debug("Leaving PortalMailPage.forgotForm(). Three fields.");
-      return bare('Forgot your password?',
-        '<div class="card"><h1>Forgot your password?</h1>' +
+      return bare(t.text('portalMail.forgot.title'),
+        '<div class="card">' + chooser + '<h1>' +
+        t.html('portalMail.forgot.heading') + '</h1>' +
         (note ? '<div class="ok">' + esc(note) + '</div>' : '') +
-        '<p class="sub">Give your username, the email address on your ' +
-        'account and one of your recovery codes. When all three are right, ' +
-        'a link to choose a new password is sent to that address, and the ' +
-        'recovery code is used up. Your current password keeps working ' +
-        'until the link is used.</p>' +
+        '<p class="sub">' + t.html('portalMail.forgot.subThree') + '</p>' +
         '<form method="post" action="' + this.FORGOT + '">' +
-        '<label for="account">Username</label>' +
+        '<label for="account">' + t.html('portalMail.forgot.username') +
+        '</label>' +
         '<input type="text" id="account" name="account" maxlength="256" ' +
         'autocomplete="username" required>' +
-        '<label for="address">Email address</label>' +
+        '<label for="address">' + t.html('portalMail.forgot.address') +
+        '</label>' +
         '<input type="email" id="address" name="address" maxlength="254" ' +
         'autocomplete="email" required>' +
-        '<label for="code">A recovery code</label>' +
+        '<label for="code">' + t.html('portalMail.forgot.code') +
+        '</label>' +
         '<input type="text" id="code" name="code" maxlength="64" ' +
         'autocomplete="one-time-code" autocapitalize="characters" ' +
         'spellcheck="false" required placeholder="XXXXX-XXXXX">' +
-        '<button type="submit">Send me a link</button></form>' +
-        '<p class="note">No recovery codes? Ask whoever manages your ' +
-        'account to reset your password.</p></div>');
+        '<button type="submit">' + t.html('portalMail.forgot.send') +
+        '</button></form>' +
+        '<p class="note">' + t.html('portalMail.forgot.noCodes') +
+        '</p></div>', t);
     }
     log.debug("Leaving PortalMailPage.forgotForm().");
-    return bare('Forgot your password?',
-      '<div class="card"><h1>Forgot your password?</h1>' +
+    return bare(t.text('portalMail.forgot.title'),
+      '<div class="card">' + chooser + '<h1>' +
+      t.html('portalMail.forgot.heading') + '</h1>' +
       (note ? '<div class="ok">' + esc(note) + '</div>' : '') +
-      '<p class="sub">Name your account — its username, or the email ' +
-      'address on it — and a link to choose a new password is sent to the ' +
-      'address the account has. Your current password keeps working until ' +
-      'the link is used.</p>' +
+      '<p class="sub">' + t.html('portalMail.forgot.sub') + '</p>' +
       '<form method="post" action="' + this.FORGOT + '">' +
-      '<label for="account">Username or email address</label>' +
+      '<label for="account">' + t.html('portalMail.forgot.account') +
+      '</label>' +
       '<input type="text" id="account" name="account" maxlength="256" ' +
       'autocomplete="username" required>' +
-      '<button type="submit">Send me a link</button></form></div>');
+      '<button type="submit">' + t.html('portalMail.forgot.send') +
+      '</button></form></div>', t);
   }
 
   private notOffered(res: Res): unknown {
@@ -477,7 +582,10 @@ class PortalMailPage {
     }
     // THE ANSWER FIRST, THE WORK AFTER (header): the same page, whatever
     // becomes of the request.
-    ctx.send(res, 200, this.forgotForm(mailUses.RESET_ANSWER));
+    // The sentence is `mailUses.RESET_ANSWER`, in the page's language
+    // (#539): the same words whatever happened, so it says no more.
+    const t = ctx.translatorFor(null);
+    ctx.send(res, 200, this.forgotForm(t.text('portalMail.forgot.answer')));
     const realm = realms.current();
     setImmediate(function (): void {
       realms.run(realm, function (): unknown {

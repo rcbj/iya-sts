@@ -57,6 +57,8 @@ interface PortalContext {
     info(message: string): void;
   };
   esc(value: unknown): string;
+  // The portal's translator (#539): the person's language for this page.
+  translatorFor(session: Json): any;
   shell(path: string, session: Json, message: unknown, error: unknown,
         body: string): string;
   send(res: Res, status: number, body: string): unknown;
@@ -150,12 +152,37 @@ class PortalDevicePage {
     log.debug("Leaving PortalDevicePage.noteWrong().");
   }
 
+  // "<client> asks to sign you in on a device showing the code <code>": the
+  // two names carry ids a test or a reader's tools find them by, and a
+  // catalog message may hold no attributes (#539). So the message is drawn
+  // with two placeholder words, and each is replaced by its element after
+  // the message is formatted — the words are where the language puts them,
+  // and the markup is the code's. The placeholders are letters only, so
+  // formatting escapes nothing in them, and the names go in escaped.
+  private asks(t: Json, record: Json): string {
+    const { log, esc } = this.ctx;
+    log.debug("Entering PortalDevicePage.asks().");
+    const CLIENT = 'XDEVICECLIENTX';
+    const CODE = 'XDEVICECODEX';
+    const html = String(t.html('portalDevice.request.asks',
+                               { client: CLIENT, code: CODE }))
+      .replace(CLIENT, '<strong id="device-client">' +
+               esc(record.clientName || record.clientId) + '</strong>')
+      .replace(CODE, '<code id="device-code">' + esc(record.userCode) +
+               '</code>');
+    log.debug("Leaving PortalDevicePage.asks().");
+    return html;
+  }
+
   private page(session: Json, record: Json, typed: string, message: unknown,
                error: unknown): string {
     const { log, shell, esc, websecurity, config } = this.ctx;
     log.debug("Entering PortalDevicePage.page().");
     const csrf = websecurity.field(session.id);
     const PATH = this.PATH;
+    // THE LANGUAGE (#539): the shell's, for the person signed in. An error
+    // handed in stays English, as every refusal does.
+    const t = this.ctx.translatorFor(session);
     const answer = function (action: string, label: string,
                              danger: boolean): string {
       return '<form method="post" action="' + esc(PATH) + '" ' +
@@ -167,30 +194,27 @@ class PortalDevicePage {
         ' id="device-' + action + '">' + label + '</button></form> ';
     };
     const confirm = record
-      ? '<div class="card" id="device-request"><h2>Is this your ' +
-        'device?</h2><p><strong id="device-client">' +
-        esc(record.clientName || record.clientId) + '</strong> asks to ' +
-        'sign you in on a device showing the code <code id="device-code">' +
-        esc(record.userCode) + '</code>.</p><p class="sub">Access: <code>' +
-        esc(record.scope || '(none named)') + '</code>. Expires ' +
-        esc(new Date(record.expiresAt).toISOString()) + '.</p>' +
-        '<p><strong>Approve only a device in front of you</strong> that ' +
-        'you started signing in yourself. Somebody who sent you this code ' +
-        'is asking you to sign THEM in as you.</p>' +
-        answer('approve', 'Approve', false) +
-        answer('deny', 'Deny', true) + '</div>'
+      ? '<div class="card" id="device-request"><h2>' +
+        t.html('portalDevice.request.heading') + '</h2><p>' +
+        this.asks(t, record) + '</p><p class="sub">' +
+        t.html('portalDevice.request.access', {
+          scope: record.scope || t.text('portalDevice.request.noScope'),
+          when: t.date(record.expiresAt) }) + '</p>' +
+        '<p>' + t.html('portalDevice.request.warning') + '</p>' +
+        answer('approve', t.html('portalDevice.request.approve'), false) +
+        answer('deny', t.html('portalDevice.request.deny'), true) + '</div>'
       : '';
     const body = confirm +
-      '<div class="card"><h2>Sign in a device</h2><p class="sub">A ' +
-      'television, a console or a command line that shows a code and ' +
-      'this address is asking you to sign in here instead (RFC 8628).' +
-      (config.value('oauth2.deviceAuthorization') ? '' : ' Signing in ' +
-        'this way is turned off here.') + '</p>' +
+      '<div class="card"><h2>' + t.html('portalDevice.find.heading') +
+      '</h2><p class="sub">' + t.html('portalDevice.find.sub') +
+      (config.value('oauth2.deviceAuthorization') ? '' : ' ' +
+        t.html('portalDevice.find.off')) + '</p>' +
       '<form method="get" action="' + esc(PATH) + '">' +
-      '<label>The code the device shows <input type="text" ' +
+      '<label>' + t.html('portalDevice.find.code') + ' <input type="text" ' +
       'name="user_code" maxlength="32" required autocomplete="off" ' +
       'autocapitalize="characters" value="' + esc(typed) + '"></label> ' +
-      '<button type="submit" id="device-find">Continue</button></form>' +
+      '<button type="submit" id="device-find">' +
+      t.html('portalDevice.find.continue') + '</button></form>' +
       '</div>';
     log.debug("Leaving PortalDevicePage.page().");
     return shell(this.PATH, session, message, error, body);
@@ -306,8 +330,12 @@ class PortalDevicePage {
              (approve ? 'approved' : 'denied') + ' a device sign-in for "' +
              answered.record.clientId + '".');
     log.debug('Leaving POST ' + PATH + '. Answered.');
+    // The success line in the person's language (#539), worked out here
+    // because `?done=` carries the text itself.
+    const t = ctx.translatorFor(session);
     res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      approve ? 'Approved: the device is signing you in.' : 'Denied.'))
+      approve ? t.text('portalDevice.done.approved')
+              : t.text('portalDevice.done.denied')))
       .end();
     return undefined;
   }
