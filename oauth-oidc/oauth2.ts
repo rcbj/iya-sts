@@ -325,6 +325,10 @@ import consentScreen = require('./consent_screen');
 // because the slot answers "what did an administrator TICK" and this is the
 // other question: "what did the CLIENT ask for".
 import claimAttributes = require('../common/claim_attributes');
+// OIDC Core section 5.4's scope claims, the gate that releases one only when
+// its scope was granted, and how a resource server's declared claims combine
+// with the client's (#395). A library.
+import scopeClaims = require('../common/scope_claims');
 import identityAssurance = require('../common/identity_assurance');
 // THE DEVICE REGISTER (#130): Native SSO mints and checks its device_secret
 // against `ou=devices`. A library over `credentials.ts`; it requires nothing
@@ -1247,14 +1251,11 @@ const IDA_REGISTERED_CLAIMS = ['place_of_birth', 'nationalities',
                                'birth_middle_name', 'salutation', 'title',
                                'msisdn', 'also_known_as'];
 
-const USERINFO_SCOPE_CLAIMS = {
-  profile: ['name', 'family_name', 'given_name', 'middle_name', 'nickname',
-            'preferred_username', 'profile', 'picture', 'website', 'gender',
-            'birthdate', 'zoneinfo', 'locale', 'updated_at'],
-  email: ['email', 'email_verified'],
-  address: ['address'],
-  phone: ['phone_number', 'phone_number_verified']
-};
+// OIDC Core section 5.4's table, held in `common/scope_claims.ts` since #395
+// so the gate that keeps an ungranted claim out of every token reads the same
+// one this endpoint answers from.
+const USERINFO_SCOPE_CLAIMS: Record<string, string[]> =
+  scopeClaims.SCOPE_CLAIMS;
 
 // ---------------------------------------------------------------------------
 // NON-SPEC: A CLAIMS REQUEST SENT TO THE USERINFO ENDPOINT ITSELF.
@@ -4029,14 +4030,13 @@ class OAuth2Server {
     if (opts.scope) {
       payload.scope = opts.scope;
     }
-    // Section 2.2.2: an identity attribute goes under its REGISTERED name where
-    // one exists, and `preferred_username` is OpenID Connect's for exactly what
-    // `username` holds. `username` stays — the token registry, SCIM's principal
-    // and the audit log read it. Neither is on a client_credentials token,
-    // where there is no end user to have a name.
-    if (opts.grant !== 'client_credentials' && user.preferred_username) {
-      payload.preferred_username = user.preferred_username;
-    }
+    // Section 2.2.2's `preferred_username` is NOT added here any more (#395).
+    // It is a `profile` claim, and it went into every person's access token
+    // whatever was granted; it now arrives as any other section 5.4 claim
+    // does — declared by the resource server the token is for, and only when
+    // `profile` was granted (resourceServerClaims(), below). `username` stays:
+    // it is this service's own claim, and the token registry, SCIM's
+    // principal and the audit log read it.
     // Section 2.2.1: WHEN the resource owner authenticated, and HOW. Only where
     // an authentication event is behind the grant — a session, carried on the
     // code, the refresh token or the implicit response — and never invented,
@@ -4162,11 +4162,36 @@ class OAuth2Server {
     // the second of two defences rather than the only one, which is the same
     // arrangement the console's reserved-name refusal has.
     // ---------------------------------------------------------------------
-    const payloadWithCustom = Object.assign(
-      stats.jwtClaims('access_token',
-                      self.customClaimContext(base, payload, user,
-                                              opts.grant)),
-      opts.assertionClaims || {}, payload);
+    // ---------------------------------------------------------------------
+    // AND THE RESOURCE SERVER'S OWN DECLARATION (#395), COMBINED WITH THE
+    // CLIENT'S CLAIMS AS IT CHOSE, AND THEN NOTHING THAT WAS NOT GRANTED.
+    //
+    // RFC 9068 section 2.2.2 leaves the identity claims of an access token
+    // to the authorization server, "based on the client, scope and
+    // resource". The client's are the set above (the realm's and the
+    // client's own, combined as the client chose). The resource's are
+    // resourceServerClaims(). The gate is last and covers both: a section
+    // 5.4 claim whose scope the GRANT did not include — `opts.granted_scope`,
+    // because RFC 9068's plan takes the OpenID Connect scopes off a token for
+    // an API while they stay granted — is not released, whichever layer
+    // offered it. The assertion's claims are not part of either set: they
+    // are a statement about THIS issuance, and stay above both.
+    // ---------------------------------------------------------------------
+    const granted = opts.granted_scope !== undefined ? opts.granted_scope
+                                                     : opts.scope;
+    const clientClaims = stats.jwtClaims('access_token',
+                                         self.customClaimContext(
+                                           base, payload, user, opts.grant));
+    const resourceLayer = opts.grant === 'client_credentials' ? null
+      : self.resourceServerClaims(payload.aud, user, granted);
+    const combined = resourceLayer
+      ? scopeClaims.combineResource(clientClaims, resourceLayer.claims,
+                                    resourceLayer.mode)
+      : clientClaims;
+    scopeClaims.gate(combined, granted, 'access token');
+    const payloadWithCustom = Object.assign(combined,
+                                            opts.assertionClaims || {},
+                                            payload);
     // A token granted no scope carries no scope claim, and the merge above is
     // the one way a layer beneath the protocol's could supply one: the protocol
     // layer wins by OVERWRITING, and a claim it deliberately left out has
@@ -4186,6 +4211,85 @@ class OAuth2Server {
                             algorithm: self.accessTokenAlg(opts.request) });
     log.debug("Leaving OAuth2Server.accessToken().");
     return token;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE RESOURCE SERVERS A TOKEN IS FOR WANT IN IT (#395).
+  //
+  // Each audience the token names is looked up as an application — by
+  // `oauthAudience`, then as a client_id or identifier, which is how a scope
+  // naming an API becomes its audience — and its `oauthAccessTokenClaim` read.
+  // NO AUDIENCE DECLARING ANYTHING IS NO LAYER: the answer is null, and the
+  // client's claims go out as they are. Otherwise:
+  //
+  //   * only what EVERY audience declared (rcbj, 2026-10-09), so a token for
+  //     two APIs carries nothing one of them did not ask for — and an
+  //     audience that declared nothing, this service's own resource server
+  //     among them, therefore leaves nothing;
+  //   * only what the GRANT covers: `profile` for `name`, `email` for `email`
+  //     and the rest of section 5.4's table;
+  //   * resolved for the person as UserInfo resolves them (claimsNamed()).
+  //
+  // The mode is the declaring audiences' `oauthAccessTokenClaimsCombine`:
+  // theirs when they agree, `intersection` when they do not.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the identity claims the resource servers an access token is
+   * addressed to declared, gated by the granted scope, and how they combine
+   * with the client's — or null when no audience declared any.
+   *
+   * @param aud - the token's `aud`
+   * @param user - the person
+   * @param granted - the scope granted
+   * @returns `{ claims, mode }`, or null
+   */
+  resourceServerClaims(aud: Json, user: Json, granted: Json): Json {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.resourceServerClaims().");
+    const declared: string[][] = [];
+    const modes: string[] = [];
+    let anyDeclared = false;
+    self.audienceList(aud).forEach(function (one: string) {
+      let app: Json = null;
+      try {
+        app = applications.forAudience(one) ||
+          applications.forClientId(one) || applications.get(one);
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.resourceServerClaims(): " +
+                  ((e && e.message) || e));
+        // A registry that cannot answer is an audience that declared
+        // nothing: the intersection then releases nothing, which is the
+        // private answer.
+        app = null;
+      }
+      const names = app && app.fields
+        ? [].concat(app.fields.oauthAccessTokenClaim || []).map(String)
+          .filter(function (name: string): boolean {
+            return scopeClaims.DECLARABLE_CLAIMS.indexOf(name) >= 0;
+          })
+        : [];
+      declared.push(names);
+      if (names.length) {
+        anyDeclared = true;
+        modes.push(scopeClaims.modeOf(app.fields.oauthAccessTokenClaimsCombine,
+                                      scopeClaims.RESOURCE_MODES, 'union'));
+      }
+    });
+    if (!anyDeclared) {
+      log.debug("Leaving OAuth2Server.resourceServerClaims(). No audience " +
+                "declared any.");
+      return null;
+    }
+    const wanted = scopeClaims.intersectDeclared(declared)
+      .filter(function (name: string): boolean {
+        return scopeClaims.grants(granted, scopeClaims.scopeOf(name));
+      });
+    const claims = wanted.length ? self.claimsNamed(user, wanted) : {};
+    const mode = scopeClaims.agreedResourceMode(modes);
+    log.debug("Leaving OAuth2Server.resourceServerClaims(). " +
+              Object.keys(claims).length + " claim(s), " + mode + ".");
+    return { claims: claims, mode: mode };
   }
 
   private refreshToken(base: Json, opts: Json): Json {
@@ -4546,9 +4650,8 @@ class OAuth2Server {
    * @returns the claims
    */
   scopeClaimsOf(user: Json, scope: Json): Json {
-    const { log, hasScope, claimAttributes, errorCodes } = this.deps;
+    const { log, hasScope } = this.deps;
     log.debug("Entering OAuth2Server.scopeClaimsOf().");
-    const out: Json = {};
     const wanted: string[] = [];
     Object.keys(USERINFO_SCOPE_CLAIMS).forEach(function (name) {
       if (hasScope(scope, name)) {
@@ -4557,6 +4660,30 @@ class OAuth2Server {
         });
       }
     });
+    const out = this.claimsNamed(user, wanted);
+    log.debug("Leaving OAuth2Server.scopeClaimsOf(). " +
+              Object.keys(out).length + " claim(s).");
+    return out;
+  }
+
+  // The section 5.4 claims NAMED, resolved as scopeClaimsOf() always resolved
+  // them: what the person object holds first, the directory entry through the
+  // catalogue for the rest. Lifted out of that function by #395, for its
+  // second caller — a resource server's declared access-token claims, which
+  // name claims rather than scopes.
+  /**
+   * Resolves named OpenID Connect section 5.4 claims for a person: the person
+   * object first, then the directory entry. A claim neither holds is absent.
+   *
+   * @param user - the person
+   * @param wanted - the claim names
+   * @returns the claims
+   */
+  claimsNamed(user: Json, wanted: string[]): Json {
+    const { log, claimAttributes, errorCodes } = this.deps;
+    log.debug("Entering OAuth2Server.claimsNamed(). " + wanted.length +
+              " wanted.");
+    const out: Json = {};
     const missing: string[] = [];
     wanted.forEach(function (claim) {
       if (user && user[claim] !== undefined && user[claim] !== null &&
@@ -4579,7 +4706,7 @@ class OAuth2Server {
       } catch (e) {
         // The rule personFromDirectory() follows: a directory that threw must
         // not fail an issuance, and the claims are simply absent.
-        log.error(errorCodes.tag('STS-OAUTH-0181') + 'scopeClaimsOf(): the ' +
+        log.error(errorCodes.tag('STS-OAUTH-0181') + 'claimsNamed(): the ' +
                   'directory threw while being read for ' + user.username +
                   '\'s scope claims and they are omitted: ' + e.message);
       }
@@ -4603,7 +4730,7 @@ class OAuth2Server {
         out.phone_number_verified === undefined) {
       out.phone_number_verified = false;
     }
-    log.debug("Leaving OAuth2Server.scopeClaimsOf(). " +
+    log.debug("Leaving OAuth2Server.claimsNamed(). " +
               Object.keys(out).length + " claim(s).");
     return out;
   }
@@ -4806,8 +4933,16 @@ class OAuth2Server {
     // the two go to different readers (a client reads the ID Token, a resource
     // server reads the access token) and configuring them together would mean
     // never being able to test that a claim reached one and not the other.
+    // NOTHING THE GRANT DID NOT COVER (#395): a section 5.4 claim in the
+    // configured set — the realm's, or this client's own — goes in only when
+    // its scope was granted. The scope-driven layer above is gated by
+    // construction, and a claim the client NAMED in section 5.5's request,
+    // below, is its own grant and passes.
     const payloadWithCustom = Object.assign(
-      stats.jwtClaims('id_token', self.customClaimContext(base, payload, user)),
+      scopeClaims.gate(stats.jwtClaims('id_token',
+                                       self.customClaimContext(base, payload,
+                                                               user)),
+                       opts.scope, 'ID Token'),
       payload);
     // ---------------------------------------------------------------------
     // AND THE ONE LAYER ABOVE ALL OF THEM: a claim THIS CLIENT asked for by
@@ -5332,6 +5467,9 @@ class OAuth2Server {
       grant_family: grantFamily || undefined,
       limits_grant: limitsGrant || undefined,
       scope: plan.scope,
+      // What was GRANTED, before the plan took the OpenID Connect scopes off
+      // a token for an API: what the scope gate reads (#395).
+      granted_scope: opts.scope,
       audience: self.audienceClaim(plan.audiences),
       // Onto the refresh token as well, for the reason the RFC 8707 call sites
       // give: a grant cannot widen itself by being renewed, and the refresh
@@ -8559,6 +8697,8 @@ class OAuth2Server {
         user: user,
         client_id: String(query.client_id),
         scope: audiencePlan.scope,
+        // The scope granted, for the gate (#395) — see tokenSet().
+        granted_scope: scope,
         audience: self.audienceClaim(audiencePlan.audiences),
         session_id: sessionId, grant: flow,
         set_id: setId,
@@ -11874,8 +12014,13 @@ class OAuth2Server {
     // -----------------------------------------------------------------------
     const body: Json = {};
 
-    const configured = stats.jwtClaims(
-      'userinfo', self.customClaimContext(base, claims, user));
+    // Gated by the token's scope (#395): a section 5.4 claim in the
+    // configured set is answered only when its scope was granted. A token
+    // UserInfo accepts is for this service's own resource server, which keeps
+    // the OpenID Connect scopes on its scope claim (RFC 9068's plan).
+    const configured = scopeClaims.gate(
+      stats.jwtClaims('userinfo', self.customClaimContext(base, claims, user)),
+      claims.scope, 'UserInfo response');
     Object.assign(body, configured);
     if (Object.keys(configured).length) {
       log.debug("userinfoResponse(): " + Object.keys(configured).length +

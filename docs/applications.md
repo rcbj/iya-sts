@@ -639,7 +639,9 @@ press **Save this application's selection**: from then on the realm's
 selection is not used for it, so an attribute the realm ticks can be dropped
 as well as one added, and saving with every box unticked issues none.
 **Use the realm's selection** takes the application's off again. A typed or
-attribute row above still wins over a selected attribute of the same name.
+attribute row above still wins over a selected attribute of the same name. Both
+rules can be changed per token type: see *How the realm's set and the
+application's own combine*, below.
 
 | Set | Applies to |
 |---|---|
@@ -663,6 +665,80 @@ The management API: `POST /admin-api/applications/set-claim-attributes`
 /admin-api/applications/inherit-claim-attributes`. `GET
 /admin-api/applications?application=<id>&claimsUser=<person>` returns
 `claimSelections`.
+
+#### How the realm's set and the application's own combine
+
+The two rules above — rows **added** and winning by name, a selection
+**replacing** the realm's — are the default. Each application can choose
+another, per token type, in the **Claims in tokens** section of its OAuth 2.0
+/ OpenID Connect sub-tab (`oauthClaimsCombineAccessToken`,
+`oauthClaimsCombineIdToken`, `oauthClaimsCombineUserinfo`) and the
+**Attributes in assertions** section of its SAML sub-tab
+(`saml2ClaimsCombine`, `saml11ClaimsCombine`). One choice covers the rows and
+the ticked attributes of that set:
+
+| Value | What the token carries |
+|---|---|
+| *(unset)* | The realm's rows with the application's added (its own winning by name); the application's selection in place of the realm's. |
+| `application` | Only the application's own rows and selection. |
+| `union` | The realm's and the application's, its own winning by name. |
+| `intersection` | Only the claims both name, with the application's value. |
+| `realm` | Only the realm's. |
+
+An application that holds no rows or selection of its own gets the realm's
+whatever it chose. A value outside the four is refused (`STS-REG-0203`). The
+Kerberos PAC set has no choice: a service ticket's claims are merged inside
+the KDC.
+
+#### Identity claims a resource server wants in its access tokens
+
+OpenID Connect's `profile`, `email`, `address` and `phone` scopes ask for
+**access** to a person's claims, which [OpenID Connect Core 1.0 section
+5.4](https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims)
+returns from the **UserInfo endpoint** (and in the ID Token only when the
+response issues no access token). They are not an access-token claim set:
+[RFC 9068 section 2.2.2](https://www.rfc-editor.org/rfc/rfc9068#section-2.2.2)
+leaves the identity claims of a JWT access token to the authorization server,
+by client, scope and resource. So an access token carries none of them unless
+the **resource server** it is addressed to asks:
+
+* **`oauthAccessTokenClaim`** (multi-valued, on the resource server's entry):
+  the section 5.4 claims it wants — `name`, `email`, `preferred_username`,
+  `address` and the rest. A token addressed to it (one of its `oauthAudience`
+  values, or its `client_id` named as a scope) carries each one **only when
+  the scope that covers it was granted**: `email` needs `email`, `name` needs
+  `profile`. The scope is read as granted, not as it appears on the token
+  (RFC 9068's audience plan takes the OpenID Connect scopes off a token for an
+  API). A claim outside section 5.4 is refused (`STS-REG-0203`); ask for it
+  as one of the client's custom claims instead.
+* **A token for several resource servers** carries only the claims **every**
+  one of them declared, so none receives an attribute it did not ask for.
+* **`oauthAccessTokenClaimsCombine`** (on the resource server's entry): how
+  the declared claims combine with the client's own access-token claims (the
+  realm's and the client's, combined as above) — `union` (the default),
+  `intersection` (only claims both carry), `client` (ignore the declaration)
+  or `resource` (only the declared claims). Where both carry a claim, the
+  client's value is kept. Resource servers that disagree are combined by
+  `intersection`.
+
+**`preferred_username` is no longer on every person's access token.** It is a
+`profile` claim, so it is issued as the others are: when a resource server
+declares it and `profile` was granted. `username`, this service's own claim,
+is unchanged.
+
+**Nothing that was not granted is released, from any layer.** A section 5.4
+claim in a realm's or an application's configured access token, ID Token or
+UserInfo set — a ticked `mail`, a typed `email` — goes out only when its scope
+was granted. A claim the client named in a [section
+5.5](https://openid.net/specs/openid-connect-core-1_0.html#ClaimsParameter)
+`claims` request is its own grant and passes, and a claim no scope covers
+(`groups`, `roles`, a typed `tenant`) is not affected. A GNAP subject
+assertion's ID Token is issued on no scope, so it carries none of these
+claims.
+
+All seven fields are ordinary configuration fields: set them from the
+application's page, `POST /admin-api/applications/update-fields`, or `set` (or
+`add` / `remove` for `oauthAccessTokenClaim`) with `attribute:` the field.
 
 ### CORS: which pages may read an answer
 
