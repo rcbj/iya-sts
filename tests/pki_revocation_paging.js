@@ -38,6 +38,10 @@ delete process.env.CONFIG_FILE;
 const realRevocation = require('../common/pki_revocation');
 const pkiAdminModule = require('../admin-ui/pki_admin');
 
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({
   name: 'pki_revocation_paging',
   level: process.env.LOG_LEVEL || 'info' });

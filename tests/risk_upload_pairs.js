@@ -24,6 +24,10 @@
 //      left as it was.
 // ===========================================================================
 
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({ name: 'risk_upload_pairs',
   level: process.env.LOG_LEVEL || 'info' });
 

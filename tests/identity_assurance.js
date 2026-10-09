@@ -38,6 +38,10 @@ const ldap = require('../ldap/ldap_server');
 const ida = require('../common/identity_assurance');
 const oauth2 = require('../oauth-oidc/oauth2');
 
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({ name: 'identity_assurance',
   level: process.env.LOG_LEVEL || 'info' });
 

@@ -53,6 +53,10 @@ const riskDatasets = require('../risk/risk_datasets');
 const riskFailures = require('../risk/risk_failures');
 const riskEngine = require('../risk/risk_engine');
 
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({ name: 'risk_engine',
   level: process.env.LOG_LEVEL || 'info' });
 
