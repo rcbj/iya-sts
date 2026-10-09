@@ -241,7 +241,8 @@ async function run(t) {
           'name this file does not write', JSON.stringify(view));
   const json = { revocation: admin['revocationModel'](query) };
   // Drawn by the renderer from the model passed through JSON (#446).
-  const html = PkiPage.revocationPane(JSON.parse(JSON.stringify(json)), view);
+  const html = PkiPage.revocationPane(JSON.parse(JSON.stringify(json)), view,
+    require('../admin-ui/web_kit').context({}, true).t);
   const revokeForms =
     (html.match(/name="action" value="revoke-certificate"/g) || []).length;
   const releaseForms = (html.match(/name="action" value="release-hold"/g) ||

@@ -264,7 +264,7 @@ class WebMessages {
    * @returns the text
    */
   static render(nodes: MessageNode[], params: MessageParams, locale: string,
-                asHtml: boolean, count?: number): string {
+                asHtml: boolean, count?: number, slots?: string[]): string {
     let out = '';
     for (const node of nodes) {
       if (typeof node === 'string') {
@@ -278,13 +278,21 @@ class WebMessages {
       const value = params[node.arg];
       if (node.kind === 'simple') {
         const text = value == null ? '' : String(value);
+        if (!asHtml && slots) {
+          // A placeholder the markup strip in `format()` cannot touch; the
+          // value goes back in after it (see there).
+          out += '\uE000' + slots.length + '\uE001';
+          slots.push(text);
+          continue;
+        }
         out += asHtml ? WebMessages.esc(text) : text;
         continue;
       }
       const options = node.options || {};
       if (node.kind === 'select') {
         const chosen = options[String(value)] || options.other;
-        out += WebMessages.render(chosen, params, locale, asHtml, count);
+        out += WebMessages.render(chosen, params, locale, asHtml, count,
+                                  slots);
         continue;
       }
       const n = Number(value);
@@ -299,7 +307,7 @@ class WebMessages {
         }
         chosen = options[category] || options.other;
       }
-      out += WebMessages.render(chosen, params, locale, asHtml, n);
+      out += WebMessages.render(chosen, params, locale, asHtml, n, slots);
     }
     return out;
   }
@@ -490,10 +498,23 @@ class WebTranslator {
     // translation lacks — is pluralised by that catalog's rules.
     const own = WebMessages.languageOf(catalog) ===
       WebMessages.languageOf(this.negotiated.catalog);
+    // PLAIN TEXT STRIPS THE CATALOG'S MARKUP AND NEVER A VALUE'S. The values
+    // are held out as placeholders while the message's own tags are removed,
+    // then put back: stripping the whole string removed anything in a value
+    // that looked like a tag (`a <b> c` came out `a  c`; a label
+    // `"><script>…` lost its tags rather than reaching the caller to escape).
+    const slots: string[] | undefined = asHtml ? undefined : [];
     const out = WebMessages.render(nodes, params,
                                    own ? this.negotiated.locale : catalog,
-                                   asHtml);
-    return asHtml ? out : out.replace(/<[^>]*>/g, '');
+                                   asHtml, undefined, slots);
+    if (asHtml) {
+      return out;
+    }
+    return out.replace(/<[^>]*>/g, '').replace(/\uE000(\d+)\uE001/g,
+      function (whole: string, index: string): string {
+        const value = (slots as string[])[Number(index)];
+        return value === undefined ? '' : value;
+      });
   }
 
   /**
