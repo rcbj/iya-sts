@@ -861,6 +861,19 @@ const MAX_SESSION_EVENTS = 20;
 // already argues at length, and it is not one of these two.
 // ---------------------------------------------------------------------------
 /**
+ * The language chooser's stylesheet (#539), small and to one side: a page's
+ * first business is its own form. A constant of its own because the second
+ * factor pages carry stylesheets of their own, and each appends this one —
+ * their `button{width:100%}` and `input{width:100%}` would otherwise stretch
+ * the chooser across the card.
+ */
+const CHOOSER_CSS =
+  'form.language-chooser{float:right;font-size:.75em;margin:0 0 6px 8px}' +
+  'form.language-chooser select,form.language-chooser button{width:auto;' +
+  'display:inline;padding:2px 6px;margin:0;font-size:1em}' +
+  'form.language-chooser label{display:inline;margin:0 4px 0 0}';
+
+/**
  * The stylesheet of the sign-in screen and the federation chooser, shared with
  * the consent screen.
  */
@@ -890,13 +903,7 @@ const CARD_CSS =
   '8px}a.fedbtn{display:block;text-align:center;padding:9px 12px;margin:6px ' +
   '0;border-radius:5px;border:1px solid #12107c;color:#12107c;' +
   'background:#fff;text-decoration:none;font-size:.9em}a.fedbtn ' +
-  'span{display:block;font-size:.75em;color:#777}' +
-  // The language chooser (#539), small and to one side: a page's first
-  // business is its own form.
-  'form.language-chooser{float:right;font-size:.75em;margin:0 0 6px 8px}' +
-  'form.language-chooser select,form.language-chooser button{width:auto;' +
-  'display:inline;padding:2px 6px;margin:0;font-size:1em}' +
-  'form.language-chooser label{display:inline;margin:0 4px 0 0}';
+  'span{display:block;font-size:.75em;color:#777}' + CHOOSER_CSS;
 
 const PENDING_ID_QUERY = vz.object({
   authn: vt.opt(vt.base64url)
@@ -999,7 +1006,8 @@ const MFA_SETUP_STYLE = '<style>body{font-family:system-ui,-apple-system,' +
   '1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
   'font-size:.85em;margin-bottom:12px}code{font-family:ui-monospace,' +
   'SFMono-Regular,Menlo,monospace}.meta{margin-top:20px;padding-top:14px;' +
-  'border-top:1px solid #eee;font-size:.75em;color:#777}</style>';
+  'border-top:1px solid #eee;font-size:.75em;color:#777}' + CHOOSER_CSS +
+  '</style>';
 
 const MFA_SETUP_FORM = vz.object({
   mfa_id: vt.opt(vt.base64url),
@@ -7990,31 +7998,58 @@ class Authn {
     return { handled: true };
   }
 
+  // THE LANGUAGE OF A SECOND-FACTOR PAGE (#539): what the pending sign-in
+  // knows — its application and `ui_locales` — and the person, who is known
+  // by now. A step that has already gone (an error path reaches a page that
+  // way) is read with neither, and the cookie and the browser decide.
+  private stepTranslator(step: any, username: string) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.stepTranslator().");
+    const authn = (step && step.authn) || {};
+    const t = PageLocale.forPage({ application: authn.application,
+                                   uiLocales: authn.uiLocales,
+                                   username: username || '' });
+    log.debug("Leaving Authn.stepTranslator(). " + t.locale);
+    return t;
+  }
+
   // The password-as-second-factor page. No script.
   private passwordFactorPage(mfaId: string, username: string,
                              error: string): string {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering Authn.passwordFactorPage().");
     const step = pendingMfa.get(mfaId);
-    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-      'charset="utf-8"><title>Your password — mock authentication ' +
-      'service</title><style>' + CARD_CSS + '</style></head><body><div ' +
-      'class="card"><h1>Your password</h1><p class="sub">Second factor for ' +
-      '<code>' + xmlEscape(username) + '</code>, after your wallet.</p>' +
+    // THE LANGUAGE (#539), as the sign-in screen's: the pending sign-in's
+    // `ui_locales` and application, and the person. The error stays English.
+    const t = this.stepTranslator(step, username);
+    const html = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+      '><head><meta ' +
+      'charset="utf-8"><title>' +
+      xmlEscape(t.text('authn.passwordFactor.title')) + '</title><style>' +
+      CARD_CSS + '</style></head><body><div ' +
+      'class="card">' +
+      // Drawn by a GET or by a refused POST; the GET redraws it.
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + PASSWORD_FACTOR_PATH +
+                            '?mfa=' + encodeURIComponent(mfaId))) +
+      '<h1>' + t.html('authn.passwordFactor.heading') +
+      '</h1><p class="sub">' +
+      t.html('authn.passwordFactor.sub', { name: username }) + '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       '<form method="post" action="' + PASSWORD_FACTOR_PATH + '">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
-      '<label for="password">Password</label><input type="password" ' +
+      '<label for="password">' + t.html('authn.passwordFactor.password') +
+      '</label><input type="password" ' +
       'id="password" name="password" autocomplete="current-password" ' +
       'autofocus>' +
-      '<button type="submit" id="password-factor-submit">Sign in</button>' +
-      '</form><div class="meta"><div>Your wallet has already presented a ' +
-      'credential this service issued to you. On success the session ' +
-      'records amr ' + xmlEscape(JSON.stringify(
-        this.firstAmrOf(step).concat(['pwd']))) + ' and acr "mfa".</div>' +
+      '<button type="submit" id="password-factor-submit">' +
+      t.html('authn.passwordFactor.signIn') + '</button>' +
+      '</form><div class="meta"><div>' +
+      t.html('authn.passwordFactor.meta', { amr: JSON.stringify(
+        this.firstAmrOf(step).concat(['pwd'])) }) + '</div>' +
       (step && step.alternate === 'totp'
         ? '<div><a href="' + TOTP_PATH + '?mfa=' + encodeURIComponent(mfaId) +
-          '">Use a code from your authenticator app instead</a></div>'
+          '">' + t.html('authn.secondFactor.totpInstead') + '</a></div>'
         : '') +
       '</div></div></body></html>\n';
     log.debug("Leaving Authn.passwordFactorPage().");
@@ -8031,8 +8066,11 @@ class Authn {
   }
 
   // The links a second-factor page draws for the factors a wallet adds: the
-  // wallet itself after a password, and the password after a wallet.
-  private walletFactorLinksHtml(mfaId: string, step: any): string {
+  // wallet itself after a password, and the password after a wallet. In the
+  // page's own language (#539): the page passes its translator.
+  private walletFactorLinksHtml(mfaId: string, step: any,
+                                t: ReturnType<typeof PageLocale.forPage>):
+                                string {
     const { log, config } = this.deps;
     log.debug("Entering Authn.walletFactorLinksHtml().");
     if (!step) {
@@ -8044,13 +8082,13 @@ class Authn {
     if (first.indexOf('pop') < 0 && !step.passwordless &&
         config.value('oid4vp.signIn') && this.stepAllowsWallet(step)) {
       out += '<div><a id="wallet-second-factor" href="' + WALLET_PATH +
-        '?mfa=' + encodeURIComponent(mfaId) + '">Use your wallet ' +
-        'instead</a></div>';
+        '?mfa=' + encodeURIComponent(mfaId) + '">' +
+        t.html('authn.secondFactor.walletInstead') + '</a></div>';
     }
     if (step.passwordAlternate) {
       out += '<div><a id="password-second-factor" href="' +
         PASSWORD_FACTOR_PATH + '?mfa=' + encodeURIComponent(mfaId) +
-        '">Use your password instead</a></div>';
+        '">' + t.html('authn.secondFactor.passwordInstead') + '</a></div>';
     }
     // THE EMAILED FACTOR (#64). A LINK TO A PAGE, not a send: the page it
     // leads to asks before anything is mailed, because a GET is markup and
@@ -8059,8 +8097,9 @@ class Authn {
       out += '<div><a id="email-second-factor" href="' +
         (step.email === 'code' ? EMAIL_CODE_PATH : EMAIL_LINK_PATH) +
         '?mfa=' + encodeURIComponent(mfaId) + '">' +
-        (step.email === 'code' ? 'Email me a code instead'
-                               : 'Email me a sign-in link instead') +
+        (step.email === 'code'
+          ? t.html('authn.secondFactor.emailCodeInstead')
+          : t.html('authn.secondFactor.emailLinkInstead')) +
         '</a></div>';
     }
     log.debug("Leaving Authn.walletFactorLinksHtml().");
@@ -8354,6 +8393,11 @@ class Authn {
     // button for a list of two would make that setting mean the opposite of
     // what it says.
     const home = record.federation;
+    // THE LANGUAGE (#539): the sign-in screen's own, worked out again from
+    // the same record — this fragment is drawn only where the screen is not
+    // locked to a person, so no username is missing from it.
+    const t = PageLocale.forPage({ application: record.application,
+                                   uiLocales: record.uiLocales });
     if (home && home.usable && home.usable.length) {
       const many = home.usable.length > 1;
       // THE APPLICATION'S OWN PARTNERS, so the pair is named on every href —
@@ -8363,13 +8407,8 @@ class Authn {
       // will agree to record.
       const html = this.federatedButtons(record,
         home.usable.map(function (one) { return one.option; }),
-        'This application signs its users in at ' +
-        (many ? 'one of these federated identity providers. Pick the one you ' +
-                'have an account at'
-              : 'a federated identity provider') +
-        '. No password is typed here and none is checked there ' +
-        'either as far as this service can tell — what it checks is the ' +
-        'partner\'s signature.');
+        many ? t.html('authn.options.federatedOwnMany')
+             : t.html('authn.options.federatedOwnOne'));
       log.debug("Leaving Authn.federatedOptionsHtml(). " + home.usable.length +
                 " partner(s) this application names.");
       return html;
@@ -8405,9 +8444,7 @@ class Authn {
     // use of the pair would put a number on /admin/federation/map that means
     // something other than what the page says it means.
     const html = this.federatedButtons(record, options,
-      'Or sign in with a federated identity provider. No password is typed ' +
-      'here and none is checked there either as far as this service can tell ' +
-      '— what it checks is the partner\'s signature.');
+      t.html('authn.options.federatedAny'));
     log.debug("Leaving Authn.federatedOptionsHtml(). " + options.length + " " +
         "partner(s) offered.");
     return html;
@@ -8504,25 +8541,26 @@ class Authn {
       log.debug("Leaving Authn.integratedOptionHtml(). Not offered.");
       return '';
     }
+    // THE LANGUAGE (#539): the sign-in screen's, from the same record.
+    const t = PageLocale.forPage({ application: record.application,
+                                   uiLocales: record.uiLocales });
     if (record.forceKey && !record.forceMfa) {
       log.debug("Leaving Authn.integratedOptionHtml(). Withheld: a security " +
                 "key was demanded.");
-      return '<div class="fed"><p>Integrated Kerberos sign-in is not offered ' +
-        'for this request: it demands a passkey.</p></div>';
+      return '<div class="fed"><p>' +
+        t.html('authn.options.kerberosWithheldKey') + '</p></div>';
     }
     if (record.forceMfa) {
       log.debug("Leaving Authn.integratedOptionHtml(). Withheld: two factors " +
                 "were demanded.");
-      return '<div class="fed"><p>Integrated Kerberos sign-in is not offered ' +
-        'for this request: it demands two factors, and a ticket claims ' +
-        'whatever its own flags claim &mdash; usually one.</p></div>';
+      return '<div class="fed"><p>' +
+        t.html('authn.options.kerberosWithheldMfa') + '</p></div>';
     }
-    const html = '<div class="fed"><p>Or sign in with a Kerberos ticket, if ' +
-      'this machine holds one. Nothing is typed and this service checks the ' +
-      'ticket rather than a name &mdash; the only sign-in here that rests on ' +
-      'a credential it genuinely verified.</p><a class="fedbtn" ' +
+    const html = '<div class="fed"><p>' + t.html('authn.options.kerberos') +
+      '</p><a class="fedbtn" ' +
       'href="' + SPNEGO_PATH + '?authn=' +
-      encodeURIComponent(record.id) + '">Sign in with Kerberos' +
+      encodeURIComponent(record.id) + '">' +
+      t.html('authn.options.kerberosButton') +
       '<span>SPNEGO &middot; RFC 4559</span></a></div>';
     log.debug("Leaving Authn.integratedOptionHtml(). Offered.");
     return html;
@@ -8555,31 +8593,31 @@ class Authn {
       log.debug("Leaving Authn.walletOptionHtml(). Not offered.");
       return '';
     }
+    // THE LANGUAGE (#539): the sign-in screen's, from the same record.
+    const t = PageLocale.forPage({ application: record.application,
+                                   uiLocales: record.uiLocales });
     if (record.forceKey) {
       log.debug("Leaving Authn.walletOptionHtml(). Withheld: a security key " +
                 "was demanded.");
-      return '<div class="fed"><p id="wallet-withheld">Signing in with a ' +
-        'wallet is not offered for this request: it demands a security ' +
-        'key.</p></div>';
+      return '<div class="fed"><p id="wallet-withheld">' +
+        t.html('authn.options.walletWithheld') + '</p></div>';
     }
-    const html = '<div class="fed"><p>Or sign in with a wallet that holds ' +
-      'a credential this service issued to you. Nothing is typed: your ' +
-      'wallet proves it holds the key the credential is bound to.' +
+    const html = '<div class="fed"><p>' + t.html('authn.options.wallet') +
       (record.forceMfa
-        ? ' <span id="wallet-mfa-note">This request needs two factors, so ' +
-          'you will be asked for a second one afterwards unless your ' +
-          'wallet\'s key is attested to need your PIN or biometric.</span>'
+        ? ' <span id="wallet-mfa-note">' +
+          t.html('authn.options.walletMfaNote') + '</span>'
         : '') + '</p>' +
       '<a class="fedbtn" id="wallet-signin" href="' + WALLET_PATH +
-      '?authn=' + encodeURIComponent(record.id) + '">Sign in with a wallet' +
+      '?authn=' + encodeURIComponent(record.id) + '">' +
+      t.html('authn.options.walletButton') +
       '<span>OpenID4VP &middot; Digital Credentials API</span></a>' +
       // SIOPv2 (#129): the wallet's own key, enrolled on the person's
       // portal. Its own switch, off by default.
       (config.value('oid4vp.signInSelfIssued')
         ? '<a class="fedbtn" id="siop-signin" href="' + WALLET_PATH +
-          '?authn=' + encodeURIComponent(record.id) + '&amp;siop=1">Sign in ' +
-          'with a self-issued ID<span>SIOPv2 &middot; a wallet key you ' +
-          'enrolled</span></a>'
+          '?authn=' + encodeURIComponent(record.id) + '&amp;siop=1">' +
+          t.html('authn.options.siopButton') + '<span>SIOPv2 &middot; ' +
+          t.html('authn.options.siopNote') + '</span></a>'
         : '') + '</div>';
     log.debug("Leaving Authn.walletOptionHtml(). Offered.");
     return html;
@@ -9027,7 +9065,7 @@ class Authn {
     const origin = record.restart;
     pending.delete(record.id);
     log.debug("Leaving Authn.restartAtHome().");
-    return this.sendHome(req, res, origin, home);
+    return this.sendHome(req, res, origin, home, record);
   }
 
   // ---------------------------------------------------------------------------
@@ -9116,7 +9154,10 @@ class Authn {
    * @param home - the person's home cell
    * @returns a promise settled when the answer is sent
    */
-  private async sendHome(req, res, origin, home: string): Promise<void> {
+  // `record`, where there is one, is only for the language the re-post page
+  // is drawn in (#539).
+  private async sendHome(req, res, origin, home: string,
+                         record?: any): Promise<void> {
     const { log } = this.deps;
     log.debug("Entering Authn.sendHome(). home=" + home);
     const realmId = realms.currentId();
@@ -9157,14 +9198,21 @@ class Authn {
       return '<input type="hidden" name="' + esc(k) + '" value="' +
         esc(origin.form[k]) + '">';
     }).join('');
+    // THE LANGUAGE (#539), from the pending sign-in where there is one. NO
+    // CHOOSER on this page, deliberately: it carries a POST that no GET can
+    // draw again, so a chooser's return would lose the request it re-posts.
+    const t = PageLocale.forPage({
+      application: record ? record.application : '',
+      uiLocales: record ? record.uiLocales : '' });
     log.debug("Leaving Authn.sendHome(). A re-post.");
     res.status(200).type('html').send(
-      '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
-      '<title>Continue signing in</title></head><body>' +
-      '<p>Your account is held in another region of this service. Continue ' +
-      'to sign in there.</p>' +
+      '<!DOCTYPE html><html' + PageLocale.htmlAttributes(t) +
+      '><head><meta charset="utf-8">' +
+      '<title>' + esc(t.text('authn.home.title')) + '</title></head><body>' +
+      '<p>' + t.html('authn.home.text') + '</p>' +
       '<form method="post" action="' + esc(origin.url) + '">' + fields +
-      '<button type="submit">Continue</button></form></body></html>');
+      '<button type="submit">' + t.html('authn.home.continue') +
+      '</button></form></body></html>');
   }
 
   private sendLoginPage(res, html) {
@@ -9227,14 +9275,22 @@ class Authn {
     const home = record.federation || {};
     const usable = home.usable || [];
     const problems = home.problems || [];
-    const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-                 'charset="utf-8">' +
-      '<title>Choose how to sign in — mock authentication ' +
-      'service</title><style>' +
+    // THE LANGUAGE (#539), as the sign-in screen's. The problem banners stay
+    // English: each is a refusal an operator reads.
+    const t = PageLocale.forPage({ application: record.application,
+                                   uiLocales: record.uiLocales });
+    const page = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+                 '><head><meta charset="utf-8">' +
+      '<title>' + xmlEscape(t.text('authn.selectIdp.title')) +
+      '</title><style>' +
       CARD_CSS + '</style></head><body><div class="card">' +
-      '<h1>Choose how to sign in</h1>' +
-      '<p class="sub">Mock authentication service at <code>' +
-      xmlEscape(base) + '</code></p>' +
+      // Always drawn by a GET, which is the page's own address.
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + SELECT_IDP_PATH +
+                            '?authn=' + encodeURIComponent(record.id))) +
+      '<h1>' + t.html('authn.selectIdp.heading') + '</h1>' +
+      '<p class="sub">' + t.html('authn.selectIdp.at', { base: base }) +
+      '</p>' +
       // Every unusable value gets its own banner rather than one banner listing
       // them, because each is a different entry to go and fix and an operator
       // reading this is about to fix one of them.
@@ -9244,24 +9300,18 @@ class Authn {
       this.federatedButtons(record,
                             usable.map(function (one) { return one.option; }),
         (record.application
-           ? '<code>' + xmlEscape(record.application) + '</code> signs its ' +
-                                                             'users in at '
-           : 'This application signs its users in at ') +
-        'one of these federated identity providers. Pick the one you have an ' +
-        'account at. No password is typed here and none is checked there ' +
-        'either as far as this service can tell — what it checks is the ' +
-        'partner\'s signature.',
+           ? t.html('authn.selectIdp.blurbNamed',
+                    { application: record.application })
+           : t.html('authn.selectIdp.blurb')),
         // THIS APPLICATION'S OWN PARTNERS BY CONSTRUCTION — the page is not
         // drawn at all for any other list — so the pair is named on every href.
         // It is the same argument the sign-in screen's first branch makes, and
         // it holds here with less to check: `usable` came from federationFor()
         // against this record's application and from nowhere else.
         record.application) +
-      '<div class="meta"><div>These are the relationships named on this ' +
-      'application\'s entry under <code>ou=applications</code>, in ' +
-      '<code>appFederationRelationship</code> — not every federation ' +
-      'relationship this service has.</div><div>Signing in for: ' +
-      '<code>' + xmlEscape(record.protocol) + '</code></div>' +
+      '<div class="meta"><div>' + t.html('authn.selectIdp.meta') +
+      '</div><div>' + t.html('authn.selectIdp.signingInFor',
+                             { protocol: record.protocol }) + '</div>' +
       record.details.map(function (d) {
         return '<div>' + xmlEscape(d.label) + ': <code>' +
                xmlEscape(d.value == null ? '' : d.value) + '</code>' +
@@ -9915,9 +9965,15 @@ class Authn {
   private passwordChangePage(changeId, username, error) {
     const { log, xmlEscape } = this.deps;
     log.debug('Entering Authn.passwordChangePage(). username=' + username);
-    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-      'charset="utf-8"><title>Choose a new password — mock authentication ' +
-      'service</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
+    // THE LANGUAGE (#539): the pending sign-in the step carries, and the
+    // person. The error (a policy refusal, a mismatch) stays English.
+    const t = this.stepTranslator(pendingPasswordChange.get(changeId),
+                                  username);
+    const html = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+      '><head><meta ' +
+      'charset="utf-8"><title>' +
+      xmlEscape(t.text('authn.passwordChange.title')) +
+      '</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
       'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
       '.card{background:#fff;border:1px solid ' +
@@ -9934,24 +9990,29 @@ class Authn {
       'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;' +
       'padding-top:14px;border-top:1px solid ' +
       '#eee;font-size:.75em;color:#777}code{font-family:ui-monospace,' +
-      'SFMono-Regular,Menlo,monospace}</style></head><body><div class="card">' +
-      '<h1>Choose a new password</h1><p class="sub">The password for <code>' +
-      xmlEscape(username) + '</code> was set for you and must be changed ' +
-      'before you continue.</p>' +
+      'SFMono-Regular,Menlo,monospace}' + CHOOSER_CSS +
+      '</style></head><body><div class="card">' +
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + PASSWORD_CHANGE_PATH +
+                            '?change=' + encodeURIComponent(changeId))) +
+      '<h1>' + t.html('authn.passwordChange.heading') +
+      '</h1><p class="sub">' +
+      t.html('authn.passwordChange.sub', { name: username }) + '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       '<form method="post" action="' + PASSWORD_CHANGE_PATH + '">' +
       '<input type="hidden" name="change_id" value="' + xmlEscape(changeId) +
       '">' +
-      '<label for="new_password">New password</label><input type="password" ' +
+      '<label for="new_password">' + t.html('authn.passwordChange.new') +
+      '</label><input type="password" ' +
       'id="new_password" name="new_password" autocomplete="new-password" ' +
       'autofocus>' +
-      '<label for="confirm_password">Type it again</label><input ' +
+      '<label for="confirm_password">' +
+      t.html('authn.passwordChange.confirm') + '</label><input ' +
       'type="password" id="confirm_password" name="confirm_password" ' +
       'autocomplete="new-password">' +
-      '<button type="submit" id="password-change-submit">Change password and ' +
-      'continue</button></form>' +
-      '<div class="meta">Nothing has been signed in yet. The sign-in you ' +
-      'started continues as soon as the new password is stored.</div>' +
+      '<button type="submit" id="password-change-submit">' +
+      t.html('authn.passwordChange.submit') + '</button></form>' +
+      '<div class="meta">' + t.html('authn.passwordChange.meta') + '</div>' +
       '</div></body></html>\n';
     log.debug('Leaving Authn.passwordChangePage().');
     return html;
@@ -10249,14 +10310,24 @@ class Authn {
     log.debug('Leaving Authn.enrolAfterProof().');
   }
 
-  private mfaSetupShell(title, body) {
+  // THE LANGUAGE (#539): every page through this shell is drawn with the
+  // translator its caller built, and `title` is already in that language.
+  // The chooser returns to the set-up step's GET, which draws whichever of
+  // the two pages the step is at.
+  private mfaSetupShell(t: ReturnType<typeof PageLocale.forPage>, setupId,
+                        title, body) {
     const { log, xmlEscape } = this.deps;
     log.debug('Entering Authn.mfaSetupShell().');
     log.debug('Leaving Authn.mfaSetupShell().');
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-      '<title>' + xmlEscape(title) + ' — mock authentication service</title>' +
-      MFA_SETUP_STYLE + '</head><body><div class="card">' + body +
-      '</div></body></html>\n';
+    return '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+      '><head><meta charset="utf-8">' +
+      '<title>' + xmlEscape(t.text('authn.mfaSetup.titleSuffix',
+                                   { title: title })) + '</title>' +
+      MFA_SETUP_STYLE + '</head><body><div class="card">' +
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + MFA_SETUP_PATH +
+                            '?mfa=' + encodeURIComponent(setupId))) +
+      body + '</div></body></html>\n';
   }
 
   // ENROLMENT AT ELEVATED RISK (#246, rcbj's decision 3): an administrator
@@ -10306,39 +10377,33 @@ class Authn {
     // A step after a proof (#475) is the application's, not the account's.
     const setupStep = pendingMfa.get(setupId);
     const proved = !!(setupStep && setupStep.proved);
-    const html = this.mfaSetupShell('Set up a second factor',
-      '<h1>Set up a second factor</h1><p class="sub">' + (proved
-        ? 'The application you are signing in to does not accept the ' +
-          'second factor you just gave for <code>' + xmlEscape(username) +
-          '</code>. Set up one it does accept; nothing is signed in until ' +
-          'you have.'
+    // THE LANGUAGE (#539); the error stays English.
+    const t = this.stepTranslator(setupStep, username);
+    const html = this.mfaSetupShell(t, setupId,
+      t.text('authn.mfaSetup.title'),
+      '<h1>' + t.html('authn.mfaSetup.heading') + '</h1><p class="sub">' +
+      (proved
+        ? t.html('authn.mfaSetup.subProved', { name: username })
         : optional
-        ? 'You hold an administrator role, and <code>' +
-          xmlEscape(username) + '</code> has no second factor yet. ' +
-          'Setting one up now is recommended; you can ignore this and ' +
-          'sign in with your password, and you will be asked again next ' +
-          'time.'
-        : 'A second factor is required for <code>' + xmlEscape(username) +
-          '</code>, and you do not have one yet. Nothing is signed in until ' +
-          'one is set up.') + '</p>' +
+        ? t.html('authn.mfaSetup.subOptional', { name: username })
+        : t.html('authn.mfaSetup.subRequired', { name: username })) + '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       (offered.totp
-        ? '<h2>An authenticator app</h2><p>A six-digit code from an app ' +
-          'such as Google Authenticator, Microsoft Authenticator, 1Password ' +
-          'or any other RFC 6238 app.</p>' +
-          button('totp', 'Set up an authenticator app')
+        ? '<h2>' + t.html('authn.mfaSetup.totpHeading') + '</h2><p>' +
+          t.html('authn.mfaSetup.totpText') + '</p>' +
+          button('totp', t.html('authn.mfaSetup.totpButton'))
         : '') +
       (offered.webauthn
-        ? '<h2>A passkey</h2><p>A passkey on this device, your phone or ' +
-          'a security key, used after your password.</p>' +
-          button('webauthn', 'Set up a passkey')
+        ? '<h2>' + t.html('authn.mfaSetup.passkeyHeading') + '</h2><p>' +
+          t.html('authn.mfaSetup.passkeyText') + '</p>' +
+          button('webauthn', t.html('authn.mfaSetup.passkeyButton'))
         : '') +
       (optional
-        ? '<h2>Not now</h2><p>Sign in with your password alone.</p>' +
-          button('ignore', 'Ignore')
+        ? '<h2>' + t.html('authn.mfaSetup.ignoreHeading') + '</h2><p>' +
+          t.html('authn.mfaSetup.ignoreText') + '</p>' +
+          button('ignore', t.html('authn.mfaSetup.ignoreButton'))
         : '') +
-      '<div class="meta">This step expires in a few minutes; if it does, ' +
-      'sign in again from the application that sent you here.</div>');
+      '<div class="meta">' + t.html('authn.mfaSetup.meta') + '</div>');
     log.debug('Leaving Authn.mfaSetupPage().');
     return html;
   }
@@ -10366,27 +10431,30 @@ class Authn {
                                                           e));
       qr = '';
     }
-    const html = this.mfaSetupShell('Set up your authenticator app',
-      '<h1>Scan this with your authenticator app</h1><p class="sub">For ' +
-      '<code>' + xmlEscape(username) + '</code>. Nothing is stored until the ' +
-      'code below checks out.</p>' +
+    // THE LANGUAGE (#539); the error stays English.
+    const t = this.stepTranslator(pendingMfa.get(setupId), username);
+    const html = this.mfaSetupShell(t, setupId,
+      t.text('authn.mfaSetup.totpTitle'),
+      '<h1>' + t.html('authn.mfaSetup.scanHeading') + '</h1><p class="sub">' +
+      t.html('authn.mfaSetup.scanSub', { name: username }) + '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       (qr ? '<p><img src="' + xmlEscape(qr) + '" width="220" height="220" ' +
-            'alt="QR code carrying this account\'s otpauth setup URI"></p>'
+            'alt="' + xmlEscape(t.text('authn.mfaSetup.qrAlt')) + '"></p>'
           : '') +
-      '<p>Or type it in: <code>' + xmlEscape(totp.grouped(held.secret)) +
-      '</code> (' + xmlEscape('HMAC-' +
-        String(held.algorithm).replace(/^SHA/, 'SHA-') + ', ' + held.digits +
-        ' digits, every ' + held.period + ' seconds') + ')</p>' +
+      '<p>' + t.html('authn.mfaSetup.typeIt', {
+        secret: totp.grouped(held.secret),
+        algorithm: 'HMAC-' + String(held.algorithm).replace(/^SHA/, 'SHA-'),
+        digits: held.digits, period: held.period }) + '</p>' +
       '<form method="post" action="' + MFA_SETUP_PATH + '">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(setupId) + '">' +
       '<input type="hidden" name="action" value="confirm-totp">' +
-      '<label for="code">The ' + held.digits + '-digit code your app shows ' +
-      'now</label><input type="text" id="code" name="code" ' +
+      '<label for="code">' + t.html('authn.mfaSetup.codeLabel',
+                                     { digits: held.digits }) +
+      '</label><input type="text" id="code" name="code" ' +
       'autocomplete="one-time-code" inputmode="numeric" maxlength="' +
       held.digits + '" autofocus>' +
-      '<button type="submit" id="mfa-setup-confirm">Finish and sign ' +
-      'in</button></form>');
+      '<button type="submit" id="mfa-setup-confirm">' +
+      t.html('authn.mfaSetup.finish') + '</button></form>');
     log.debug('Leaving Authn.mfaSetupTotpPage().');
     return html;
   }
@@ -10574,9 +10642,13 @@ class Authn {
     // three times for one page.
     const rpId = this.rpIdOf(base);
     const options = webauthnPolicy.settings();
-    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-      'charset="utf-8"><title>Passkey — mock authentication ' +
-      'service</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
+    // THE LANGUAGE (#539); the error stays English, and so do the ceremony's
+    // parameter names and values in the technical fold.
+    const t = this.stepTranslator(step, username);
+    const html = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+      '><head><meta ' +
+      'charset="utf-8"><title>' + xmlEscape(t.text('authn.webauthn.title')) +
+      '</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
       'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
       '.card{background:#fff;border:1px solid ' +
@@ -10594,23 +10666,31 @@ class Authn {
       'padding-top:14px;border-top:1px solid ' +
       '#eee;font-size:.75em;color:#777;word-break:break-all}.meta ' +
       'div{margin:2px 0}code{font-family:ui-monospace,SFMono-Regular,Menlo,' +
-      'monospace}</style></head><body><div ' +
+      'monospace}' + CHOOSER_CSS + '</style></head><body><div ' +
+      'class="card">' +
+      // The chooser returns to this step's GET, with the passkey chosen
+      // (#534) where one is.
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + WEBAUTHN_PATH +
+                            '?mfa=' + encodeURIComponent(mfaId) +
+                            (chosen ? '&key=' +
+                              encodeURIComponent(chosen.credentialId)
+                                    : ''))) +
       // PASSKEY, IN A PERSON'S WORDS (#470): "passkey" covers one on this
       // device, in a password manager, on a phone or on a security key, so
       // the page no longer says "security key" for all four.
-      'class="card"><h1>' + (mode === 'create' ? 'Create a passkey'
-                                               : 'Sign in with your passkey') +
+      '<h1>' + (mode === 'create' ? t.html('authn.webauthn.headingCreate')
+                                  : t.html('authn.webauthn.headingGet')) +
       '</h1><p class="sub">' + (passwordless
-        ? 'Signing in as <code>' + xmlEscape(username) + '</code> with a ' +
-          'passkey instead of a password'
-        : 'Second step for <code>' + xmlEscape(username) + '</code>: use ' +
-          'your passkey') +
+        ? t.html('authn.webauthn.subPasswordless', { name: username })
+        : t.html('authn.webauthn.subSecond', { name: username })) +
         '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       (choosing
         // THE CHOICE (#534): a link per passkey, which draws this page again
         // for that one. Links, so no script is needed to choose.
-        ? '<p>Choose the passkey to use:</p><ul id="wa-choices">' +
+        ? '<p>' + t.html('authn.webauthn.choose') +
+          '</p><ul id="wa-choices">' +
           known.map(function (one) {
             return '<li><a href="' + WEBAUTHN_PATH + '?mfa=' +
               encodeURIComponent(mfaId) + '&amp;key=' +
@@ -10618,13 +10698,16 @@ class Authn {
               xmlEscape(credentials.keyName(one)) + '</a></li>';
           }).join('') + '</ul>'
         : (chosen
-          ? '<p class="sub">Using <strong>' +
-            xmlEscape(credentials.keyName(chosen)) + '</strong> &middot; ' +
+          ? '<p class="sub">' + t.html('authn.webauthn.using',
+                                       { name: credentials.keyName(chosen) }) +
+            ' &middot; ' +
             '<a href="' + WEBAUTHN_PATH + '?mfa=' +
-            encodeURIComponent(mfaId) + '">choose another</a></p>'
+            encodeURIComponent(mfaId) + '">' +
+            t.html('authn.webauthn.chooseAnother') + '</a></p>'
           : '') +
       '<button id="wa-go" type="button">' +
-      (mode === 'create' ? 'Create passkey' : 'Use passkey') +
+      (mode === 'create' ? t.html('authn.webauthn.create')
+                         : t.html('authn.webauthn.use')) +
       '</button><form ' +
       'method="post" action="' + WEBAUTHN_PATH + '" id="wa-form">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
@@ -10634,8 +10717,8 @@ class Authn {
       // this one did not (the root CLAUDE.md's rule): with the script blocked
       // it posts the step with no credential, and the endpoint answers that
       // the browser ran no ceremony rather than the page doing nothing.
-      '<button class="secondary">My browser did not ask &mdash; tell me ' +
-      'why</button></form>' +
+      '<button class="secondary">' + t.html('authn.webauthn.noPrompt') +
+      '</button></form>' +
       // The ceremony's parameters travel as data attributes and the script is a
       // separate resource, so this page needs no inline script. That is not
       // fastidiousness: this service sets `script-src 'none'` on everything by
@@ -10682,12 +10765,11 @@ class Authn {
       // THE TECHNICAL LINES FOLDED (#470): a person signing in reads the
       // heading, the button and the ways out; somebody debugging opens the
       // fold. A `<details>` is markup and needs no script.
-      '<details class="meta"><summary>Technical details</summary>' +
-      '<div>RP ID: <code>' + xmlEscape(rpId) + '</code> — the ceremony is ' +
-                                               'bound to this origin' +
-      (options.rpId
-        ? ', widened to this suffix by <code>webauthn.rpId</code>'
-        : '') + '.</div>' +
+      '<details class="meta"><summary>' + t.html('authn.webauthn.details') +
+      '</summary>' +
+      '<div>' + (options.rpId
+        ? t.html('authn.webauthn.rpIdWidened', { rpId: rpId })
+        : t.html('authn.webauthn.rpId', { rpId: rpId })) + '</div>' +
       '<div>challenge: <code>' + xmlEscape(step ? step.challenge : '') +
       '</code></div>' +
       // WHAT THIS CEREMONY IS ASKING FOR, said on the page rather than only in
@@ -10699,30 +10781,26 @@ class Authn {
           ? 'attestation ' + options.attestation + ', ' +
             'algorithms ' + options.algorithms.join('/') + ', '
           : '') +
-        'user verification ' + options.userVerification +
-        (options.userVerification === 'required'
-          ? ' (CHECKED here — an authenticator that did not verify is refused)'
-          : ' (requested, not required)') +
+        'user verification ' + options.userVerification) + ' ' +
+      // The ceremony's own names stay as they are; what is said ABOUT them
+      // is in the page's language (#539).
+      (options.userVerification === 'required'
+        ? t.html('authn.webauthn.uvChecked')
+        : t.html('authn.webauthn.uvRequested')) +
+      xmlEscape(
         (mode === 'create' && options.residentKey !== 'discouraged'
           ? ', resident key ' + options.residentKey
-          : '') +
-        (mode === 'create' && options.authenticatorAttachment !== 'any'
-          ? ', ' + options.authenticatorAttachment + ' authenticators only'
-          : '')) + '</div>' +
+          : '')) +
+      (mode === 'create' && options.authenticatorAttachment !== 'any'
+        ? ', ' + t.html('authn.webauthn.attachmentOnly',
+                        { attachment: options.authenticatorAttachment })
+        : '') + '</div>' +
       '<div>' + (mode === 'create'
-        ? 'No passkey is registered for this user yet, so this step ' +
-          'registers one.'
-        : 'A passkey is already registered for this user, so this step is ' +
-          'an assertion.') + '</div><div>' + (passwordless
-        ? 'No password was presented. On success the session records amr ' +
-          '["hwk"] and acr "1" — ONE factor — and this counts as an ' +
-          'authentication in its own right, so it appears on /admin/users ' +
-          'and the directory grows an entry for ' + xmlEscape(username) + '.'
-        : 'A password step has already succeeded. On success the session ' +
-          'records amr ["pwd","hwk"] and acr "mfa", and the directory entry ' +
-          'for ' + xmlEscape(username) + ' ' +
-          'is flagged as having authenticated with more than one ' +
-          'factor.') + '</div></details><div class="links">' +
+        ? t.html('authn.webauthn.modeCreate')
+        : t.html('authn.webauthn.modeGet')) + '</div><div>' + (passwordless
+        ? t.html('authn.webauthn.amrPasswordless', { name: username })
+        : t.html('authn.webauthn.amrSecond', { name: username })) +
+      '</div></details><div class="links">' +
       // THE OTHER SECOND FACTOR, WHERE THIS PERSON HOLDS ONE (2026-09-10). The
       // step's `alternate` is resolved when the step is MINTED and not here, so
       // this link cannot offer a mechanism the person has not enrolled — see
@@ -10731,9 +10809,9 @@ class Authn {
       // moment a page with no way out is useless.
       (step && step.alternate === 'totp'
         ? '<div><a href="' + TOTP_PATH + '?mfa=' + encodeURIComponent(mfaId) +
-          '">Use a code from your authenticator app instead</a></div>'
+          '">' + t.html('authn.secondFactor.totpInstead') + '</a></div>'
         : '') +
-      this.walletFactorLinksHtml(mfaId, step) +
+      this.walletFactorLinksHtml(mfaId, step, t) +
       // AND THE WAY OUT WHEN THE KEY IS NOT TO HAND AT ALL (2026-09-10), which
       // is the commonest reason somebody is stuck at this screen: the key is in
       // a drawer at home. Drawn only where the step says an unspent recovery
@@ -10741,8 +10819,8 @@ class Authn {
       // finite and issued once.
       (step && step.backup
         ? '<div><a href="' + BACKUP_CODE_PATH + '?mfa=' +
-          encodeURIComponent(mfaId) + '">I do not have my passkey — use a ' +
-          'recovery code</a></div>'
+          encodeURIComponent(mfaId) + '">' +
+          t.html('authn.webauthn.backup') + '</a></div>'
         : '') +
       '</div></div>' +
       '<script src="' + WEBAUTHN_SCRIPT_PATH + '"></script></body></html>\n';
@@ -11512,9 +11590,12 @@ class Authn {
     const enrolled = credentials.mechanismsFor(username);
     const digits = (enrolled.totpDetail && enrolled.totpDetail.digits) || 6;
     const alternate = step && step.alternate === 'webauthn';
-    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-      'charset="utf-8"><title>One-time code — mock authentication ' +
-      'service</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
+    // THE LANGUAGE (#539); the error stays English.
+    const t = this.stepTranslator(step, username);
+    const html = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+      '><head><meta ' +
+      'charset="utf-8"><title>' + xmlEscape(t.text('authn.totp.title')) +
+      '</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
       'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
       '.card{background:#fff;border:1px solid ' +
@@ -11540,31 +11621,33 @@ class Authn {
       'padding-top:14px;border-top:1px solid ' +
       '#eee;font-size:.75em;color:#777}.meta div{margin:2px 0}.meta ' +
       'a{color:#12107c}code{font-family:ui-monospace,SFMono-Regular,Menlo,' +
-      'monospace}</style></head><body><div class="card"><h1>Your one-time ' +
-      'code</h1><p class="sub">Second factor for <code>' + xmlEscape(username) +
-      '</code></p>' +
+      'monospace}' + CHOOSER_CSS + '</style></head><body><div class="card">' +
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + TOTP_PATH + '?mfa=' +
+                            encodeURIComponent(mfaId))) +
+      '<h1>' + t.html('authn.totp.heading') + '</h1><p class="sub">' +
+      t.html('authn.totp.sub', { name: username }) + '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       (notice ? '<div class="ok">' + xmlEscape(notice) + '</div>' : '') +
       '<form method="post" action="' + TOTP_PATH + '">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
-      '<label for="code">The ' + digits + '-digit code from your ' +
-      'authenticator app</label><input type="text" id="code" name="code" ' +
+      '<label for="code">' + t.html('authn.totp.label', { digits: digits }) +
+      '</label><input type="text" id="code" name="code" ' +
       'autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" ' +
       'maxlength="' + digits + '" ' +
       'autofocus placeholder="' + '0'.repeat(digits) + '">' +
-      '<button type="submit" id="totp-submit">Sign in</button>' +
+      '<button type="submit" id="totp-submit">' +
+      t.html('authn.totp.signIn') + '</button>' +
       '</form>' +
       '<div class="meta">' +
-      '<div>The code changes every ' +
-      xmlEscape(String((enrolled.totpDetail &&
-                        enrolled.totpDetail.period) || 30)) +
-      ' seconds. A code can only be used once (RFC 6238 section 5.2), so if ' +
-      'you have just signed in, wait for the next one.</div>' +
+      '<div>' + t.html('authn.totp.meta', { period: String(
+        (enrolled.totpDetail && enrolled.totpDetail.period) || 30) }) +
+      '</div>' +
       (alternate
         ? '<div><a href="/authn/webauthn?mfa=' + encodeURIComponent(mfaId) +
-          '">Use your passkey instead</a></div>'
+          '">' + t.html('authn.secondFactor.passkeyInstead') + '</a></div>'
         : '') +
-      this.walletFactorLinksHtml(mfaId, step) +
+      this.walletFactorLinksHtml(mfaId, step, t) +
       // THE WAY OUT (2026-09-10), drawn only where the step says this person
       // holds an unspent recovery code. It is LAST on purpose: the codes are a
       // finite, single-use resource issued once, and a link offered above the
@@ -11572,8 +11655,8 @@ class Authn {
       // next room.
       (step && step.backup
         ? '<div><a href="' + BACKUP_CODE_PATH + '?mfa=' +
-          encodeURIComponent(mfaId) + '">I cannot use my authenticator app — ' +
-          'use a recovery code</a></div>'
+          encodeURIComponent(mfaId) + '">' + t.html('authn.totp.backup') +
+          '</a></div>'
         : '') +
       '</div></div></body></html>\n';
     log.debug('Leaving Authn.totpPage().');
@@ -11711,15 +11794,21 @@ class Authn {
                    { remaining: 0, total: 0 };
     // WHICH MECHANISM THEY ARE STANDING IN FOR, so the page can say what this
     // is instead of. It is the step's, because that is what was asked for.
-    const insteadOf = step && step.factor === 'webauthn'
-      ? 'your passkey'
+    // A KIND rather than a phrase since #539: the sentences that name it
+    // choose their own words by a `select` on it, because a phrase dropped
+    // into a sentence does not decline in most of the page's languages.
+    const factorKind = step && step.factor === 'webauthn'
+      ? 'passkey'
       : (step && String(step.factor).indexOf('email-') === 0
-        ? 'the emailed ' + (step.factor === 'email-code' ? 'code' : 'link')
-        : 'your authenticator app');
+        ? (step.factor === 'email-code' ? 'code' : 'link')
+        : 'app');
     const low = status.remaining > 0 && status.remaining <= 3;
-    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-      'charset="utf-8"><title>Recovery code — mock authentication ' +
-      'service</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
+    // THE LANGUAGE (#539); the error stays English.
+    const t = this.stepTranslator(step, username);
+    const html = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+      '><head><meta ' +
+      'charset="utf-8"><title>' + xmlEscape(t.text('authn.backupCode.title')) +
+      '</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
       'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
       '.card{background:#fff;border:1px solid ' +
@@ -11749,36 +11838,37 @@ class Authn {
       '.meta{margin-top:20px;padding-top:14px;border-top:1px solid ' +
       '#eee;font-size:.75em;color:#777}.meta div{margin:2px 0}.meta ' +
       'a{color:#12107c}code{font-family:ui-monospace,SFMono-Regular,Menlo,' +
-      'monospace}</style></head><body><div class="card"><h1>Use a recovery ' +
-      'code</h1><p class="sub">Instead ' +
-      'of ' + xmlEscape(insteadOf) + ', for <code>' +
-      xmlEscape(username) + '</code></p>' +
+      'monospace}' + CHOOSER_CSS + '</style></head><body><div class="card">' +
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + BACKUP_CODE_PATH +
+                            '?mfa=' + encodeURIComponent(mfaId))) +
+      '<h1>' + t.html('authn.backupCode.heading') + '</h1><p class="sub">' +
+      t.html('authn.backupCode.sub', { factor: factorKind, name: username }) +
+      '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       (notice ? '<div class="ok">' + xmlEscape(notice) + '</div>' : '') +
       // HOW MANY ARE LEFT, ON THE WAY IN AND NOT ONLY AFTERWARDS. See the
       // header: somebody down to their last code needs to know while they can
       // still do something about it.
       (low
-        ? '<div class="warn">' + xmlEscape('Only ' + status.remaining +
-            ' of your ' + status.total + ' recovery codes are unused. A set ' +
-            'is issued once and is never topped up — after the last one an ' +
-            'administrator has to clear the set before a new one can be ' +
-            'issued.') + '</div>'
+        ? '<div class="warn">' + t.html('authn.backupCode.low', {
+            remaining: status.remaining, total: status.total }) + '</div>'
         : '') +
       '<form method="post" action="' + BACKUP_CODE_PATH + '">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
-      '<label for="code">One of the recovery codes you were given</label>' +
+      '<label for="code">' + t.html('authn.backupCode.label') + '</label>' +
       '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
       'autocapitalize="characters" spellcheck="false" maxlength="64" ' +
       'autofocus placeholder="XXXXX-XXXXX">' +
-      '<button type="submit" id="backup-submit">Sign in</button>' +
+      '<button type="submit" id="backup-submit">' +
+      t.html('authn.backupCode.signIn') + '</button>' +
       '</form>' +
       '<div class="meta">' +
-      '<div>Each code works <strong>once</strong>. The dashes and the case ' +
-      'do not matter — type it however you can read it.</div>' +
+      '<div>' + t.html('authn.backupCode.once') + '</div>' +
       (status.total
-        ? '<div>' + xmlEscape(String(status.remaining) + ' of ' +
-            String(status.total) + ' unused.') + '</div>'
+        ? '<div>' + t.html('authn.backupCode.count', {
+            remaining: String(status.remaining),
+            total: String(status.total) }) + '</div>'
         : '') +
       // BACK TO THE MECHANISM THEY ARE ACTUALLY CONFIGURED FOR. A screen with
       // no way back is what made this whole family of links necessary, and
@@ -11789,8 +11879,8 @@ class Authn {
         : step && step.factor === 'email-code' ? EMAIL_CODE_PATH
           : step && step.factor === 'email-link' ? EMAIL_LINK_PATH
             : TOTP_PATH) +
-      '?mfa=' + encodeURIComponent(mfaId) + '">Go back and use ' +
-      xmlEscape(insteadOf) + ' after all</a></div>' +
+      '?mfa=' + encodeURIComponent(mfaId) + '">' +
+      t.html('authn.backupCode.back', { factor: factorKind }) + '</a></div>' +
       '</div></div></body></html>\n';
     log.debug('Leaving Authn.backupCodePage().');
     return html;

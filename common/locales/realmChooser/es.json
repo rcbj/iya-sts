@@ -1,0 +1,10 @@
+{
+  "title": "Elige tu dominio",
+  "heading": "Elige tu dominio",
+  "lead": "Elige un dominio para continuar a {surface, select, portal {tu cuenta} other {la consola de administración}}. No se puede usar nada más aquí hasta que lo hagas.",
+  "explain": "Este servicio aloja más de un dominio de confianza, y cada uno tiene sus propias personas y sus propios administradores. Elige el dominio al que perteneces y se te pedirá que inicies sesión allí.",
+  "realm": "Dominio",
+  "continue": "Continuar a {surface, select, portal {tu cuenta} other {la consola de administración}}",
+  "defaultRealm": "(el dominio predeterminado)",
+  "idNote": "Tu administrador puede decirte el id de tu dominio. El id del dominio predeterminado es <code>{id}</code>."
+}

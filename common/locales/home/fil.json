@@ -1,0 +1,22 @@
+{
+  "logoAlt": "IYA STS — Security Token Service",
+  "sub": "Isang maluwag na mock na serbisyo ng pagkakakilanlan na nagsasalita ng labing-anim na pamilya ng protocol. Umiiral ito para subukin ang mga CLIENT.",
+  "version": "bersyon {version}",
+  "warn": "Hindi ito nagsusuri ng password, hindi nagva-validate ng access token, at hindi nagpapatunay ng workload. Huwag ilagay ang port na ito sa pampublikong address.",
+  "repoLabel": "Ang proyekto sa GitHub",
+  "repoNote": "Ang source, ang README, at ang labing-anim na pamilya nang buo.",
+  "issuesLabel": "Mga isyu",
+  "issuesNote": "Ang alam nang mali, at kung saan mo maiuulat ang hindi pa alam.",
+  "docsLabel": "Dokumentasyon",
+  "docsNote": "Ang site sa GitHub Pages: pagsisimula, configuration, at kung ano ang sadyang hindi sinusuri.",
+  "consoleLabel": "Ang admin console sa instance na ito",
+  "consoleNote": "Lahat ng ginawa ng prosesong ito, at ang mga setting na nagbabago sa ginagawa ng mga protocol endpoint nito.",
+  "consoleRoles": "Humihingi rin ito ng isa sa dalawang role.",
+  "consoleOpen": "Bukas ito sa instance na ito.",
+  "consoleMetadata": "Nakalista sa loob nito ang bawat endpoint na nirehistro ng serbisyong ito, sa /admin/sts-metadata.",
+  "portalLabel": "Ang user portal sa instance na ito",
+  "portalNote": "Ang mga pahina ng account ng sinumang tumitingin sa mga ito: kung paano sila nagsa-sign in sa serbisyong ito, ano ang hawak nito tungkol sa kanila, at saan sila nito isa-sign in.",
+  "portalNoRole": "Wala itong hinihinging role, at iyon ang buong pagkakaiba nito sa console sa itaas: ang bawat pahina nito ay tungkol sa taong tumitingin, kaya ang pagsabi kung sino ka ang tanging tanong.",
+  "signInProduct": "Hihilingin nitong mag-sign in ka, at nasa product mode ang instance na ito, kaya sinusuri ang password laban sa account.",
+  "signInDevelopment": "Hihilingin nitong mag-sign in ka — kahit anong username, at walang password na sinusuri."
+}

@@ -77,9 +77,10 @@ class PoliciesPage {
     });
     panels.push({ id: 'tab-profiles', label: 'All profiles',
       html: '<h2 id="profiles">Profiles</h2>' +
-      kit.note('One profile of each kind, and the passkey policy\'s named ' +
-      'profiles, which are chosen by application and group (see that ' +
-      'tab). The list is paged like every list in this console.') +
+      kit.note('One profile of each kind, and the named profiles of the ' +
+      'passkey policy (chosen by application and group) and of the locale ' +
+      'policy (chosen by application) — see their tabs. The list is paged ' +
+      'like every list in this console.') +
       listedNav.head +
       '<table><tr><th>Kind</th><th>Profile</th><th>Stored at</th>' +
       '<th>Problems</th></tr>' +
@@ -112,7 +113,8 @@ class PoliciesPage {
       'its own entry in its own container and its own tab, and each has a ' +
       'profile — <code>default</code> — which applies to every person in ' +
       'this realm; the passkey policy may also have named profiles, each ' +
-      'applying to the applications and groups it names. ' +
+      'applying to the applications and groups it names, and the locale ' +
+      'policy named profiles applying to the applications it names. ' +
       view.kinds.map(function (kind) {
         return '<a href="#' + kit.esc(kind.id) + '">' +
           kit.esc(kind.label) + '</a> (<code>' +
@@ -245,22 +247,34 @@ class PoliciesPage {
    * @returns the section as HTML
    */
   static namedProfilesSection(kind, member) {
+    // The selectors this kind carries (#539): all three for the passkey
+    // policy, applications alone for the locale policy. A view from before
+    // the member was published names none, and means all three.
+    const selectors = Array.isArray(member.selectors) ? member.selectors
+      : ['selectApplications', 'selectGroups', 'precedence'];
+    const has = function (key) {
+      return selectors.indexOf(key) >= 0;
+    };
     const selectorRows = function (named, prefix) {
-      return '<tr><td><label for="' + kit.esc(prefix) + 'apps">' +
+      return (!has('selectApplications') ? '' :
+        '<tr><td><label for="' + kit.esc(prefix) + 'apps">' +
         'Applications</label></td><td colspan="4"><input type="text" id="' +
         kit.esc(prefix) + 'apps" name="selectApplications" size="60" ' +
         'value="' + kit.esc((named.selectApplications || []).join(', ')) +
         '" placeholder="identifier or client_id, comma-separated"></td>' +
-        '</tr><tr><td><label for="' + kit.esc(prefix) + 'groups">Groups' +
+        '</tr>') + (!has('selectGroups') ? '' :
+        '<tr><td><label for="' + kit.esc(prefix) + 'groups">Groups' +
         '</label></td><td colspan="4"><input type="text" id="' +
         kit.esc(prefix) + 'groups" name="selectGroups" size="60" value="' +
         kit.esc((named.selectGroups || []).join(', ')) + '" placeholder=' +
-        '"group cn or DN, comma-separated"></td></tr><tr><td><label for="' +
+        '"group cn or DN, comma-separated"></td></tr>') +
+        (!has('precedence') ? '' :
+        '<tr><td><label for="' +
         kit.esc(prefix) + 'precedence">Precedence</label></td><td ' +
         'colspan="4"><input type="number" id="' + kit.esc(prefix) +
         'precedence" name="precedence" min="1" max="1000" value="' +
         kit.esc(named.precedence || 100) + '"> <span class="sub">the ' +
-        'lowest matching one applies</span></td></tr>';
+        'lowest matching one applies</span></td></tr>');
     };
     const form = function (named, prefix, adding) {
       return '<form method="post" action="/admin/policies">' +
@@ -294,14 +308,21 @@ class PoliciesPage {
                                                     source: 'built-in' });
                     }) };
     return '<h3 id="' + kit.esc(kind.id) + '-named">Named profiles</h3>' +
-      kit.note('A named profile applies, instead of the default, to a ' +
-      'sign-in for one of its applications or by a member of one of its ' +
-      'groups; where several match, the one with the lowest precedence ' +
-      'applies. A realm\'s named profiles are its own and are not ' +
-      'inherited.') +
+      kit.note(has('precedence')
+        ? 'A named profile applies, instead of the default, to a ' +
+          'sign-in for one of its applications or by a member of one of ' +
+          'its groups; where several match, the one with the lowest ' +
+          'precedence applies. A realm\'s named profiles are its own and ' +
+          'are not inherited.'
+        : 'A named profile applies, instead of the default, to a page ' +
+          'drawn for one of its applications and to a person that ' +
+          'application caused to be created. An application is on one ' +
+          'named profile at most, so nothing is ranked. A realm\'s named ' +
+          'profiles are its own and are not inherited.') +
       (member.named.length ? member.named.map(function (named) {
-        return '<h4>' + kit.esc(named.name) + ' (precedence ' +
-          kit.esc(named.precedence) + ')</h4>' +
+        return '<h4>' + kit.esc(named.name) + (has('precedence')
+          ? ' (precedence ' + kit.esc(named.precedence) + ')' : '') +
+          '</h4>' +
           form(named, kind.id + '-' + named.name + '-', false) +
           '<ul>' + named.rules.map(function (rule) {
             return '<li>' + kit.esc(rule) + '</li>';
@@ -556,6 +577,13 @@ class PoliciesPage {
           ? 'text, {provider} and {kind} filled in; empty for the default'
           : 'attributes, commas between, spaces to join; empty for the ' +
             'default') + '</span>';
+    } else if (field.type === 'locale') {
+      // A BCP 47 LANGUAGE TAG (#539), typed: any tag is a locale, and the
+      // save says whether it is well-formed.
+      control = '<input type="text" id="' + kit.esc(id) + '" name="' +
+        kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
+        ' maxlength="64"' + hint + '> <span class="sub">a BCP 47 tag, such ' +
+        'as en, fr-CA or zh-TW</span>';
     } else if (field.type === 'attribute') {
       // A DIRECTORY ATTRIBUTE NAME, or empty (#532).
       control = '<input type="text" id="' + kit.esc(id) + '" name="' +

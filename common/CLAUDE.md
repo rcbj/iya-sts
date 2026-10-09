@@ -11500,3 +11500,76 @@ issuance policy DECIDES:
   AAGUID) are sent either way, so a realm's own policy can rule on them.
 * **#535's selection of which profile applies stays code.** It chooses the
   settings and decides nothing.
+
+## 3ci. `i18n.ts`, `page_locale.ts`, `locale_policy.ts`: THE LANGUAGE A PAGE IS DRAWN IN (#539, 2026-10-09)
+
+rcbj: "multi-lingual support to the admin portal, authentication service,
+logout service, and user portal. It should be able to handle any locale +
+language." The issue body is the spec of record. Its decisions, and the
+reasons for the shape:
+
+* **Three modules, split by what each knows.**
+  - `i18n.ts` knows the catalogs and nothing about a request. It does BCP 47
+    lookup, with the script made explicit by `Intl.Locale.maximize()`, and
+    formats ICU-subset messages on `Intl`. It is a leaf.
+  - `page_locale.ts` knows a request: `ui_locales`, then the person's
+    `preferredLanguage`, then the `sts_lang` cookie, then `Accept-Language`,
+    then the locale policy. It also draws the chooser and holds its return to
+    a local path.
+  - `locale_policy.ts` is the fifth kind on Directory → Policies.
+  - `i18n.ts` requires neither of the others. `page_locale.ts` reaches
+    `audit.js`'s ambient request lazily, as `passkey_policy.ts` does.
+* **The catalogs are data:** `common/locales/<namespace>/<tag>.json`.
+  - A namespace is a surface, so parallel work never collides on a key.
+  - A regional catalog is an OVERLAY holding only what differs.
+  - English is complete, and every chain ends in it.
+  - `tests/i18n_catalogs.js` holds every catalog to English: the same keys,
+    parameters and markup, and every base catalog complete.
+  - **A page's translator is always called `t`, and keys are literals**, so
+    the test can scan the source for every key used.
+* **Errors stay English (rcbj).** A refusal is simply never looked up. That is
+  why the namespaces hold labels, prose and success text and no refusal
+  text. Do not "finish" a page by translating its error box.
+* **A page builder asks `PageLocale.forPage()`** instead of being handed the
+  request. Most builders are called from dozens of places, many inside a
+  POST, and threading a translator through every caller was the alternative.
+  The builder passes what it already holds: the application, `ui_locales` and
+  the person.
+* **The chooser is a real form with a button, on every page** (rcbj: "from
+  any user-facing page"). It posts to `POST /authn/language`, which lives in
+  `authn/` because a signed-in person's choice is also written to their
+  entry (through `ldap/person_editor.ts`). The entry outranks the cookie, so
+  a choice that did not reach the entry would change nothing for them.
+  - A page drawn by a POST returns the chooser to the GET that redraws it.
+  - `safeReturn()` turns anything that is not a local path into `/`.
+* **The locale policy is `passkey_policy.ts`'s pattern** with two rows,
+  `defaultLocale` (`en`) and `populatePreferredLanguage` (on).
+  - Named profiles are chosen by APPLICATION alone (rcbj). An application is
+    on one named profile at most, refused with `STS-I18N-0007`, so nothing is
+    ranked and there is no precedence.
+  - Selection is an argument (`forApplication()`), not #535's ambient
+    `select()`, because every caller already holds its application.
+  - It replaced `mail.defaultLanguage` (`REPLACED_SETTINGS`), so pages and
+    mail share one default.
+* **Population happens in `putEntry()`** (`fillPreferredLanguage()`), the one
+  place every door that creates a person ends.
+  - It applies only on a create, only to a person, and only where the entry
+    names no language, so an update never re-adds a removed one.
+  - **A populated value ranks BELOW the browser on a page** (rcbj, after the
+    first render showed everybody's browser ignored).
+    `stsPreferredLanguagePopulated` records what was written. While
+    `preferredLanguage` still equals it, `page_locale.ts` puts it after
+    `Accept-Language`. A different value is the person's, so no write path
+    has to clear the marker.
+    - Choosing the same value explicitly still wins on that browser, because
+      the chooser's cookie outranks `Accept-Language`.
+  - The application arrives as `opts.application`:
+    - SCIM passes its OAuth client, and its create keeps the populated value
+      through its merge.
+    - A sign-in passes its client through `admin_stats`'s user observer.
+    - The console and `/admin-api` pass none, because the administrator is
+      not the person's application.
+* **`ui_locales`** is carried on the pending sign-in record, and discovery's
+  `ui_locales_supported` lists the offered locales.
+* Error codes `STS-I18N-0001` to `0009`. Their own subsystem, because every
+  surface asks it.

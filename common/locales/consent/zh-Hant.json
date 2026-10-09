@@ -1,0 +1,21 @@
+{
+  "title": "允許存取？— 模擬授權伺服器",
+  "heading": "允許存取？",
+  "signedInAs": "已在 <code>{base}</code> 以 <code>{username}</code> 身分登入",
+  "asking": "<strong>{client}</strong> 正在要求代表您進行存取。",
+  "scope.permission": "{description} — 由 <code>{identifier}</code> 公開，存取權杖將發往 <code>{baseUri}</code>",
+  "scope.permissionNamed": "權限「{name}」",
+  "scope.ordinary": "一般範圍：本服務不賦予它任何意義，會原樣放入權杖的 scope 宣告中",
+  "detail.understood": "由 <code>{resource}</code> 理解，存取權杖將發往 <code>{audience}</code>",
+  "detail.described": "{description} — 由 <code>{resource}</code> 理解，存取權杖將發往 <code>{audience}</code>",
+  "detailsNote": "此要求包含 <strong>{count, plural, other {# 項授權詳細資料}}</strong>（RFC 9396）。每次都會詢問您：「允許」僅針對這一次要求，同意的正是所列內容。",
+  "already.summary": "您已為此應用程式同意的 {count} 個範圍",
+  "already.global": "已在此應用程式的項目上為所有人同意（<code>oauthGlobalConsent</code>）— 從未詢問過您",
+  "already.byYou": "由您同意",
+  "already.byYouAt": "由您於 {at} 同意",
+  "allow": "允許",
+  "deny": "拒絕",
+  "meta.allow": "「允許」會在您位於 <code>ou=users</code> 下的項目中為每個範圍寫入一個 <code>{attribute}</code> 值，之後不會再就這些範圍詢問您。「拒絕」會向應用程式傳回 <code>access_denied</code>，且不記錄任何內容。",
+  "meta.nothingIssued": "目前尚未核發任何內容。此畫面由 <code>oauth2.consentRequired</code> 控制，預設開啟；在 /admin/consent 可以檢視並撤回在此作出的每一個答覆。",
+  "meta.consentingFor": "同意的對象：<code>{protocol}</code>"
+}

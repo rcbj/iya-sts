@@ -1,5 +1,9 @@
 {
   "login.emailCode": "以電郵傳送登入驗證碼",
   "login.emailLink": "以電郵傳送登入連結",
-  "login.rememberNote": "— 下次透過 Cookie 識別。請勿在共用電腦上剔選。"
+  "login.rememberNote": "— 下次透過 Cookie 識別。請勿在共用電腦上剔選。",
+  "backupCode.sub": "代替{factor, select, passkey {您的密碼金鑰} code {以電郵傳送的驗證碼} link {以電郵傳送的連結} other {您的驗證器應用程式}}，用於 <code>{name}</code>",
+  "backupCode.back": "返回，仍然使用{factor, select, passkey {您的密碼金鑰} code {以電郵傳送的驗證碼} link {以電郵傳送的連結} other {您的驗證器應用程式}}",
+  "secondFactor.emailCodeInstead": "改以電郵傳送驗證碼",
+  "secondFactor.emailLinkInstead": "改以電郵傳送登入連結"
 }

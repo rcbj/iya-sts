@@ -165,6 +165,10 @@ import errorCodes = require('../common/error_codes');
 // the way back is refused rather than sent round again. A library that
 // registers no route.
 import stepUp = require('../oauth-oidc/step_up');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
+// no route and closes no cycle. Only the pages a PERSON passes through use it
+// — the sign-in response and the sign-out page; refusals stay English.
+import PageLocale = require('../common/page_locale');
 
 // --- the vocabulary --------------------------------------------------------
 const WSFED_NS = 'http://docs.oasis-open.org/wsfed/federation/200706';
@@ -482,11 +486,16 @@ class WsFederation {
   // One shell for all of them. The CSS is inline because app.js sets
   // `default-src 'none'` with `style-src 'unsafe-inline'`, so a stylesheet as a
   // separate resource would need its own exception to buy nothing.
-  private page(title, inner) {
+  //
+  // `t` is the page's translator (#539), for a page a person passes through;
+  // without one the page is English, exactly as it always was.
+  private page(title, inner, t?) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering WsFederation.page().");
     log.debug("Leaving WsFederation.page().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<title>' + xmlEscape(title) +
       '</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
@@ -761,13 +770,17 @@ class WsFederation {
   // block the sign-in response from ever reaching the relying party, and the
   // symptom is a sign-in that appears to succeed while the RP simply never
   // hears anything.
-  private signInResponsePage(wreply, wresult, wctx, realm, tokenType) {
+  //
+  // IN THE PERSON'S LANGUAGE (#539), the words only: `t` is the page's
+  // translator. No language chooser: the page is drawn mid-flow, and no GET
+  // redraws it without issuing a token again — it is on screen for an
+  // instant.
+  private signInResponsePage(wreply, wresult, wctx, realm, tokenType, t) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering WsFederation.signInResponsePage(). wreply=" + wreply);
-    const inner = '<h1>Signing in to the relying party</h1><p ' +
-      'class="sub">WS-Federation 1.2 section 13.2.2 — the token travels in a ' +
-      'form POST, not in a redirect, so it is not length-limited and never ' +
-      'appears in a URL, a log or a Referer header.</p><form method="post" ' +
+    const inner = '<h1>' + t.html('handoff.wsfed.signingIn.heading') +
+      '</h1><p class="sub">' + t.html('handoff.wsfed.signingIn.sub') +
+      '</p><form method="post" ' +
       'action="' + xmlEscape(wreply) + '" id="wsfed-form">' +
         '<input type="hidden" name="wa" value="wsignin1.0">' +
         '<input type="hidden" name="wresult" value="' + xmlEscape(wresult) +
@@ -776,27 +789,25 @@ class WsFederation {
           ? '<input type="hidden" name="wctx" value="' + xmlEscape(wctx) +
               '">' :
          '') +
-        '<div class="row"><button type="submit">Continue to the relying ' +
-      'party</button></div></form><div class="meta"><div>wa: ' +
-      '<code>wsignin1.0</code></div><div>posting to (wreply): ' +
-      '<code>' + xmlEscape(wreply) + '</code></div>' +
-      '<div>realm (wtrealm): <code>' + xmlEscape(realm) + '</code></div>' +
-      '<div>token type: <code>' + xmlEscape(tokenType) + '</code></div>' +
-      '<div>wctx: ' + (wctx ? '<code>' + xmlEscape(wctx) + '</code>, echoed ' +
-          'byte for byte'
-                            : 'the request carried none, so none is returned') +
-      '</div><div>The form submits itself from <code>' +
-      '/wsfed/autopost.js</code>. It is a separate resource because this ' +
-      'service sets <code>script-src \'none\'</code> on every response and ' +
-      'this page relaxes it to <code>\'self\'</code> — an inline script ' +
-      'would not run, and the button would be the only thing that worked. ' +
-      'With scripting off, the button IS the mechanism.</div></div><script ' +
+        '<div class="row"><button type="submit">' +
+      t.html('handoff.common.continueToRp') +
+      '</button></div></form><div class="meta"><div>wa: ' +
+      '<code>wsignin1.0</code></div><div>' +
+      t.html('handoff.wsfed.postingTo', { destination: wreply }) +
+      '</div><div>' + t.html('handoff.wsfed.realm', { realm: realm }) +
+      '</div><div>' + t.html('handoff.wsfed.tokenType',
+                             { tokenType: tokenType }) + '</div>' +
+      '<div>' + (wctx ? t.html('handoff.wsfed.wctxEchoed', { wctx: wctx })
+                      : t.html('handoff.wsfed.wctxNone')) +
+      '</div><div>' +
+      t.html('handoff.common.autopost', { script: '/wsfed/autopost.js' }) +
+      '</div></div><script ' +
       'src="/wsfed/autopost.js"></script>';
     log.debug("Leaving WsFederation.signInResponsePage().");
     return inner;
   }
 
-  private sendSignInResponse(res, inner) {
+  private sendSignInResponse(res, inner, t) {
     const { app, log } = this.deps;
     log.debug("Entering WsFederation.sendSignInResponse().");
     // The same shape of exception the WebAuthn page takes, and no wider: a
@@ -804,7 +815,7 @@ class WsFederation {
     res.set('Content-Security-Policy',
             app.contentSecurityPolicy({ 'script-src': "'self'" }));
     res.status(200).type('text/html').set('Cache-Control', 'no-store')
-       .send(this.page('Signing in — WS-Federation', inner));
+       .send(this.page(t.text('handoff.wsfed.signingIn.title'), inner, t));
     log.debug("Leaving WsFederation.sendSignInResponse().");
   }
 
@@ -1488,10 +1499,14 @@ class WsFederation {
     // node: `authn.noteSessionChanged()` carries the argument.
     noteSessionChanged(session);
 
+    // THE PAGE'S LANGUAGE (#539): the relying party's — its wtrealm is the
+    // application a locale policy names — and the person's.
+    const t = PageLocale.forPage({ application: realm,
+                                   username: user.username });
     this.sendSignInResponse(res,
                             this.signInResponsePage(wreply, wresult,
                                                     params.wctx, realm,
-                                                    tokenType));
+                                                    tokenType, t), t);
     log.debug("Leaving WsFederation.issueSignInResponse(). " + user.username +
               " signed in to " + realm + ".");
   }
@@ -1556,9 +1571,16 @@ class WsFederation {
     log.debug("Entering WsFederation.signOut(). cleanupOnly=" + !!cleanupOnly);
     const session = endSession(req, res);
     const targets = this.cleanupTargetsFor(session);
-    const names = targets.map((t) => { return t.realm; });
+    const names = targets.map((one) => { return one.realm; });
     const realms = {};
-    targets.forEach((t) => { realms[t.realm] = t.wreply; });
+    targets.forEach((one) => { realms[one.realm] = one.wreply; });
+    // In the person's language (#539): the relying party's, where the
+    // request names one, and the person's. No language chooser: the GET that
+    // drew it ENDED the session, and drawing it again would say there was
+    // none and send no cleanups — a different page.
+    const t = PageLocale.forPage({
+      application: params.wtrealm ? String(params.wtrealm) : '',
+      username: (session && session.user && session.user.username) || '' });
     const wreply = params.wreply ? String(params.wreply) : '';
     const cleanupUrl = (url) => {
       log.debug("Entering cleanupUrl().");
@@ -1566,15 +1588,15 @@ class WsFederation {
       return url + (url.indexOf('?') >= 0 ? '&' : '?') +
           'wa=wsignoutcleanup1.0';
     };
-    let inner = '<h1>' + (cleanupOnly ? 'Signed out (cleanup)' : 'Signed out') +
+    let inner = '<h1>' + (cleanupOnly
+      ? t.html('handoff.wsfed.signedOutCleanup')
+      : t.html('handoff.common.signedOut')) +
       '</h1><p ' +
-      'class="sub">WS-Federation 1.2 section 13.2.4</p><div ' +
+      'class="sub">' + t.html('handoff.wsfed.signOut.sub') + '</p><div ' +
       'class="ok">' + (session
-        ? 'The session for ' + xmlEscape(session.user.username) + ' has ' +
-          'ended. ' +
-          'It was the session the OAuth 2.0 / OIDC side shares, so that side ' +
-          'is signed out too.'
-        : 'There was no session to end. The cookie has been cleared anyway.') +
+        ? t.html('handoff.wsfed.sessionEnded',
+                 { username: session.user.username })
+        : t.html('handoff.common.noSession')) +
       '</div>';
     if (cleanupOnly) {
       // A cleanup request arriving HERE (rather than at a relying party) ends
@@ -1582,15 +1604,10 @@ class WsFederation {
       // cleanups: a federation of two identity providers each cleaning the
       // other up on receipt is a loop, and this service is not a federation
       // gateway.
-      inner += '<p>This was a <code>wsignoutcleanup1.0</code> request, so ' +
-        'the ' +
-        'session was dropped and no further cleanup requests were sent — an ' +
-        'identity provider that fanned out on receipt of a cleanup would ' +
-        'loop with whatever sent it.</p>';
+      inner += '<p>' + t.html('handoff.wsfed.cleanupOnly') + '</p>';
     } else if (names.length) {
-      inner += '<h2>Cleanup requests sent to ' + names.length + ' relying ' +
-          'part' +
-        (names.length === 1 ? 'y' : 'ies') + '</h2><ul>' +
+      inner += '<h2>' + t.html('handoff.wsfed.cleanupSent',
+                               { n: names.length }) + '</h2><ul>' +
         names.map((r) => {
           return '<li><code>' + xmlEscape(r) + '</code><br>' +
             '<a href="' + xmlEscape(cleanupUrl(realms[r])) + '" ' +
@@ -1601,32 +1618,27 @@ class WsFederation {
           return '<img src="' + xmlEscape(cleanupUrl(realms[r])) + '" alt="" ' +
               'width="1" height="1">';
         }).join('') +
-        '<p class="sub">Each was fetched as a one-pixel image as this page ' +
-        'loaded — front-channel logout, and the links above are the same ' +
-        'URLs so a failed ping can be seen rather than guessed at.</p>';
+        '<p class="sub">' + t.html('handoff.wsfed.pingNote') + '</p>';
     } else {
-      inner += '<p>This session had signed into no relying party through ' +
-        'this ' +
-        'profile, so there was nothing to clean up.</p>';
+      inner += '<p>' + t.html('handoff.wsfed.nothingToClean') + '</p>';
     }
     if (wreply) {
       // Not an automatic redirect: the cleanup pings have to load first, and a
       // 302 would abandon them. WS-Federation says the IdP MAY return the
       // browser to wreply, and a link is the version that does not defeat the
       // cleanup.
-      inner += '<h2>Return to the relying party</h2><p><a href="' +
+      inner += '<h2>' + t.html('handoff.wsfed.returnHeading') +
+        '</h2><p><a href="' +
         xmlEscape(wreply) + '">' +
-        xmlEscape(wreply) + '</a></p><p class="sub">A link and not a ' +
-                            'redirect: ' +
-        'the cleanup requests above load with this page, and a 302 would ' +
-        'abandon them before they were sent.</p>';
+        xmlEscape(wreply) + '</a></p><p class="sub">' +
+        t.html('handoff.wsfed.returnNote') + '</p>';
     }
     // One of the two responses in this service that widen img-src (the other is
     // /logout's, for the same pings), and only that clause.
     res.set('Content-Security-Policy',
             app.contentSecurityPolicy({ 'img-src': '*' }));
     res.status(200).type('text/html').set('Cache-Control', 'no-store')
-       .send(this.page('Signed out — WS-Federation', inner));
+       .send(this.page(t.text('handoff.wsfed.signedOut.title'), inner, t));
     log.debug("Leaving WsFederation.signOut(). " + names.length + " cleanup " +
                                                      "request(s) on the page.");
   }

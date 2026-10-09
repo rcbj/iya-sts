@@ -89,7 +89,7 @@ interface DirectoryHooks {
   writeLocalePolicy?(name: string,
                      attributes: Record<string, unknown>): unknown;
   deleteLocalePolicy?(name: string): unknown;
-  personLanguage?(key: string): string;
+  personLanguage?(key: string): { value: string; populated: boolean };
   [hook: string]: unknown;
 }
 
@@ -218,7 +218,17 @@ const SCHEMA = {
   })).concat([
     { name: 'description',
       what: 'What the profile is for, for the next person.' }
-  ])
+  ]),
+  // ON A PERSON (#539): what population wrote, so a page can tell the
+  // policy's language from the person's own.
+  personAttributes: [
+    { name: 'stsPreferredLanguagePopulated',
+      what: 'The preferredLanguage the locale policy gave this person when ' +
+            'their entry was created. While preferredLanguage still equals ' +
+            'it, it is the POLICY\'s choice and a page ranks it below the ' +
+            'browser\'s language; once anybody sets another, it is the ' +
+            'person\'s. Written by this service only.' }
+  ]
 };
 
 /**
@@ -617,19 +627,38 @@ class LocalePolicy {
   preferredLanguageOf(username: unknown): string {
     const { log } = this.deps;
     log.debug("Entering LocalePolicy.preferredLanguageOf().");
-    const hook = this.directory && this.directory.personLanguage;
-    let out = '';
-    if (username && typeof hook === 'function') {
-      try {
-        out = String(hook.call(this.directory, String(username)) || '');
-      } catch (e) {
-        log.debug("Caught in LocalePolicy.preferredLanguageOf(): " +
-                  ((e && e.message) || e));
-        out = '';
-      }
-    }
+    const out = this.languageOf(username).value;
     log.debug("Leaving LocalePolicy.preferredLanguageOf(). " +
               (out || 'None.'));
+    return out;
+  }
+
+  /**
+   * Returns a person's `preferredLanguage` and whether it is still the value
+   * this policy POPULATED when their entry was created (rcbj on #539: such a
+   * value ranks below the browser's language on a page).
+   *
+   * @param username - the person: a username, a DN or `urn:uuid:`
+   * @returns `{ value, populated }`; `value` is '' where none is named
+   */
+  languageOf(username: unknown): { value: string; populated: boolean } {
+    const { log } = this.deps;
+    log.debug("Entering LocalePolicy.languageOf().");
+    const hook = this.directory && this.directory.personLanguage;
+    let out = { value: '', populated: false };
+    if (username && typeof hook === 'function') {
+      try {
+        const found = hook.call(this.directory, String(username)) || {};
+        out = { value: String(found.value || ''),
+                populated: found.populated === true };
+      } catch (e) {
+        log.debug("Caught in LocalePolicy.languageOf(): " +
+                  ((e && e.message) || e));
+        out = { value: '', populated: false };
+      }
+    }
+    log.debug("Leaving LocalePolicy.languageOf(). " + (out.value || 'None.') +
+              (out.populated ? ' (populated)' : ''));
     return out;
   }
 
@@ -925,6 +954,7 @@ export = {
   defaultLocaleFor: slot.forward('defaultLocaleFor'),
   populationFor: slot.forward('populationFor'),
   preferredLanguageOf: slot.forward('preferredLanguageOf'),
+  languageOf: slot.forward('languageOf'),
   validate: slot.forward('validate'),
   save: slot.forward('save'),
   reset: slot.forward('reset'),

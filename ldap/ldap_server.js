@@ -2740,9 +2740,10 @@ passkeyPolicy.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the passkey policy schema');
 });
 // #539: the locale policy's attributes.
-localePolicy.SCHEMA.attributes.forEach(function (row) {
-  learnName(row.name, 'the locale policy schema');
-});
+localePolicy.SCHEMA.attributes.concat(localePolicy.SCHEMA.personAttributes)
+  .forEach(function (row) {
+    learnName(row.name, 'the locale policy schema');
+  });
 xacmlStore.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML policy schema');
 });
@@ -3331,6 +3332,11 @@ function fillPreferredLanguage(stored, opts) {
   }
   if (tag) {
     stored.attributes.preferredlanguage = [tag];
+    // AND WHAT WAS WRITTEN, so a page can tell the POLICY's language from the
+    // PERSON's (rcbj on #539: a populated value ranks below the browser).
+    // While preferredLanguage still equals this, it is the policy's; once
+    // anybody writes another, it is theirs — no write path has to clear it.
+    stored.attributes.stspreferredlanguagepopulated = [tag];
   }
   log.debug("Leaving fillPreferredLanguage(). " + (tag || 'None.'));
 }
@@ -8465,13 +8471,18 @@ if (typeof localePolicy.setDirectory === 'function') {
     // A PERSON'S OWN preferredLanguage (RFC 2798 section 2.7), which ranks
     // above the language chooser and the browser when a page is drawn for
     // them (#539). One attribute of one person, never anything else.
+    // With whether it is still the value the policy POPULATED (#539).
     personLanguage: function personLanguage(key) {
       log.debug('Entering personLanguage().');
       const stored = locateEntry(String(key || '')).stored;
-      const out = stored && isPersonEntry(stored)
+      const value = stored && isPersonEntry(stored)
         ? String((stored.attributes.preferredlanguage || [])[0] || '') : '';
-      log.debug('Leaving personLanguage(). ' + (out || 'None.'));
-      return out;
+      const populated = !!value && value === String(
+        ((stored && stored.attributes.stspreferredlanguagepopulated) ||
+         [])[0] || '');
+      log.debug('Leaving personLanguage(). ' + (value || 'None.') +
+                (populated ? ' (populated)' : ''));
+      return { value: value, populated: populated };
     }
   });
 } else {

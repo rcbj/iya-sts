@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4229** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4238** of them, in **44** subsystems.
 
 ## Where a code appears
 
@@ -81,6 +81,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 47
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
+* [Languages and locales (`STS-I18N`)](#sts-i18n) — 9
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 351
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
@@ -3591,6 +3592,24 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0038` | A followed verification link for a NEW address could not write it to the entry (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0039` | A person asked to change their address to something that is not an address this service can send to (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0180` | The notice telling a person that a GNAP grant waits for their approval on the portal could not be queued; the request still waits there (#432 phase 6). | log only |
+
+## STS-I18N
+
+**Languages and locales.** The catalogs a page is drawn from, the negotiation of a reader's languages against them, the locale policy (#539) and the language chooser. Refusals and errors are never translated (rcbj's decision on #539), so nothing here changes what a refusal says.
+
+Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, authn/authn.ts (the language chooser).
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-I18N-0001` | A catalog file under common/locales could not be read or parsed (or catalogs.json itself, in which case every page is drawn in English); the messages it held fall back along their chain to English, and the problem is listed on Directory > Policies (#539). | none — an error in the log |
+| `STS-I18N-0002` | A page asked for a message no catalog has, or one whose text is malformed; the key itself, or the text as written, was drawn. tests/i18n_catalogs.js is what keeps this from shipping (#539). | none — a warning in the log |
+| `STS-I18N-0003` | A locale policy profile name was refused: it is neither `default` nor a name of lower-case letters, digits and hyphens of at most 64 (#539). | HTTP 400 (management API) |
+| `STS-I18N-0004` | A locale policy save was refused: a field was missing, the default language was not a BCP 47 tag, a yes-or-no field was neither, or a named profile named no application or too many (#539). | HTTP 400 (management API) |
+| `STS-I18N-0005` | A locale policy could not be saved: this process has no embedded directory, so there is no ou=localePolicies (#539). | HTTP 400 (management API) |
+| `STS-I18N-0006` | A locale policy could not be saved: the directory is at its maximum number of entries (#539). | HTTP 400 (management API) |
+| `STS-I18N-0007` | A named locale policy save was refused: an application it names is already on another named locale profile, and an application is on one at most (#539). | HTTP 400 (management API) |
+| `STS-I18N-0008` | The language chooser was posted a value that is not a BCP 47 tag a catalog answers, or a malformed form; nothing was set (#539). | HTTP 400 |
+| `STS-I18N-0009` | The language chooser set its cookie but could not write the signed-in person's preferredLanguage; the person editor refused or could not be asked. Their entry still names the old language, which outranks the cookie (#539). | none — a warning in the log |
 
 ## STS-GNAP
 

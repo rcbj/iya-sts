@@ -225,6 +225,10 @@ import documentSettings = require('./document_settings');
 import listenerKeys = require('./listener_keys');
 import returnAddress = require('./return_address');
 import personAttributes = require('./person_attributes');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
+// no route and closes no cycle. Only the pages a PERSON passes through use it
+// — the hand-off pages and the sign-out pages; refusals stay English.
+import PageLocale = require('../common/page_locale');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an artifact is spent
 // through, so that two nodes against one store cannot both resolve it. A
 // LIBRARY that registers no route and requires persistence lazily, so it
@@ -1565,11 +1569,16 @@ class Saml2Sso {
   // One shell, and it is `wsfed.ts`'s: the CSS is inline because app.js sets
   // `default-src 'none'` with `style-src 'unsafe-inline'`, so a stylesheet as a
   // separate resource would need its own exception to buy nothing.
-  private page(title, inner) {
+  //
+  // `t` is the page's translator (#539), for a page a person passes through;
+  // without one the page is English and says so exactly as it always did.
+  private page(title, inner, t?) {
     const { log, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.page().");
     log.debug("Leaving Saml2Sso.page().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<title>' + xmlEscape(title) +
       '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
@@ -1607,13 +1616,13 @@ class Saml2Sso {
       'class="card">' + inner + '</div></body></html>\n';
   }
 
-  private sendPage(res, status, title, inner) {
+  private sendPage(res, status, title, inner, t?) {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.sendPage().");
     res.status(status)
        .type('text/html')
        .set('Cache-Control', 'no-store')
-       .send(this.page(title, inner));
+       .send(this.page(title, inner, t));
     log.debug("Leaving Saml2Sso.sendPage().");
   }
 
@@ -2327,11 +2336,18 @@ class Saml2Sso {
     return false;
   }
 
+  //
+  // IN THE PERSON'S LANGUAGE (#539), the words only: `note.t` is the page's
+  // translator, and a refusal's `note.title` and `note.sub` arrive in English
+  // and stay so (rule 1). No language chooser: the page is drawn mid-flow, by
+  // the POST or GET that carried the request, and no GET redraws it without
+  // issuing again — it is on screen for an instant.
   private postBindingPage(destination, field, message, relayState, note,
                           extra?) {
     const { log, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.postBindingPage(). destination=" +
               destination);
+    const t = note.t;
     const inner = '<h1>' + xmlEscape(note.title) + '</h1>' +
       '<p class="sub">' + note.sub + '</p>' +
       '<form method="post" action="' + xmlEscape(destination) + '" ' +
@@ -2344,30 +2360,28 @@ class Saml2Sso {
           return '<input type="hidden" name="' + pair[0] + '" value="' +
                  xmlEscape(pair[1]) + '">';
         }).join('') +
-        '<div class="row"><button type="submit">Continue to ' +
-      xmlEscape(note.who) +
+        '<div class="row"><button type="submit">' +
+        t.html('handoff.saml2.continueToSp') +
         '</button></div>' +
       '</form>' +
       '<div class="meta">' +
-      '<div>posting to: <code>' + xmlEscape(destination) + '</code></div>' +
-      '<div>field: <code>' + field + '</code>, ' + message.length + ' base64 ' +
-      'characters</div><div>RelayState: ' +
-      (relayState ? '<code>' + xmlEscape(relayState) +
-        '</code>, echoed byte for byte' : 'the request carried none, so none ' +
-                                          'is returned') + '</div><div>The ' +
-      'form submits itself from ' +
-      '<code>' + BASE_PATH + '/autopost.js</code>. ' +
-      'It is a separate resource because this service sets <code>script-src ' +
-      '\'none\'</code> on every response and this page relaxes it to ' +
-      '<code>\'self\'</code> — an inline script would not run, and the ' +
-      'button would be the only thing that worked. With scripting off, the ' +
-      'button IS the mechanism.</div></div><script ' +
+      '<div>' + t.html('handoff.common.postingTo',
+                       { destination: destination }) + '</div>' +
+      '<div>' + t.html('handoff.common.field',
+                       { field: field, length: message.length }) +
+      '</div><div>' +
+      (relayState
+        ? t.html('handoff.saml2.relayStateEchoed', { relayState: relayState })
+        : t.html('handoff.saml2.relayStateNone')) + '</div><div>' +
+      t.html('handoff.common.autopost',
+             { script: BASE_PATH + '/autopost.js' }) +
+      '</div></div><script ' +
       'src="' + BASE_PATH + '/autopost.js"></script>';
     log.debug("Leaving Saml2Sso.postBindingPage().");
     return inner;
   }
 
-  private sendPostBinding(res, title, inner) {
+  private sendPostBinding(res, title, inner, t) {
     const { app } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.sendPostBinding().");
@@ -2376,7 +2390,7 @@ class Saml2Sso {
     res.status(200)
        .type('text/html')
        .set('Cache-Control', 'no-store')
-       .send(this.page(title, inner));
+       .send(this.page(title, inner, t));
     log.debug("Leaving Saml2Sso.sendPostBinding().");
   }
 
@@ -2587,20 +2601,29 @@ class Saml2Sso {
       log.debug("Leaving Saml2Sso.deliver(). By redirect.");
       return;
     }
+    // THE PAGE'S LANGUAGE (#539): the service provider's (its entityID is
+    // the application a locale policy names) and the person's, where the
+    // caller knows them. A note with `words` is translated by them; one
+    // without — a refusal — keeps its English title and sub.
+    const t = PageLocale.forPage({ application: opts.spEntityId || '',
+                                   username: opts.username || '' });
+    const note = Object.assign({}, opts.note,
+                               opts.note.words ? opts.note.words(t) : {},
+                               { t: t });
     if (opts.binding === BINDING_SIMPLESIGN) {
       const form = this.simpleSignFields(opts.field, opts.xml,
                                          opts.relayState, opts.spEntityId);
-      this.sendPostBinding(res, opts.note.title,
+      this.sendPostBinding(res, note.title,
                            this.postBindingPage(opts.destination, opts.field,
                                                 form.message, opts.relayState,
-                                                opts.note, form.extra));
+                                                note, form.extra), t);
       log.debug("Leaving Saml2Sso.deliver(). By SimpleSign.");
       return;
     }
-    this.sendPostBinding(res, opts.note.title,
+    this.sendPostBinding(res, note.title,
                          this.postBindingPage(opts.destination, opts.field,
                                               this.encodePost(opts.xml),
-                                              opts.relayState, opts.note));
+                                              opts.relayState, note), t);
     log.debug("Leaving Saml2Sso.deliver(). By form POST.");
   }
 
@@ -3144,7 +3167,7 @@ class Saml2Sso {
              field: 'SAMLResponse', xml: refusal.xml,
              relayState: relayState, issuer: idpEntityId,
              spEntityId: spEntityId, inResponseTo: request.id,
-             note: { title: 'Refused — SAML 2.0', who: 'the service provider',
+             note: { title: 'Refused — SAML 2.0',
                      sub: 'A <samlp:Response> carrying InvalidNameIDPolicy. ' +
                           policyProblem }
       });
@@ -3184,7 +3207,6 @@ class Saml2Sso {
                spEntityId: spEntityId,
              inResponseTo: request.id,
              note: { title: 'Sign-in failed — SAML 2.0',
-                     who: 'the service provider',
                      sub: 'A <samlp:Response> carrying AuthnFailed. Unlike ' +
                           'WS-Federation\'s passive profile, this one has ' +
                           'somewhere to report a cancellation to.' }
@@ -3255,7 +3277,7 @@ class Saml2Sso {
                relayState: relayState, issuer: idpEntityId,
                  spEntityId: spEntityId,
                inResponseTo: request.id,
-               note: { title: 'Refused — SAML 2.0', who: 'the service provider',
+               note: { title: 'Refused — SAML 2.0',
                        sub: 'A <samlp:Response> carrying NoPassive. ' +
                             'IsPassive="true" forbids this identity provider ' +
                             'from taking control of the user interface, so ' +
@@ -3376,7 +3398,7 @@ class Saml2Sso {
                relayState: relayState, issuer: idpEntityId,
                  spEntityId: spEntityId,
                inResponseTo: request.id,
-               note: { title: 'Refused — SAML 2.0', who: 'the service provider',
+               note: { title: 'Refused — SAML 2.0',
                        sub: 'A <samlp:Response> carrying ' +
                             subStatus.split(':').pop() + '. ' + why }
         });
@@ -3510,7 +3532,6 @@ class Saml2Sso {
              xml: denied.xml, relayState: relayState, issuer: idpEntityId,
              spEntityId: spEntityId, inResponseTo: request.id,
              note: { title: 'Refused by policy — SAML 2.0',
-                     who: 'the service provider',
                      sub: 'A <samlp:Response> carrying RequestDenied. The ' +
                           'person signed in; the XACML issuance policy would ' +
                           'not let this service provider have an assertion ' +
@@ -3734,7 +3755,6 @@ class Saml2Sso {
         xml: denied.xml, relayState: relayState, issuer: idpEntityId,
         spEntityId: spEntityId, inResponseTo: '',
         note: { title: 'Refused by policy — SAML 2.0',
-                who: 'the service provider',
                 sub: 'A <samlp:Response> carrying RequestDenied.' }
       });
       log.debug("Leaving Saml2Sso.unsolicitedSignOn(). RequestDenied.");
@@ -4099,7 +4119,7 @@ class Saml2Sso {
              xml: refusal.xml, relayState: ctx.relayState,
                issuer: ctx.idpEntityId,
              spEntityId: ctx.spEntityId, inResponseTo: ctx.request.id,
-             note: { title: 'Refused — SAML 2.0', who: 'the service provider',
+             note: { title: 'Refused — SAML 2.0',
                      sub: 'A <samlp:Response> carrying Responder and no ' +
                           'assertion: encryption was required and could not ' +
                           'be performed.' }
@@ -4161,11 +4181,13 @@ class Saml2Sso {
            relayState: ctx.relayState, issuer: ctx.idpEntityId,
            spEntityId: ctx.spEntityId,
            inResponseTo: ctx.request.id,
-           note: { title: 'Signing in — SAML 2.0', who: 'the service provider',
-                   sub: 'saml-profiles-2.0-os section 4.1.4 — the response ' +
-                        'travels in the body of a form POST, so it is not ' +
-                        'length-limited and never appears in a URL, a log or ' +
-                        'a Referer header.' }
+           username: (session.user && session.user.username) || '',
+           // In the person's language (#539): deliver() hands `words` the
+           // page's translator.
+           note: { words: function (t) {
+             return { title: t.text('handoff.saml2.signingIn.title'),
+                      sub: t.html('handoff.saml2.signingIn.sub') };
+           } }
     });
     log.debug("Leaving Saml2Sso.issueSignInResponse(). " +
               ((session.user && session.user.username) || '?') +
@@ -4802,20 +4824,21 @@ class Saml2Sso {
       }
       log.debug("Leaving Saml2Sso.singleLogout(). A LogoutResponse was " +
                 "received and dropped.");
-      return this.sendPage(res, 200, 'Logout response received — SAML 2.0',
-        '<h1>A LogoutResponse arrived here</h1><div class="ok">It has been ' +
-        'logged and dropped.</div><p>A LogoutResponse is an answer to a ' +
-        'LogoutRequest, and this identity provider does not wait for one: ' +
-        'its logout page fans out and reports, rather than driving a chain ' +
-        'of redirects through every service provider in turn. Acting on this ' +
-        'would make this service a federation gateway, which it is ' +
-        'not.</p>' +
+      // In the person's language (#539); the signature's assessment is
+      // data and stays as it was written. No language chooser: drawing it
+      // again would mean the LogoutResponse arriving again.
+      const t = PageLocale.forPage({ application: answerFrom || '' });
+      return this.sendPage(res, 200,
+        t.text('handoff.saml2.logoutResponse.title'),
+        '<h1>' + t.html('handoff.saml2.logoutResponse.heading') +
+        '</h1><div class="ok">' + t.html('handoff.saml2.logoutResponse.ok') +
+        '</div><p>' + t.html('handoff.saml2.logoutResponse.why') + '</p>' +
         (checkedAnswer
-          ? '<p>Its signature: <strong>' +
-            xmlEscape(checkedAnswer.assessment.outcome) + '</strong> — ' +
-            xmlEscape(checkedAnswer.assessment.why) + '.</p>'
+          ? '<p>' + t.html('handoff.saml2.logoutResponse.signature',
+              { outcome: checkedAnswer.assessment.outcome,
+                why: checkedAnswer.assessment.why }) + '</p>'
           : '') +
-        '<pre>' + xmlEscape(answered) + '</pre>');
+        '<pre>' + xmlEscape(answered) + '</pre>', t);
     }
 
     if (!params.SAMLRequest) {
@@ -5045,28 +5068,24 @@ class Saml2Sso {
     if (!back.url) {
       log.debug("Leaving Saml2Sso.singleLogout(). Nowhere to send the " +
                 "LogoutResponse.");
-      return this.sendPage(res, 200, 'Signed out — SAML 2.0',
-        '<h1>Signed out</h1>' +
+      // In the person's language (#539). No language chooser: the GET that
+      // drew it carried a LogoutRequest, and drawing it again would be
+      // answering that request again — the session is already gone.
+      const t = PageLocale.forPage({
+        application: spEntityId,
+        username: (session && session.user && session.user.username) || '' });
+      return this.sendPage(res, 200, t.text('handoff.saml2.signedOut.title'),
+        '<h1>' + t.html('handoff.common.signedOut') + '</h1>' +
         '<div class="ok">' + (session
-          ? 'The session for ' +
-            xmlEscape((session.user && session.user.username) || '') +
-            ' has ended. It is the session the OAuth 2.0 / OIDC and ' +
-            'WS-Federation sides share, so they are signed out too.'
-          : 'There was no session to end. The cookie has been cleared ' +
-            'anyway.') +
-        '</div><p>There ' +
-        'is nowhere to send the <code>&lt;samlp:LogoutResponse&gt;</code>: ' +
-        '<code>' +
-        xmlEscape(spEntityId) + '</code> has no ' +
-        '<code>samlSingleLogoutService</code> on its application entry, ' +
-        '<code>saml2.defaultSingleLogoutService</code> is empty, no ' +
-        'metadata has been consumed for it, and this service has never seen ' +
-        'an assertion consumer service URL for it either. A LogoutRequest ' +
-        'carries no return address of its own — only SP metadata ' +
-        'does.</p><p>Consume its metadata, or set an address on <a ' +
-        'href="/admin/saml2">the SAML 2.0 console page</a>, through ' +
-        '<code>POST /admin-api/saml2/set-logout-service</code>, or with an ' +
-        '<code>ldapmodify</code>.</p>');
+          ? t.html('handoff.saml2.sessionEnded', { username:
+              (session.user && session.user.username) || '' })
+          : t.html('handoff.common.noSession')) +
+        '</div><p>' +
+        t.html('handoff.saml2.slo.nowhere',
+               { element: '<samlp:LogoutResponse>', sp: spEntityId }) +
+        '</p><p>' + t.html('handoff.saml2.slo.fixBefore') + ' <a ' +
+        'href="/admin/saml2">' + t.html('handoff.saml2.slo.fixLink') +
+        '</a>' + t.html('handoff.saml2.slo.fixAfter') + '</p>', t);
     }
 
     const response = this.buildLogoutResponse(idpEntityId, back.url, requestId,
@@ -5085,9 +5104,16 @@ class Saml2Sso {
            relayState: params.RelayState ||
                        '', issuer: idpEntityId, spEntityId: spEntityId,
            inResponseTo: requestId,
-           note: { title: 'Signed out — SAML 2.0', who: 'the service provider',
-                   sub: 'A <samlp:LogoutResponse>, going to ' +
-                          xmlEscape(back.from) + '.' }
+           username: (session && session.user && session.user.username) || '',
+           // In the person's language (#539). The element's name is a
+           // parameter, so it is escaped — written into the markup raw, as it
+           // was, a browser read it as an unknown tag and drew nothing.
+           note: { words: function (t) {
+             return { title: t.text('handoff.saml2.signedOut.title'),
+                      sub: t.html('handoff.saml2.signedOut.sub',
+                                  { element: '<samlp:LogoutResponse>',
+                                    from: back.from }) };
+           } }
     });
     log.debug("Leaving Saml2Sso.singleLogout(). A LogoutResponse went to " +
               spEntityId +
@@ -5200,43 +5226,43 @@ class Saml2Sso {
     log.debug("Entering Saml2Sso.identityProviderInitiatedLogout().");
     const session = endSession(req, res);
     const targets = this.logoutTargetsFor(session);
-    const names = targets.map(function (t) { return t.entityId; });
+    const names = targets.map(function (one) { return one.entityId; });
     const username = (session && session.user && session.user.username) || '';
+    // In the person's language (#539). No language chooser: the GET that
+    // drew it ENDED the session, and drawing it again would say there was
+    // none — a different page.
+    const t = PageLocale.forPage({ username: username });
     const rows = targets.map(function (target) {
       return '<tr><td><code>' + xmlEscape(target.entityId) + '</code></td>' +
         '<td>' + (target.url
-          ? '<a href="' + xmlEscape(target.url) + '">send a ' +
-            'LogoutRequest</a><br><span ' +
+          ? '<a href="' + xmlEscape(target.url) + '">' +
+            t.html('handoff.saml2.idpLogout.send') + '</a><br><span ' +
             'class="sub">' + xmlEscape(target.from) + '</span>'
-          : '<span class="fail">nowhere to send one</span>') + '</td></tr>';
+          : '<span class="fail">' + t.html('handoff.saml2.idpLogout.nowhere') +
+            '</span>') + '</td></tr>';
     }).join('');
-    const inner = '<h1>Signed out</h1>' +
-      '<p class="sub">SAML 2.0 Single Logout, identity-provider-initiated ' +
-      '(saml-profiles-2.0-os section 4.4)</p>' +
+    const inner = '<h1>' + t.html('handoff.common.signedOut') + '</h1>' +
+      '<p class="sub">' + t.html('handoff.saml2.idpLogout.sub') + '</p>' +
       '<div class="ok">' + (session
-        ? 'The session for ' + xmlEscape(username) + ' has ended. It is the ' +
-          'session the OAuth 2.0 / OIDC and WS-Federation sides share, so ' +
-          'they are signed out too.'
-        : 'There was no session to end. The cookie has been cleared anyway.') +
+        ? t.html('handoff.saml2.sessionEnded', { username: username })
+        : t.html('handoff.common.noSession')) +
       '</div>' +
       (names.length
-        ? '<h2>' + names.length + ' service provider' +
-          (names.length === 1 ? '' : 's') +
-          ' was signed in on it</h2><table><thead><tr><th>Service ' +
-          'provider</th><th>LogoutRequest</th></tr></thead><tbody>' + rows +
+        ? '<h2>' + t.html('handoff.saml2.idpLogout.count',
+                          { n: names.length }) +
+          '</h2><table><thead><tr><th>' +
+          t.html('handoff.saml2.idpLogout.spHeader') +
+          '</th><th>LogoutRequest</th></tr></thead><tbody>' + rows +
           '</tbody></table><p ' +
-          'class="sub">These are LINKS rather than an automatic fan-out, and ' +
-          'that is deliberate. WS-Federation\'s ' +
-          '<code>wsignoutcleanup1.0</code> is an idempotent GET that works ' +
-          'as a one-pixel image; a SAML LogoutRequest is a signed message ' +
-          'that a service provider ANSWERS, and firing those into hidden ' +
-          'frames would produce a page claiming a federation-wide logout it ' +
-          'cannot observe.</p>'
-        : '<p>This session had signed into no service provider through this ' +
-          'profile, so there is nothing to log out of.</p>') +
-      (params.RelayState ? '<div class="meta"><div>RelayState: <code>' +
-        xmlEscape(String(params.RelayState)) + '</code></div></div>' : '');
-    this.sendPage(res, 200, 'Signed out — SAML 2.0', inner);
+          'class="sub">' + t.html('handoff.saml2.idpLogout.linksNote') +
+          '</p>'
+        : '<p>' + t.html('handoff.saml2.idpLogout.none') + '</p>') +
+      (params.RelayState ? '<div class="meta"><div>' +
+        t.html('handoff.common.relayState',
+               { relayState: String(params.RelayState) }) +
+        '</div></div>' : '');
+    this.sendPage(res, 200, t.text('handoff.saml2.signedOut.title'), inner,
+                  t);
     log.debug("Leaving Saml2Sso.identityProviderInitiatedLogout(). " +
               names.length + " " +
         "named.");

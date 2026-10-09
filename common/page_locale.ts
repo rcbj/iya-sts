@@ -15,7 +15,9 @@
 //      party's request for the sign-in and consent screens, where a page is
 //      drawn for an authorization request that carried one;
 //   2. the person's own `preferredLanguage` (RFC 2798 section 2.7), where the
-//      page knows who it is drawn for;
+//      page knows who it is drawn for — unless it is still the value the
+//      locale policy POPULATED, which is the policy's choice and ranks after
+//      4 (rcbj on #539);
 //   3. the LANGUAGE CHOOSER's cookie, `sts_lang`, which every user-facing page
 //      offers and which works before anybody has signed in;
 //   4. the browser's `Accept-Language` (RFC 9110 section 12.5.4);
@@ -129,13 +131,21 @@ class PageLocale {
       });
     };
     add(i18n.uiLocales(asked.uiLocales || ''));
-    if (asked.username) {
-      add(i18n.acceptLanguage(
-        localePolicy.preferredLanguageOf(asked.username)));
+    // THE PERSON'S OWN LANGUAGE — but one the locale policy POPULATED when
+    // their entry was made, and nobody has changed since, is the policy's
+    // choice rather than theirs (rcbj on #539), so it ranks after the
+    // browser's, just ahead of the policy's own default.
+    const own = asked.username ? localePolicy.languageOf(asked.username)
+      : { value: '', populated: false };
+    if (own.value && !own.populated) {
+      add(i18n.acceptLanguage(own.value));
     }
     add([i18n.canonical(PageLocale.cookieOf(req, COOKIE))]);
     add(i18n.acceptLanguage(req && req.headers &&
                             req.headers['accept-language']));
+    if (own.value && own.populated) {
+      add(i18n.acceptLanguage(own.value));
+    }
     log.debug("Leaving PageLocale.preferences(). " + out.join(' '));
     return out;
   }

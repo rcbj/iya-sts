@@ -1,0 +1,21 @@
+{
+  "title": "Payagan ang access? — mock na authorization server",
+  "heading": "Payagan ang access?",
+  "signedInAs": "Naka-sign in bilang <code>{username}</code> sa <code>{base}</code>",
+  "asking": "Humihingi ang <strong>{client}</strong> ng access para sa iyo.",
+  "scope.permission": "{description} — inilalantad ng <code>{identifier}</code>, at ipapadala ang access token sa <code>{baseUri}</code>",
+  "scope.permissionNamed": "ang permiso na “{name}”",
+  "scope.ordinary": "isang karaniwang scope: walang ibinibigay na kahulugan dito ang serbisyong ito at ilalagay ito sa scope claim ng token nang walang pagbabago",
+  "detail.understood": "naiintindihan ng <code>{resource}</code>, at ipapadala ang access token sa <code>{audience}</code>",
+  "detail.described": "{description} — naiintindihan ng <code>{resource}</code>, at ipapadala ang access token sa <code>{audience}</code>",
+  "detailsNote": "May dalang <strong>{count, plural, one {# authorization detail} other {# authorization detail}}</strong> ang request na ito (RFC 9396). Tatanungin ka tungkol sa mga ito sa bawat pagkakataon: ang Payagan ay pagsang-ayon sa eksaktong nakalista, para sa iisang request na ito lang.",
+  "already.summary": "{count} scope na pinayagan mo na para sa application na ito",
+  "already.global": "pinayagan para sa lahat sa entry ng application na ito (<code>oauthGlobalConsent</code>) — hindi ka kailanman tinanong",
+  "already.byYou": "pinayagan mo",
+  "already.byYouAt": "pinayagan mo noong {at}",
+  "allow": "Payagan",
+  "deny": "Tanggihan",
+  "meta.allow": "Ang Payagan ay nagsusulat ng isang <code>{attribute}</code> na value bawat scope sa iyong entry sa ilalim ng <code>ou=users</code>, para hindi ka na tanungin ulit tungkol sa mga ito. Ang Tanggihan ay nagbabalik ng <code>access_denied</code> sa application at walang itinatala.",
+  "meta.nothingIssued": "Wala pang naibibigay. Ang screen na ito ay <code>oauth2.consentRequired</code>, na naka-on bilang default; sa /admin/consent mababasa at mababawi ang bawat sagot na ibinigay dito.",
+  "meta.consentingFor": "Pumapayag para sa: <code>{protocol}</code>"
+}
