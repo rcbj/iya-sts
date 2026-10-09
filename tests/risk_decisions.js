@@ -204,6 +204,17 @@ function childMain() {
          'transfer-hold-relayed,transfer-hold-kept,' +
          'transfer-serve-geofenced,transfer-serve-kept,' +
          'transfer-release-withheld,transfer-release-kept,' +
+         // The passkey rules (#536): registration, then sign-in, each
+         // stage's refusals in order and its allow.
+         'passkey-register-backup-eligible,passkey-register-pin-length,' +
+         'passkey-register-serial-missing,passkey-register-serial-not-held,' +
+         'passkey-register-allowed,' +
+         'passkey-use-backup-eligible,passkey-use-pin-length,' +
+         'passkey-use-attestation-unchecked,' +
+         'passkey-use-attestation-compromised,' +
+         'passkey-use-attestation-untrusted,passkey-use-attestation-aaguid,' +
+         'passkey-use-attestation-unlisted,passkey-use-attestation-level,' +
+         'passkey-use-attestation-fips,passkey-use-allowed,' +
          // The exchange rules (#186): the semantics, the refusals in order,
          // the allows, and the may_act question.
          'exchange-semantics-requested,exchange-semantics-actor-default,' +
@@ -228,15 +239,16 @@ function childMain() {
       { decideRisk: 'no', decideDevices: 'no', decideProtocols: 'no',
         decideAuthnMechanisms: 'no', decideMfaMechanisms: 'no',
         decideScopes: 'no', decideTransfers: 'no', decideExchanges: 'no',
-        decideGnapRights: 'no' },
+        decideGnapRights: 'no', decidePasskeys: 'no' },
       { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
          'A2. decideRisk: no (and decideDevices, decideProtocols, ' +
          'decideAuthnMechanisms (#457), decideMfaMechanisms (#475), ' +
          'decideScopes and ' +
-         'decideTransfers, decideExchanges and decideGnapRights: no, #164, ' +
-         '#304, #98, #186 and #432) builds the ' +
+         'decideTransfers, decideExchanges, decideGnapRights and ' +
+         'decidePasskeys: no, #164, #304, #98, #186, #432 and #536) builds ' +
+         'the ' +
          'roles-only document it was');
     const request = rolePep.buildRequest({
       application: CLIENT, kind: 'start-session',
@@ -670,9 +682,10 @@ function childMain() {
          // the fourteen scope and detail rules of #304, #305 and #186, the
          // six transfer rules of #98, the protocol-declaration rule, the
          // twenty exchange rules of #186, the fourteen per-right GNAP
-         // rules of #432, the sign-in mechanism rule of #457, and the
-         // second-factor rule of #475.
-         unprotectedPolicy.policy.rules.length === 63,
+         // rules of #432, the sign-in mechanism rule of #457, the
+         // second-factor rule of #475, and the fifteen passkey rules of
+         // #536.
+         unprotectedPolicy.policy.rules.length === 78,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 
