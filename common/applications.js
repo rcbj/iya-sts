@@ -17632,10 +17632,21 @@ function internalBaseUrl() {
 }
 
 // ---------------------------------------------------------------------------
-// THE EMBEDDED PROTOCOL DEBUGGER'S TWO ENTRIES (2026-09-13), seeded only in a
-// process that embeds it (`mode.embedsProtocolDebugger()`), in the default
+// THE EMBEDDED PROTOCOL DEBUGGER'S TWO ENTRIES (2026-09-13), in the default
 // realm only — its listener has no realm prefix, and the console roster that
 // decides who may use it is the default realm's.
+//
+// **SEEDED IN EVERY INSTALL SINCE #541 (2026-10-09)**, whether or not this
+// process embeds the debugger — rcbj: "Add a debugger application object by
+// default to new installs. Model it after the admin console application
+// object." Until then they were seeded only where
+// `mode.embedsProtocolDebugger()` answered yes, so a product install (where
+// `debugger.enabled` `auto` is off) that turned the debugger on later had no
+// client to sign in through until the next start re-seeded. The console's
+// entry has never depended on anything; neither do these now. They grant
+// nothing by existing: the permission is still narrowed to a console
+// administrator at issuance (`debugger/debugger_access.ts`), and with the
+// debugger off nothing listens at their redirect URI.
 //
 // **TWO ENTRIES AND NOT ONE, BECAUSE THEY ARE TWO PARTIES.** `sts-debugger-api`
 // is a RESOURCE SERVER: it exposes one delegated permission and signs nobody
@@ -17671,10 +17682,6 @@ function debuggerBaseUrl() {
 
 function debuggerApplications() {
   log.debug("Entering debuggerApplications().");
-  if (!mode.embedsProtocolDebugger()) {
-    log.debug("Leaving debuggerApplications(). The debugger is not embedded.");
-    return [];
-  }
   const base = debuggerBaseUrl();
   const issued = nowSec();
   const permission = 'urn:sts:debugger-api:debugger';
