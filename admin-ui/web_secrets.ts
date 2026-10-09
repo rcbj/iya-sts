@@ -56,13 +56,16 @@ class SecretsPage {
    * Draws the page's body from its view.
    *
    * @param view - the answer of the page's management API operation
+   * @param ctx - the render context (`WebKit.context()`), whose translator
+   *   the page is drawn with (#539); the default when absent
    * @returns the body as HTML
    */
-  static render(view: Json): string {
-    return SecretsPage.body(view);
+  static render(view: Json, ctx?: Json): string {
+    return SecretsPage.body(view, (ctx && ctx.t) || kit.context().t);
   }
 
-  static ago(iso: Json): string {
+  // Every helper below takes the page's translator `t` (#539) from body().
+  static ago(iso: Json, t: Json): string {
     const then = Date.parse(iso);
     if (!then) {
       return '';
@@ -72,28 +75,30 @@ class SecretsPage {
     const n = Math.abs(seconds);
     let said;
     if (n < 90) {
-      said = n + 's';
+      said = t.text('consoleSecrets.seconds', { n: n });
     } else if (n < 5400) {
-      said = Math.round(n / 60) + ' min';
+      said = t.text('consoleSecrets.minutes', { n: Math.round(n / 60) });
     } else if (n < 172800) {
-      said = Math.round(n / 3600) + ' hours';
+      said = t.text('consoleSecrets.hours', { n: Math.round(n / 3600) });
     } else {
-      said = Math.round(n / 86400) + ' days';
+      said = t.text('consoleSecrets.days', { n: Math.round(n / 86400) });
     }
-    return future ? ('in ' + said) : (said + ' ago');
+    return future ? t.text('consoleSecrets.inFuture', { said: said })
+                  : t.text('consoleSecrets.ago', { said: said });
   }
 
-  static cell(value: Json): string {
+  static cell(value: Json, t: Json): string {
     const self = this;
     if (value === null || value === undefined) {
       return '<span class="muted">&mdash;</span>';
     }
     if (typeof value === 'boolean') {
-      return value ? 'yes' : 'no';
+      return value ? t.html('consoleSecrets.yes') : t.html('consoleSecrets.no');
     }
     if (Array.isArray(value)) {
       if (!value.length) {
-        return '<span class="muted">none</span>';
+        return '<span class="muted">' + t.html('consoleSecrets.none') +
+               '</span>';
       }
       if (value.every(function (one) {
         return one === null || typeof one !== 'object';
@@ -103,15 +108,15 @@ class SecretsPage {
         }).join(' ');
       }
       return '<div class="wide">' + value.map(function (one) {
-        return self.objectTable(one);
+        return self.objectTable(one, t);
       }).join('') + '</div>';
     }
     if (typeof value === 'object') {
-      return self.objectTable(value);
+      return self.objectTable(value, t);
     }
     const text = String(value);
     if (ISO_LIKE.test(text)) {
-      const relative = self.ago(text);
+      const relative = self.ago(text, t);
       return kit.esc(text.replace('T', ' ').replace(/\.\d+/, '')) +
              (relative ? ' <span class="muted">(' + kit.esc(relative) +
                          ')</span>' : '');
@@ -129,7 +134,7 @@ class SecretsPage {
     // reading.
     const limit = text.indexOf(' ') >= 0 ? 160 : 80;
     if (text.length > limit) {
-      return kit.clipped(text, limit);
+      return kit.clipped(text, limit, t);
     }
     return kit.esc(text);
   }
@@ -138,19 +143,20 @@ class SecretsPage {
   // this page draw a `replication` block or a `rotationRules` block without
   // naming a single member of either — which is the same reason
   // `/admin/database` asks for every column rather than the ones it knows.
-  static objectTable(value: Json): string {
+  static objectTable(value: Json, t: Json): string {
     const self = this;
     if (value === null || typeof value !== 'object') {
-      return self.cell(value);
+      return self.cell(value, t);
     }
     const keys = Object.keys(value);
     if (!keys.length) {
-      return '<span class="muted">empty</span>';
+      return '<span class="muted">' + t.html('consoleSecrets.empty') +
+             '</span>';
     }
     return '<table class="grid"><tbody>' +
       keys.map(function (key) {
         return '<tr><th>' + self.label(key) + '</th><td>' +
-               self.cell(value[key]) + '</td></tr>';
+               self.cell(value[key], t) + '</td></tr>';
       }).join('') +
       '</tbody></table>';
   }
@@ -177,67 +183,55 @@ class SecretsPage {
   // the ordinary state of a development-mode service that has never needed a
   // key.
   // ---------------------------------------------------------------------------
-  static whyNot(probe: Json): string {
+  // The explanation is this page's own prose and is translated (#539); the
+  // probe's error itself, drawn above it, stays as the store wrote it.
+  static whyNot(probe: Json, t: Json): string {
     if (probe.status === 403) {
-      return 'The store refused it. For the paths this service is NOT ' +
-             'supposed ' +
-             'to reach that is the read-only policy <strong>working</strong> ' +
-             'and not a fault — the identity it holds is bound to two read ' +
-             'paths and nothing else.';
+      return t.html('consoleSecrets.why403');
     }
     if (probe.status === 404) {
-      return 'No such path in the store. For a KV version 2 secret that ' +
-             'usually means the engine is mounted somewhere else, or the ' +
-             'secret has not been written yet.';
+      return t.html('consoleSecrets.why404');
     }
     if (probe.status === 400) {
-      return 'The store rejected the request itself. A KV version 1 engine ' +
-             'answers this to a version 2 path, which is the usual cause.';
+      return t.html('consoleSecrets.why400');
     }
     if (/ENOENT/.test(probe.error || '')) {
-      return 'There is no such file. On a DEVELOPMENT-mode service that is ' +
-             'ordinary: nothing is persisted, so the key-encryption key is ' +
-             'never read and the file it names need not exist. In product ' +
-             'mode this is a service that would not start.';
+      return t.html('consoleSecrets.whyEnoent');
     }
     if (/EACCES/.test(probe.error || '')) {
-      return 'The file is there and this process may not read it. Check the ' +
-             'ownership of the mount rather than the path.';
+      return t.html('consoleSecrets.whyEacces');
     }
     if (/did not answer within/.test(probe.error || '')) {
-      return 'The store did not answer inside ' +
-             '<code>keys.storeProbeTimeoutMs</code>. That bounds one probe ' +
-             'and not the page, so the others below were still asked.';
+      return t.html('consoleSecrets.whyTimeout');
     }
     if (/Cannot find module|needs the /.test(probe.error || '')) {
-      return 'The SDK for this provider is not installed. It is deliberately ' +
-             'not a dependency of this service — it is a mock first, and ' +
-             'five cloud SDKs nobody uses would be carried by every install ' +
-             '— so the message above names the package to install.';
+      return t.html('consoleSecrets.whySdk');
     }
     return '';
   }
 
-  static probeRows(probes: Json): string {
+  static probeRows(probes: Json, t: Json): string {
     const self = this;
     return probes.map(function (probe) {
       return '<h4>' + kit.esc(probe.id) +
-        ' <span class="muted">' + (probe.ok ? '' : 'unavailable, ') +
-        probe.tookMs + 'ms</span></h4>' +
+        ' <span class="muted">' +
+        (probe.ok ? t.html('consoleSecrets.tookMs', { ms: probe.tookMs })
+                  : t.html('consoleSecrets.unavailableTookMs',
+                           { ms: probe.tookMs })) + '</span></h4>' +
         '<p class="muted">' + kit.esc(probe.what) + '</p>' +
         (probe.ok
-          ? self.objectTable(probe.data)
+          ? self.objectTable(probe.data, t)
           : kit.warn('<p><code>' +
                        kit.esc(String(probe.status || '') +
                                  (probe.status ? ' ' : '')) +
                        kit.esc(probe.error) + '</code></p>' +
-                       (self.whyNot(probe)
-                         ? '<p>' + self.whyNot(probe) + '</p>' : ''),
-                       'It did not answer'));
+                       (self.whyNot(probe, t)
+                         ? '<p>' + self.whyNot(probe, t) + '</p>' : ''),
+                       t.html('consoleSecrets.didNotAnswer')));
     }).join('');
   }
 
-  static body(json: Json): string {
+  static body(json: Json, t: Json): string {
     const self = this;
 
     const configured = json.secrets.filter(function (one) {
@@ -248,58 +242,37 @@ class SecretsPage {
     });
     const tiles = '<div class="tiles">' +
       kit.tile(String(configured.length) + '/' + String(json.secrets.length),
-                 'secrets from a store') +
-      kit.tile(String(json.stores.length), 'stores') +
-      kit.tile(String(read.length), 'read this start') +
-      kit.tile(json.productMode ? 'product' : 'development', 'mode') +
-      kit.tile(json.persistingKeys ? 'durable' : 'ephemeral',
-                 'signing keys') +
-      kit.tile(String(json.failed.length), 'probes unavailable') +
+                 t.text('consoleSecrets.tileFromStore')) +
+      kit.tile(String(json.stores.length),
+               t.text('consoleSecrets.tileStores')) +
+      kit.tile(String(read.length), t.text('consoleSecrets.tileRead')) +
+      kit.tile(json.productMode ? t.text('consoleSecrets.modeProduct')
+                                : t.text('consoleSecrets.modeDevelopment'),
+               t.text('consoleSecrets.tileMode')) +
+      kit.tile(json.persistingKeys ? t.text('consoleSecrets.keysDurable')
+                                   : t.text('consoleSecrets.keysEphemeral'),
+                 t.text('consoleSecrets.tileSigningKeys')) +
+      kit.tile(String(json.failed.length),
+               t.text('consoleSecrets.tileUnavailable')) +
       '</div>';
 
+    // The two links are markup a message cannot carry, so the second
+    // paragraph is cut at each of them.
     const what = kit.note(
-      '<p>This page is <strong>where this service’s two primordial ' +
-      'secrets come from, whether it actually got them, and what the store ' +
-      'at the other end is doing</strong>. It reads them and never writes ' +
-      'one: the key-encryption key is generated by nobody here, and neither ' +
-      'is the database password.</p><p><strong>Three pages touch this ' +
-      'subject and they answer three questions.</strong> <a ' +
-      'href="/admin/config">Configuration</a>, under Server configuration, ' +
-      'holds the <code>keys.*</code> settings and says what this service is ' +
-      '<em>set up</em> to do. <a href="/admin/encryption">Encryption</a> ' +
-      'says what is <em>sealed</em> and with what. This one says what is at ' +
-      'the other end of that: a file’s mode and mtime, or a store’s seal ' +
-      'state, its version, its leader, the certificate this service proves ' +
-      'itself with and when that expires, what its policy actually grants, ' +
-      'and every version of the secret the store has kept. <strong>All of ' +
-      'that can be broken while every settings row is ' +
-      'right.</strong></p><p><strong>No secret value appears here and there ' +
-      'is no control on this page.</strong> No reveal, no rotate, no ' +
-      'test-read. A reveal is the end of the key. A rotate would destroy ' +
-      'everything sealed under it, because this service has no re-sealing ' +
-      'pass — which is exactly why the key is written once. And a test-read ' +
-      'would be this console causing the one thing the whole design avoids: ' +
-      'the key in this process’s memory because somebody opened a page. ' +
-      'Every probe below reads METADATA — a stat, a <code>sys</code> ' +
-      'endpoint, a version history, a <code>DescribeSecret</code> — and not ' +
-      'one of them fetches a stored value.</p>',
-      'What this page is, and the three controls it deliberately has not got');
+      '<p>' + t.html('consoleSecrets.whatIs') + '</p><p>' +
+      t.html('consoleSecrets.whatThree') + ' <a href="/admin/config">' +
+      t.html('consoleSecrets.configuration') + '</a>' +
+      t.html('consoleSecrets.whatConfig') + ' <a href="/admin/encryption">' +
+      t.html('consoleSecrets.encryption') + '</a> ' +
+      t.html('consoleSecrets.whatEncryption') + '</p><p>' +
+      t.html('consoleSecrets.whatNoControl') + '</p>',
+      t.html('consoleSecrets.whatTitle'));
 
     const refusals = kit.warn(
-      '<p><strong>Half the probes on this page are supposed to fail, and a ' +
-      '403 is usually the good news.</strong> The identity this service ' +
-      'holds in a secret store is bound to two read paths and nothing else — ' +
-      'it cannot write its own key, cannot rotate it out from under the data ' +
-      'sealed with it, and cannot plant one of its own — so a refusal ' +
-      'against anything else is the policy working. A page that hid those ' +
-      'refusals would be hiding the evidence for the claim.</p><p>Each probe ' +
-      'is run, timed and caught <strong>separately</strong>, bounded by ' +
-      '<code>keys.storeProbeTimeoutMs</code> at ' +
-      kit.esc(String(json.timeoutMs)) + 'ms, and they run in parallel: a ' +
-      'store that is entirely unreachable costs that bound once rather than ' +
-      'once per question asked of it.</p>',
-      'Why a failed probe here is not the same as a failed probe anywhere ' +
-      'else');
+      '<p>' + t.html('consoleSecrets.halfFail') + '</p><p>' +
+      t.html('consoleSecrets.eachProbe', { ms: String(json.timeoutMs) }) +
+      '</p>',
+      t.html('consoleSecrets.halfFailTitle'));
 
     // **THE STATE THAT MAKES EVERY ROW BELOW MEANINGLESS, SAID FIRST.** A
     // development-mode service on a memory store never reads the
@@ -309,25 +282,16 @@ class SecretsPage {
     // away not knowing.
     const unused = (!json.persistingKeys && !json.productMode)
       ? kit.warn(
-          '<p>This service is in <strong>development</strong> mode and is ' +
-          'not persisting signing keys, so <strong>it has never asked for ' +
-          'the key-encryption key</strong>. Everything below about that ' +
-          'secret describes what <em>would</em> happen, and the ordinary ' +
-          '<em>unavailable</em> rows on this page are this service correctly ' +
-          'not needing something.</p><p>Signing keys are generated on every ' +
-          'start and held in memory here, which is what makes this service ' +
-          'disposable. <code>global.mode=product</code>, or ' +
-          '<code>keys.source=persisted</code>, is what makes the key real — ' +
-          'and in product mode a key that cannot be read is a service that ' +
-          'does not start.</p>',
-          'Nothing here is load-bearing on this service, yet')
+          '<p>' + t.html('consoleSecrets.unusedDev') + '</p><p>' +
+          t.html('consoleSecrets.unusedSigning') + '</p>',
+          t.html('consoleSecrets.unusedTitle'))
       : '';
 
     return tiles + what + refusals + unused +
            json.secrets.map(function (row) {
-             return self.secretBlock(row, json);
+             return self.secretBlock(row, json, t);
            }).join('') +
-           self.storesBlock(json);
+           self.storesBlock(json, t);
   }
 
   // ---------------------------------------------------------------------------
@@ -335,53 +299,55 @@ class SecretsPage {
   // process has actually read it, and the probes that are about the SECRET
   // rather than about the store holding it.
   // ---------------------------------------------------------------------------
-  static secretBlock(row: Json, json: Json): string {
+  static secretBlock(row: Json, json: Json, t: Json): string {
     const self = this;
+    // The notes (heading, what, without, rotating) are the view's prose,
+    // drawn in English as they come.
     const notes = json.notes[row.secret] || { heading: row.secret, what: '',
                                               without: '', rotating: '' };
     if (!row.configured) {
       return '<h3>' + kit.esc(notes.heading) + '</h3>' +
         kit.note(
           '<p>' + notes.what + '</p>' +
-          '<p><strong>No provider is configured</strong>, so this service ' +
-          'does not read it from a store. <code>' +
-          kit.esc(row.settings.provider) + '</code> selects one.</p>' +
+          '<p>' + t.html('consoleSecrets.noProvider',
+                         { setting: row.settings.provider }) + '</p>' +
           '<p>' + notes.without + '</p>',
-          'Not read from a secret store');
+          t.html('consoleSecrets.noProviderTitle'));
     }
 
     const last = row.lastRead;
+    // A failed read is a failure, and its box stays English (#539). The
+    // muted span is markup a message cannot carry, so the sentence of a
+    // good read is cut around it.
     const read = last
       ? (last.ok
-          ? kit.note('<p>Read <strong>successfully</strong> at ' +
-                       kit.esc(String(last.at).replace('T', ' ')
-                         .replace(/\.\d+Z$/, 'Z')) +
-                       ' <span class="muted">(' + kit.esc(self.ago(last.at)) +
-                       ')</span>, in ' + kit.esc(String(last.tookMs)) +
-                       'ms, from <code>' + kit.esc(last.provider) +
-                       '</code>.</p><p class="muted">This process holds the ' +
-                       'value in memory and nothing wrote it to disk. It is ' +
-                       'not on this page, in the JSON behind it, or in any ' +
-                       'log line this service has ever emitted.</p>',
-                       'This process has read it')
+          ? kit.note('<p>' +
+                       t.html('consoleSecrets.readOkAt',
+                              { at: String(last.at).replace('T', ' ')
+                                  .replace(/\.\d+Z$/, 'Z') }) +
+                       ' <span class="muted">(' +
+                       kit.esc(self.ago(last.at, t)) + ')</span>' +
+                       t.html('consoleSecrets.readOkFrom',
+                              { ms: String(last.tookMs),
+                                provider: last.provider }) +
+                       '</p><p class="muted">' +
+                       t.html('consoleSecrets.readOkMemory') + '</p>',
+                       t.html('consoleSecrets.readOkTitle'))
           : kit.warn('<p>The last read <strong>failed</strong> at ' +
                        kit.esc(String(last.at).replace('T', ' ')
                          .replace(/\.\d+Z$/, 'Z')) + ': <code>' +
                        kit.esc(last.error) + '</code></p>',
                        'The last read of this secret failed'))
-      : kit.note('<p><strong>This process has not read it.</strong> ' +
-                   'That is ' +
-                   'not by itself a fault: a secret is read when something ' +
-                   'needs it, and in development mode on a memory store ' +
-                   'nothing does. It does mean nothing below has been ' +
-                   'proved by use.</p>',
-                   'Not read in this process');
+      : kit.note('<p>' + t.html('consoleSecrets.notRead') + '</p>',
+                   t.html('consoleSecrets.notReadTitle'));
 
     const where = '<table class="grid"><tbody>' +
-      '<tr><th>Provider</th><td><code>' + kit.esc(row.provider) +
+      '<tr><th>' + t.html('consoleSecrets.provider') + '</th><td><code>' +
+        kit.esc(row.provider) +
         '</code> &mdash; ' + kit.esc(row.label) + '</td>' +
-        '<td class="why">Set by <code>' + kit.esc(row.settings.provider) +
-        '</code>.</td></tr>' +
+        '<td class="why">' + t.html('consoleSecrets.setBy',
+                                    { setting: row.settings.provider }) +
+        '</td></tr>' +
       // **`field` AND `shared` ARE SKIPPED HERE AND NOT BECAUSE THEY ARE
       // UNINTERESTING**: both have a row of their own below with the sentence
       // that makes them mean something, and a provider's `describe()` carries
@@ -392,39 +358,39 @@ class SecretsPage {
                row.where[key] !== null && row.where[key] !== undefined;
       }).map(function (key) {
         return '<tr><th>' + self.label(key) + '</th><td>' +
-               self.cell(row.where[key]) + '</td><td class="why"></td></tr>';
+               self.cell(row.where[key], t) +
+               '</td><td class="why"></td></tr>';
       }).join('') +
       (row.field
-        ? '<tr><th>Field</th><td><code>' + kit.esc(row.field) +
-          '</code></td>' +
-          '<td class="why">Which member is taken when what is stored is a ' +
-          'JSON object. A stored value that is not JSON is taken whole. Set ' +
-          'by <code>' + kit.esc(row.settings.field) + '</code>.</td></tr>'
+        ? '<tr><th>' + t.html('consoleSecrets.field') + '</th><td><code>' +
+          kit.esc(row.field) + '</code></td>' +
+          '<td class="why">' + t.html('consoleSecrets.fieldWhy',
+                                      { setting: row.settings.field }) +
+          '</td></tr>'
         : '') +
-      '<tr><th>Location of its own</th><td>' + (row.shared ? 'no' : 'yes') +
+      '<tr><th>' + t.html('consoleSecrets.ownLocation') + '</th><td>' +
+        (row.shared ? t.html('consoleSecrets.no')
+                    : t.html('consoleSecrets.yes')) +
         '</td><td class="why">' +
         (row.shared
-          ? 'This secret names no location, so it is read from ' +
-            '<strong>wherever the key-encryption key is</strong> and the ' +
-            'field above is what tells the two apart inside one value. That ' +
-            'is the arrangement a deployment with one mounted file or one ' +
-            'cloud secret is already in. If what is there turns out NOT to ' +
-            'be a JSON object, reading this secret is REFUSED rather than ' +
-            'handing that key to a database.'
-          : 'It names its own location in <code>' +
-            kit.esc(row.settings.location) + '</code>.') +
+          ? t.html('consoleSecrets.sharedLocation')
+          : t.html('consoleSecrets.namesLocation',
+                   { setting: row.settings.location })) +
         '</td></tr>' +
       '</tbody></table>';
 
     return '<h3>' + kit.esc(notes.heading) + '</h3>' +
       kit.note('<p>' + notes.what + '</p>' +
-                 '<p><strong>Without it:</strong> ' + notes.without + '</p>' +
-                 '<p><strong>Rotating it:</strong> ' + notes.rotating + '</p>',
-                 'What it is, and what happens without it') +
+                 '<p>' + t.html('consoleSecrets.withoutIt') + ' ' +
+                 notes.without + '</p>' +
+                 '<p>' + t.html('consoleSecrets.rotatingIt') + ' ' +
+                 notes.rotating + '</p>',
+                 t.html('consoleSecrets.whatItIsTitle')) +
       where + read +
       (row.probes.length
-        ? '<h4 class="muted">What the store says about this secret</h4>' +
-          self.probeRows(row.probes)
+        ? '<h4 class="muted">' + t.html('consoleSecrets.storeSays') +
+          '</h4>' +
+          self.probeRows(row.probes, t)
         : '');
   }
 
@@ -434,33 +400,24 @@ class SecretsPage {
   // and because a reader looking at *is the store up* is not asking about
   // either secret.
   // ---------------------------------------------------------------------------
-  static storesBlock(json: Json): string {
+  static storesBlock(json: Json, t: Json): string {
     const self = this;
     if (!json.stores.length) {
-      return '<h3>The stores</h3>' +
-        kit.note('Neither secret is read from a store, so there is none to ' +
-                   'report on.');
+      return '<h3>' + t.html('consoleSecrets.stores') + '</h3>' +
+        kit.note(t.html('consoleSecrets.noStores'));
     }
-    return '<h3>The stores</h3>' +
-      kit.note('<p>One block per store and not per secret: two secrets ' +
-                 'kept ' +
-                 'in one place share everything below, and asking the same ' +
-                 'store twice whether it is sealed would be this page ' +
-                 'inventing a disagreement it then has to draw.</p>') +
+    return '<h3>' + t.html('consoleSecrets.stores') + '</h3>' +
+      kit.note('<p>' + t.html('consoleSecrets.perStore') + '</p>') +
       json.stores.map(function (store) {
         return '<h4>' + kit.esc(store.label) + ' <span class="muted">' +
           kit.esc(store.where) + '</span></h4>' +
-          '<p class="muted">Holds: ' +
+          '<p class="muted">' + t.html('consoleSecrets.holds') + ' ' +
           store.secrets.map(function (one) {
             return '<code>' + kit.esc(one) + '</code>';
           }).join(', ') + '</p>' +
           (store.probes.length
-            ? self.probeRows(store.probes)
-            : kit.note('This provider publishes nothing about the store ' +
-                         'itself beyond what is already on the secret above ' +
-                         '&mdash; a cloud secret manager is an endpoint and ' +
-                         'an access policy, and everything it will say is ' +
-                         'said about the secret.'));
+            ? self.probeRows(store.probes, t)
+            : kit.note(t.html('consoleSecrets.nothingPublished')));
       }).join('');
   }
 }

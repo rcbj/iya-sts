@@ -39,6 +39,7 @@ class ErrorCodesPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    const t = ctx.t;
     const paging = json.paging;
     const filterParams = { subsystem: (json.filter.subsystem || ''),
                            q: (json.filter.q || ''),
@@ -49,7 +50,8 @@ class ErrorCodesPage {
     const subsystemOptions = '<option value=""' +
       ((json.filter.subsystem || '') ? '' : ' ' +
         'selected') +
-      '>every subsystem</option>' +
+      '>' + t.html('consoleErrorCodes.filter.everySubsystem') +
+      '</option>' +
       json.subsystems.map(function (sub) {
         return '<option value="' + kit.esc(sub.id) + '"' +
                (sub.id === (json.filter.subsystem || '') ? ' selected' : '') +
@@ -75,26 +77,28 @@ class ErrorCodesPage {
     const codeRows = json.codes.map(function (row) {
       return '<tr id="' + kit.esc(row.code) + '">' +
         '<td><code>' + kit.esc(row.code) + '</code>' +
-          (row.retired ? '<br><span class="state-none">retired</span>' : '') +
+          (row.retired ? '<br><span class="state-none">' +
+            t.html('consoleErrorCodes.codes.retired') + '</span>' : '') +
         '</td><td>' + kit.esc(row.summary) + '</td><td>' +
         (row.spec ? kit.esc(row.spec) : '<span ' +
               'class="state-none">—</span>') + '</td><td ' +
         'class="num">' + (row.seen
           ? '<a href="/admin/audit?code=' + encodeURIComponent(row.code) +
             '">' +
-            kit.esc(row.seen) + '</a><br><span class="state-none">last ' +
-            kit.esc(kit.whenText(row.lastSeenAt)) + '</span>'
+            kit.esc(row.seen) + '</a><br><span class="state-none">' +
+            t.html('consoleErrorCodes.codes.last',
+                   { when: kit.whenText(row.lastSeenAt) }) + '</span>'
           : '<span class="state-none">0</span>') + '</td>' +
         '</tr>';
     }).join('');
 
     const unregistered = json.unregisteredSeen.length
-      ? '<h3>Codes on audit rows that the table does not hold</h3>' +
-        kit.note('These were recorded as given rather than dropped, so ' +
-        'that the row saying the table is incomplete survives. Each one is ' +
-        'a failure site whose code was never added to ' +
-        '<code>common/error_codes.js</code>.') +
-        '<table><tr><th>Code</th><th class="num">Rows</th></tr>' +
+      ? '<h3>' + t.html('consoleErrorCodes.unregistered.heading') +
+        '</h3>' +
+        kit.note(t.html('consoleErrorCodes.unregistered.note')) +
+        '<table><tr><th>' + t.html('consoleErrorCodes.th.code') +
+        '</th><th class="num">' + t.html('consoleErrorCodes.th.rows') +
+        '</th></tr>' +
         json.unregisteredSeen.map(function (u) {
           return '<tr><td><a href="/admin/audit?code=' +
                  encodeURIComponent(u.code) +
@@ -108,77 +112,75 @@ class ErrorCodesPage {
                       !!json.filter.seen;
 
     const inner = '<div class="tiles">' +
-        kit.tile(json.registered, 'codes') +
-        kit.tile(json.subsystemCount, 'subsystems') +
-        kit.tile(json.distinctCodesSeen, 'codes on held audit rows') +
-        kit.tile(json.auditRowsWithCode, 'audit rows with a code') +
-        kit.tile(json.unregisteredSeen.length, 'unregistered codes seen') +
+        kit.tile(json.registered, t.text('consoleErrorCodes.tile.codes')) +
+        kit.tile(json.subsystemCount,
+                 t.text('consoleErrorCodes.tile.subsystems')) +
+        kit.tile(json.distinctCodesSeen,
+                 t.text('consoleErrorCodes.tile.distinctSeen')) +
+        kit.tile(json.auditRowsWithCode,
+                 t.text('consoleErrorCodes.tile.rowsWithCode')) +
+        kit.tile(json.unregisteredSeen.length,
+                 t.text('consoleErrorCodes.tile.unregistered')) +
       '</div>' +
 
-      kit.note('Every way this service can fail or refuse has a code of ' +
-      'the form <code>STS-&lt;SUBSYSTEM&gt;-&lt;NNNN&gt;</code>. It is ' +
-      'recorded on the audit row for the event and at the front of the ' +
-      'service\'s log line, and <strong>it is never sent to a ' +
-      'client</strong> — not in a body, a header or a redirect. Each ' +
-      'protocol here already defines how it reports an error, and a client ' +
-      'under test must see exactly that: the <em>Client sees</em> column ' +
-      'says what it is sent, and the code changes nothing about it.') +
+      kit.note(t.html('consoleErrorCodes.note.form')) +
 
-      kit.note('<strong>Seen</strong> counts the rows <a ' +
-      'href="/admin/audit">the audit log</a> holds in this realm right now ' +
-      '(' + kit.esc(json.auditRowsHeld) + '), ' +
-      'so it falls as that log\'s cap discards the oldest, and it is zero ' +
-      'for a failure recorded only as a log line — one that stops the ' +
-      'service starting, and everything the remote PEP container records, ' +
-      'since that container has no audit log of its own. A zero here is ' +
-      'not "never happens".') +
+      // Split around its link (#539): a catalog message cannot carry an
+      // anchor.
+      kit.note(t.html('consoleErrorCodes.note.seenBefore') + '<a ' +
+      'href="/admin/audit">' + t.html('consoleErrorCodes.note.seenLink') +
+      '</a>' + t.html('consoleErrorCodes.note.seenAfter',
+                      { held: json.auditRowsHeld })) +
 
-      kit.note('<code>STS-HTTP-0002</code> and <code>STS-HTTP-0003</code> ' +
-      'are what the HTTP call log records for a 4xx or 5xx response no ' +
-      'handler gave a more specific code. <strong>A row carrying either ' +
-      'names a failure site that is missing its own code.</strong> ' +
-      '<code>STS-HTTP-0001</code> is an unrouted path, which is an ' +
-      'ordinary outcome.') +
+      kit.note(t.html('consoleErrorCodes.note.http')) +
 
-      '<h2>Subsystems</h2>' +
-      '<table><tr><th>Prefix</th><th>Subsystem</th><th ' +
-      'class="num">Codes</th><th class="num">Seen</th><th>Raised ' +
-      'from</th></tr>' + subsystemRows +
-      '</table><h2>Codes</h2><form ' +
+      '<h2>' + t.html('consoleErrorCodes.subsystems.heading') + '</h2>' +
+      '<table><tr><th>' + t.html('consoleErrorCodes.th.prefix') +
+      '</th><th>' + t.html('consoleErrorCodes.th.subsystem') + '</th><th ' +
+      'class="num">' + t.html('consoleErrorCodes.th.codes') +
+      '</th><th class="num">' + t.html('consoleErrorCodes.th.seen') +
+      '</th><th>' + t.html('consoleErrorCodes.th.raisedFrom') +
+      '</th></tr>' + subsystemRows +
+      '</table><h2>' + t.html('consoleErrorCodes.codes.heading') +
+      '</h2><form ' +
       'method="get" action="/admin/error-codes"><div ' +
-      'class="formrow"><label for="subsystem">Subsystem</label><select ' +
+      'class="formrow"><label for="subsystem">' +
+      t.html('consoleErrorCodes.th.subsystem') + '</label><select ' +
       'id="subsystem" name="subsystem">' +
           subsystemOptions + '</select>' +
-        '<label for="q">Text</label>' +
+        '<label for="q">' + t.html('consoleErrorCodes.filter.text') +
+        '</label>' +
         '<input type="text" id="q" name="q" size="30" value="' +
       kit.esc((json.filter.q || '')) +
-          '" placeholder="a code, a word, invalid_grant">' +
+          '" placeholder="' +
+        kit.esc(t.text('consoleErrorCodes.filter.placeholder')) + '">' +
         '<label for="seen"><input type="checkbox" id="seen" name="seen" ' +
         'value="1"' +
-          (!!json.filter.seen ? ' checked' : '') + '> only codes on held ' +
-        'rows</label><label for="per">Per page</label><select id="per" ' +
-        'name="per">' +
+          (!!json.filter.seen ? ' checked' : '') + '> ' +
+        t.html('consoleErrorCodes.filter.onlyHeld') +
+        '</label><label for="per">' +
+        t.html('consoleErrorCodes.filter.perPage') + '</label><select ' +
+        'id="per" name="per">' +
           kit.perPageOptions(paging.perPage) + '</select>' +
-        '<button class="secondary">Filter</button>' +
-        (filtering ? ' <a href="/admin/error-codes">clear</a>' : '') +
+        '<button class="secondary">' +
+        t.html('consoleErrorCodes.filter.filter') + '</button>' +
+        (filtering ? ' <a href="/admin/error-codes">' +
+         t.html('consoleErrorCodes.filter.clear') + '</a>' : '') +
       '</div></form>' +
       nav.head +
-      '<table><tr><th>Code</th><th>What failed</th><th>Client sees</th>' +
-      '<th class="num">Seen</th></tr>' +
-      (codeRows || '<tr><td colspan="4">Nothing matches.</td></tr>') +
+      '<table><tr><th>' + t.html('consoleErrorCodes.th.code') +
+      '</th><th>' + t.html('consoleErrorCodes.th.whatFailed') +
+      '</th><th>' + t.html('consoleErrorCodes.th.clientSees') + '</th>' +
+      '<th class="num">' + t.html('consoleErrorCodes.th.seen') +
+      '</th></tr>' +
+      (codeRows || '<tr><td colspan="4">' +
+       t.html('consoleErrorCodes.codes.none') + '</td></tr>') +
       '</table>' +
       nav.foot +
       unregistered +
 
-      kit.note('The table is <code>common/error_codes.js</code> and this ' +
-      'page has no control: a code is never renumbered or reused, because ' +
-      'it ends up in alert rules and saved searches, and a condition that ' +
-      'stops existing keeps its row marked retired. The same table is ' +
-      'published as <code>docs/error-codes.md</code>, generated from the ' +
-      'source, and this list is at <code>GET /admin-api/error-codes</code> ' +
-      'with the same parameters. Paging is <code>?page=</code> and ' +
-      '<code>?per=</code> (at most ' +
-      kit.MAX_ROWS + ' rows a page).');
+      kit.note(t.html('consoleErrorCodes.note.table',
+                      { max: kit.MAX_ROWS }));
 
     return inner;
   }

@@ -1,0 +1,17 @@
+{
+  "scopeFor": " para sa {resource}",
+  "details": "{n} detalye ng awtorisasyon",
+  "claims": "mga claim {claims}",
+  "revoke": "Bawiin",
+  "none": "Walang client na may hawak na grant sa realm na ito. Nalilikha ang grant ng isang authorization request na may <code>grant_management_action=create</code>.",
+  "note": "<strong>Grant Management for OAuth 2.0.</strong> Pinangangalanan ng isang confidential client kung ano ang ipinahintulot ng isang tao na gawin nito — paglikha ng grant, pagsasama ng higit pa rito o pagpapalit nito sa pamamagitan ng karaniwang authorization request — at binabasa o binabawi ito sa <code>{path}</code> gamit ang mga scope na <code>grant_management_query</code> at <code>grant_management_revoke</code>. Umiiral ang grant kapag na-claim na ang mga token nito, at mag-e-expire kasabay ng huli sa mga ito. Ang pagbawi rito ay katumbas ng DELETE ng client: tinatanggihan sa bawat node ang bawat refresh token sa ilalim nito, at binabawi ang bawat token na itinala ng realm na ito sa ilalim nito. Ang PINAYAGAN ng tao ay nasa ",
+  "consentLink": "Pahintulot",
+  "noteEnd": ".",
+  "colClient": "Client",
+  "colSubject": "Subject",
+  "colScopes": "Mga scope",
+  "colGeneration": "Henerasyon",
+  "colCreated": "Nilikha / in-update",
+  "colExpires": "Mag-e-expire",
+  "colTokens": "Mga token na hawak"
+}

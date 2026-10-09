@@ -1,0 +1,17 @@
+{
+  "reauth.title": "您的会话已结束。",
+  "reauth.text": "请重新登录以继续。此页面及您输入的内容会保持原样，您按下的操作将在您回来后发送。",
+  "reauth.again": "重新登录",
+  "reauth.here": "在此页面上登录",
+  "reauth.hereInstead": "改为在此页面上登录",
+  "reauth.noPopup": "此浏览器无法从另一个窗口传回登录结果，请在此页面上登录。",
+  "reauth.finish": "请在打开的窗口中完成登录。",
+  "otherPerson.waiting": "登录的是另一个人，因此此页面上等待发送的内容没有发送。",
+  "otherPerson.typed": "登录的是另一个人，因此之前在此页面上输入的内容没有恢复。",
+  "restored": "您已重新登录。您在此页面上输入的内容已恢复，且没有发送任何内容：请再次按下按钮以发送。",
+  "restored.unplaced": "{n, plural, other {有 {n} 个值无法恢复，因为页面上已没有放置它们的位置。}}",
+  "signedInAgain": "已重新登录",
+  "signedInAgain.text": "控制台将从您离开的地方继续。可以关闭此窗口。",
+  "openConsole": "打开控制台",
+  "copied": "已复制"
+}

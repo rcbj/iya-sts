@@ -1,0 +1,17 @@
+{
+  "reauth.title": "Din session har upphört.",
+  "reauth.text": "Logga in igen för att fortsätta. Den här sidan och det du skrev ligger kvar som de är, och det du tryckte på skickas när du är tillbaka.",
+  "reauth.again": "Logga in igen",
+  "reauth.here": "Logga in på den här sidan",
+  "reauth.hereInstead": "Logga in på den här sidan i stället",
+  "reauth.noPopup": "Den här webbläsaren kan inte lämna tillbaka en inloggning från ett annat fönster, så logga in på den här sidan.",
+  "reauth.finish": "Slutför inloggningen i fönstret som öppnades.",
+  "otherPerson.waiting": "En annan person loggade in, så det som väntade på den här sidan skickades inte.",
+  "otherPerson.typed": "En annan person loggade in, så det som tidigare skrevs på den här sidan lades inte tillbaka.",
+  "restored": "Du är inloggad igen. Det du hade skrivit på den här sidan lades tillbaka, och inget skickades: tryck på knappen igen för att skicka det.",
+  "restored.unplaced": " {n, plural, one {{n} värde kunde inte läggas tillbaka, eftersom sidan inte längre har någon plats för det.} other {{n} värden kunde inte läggas tillbaka, eftersom sidan inte längre har någon plats för dem.}}",
+  "signedInAgain": "Inloggad igen",
+  "signedInAgain.text": "Konsolen fortsätter där du var. Det här fönstret kan stängas.",
+  "openConsole": "Öppna konsolen",
+  "copied": "Kopierat"
+}

@@ -61,7 +61,7 @@ class SecretDestinationsPage {
     return SecretDestinationsPage.body(view, ctx || kit.context());
   }
 
-  // One text box.
+  // One text box. Its label and hint arrive translated (#539).
   static text(name: string, label: string, value: unknown,
               hint?: string): string {
     return '<label>' + esc(label) + ' <input type="text" name="' + name +
@@ -69,7 +69,8 @@ class SecretDestinationsPage {
       (hint ? ' placeholder="' + esc(hint) + '"' : '') + '></label>';
   }
 
-  // One select over a closed set.
+  // One select over a closed set. The options are the view's own values,
+  // submitted as they are, so only the label is translated.
   static select(name: string, label: string, options: string[],
                 value: string): string {
     return '<label>' + esc(label) + ' <select name="' + name + '">' +
@@ -80,51 +81,67 @@ class SecretDestinationsPage {
   }
 
   // The fields of a destination's form, filled with `row` (empty for a new
-  // one). The credential box is never filled.
-  static fields(json: Json, row: Json): string {
+  // one). The credential box is never filled. The example placeholders are
+  // values (a region, a URL), not words, and are drawn as they were.
+  static fields(t: Json, json: Json, row: Json): string {
     const at = (row && row.location) || {};
     const providers: string[] = (json.providers || []).slice();
     if (row && row.provider && providers.indexOf(row.provider) < 0) {
       providers.push(row.provider);
     }
     return '<div class="formrow">' +
-      this.select('provider', 'Provider', providers,
-                  (row && row.provider) || providers[0] || '') +
-      this.select('payload', 'Payload', json.payloads || [],
-                  (row && row.payload) || 'password') +
-      this.text('region', 'Region (aws)', at.region, 'us-east-1') +
-      this.text('project', 'Project (gcp)', at.project, 'my-project') +
+      this.select('provider',
+                  t.text('consoleSecretDestinations.fields.provider'),
+                  providers, (row && row.provider) || providers[0] || '') +
+      this.select('payload',
+                  t.text('consoleSecretDestinations.fields.payload'),
+                  json.payloads || [], (row && row.payload) || 'password') +
+      this.text('region', t.text('consoleSecretDestinations.fields.region'),
+                at.region, 'us-east-1') +
+      this.text('project',
+                t.text('consoleSecretDestinations.fields.project'),
+                at.project, 'my-project') +
       '</div><div class="formrow">' +
-      this.text('endpoint', 'Vault URL (azure, vault)', at.endpoint,
-                'https://vault.example.com:8200') +
-      this.text('mount', 'KV mount (vault)', at.mount, 'secret') +
-      this.text('field', 'Field (vault, password payload)', at.field,
-                'value') +
+      this.text('endpoint',
+                t.text('consoleSecretDestinations.fields.endpoint'),
+                at.endpoint, 'https://vault.example.com:8200') +
+      this.text('mount', t.text('consoleSecretDestinations.fields.mount'),
+                at.mount, 'secret') +
+      this.text('field', t.text('consoleSecretDestinations.fields.field'),
+                at.field, 'value') +
       (json.fileAllowed || (row && row.provider === 'file')
-        ? this.text('directory', 'Directory (file, development only)',
+        ? this.text('directory',
+                    t.text('consoleSecretDestinations.fields.directory'),
                     at.directory, '/run/sts-test-secrets')
         : '') +
-      '</div><div class="formrow"><label>CA certificates (PEM, vault) ' +
+      '</div><div class="formrow"><label>' +
+      t.html('consoleSecretDestinations.fields.caCertificates') + ' ' +
       '<textarea name="caCertificates" rows="3" cols="64" ' +
       'placeholder="-----BEGIN CERTIFICATE-----">' +
       esc(at.caCertificates || '') + '</textarea></label></div>' +
-      '<div class="formrow"><label>Write credential <input ' +
+      '<div class="formrow"><label>' +
+      t.html('consoleSecretDestinations.fields.credential') + ' <input ' +
       'type="password" name="credential" autocomplete="off" value="" ' +
       'placeholder="' + esc(row && row.credentialSet
-                              ? 'set — leave empty to keep it'
-                              : 'required, except for a file') +
+        ? t.text('consoleSecretDestinations.fields.credentialKept')
+        : t.text('consoleSecretDestinations.fields.credentialRequired')) +
       '"></label></div>';
   }
 
   // One destination's row: what it is, where it writes, whether it can.
-  static row(json: Json, row: Json, ctx: Json): string {
+  static row(t: Json, json: Json, row: Json, ctx: Json): string {
     const at = row.location || {};
-    const where = row.provider === 'aws' ? 'region ' + (at.region || '?')
-      : row.provider === 'gcp' ? (at.project ? 'project ' + at.project
-                                             : 'full resource names')
+    const where = row.provider === 'aws'
+      ? t.text('consoleSecretDestinations.row.region',
+               { region: at.region || '?' })
+      : row.provider === 'gcp'
+        ? (at.project ? t.text('consoleSecretDestinations.row.project',
+                               { project: at.project })
+                      : t.text('consoleSecretDestinations.row.fullNames'))
       : row.provider === 'azure' ? at.endpoint
-      : row.provider === 'vault' ? at.endpoint + ', mount ' +
-                                   (at.mount || 'secret')
+      : row.provider === 'vault'
+        ? t.text('consoleSecretDestinations.row.vaultAt',
+                 { endpoint: at.endpoint, mount: at.mount || 'secret' })
       : row.provider === 'file' ? at.directory : '';
     const form = function (action: string, extra: string, label: string,
                            danger?: boolean): string {
@@ -141,32 +158,47 @@ class SecretDestinationsPage {
       '</a></span></td><td><code>' + esc(row.provider || '?') + '</code>' +
       '<br><span class="sub">' + esc(where || '') + '</span></td><td>' +
       esc(row.payload) + (row.provider === 'vault' && row.payload ===
-        'password' ? '<br><span class="sub">field ' +
-        esc(at.field || 'value') + '</span>' : '') + '</td><td>' +
+        'password' ? '<br><span class="sub">' +
+        t.html('consoleSecretDestinations.row.field',
+               { field: at.field || 'value' }) + '</span>' : '') +
+      '</td><td>' +
       (row.credentialSet
-        ? 'set <span class="sub">(never shown)</span>'
-        : (row.provider === 'file' ? '<span class="state-none">none ' +
-                                     'needed</span>'
-                                   : '<span class="state-revoked">not ' +
-                                     'set</span>')) +
+        ? t.html('consoleSecretDestinations.row.credentialSet') +
+          ' <span class="sub">' +
+          t.html('consoleSecretDestinations.row.neverShown') + '</span>'
+        : (row.provider === 'file'
+          ? '<span class="state-none">' +
+            t.html('consoleSecretDestinations.row.noneNeeded') + '</span>'
+          : '<span class="state-revoked">' +
+            t.html('consoleSecretDestinations.row.notSet') + '</span>')) +
       (shape && shape !== 'none' ? '<br><span class="sub">' + esc(shape) +
                                    '</span>' : '') + '</td><td>' +
-      (row.usable ? 'usable'
-                  : '<span class="state-revoked">not usable</span>' +
+      (row.usable ? t.html('consoleSecretDestinations.row.usable')
+                  : '<span class="state-revoked">' +
+                    t.html('consoleSecretDestinations.row.notUsable') +
+                    '</span>' +
                     row.problems.map(function (p: string) {
                       return '<div class="sub">' + esc(p) + '</div>';
                     }).join('')) + '</td><td class="act">' +
       (ctx.write
         ? form('test-push', '<input type="text" name="secretName" ' +
-               'size="16" placeholder="a test secret" required>',
-               'Test push') +
-          '<details><summary>Edit</summary><form method="post" action="' +
+               'size="16" placeholder="' +
+               esc(t.text('consoleSecretDestinations.row.testSecret')) +
+               '" required>',
+               t.text('consoleSecretDestinations.row.testPush')) +
+          '<details><summary>' +
+          t.html('consoleSecretDestinations.row.edit') +
+          '</summary><form method="post" action="' +
           PAGE + '"><input type="hidden" name="action" ' +
           'value="update-destination"><input type="hidden" name="id" ' +
           'value="' + esc(row.id) + '"><div class="formrow">' +
-          this.text('name', 'Name', row.name) + '</div>' +
-          this.fields(json, row) + '<button type="submit">Save</button>' +
-          '</form></details>' + form('remove-destination', '', 'Remove', true)
+          this.text('name', t.text('consoleSecretDestinations.row.name'),
+                    row.name) + '</div>' +
+          this.fields(t, json, row) + '<button type="submit">' +
+          t.html('consoleSecretDestinations.row.save') + '</button>' +
+          '</form></details>' +
+          form('remove-destination', '',
+               t.text('consoleSecretDestinations.row.remove'), true)
         : '') + '</td></tr>';
   }
 
@@ -179,39 +211,42 @@ class SecretDestinationsPage {
    */
   static body(json: Json, ctx?: Json): string {
     const c = ctx || kit.context();
+    // The page's words are its translator's (#539 phase 6).
+    const t = c.t;
     const rows = (json.destinations || []).map((row: Json) =>
-      this.row(json, row, c)).join('');
-    return kit.note('Where this realm PUSHES a service account\'s rotated ' +
-        'password: a secrets manager the new password is written to as a ' +
-        'new version <strong>before</strong> its hash is committed here, so ' +
-        'a failed push changes nothing. Each destination is an application ' +
-        'entry declared for the <em>Secret push destination</em> family, ' +
-        'holding its own write credential — sealed, and never shown again ' +
-        'once set. <strong>A push never creates a secret</strong>: the ' +
-        'secret must already exist, so the credential needs write on the ' +
-        'named secrets and nothing more. A service account names a ' +
-        'destination and a secret on its own page.') +
-      (json.fileAllowed ? kit.warn('<strong>Development mode.</strong> A ' +
-        '<code>file</code> destination is offered here and refused in ' +
-        'product mode: a password written to this container\'s disk is not ' +
-        'in a secrets manager.') : '') +
-      '<h3 id="destinations">Destinations</h3><table><thead><tr>' +
-      '<th>Destination</th><th>Provider</th><th>Payload</th>' +
-      '<th>Write credential</th><th>State</th><th></th></tr></thead>' +
+      this.row(t, json, row, c)).join('');
+    return kit.note(t.html('consoleSecretDestinations.body.lead')) +
+      (json.fileAllowed
+        ? kit.warn(t.html('consoleSecretDestinations.body.development'))
+        : '') +
+      '<h3 id="destinations">' +
+      t.html('consoleSecretDestinations.body.destinations') +
+      '</h3><table><thead><tr>' +
+      '<th>' + t.html('consoleSecretDestinations.body.thDestination') +
+      '</th><th>' + t.html('consoleSecretDestinations.body.thProvider') +
+      '</th><th>' + t.html('consoleSecretDestinations.body.thPayload') +
+      '</th><th>' + t.html('consoleSecretDestinations.body.thCredential') +
+      '</th><th>' + t.html('consoleSecretDestinations.body.thState') +
+      '</th><th></th></tr></thead>' +
       '<tbody>' +
-      (rows || '<tr><td colspan="6"><span class="state-none">No secret ' +
-               'destination is registered in this realm.</span></td></tr>') +
+      (rows || '<tr><td colspan="6"><span class="state-none">' +
+               t.html('consoleSecretDestinations.body.none') +
+               '</span></td></tr>') +
       '</tbody></table>' +
-      '<p class="sub">A <strong>test push</strong> writes a canary — a ' +
-      'random password nobody uses — to a secret kept for testing; the ' +
-      'secret a service account rotates into is refused.</p>' +
+      '<p class="sub">' + t.html('consoleSecretDestinations.body.testPush') +
+      '</p>' +
       (c.write
-        ? '<h3 id="add">Add a destination</h3><form method="post" ' +
+        ? '<h3 id="add">' + t.html('consoleSecretDestinations.body.add') +
+          '</h3><form method="post" ' +
           'action="' + PAGE + '"><input type="hidden" name="action" ' +
           'value="add-destination"><div class="formrow">' +
-          this.text('identifier', 'Identifier', '', 'vault-prod') +
-          this.text('name', 'Name', '', 'Production Vault') + '</div>' +
-          this.fields(json, null) + '<button type="submit">Add</button>' +
+          this.text('identifier',
+                    t.text('consoleSecretDestinations.body.identifier'), '',
+                    'vault-prod') +
+          this.text('name', t.text('consoleSecretDestinations.row.name'), '',
+                    'Production Vault') + '</div>' +
+          this.fields(t, json, null) + '<button type="submit">' +
+          t.html('consoleSecretDestinations.body.addButton') + '</button>' +
           '</form>'
         : '') +
       '<p class="links"><code>GET /admin-api/secret-destinations</code></p>';

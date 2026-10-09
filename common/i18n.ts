@@ -97,6 +97,9 @@ import path = require('path');
 import helpers = require('./helpers');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+// The formatter and the translator (#539 phase 5): a `web_` module, which
+// requires nothing, so this stays a leaf.
+import webMessages = require('../admin-ui/web_messages');
 
 const { log } = helpers;
 
@@ -153,17 +156,6 @@ interface Negotiated {
   matched: boolean;
 }
 
-// One node of a parsed message.
-type MessageNode = string | {
-  arg: string;
-  kind: 'simple' | 'plural' | 'select';
-  options?: Record<string, MessageNode[]>;
-} | { hash: true };
-
-/**
- * The parameters of a message: values by name.
- */
-type MessageParams = Record<string, unknown>;
 
 /**
  * The dependencies the instance is built from.
@@ -185,124 +177,12 @@ const INLINE_ELEMENTS = ['strong', 'em', 'code', 'br'];
  */
 const SOURCE = 'en';
 
-/**
- * One translator: a negotiated locale and the catalogs it reads, with the
- * three ways of turning a key into words.
- */
-class Translator {
-  /**
-   * Builds a translator over a negotiation.
-   *
-   * @param owner - the catalogs
-   * @param negotiated - the locale, its catalog chain and its direction
-   */
-  constructor(private readonly owner: I18n,
-              readonly negotiated: Negotiated) {
-    log.debug("Entering Translator.constructor().");
-    log.debug("Leaving Translator.constructor(). " + negotiated.locale);
-  }
-
-  /**
-   * The locale `Intl` formats for: the preference that won, such as `es-PA`.
-   */
-  get locale(): string {
-    return this.negotiated.locale;
-  }
-
-  /**
-   * The value of a page's `lang` attribute: the locale, which says more than
-   * the catalog read for it.
-   */
-  get lang(): string {
-    return this.negotiated.locale;
-  }
-
-  /**
-   * The value of a page's `dir` attribute.
-   */
-  get dir(): 'ltr' | 'rtl' {
-    return this.negotiated.direction;
-  }
-
-  // Called for every string on every page, so no Entering/Leaving pair —
-  // the hot-path exception the code style allows, stated as it requires.
-  /**
-   * Formats a message as HTML: its own inline markup kept, every parameter
-   * escaped.
-   *
-   * @param key - `namespace.key`
-   * @param params - the parameters
-   * @returns the message as HTML
-   */
-  html(key: string, params?: MessageParams): string {
-    return this.owner.format(this.negotiated, key, params || {}, true);
-  }
-
-  // The hot-path exception, as html() above.
-  /**
-   * Formats a message as plain text, for an attribute value, a title or a
-   * header: its markup stripped and nothing escaped (the caller escapes).
-   *
-   * @param key - `namespace.key`
-   * @param params - the parameters
-   * @returns the message as text
-   */
-  text(key: string, params?: MessageParams): string {
-    return this.owner.format(this.negotiated, key, params || {}, false);
-  }
-
-  /**
-   * Formats a date and time for this locale.
-   *
-   * @param when - the instant
-   * @param options - `Intl.DateTimeFormat` options; date and time, medium,
-   * when omitted
-   * @returns the text
-   */
-  date(when: Date | number | string,
-       options?: Intl.DateTimeFormatOptions): string {
-    log.debug("Entering Translator.date().");
-    const value = when instanceof Date ? when : new Date(when);
-    let out: string;
-    try {
-      // UTC, AND SAID, unless asked otherwise: this service's pages give
-      // times in UTC, and a time in the server's own zone with no zone named
-      // is a time nobody can read correctly.
-      const fallback: Intl.DateTimeFormatOptions =
-        { dateStyle: 'medium', timeStyle: 'long' };
-      const asked: Intl.DateTimeFormatOptions =
-        Object.assign({ timeZone: 'UTC' }, options || fallback);
-      out = new Intl.DateTimeFormat(this.locale, asked).format(value);
-    } catch (e) {
-      log.debug("Caught in Translator.date(): " +
-                ((e && e.message) || e));
-      out = isNaN(value.getTime()) ? String(when) : value.toISOString();
-    }
-    log.debug("Leaving Translator.date().");
-    return out;
-  }
-
-  /**
-   * Formats a number for this locale.
-   *
-   * @param value - the number
-   * @param options - `Intl.NumberFormat` options
-   * @returns the text
-   */
-  number(value: number, options?: Intl.NumberFormatOptions): string {
-    log.debug("Entering Translator.number().");
-    let out: string;
-    try {
-      out = new Intl.NumberFormat(this.locale, options).format(value);
-    } catch (e) {
-      log.debug("Caught in Translator.number(): " +
-                ((e && e.message) || e));
-      out = String(value);
-    }
-    log.debug("Leaving Translator.number().");
-    return out;
-  }
-}
+// THE TRANSLATOR AND THE FORMATTER ARE `admin-ui/web_messages.ts`'S (#539
+// phase 5): one implementation, which the admin console runs in a browser
+// and this module builds for every page it draws. This module keeps the
+// catalogs, the negotiation and the problem log.
+const WebTranslator = webMessages.WebTranslator;
+type Translator = InstanceType<typeof WebTranslator>;
 
 /**
  * The catalogs, the negotiation of a list of language tags against them, and
@@ -322,8 +202,6 @@ class I18n {
   // namespace → catalog tag → key → message
   private messages: Record<string, Record<string, Record<string, string>>> =
     {};
-  // `namespace.key` + NUL + catalog → parsed message
-  private parsed = new Map<string, MessageNode[]>();
   private catalogParts: Record<string, TagParts> = {};
   private loadProblems: string[] = [];
 
@@ -482,6 +360,38 @@ class I18n {
     const found = (this.messages[ns] || {})[tag] || {};
     log.debug("Leaving I18n.messagesOf(). " + Object.keys(found).length);
     return Object.assign({}, found);
+  }
+
+  /**
+   * Returns the catalogs of a negotiation as plain data, for a translator
+   * built somewhere else — the admin console, in a browser (#539 phase 5):
+   * every catalog of the chain, each with the messages of the namespaces
+   * whose names start with `prefix`, keyed `namespace.key`.
+   *
+   * @param negotiated - the negotiation
+   * @param prefix - the namespaces' prefix (`console`)
+   * @returns `{ negotiated, catalogs: { <tag>: { 'ns.key': message } } }`
+   */
+  catalogData(negotiated: Negotiated, prefix: string) {
+    log.debug("Entering I18n.catalogData(). " + prefix);
+    this.load();
+    const catalogs: Record<string, Record<string, string>> = {};
+    const spaces = Object.keys(this.messages).filter(function (ns) {
+      return ns.indexOf(prefix) === 0;
+    });
+    negotiated.chain.forEach((tag) => {
+      const flat: Record<string, string> = {};
+      spaces.forEach((ns) => {
+        const own = (this.messages[ns] || {})[tag] || {};
+        Object.keys(own).forEach(function (key) {
+          flat[ns + '.' + key] = own[key];
+        });
+      });
+      catalogs[tag] = flat;
+    });
+    log.debug("Leaving I18n.catalogData(). " + spaces.length +
+              " namespace(s) in " + negotiated.chain.length + " catalog(s).");
+    return { negotiated: negotiated, catalogs: catalogs };
   }
 
   /**
@@ -711,7 +621,21 @@ class I18n {
    */
   translator(preferences: string[], lastResort?: string): Translator {
     log.debug("Entering I18n.translator().");
-    const out = new Translator(this, this.negotiate(preferences, lastResort));
+    const { errorCodes } = this.deps;
+    const out = new WebTranslator({
+      negotiated: this.negotiate(preferences, lastResort),
+      find: (tag: string, key: string) => this.find(tag, key),
+      // A key no catalog has is drawn as its key, and a malformed message as
+      // written; tests/i18n_catalogs.js is what keeps either from shipping.
+      onProblem: function (kind, key, detail) {
+        log.warn(errorCodes.tag('STS-I18N-0002') + 'i18n: ' +
+                 (kind === 'missing'
+                   ? 'no catalog has the message ' + key + ', so its key ' +
+                     'is drawn.'
+                   : 'the message ' + key + ' is malformed (' + detail +
+                     '), so it is drawn as written.'));
+      }
+    });
     log.debug("Leaving I18n.translator().");
     return out;
   }
@@ -733,135 +657,17 @@ class I18n {
   // -------------------------------------------------------------------------
   // MESSAGES.
   // -------------------------------------------------------------------------
-  // The message for a key along a chain. Called for every string, so no
-  // Entering/Leaving pair (the hot-path exception, stated).
-  private lookup(chain: string[], key: string):
-      { message: string; catalog: string } | null {
-    const dot = key.indexOf('.');
-    const ns = dot > 0 ? key.slice(0, dot) : '';
-    const rest = dot > 0 ? key.slice(dot + 1) : key;
-    const space = this.messages[ns] || {};
-    for (const tag of chain) {
-      const found = (space[tag] || {})[rest];
-      if (typeof found === 'string') {
-        return { message: found, catalog: tag };
-      }
-    }
-    return null;
-  }
-
   /**
    * Parses a message into nodes, or throws on one that is malformed.
+   * `admin-ui/web_messages.ts`'s parser, here for the catalog test.
    *
    * @param message - the message
    * @returns the nodes
    */
-  static parse(message: string): MessageNode[] {
+  static parse(message: string): unknown[] {
     log.debug("Entering I18n.parse().");
-    const at = { i: 0 };
-    const nodes = I18n.parseNodes(message, at, false, false);
-    if (at.i < message.length) {
-      throw new Error('an unmatched } at ' + at.i);
-    }
-    log.debug("Leaving I18n.parse(). " + nodes.length + " node(s).");
-    return nodes;
-  }
-
-  // The recursive half of parse(): text up to a `}` (when nested) or the end.
-  private static parseNodes(message: string, at: { i: number },
-                            nested: boolean,
-                            inPlural: boolean): MessageNode[] {
-    log.debug("Entering I18n.parseNodes().");
-    const nodes: MessageNode[] = [];
-    let text = '';
-    while (at.i < message.length) {
-      const c = message[at.i];
-      if (c === '}') {
-        if (!nested) {
-          throw new Error('an unmatched } at ' + at.i);
-        }
-        break;
-      }
-      if (c === '#' && inPlural) {
-        if (text) {
-          nodes.push(text);
-          text = '';
-        }
-        nodes.push({ hash: true });
-        at.i += 1;
-        continue;
-      }
-      if (c === '{') {
-        if (text) {
-          nodes.push(text);
-          text = '';
-        }
-        nodes.push(I18n.parseArgument(message, at));
-        continue;
-      }
-      text += c;
-      at.i += 1;
-    }
-    if (text) {
-      nodes.push(text);
-    }
-    log.debug("Leaving I18n.parseNodes().");
-    return nodes;
-  }
-
-  // `{name}`, `{name, plural, ...}` or `{name, select, ...}`, from its `{`.
-  private static parseArgument(message: string,
-                               at: { i: number }): MessageNode {
-    log.debug("Entering I18n.parseArgument().");
-    const close = message.indexOf('}', at.i);
-    const comma = message.indexOf(',', at.i);
-    if (close < 0) {
-      throw new Error('an unclosed { at ' + at.i);
-    }
-    if (comma < 0 || comma > close) {
-      const arg = message.slice(at.i + 1, close).trim();
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(arg)) {
-        throw new Error('"' + arg + '" is not a parameter name');
-      }
-      at.i = close + 1;
-      log.debug("Leaving I18n.parseArgument(). Simple.");
-      return { arg: arg, kind: 'simple' };
-    }
-    const arg = message.slice(at.i + 1, comma).trim();
-    const afterKind = message.indexOf(',', comma + 1);
-    if (afterKind < 0) {
-      throw new Error('"' + arg + '" has a kind but no options');
-    }
-    const kind = message.slice(comma + 1, afterKind).trim();
-    if (kind !== 'plural' && kind !== 'select') {
-      throw new Error('"' + kind + '" is not plural or select');
-    }
-    at.i = afterKind + 1;
-    const options: Record<string, MessageNode[]> = {};
-    for (;;) {
-      while (at.i < message.length && /\s/.test(message[at.i])) {
-        at.i += 1;
-      }
-      if (message[at.i] === '}') {
-        at.i += 1;
-        break;
-      }
-      const m = /^(=?[A-Za-z0-9_-]+)\s*\{/.exec(message.slice(at.i));
-      if (!m) {
-        throw new Error('an option of "' + arg + '" is malformed at ' + at.i);
-      }
-      at.i += m[0].length;
-      options[m[1]] = I18n.parseNodes(message, at, true, kind === 'plural');
-      if (message[at.i] !== '}') {
-        throw new Error('option ' + m[1] + ' of "' + arg + '" is unclosed');
-      }
-      at.i += 1;
-    }
-    if (!options.other) {
-      throw new Error('"' + arg + '" has no `other` option');
-    }
-    log.debug("Leaving I18n.parseArgument(). " + kind + ".");
-    return { arg: arg, kind: kind, options: options };
+    log.debug("Leaving I18n.parse().");
+    return webMessages.WebMessages.parse(message);
   }
 
   /**
@@ -873,142 +679,19 @@ class I18n {
    */
   static shapeOf(message: string): { params: string[]; elements: string[] } {
     log.debug("Entering I18n.shapeOf().");
-    const params: string[] = [];
-    const walk = function (nodes: MessageNode[]): void {
-      nodes.forEach(function (node) {
-        if (typeof node === 'string' || 'hash' in node) {
-          return;
-        }
-        if (params.indexOf(node.arg) < 0) {
-          params.push(node.arg);
-        }
-        Object.keys(node.options || {}).forEach(function (k) {
-          walk(node.options[k]);
-        });
-      });
-    };
-    walk(I18n.parse(message));
-    const elements: string[] = [];
-    const re = /<\/?([A-Za-z][A-Za-z0-9]*)\b[^>]*>/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(message)) !== null) {
-      elements.push(m[0].replace(/\s.*>$/, '>').toLowerCase());
-    }
     log.debug("Leaving I18n.shapeOf().");
-    return { params: params.sort(), elements: elements.sort() };
+    return webMessages.WebMessages.shapeOf(message);
   }
 
-  // A node list as text. Called for every string, so no Entering/Leaving
-  // pair (the hot-path exception, stated).
-  private render(nodes: MessageNode[], params: MessageParams,
-                 locale: string, asHtml: boolean, count?: number): string {
-    let out = '';
-    for (const node of nodes) {
-      if (typeof node === 'string') {
-        out += node;
-        continue;
-      }
-      if ('hash' in node) {
-        out += this.numberText(locale, count);
-        continue;
-      }
-      const value = params[node.arg];
-      if (node.kind === 'simple') {
-        const text = value == null ? '' : String(value);
-        out += asHtml ? I18n.esc(text) : text;
-        continue;
-      }
-      const options = node.options || {};
-      if (node.kind === 'select') {
-        const chosen = options[String(value)] || options.other;
-        out += this.render(chosen, params, locale, asHtml, count);
-        continue;
-      }
-      const n = Number(value);
-      let chosen = options['=' + n];
-      if (!chosen) {
-        let category = 'other';
-        try {
-          category = new Intl.PluralRules(locale).select(n);
-        } catch (e) {
-          log.debug("Caught in I18n.render(): " + ((e && e.message) || e));
-          category = 'other';
-        }
-        chosen = options[category] || options.other;
-      }
-      out += this.render(chosen, params, locale, asHtml, n);
-    }
-    return out;
-  }
-
-  // `#` in a plural, per string: the hot-path exception, as render().
-  private numberText(locale: string, n: number | undefined): string {
-    try {
-      return new Intl.NumberFormat(locale).format(Number(n));
-    } catch (e) {
-      log.debug("Caught in I18n.numberText(): " + ((e && e.message) || e));
-      return String(n);
-    }
-  }
-
-  // Escaping, as `Html.esc()` does; here so this module stays a leaf. Per
-  // parameter: the hot-path exception, as render().
-  private static esc(value: string): string {
-    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
-  // Called for every string on every page, through Translator: no
-  // Entering/Leaving pair (the hot-path exception, stated).
-  /**
-   * Formats one message for a negotiated locale.
-   *
-   * A key no catalog has is answered with the key itself and logged; the
-   * catalog test is what keeps that from shipping.
-   *
-   * @param negotiated - the locale and its chain
-   * @param key - `namespace.key`
-   * @param params - the parameters
-   * @param asHtml - keep the message's markup and escape the parameters
-   * (true), or strip the markup and escape nothing (false)
-   * @returns the formatted message
-   */
-  format(negotiated: Negotiated, key: string, params: MessageParams,
-         asHtml: boolean): string {
+  // A message by catalog and `namespace.key`, from the loaded files. Called
+  // for every string, so no Entering/Leaving pair (the hot-path exception).
+  private find(tag: string, key: string): string | undefined {
     this.load();
-    const found = this.lookup(negotiated.chain, key);
-    if (!found) {
-      log.warn(this.deps.errorCodes.tag('STS-I18N-0002') + 'i18n: no ' +
-               'catalog has the message ' + key + ', so its key is drawn.');
-      return asHtml ? I18n.esc(key) : key;
-    }
-    const cacheKey = key + '\u0000' + found.catalog;
-    let nodes = this.parsed.get(cacheKey);
-    if (!nodes) {
-      try {
-        nodes = I18n.parse(found.message);
-      } catch (e) {
-        log.debug("Caught in I18n.format(): " + ((e && e.message) || e));
-        log.warn(this.deps.errorCodes.tag('STS-I18N-0002') + 'i18n: the ' +
-                 found.catalog + ' message ' + key + ' is malformed (' +
-                 ((e && e.message) || e) + '), so it is drawn as written.');
-        nodes = [found.message];
-      }
-      this.parsed.set(cacheKey, nodes);
-    }
-    // PLURAL RULES ARE THE LANGUAGE'S WHOSE WORDS ARE DRAWN. A message that
-    // fell through to another language's catalog — English, for a key a
-    // translation lacks — is pluralised by that catalog's rules: Filipino's
-    // `one` covers 2, and "2 key" is what English words under Filipino rules
-    // came out as.
-    const ownLanguage = this.catalogParts[found.catalog] &&
-      this.catalogParts[negotiated.catalog] &&
-      this.catalogParts[found.catalog].language ===
-        this.catalogParts[negotiated.catalog].language;
-    const out = this.render(nodes, params,
-                            ownLanguage ? negotiated.locale : found.catalog,
-                            asHtml);
-    return asHtml ? out : out.replace(/<[^>]*>/g, '');
+    const dot = key.indexOf('.');
+    const ns = dot > 0 ? key.slice(0, dot) : '';
+    const rest = dot > 0 ? key.slice(dot + 1) : key;
+    const found = ((this.messages[ns] || {})[tag] || {})[rest];
+    return typeof found === 'string' ? found : undefined;
   }
 }
 
@@ -1020,6 +703,13 @@ const slot = new InstanceSlot<I18n>(
 
 slot.buildNowUnlessDeferred();
 
+// THE CONSOLE'S RENDERERS, DRAWN IN NODE WITH NO TRANSLATOR — a test, a
+// server-drawn page — read English (#539 phase 5): the default a `web_`
+// context falls back to. The browser sets none and is always handed one.
+webMessages.WebTranslator.setDefault(function () {
+  return slot.get().translator([SOURCE]);
+});
+
 /**
  * The catalogs (#539): the languages a page may be drawn in, the negotiation
  * of a list of tags against them, and the formatting of one message. The
@@ -1030,7 +720,7 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   I18n: I18n,
-  Translator: Translator,
+  Translator: WebTranslator,
   /**
    * Installs the instance the module-level functions forward to.
    */
@@ -1055,5 +745,6 @@ export = {
   chainFor: slot.forward('chainFor'),
   negotiate: slot.forward('negotiate'),
   translator: slot.forward('translator'),
+  catalogData: slot.forward('catalogData'),
   answers: slot.forward('answers')
 };

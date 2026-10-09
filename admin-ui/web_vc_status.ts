@@ -51,42 +51,41 @@ class VcStatusPage {
 
   static html(ctx: Json, json: Json): string {
     const canWrite = ctx.write;
+    const t = ctx.t;
     const tiles = '<div class="tiles">' +
-      kit.tile(String(json.allocated), 'credentials with an index') +
-      kit.tile(String(json.valid), 'valid') +
-      kit.tile(String(json.suspended), 'suspended') +
-      kit.tile(String(json.invalid), 'revoked') +
-      kit.tile(String(json.size), 'indexes per list') +
+      kit.tile(String(json.allocated), t.text('consoleVcStatus.tileIndexed')) +
+      kit.tile(String(json.valid), t.text('consoleVcStatus.tileValid')) +
+      kit.tile(String(json.suspended),
+               t.text('consoleVcStatus.tileSuspended')) +
+      kit.tile(String(json.invalid), t.text('consoleVcStatus.tileRevoked')) +
+      kit.tile(String(json.size), t.text('consoleVcStatus.tilePerList')) +
       '</div>';
     const where = '<table class="grid"><tbody>' +
       '<tr><th>Token Status List</th><td><a href="' +
       kit.esc(json.tokenStatusList) + '"><code>' +
       kit.esc(json.tokenStatusList) + '</code></a><br><small>' +
-      'application/statuslist+jwt, or application/statuslist+cwt by ' +
-      'Accept; ' + json.bits + ' bits per credential</small></td></tr>' +
-      '<tr><th>Aggregation</th><td><code>' + kit.esc(json.aggregation) +
+      t.html('consoleVcStatus.tokenListFormats', { bits: String(json.bits) }) +
+      '</small></td></tr>' +
+      '<tr><th>' + t.html('consoleVcStatus.thAggregation') +
+      '</th><td><code>' + kit.esc(json.aggregation) +
       '</code></td></tr>' +
       '<tr><th>Bitstring Status Lists</th><td>' +
       json.bitstring.map(function (u: string): string {
         return '<code>' + kit.esc(u) + '</code>';
       }).join('<br>') + '<br><small>application/vc+jwt</small></td></tr>' +
-      '<tr><th>Time to live</th><td>' + json.ttlS + ' s (<code>' +
-      'oid4vci.statusListTtlS</code>); valid for ' + json.lifetimeS +
-      ' s (<code>oid4vci.statusListLifetimeS</code>)</td></tr>' +
+      '<tr><th>' + t.html('consoleVcStatus.thTtl') + '</th><td>' +
+      t.html('consoleVcStatus.ttl', { ttl: String(json.ttlS),
+                                       lifetime: String(json.lifetimeS) }) +
+      '</td></tr>' +
       '</tbody></table>';
+    // The Tokens link is markup a message cannot carry (#539), so the
+    // sentence is split around it.
     const about = kit.note(
-      '<p>Every credential this realm issues carries its index here: a ' +
-      'dc+sd-jwt and a jwt_vc_json in the Token Status List ' +
-      '(draft-ietf-oauth-status-list), a jwt_vc_json and an ldp_vc in the ' +
-      'two Bitstring Status Lists (W3C). One index, the same in every list. ' +
-      'A verifier fetches the list and reads the bit; this service\'s own ' +
-      'Verifier reads it directly.</p><p>A credential is shown ' +
-      '<strong>INVALID</strong> when it was revoked here, when an ' +
-      'administrator revoked it on <a href="/admin/tokens">Tokens</a>, or ' +
-      'when a global sign-out disowned it. INVALID is final. ' +
-      '<strong>SUSPENDED</strong> can be reinstated. Either stops the ' +
-      'credential signing anybody in at <code>/authn/wallet</code>.</p>',
-      'What this page is');
+      '<p>' + t.html('consoleVcStatus.about1') + '</p><p>' +
+      t.html('consoleVcStatus.about2') + '<a href="/admin/tokens">' +
+      t.html('consoleVcStatus.aboutTokensLink') + '</a>' +
+      t.html('consoleVcStatus.about3') + '</p>',
+      t.text('consoleVcStatus.aboutLabel'));
     const nav = kit.pageNavPair(PAGE, {}, json.rowsPaging);
     const rows = json.rows.map(function (r: Json): string {
       const form = function (action: string, label: string): string {
@@ -97,26 +96,35 @@ class VcStatusPage {
           '">' + label + '</button></form>';
       };
       const controls = !canWrite || r.status === 'INVALID' ? '' :
-        (r.status === 'SUSPENDED' ? form('reinstate', 'Reinstate')
-                                  : form('suspend', 'Suspend')) +
-        form('revoke', 'Revoke');
+        (r.status === 'SUSPENDED'
+          ? form('reinstate', t.html('consoleVcStatus.reinstate'))
+          : form('suspend', t.html('consoleVcStatus.suspend'))) +
+        form('revoke', t.html('consoleVcStatus.revoke'));
       return '<tr><td class="num">' + r.idx + '</td><td>' +
         kit.esc(r.format) + '<br><small>' + kit.esc(r.configId) +
         '</small></td><td><strong>' + kit.esc(r.status) + '</strong>' +
-        (r.status !== r.explicit ? '<br><small>set here: ' +
-         kit.esc(r.explicit) + '</small>' : '') + '</td><td>' +
+        (r.status !== r.explicit ? '<br><small>' +
+         // The value stays out of the message: `kit.esc()` writes `&apos;`
+         // where a message parameter would write `&#39;` (#539).
+         t.html('consoleVcStatus.setHere') + kit.esc(r.explicit) +
+         '</small>' : '') + '</td><td>' +
         (r.via ? kit.esc(r.via) + '<br><small>' +
          kit.esc(new Date(r.changedAt).toISOString()) + '</small>' : '—') +
         '</td><td><small>' +
         kit.esc(new Date(r.expiresAt).toISOString()) + '</small></td><td>' +
         controls + '</td></tr>';
     }).join('');
-    return tiles + about + where + '<h3>Credentials</h3>' + nav.head +
-      '<table class="grid"><thead><tr><th>Index</th><th>Format</th>' +
-      '<th>Status</th><th>Changed by</th><th>Expires</th><th></th></tr>' +
+    return tiles + about + where + '<h3>' +
+      t.html('consoleVcStatus.credentialsHeading') + '</h3>' + nav.head +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleVcStatus.thIndex') + '</th><th>' +
+      t.html('consoleVcStatus.thFormat') + '</th>' +
+      '<th>' + t.html('consoleVcStatus.thStatus') + '</th><th>' +
+      t.html('consoleVcStatus.thChangedBy') + '</th><th>' +
+      t.html('consoleVcStatus.thExpires') + '</th><th></th></tr>' +
       '</thead><tbody>' +
-      (rows || '<tr><td colspan="6">No credential issued here carries a ' +
-       'status yet.</td></tr>') + '</tbody></table>' + nav.foot;
+      (rows || '<tr><td colspan="6">' + t.html('consoleVcStatus.none') +
+       '</td></tr>') + '</tbody></table>' + nav.foot;
   }
 }
 

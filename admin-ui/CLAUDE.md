@@ -26,6 +26,12 @@ The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
 > find what they are looking for. Use this tabular design on each page for the
 > various sections."
 
+**Every console page draws its words through `ctx.t` (#539)**: one `console*`
+catalog namespace per `web_` file, English byte-identical to before, and no
+refusal or view-supplied text translated. A new page or string does the same,
+or `tests/i18n_catalogs.js` names the key English lacks. The design is
+`common/CLAUDE.md` 3ci.
+
 **Every console page with more than one section draws them as TABS**, in the
 shape the application page (`applicationDetailPage()`, 2026-10-01) and Server
 configuration → Listeners (#423) have. The rules:

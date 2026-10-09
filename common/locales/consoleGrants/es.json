@@ -1,0 +1,17 @@
+{
+  "scopeFor": " para {resource}",
+  "details": "{n} detalle(s) de autorización",
+  "claims": "claims {claims}",
+  "revoke": "Revocar",
+  "none": "Ningún cliente tiene una concesión en este dominio. Una concesión se crea con una solicitud de autorización que lleva <code>grant_management_action=create</code>.",
+  "note": "<strong>Grant Management for OAuth 2.0.</strong> Un cliente confidencial nombra lo que una persona le permitió hacer — creando una concesión, fusionando más en ella o reemplazándola mediante solicitudes de autorización ordinarias — y la lee o revoca en <code>{path}</code> con los ámbitos <code>grant_management_query</code> y <code>grant_management_revoke</code>. Una concesión existe una vez que se reclaman sus tokens, y caduca con el último de ellos. Revocarla aquí es lo que hace el DELETE de un cliente: cada token de actualización bajo ella se rechaza en todos los nodos, y cada token que este dominio registró bajo ella se revoca. Lo que la persona ACEPTÓ está en ",
+  "consentLink": "Consentimiento",
+  "noteEnd": ".",
+  "colClient": "Cliente",
+  "colSubject": "Sujeto",
+  "colScopes": "Ámbitos",
+  "colGeneration": "Generación",
+  "colCreated": "Creada / actualizada",
+  "colExpires": "Caduca",
+  "colTokens": "Tokens en poder"
+}

@@ -1,0 +1,4 @@
+{
+  "authn.noMail": "<strong>此領域無法傳送郵件</strong>，因此下方的兩種電郵機制顯示為停用，且從不提供。請在以下位置設定傳輸方式：",
+  "authn.emailWarning": "將電郵用作驗證器。"
+}

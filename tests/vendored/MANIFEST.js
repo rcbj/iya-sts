@@ -1361,6 +1361,10 @@ const JOBS = [
   // the Policies resource, and both mechanisms as a first and a second
   // factor, in a product realm, delivered to the same catcher.
   { file: 'sts_email_factor.js',         browser: false, local: true },
+  // The language chooser over HTTP in a realm (#539): the action prefixed
+  // once, the 303 to a local return only, the cookie, ui_locales first, and
+  // discovery's ui_locales_supported.
+  { file: 'sts_language_chooser.js',     browser: false, local: true },
   // #64's addresses: an administrator's verified, a person's own change
   // pending until its link is followed, and the recovery-code reset.
   { file: 'sts_email_verification.js',   browser: false, local: true },

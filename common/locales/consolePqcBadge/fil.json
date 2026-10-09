@@ -1,0 +1,14 @@
+{
+  "sentencePq": "Post-quantum na key pair: {label}",
+  "sentenceComposite": "Composite na post-quantum key pair: {label} — dapat mag-verify ang dalawang kalahati",
+  "sentenceKem": "Post-quantum na key-establishment key: {label} — wala itong pinipirmahan",
+  "sentenceHybrid": "Hybrid: isang classical na key na ang certificate ay may dala ring {label}",
+  "sentenceOther": "Post-quantum: {label}",
+  "legendPq": " ay nagmamarka ng key pair na gumagamit ng post-quantum na algorithm",
+  "legendPqAfter": " — ML-DSA o SLH-DSA. ",
+  "legendComposite": " ay isang COMPOSITE: iisang key na may post-quantum na kalahati at classical na kalahati, at dapat mag-verify ang pareho. ",
+  "legendKem": " ay isang post-quantum na key para sa key ESTABLISHMENT, na walang pinipirmahan. ",
+  "legendHybridLabel": "alternatibong ML-DSA-65 key",
+  "legendHybrid": " ay isang CLASSICAL na key na ang certificate ay may dala ring alternatibong post-quantum na key — hindi post-quantum ang key mismo. I-hover ang isang icon para makita ang algorithm. Classical ang key na walang icon (RSA, ECDSA o EdDSA). Ang nagpapasya ay ang sariling algorithm ng key, hindi ang pirma sa certificate nito: minamarkahan ang ML-DSA key na sertipikado ng isang RSA CA, at hindi minamarkahan ang RSA key na sertipikado ng isang ML-DSA CA.",
+  "legendTitle": "Mga post-quantum na key pair"
+}

@@ -1,0 +1,5 @@
+{
+  "created.mailedHeading": "Le lien d’activation a été envoyé par courriel",
+  "created.mailLink": "Courriel",
+  "created.linkWarn": "<strong>Valide jusqu’au {until}, et affiché une seule fois.</strong> Ce service ne conserve qu’un hachage du jeton qu’il contient et ne peut pas reproduire le lien — en émettre un autre invalide celui-ci, et c’est aussi ainsi que l’on remplace un lien qui n’est jamais arrivé. <strong>Traitez-le comme l’identifiant qu’il est</strong> : quiconque le détient peut terminer la configuration de ce compte, en choisissant un mot de passe ou en enregistrant une clé de sécurité. Il est consommé lorsque cette configuration se TERMINE, et non à l’ouverture du lien : un analyseur de courriels ou un préchargement du navigateur ne peut donc pas le griller. Il n’existe délibérément aucune version en libre-service de ce lien : tant que le compte n’est pas activé, personne n’a prouvé que l’adresse qui y figure lui appartient. Cochez <em>envoyer le lien d’activation par courriel</em> dans le formulaire pour que ce service l’envoie à votre place."
+}

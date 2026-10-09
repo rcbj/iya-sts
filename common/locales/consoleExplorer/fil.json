@@ -1,0 +1,5 @@
+{
+  "lede": "Bawat operation na inaalok ng management API ng serbisyong ito, binasa mula sa parehong OpenAPI document na pina-publish ng API, na may form na tumatawag dito. Ginagawa ang mga tawag gamit ang sariling access token ng console na ito, na ibinigay sa <strong>{who}</strong> at naka-bind sa key ng browser na ito, na may dalang <code>{scope}</code> — ang mga scope na ibinibigay ng iyong mga console role at wala nang iba, kaya ang operation na hindi mo puwedeng gawin ay tinatanggihan dito gaya rin ng kahit saan.",
+  "you": "iyo",
+  "reading": "Binabasa ang <code>{spec}</code>&hellip;"
+}

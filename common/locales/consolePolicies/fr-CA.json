@@ -1,0 +1,5 @@
+{
+  "authn.noMail": "<strong>Ce domaine ne peut pas envoyer de courriel</strong> ; les deux mécanismes par courriel sont donc affichés désactivés ci-dessous et ne sont jamais proposés. Configurez un transport dans ",
+  "authn.noMailLink": "Configuration du serveur → Courriel",
+  "authn.emailWarning": "Le courriel comme authentificateur."
+}

@@ -1,0 +1,15 @@
+{
+  "newUserBody.emptyMiddle": " : ce bouton inventait une personne entière — un nom, une adresse courriel, une date de naissance, une rue, une nationalité — derrière le nom d’utilisateur saisi. Ici, rien n’est inventé à moins que vous n’appuyiez sur le bouton qui l’invente. Ce que cela coûte : un identifiant émis qui affirme <code>birthdate</code> pour une personne sans <code>schacDateOfBirth</code> se rabat sur la valeur inventée au moment de l’ÉMISSION (<code>vc_claims.js</code> le fait pour qu’un identifiant ne soit jamais vide) ; l’identifiant et l’annuaire seront donc en désaccord jusqu’à ce que quelqu’un renseigne l’attribut. ",
+  "detail.sessionsNote": "Une <strong>session d’authentification</strong> est un navigateur détenant le témoin <code>sts_session</code>, partagé entre l’écran de connexion OAuth 2.0 / OIDC et WS-Federation. Un jeton est rangé sous une session parce que l’émission l’a indiqué — aucun jeton émis par ce service ne porte d’identifiant de session, et la revendication <code>sid</code> d’OIDC sert à la déconnexion front-channel ; en inventer un pour faciliter cette page changerait ce que reçoit chaque client. Le lien est donc enregistré à part au moment de l’émission, et il survit à un rafraîchissement : un jeton rafraîchi est retrouvé par le <code>jti</code> du jeton de rafraîchissement et se range sous la même session.",
+  "mfaSection.asksFor": " — l’écran de connexion demande {factor, select, webauthn {la CLÉ DE SÉCURITÉ} webauthnOrTotp {la CLÉ DE SÉCURITÉ, l’application d’authentification étant proposée en alternative pour quelqu’un devant une machine où la clé n’est pas branchée} totp {un CODE de son application d’authentification} emailLink {un LIEN DE CONNEXION ENVOYÉ PAR COURRIEL, le seul second facteur qu’elle détient} other {un CODE ENVOYÉ PAR COURRIEL, le seul second facteur qu’elle détient}}. Un mot de passe seul ne la connectera pas.",
+  "emailFactorBlock.heading": "Adresse courriel, et courriel comme second facteur",
+  "emailFactorBlock.factor": "Second facteur par courriel",
+  "emailFactorBlock.onNote": " — un {held} envoyé par courriel après son premier facteur",
+  "emailFactorBlock.chosen": "choisi (un {opted} envoyé par courriel) et <strong>non utilisé</strong> : {why}",
+  "emailFactorBlock.turnOffTip": "Cesser d’envoyer à cette personne un code ou un lien par courriel après son premier facteur. Elle peut le réactiver sur /portal/mfa là où la politique d’authentification le permet.",
+  "emailFactorBlock.turnOff": "Désactiver son second facteur par courriel",
+  "emailFactorBlock.setAddressTip": "Enregistrer cette adresse comme son adresse courriel vérifiée. L’ancienne, s’il y en a une, est informée du changement lorsque ce domaine peut envoyer du courrier.",
+  "personFieldsSection.mailHeading": "Adresse courriel",
+  "personFieldsSection.setMailTip": "Enregistrer cette adresse comme son adresse courriel vérifiée ; l’ancienne adresse est informée du changement.",
+  "controls.issueLinkTitle": "Supprime son mot de passe actuel, la déconnecte partout et affiche un lien à usage unique à lui envoyer — ou le lui envoie par courriel."
+}

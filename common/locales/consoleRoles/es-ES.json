@@ -1,0 +1,5 @@
+{
+  "body.twoMeet": ". <strong>Ambas se encuentran en un punto desde #303</strong>: <code>ADMIN_READ</code> y <code>ADMIN_WRITE</code>, más abajo, son roles sobre esos dos grupos que autorizan <code>admin:read</code> y <code>admin:write</code> de la API de gestión. Las personas los tienen mediante Roles de administración; una aplicación se añade a ellos aquí. Y un grupo sigue sin otorgar nada por sí solo, y esa frase sigue siendo cierta allí donde está escrita. Lo que cambió es que un rol puede NOMBRAR un grupo &mdash; así que añadir a alguien a <code>cn=developers</code> ahora puede darle un rol, a través de este registro y solo de él.",
+  "body.add": "Añadir",
+  "body.authorizeAfter": ", y una aplicación al añadirse a ellos más arriba."
+}

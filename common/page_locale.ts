@@ -223,12 +223,60 @@ class PageLocale {
    * @param fallback - the path when the request was not a GET
    * @returns the path, with its query
    */
-  static herePath(fallback: string): string {
+  //
+  // **IT NEVER COPIES THE REQUEST'S WHOLE URL** (the integrator's finding on
+  // #539 phase 3). It once answered a GET's `originalUrl`, so whatever
+  // parameter a link carried — `/portal?user=<somebody else>` — was drawn
+  // back into the page in the chooser's hidden field: reflection that
+  // `sts_portal_sessions` exists to forbid. It answers the caller's own path
+  // now, which names the parameters that page needs to be drawn again (its
+  // pending id, its step id), and of the request's own parameters only those
+  // the caller lists in `keep`, on a GET, that the path does not already
+  // carry. Nothing a request merely adds is drawn back.
+  /**
+   * The path the chooser returns to: the caller's own, plus the listed
+   * parameters of the current GET.
+   *
+   * @param path - the page's own path and the query it needs
+   * @param keep - the request's parameters to carry as well, on a GET
+   * @returns the path
+   */
+  static herePath(path: string, keep?: string[]): string {
     log.debug("Entering PageLocale.herePath().");
+    let out = String(path || '/');
     const req = PageLocale.ambientRequest();
-    const out = req && String(req.method || '').toUpperCase() === 'GET' &&
-      req.originalUrl ? String(req.originalUrl) : String(fallback || '/');
+    if (keep && keep.length && req &&
+        String(req.method || '').toUpperCase() === 'GET') {
+      const url = new URL(out, 'http://here.invalid');
+      const query = req.query || {};
+      keep.forEach(function (name) {
+        const value = query[name];
+        if (typeof value === 'string' && !url.searchParams.has(name)) {
+          url.searchParams.set(name, value);
+        }
+      });
+      out = url.pathname + url.search;
+    }
     log.debug("Leaving PageLocale.herePath().");
+    return out;
+  }
+
+  /**
+   * The admin console's language (#539 phase 5): the negotiation for the
+   * signed-in administrator and the console's own application, its catalogs
+   * as data for the browser's `WebTranslator`, and the locales the chooser
+   * offers. `GET /admin-api/console` answers it as its `locale` member.
+   *
+   * @param req - the request
+   * @param page - the console's application and the administrator
+   * @returns `{ negotiated, catalogs, offered }`
+   */
+  static consoleData(req: any, page: PageFor) {
+    log.debug("Entering PageLocale.consoleData().");
+    const t = PageLocale.translatorFor(req, page);
+    const out = Object.assign(i18n.catalogData(t.negotiated, 'console'),
+                              { offered: i18n.offered() });
+    log.debug("Leaving PageLocale.consoleData(). " + t.locale);
     return out;
   }
 

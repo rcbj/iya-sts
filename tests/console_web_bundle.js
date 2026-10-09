@@ -319,6 +319,15 @@ function childMain() {
       const sandbox = vm.createContext({});
       StsConsole = vm.runInContext(code + '\n;StsConsole;', sandbox,
                                    { filename: 'console.bundle.js' });
+      // THE DEFAULT TRANSLATOR (#539): in a browser the runtime sets it to
+      // the page's own (`applyLocale()`), so a helper handed no translator
+      // draws in the reader's language. Here there is no runtime, so the
+      // bundle is given node's — English — and the two draw the same words.
+      if (StsConsole && StsConsole.messages) {
+        StsConsole.messages.WebTranslator.setDefault(function () {
+          return WebKit.context().t;
+        });
+      }
     } catch (e) {
       loadProblem = String((e && e.message) || e);
     }

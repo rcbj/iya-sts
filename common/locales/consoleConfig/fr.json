@@ -1,0 +1,22 @@
+{
+  "everySettingLives": "<strong>Chaque paramètre de ce service se trouve sur la page du protocole qu’il configure.</strong> Cette page en est l’index — et le formulaire des {mine} lignes qui n’appartiennent à aucun protocole, car ce sont des faits sur le processus plutôt que sur ce qu’il parle. Elle les contenait tous les {total} jusqu’au 2026-08-27 ; ce qui a changé, c’est l’endroit où ils sont AFFICHÉS, et rien de ce qu’ils font ni de la façon dont ils sont lus.",
+  "fourPlaces": "Une valeur peut venir de quatre endroits, et la colonne <em>Source</em> de chacune de ces pages indique lequel : une surcharge d’exécution définie sur la page, une variable d’environnement, le fichier appconfig avec lequel ce processus a démarré (<code>{configFile}</code>), ou <code>{defaultsFile}</code> — le fichier appconfig par défaut sur lequel celui-ci est superposé. Le plus haut l’emporte sur le plus bas, si bien qu’une variable d’environnement définie sur le conteneur l’emporte toujours sur le fichier — c’est ce qui permet à tout déploiement existant de fonctionner sans changement.",
+  "noFifthPlace": "<strong>Il n’y a pas de cinquième endroit.</strong> Un paramètre sans valeur dans aucun des deux fichiers appconfig ni dans une variable d’environnement empêche ce service de démarrer, en le nommant, au lieu de se rabattre sur une constante enfouie dans un module. Chaque valeur de ces pages est donc une valeur que l’on peut retrouver dans un fichier — c’est ce qui rend la colonne <em>Source</em> digne d’être lue.",
+  "survives": "<strong>Les modifications SURVIVENT À UN REDÉMARRAGE.</strong>",
+  "fileLeftAlone": "Le fichier n’est volontairement pas modifié : un service qui modifierait un fichier versionné dans un dépôt y laisserait pour toujours la modification oubliée d’un test.",
+  "inMemory": "<strong>Les modifications sont en mémoire et disparaissent au redémarrage.</strong> Rien n’écrit dans le fichier appconfig, volontairement : un service qui modifierait un fichier versionné dans un dépôt y laisserait pour toujours la modification oubliée d’un test.",
+  "settingsHeading": "{total} paramètres, dont {editable} modifiables pendant que ce service tourne",
+  "overridesInForce": "{n} surcharge(s) d’exécution en vigueur, n’importe où dans le service :",
+  "resetAll": "Tout réinitialiser",
+  "noOverrides": "Aucune surcharge d’exécution n’est en vigueur dans ce service : chaque valeur vient de l’environnement ou de l’un des deux fichiers appconfig.",
+  "resetAllHere": "<strong>Tout réinitialiser se trouve ici et sur aucune page de protocole</strong>, parce que cela efface toutes les surcharges du service et pas seulement celles qui sont en dessous. Un bouton qui porterait aussi loin depuis la page Kerberos serait la seule commande de cette console dont la portée serait invisible depuis l’endroit où l’on appuie.",
+  "whereEdited": "Où chaque paramètre se modifie",
+  "wholeTable": "Le tableau complet, groupe par groupe, dans l’ordre où <code>config.js</code> les déclare. La colonne <em>Page</em> indique où le formulaire de ce groupe est affiché ; les nombres sont ceux du groupe, et <em>Surchargés</em> indique combien d’entre eux ont une surcharge d’exécution en vigueur en ce moment.",
+  "thGroup": "Groupe",
+  "thSettings": "Paramètres",
+  "thRestartOnly": "Au redémarrage seulement",
+  "thOverridden": "Surchargés",
+  "thPage": "Page",
+  "pagesAnd": " et ",
+  "overJson": "Le tableau complet en JSON — chaque paramètre, quelle que soit la page qui le modifie — se trouve à <code>/admin/config?format=json</code> et <code>GET /admin-api/config</code> ; les quatre actions de ces pages sont <code>POST /admin-api/config/set</code>, <code>/set-many</code>, <code>/reset</code> et <code>/reset-all</code>."
+}

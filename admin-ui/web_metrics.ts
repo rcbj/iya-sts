@@ -43,6 +43,10 @@ class MetricsPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // THE WORDS ARE THE READER'S LANGUAGE (#539): `consoleMetrics.*`, whose
+    // English is exactly what was drawn before. A link is markup no message
+    // can carry, so a note with one is two messages around the `<a>`.
+    const t = ctx.t;
     // The snapshot's keys are the top level of that object; see the note on
     // it.
     const snap = json;
@@ -68,15 +72,16 @@ class MetricsPage {
         row.subjects + '</td><td ' +
         'class="who">' + shown +
         (row.who.length > MAX_WHO ?
-         ' &hellip; and ' + (row.who.length - MAX_WHO) + ' ' +
-            'more' : '') +
+         ' ' + t.html('consoleMetrics.who.more',
+                      { n: row.who.length - MAX_WHO }) : '') +
         '</td></tr>';
     }).join('');
 
     const signOnRows = signOn.slice(0, kit.MAX_ROWS).map(function (s) {
       return '<tr><td>' + kit.esc(s.username) + '</td>' +
         '<td class="' + (s.expired ? 'state-expired' : 'state-valid') + '">' +
-          (s.expired ? 'expired, not yet swept' : 'active') + '</td>' +
+          (s.expired ? t.html('consoleMetrics.state.expired')
+                     : t.html('consoleMetrics.state.active')) + '</td>' +
         '<td>' + kit.esc(s.amr || '—') + '</td><td>' +
         kit.esc(s.acr || '—') + '</td>' +
         '<td>' + kit.esc(kit.whenText(s.startedAt)) + '</td>' +
@@ -89,98 +94,78 @@ class MetricsPage {
     }).join('');
 
     const inner = '<div class="tiles">' +
-        kit.tile(snap.calls.total, 'endpoint calls') +
-        kit.tile(snap.calls.paths, 'routes called') +
-        kit.tile(snap.tokens.held, 'tokens issued') +
-        kit.tile(snap.tokens.revoked, 'tokens revoked') +
-        kit.tile(snap.artifacts.held, 'assertions, tickets, credentials') +
-        kit.tile(liveSignOn.length, 'sign-on sessions') +
+        kit.tile(snap.calls.total, t.text('consoleMetrics.tile.calls')) +
+        kit.tile(snap.calls.paths, t.text('consoleMetrics.tile.routes')) +
+        kit.tile(snap.tokens.held,
+                 t.text('consoleMetrics.tile.tokensIssued')) +
+        kit.tile(snap.tokens.revoked,
+                 t.text('consoleMetrics.tile.tokensRevoked')) +
+        kit.tile(snap.artifacts.held,
+                 t.text('consoleMetrics.tile.artifacts')) +
+        kit.tile(liveSignOn.length, t.text('consoleMetrics.tile.sessions')) +
         kit.tile(snap.sessions.distinctSubjects,
-                  'subjects with a live artifact') +
-        kit.tile(kit.durationText(snap.uptimeMs), 'uptime') +
+                 t.text('consoleMetrics.tile.subjects')) +
+        kit.tile(kit.durationText(snap.uptimeMs),
+                 t.text('consoleMetrics.tile.uptime')) +
       '</div>' +
-      kit.note('Since <code>' + kit.esc(kit.whenText(snap.startedAt)) +
-                '</code>. Every ' +
-      'figure on this page is computed when the page is drawn rather than ' +
-      'kept up to date as things happen, because &ldquo;valid&rdquo; and ' +
-      '&ldquo;expired&rdquo; are functions of the clock: a counter ' +
-      'incremented at issuance would be wrong a second later.') +
+      kit.note(t.html('consoleMetrics.since',
+                      { when: kit.whenText(snap.startedAt) })) +
 
-      '<h2>Endpoint calls</h2>' +
-      kit.note('Keyed on the route Express matched, not on the URL ' +
-      'requested, so <code>/oauth2/register/:client_id</code> is one row ' +
-      'rather than one row per client. These are the same route patterns ' +
-      '<a href="/admin/sts-metadata">/admin/sts-metadata</a> lists.') +
-      MetricsPage.callTable(snap) +
+      '<h2>' + t.html('consoleMetrics.calls.heading') + '</h2>' +
+      kit.note(t.html('consoleMetrics.calls.noteA') + ' ' +
+      '<a href="/admin/sts-metadata">/admin/sts-metadata</a> ' +
+      t.html('consoleMetrics.calls.noteB')) +
+      MetricsPage.callTable(snap, t) +
 
-      '<h2>Tokens</h2>' +
-      kit.note('Every JWT this service signs, by <code>typ</code> — which ' +
-      'is the only thing that tells them apart, since all of them are ' +
-      'RS256 and signed with the same key. <a href="/admin/tokens">The ' +
-      'tokens page</a> lists them one by one — beside the SAML assertions ' +
-      'and Kerberos tickets, which it also lists — and can invalidate ' +
-      'these.') +
-      MetricsPage.tokenKindTable(snap) +
+      '<h2>' + t.html('consoleMetrics.tokens.heading') + '</h2>' +
+      kit.note(t.html('consoleMetrics.tokens.noteA') + ' ' +
+      '<a href="/admin/tokens">' + t.html('consoleMetrics.link.tokensPage') +
+      '</a> ' + t.html('consoleMetrics.tokens.noteB')) +
+      MetricsPage.tokenKindTable(snap, t) +
       (snap.tokens.forgotten > 0
-        ? kit.note(snap.tokens.forgotten + ' older token(s) have been ' +
-          'forgotten: the registry holds the most ' +
-          'recent ' + snap.tokens.cap + '. Their ' +
-          'revocations are NOT forgotten — the set of revoked ' +
-          '<code>jti</code>s is kept separately and is not capped, so a ' +
-          'token revoked long ago stays revoked.')
+        ? kit.note(t.html('consoleMetrics.tokens.forgotten',
+                          { n: snap.tokens.forgotten,
+                            cap: snap.tokens.cap }))
         : '') +
 
-      '<h2>Assertions, tickets and credentials</h2>' +
-      kit.note('The artifacts that are not JWTs. None of them can be ' +
-      'revoked and the console does not pretend otherwise — see the index ' +
-      'for why — so the only distinction here is whether the validity ' +
-      'window has closed. The assertions and the tickets are listed one by ' +
-      'one on <a href="/admin/tokens">the tokens page</a>, beside the JWTs ' +
-      'and in the order they were all issued; the credentials are counted ' +
-      'here and nowhere else.') +
-      MetricsPage.artifactKindTable(snap) +
+      '<h2>' + t.html('consoleMetrics.artifacts.heading') + '</h2>' +
+      kit.note(t.html('consoleMetrics.artifacts.noteA') + ' ' +
+      '<a href="/admin/tokens">' + t.html('consoleMetrics.link.tokensPageLc') +
+      '</a>' + t.html('consoleMetrics.artifacts.noteB')) +
+      MetricsPage.artifactKindTable(snap, t) +
       (snap.artifacts.forgotten > 0
-        ? kit.note(snap.artifacts.forgotten + ' older artifact(s) have ' +
-          'been forgotten; the registry holds the most ' +
-          'recent ' + snap.artifacts.cap + '.')
+        ? kit.note(t.html('consoleMetrics.artifacts.forgotten',
+                          { n: snap.artifacts.forgotten,
+                            cap: snap.artifacts.cap }))
         : '') +
 
-      '<h2>Sessions, counted both ways</h2>' +
-      kit.note('The two numbers mean different things and disagree on ' +
-      'purpose. A <strong>sign-on session</strong> is a real one: a ' +
-      'browser holding the <code>sts_session</code> cookie, shared between ' +
-      'the OAuth 2.0 / OIDC login screen and WS-Federation, which is what ' +
-      'makes single sign-on across the two work. An ' +
-      '<strong>artifact-derived session</strong> is an inference: a ' +
-      'subject that holds at least one artifact from that protocol family ' +
-      'which is still valid. A <code>client_credentials</code> token is ' +
-      'the second and not the first (there is no human and no browser ' +
-      'behind it); a browser that has signed in but been issued nothing ' +
-      'yet is the first and not the second; a Kerberos client is never the ' +
-      'first at all. Both are counted here per family; <a ' +
-      'href="/admin/users">the users page</a> is where one person\'s ' +
-      'sessions and the tokens issued on each of them are.') +
-      '<h3>Sign-on sessions (' + liveSignOn.length + ' active of ' +
-      signOn.length + ' ' +
-      'held)</h3><table><tr><th>User</th><th>State</th><th>amr</th><th>acr' +
-      '</th><th>Signed in</th><th>Last authenticated</th>' +
-      '<th>Expires</th><th>WS-Fed relying parties signed into</th></tr>' +
-      (signOnRows || '<tr><td colspan="8">Nobody is signed in.</td></tr>') +
+      '<h2>' + t.html('consoleMetrics.sessions.heading') + '</h2>' +
+      kit.note(t.html('consoleMetrics.sessions.noteA') + ' ' +
+      '<a href="/admin/users">' + t.html('consoleMetrics.link.usersPage') +
+      '</a> ' + t.html('consoleMetrics.sessions.noteB')) +
+      '<h3>' + t.html('consoleMetrics.signOn.heading',
+                      { active: liveSignOn.length, held: signOn.length }) +
+      '</h3><table><tr><th>' + t.html('consoleMetrics.th.user') +
+      '</th><th>' + t.html('consoleMetrics.th.state') +
+      '</th><th>amr</th><th>acr' +
+      '</th><th>' + t.html('consoleMetrics.th.signedIn') + '</th><th>' +
+      t.html('consoleMetrics.th.lastAuthenticated') + '</th>' +
+      '<th>' + t.html('consoleMetrics.th.expires') + '</th><th>' +
+      t.html('consoleMetrics.th.wsfedRps') + '</th></tr>' +
+      (signOnRows || '<tr><td colspan="8">' +
+                     t.html('consoleMetrics.signOn.none') + '</td></tr>') +
       '</table>' +
-      kit.note('An expired session stays in the map until something reads ' +
-      'it — <code>sessionOf()</code> drops one when it finds it stale — so ' +
-      'it is listed as held but not active rather than quietly omitted.') +
-      '<h3>Artifact-derived sessions (' + snap.sessions.distinctSubjects +
-      ' distinct subject(s))</h3><table><tr><th>Protocol family</th><th ' +
-      'class="num">Subjects</th><th>Who</th></tr>' +
+      kit.note(t.html('consoleMetrics.signOn.expiredNote')) +
+      '<h3>' + t.html('consoleMetrics.derived.heading',
+                      { n: snap.sessions.distinctSubjects }) +
+      '</h3><table><tr><th>' + t.html('consoleMetrics.th.family') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.subjects') +
+      '</th><th>' + t.html('consoleMetrics.th.who') + '</th></tr>' +
       (sessionFamilyRows ||
-       '<tr><td colspan="3">Nothing valid has been issued ' +
-                            'yet.</td></tr>') +
+       '<tr><td colspan="3">' + t.html('consoleMetrics.derived.none') +
+       '</td></tr>') +
       '</table>' +
-      kit.note('A Kerberos TGT is counted as a session and a service ' +
-      'ticket is not, because that is what they are: the TGT is the ' +
-      'credential the session consists of, and a service ticket is one use ' +
-      'of it. Counting both would report the same session twice.');
+      kit.note(t.html('consoleMetrics.derived.tgtNote'));
 
     return inner;
   }
@@ -192,14 +177,16 @@ class MetricsPage {
    * were left out and how many unmatched paths were collapsed.
    *
    * @param snap - a snapshot from stats.snapshot()
+   * @param t - the page's translator (#539)
    * @returns the table and its notes as HTML
    */
-  static callTable(snap) {
+  static callTable(snap, t) {
     const rows = snap.calls.rows.slice(0, kit.MAX_ROWS);
     const body = rows.map(function (row) {
       return '<tr><td><code>' + kit.esc(row.method) + '</code></td>' +
         '<td><code>' + kit.esc(row.path) + '</code>' +
-        (row.matched ? '' : ' <span class="state-expired">no route</span>') +
+        (row.matched ? '' : ' <span class="state-expired">' +
+         t.html('consoleMetrics.calls.noRoute') + '</span>') +
         '</td><td ' +
         'class="num">' + row.count + '</td>' +
         '<td class="num">' + (row.statuses['2xx'] || 0) + '</td>' +
@@ -212,23 +199,29 @@ class MetricsPage {
         '<td>' + kit.esc(kit.whenText(row.lastAt)) + '</td></tr>';
     }).join('');
     const hidden = snap.calls.rows.length - rows.length;
-    return '<table><tr><th>Method</th><th>Route</th><th ' +
-      'class="num">Calls</th><th class="num">2xx</th><th ' +
+    // The collapsed row's name is the registry's own key, so it stays in
+    // code between two messages rather than being translated.
+    return '<table><tr><th>' + t.html('consoleMetrics.th.method') +
+      '</th><th>' + t.html('consoleMetrics.th.route') + '</th><th ' +
+      'class="num">' + t.html('consoleMetrics.th.calls') +
+      '</th><th class="num">2xx</th><th ' +
       'class="num">3xx</th><th class="num">4xx</th><th ' +
-      'class="num">5xx</th><th class="num">Avg ms</th><th class="num">Max ' +
-      'ms</th><th>Last</th></tr>' +
+      'class="num">5xx</th><th class="num">' +
+      t.html('consoleMetrics.th.avgMs') + '</th><th class="num">' +
+      t.html('consoleMetrics.th.maxMs') + '</th><th>' +
+      t.html('consoleMetrics.th.last') + '</th></tr>' +
       (body ||
-       '<tr><td colspan="10">No call has been recorded yet.</td></tr>') +
+       '<tr><td colspan="10">' + t.html('consoleMetrics.calls.none') +
+       '</td></tr>') +
       '</table>' +
-      (hidden > 0 ? kit.note(hidden + ' further route(s) are not shown; the ' +
-                                       'table draws the ' +
-                    kit.MAX_ROWS + ' busiest.') : '') +
+      (hidden > 0 ? kit.note(t.html('consoleMetrics.calls.hidden',
+                                    { n: hidden, max: kit.MAX_ROWS }))
+                  : '') +
       (snap.calls.pathsCollapsed > 0
-        ? kit.note(snap.calls.pathsCollapsed + ' request(s) to paths that ' +
-          'matched no route were counted in the single ' +
+        ? kit.note(t.html('consoleMetrics.calls.collapsedA',
+                          { n: snap.calls.pathsCollapsed }) + ' ' +
           '<code>' + kit.esc('(other unmatched paths)') + '</code> ' +
-          'row: the table is capped so that a scanner inventing URLs cannot ' +
-          'grow it without limit.')
+          t.html('consoleMetrics.calls.collapsedB'))
         : '');
   }
 
@@ -236,9 +229,10 @@ class MetricsPage {
    * Draws the metrics page's table of tokens by kind and state.
    *
    * @param snap - a snapshot from stats.snapshot()
+   * @param t - the page's translator (#539)
    * @returns the table as HTML
    */
-  static tokenKindTable(snap) {
+  static tokenKindTable(snap, t) {
     const body = snap.tokens.byKind.map(function (row) {
       return '<tr><td>' + kit.esc(row.kind) + '</td>' +
         '<td class="num">' + row.issued + '</td>' +
@@ -249,11 +243,17 @@ class MetricsPage {
         '<td class="num">' + row.noExpiry + '</td>' +
         '<td class="num">' + row.bound + '</td></tr>';
     }).join('');
-    return '<table><tr><th>Token</th><th class="num">Issued</th><th ' +
-      'class="num">Valid</th><th class="num">Expired</th><th ' +
-      'class="num">Revoked</th><th class="num">Not yet valid</th><th ' +
-      'class="num">No expiry</th><th class="num">DPoP-bound</th></tr>' +
-      (body || '<tr><td colspan="8">No token has been issued yet.</td></tr>') +
+    return '<table><tr><th>' + t.html('consoleMetrics.th.token') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.issued') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.valid') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.expired') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.revoked') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.notYetValid') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.noExpiry') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.dpopBound') +
+      '</th></tr>' +
+      (body || '<tr><td colspan="8">' +
+               t.html('consoleMetrics.tokens.none') + '</td></tr>') +
       '</table>';
   }
 
@@ -261,9 +261,10 @@ class MetricsPage {
    * Draws the metrics page's table of assertions, tickets and SVIDs.
    *
    * @param snap - a snapshot from stats.snapshot()
+   * @param t - the page's translator (#539)
    * @returns the table as HTML
    */
-  static artifactKindTable(snap) {
+  static artifactKindTable(snap, t) {
     const body = snap.artifacts.byKind.map(function (row) {
       return '<tr><td>' + kit.esc(row.kind) + '</td>' +
         '<td class="num">' + row.issued + '</td>' +
@@ -271,11 +272,14 @@ class MetricsPage {
         '<td class="num state-expired">' + row.expired + '</td>' +
         '<td class="num">' + row.noExpiry + '</td></tr>';
     }).join('');
-    return '<table><tr><th>Artifact</th><th class="num">Issued</th><th ' +
-      'class="num">Valid</th><th class="num">Expired</th><th class="num">No ' +
-      'expiry</th></tr>' +
-      (body || '<tr><td colspan="5">No assertion, ticket or credential has ' +
-               'been issued yet.</td></tr>') +
+    return '<table><tr><th>' + t.html('consoleMetrics.th.artifact') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.issued') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.valid') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.expired') +
+      '</th><th class="num">' + t.html('consoleMetrics.th.noExpiry') +
+      '</th></tr>' +
+      (body || '<tr><td colspan="5">' +
+               t.html('consoleMetrics.artifacts.none') + '</td></tr>') +
       '</table>';
   }
 }

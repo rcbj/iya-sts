@@ -29,11 +29,60 @@ type Json = any;
  */
 const PAGE = '/admin/scheduler';
 
-// What each state is called on the page.
-const STATE_WORDS: Json = {
-  succeeded: 'succeeded', failed: 'failed', abandoned: 'abandoned',
-  running: 'running now', queued: 'queued'
-};
+// What each state is called on the page (#539: in the reader's language, so
+// a function over literal keys rather than a table of English words — the
+// catalog test finds a key only where it is written out).
+/**
+ * Names a run's state on the page.
+ *
+ * @param state - the run's state
+ * @param t - the page's translator
+ * @returns the word as HTML, or the state itself when it has none
+ */
+function stateWord(state: string, t: Json): string {
+  switch (state) {
+    case 'succeeded':
+      return t.html('consoleScheduler.state.succeeded');
+    case 'failed':
+      return t.html('consoleScheduler.state.failed');
+    case 'abandoned':
+      return t.html('consoleScheduler.state.abandoned');
+    case 'running':
+      return t.html('consoleScheduler.state.running');
+    case 'queued':
+      return t.html('consoleScheduler.state.queued');
+    default:
+      return kit.esc(state);
+  }
+}
+
+// The outcome filter's options: the bare state names (`running`, not
+// `running now`), as they always were.
+/**
+ * Names an option of the outcome filter.
+ *
+ * @param outcome - the option's value, '' for every outcome
+ * @param t - the page's translator
+ * @returns the label as HTML
+ */
+function outcomeLabel(outcome: string, t: Json): string {
+  switch (outcome) {
+    case '':
+      return t.html('consoleScheduler.filter.everyOutcome');
+    case 'succeeded':
+      return t.html('consoleScheduler.filter.succeeded');
+    case 'failed':
+      return t.html('consoleScheduler.filter.failed');
+    case 'abandoned':
+      return t.html('consoleScheduler.filter.abandoned');
+    case 'running':
+      return t.html('consoleScheduler.filter.running');
+    case 'queued':
+      return t.html('consoleScheduler.filter.queued');
+    default:
+      return kit.esc(outcome);
+  }
+}
 
 /**
  * Draws Scheduler from the answer of `GET /admin-api/scheduler`: every
@@ -41,6 +90,7 @@ const STATE_WORDS: Json = {
  * run.
  *
  * A static utility class; it holds no state and takes no dependencies.
+ * Every method that draws words takes the page's translator `t` (#539).
  */
 class SchedulerPage {
   /**
@@ -65,19 +115,20 @@ class SchedulerPage {
   // -------------------------------------------------------------------------
   // THE DRAWING.
   // -------------------------------------------------------------------------
-  static when(iso: string | null, inMs?: number | null): string {
+  static when(iso: string | null, inMs: number | null | undefined,
+              t: Json): string {
     if (!iso) {
       return '—';
     }
     const rel = inMs === undefined || inMs === null ? ''
-      : (inMs <= 0 ? 'now' : 'in ' + kit.span(inMs)) +
+      : (inMs <= 0 ? t.html('consoleScheduler.when.now')
+         : t.html('consoleScheduler.when.in', { span: kit.span(inMs) })) +
         '<br>';
     return rel + '<small><code>' + kit.esc(iso) + '</code></small>';
   }
 
-  static outcomeText(run: Json): string {
-    const word = STATE_WORDS[run.state] || run.state;
-    let text = '<strong>' + kit.esc(word) + '</strong>';
+  static outcomeText(run: Json, t: Json): string {
+    let text = '<strong>' + stateWord(run.state, t) + '</strong>';
     if (run.errorCode) {
       text += ' <code>' + kit.esc(run.errorCode) + '</code>';
     }
@@ -87,75 +138,80 @@ class SchedulerPage {
     return text;
   }
 
-  static lastRunCell(job: Json): string {
+  static lastRunCell(job: Json, t: Json): string {
     const parts: string[] = [];
     if (job.running) {
-      parts.push('<strong>running now</strong> since <code>' +
-                 kit.esc(job.running.startedAt || '') + '</code> on ' +
-                 kit.esc(job.running.nodeName || job.running.host) +
-                 ' (pid ' + kit.esc(job.running.pid) + ', attempt ' +
-                 job.running.attempt + ')');
+      parts.push(t.html('consoleScheduler.last.runningNow', {
+        since: job.running.startedAt || '',
+        node: job.running.nodeName || job.running.host,
+        pid: job.running.pid, attempt: job.running.attempt }));
     }
     const last = job.lastRun;
     if (last) {
       parts.push('<a href="' + kit.esc(PAGE + '?run=' +
                                          encodeURIComponent(last.runId)) +
-                 '">' + this.outcomeText(last).replace(/<br>.*$/, '') +
+                 '">' + this.outcomeText(last, t).replace(/<br>.*$/, '') +
                  '</a><br><small>' + kit.esc(last.startedAt || '') +
                  ' → ' + kit.esc(last.endedAt || '') +
                  (last.durationMs !== null ? ', ' +
                   kit.esc(kit.span(last.durationMs)) +
                   ' (' + last.durationMs + ' ms)' : '') + ', ' +
-                 kit.esc(last.trigger) + ', on ' +
-                 kit.esc(last.nodeName || last.host || '?') + '</small>' +
+                 kit.esc(last.trigger) + ', ' +
+                 t.html('consoleScheduler.last.on',
+                        { node: last.nodeName || last.host || '?' }) +
+                 '</small>' +
                  (last.why ? '<br><small>' + kit.esc(last.why) +
                   '</small>' : ''));
     }
     if (!parts.length) {
-      parts.push('<em>never run</em>');
+      parts.push(t.html('consoleScheduler.last.never'));
     }
     return parts.join('<br>');
   }
 
-  static nextRunCell(job: Json): string {
+  static nextRunCell(job: Json, t: Json): string {
     let text: string;
     switch (job.nextRunState) {
       case 'off':
         text = '—';
         break;
       case 'manual-only':
-        text = '<em>on demand only</em>';
+        text = t.html('consoleScheduler.next.manualOnly');
         break;
       case 'queued':
-        text = '<strong>queued</strong> (manual run requested by ' +
-               kit.esc(job.queued[0].requestedBy || 'somebody') + ')<br>' +
+        // The requester is a person's name, kept out of the message so it
+        // is escaped exactly as it always was.
+        text = t.html('consoleScheduler.next.queuedA') + ' ' +
+               kit.esc(job.queued[0].requestedBy ||
+                       t.text('consoleScheduler.next.somebody')) +
+               t.html('consoleScheduler.next.queuedB') + '<br>' +
                '<small><code>' + kit.esc(job.queued[0].queuedAt || '') +
                '</code></small>';
         break;
       case 'due':
-        text = '<strong>due now</strong> — waiting for the leader\'s next ' +
-               'tick<br><small><code>' + kit.esc(job.nextRunAt) +
+        text = t.html('consoleScheduler.next.due') +
+               '<br><small><code>' + kit.esc(job.nextRunAt) +
                '</code></small>';
         break;
       case 'overdue':
-        text = '<strong>overdue since</strong> <code>' +
+        text = t.html('consoleScheduler.next.overdue') + ' <code>' +
                kit.esc(job.overdueSince) + '</code><br><small>' +
                kit.esc(job.overdueWhy || '') + '</small>';
         break;
       case 'running':
-        text = 'after this run; next slot ' +
-               this.when(job.nextRunAt, job.nextRunInMs);
+        text = t.html('consoleScheduler.next.afterThisRun') + ' ' +
+               this.when(job.nextRunAt, job.nextRunInMs, t);
         break;
       default:
-        text = this.when(job.nextRunAt, job.nextRunInMs);
+        text = this.when(job.nextRunAt, job.nextRunInMs, t);
     }
     return text;
   }
 
-  static runNowCell(job: Json, canWrite: boolean): string {
+  static runNowCell(job: Json, canWrite: boolean, t: Json): string {
     if (!canWrite || !job.manual || job.readOnly || job.state === 'off') {
       return job.state === 'off' && job.manual
-        ? '<small>off</small>' : '—';
+        ? '<small>' + t.html('consoleScheduler.jobs.off') + '</small>' : '—';
     }
     return '<form method="post" action="' + PAGE + '" class="inline">' +
       '<input type="hidden" name="action" value="run">' +
@@ -163,27 +219,32 @@ class SchedulerPage {
       '<input type="hidden" name="realm" value="' + kit.esc(job.realm) +
       '">' +
       '<button type="submit" id="scheduler-run-' + kit.esc(job.id) + '-' +
-      kit.esc(job.realm) + '">Run now</button></form>';
+      kit.esc(job.realm) + '">' + t.html('consoleScheduler.jobs.runNow') +
+      '</button></form>';
   }
 
-  static jobsTable(json: Json, canWrite: boolean, query: Json): string {
+  static jobsTable(json: Json, canWrite: boolean, query: Json,
+                   t: Json): string {
     const self = this;
     const nav = kit.pageNavPair(PAGE, kit.pageParamsOf(query),
                                   json.jobsPaging);
     const rows = json.jobs.map(function (job: Json): string {
       const state = job.state === 'off'
-        ? '<strong>off</strong><br><small>' + kit.esc(job.offReason) +
+        ? '<strong>' + t.html('consoleScheduler.jobs.off') +
+          '</strong><br><small>' + kit.esc(job.offReason) +
           '</small>'
-        : 'enabled' + (job.readOnly ? '<br><small>read-only here: a ' +
-                       'service job</small>' : '');
+        : t.html('consoleScheduler.jobs.enabled') +
+          (job.readOnly ? '<br><small>' +
+           t.html('consoleScheduler.jobs.readOnly') + '</small>' : '');
       const head = '<tr id="job-' + kit.esc(job.id) + '-' +
         kit.esc(job.realm) + '">' +
         '<td><a href="' + kit.esc(PAGE + '?job=' +
                                     encodeURIComponent(job.id)) +
         '"><code>' + kit.esc(job.id) + '</code></a><br>' +
         kit.esc(job.title) + '<br><small>' + kit.esc(job.describe) +
-        '</small><br><small>owner <code>' + kit.esc(job.owner) +
-        '</code></small></td>' +
+        '</small><br><small>' +
+        t.html('consoleScheduler.jobs.owner', { owner: job.owner }) +
+        '</small></td>' +
         '<td>' + kit.esc(job.kind) + '<br><small>' +
         kit.esc(job.scope) + (job.scope === 'realm'
           ? ': <code>' + kit.esc(job.realm) + '</code>' : '') +
@@ -191,68 +252,80 @@ class SchedulerPage {
         '<td>' + kit.esc(job.schedule.text) + '</td>' +
         '<td>' + state + '</td>' +
         '<td>' + (job.kind === 'per-process'
-          ? '<em>per process, below</em>' : self.lastRunCell(job)) + '</td>' +
-        '<td>' + self.nextRunCell(job) + '</td>' +
-        '<td>' + self.runNowCell(job, canWrite) + '</td></tr>';
+          ? t.html('consoleScheduler.jobs.perProcess')
+          : self.lastRunCell(job, t)) + '</td>' +
+        '<td>' + self.nextRunCell(job, t) + '</td>' +
+        '<td>' + self.runNowCell(job, canWrite, t) + '</td></tr>';
       const subs = (job.processes || []).map(function (p: Json): string {
         return '<tr class="sub"><td colspan="4"><small>↳ ' +
           kit.esc(p.nodeName || p.host) + ', pid ' + kit.esc(p.pid) +
-          (p.worker ? ' (request worker)' : ' (front process)') +
-          (p.stale ? ' — <strong>no run for two slots; the process has ' +
-           'probably gone</strong>' : '') + '</small></td><td>' +
-          self.outcomeText(p) + '<br><small>' +
+          ' ' + (p.worker ? t.html('consoleScheduler.jobs.requestWorker')
+                          : t.html('consoleScheduler.jobs.frontProcess')) +
+          (p.stale ? ' — <strong>' + t.html('consoleScheduler.jobs.stale') +
+           '</strong>' : '') + '</small></td><td>' +
+          self.outcomeText(p, t) + '<br><small>' +
           kit.esc(p.startedAt || '') + '</small></td><td>' +
-          self.when(p.nextRunAt, p.nextRunInMs) + '</td><td></td></tr>';
+          self.when(p.nextRunAt, p.nextRunInMs, t) + '</td><td></td></tr>';
       }).join('');
       const noProcess = job.kind === 'per-process' &&
         !(job.processes || []).length
-        ? '<tr class="sub"><td colspan="7"><small>↳ no process has run ' +
-          'it yet</small></td></tr>' : '';
+        ? '<tr class="sub"><td colspan="7"><small>↳ ' +
+          t.html('consoleScheduler.jobs.noProcess') + '</small></td></tr>'
+        : '';
       return head + subs + noProcess;
     }).join('');
-    return nav.head + '<table class="grid"><thead><tr><th>Job</th>' +
-      '<th>Kind and scope</th><th>Schedule</th><th>State</th>' +
-      '<th>Last run</th><th>Time to next run</th><th>Run now</th>' +
+    return nav.head + '<table class="grid"><thead><tr><th>' +
+      t.html('consoleScheduler.th.job') + '</th>' +
+      '<th>' + t.html('consoleScheduler.th.kindScope') + '</th><th>' +
+      t.html('consoleScheduler.th.schedule') + '</th><th>' +
+      t.html('consoleScheduler.th.state') + '</th>' +
+      '<th>' + t.html('consoleScheduler.th.lastRun') + '</th><th>' +
+      t.html('consoleScheduler.th.nextRun') + '</th><th>' +
+      t.html('consoleScheduler.th.runNow') + '</th>' +
       '</tr></thead><tbody>' +
-      (rows || '<tr><td colspan="7">No job is registered.</td></tr>') +
+      (rows || '<tr><td colspan="7">' +
+               t.html('consoleScheduler.jobs.none') + '</td></tr>') +
       '</tbody></table>' + nav.foot;
   }
 
-  static leaderBlock(json: Json, canWrite: boolean): string {
+  static leaderBlock(json: Json, canWrite: boolean, t: Json): string {
     const l = json.leader || {};
     let who: string;
     if (!l.known) {
-      who = '<strong>No process has led the scheduler yet.</strong> The ' +
-            'leader writes a row when it takes the lead and at every tick.';
+      who = t.html('consoleScheduler.leader.none');
     } else {
-      who = (l.thisProcess ? '<strong>This process</strong> — ' : '') +
-        '<strong>' + kit.esc(l.nodeName || l.host) + '</strong>, pid ' +
-        kit.esc(l.pid) + (l.clustered
-          ? ', node <code>' + kit.esc(l.node) + '</code>, lease token ' +
-            kit.esc(l.token) : ' — <em>not clustered</em>: the one front ' +
-            'process leads, and nothing else could') +
-        '<br><small>leading since <code>' + kit.esc(l.since || '?') +
-        '</code>' + (l.leaseAcquiredAt ? ' (the lease was acquired ' +
-        '<code>' + kit.esc(l.leaseAcquiredAt) + '</code>)' : '') +
-        '; last tick <code>' + kit.esc(l.lastTickAt || '?') + '</code>' +
+      who = (l.thisProcess
+        ? t.html('consoleScheduler.leader.thisProcess') + ' ' : '') +
+        t.html('consoleScheduler.leader.node',
+               { node: l.nodeName || l.host, pid: l.pid }) + (l.clustered
+          ? t.html('consoleScheduler.leader.clustered',
+                   { node: l.node, token: l.token })
+          : ' ' + t.html('consoleScheduler.leader.notClustered')) +
+        '<br><small>' +
+        t.html('consoleScheduler.leader.since', { since: l.since || '?' }) +
+        (l.leaseAcquiredAt ? ' ' +
+         t.html('consoleScheduler.leader.leaseAcquired',
+                { at: l.leaseAcquiredAt }) : '') +
+        t.html('consoleScheduler.leader.lastTick',
+               { at: l.lastTickAt || '?' }) +
         (l.lastTickAgoMs !== null ? ', ' +
-         kit.esc(kit.span(l.lastTickAgoMs)) +
-         ' ago' : '') + '</small>' +
-        (l.live ? '' : kit.warn('The leader has not ticked for longer ' +
-                                  'than three ticks. No job is running on ' +
-                                  'schedule until a node leads again.'));
+         t.html('consoleScheduler.leader.ago',
+                { span: kit.span(l.lastTickAgoMs) }) : '') + '</small>' +
+        (l.live ? '' : kit.warn(t.html('consoleScheduler.leader.stalled')));
     }
     const stepDown = canWrite && l.clustered && !json.confinedToRealm
       ? '<form method="post" action="' + PAGE + '" class="inline">' +
         '<input type="hidden" name="action" value="step-down">' +
-        '<button type="submit" id="scheduler-step-down">Step down</button>' +
-        '</form> <small>asks the leader to hand the scheduler to another ' +
-        'node; it stands down at its next tick</small>'
+        '<button type="submit" id="scheduler-step-down">' +
+        t.html('consoleScheduler.leader.stepDown') + '</button>' +
+        '</form> <small>' + t.html('consoleScheduler.leader.stepDownWhat') +
+        '</small>'
       : '';
-    return '<h3>Leader</h3><p>' + who + '</p>' + stepDown;
+    return '<h3>' + t.html('consoleScheduler.leader.heading') + '</h3><p>' +
+      who + '</p>' + stepDown;
   }
 
-  static runsTable(json: Json, query: Json): string {
+  static runsTable(json: Json, query: Json, t: Json): string {
     const self = this;
     const params = kit.pageParamsOf(query);
     ['job', 'outcome'].forEach(function (name: string): void {
@@ -262,7 +335,8 @@ class SchedulerPage {
       }
     });
     const nav = kit.pageNavPair(PAGE, params, json.runsPaging);
-    const jobOptions = ['<option value="">every job</option>'].concat(
+    const jobOptions = ['<option value="">' +
+      t.html('consoleScheduler.filter.everyJob') + '</option>'].concat(
       ((json.jobIds || []) as string[]).map(function (id: string): string {
         return '<option value="' + kit.esc(id) + '"' +
           (json.filters.job === id ? ' selected' : '') + '>' +
@@ -272,12 +346,15 @@ class SchedulerPage {
                             'running', 'queued'].map(function (o: string) {
       return '<option value="' + o + '"' +
         ((json.filters.outcome || '') === o ? ' selected' : '') + '>' +
-        (o || 'every outcome') + '</option>';
+        outcomeLabel(o, t) + '</option>';
     }).join('');
     const filter = '<form method="get" action="' + PAGE + '" class="inline">' +
-      '<label>Job <select name="job">' + jobOptions + '</select></label> ' +
-      '<label>Outcome <select name="outcome">' + outcomeOptions +
-      '</select></label> <button type="submit">Filter</button></form>';
+      '<label>' + t.html('consoleScheduler.filter.job') +
+      ' <select name="job">' + jobOptions + '</select></label> ' +
+      '<label>' + t.html('consoleScheduler.filter.outcome') +
+      ' <select name="outcome">' + outcomeOptions +
+      '</select></label> <button type="submit">' +
+      t.html('consoleScheduler.filter.submit') + '</button></form>';
     const rows = json.runs.map(function (r: Json): string {
       return '<tr><td><a href="' + kit.esc(PAGE + '?run=' +
                                              encodeURIComponent(r.runId)) +
@@ -289,22 +366,33 @@ class SchedulerPage {
         (r.pid ? ' <small>pid ' + kit.esc(r.pid) + '</small>' : '') +
         '</td><td class="num">' + (r.fenceAt || '—') + '</td>' +
         '<td class="num">' + r.attempt + '</td>' +
-        '<td>' + self.outcomeText(r) + '</td>' +
+        '<td>' + self.outcomeText(r, t) + '</td>' +
         '<td class="num">' + (r.durationMs === null ? '—'
                                : r.durationMs + ' ms') + '</td>' +
         '<td><small>' + kit.esc(r.startedAt || r.queuedAt || '') +
         '</small></td></tr>';
     }).join('');
-    return '<h3>Recent runs</h3>' + filter + nav.head +
-      '<table class="grid"><thead><tr><th>Run</th><th>Job</th>' +
-      '<th>Realm</th><th>Trigger</th><th>Node</th><th>Fence</th>' +
-      '<th>Attempt</th><th>Outcome</th><th>Duration</th><th>Started</th>' +
+    return '<h3>' + t.html('consoleScheduler.runs.heading') + '</h3>' +
+      filter + nav.head +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleScheduler.th.run') + '</th><th>' +
+      t.html('consoleScheduler.th.job') + '</th>' +
+      '<th>' + t.html('consoleScheduler.th.realm') + '</th><th>' +
+      t.html('consoleScheduler.th.trigger') + '</th><th>' +
+      t.html('consoleScheduler.th.node') + '</th><th>' +
+      t.html('consoleScheduler.th.fence') + '</th>' +
+      '<th>' + t.html('consoleScheduler.th.attempt') + '</th><th>' +
+      t.html('consoleScheduler.th.outcome') + '</th><th>' +
+      t.html('consoleScheduler.th.duration') + '</th><th>' +
+      t.html('consoleScheduler.th.started') + '</th>' +
       '</tr></thead><tbody>' +
-      (rows || '<tr><td colspan="10">No run is recorded.</td></tr>') +
+      (rows || '<tr><td colspan="10">' +
+               t.html('consoleScheduler.runs.none') + '</td></tr>') +
       '</tbody></table>' + nav.foot;
   }
 
   static listHtml(ctx: Json, json: Json): string {
+    const t = ctx.t;
     const canWrite = ctx.write;
     const off = json.jobs.filter(function (j: Json): boolean {
       return j.state === 'off';
@@ -313,42 +401,40 @@ class SchedulerPage {
       return j.lastRun && j.lastRun.state === 'failed';
     }).length;
     const tiles = '<div class="tiles">' +
-      kit.tile(String(json.jobs.length), 'job rows') +
-      kit.tile(String(off), 'off') +
-      kit.tile(String(failing), 'last run failed') +
-      kit.tile(String(json.tickS) + ' s', 'tick') +
+      kit.tile(String(json.jobs.length),
+               t.text('consoleScheduler.tile.jobRows')) +
+      kit.tile(String(off), t.text('consoleScheduler.tile.off')) +
+      kit.tile(String(failing), t.text('consoleScheduler.tile.failed')) +
+      kit.tile(String(json.tickS) + ' s',
+               t.text('consoleScheduler.tile.tick')) +
       '</div>';
-    const asOf = '<p><small>As of <code>' + kit.esc(json.generatedAt) +
-      '</code> by ' + kit.esc(json.clock) + '\'s clock, drawn by ' +
-      kit.esc(json.answeredBy.nodeName || json.answeredBy.host) +
-      ', pid ' + kit.esc(json.answeredBy.pid) + '. <a href="' + PAGE +
-      '">Refresh</a> — the times below do not count down.</small></p>';
+    const asOf = '<p><small>' + t.html('consoleScheduler.asOf', {
+      at: json.generatedAt, clock: json.clock,
+      node: json.answeredBy.nodeName || json.answeredBy.host,
+      pid: json.answeredBy.pid }) + ' <a href="' + PAGE +
+      '">' + t.html('consoleScheduler.refresh') + '</a> ' +
+      t.html('consoleScheduler.noCountdown') + '</small></p>';
+    // A `<p>` is markup no message carries, so each paragraph is a message.
     const what = kit.note(
-      '<p>This page answers <strong>whether the background work is ' +
-      'happening</strong>. Every periodic job in this service is registered ' +
-      'with one scheduler and is listed here, including the ones that are ' +
-      'off. A <em>cluster</em> job runs once for the whole service, on the ' +
-      'scheduler\'s leader; a <em>per-process</em> job runs in every process ' +
-      'that holds what it cleans, and has a row per process.</p>' +
-      '<p>A job runs once per <strong>slot</strong> — a multiple of its ' +
-      'interval by the database\'s clock, or an occurrence of its cron ' +
-      'expression — so a slot missed while no node led runs once when one ' +
-      'does. A run is claimed before it starts, and the claim\'s time is ' +
-      'its <strong>fence</strong>: a node that paused past its claim cannot ' +
-      'write an outcome over the attempt that took it over, which is shown ' +
-      'as <em>abandoned</em>.</p>', 'What this page is');
+      '<p>' + t.html('consoleScheduler.what.p1') + '</p>' +
+      '<p>' + t.html('consoleScheduler.what.p2') + '</p>',
+      t.html('consoleScheduler.what.label'));
     const unknown = json.unknownDisabledIds.length
-      ? kit.warn('<code>scheduler.disabledJobs</code> names ' +
+      ? kit.warn(t.html('consoleScheduler.unknownA') + ' ' +
                    json.unknownDisabledIds.map(function (id: string) {
                      return '<code>' + kit.esc(id) + '</code>';
-                   }).join(', ') + ', which no job is called.')
+                   }).join(', ') + t.html('consoleScheduler.unknownB'))
       : '';
     const disabled = json.enabled ? ''
-      : kit.warn('<code>scheduler.enabled</code> is off: no job runs, on ' +
-                   'its schedule or by hand.');
+      : kit.warn(t.html('consoleScheduler.disabled'));
     const commands = json.commands.length
-      ? '<h3>Commands</h3><table class="grid"><thead><tr><th>Command</th>' +
-        '<th>State</th><th>Requested</th><th>By</th><th>Obeyed by</th>' +
+      ? '<h3>' + t.html('consoleScheduler.commands.heading') +
+        '</h3><table class="grid"><thead><tr><th>' +
+        t.html('consoleScheduler.th.command') + '</th>' +
+        '<th>' + t.html('consoleScheduler.th.state') + '</th><th>' +
+        t.html('consoleScheduler.th.requested') + '</th><th>' +
+        t.html('consoleScheduler.th.by') + '</th><th>' +
+        t.html('consoleScheduler.th.obeyedBy') + '</th>' +
         '</tr></thead><tbody>' + json.commands.map(function (c: Json) {
           return '<tr><td>' + kit.esc(c.command) + '</td><td>' +
             kit.esc(c.state) + '</td><td><small>' +
@@ -359,15 +445,20 @@ class SchedulerPage {
         }).join('') + '</tbody></table>'
       : '';
     return tiles + asOf + disabled + unknown + what +
-      this.leaderBlock(json, canWrite) + '<h3>Jobs</h3>' +
-      this.jobsTable(json, canWrite, ctx.query || {}) +
-      this.runsTable(json, ctx.query || {}) +
+      this.leaderBlock(json, canWrite, t) + '<h3>' +
+      t.html('consoleScheduler.jobs.heading') + '</h3>' +
+      this.jobsTable(json, canWrite, ctx.query || {}, t) +
+      this.runsTable(json, ctx.query || {}, t) +
       commands + (json.confinedToRealm ? ''
-        : '<h2>Settings</h2>' + SettingsForms.forms(json.settings, PAGE));
+        : '<h2>' + t.html('consoleScheduler.settings.heading') + '</h2>' +
+          SettingsForms.forms(json.settings, PAGE, undefined,
+                              t));
   }
 
-  static detailHtml(json: Json): string {
+  static detailHtml(json: Json, t: Json): string {
     if (!json.found) {
+      // A run that is not there is a refusal, and refusals stay English
+      // (#539, decision 6).
       return kit.warn('There is no run <code>' + kit.esc(json.run) +
         '</code> here. <a href="' + PAGE + '">Every recent run</a> is ' +
         'listed on the Scheduler page.');
@@ -377,28 +468,41 @@ class SchedulerPage {
       return '<tr><th>' + label + '</th><td>' + value + '</td></tr>';
     };
     return '<table class="grid"><tbody>' +
-      row('Run', '<code>' + kit.esc(r.runId) + '</code>') +
-      row('Job', '<code>' + kit.esc(r.jobId || '') + '</code>') +
-      row('Realm', '<code>' + kit.esc(r.realm || '') + '</code>') +
-      row('Trigger', kit.esc(r.trigger) +
-          (r.requestedBy ? ' by ' + kit.esc(r.requestedBy) : '') +
-          (r.requestedVia ? ' at ' + kit.esc(r.requestedVia) : '')) +
-      row('Outcome', this.outcomeText(r)) +
-      row('Attempt', String(r.attempt) + (r.takenOver
-        ? ' (it took over an attempt that lost its claim)' : '')) +
-      row('Fence', String(r.fenceAt || '—')) +
-      row('Node', kit.esc(r.nodeName || r.host || '—') + (r.pid
+      row(t.html('consoleScheduler.th.run'),
+          '<code>' + kit.esc(r.runId) + '</code>') +
+      row(t.html('consoleScheduler.th.job'),
+          '<code>' + kit.esc(r.jobId || '') + '</code>') +
+      row(t.html('consoleScheduler.th.realm'),
+          '<code>' + kit.esc(r.realm || '') + '</code>') +
+      row(t.html('consoleScheduler.th.trigger'), kit.esc(r.trigger) +
+          (r.requestedBy ? ' ' + t.html('consoleScheduler.detail.by') + ' ' +
+           kit.esc(r.requestedBy) : '') +
+          (r.requestedVia ? ' ' + t.html('consoleScheduler.detail.at') +
+           ' ' + kit.esc(r.requestedVia) : '')) +
+      row(t.html('consoleScheduler.th.outcome'), this.outcomeText(r, t)) +
+      row(t.html('consoleScheduler.th.attempt'), String(r.attempt) +
+          (r.takenOver
+           ? ' ' + t.html('consoleScheduler.detail.tookOver') : '')) +
+      row(t.html('consoleScheduler.th.fence'), String(r.fenceAt || '—')) +
+      row(t.html('consoleScheduler.th.node'),
+          kit.esc(r.nodeName || r.host || '—') + (r.pid
         ? ', pid ' + kit.esc(r.pid) : '')) +
-      row('Due', '<code>' + kit.esc(r.dueAt || '—') + '</code>') +
-      row('Queued', '<code>' + kit.esc(r.queuedAt || '—') + '</code>') +
-      row('Started', '<code>' + kit.esc(r.startedAt || '—') + '</code>') +
-      row('Ended', '<code>' + kit.esc(r.endedAt || '—') + '</code>') +
-      row('Duration', r.durationMs === null ? '—' : r.durationMs + ' ms') +
-      row('Parameters', r.params ? '<code>' +
+      row(t.html('consoleScheduler.detail.due'),
+          '<code>' + kit.esc(r.dueAt || '—') + '</code>') +
+      row(t.html('consoleScheduler.detail.queued'),
+          '<code>' + kit.esc(r.queuedAt || '—') + '</code>') +
+      row(t.html('consoleScheduler.th.started'),
+          '<code>' + kit.esc(r.startedAt || '—') + '</code>') +
+      row(t.html('consoleScheduler.detail.ended'),
+          '<code>' + kit.esc(r.endedAt || '—') + '</code>') +
+      row(t.html('consoleScheduler.th.duration'),
+          r.durationMs === null ? '—' : r.durationMs + ' ms') +
+      row(t.html('consoleScheduler.detail.params'), r.params ? '<code>' +
           kit.esc(JSON.stringify(r.params)) + '</code>' : '—') +
-      row('Result', r.result ? '<code>' + kit.esc(String(r.result)) +
-          '</code>' : '—') +
-      (r.abandonedOf ? row('Abandoned attempt of', '<a href="' +
+      row(t.html('consoleScheduler.detail.result'), r.result ? '<code>' +
+          kit.esc(String(r.result)) + '</code>' : '—') +
+      (r.abandonedOf ? row(t.html('consoleScheduler.detail.abandonedOf'),
+        '<a href="' +
         kit.esc(PAGE + '?run=' + encodeURIComponent(r.abandonedOf)) +
         '"><code>' + kit.esc(r.abandonedOf) + '</code></a>') : '') +
       '</tbody></table>';
@@ -415,7 +519,7 @@ class SchedulerPage {
    */
   static body(ctx: Json, json: Json): string {
     return json.run === undefined ? this.listHtml(ctx, json)
-      : this.detailHtml(json);
+      : this.detailHtml(json, ctx.t);
   }
 }
 

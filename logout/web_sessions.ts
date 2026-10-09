@@ -39,6 +39,10 @@ class SessionsPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // The page's words are its translator's (#539 phase 6); a row's rule,
+    // its reason and its detail come from the view and are drawn as they
+    // come, and the not-installed box is an error and stays English.
+    const t = ctx.t;
 
     if (!json.installed) {
       const inner = '<div class="err"><strong>The logout reader is not ' +
@@ -66,7 +70,7 @@ class SessionsPage {
 
     const protocolOptions = ['<option value=""' +
         ((json.filter.protocol || '') ? '' : ' selected') +
-          '>any protocol</option>']
+          '>' + t.html('consoleSessions.anyProtocol') + '</option>']
       .concat(json.protocols.map(function (name) {
         return '<option value="' + kit.esc(name) + '"' +
                (name === (json.filter.protocol || '') ? ' selected' : '') +
@@ -76,123 +80,89 @@ class SessionsPage {
 
     const rows = json.sessions.length
       ? json.sessions.map(function (row) {
-          return SessionsPage.sessionRow(row, nowMs, ctx.write, back);
+          return SessionsPage.sessionRow(t, row, nowMs, ctx.write, back);
         }).join('')
       : '<tr><td colspan="8">' +
         (json.held
-          ? 'Nothing matches. ' + json.held + ' session(s) are live ' +
-            'under other names or other protocols.'
-          : 'Nothing is signed in. Sign somebody in &mdash; an OIDC flow, ' +
-            'a SAML 2.0 sign-in, an <code>ldapsearch</code> that binds, a ' +
-            '<code>kinit</code> &mdash; and a row appears here.') +
+          ? t.html('consoleSessions.nothingMatches', { n: json.held })
+          : t.html('consoleSessions.nothingSignedIn')) +
         '</td></tr>';
 
-    const inner = kit.note('<strong>Every session this service is holding ' +
-      'right ' +
-      'now</strong>, across the three protocols that have one. A session ' +
-      'is state THIS SERVICE holds that makes somebody currently ' +
-      'authenticated; a token, an assertion, a ticket and an SVID are ' +
-      'things it has HANDED OUT, they outlive every session here, and they ' +
-      'are <a href="/admin/tokens">Tokens</a>. Keeping the two apart is ' +
-      'the whole point of a page of each.') +
+    const thead = '<tr><th>' + t.html('consoleSessions.thKind') +
+      '</th><th>' + t.html('consoleSessions.thProtocol') + '</th><th>' +
+      t.html('consoleSessions.thWho') + '</th><th>' +
+      t.html('consoleSessions.thSince') + '</th>' +
+      '<th>' + t.html('consoleSessions.thExpires') + '</th><th>' +
+      t.html('consoleSessions.thCarries') + '</th><th>' +
+      t.html('consoleSessions.thCredentials') + '</th><th></th></tr>';
+
+    // A link carries an href, which a message may not: each sentence around
+    // one is split into messages with the anchor in the code.
+    const inner = kit.note(t.html('consoleSessions.leadBefore') +
+      '<a href="/admin/tokens">' + t.html('consoleSessions.leadTokens') +
+      '</a>' + t.html('consoleSessions.leadAfter')) +
 
       '<div class="tiles">' +
-      kit.tile(json.held, 'live sessions') +
-      kit.tile(json.heldByKind.session || 0, 'browser sign-on') +
-      kit.tile(json.heldByKind.krb5 || 0, 'Kerberos TGTs') +
-      kit.tile(json.heldByKind.ldap || 0, 'LDAP connections') +
+      kit.tile(json.held, t.text('consoleSessions.tileLive')) +
+      kit.tile(json.heldByKind.session || 0,
+               t.text('consoleSessions.tileBrowser')) +
+      kit.tile(json.heldByKind.krb5 || 0,
+               t.text('consoleSessions.tileKerberos')) +
+      kit.tile(json.heldByKind.ldap || 0, t.text('consoleSessions.tileLdap')) +
       // The fifth tile is a SLICE of the first four rather than a fifth kind,
       // so the four above it still add up to `live sessions` and this one
       // does not join that sum. It earns a tile anyway: it is the number
       // somebody scans this page for, and a zero here is as informative as a
       // non-zero.
-      kit.tile(json.unauthenticatedHeld, 'unauthenticated') +
+      kit.tile(json.unauthenticatedHeld,
+               t.text('consoleSessions.tileUnauthenticated')) +
       '</div>' +
 
-      kit.note('<strong>The three are not variants of one thing and their ' +
-      'expiries are worked out differently</strong>, which is why the ' +
-      'Expires column carries the rule as well as the time &mdash; hover ' +
-      'it on any row:') +
-      '<ul><li><strong>The browser sign-on session</strong> &mdash; the ' +
-      'cookie from <code>/authn/login</code>, which OAuth 2.0 / OIDC, ' +
-      'WS-Federation, SAML 2.0, SAML 1.1 and this console all read. It ' +
-      'expires at an ABSOLUTE instant fixed when it was created ' +
-      '(<code>authn.sessionLifetimeS</code>) and <strong>using it does not ' +
-      'extend it</strong>. An idle timeout ' +
-      '(<code>authn.sessionIdleTimeoutS</code>) ends it earlier when it ' +
-      'goes unused; it is off by default, and then a session in constant ' +
-      'use dies at the same moment as one nobody has touched. The ' +
-      '<em>Carries</em> column is what has signed in ON it, which is what ' +
-      'makes ending one reach further than it looks.</li><li><strong>The ' +
-      'Kerberos ticket-granting ticket</strong> &mdash; a TGT IS the ' +
-      'Kerberos session and a service ticket is one use of it. It expires ' +
-      'at the <code>endtime</code> the KDC sealed INTO the ticket, and ' +
-      'nothing here can move it or take it back: a ticket is valid because ' +
-      'it decrypts and its endtime has not passed. Short lifetimes are the ' +
-      'whole of Kerberos\'s revocation model.</li><li><strong>The LDAP ' +
-      'connection</strong> &mdash; RFC 4511 section 4.2 makes a Bind the ' +
-      'authorization state of a CONNECTION, so in LDAP the connection is ' +
-      'the session and closing it is the only sign-out the protocol has. ' +
-      'It has <strong>no expiry at all</strong>: it lasts until the next ' +
-      'Bind, an Unbind, or the socket closing.</li></ul>' +
+      kit.note(t.html('consoleSessions.threeKinds')) +
+      '<ul><li>' + t.html('consoleSessions.kindBrowser') + '</li><li>' +
+      t.html('consoleSessions.kindKerberos') + '</li><li>' +
+      t.html('consoleSessions.kindLdap') + '</li></ul>' +
 
-      kit.warn('<strong>Revoke is not one act either.</strong> On a ' +
-      'browser session it ends that session and everything hanging off it ' +
-      '&mdash; the relying parties are notified, the refresh tokens issued ' +
-      'on it are revoked. On an LDAP row it closes the socket, which the ' +
-      'client sees as its connection dropping mid-conversation. On a ' +
-      'Kerberos row <strong>it does more than the row it is on</strong>: ' +
-      'it stamps a sign-out instant on the PRINCIPAL, so every ' +
-      'ticket-granting ticket that principal authenticated before now is ' +
-      'refused &mdash; and it still reaches no service ticket already in a ' +
-      'cache, because accepting one never contacts this KDC. Every button ' +
-      'carries its own sentence; hover it before pressing it. All three go ' +
-      'through the same termination <a href="/logout">the ' +
-      'protocol-independent sign-out</a> performs, so they write the same ' +
-      'audit row and honour the same two settings.') +
+      kit.warn(t.html('consoleSessions.revokeBefore') +
+      '<a href="/logout">' + t.html('consoleSessions.revokeLink') + '</a>' +
+      t.html('consoleSessions.revokeAfter')) +
 
-      '<h2>Live sessions</h2>' +
+      '<h2>' + t.html('consoleSessions.hLive') + '</h2>' +
       // No `page` input in this form, and that is the point: changing the
       // filter or the page size sends the reader back to page 1. Carrying the
       // old page number over would land somebody on page 6 of a two-page
       // result.
       '<form method="get" action="/admin/sessions"><div class="formrow">' +
-        '<label for="q">Search</label>' +
+        '<label for="q">' + t.html('consoleSessions.search') + '</label>' +
         '<input type="text" id="q" name="q" size="28" value="' +
         kit.esc((json.filter.q || '')) +
-          '" placeholder="a username, a subject, ' +
-        'a DN or a session id">' +
-        '<label for="protocol">Protocol</label>' +
+          '" placeholder="' +
+        kit.esc(t.text('consoleSessions.searchPlaceholder')) + '">' +
+        '<label for="protocol">' + t.html('consoleSessions.protocol') +
+        '</label>' +
         '<select id="protocol" name="protocol">' + protocolOptions +
-        '</select><label for="per">Per page</label><select id="per" ' +
+        '</select><label for="per">' + t.html('consoleSessions.perPage') +
+        '</label><select id="per" ' +
         'name="per">' + kit.perPageOptions(paging.perPage) +
         '</select>' +
-        '<button class="secondary">Filter</button>' +
+        '<button class="secondary">' + t.html('consoleSessions.filter') +
+        '</button>' +
         ((json.filter.q || '') || (json.filter.protocol || '')
-          ? ' <a href="/admin/sessions">clear</a>' : '') +
+          ? ' <a href="/admin/sessions">' + t.html('consoleSessions.clear') +
+            '</a>' : '') +
       '</div></form>' +
-      kit.note('The search matches the username, the subject, the session ' +
-      'id, the bind DN and the principal name together, because a reader ' +
-      'arrives holding exactly one of those. The protocol is the one the ' +
-      'sign-in came THROUGH and not the only one the session serves: every ' +
-      'browser family here reads the same session, so a row saying ' +
-      '<code>SAML 2.0</code> may well be carrying OIDC relying parties too ' +
-      '&mdash; which is what the <em>Carries</em> column says.') +
+      kit.note(t.html('consoleSessions.searchNote')) +
       nav.head +
-      '<table><tr><th>Kind</th><th>Protocol</th><th>Who</th><th>Since</th>' +
-      '<th>Expires</th><th>Carries</th><th>Credentials</th><th></th></tr>' +
+      '<table>' + thead +
       rows + '</table>' +
       nav.foot +
-      kit.note(json.matched + ' row(s) match' +
+      kit.note(t.html('consoleSessions.matched', { n: json.matched }) +
       (paging.pages > 1
-        ? ', of which rows ' + paging.firstRow + '&ndash;' + paging.lastRow +
-          ' are on this page (' + paging.page + ' of ' + paging.pages + ')'
+        ? t.html('consoleSessions.rowsOnPage', {
+            first: paging.firstRow, last: paging.lastRow,
+            page: paging.page, pages: paging.pages })
         : '') +
-      '; ' + json.held + ' live in total. Newest first. Everything ' +
-      'here is read live from the module that owns it every time this page ' +
-      'is drawn &mdash; there is no cache, deliberately, because a cached ' +
-      'answer to <em>is this still live</em> would be the half a reader is ' +
-      'about to press a button on.') +
+      t.html('consoleSessions.liveInTotal', { held: json.held })) +
 
       // ---------------------------------------------------------------------
       // THE UNAUTHENTICATED SESSIONS (2026-09-05).
@@ -207,68 +177,44 @@ class SessionsPage {
       // section that disappeared with the setting would hide exactly those.
       // What changes with the setting is the sentence, not the presence.
       // ---------------------------------------------------------------------
-      '<h2>Unauthenticated sessions</h2>' +
+      '<h2>' + t.html('consoleSessions.hUnauthenticated') + '</h2>' +
 
-      kit.note('<strong>A session where nobody authenticated.</strong> ' +
-      'Somebody pressed <em>Continue without signing in</em> at ' +
-      '<code>/authn/login</code>, so this service holds a real session for ' +
-      'them &mdash; it has a cookie, it satisfies a flow already in ' +
-      'progress, and tokens can be issued on it &mdash; and it records ' +
-      'that no credential was ever checked. They are the ' +
-      '<code>anonymous</code> principal, which is one directory entry ' +
-      'however many of these there are.') +
+      kit.note(t.html('consoleSessions.unauthLead')) +
 
-      kit.note('<strong>This is the only place the difference between two ' +
-      'of the built-in roles is visible.</strong> Every session in the ' +
-      'table above holds <code>EVERYBODY</code> <em>and</em> ' +
-      '<code>ALL_AUTHENTICATED_USERS</code>; every session in this one ' +
-      'holds <code>EVERYBODY</code> and ' +
-      '<code>ALL_UNAUTHENTICATED_USERS</code> instead. So an application ' +
-      'whose <code>appRequiredRole</code> is ' +
-      '<code>ALL_AUTHENTICATED_USERS</code> refuses these with ' +
-      '<code>access_denied</code>, and one that names no role at all ' +
-      '&mdash; which requires <code>EVERYBODY</code> &mdash; does not. <a ' +
-      'href="/admin/roles">The role register</a> is where that is ' +
-      'configured.') +
+      kit.note(t.html('consoleSessions.rolesBefore') + '<a ' +
+      'href="/admin/roles">' + t.html('consoleSessions.rolesLink') + '</a>' +
+      t.html('consoleSessions.rolesAfter')) +
 
       (json.unauthenticatedKept
-        ? kit.note('<strong><code>authn.unauthenticatedSessions</code> is ' +
-          'ON</strong> in this realm, so the sign-in screen is offering ' +
-          'the third button. <a href="/admin/roles">Turn it off</a> and no ' +
-          'new ones can be started; any already here stay until they ' +
-          'expire or are ended.')
-        : kit.warn('<strong><code>authn.unauthenticatedSessions</code> is ' +
-          'OFF</strong> in this realm, so no new ones can be started and ' +
-          'this section will stay empty. It is off by default because it ' +
-          'puts a third button on every sign-in screen in the service. <a ' +
-          'href="/admin/roles">Turn it on</a> to make ' +
-          '<code>ALL_UNAUTHENTICATED_USERS</code> reachable.')) +
+        ? kit.note(t.html('consoleSessions.onBefore') +
+          '<a href="/admin/roles">' + t.html('consoleSessions.turnOff') +
+          '</a>' + t.html('consoleSessions.onAfter'))
+        : kit.warn(t.html('consoleSessions.offBefore') + '<a ' +
+          'href="/admin/roles">' + t.html('consoleSessions.turnOn') +
+          '</a>' + t.html('consoleSessions.offAfter'))) +
 
       (json.unauthenticatedHeld
-        ? '<table><tr><th>Kind</th><th>Protocol</th><th>Who</th><th>Since' +
-          '</th>' +
-          '<th>Expires</th><th>Carries</th><th>Credentials</th><th></th>' +
-          '</tr>' +
+        ? '<table>' + thead +
           json.unauthenticatedSessions.map(function (row) {
-            return SessionsPage.sessionRow(row, nowMs, ctx.write, back);
+            return SessionsPage.sessionRow(t, row, nowMs, ctx.write, back);
           }).join('') + '</table>' +
-          kit.note(json.unauthenticatedHeld + ' unauthenticated ' +
-            'session(s), of ' +
-          json.held + ' live. <strong>Not filtered and not ' +
-          'paged</strong>, unlike the table above &mdash; the question ' +
-          'this section answers is about the whole service, and a search ' +
-          'box somebody had left set could hide the one row that matters.')
-        : kit.note('<strong>None.</strong> Every session this service is ' +
-          'holding right now had a credential accepted for it.')) +
+          kit.note(t.html('consoleSessions.unauthCount', {
+            n: json.unauthenticatedHeld, held: json.held }))
+        : kit.note(t.html('consoleSessions.unauthNone'))) +
 
-      kit.note('<a href="/admin/logout">What ONE person is still signed ' +
-      'into</a>, which is this question asked the other way round and ' +
-      'reaches seven more families &middot; <a href="/admin/tokens">what ' +
-      'has been issued</a> &middot; <a href="/admin/caep-sessions">what ' +
-      'has been SAID about these sessions</a> over Shared Signals &middot; ' +
-      '<a href="/admin/metrics">the counts</a> &middot; <a ' +
-      'href="/admin/sessions?format=json">this page as JSON</a> &middot; ' +
-      '<a href="/admin-api/sessions">the same over the management API</a>');
+      kit.note('<a href="/admin/logout">' +
+      t.html('consoleSessions.linkLogout') + '</a>' +
+      t.html('consoleSessions.linkLogoutAfter') + ' &middot; <a ' +
+      'href="/admin/tokens">' + t.html('consoleSessions.linkTokens') +
+      '</a> &middot; <a href="/admin/caep-sessions">' +
+      t.html('consoleSessions.linkCaep') + '</a>' +
+      t.html('consoleSessions.linkCaepAfter') + ' &middot; ' +
+      '<a href="/admin/metrics">' + t.html('consoleSessions.linkMetrics') +
+      '</a> &middot; <a ' +
+      'href="/admin/sessions?format=json">' +
+      t.html('consoleSessions.linkJson') + '</a> &middot; ' +
+      '<a href="/admin-api/sessions">' + t.html('consoleSessions.linkApi') +
+      '</a>');
 
     return inner;
   }
@@ -279,13 +225,14 @@ class SessionsPage {
    * The form is drawn only for a terminable row and a holder of Admin
    * Write; otherwise the cell says why not.
    *
+   * @param t - the page's translator (#539)
    * @param row - a live-session row from logout.ts
    * @param nowMs - the current time in milliseconds
    * @param canWrite - whether the reader holds Admin Write
    * @param back - the list state the form posts as `back`
    * @returns a <tr> as HTML
    */
-  static sessionRow(row, nowMs, canWrite, back) {
+  static sessionRow(t, row, nowMs, canWrite, back) {
     const revoke = row.terminable && canWrite
       ? '<form method="post" action="/admin/sessions">' +
         '<input type="hidden" name="action" value="revoke">' +
@@ -294,12 +241,12 @@ class SessionsPage {
         '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
         '<button class="danger"' +
         (row.why ? ' title="' + kit.esc(row.why) + '"' : '') +
-        '>Revoke</button></form>'
+        '>' + t.html('consoleSessions.revoke') + '</button></form>'
       : (canWrite
           ? '<span class="state-none" title="' + kit.esc(row.why) +
-            '">cannot</span>'
+            '">' + t.html('consoleSessions.cannot') + '</span>'
           : '<span class="state-none" title="' +
-            kit.esc('Ending a session needs the Admin Write role.') +
+            kit.esc(t.text('consoleSessions.needsWrite')) +
             '">—</span>');
     const out = '<tr>' +
       '<td>' + kit.esc(row.kind) +
@@ -310,7 +257,7 @@ class SessionsPage {
         '</div>' :
        '') +
       '</td>' +
-      '<td>' + kit.esc(row.username || '(unknown)') +
+      '<td>' + kit.esc(row.username || t.text('consoleSessions.unknown')) +
       (row.sub ? '<div class="sub"><code>' + kit.esc(row.sub) +
        '</code></div>' :
        '') +
@@ -318,15 +265,13 @@ class SessionsPage {
       '<td class="sub">' +
       (row.startedAt ? kit.esc(kit.whenText(row.startedAt))
                      : '<span title="' +
-                       kit.esc('Nothing recorded when this one ' +
-                       'started. A connection bound before this service ' +
-                       'began stamping the instant reads this way.') +
-                       '">not ' +
-                           'recorded</span>') +
+                       kit.esc(t.text('consoleSessions.notRecordedTitle')) +
+                       '">' + t.html('consoleSessions.notRecorded') +
+                       '</span>') +
       '</td>' +
-      SessionsPage.sessionExpiryCell(row, nowMs) +
+      SessionsPage.sessionExpiryCell(t, row, nowMs) +
       '<td class="sub">' + kit.esc(row.detail || '—') + '</td>' +
-      SessionsPage.sessionCredentialsCell(row) +
+      SessionsPage.sessionCredentialsCell(t, row) +
       '<td>' + revoke + '</td>' +
       '</tr>';
     return out;
@@ -346,34 +291,34 @@ class SessionsPage {
    * A browser session links to its tokens, a Kerberos row to the ticket
    * table, and an LDAP connection to nothing.
    *
+   * @param t - the page's translator (#539)
    * @param row - a live-session row from logout.ts
    * @returns a <td> as HTML
    */
-  static sessionCredentialsCell(row) {
+  static sessionCredentialsCell(t, row) {
     if (row.family === 'session') {
       return '<td><a href="' + kit.esc('/admin/tokens' +
         kit.queryWith({ session: row.sessionId }, {})) +
-        '" title="' + kit.esc('Every credential issued under this session') +
-        '">issued on it</a></td>';
+        '" title="' + kit.esc(t.text('consoleSessions.issuedOnItTitle')) +
+        '">' + t.html('consoleSessions.issuedOnIt') + '</a></td>';
     }
     if (row.family === 'krb5') {
       return '<td><a href="' + kit.esc('/admin/tokens' +
         kit.queryWith({ family: 'ticket' }, {})) +
-        '" title="' + kit.esc('Every Kerberos ticket this KDC has minted. ' +
-          'There is no per-session link: a ticket carries no identifier this ' +
-          'service keeps a handle on.') + '">the ticket table</a></td>';
+        '" title="' + kit.esc(t.text('consoleSessions.ticketTableTitle')) +
+        '">' + t.html('consoleSessions.ticketTable') + '</a></td>';
     }
     if (row.family === 'gnap') {
       // A GNAP GRANT (#432): its tokens are in GNAP's own store, listed with
       // the grant on Protocols → GNAP.
       return '<td><a href="' + kit.esc('/admin/gnap' +
         kit.queryWith({ state: 'approved' }, {})) +
-        '" title="' + kit.esc('The grants this authorization server holds, ' +
-          'with the tokens each issued') + '">the grant list</a></td>';
+        '" title="' + kit.esc(t.text('consoleSessions.grantListTitle')) +
+        '">' + t.html('consoleSessions.grantList') + '</a></td>';
     }
     return '<td class="sub" title="' +
-           kit.esc('A Bind issues no credential. It sets the authorization ' +
-      'state of a connection, and that state is this row.') + '">none</td>';
+           kit.esc(t.text('consoleSessions.noneTitle')) + '">' +
+           t.html('consoleSessions.none') + '</td>';
   }
 
   // WHEN THIS SESSION ENDS, AND HOW THAT IS WORKED OUT. Several answers rather
@@ -386,29 +331,31 @@ class SessionsPage {
    *
    * A session with no expiry says so; one under five minutes is marked.
    *
+   * @param t - the page's translator (#539)
    * @param row - a live-session row from logout.ts
    * @param nowMs - the current time in milliseconds
    * @returns a <td> as HTML
    */
-  static sessionExpiryCell(row, nowMs) {
+  static sessionExpiryCell(t, row, nowMs) {
     const rule = row.expiryRule || '';
     if (!row.expiresAt) {
-      return '<td class="sub" title="' + kit.esc(rule) + '"><strong>no ' +
-        'expiry</strong><div class="sub">it ends when something ends ' +
-        'it</div></td>';
+      return '<td class="sub" title="' + kit.esc(rule) + '">' +
+        t.html('consoleSessions.noExpiry') + '<div class="sub">' +
+        t.html('consoleSessions.noExpiryNote') + '</div></td>';
     }
     const left = row.expiresAt - nowMs;
     if (left <= 0) {
       // Live rows only reach here in a race — the list was built a moment ago —
       // and saying so is better than a negative countdown.
       return '<td class="state-expired" title="' + kit.esc(rule) +
-             '">expired' +
+             '">' + t.html('consoleSessions.expired') +
         '<div class="sub">' + kit.esc(kit.whenText(row.expiresAt)) +
         '</div></td>';
     }
     return '<td' + (left < 5 * 60 * 1000 ? ' class="state-expired"' : '') +
-      ' title="' + kit.esc(rule) + '">in ' +
-      kit.esc(kit.durationText(left)) +
+      ' title="' + kit.esc(rule) + '">' +
+      t.html('consoleSessions.inDuration',
+             { duration: kit.durationText(left) }) +
       '<div class="sub">' + kit.esc(kit.whenText(row.expiresAt)) +
       '</div></td>';
   }

@@ -5171,6 +5171,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'servers[0].url is this service as the request reached it, so a ' +
           'document fetched through a published port names an address the ' +
           'caller can use.' },
+  { path: '/admin-api/console/language',
+    group: 'Admin console API',
+    name: 'The console\'s language, for yourself', specs: ['bcp47'],
+    what: 'NON-SPEC. The console\'s language chooser (#539): writes the ' +
+          'signed-in person\'s own preferredLanguage, or removes it for ' +
+          'an empty lang, and answers the console\'s catalogs in the ' +
+          'language now in force. Needs the console role alone. GET ' +
+          '/admin-api/console carries the same data as its `locale` ' +
+          'member.' },
   { path: '/admin-api/console/api-explorer',
     group: 'Admin console API',
     name: 'What the console\'s explorer reads', specs: [],

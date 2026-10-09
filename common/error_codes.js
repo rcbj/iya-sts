@@ -15425,6 +15425,11 @@ const CODES = [
       'could not be asked. Their entry still names the old language, which ' +
       'outranks the cookie (#539).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-I18N-0010',
+    summary: 'POST /admin-api/console/language was called by a caller that ' +
+      'is not a person — an application\'s token — which has no ' +
+      'preferredLanguage of its own to set (#539 phase 5).',
+    spec: 'HTTP 400 (management API)' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
