@@ -370,7 +370,8 @@ const CSS =
   // below, which is right there and wrong here.
   '.pagehead{display:flex;gap:12px;align-items:start;' +
   'justify-content:space-between;flex-wrap:wrap}.pagehead ' +
-  'h1{margin:0}.pagehead form{margin:0}.pagehead ' +
+  'h1{margin:0}.pagehead form{margin:0}.pagehead .acts{display:flex;' +
+  'gap:8px;align-items:start}.pagehead ' +
   'button{margin-top:0}p.sub{color:#666;font-size:.9em;margin:0 0 ' +
   '18px}label{display:block;font-size:.85em;font-weight:600;margin:12px 0 ' +
   '4px}input[type=text],input[type=password]{width:100%;padding:9px ' +
@@ -1499,6 +1500,56 @@ class Portal {
   }
 
   // ---------------------------------------------------------------------------
+  // THE REFRESH BUTTON (#538), beside Sign out on every signed-in page. The
+  // portal runs no script, so it is a GET form, and what it reloads is
+  // decided here:
+  //
+  //   * a page drawn for a GET of its own path reloads that path with the
+  //     same query — so a paged list comes back on the same page — less
+  //     `done`, the one-time message a redirect after a write carries, which
+  //     would otherwise announce the write again;
+  //   * a page drawn in answer to a POST (a refused write re-drawn with its
+  //     reason) loads its own path afresh: repeating the POST is the browser's
+  //     own reload, and is exactly what a Refresh button must not do.
+  //
+  // The request is the ambient one (`audit.currentRequest()`); `req.url`, not
+  // `originalUrl`, because the realm prefix is put back on every root-relative
+  // action by `app.js`'s rewrite, as for every other form on the page.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the Refresh button: a GET form reloading the page it is on.
+   *
+   * @param active - the page's path
+   * @returns the form's HTML
+   */
+  refreshForm(active) {
+    const self = this;
+    const { log, audit } = this.deps;
+    log.debug('Entering Portal.refreshForm().');
+    const req = audit.currentRequest();
+    let fields = [];
+    if (req && String(req.method || '').toUpperCase() === 'GET') {
+      const url = new URL(String(req.url || ''), 'http://portal.invalid');
+      if (url.pathname === active) {
+        fields = Array.from(url.searchParams.entries())
+          .filter(function (pair) {
+            return pair[0] !== 'done';
+          });
+      }
+    }
+    log.debug('Leaving Portal.refreshForm(). ' + fields.length +
+              ' parameter(s) kept.');
+    return '<form method="get" action="' + self.esc(active) + '">' +
+      fields.map(function (pair) {
+        return '<input type="hidden" name="' + self.esc(pair[0]) +
+          '" value="' + self.esc(pair[1]) + '">';
+      }).join('') +
+      '<button class="secondary" title="' +
+      self.esc('Draws this page again with what this service holds now.') +
+      '">Refresh</button></form>';
+  }
+
+  // ---------------------------------------------------------------------------
   // ONE SIGNED-IN PAGE: the header, the column, and this page's cards.
   //
   // **THE SIGN OUT BUTTON IS IN THE HEADER AND SO IS ON EVERY PAGE.** It was in
@@ -1536,13 +1587,14 @@ class Portal {
       '<header class="pagehead"><div><h1>' + self.esc(heading) + '</h1>' +
       '<p class="who">Signed in as <strong>' +
       self.esc(session.user.username) + '</strong></p></div>' +
+      '<div class="acts">' + self.refreshForm(active) +
       '<form method="post" action="' + BASE + '/signout">' + csrf +
       '<button class="secondary" title="' +
       self.esc('Ends this portal session and the sign-on session behind it — ' +
           'this browser\'s sessions. It does not revoke tokens or tickets ' +
           'already issued to applications; Sign out of everything, on the ' +
           'Overview page, does.') +
-      '">Sign out</button></form></header>' +
+      '">Sign out</button></form></div></header>' +
       '<div class="shell">' +
       '<div class="side"><div class="card">' + self.navBar(active) +
       '</div></div>' +
