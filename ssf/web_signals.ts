@@ -39,16 +39,22 @@ class SignalsPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    const t = ctx.t;
     const st: any = json.status || {};
     const stream = st.stream;
 
     const tiles = '<div class="tiles">' +
-      kit.tile(json.total, 'delivered here') +
-      kit.tile(stream ? stream.caepDelivered : 0, 'CAEP types') +
-      kit.tile(stream ? stream.riscDelivered : 0, 'RISC types') +
-      kit.tile(stream ? stream.counters.delivered : 0, 'pushes accepted') +
-      kit.tile(stream ? stream.counters.failed : 0, 'pushes failed') +
-      kit.tile(stream ? stream.queued : 0, 'still queued') +
+      kit.tile(json.total, t.text('consoleSignals.tile.delivered')) +
+      kit.tile(stream ? stream.caepDelivered : 0,
+               t.text('consoleSignals.tile.caep')) +
+      kit.tile(stream ? stream.riscDelivered : 0,
+               t.text('consoleSignals.tile.risc')) +
+      kit.tile(stream ? stream.counters.delivered : 0,
+               t.text('consoleSignals.tile.accepted')) +
+      kit.tile(stream ? stream.counters.failed : 0,
+               t.text('consoleSignals.tile.failed')) +
+      kit.tile(stream ? stream.queued : 0,
+        t.text('consoleSignals.tile.queued')) +
       '</div>';
 
     // WHY NOTHING IS HERE, ABOVE THE TABLE AND NOT BELOW IT. An empty inbox
@@ -58,8 +64,8 @@ class SignalsPage {
     // because a stream that has been paused since this morning explains a
     // page that stops rather than a page that is empty.
     const why = st.why && st.why.length
-      ? '<div class="err"><p><strong>Some or all of this console\'s ' +
-        'signals are not arriving.</strong></p><ul>' +
+      ? '<div class="err"><p>' + t.html('consoleSignals.why') +
+        '</p><ul>' +
         st.why.map(function (line) {
           return '<li>' + kit.esc(line) + '</li>';
         }).join('') + '</ul></div>'
@@ -67,38 +73,35 @@ class SignalsPage {
 
     const streamBlock = stream
       ? '<table>' +
-        '<tr><th>Stream</th><td><code>' + kit.esc(stream.stream_id) +
-        '</code></td></tr><tr><th>Audience</th><td><code>' +
+        '<tr><th>' + t.html('consoleSignals.stream.stream') +
+        '</th><td><code>' + kit.esc(stream.stream_id) +
+        '</code></td></tr><tr><th>' +
+        t.html('consoleSignals.stream.audience') + '</th><td><code>' +
         kit.esc(String(stream.aud)) + '</code> ' +
         '<span class="sub">' +
-        kit.esc('This console checks for this name in every SET\'s aud ' +
-                 'and refuses one addressed to anybody else with ' +
-                 'invalid_audience — recording it either way, so a ' +
-                 'misaddressed event is visible rather than merely absent.') +
+        kit.esc(t.text('consoleSignals.stream.audienceNote')) +
                  '</span></td></tr>' +
-        '<tr><th>Issuer</th><td><code>' + kit.esc(String(stream.iss)) +
-        '</code></td></tr><tr><th>Delivered ' +
-        'to</th><td><code>' +
+        '<tr><th>' + t.html('consoleSignals.stream.issuer') +
+        '</th><td><code>' + kit.esc(String(stream.iss)) +
+        '</code></td></tr><tr><th>' +
+        t.html('consoleSignals.stream.deliveredTo') + '</th><td><code>' +
         kit.esc(stream.endpoint_url) + '</code> <span class="sub">' +
-        kit.esc('RFC 8935 push, over the loopback interface, with this ' +
-                 'service\'s own TLS certificate pinned. It is a real HTTP ' +
-                 'request on purpose: handing the event to the page in ' +
-                 'process would skip the body, the media type, the ' +
-                 'authorization header and the signature.') +
+        kit.esc(t.text('consoleSignals.stream.deliveredToNote')) +
         '</span></td></tr>' +
-        '<tr><th>Event types</th><td>' + kit.esc(String(stream.delivers)) +
-        ' delivered of ' + kit.esc(String(stream.requested)) + ' ' +
-        'requested <span class="sub">' +
-        kit.esc('The difference is the intersection SSF 1.0 section 7.1.1 ' +
-                 'defines: a type this transmitter does not support is ' +
-                 'answered by its absence from events_delivered rather ' +
-                 'than by a refusal.') +
+        '<tr><th>' + t.html('consoleSignals.stream.eventTypes') +
+        '</th><td>' +
+        t.html('consoleSignals.stream.deliveredOf',
+               { delivers: String(stream.delivers),
+                 requested: String(stream.requested) }) +
+        ' <span class="sub">' +
+        kit.esc(t.text('consoleSignals.stream.eventTypesNote')) +
         '</span></td></tr>' +
-        '<tr><th>Status</th><td><span class="' +
+        '<tr><th>' + t.html('consoleSignals.stream.status') +
+        '</th><td><span class="' +
         (stream.status === 'enabled' ? '' : 'state-invalid') + '">' +
         kit.esc(stream.status) + '</span> <span class="sub">' +
         kit.esc(stream.statusReason) + '</span></td></tr>' +
-        '<tr><th>Last push</th><td>' +
+        '<tr><th>' + t.html('consoleSignals.stream.lastPush') + '</th><td>' +
         (stream.lastPushAt
           ? kit.esc(stream.lastPushAt) +
             (stream.lastPushError
@@ -106,28 +109,24 @@ class SignalsPage {
                 kit.esc(stream.lastPushError) +
                 '</span>'
               : '')
-          : '<span class="sub">nothing has been pushed here yet</span>') +
+          : '<span class="sub">' + t.html('consoleSignals.stream.noPush') +
+            '</span>') +
         '</td></tr></table>'
-      : kit.note('<strong>There is no stream for this console in the ' +
-        '&ldquo;' +
-        kit.esc(st.realm) + '&rdquo; realm.</strong> It is seeded at ' +
-        'startup and is an ORDINARY stream — if it was paused, narrowed or ' +
-        'deleted at <a href="/admin/ssf">Shared Signals</a> or through ' +
-        '<code>/admin-api/ssf</code>, it stays that way until a restart. ' +
-        'That is the same rule this service\'s seeded application entries ' +
-        'follow.');
+      // The link is markup a message cannot carry, so the paragraph is
+      // drawn around it (#539).
+      : kit.note(t.html('consoleSignals.noStream.before',
+                        { realm: st.realm }) +
+        '<a href="/admin/ssf">' + t.html('consoleSignals.link.ssf') +
+        '</a>' + t.html('consoleSignals.noStream.after'));
 
     const search = kit.sectionSearchForm({
       path: '/admin/signals', param: 'sigq', pageParam: 'receivedPage',
-      query: ctx.query, label: 'Find',
-      placeholder: 'alice, session-revoked, a jti, a stream id',
-      what: 'Over the event name, the type URI, the subject as this ' +
-            'receiver read it, the issuer, the audience, the jti and the ' +
-            'stream — because a reader arrives holding one of those and ' +
-            'does not know which column it is in.' });
+      query: ctx.query, label: t.text('consoleSignals.find.label'),
+      placeholder: t.text('consoleSignals.find.placeholder'),
+      what: t.html('consoleSignals.find.what') }, t);
 
     const nav = kit.pageNavPair('/admin/signals', kit.pageParamsOf(ctx.query),
-                                 json.paging.received);
+                                 json.paging.received, t);
 
     const rows = json.received.map(function (row) {
       return '<tr>' +
@@ -135,103 +134,100 @@ class SignalsPage {
         '</td><td><code>' + kit.esc(row.vocabulary) + '</code> ' +
         kit.esc(row.name) +
         (row.types.length > 1
-          ? ' <span class="sub">and ' +
-            kit.esc(String(row.types.length - 1)) +
-            ' more in the same SET</span>'
+          ? ' <span class="sub">' +
+            t.html('consoleSignals.row.more',
+                   { n: String(row.types.length - 1) }) + '</span>'
           : '') +
         '<div class="sub"><code>' + kit.esc(row.types[0] || '(none)') +
         '</code></div></td>' +
         '<td>' + (row.subject
           ? kit.esc(row.subject)
           : '<span class="sub" title="' +
-            kit.esc('SSF\'s own two events are about the STREAM rather ' +
-                     'than about anybody, so they carry no subject at all. ' +
-                     'Every CAEP and RISC event does.') +
+            kit.esc(t.text('consoleSignals.row.noSubject')) +
                      '">&mdash;</span>') + '</td>' +
         '<td>' + (row.verified
           ? '<span title="' + kit.esc(row.verificationNote) +
-            '">verified</span>'
+            '">' + t.html('consoleSignals.row.verified') + '</span>'
           : '<span class="state-invalid" title="' +
-            kit.esc(row.verificationNote) + '">not verified</span>') +
+            kit.esc(row.verificationNote) + '">' +
+            t.html('consoleSignals.row.notVerified') + '</span>') +
         (row.audienceOk
           ? ''
           : '<div class="state-invalid" title="' +
-            kit.esc('This receiver is "' + String(st.audience) +
-                     '" and that name is not in this token\'s aud. It was ' +
-                     'refused with invalid_audience and recorded anyway, ' +
-                     'because what arrived is the question being asked.') +
-                     '">wrong audience</div>') +
+            kit.esc(t.text('consoleSignals.row.wrongAudienceTip',
+                           { audience: String(st.audience) })) +
+                     '">' + t.html('consoleSignals.row.wrongAudience') +
+                     '</div>') +
         (row.correctMediaType
           ? ''
           : '<div class="sub" title="' +
-            kit.esc('RFC 8935 section 2.1 says application/secevent+jwt. ' +
-                     'This one said "' +
-                     String(row.contentType || '(nothing)') + '". It was ' +
-                     'accepted — a receiver that refused would be testing ' +
-                     'the transmitter\'s pedantry — and it is said out ' +
-                     'loud rather than passed over.') +
-                     '">media type</div>') +
+            kit.esc(t.text('consoleSignals.row.mediaTypeTip',
+                           { said: String(row.contentType || '(nothing)') })) +
+                     '">' + t.html('consoleSignals.row.mediaType') +
+                     '</div>') +
         // WHAT THIS CONSOLE DID WITH IT (#62): the signal-response
         // policy's reactions, taken, observed or failed.
         (row.reactions || []).map(function (r) {
           return '<div class="signal-reaction ' +
             (r.failed ? 'state-invalid' : 'sub') + '">' + (r.failed
-              ? 'could not end its sessions'
-              : r.skipped ? 'ended nothing: ' + kit.esc(r.skipped)
-              : (r.observed ? 'would end this console\'s sessions ' +
-                              '(development observes)'
-                            : 'ended ' + kit.esc(String(r.ended)) +
-                              ' console session(s)')) + '</div>';
+              ? t.html('consoleSignals.reaction.failed')
+              : r.skipped
+                ? t.html('consoleSignals.reaction.skipped',
+                         { why: r.skipped })
+              : (r.observed ? t.html('consoleSignals.reaction.observed')
+                            : t.html('consoleSignals.reaction.ended',
+                                     { n: String(r.ended) }))) + '</div>';
         }).join('') +
         '</td>' +
         '<td class="sub"><code>' + kit.esc(row.jti) + '</code>' +
         '<div><code>' + kit.esc(row.stream || '') + '</code></div></td>' +
         '<td>' + (Object.keys(row.payload).length
           ? '<details><summary>' +
-            kit.esc(String(Object.keys(row.payload).length) + ' member(s)') +
+            kit.esc(t.text('consoleSignals.row.members',
+                           { n: String(Object.keys(row.payload).length) })) +
             '</summary><pre>' +
             kit.esc(JSON.stringify(row.payload, null, 2)) +
             '</pre></details>'
           : '<span class="sub" title="' +
-            kit.esc('Eleven of RISC\'s fourteen event types have no ' +
-                     'payload members at all — the SUBJECT carries the ' +
-                     'entire message, which is why a subject naming the ' +
-                     'wrong person is a wholly wrong event rather than a ' +
-                     'partly wrong one.') + '">no members</span>') +
+            kit.esc(t.text('consoleSignals.row.noMembersTip')) + '">' +
+            t.html('consoleSignals.row.noMembers') + '</span>') +
         '</td></tr>';
     }).join('') || '<tr><td colspan="6">' +
       kit.esc(json.filter.received
-        ? 'Nothing delivered here matches that search.'
-        : 'Nothing has been delivered to this console yet.') +
+        ? t.text('consoleSignals.empty.search')
+        : t.text('consoleSignals.empty.none')) +
       '</td></tr>';
 
-    const inner = '<h1>Signals received</h1><p>Every Security Event Token ' +
-      '<strong>delivered to this console</strong> in the ' +
-      '&ldquo;' + kit.esc(st.realm) + '&rdquo; realm. This console is a ' +
-      'registered Shared Signals receiver: it has a stream of its own, it ' +
-      'is POSTed each event over RFC 8935 push at <code>' +
-      kit.esc(st.receivePath) + '</code>, and it verifies the signature ' +
-      'and the audience before recording anything.</p>' +
+    const inner = '<h1>' + t.html('consoleSignals.heading') + '</h1><p>' +
+      t.html('consoleSignals.intro', { realm: st.realm,
+                                       path: st.receivePath }) + '</p>' +
       why +
       tiles +
-      kit.note('<strong>This is not the transmitter\'s copy.</strong> ' +
-      '<a href="/admin/ssf">Shared Signals</a> shows every stream this ' +
-      'service holds and what it has SENT on each; <a ' +
-      'href="/admin/caep-sessions">CAEP sessions</a> and <a ' +
-      'href="/admin/risc-accounts">RISC accounts</a> show what it BELIEVES ' +
-      'about a session and an account. This page shows what came back ' +
-      'through the door — which is the only one of the four that goes ' +
-      'empty when delivery is broken, and is therefore the only one that ' +
-      'can tell you it is.') +
+      // Three links in one paragraph: the words between them are messages
+      // of their own (#539).
+      kit.note(t.html('consoleSignals.copy.head') + ' ' +
+      '<a href="/admin/ssf">' + t.html('consoleSignals.link.ssf') + '</a>' +
+      t.html('consoleSignals.copy.ssf') + '<a ' +
+      'href="/admin/caep-sessions">' +
+      t.html('consoleSignals.link.caepSessions') + '</a>' +
+      t.html('consoleSignals.copy.and') + '<a ' +
+      'href="/admin/risc-accounts">' +
+      t.html('consoleSignals.link.riscAccounts') + '</a>' +
+      t.html('consoleSignals.copy.rest')) +
 
-      '<h2>This console\'s stream</h2>' +
+      '<h2>' + t.html('consoleSignals.stream.heading') + '</h2>' +
       streamBlock +
 
-      '<h2 id="find-sigq">Delivered events</h2>' +
+      '<h2 id="find-sigq">' + t.html('consoleSignals.events.heading') +
+      '</h2>' +
       search +
       nav.head +
-      '<table><tr><th>When</th><th>Event</th><th>Subject</th>' +
-      '<th>How it arrived</th><th>Identifiers</th><th>Payload</th></tr>' +
+      '<table><tr><th>' + t.html('consoleSignals.th.when') + '</th><th>' +
+      t.html('consoleSignals.th.event') + '</th><th>' +
+      t.html('consoleSignals.th.subject') + '</th>' +
+      '<th>' + t.html('consoleSignals.th.how') + '</th><th>' +
+      t.html('consoleSignals.th.identifiers') + '</th><th>' +
+      t.html('consoleSignals.th.payload') + '</th></tr>' +
       rows + '</table>' +
       nav.foot +
 
@@ -241,12 +237,10 @@ class SignalsPage {
       // `withCsrf()` on the way out, like every other form on this console —
       // rule 8's arrangement, so a page author does neither half.
       (json.total
-        ? '<h2>Clear</h2>' +
-          kit.note('This drops what is HELD HERE and nothing else. The ' +
-          'stream is untouched and goes on delivering, and the <a ' +
-          'href="/admin/audit">audit log</a>\'s record of each delivery ' +
-          'cannot be cleared — which is the point of it being the durable ' +
-          'half.') +
+        ? '<h2>' + t.html('consoleSignals.clear.heading') + '</h2>' +
+          kit.note(t.html('consoleSignals.clear.before') + '<a ' +
+          'href="/admin/audit">' + t.html('consoleSignals.link.audit') +
+          '</a>' + t.html('consoleSignals.clear.after')) +
           '<form method="post" action="/admin/signals">' +
           '<input type="hidden" name="back" value="' +
           kit.esc(kit.queryWith(kit.listViewFromBack('/admin/signals',
@@ -256,17 +250,20 @@ class SignalsPage {
           '<div class="formrow">' +
           '<input type="hidden" name="action" value="clear">' +
           '<button type="submit" class="secondary" title="' +
-          kit.esc('Drops the ' + json.total + ' delivered event(s) held ' +
-                   'in this console\'s inbox in this realm.') +
-          '">Clear this inbox</button></div></form>'
+          kit.esc(t.text('consoleSignals.clear.tip',
+                         { n: String(json.total) })) +
+          '">' + t.html('consoleSignals.clear.button') +
+          '</button></div></form>'
         : '') +
 
-      kit.note('<a href="/admin/signals?format=json">this page as ' +
-      'JSON</a> &middot; <a href="/admin-api/signals">the same over the ' +
-      'management API</a> &middot; <a href="/admin/ssf">the streams and ' +
-      'the settings</a> &middot; <a href="/portal/signals">what a person ' +
-      'sees about themselves</a> &middot; <a href="/admin/audit">the ' +
-      'durable record</a>');
+      kit.note('<a href="/admin/signals?format=json">' +
+      t.html('consoleSignals.foot.json') + '</a> &middot; ' +
+      '<a href="/admin-api/signals">' + t.html('consoleSignals.foot.api') +
+      '</a> &middot; <a href="/admin/ssf">' +
+      t.html('consoleSignals.foot.streams') + '</a> &middot; ' +
+      '<a href="/portal/signals">' + t.html('consoleSignals.foot.portal') +
+      '</a> &middot; <a href="/admin/audit">' +
+      t.html('consoleSignals.foot.audit') + '</a>');
 
     return inner;
   }

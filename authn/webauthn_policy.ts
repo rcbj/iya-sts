@@ -96,6 +96,12 @@ import mode = require('../common/mode');
 // THE AUTHENTICATION POLICY (#64): its passkey and security-key rows are
 // asked in `roleAllowed()`. A LEAF, so no cycle.
 import authnPolicy = require('../common/authn_policy');
+// #527: the passkey policy, a leaf, which since 2026-10-08 decides the
+// usernameless sign-in and a security key's resident key.
+import passkeyPolicy = require('../common/passkey_policy');
+// The ambient realm's name, which the passkey policy may append to rp.name
+// (#533). A leaf here: `config` and `helpers` already require it.
+import realms = require('../common/realms');
 
 // JOSE spelling -> COSE identifier, INVERTED from the verifier's own table
 // rather than written out. That table is what decides whether a signature can
@@ -276,10 +282,17 @@ class WebauthnPolicy {
     const attachment =
       String(config.value('webauthn.authenticatorAttachment') ||
                               'any');
+    // ONE READ OF THE PASSKEY POLICY (#527) for the two values it decides.
+    const passkeys = passkeyPolicy.read();
     const out = {
       enabled: config.value('webauthn.enabled') !== false,
-      rpName: String(config.value('webauthn.rpName') || 'Mock authorization ' +
-                                                        'server'),
+      // THE SERVICE'S NAME A PROMPT SHOWS, with the realm's name and/or the
+      // organisation's where the passkey policy appends them (#533).
+      rpName: passkeyPolicy.rpNameFor(
+        String(config.value('webauthn.rpName') || 'Mock authorization ' +
+                                                  'server'),
+        String((realms.current() || {}).name || realms.currentId() || ''),
+        String(config.value('saml.organizationName') || ''), passkeys),
       rpId: String(config.value('webauthn.rpId') || '').trim(),
       algorithms: this.algorithmsOffered(),
       userVerification: this.oneOf(config.value('webauthn.userVerification'),
@@ -296,13 +309,20 @@ class WebauthnPolicy {
       authenticatorAttachment: this.oneOf(attachment,
                                           ['any', 'platform', 'cross-platform'],
                                           'any'),
-      residentKey: this.oneOf(config.value('webauthn.residentKey'),
-                         ['discouraged', 'preferred', 'required'],
-                         'discouraged'),
+      // What a security key (or an enrolment naming no kind) is asked to
+      // store: `required` while usernameless sign-in is off, the policy's
+      // `securityKeyResidentKey` while it is on (#527, rcbj's answers 1 and
+      // 2). It was the setting `webauthn.residentKey`, default discouraged.
+      residentKey: passkeyPolicy.securityKeyResidentKey(passkeys),
       credProps: config.value('webauthn.credProps') !== false,
       primaryAllowed: config.value('webauthn.primaryAllowed') !== false,
-      // A SIGN-IN WITH NO USERNAME (#474): off unless set, rcbj's decision.
-      usernameless: config.value('webauthn.usernameless') === true,
+      // A SIGN-IN WITH NO USERNAME (#474): off unless the realm's passkey
+      // policy allows it (#527; it was the setting webauthn.usernameless).
+      usernameless: passkeyPolicy.allowsUsernameless(passkeys),
+      // WHETHER A REGISTRATION ASKS FOR THE KEY'S MINIMUM PIN LENGTH (#529):
+      // only while the passkey policy enforces one, so a realm that does not
+      // sends exactly the options it always did.
+      minPinLength: passkeyPolicy.pinLengthRule(passkeys).enforce,
       mfaAllowed: config.value('webauthn.mfaAllowed') !== false,
       // The two algorithm flags (2026-10-01).
       insecureAlgorithms: this.insecureAlgorithmsAllowed(),
@@ -361,6 +381,11 @@ class WebauthnPolicy {
       ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus'], 'none');
     const requireFips = config.value('webauthn.attestationRequireFips') ===
                         true;
+    // A SERIAL BOUND TO THE PERSON (#532) is only worth what the certificate
+    // naming it is worth, so the passkey policy's attribute demands a
+    // trusted statement as an AAGUID list does.
+    const enterpriseSerialAttribute =
+      passkeyPolicy.enterpriseSerialAttribute();
     const out = {
       configured: configured,
       policy: policy,
@@ -373,9 +398,11 @@ class WebauthnPolicy {
                       true,
       androidSoftwareKeys:
         config.value('webauthn.attestationAndroidSoftwareKeys') === true,
+      enterpriseSerialAttribute: enterpriseSerialAttribute,
       demandsTrust: policy === 'require-trusted' ||
                     allowedAaguids.length > 0 ||
-                    minCertificationLevel !== 'none' || requireFips
+                    minCertificationLevel !== 'none' || requireFips ||
+                    !!enterpriseSerialAttribute
     };
     log.debug('Leaving WebauthnPolicy.attestationSettings(). policy=' +
               out.policy + ', demandsTrust=' + out.demandsTrust);
@@ -711,8 +738,10 @@ class WebauthnPolicy {
   //     browser offer a phone instead. `discouraged` is what made Chrome and
   //     Edge offer a security key or a phone and never the device itself.
   //   * `security-key` asks for `cross-platform` and hints `security-key`;
-  //     `webauthn.residentKey`'s reason — the few slots a roaming
-  //     authenticator has — still decides the resident key.
+  //     its resident key is the passkey policy's (#527): `required` while
+  //     usernameless sign-in is off, so both buttons make a discoverable
+  //     credential (a tester found one key giving two results by button),
+  //     and `securityKeyResidentKey` (default `required`) while it is on.
   //
   // A kind narrows nothing beyond the hint while
   // `webauthn.authenticatorAttachment` names one: that setting is the realm's
@@ -739,8 +768,10 @@ class WebauthnPolicy {
     const asked = live.authenticatorAttachment === 'any' &&
                   wanted === 'security-key' ? 'cross-platform' : '';
     const residentKey = wanted === 'passkey' ? 'required' : live.residentKey;
-    const hints = wanted === 'passkey' ? ['client-device', 'hybrid']
-      : (wanted === 'security-key' ? ['security-key'] : []);
+    // THE HINTS ARE THE PASSKEY POLICY'S ROWS (#531), whose defaults are what
+    // this line sent before: client-device then hybrid for a passkey,
+    // security-key for a security key, none for an enrolment naming no kind.
+    const hints = passkeyPolicy.hintsFor(wanted);
     // A POLICY THAT NEEDS A STATEMENT ASKS FOR ONE (#105). `none` and
     // `indirect` let the browser strip or anonymise the statement, and a
     // realm that requires a trusted one would then refuse every enrolment
@@ -764,6 +795,10 @@ class WebauthnPolicy {
         requireResidentKey: residentKey === 'required'
       },
       credProps: live.credProps,
+      // CTAP 2.1 section 12.4's extension, asked for only while the passkey
+      // policy enforces a PIN length (#529); absent otherwise, so the options
+      // a realm that does not are byte for byte what they were.
+      minPinLength: live.minPinLength === true ? true : undefined,
       hints: hints
     };
     // ABSENT AND NOT `"any"`. The options dictionary has no value meaning "no
@@ -813,11 +848,18 @@ class WebauthnPolicy {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.requestOptions(). rpId=' + rpId);
     const live = this.settings();
-    const out = {
+    const out: { rpId: string; userVerification: string; timeout: number;
+                 hints?: string[] } = {
       rpId: rpId,
       userVerification: live.userVerification,
       timeout: live.timeoutMs
     };
+    // A SIGN-IN'S HINTS (#531), the passkey policy's `signInHints`; absent
+    // where it names none, so the default request is what it always was.
+    const hints = passkeyPolicy.hintsFor('sign-in');
+    if (hints.length) {
+      out.hints = hints;
+    }
     log.debug('Leaving WebauthnPolicy.requestOptions(). uv=' +
               out.userVerification);
     return out;
@@ -829,8 +871,9 @@ class WebauthnPolicy {
   // the sign-in screen or the username field's autofill.
   //
   // **OFFERED ONLY WHERE A PRIMARY KEY IS**: `webauthn.enabled`,
-  // `webauthn.primaryAllowed` and `webauthn.usernameless`, which is OFF by
-  // default. **USER VERIFICATION IS REQUIRED AND CHECKED**, whatever
+  // `webauthn.primaryAllowed` and the passkey policy's `allowUsernameless`
+  // (#527; it was `webauthn.usernameless`), which is OFF by default.
+  // **USER VERIFICATION IS REQUIRED AND CHECKED**, whatever
   // `webauthn.userVerification` says (rcbj's decision): the sign-in is then
   // a key the person possesses and a PIN or biometric that verified them on
   // it, two factors on one device, recorded `amr ["hwk","user"]` and `acr
@@ -853,7 +896,8 @@ class WebauthnPolicy {
           '(webauthn.primaryAllowed).'
         : (!live.usernameless
           ? 'Signing in with a passkey and no username is switched off in ' +
-            'this realm (webauthn.usernameless).'
+            'this realm (the passkey policy\'s allowUsernameless, on ' +
+            'Directory → Policies).'
           : ''));
     log.debug("Leaving WebauthnPolicy.usernamelessOffered(). " +
               (why ? 'No.' : 'Yes.'));
@@ -871,11 +915,17 @@ class WebauthnPolicy {
   discoverableRequestOptions(rpId) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.discoverableRequestOptions().');
-    const out = {
+    const out: { rpId: string; userVerification: string; timeout: number;
+                 hints?: string[] } = {
       rpId: rpId,
       userVerification: 'required',
       timeout: this.settings().timeoutMs
     };
+    // The sign-in's hints (#531), as `requestOptions()` sends them.
+    const hints = passkeyPolicy.hintsFor('sign-in');
+    if (hints.length) {
+      out.hints = hints;
+    }
     log.debug('Leaving WebauthnPolicy.discoverableRequestOptions().');
     return out;
   }

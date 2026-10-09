@@ -13,8 +13,9 @@
 # anchor is handed over.
 #
 #   GET  /health       200 once shibd answers its Status handler
-#   POST /configure    {"files": {"idp-saml2.xml": ...,
-#                      "idp-saml11.xml": ...}} — written under
+#   POST /configure    {"files": {"idp.xml": ...}} — the identity
+#                      provider's one document for both SAML versions
+#                      (iya-sts #523), written under
 #                      /etc/shibboleth/peer, shibd restarted, and the answer
 #                      given once it is up again (or why it is not)
 #
@@ -31,7 +32,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PEER_DIR = "/etc/shibboleth/peer"
-ALLOWED = ("idp-saml2.xml", "idp-saml11.xml")
+ALLOWED = ("idp.xml",)
 LOG_DIR = "/run/saml-peer-log"
 
 

@@ -421,13 +421,12 @@ const HOST = config.value('global.host');
 // provider, an Issuer names whoever signed an assertion — so a deployment
 // that needed one of them to be its own real name had to change all three.
 //
-// They are now `saml.issuer`, `wstrust.issuer` and `wsfed.entityId` in
-// config.js, all three still fed by STS_ISSUER when it is set. Their default
-// was `urn:wstrust:mock:sts` until #494; it is empty now, meaning the realm's
-// SAML 2.0 entityID (`common/issuer_names.ts`). Callers read them through
-// that library, per use, rather than through a re-export here: they are
-// runtime-settable, so a constant captured at require time would be the one
-// thing the console could not change.
+// They became `saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, and
+// since #523 (2026-10-08) they are ONE name again, with no setting: the
+// realm's OAuth issuer, which follows the base URL
+// (`common/issuer_names.ts`). Callers read it through that library, per use,
+// rather than through a re-export here: it is the request's, so a constant
+// captured at require time would be wrong for every realm but one.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

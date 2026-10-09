@@ -17,6 +17,18 @@
 // It was drawn inside the route of `method:federationListPage` in
 // `admin-ui/admin.ts`, which still draws the page until the console's cutover
 // by calling this with its view passed through JSON.
+//
+// THE WORDS ARE THE `consoleFederation` CATALOG'S (#539 phases 5 and 6).
+// Every word this file writes is a message in
+// `common/locales/consoleFederation/`, and the English messages are the text
+// this file drew before, to the byte. What the VIEW says — a role's or a
+// protocol's description, a setting's `what`, a refusal — is drawn as it
+// comes, in English, and so is every refusal. A sentence holding a link is
+// split around it: a message carries no attribute, so the `<a href>` stays
+// here and the words either side of it are messages. A value a person could
+// have typed with an apostrophe in it (a username, a relationship's name) is
+// kept OUT of a message, because a message's parameter is escaped as `&#39;`
+// where `kit.esc()` writes `&apos;`, and the English must not change.
 // ---------------------------------------------------------------------------
 
 import kit = require('../admin-ui/web_kit');
@@ -40,6 +52,7 @@ class FederationPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    const t = ctx.t;
     const wantedText = json.filter.q || '';
     const wantedRole = json.filter.role || '';
     const paging = json.paging;
@@ -57,18 +70,23 @@ class FederationPage {
          '') + '</td><td>' + kit.esc(row.roleLabel) + '</td><td>' +
         kit.esc(row.protocolLabel) + '</td><td ' +
         'class="who">' + kit.esc(row.peer || row.application || '') +
-        (!row.peer && !row.application ? '<span class="sub">nothing named ' +
-                                         'yet</span>' : '') +
+        (!row.peer && !row.application
+          ? '<span class="sub">' +
+            t.html('consoleFederation.nothingNamedYet') + '</span>'
+          : '') +
         '</td>' +
-        FederationPage.federationStateCell(row) +
+        FederationPage.federationStateCell(row, t) +
         '<td class="num">' + row.authentications + '</td>' +
         '<td class="num">' + row.users + '</td>' +
         '<td>' + (row.lastError
           ? '<span class="bad">' + kit.shortened(row.lastError, 60) + '</span>'
-          : '<span class="sub">none recorded</span>') + '</td></tr>';
+          : '<span class="sub">' +
+            t.html('consoleFederation.noneRecorded') + '</span>') +
+        '</td></tr>';
     }).join('');
 
-    const roleOptions = ['<option value="">any role</option>'].concat(
+    const roleOptions = ['<option value="">' +
+      t.html('consoleFederation.anyRole') + '</option>'].concat(
       json.roles.map(function (one) {
         const n = json.roleCounts[one.role] || 0;
         return '<option value="' + kit.esc(one.role) + '"' +
@@ -78,67 +96,74 @@ class FederationPage {
       })).join('');
 
     const inner = '<div class="tiles">' +
-      kit.tile(json.relationshipCount, 'Relationships') +
-      kit.tile(json.ready, 'Ready') +
-      kit.tile(json.enabledNotConfigured, 'Enabled, not configured') +
-      kit.tile(json.authentications, 'Federated sign-ins') +
+      kit.tile(json.relationshipCount,
+               t.text('consoleFederation.tileRelationships')) +
+      kit.tile(json.ready, t.text('consoleFederation.tileReady')) +
+      kit.tile(json.enabledNotConfigured,
+               t.text('consoleFederation.tileEnabledNotConfigured')) +
+      kit.tile(json.authentications,
+               t.text('consoleFederation.tileFederatedSignIns')) +
       '</div>' +
-      FederationPage.federationCaveat() +
+      FederationPage.federationCaveat(t) +
       // THE PICTURE, pointed at from the page it drills down from. This table
       // has one row per relationship and no row can say anything about another,
       // so three questions an operator arrives with have no cell here: how many
       // applications are behind a partner, how many people have come through it
       // FOR EACH of them, and what an arriving foreign service provider
       // actually meets. All three are facts about two registers at once.
-      kit.note('<a href="/admin/federation/map">The picture</a> draws this ' +
-      'register as a diagram, laid out on the server. It adds the three ' +
-      'things a table of relationships has nowhere to put: how many ' +
-      'applications are configured to use each partner, how many people have ' +
-      'signed in through each <em>application and relationship</em> pair, ' +
-      'and what the identity-provider side is configured to do about ' +
-      'authenticating somebody — including where one relationship brokers to ' +
-      'another, which is what makes this service an identity bridge and is ' +
-      'invisible in any single row.') +
+      kit.note('<a href="/admin/federation/map">' +
+      t.html('consoleFederation.pictureLink') + '</a>' +
+      t.html('consoleFederation.pictureNote')) +
       '<form method="get" action="/admin/federation"><div class="formrow">' +
-      '<label for="q">Relationship</label>' +
+      '<label for="q">' + t.html('consoleFederation.labelRelationship') +
+      '</label>' +
       '<input type="text" id="q" name="q" value="' +
       kit.esc(String(ctx.query.q || '')) +
-      '" size="24" placeholder="id, name, partner or application">' +
-      '<label for="role">Role</label><select id="role" name="role">' +
-      roleOptions + '</select><label for="per">Show</label><select id="per" ' +
+      '" size="24" placeholder="' +
+      kit.esc(t.text('consoleFederation.filterPlaceholder')) + '">' +
+      '<label for="role">' + t.html('consoleFederation.labelRole') +
+      '</label><select id="role" name="role">' +
+      roleOptions + '</select><label for="per">' +
+      t.html('consoleFederation.labelShow') +
+      '</label><select id="per" ' +
       'name="per">' + kit.perPageOptions(paging.perPage) +
       '</select><button ' +
-      'type="submit">Filter</button>' +
-      ((wantedText || wantedRole) ? ' <a href="/admin/federation">clear</a>' :
+      'type="submit">' + t.html('consoleFederation.buttonFilter') +
+      '</button>' +
+      ((wantedText || wantedRole) ? ' <a href="/admin/federation">' +
+        t.html('consoleFederation.clear') + '</a>' :
         '') +
       '</div></form>' + nav.head +
-      '<table><tr><th>Relationship</th><th>This service ' +
-      'is</th><th>Protocol</th><th>Partner</th><th>State</th><th ' +
-      'class="num">Sign-ins</th><th class="num">People</th><th>Last ' +
-      'refusal</th></tr>' +
-      (rows || '<tr><td colspan="8">No federation relationship ' +
-        ((wantedText || wantedRole) ? 'matches. The filter above may be ' +
-                                      'hiding some.'
-          : 'is configured. Nothing federated happens until one is — and ' +
-            'then not until it is enabled, which is a second, deliberate ' +
-            'act.') + '</td></tr>') +
+      '<table><tr><th>' + t.html('consoleFederation.thRelationship') +
+      '</th><th>' + t.html('consoleFederation.thThisServiceIs') +
+      '</th><th>' + t.html('consoleFederation.thProtocol') + '</th><th>' +
+      t.html('consoleFederation.thPartner') + '</th><th>' +
+      t.html('consoleFederation.thState') + '</th><th ' +
+      'class="num">' + t.html('consoleFederation.thSignIns') +
+      '</th><th class="num">' + t.html('consoleFederation.thPeople') +
+      '</th><th>' + t.html('consoleFederation.thLastRefusal') +
+      '</th></tr>' +
+      (rows || '<tr><td colspan="8">' +
+        ((wantedText || wantedRole)
+          ? t.html('consoleFederation.noneMatches')
+          : t.html('consoleFederation.noneConfigured')) + '</td></tr>') +
       '</table>' + nav.foot +
-      FederationPage.federationCreateForm(json.roles, json.protocols) +
-      '<h2>The two directions</h2>' +
-      '<table><tr><th>This service is</th><th>What it means</th></tr>' +
+      FederationPage.federationCreateForm(json.roles, json.protocols, t) +
+      '<h2>' + t.html('consoleFederation.headingTwoDirections') + '</h2>' +
+      '<table><tr><th>' + t.html('consoleFederation.thThisServiceIs') +
+      '</th><th>' + t.html('consoleFederation.thWhatItMeans') +
+      '</th></tr>' +
       json.roles.map(function (one) {
         return '<tr><td>' + kit.esc(one.short) + '</td><td>' +
                kit.esc(one.what) +
                '</td></tr>';
       }).join('') + '</table>' +
-      kit.note('<strong>One relationship is one DIRECTION.</strong> A ' +
-      'partner this service both consumes from and asserts to is two ' +
-      'relationships with two ids, because everything that configures one ' +
-      'differs by direction — the endpoints are theirs or ours, the ' +
-      'certificate is theirs or ours, the attribute mapping runs inbound or ' +
-      'the release list runs outbound.') +
-      '<h2>The five protocols</h2><table><tr><th>Protocol</th><th>What ' +
-      'happens</th><th>Specification</th></tr>' +
+      kit.note(t.html('consoleFederation.oneDirection')) +
+      '<h2>' + t.html('consoleFederation.headingFiveProtocols') +
+      '</h2><table><tr><th>' + t.html('consoleFederation.thProtocol') +
+      '</th><th>' + t.html('consoleFederation.thWhatHappens') +
+      '</th><th>' + t.html('consoleFederation.thSpecification') +
+      '</th></tr>' +
       json.protocols.map(function (one) {
         return '<tr><td>' + kit.esc(one.label) + '</td><td>' +
                kit.esc(one.what) +
@@ -151,7 +176,7 @@ class FederationPage {
       // relationship that does not work should not have to guess that the
       // answer is a setting somewhere else.
       SettingsForms.forms(json.settings, '/admin/federation') +
-      FederationPage.federationLinks(json.paths.base);
+      FederationPage.federationLinks(json.paths.base, t);
 
     return inner;
   }
@@ -164,125 +189,107 @@ class FederationPage {
    * disabled, or enabled and not configured with what is still missing.
    *
    * @param row - the relationship's row
+   * @param t - the page's translator
    * @returns the cell as HTML
    */
-  static federationStateCell(row) {
+  static federationStateCell(row, t) {
     if (row.usable) {
-      return '<td class="ok">ready</td>';
+      return '<td class="ok">' + t.html('consoleFederation.stateReady') +
+        '</td>';
     }
     if (!row.enabled) {
-      return '<td class="off">disabled' +
-        (row.ready ? '' : ' <span class="sub">and not configured</span>') +
+      return '<td class="off">' + t.html('consoleFederation.stateDisabled') +
+        (row.ready ? '' : ' <span class="sub">' +
+         t.html('consoleFederation.andNotConfigured') + '</span>') +
              '</td>';
     }
-    return '<td class="bad">ENABLED, not configured<span class="sub">' +
-      kit.esc(row.missing.join(', ')) + ' still to set. It refuses rather ' +
-      'than half-working.</span></td>';
+    // The missing fields are attribute names, so they go in as a parameter.
+    return '<td class="bad">' +
+      t.html('consoleFederation.stateEnabledNotConfigured') +
+      '<span class="sub">' +
+      t.html('consoleFederation.stillToSetRefuses',
+             { missing: row.missing.join(', ') }) + '</span></td>';
   }
 
   /**
    * Draws the form that adds a federation relationship.
    *
+   * @param roles - the two roles, from the view
+   * @param protocols - the five protocols, from the view
+   * @param t - the page's translator
    * @returns the form as HTML
    */
-  static federationCreateForm(roles, protocols) {
-    return '<h2>Add a relationship</h2>' +
-      kit.note('It is created <strong>disabled</strong>, whatever is filled ' +
-      'in here, and nothing about it does anything until it is enabled on ' +
-      'its own page. That is not caution for its own sake: a partner that ' +
-      'half-exists and silently accepts assertions is the failure this whole ' +
-      'register is arranged to prevent, and enabling is the second, ' +
-      'deliberate act that says the configuration is finished.') +
+  static federationCreateForm(roles, protocols, t) {
+    return '<h2>' + t.html('consoleFederation.headingAdd') + '</h2>' +
+      kit.note(t.html('consoleFederation.createdDisabled')) +
       '<form method="post" action="/admin/federation"><div ' +
       'class="formrow"><input type="hidden" name="action" ' +
-      'value="create"><label for="fedid">Id</label><input type="text" ' +
+      'value="create"><label for="fedid">' +
+      t.html('consoleFederation.labelId') + '</label><input type="text" ' +
       'id="fedid" name="id" size="16" required ' +
-      'placeholder="partner-a"><label for="fedrole">This service ' +
-      'is</label><select id="fedrole" name="role">' +
+      'placeholder="partner-a"><label for="fedrole">' +
+      t.html('consoleFederation.thThisServiceIs') +
+      '</label><select id="fedrole" name="role">' +
       roles.map(function (one) {
         return '<option value="' + kit.esc(one.role) + '">' +
                kit.esc(one.short) +
                '</option>';
       }).join('') + '</select>' +
-      '<label for="fedprotocol">Protocol</label>' +
+      '<label for="fedprotocol">' + t.html('consoleFederation.thProtocol') +
+      '</label>' +
       '<select id="fedprotocol" name="protocol">' +
       protocols.map(function (one) {
         return '<option value="' + kit.esc(one.protocol) + '">' +
                kit.esc(one.label) +
                '</option>';
-      }).join('') + '</select><label for="fedname">Name</label><input ' +
+      }).join('') + '</select><label for="fedname">' +
+      t.html('consoleFederation.labelName') + '</label><input ' +
       'type="text" id="fedname" name="name" size="16" ' +
-      'placeholder="optional"><label for="fedpeer">Partner</label><input ' +
-      'type="text" id="fedpeer" name="peer" size="26" placeholder="their ' +
-      'entityID, issuer or realm"><button ' +
-      'type="submit">Add</button></div></form>' +
-      kit.note('The <strong>id</strong> is the key, the RDN and a URL ' +
-      'segment, so it has to start with a letter or a digit and hold only ' +
-      'letters, digits, dot, dash and underscore. <strong>Partner</strong> ' +
-      'is their own identifier in whatever their protocol calls it, and on a ' +
-      'service-provider-side relationship it is CHECKED: an assertion whose ' +
-      'issuer is not that string is refused, even when the signature ' +
-      'verifies.');
+      'placeholder="' + kit.esc(t.text('consoleFederation.optional')) +
+      '"><label for="fedpeer">' + t.html('consoleFederation.thPartner') +
+      '</label><input ' +
+      'type="text" id="fedpeer" name="peer" size="26" placeholder="' +
+      kit.esc(t.text('consoleFederation.peerPlaceholder')) + '"><button ' +
+      'type="submit">' + t.html('consoleFederation.buttonAdd') +
+      '</button></div></form>' +
+      kit.note(t.html('consoleFederation.idRules'));
   }
 
   /**
    * Draws the caveat both federation pages carry.
    *
+   * @param t - the page's translator
    * @returns the caveat as HTML
    */
-  static federationCaveat() {
+  static federationCaveat(t) {
     return (
-      kit.note('<strong>This is the one feature here that has to be ' +
-      'configured before it will do anything, and the one page in this ' +
-        'console ' +
-      'that configures a REFUSAL.</strong> Everywhere else this service ' +
-      'accepts what it is given — any username, any client_id, any entityID, ' +
-      'any LDAP bind. It cannot do that at an assertion consumer service: ' +
-        'what ' +
-      'arrives there is an unauthenticated HTTP request claiming to be a ' +
-      'person, and the session it would produce is the same one ' +
-      '<code>/oauth2/authorize</code>, <code>/wsfed</code>, ' +
-      '<code>/saml2</code> and this console all read. A permissive version ' +
-        'of ' +
-      'it would not be a permissive mock; it would be an ' +
-      'authentication bypass for every protocol in this process.') +
-      kit.note('<strong>The gate is on the SIGNER, and on the SUBJECT ' +
-      'too (#109).</strong> A verified assertion signs in only the person ' +
-        'its ' +
-      'partner\'s subject is LINKED to — a <code>federationLink</code> on ' +
-        'the ' +
-      'entry. What happens to a subject nobody linked is the relationship\'s ' +
-      '<code>fedSubjectPolicy</code>: the person it names signs in here ' +
-        'first ' +
-      'and is then linked (<code>link-at-first-sign-in</code>, the default), ' +
-      'it is refused (<code>pre-linked</code>), it gets a new entry of its ' +
-        'own ' +
-      '(<code>jit-namespaced</code>), or — in development only — the old ' +
-        'name ' +
-      'match (<code>any-existing</code>). Three rules narrow it further, ' +
-        'and a ' +
-      'console administrator is refused unless ' +
-      '<code>fedMayAssertAdministrators</code> is on. Nothing is written ' +
-        'onto ' +
-      'an entry before all of that has passed.'));
+      kit.note(t.html('consoleFederation.caveatRefusal')) +
+      kit.note(t.html('consoleFederation.caveatSigner')));
   }
 
   /**
    * Draws the links at the foot of the federation pages.
    *
    * @param base - the federation index's path (`federation.PATHS.base`)
+   * @param t - optional; the page's translator. `admin-ui/admin.ts` still
+   *   calls this without one, and gets the default (English in node).
    * @returns the links as HTML
    */
-  static federationLinks(base) {
+  static federationLinks(base, t?) {
+    t = t || kit.context().t;
     return (
-      '<p class="sub"><a href="/admin/federation/map">the picture</a> ' +
+      '<p class="sub"><a href="/admin/federation/map">' +
+      t.html('consoleFederation.linkPicture') + '</a> ' +
         '&middot; ' +
-      '<a href="' + base + '">the federation index</a> &middot; ' +
-      '<a href="/admin/applications">the applications registry</a> &middot; ' +
+      '<a href="' + base + '">' + t.html('consoleFederation.linkIndex') +
+      '</a> &middot; ' +
+      '<a href="/admin/applications">' +
+      t.html('consoleFederation.linkApplications') + '</a> &middot; ' +
         '<a ' +
-      'href="/admin/users">who has signed in</a> &middot; <a ' +
-      'href="/admin/ldap/federations">the register as the directory sees ' +
-      'it</a></p>');
+      'href="/admin/users">' + t.html('consoleFederation.linkWhoSignedIn') +
+      '</a> &middot; <a ' +
+      'href="/admin/ldap/federations">' +
+      t.html('consoleFederation.linkDirectoryView') + '</a></p>');
   }
 
   /**
@@ -293,6 +300,7 @@ class FederationPage {
    * @returns the body as HTML
    */
   static detail(ctx, json) {
+    const t = ctx.t;
     const record = json.found ? json.fields : null;
     const carryBack = '<input type="hidden" name="back" value="' +
       kit.esc(kit.queryWith(kit.listViewOf('/admin/federation', ctx.query),
@@ -300,13 +308,11 @@ class FederationPage {
       '">';
     let inner;
     if (!record) {
-      inner = '<p class="warn">There is no federation relationship called ' +
-        '<code>' +
-          kit.esc(json.id) +
-          '</code>. Unlike almost everything else in this console, one does ' +
-          'not appear because somebody used it: this register is configured ' +
-          'and nothing creates an entry in it by turning ' +
-          'up.</p>' + FederationPage.federationLinks(json.paths.base);
+      // The id came from the address bar, so it stays out of the message.
+      inner = '<p class="warn">' + t.html('consoleFederation.notFoundA') +
+        '<code>' + kit.esc(json.id) + '</code>' +
+        t.html('consoleFederation.notFoundB') +
+        '</p>' + FederationPage.federationLinks(json.paths.base, t);
     } else {
       const row = json;
       const acs = json.endpoints.assertionConsumerService;
@@ -345,8 +351,9 @@ class FederationPage {
             ? '<select name="value"' + kit.tip(field.what) + '>' +
               '<option value=""' + (value ? '' : ' selected') + '>' +
               (field.name === 'fedSubjectPolicy'
-                ? '(not set — ' + json.defaultSubjectPolicy + ')'
-                : '(not set — this relationship says nothing)') + '</option>' +
+                ? t.html('consoleFederation.notSetDefault',
+                         { policy: json.defaultSubjectPolicy })
+                : t.html('consoleFederation.notSetNothing')) + '</option>' +
               field.enum.map(function (one) {
                 const label = json.enumLabels[one];
                 return '<option value="' + kit.esc(one) + '"' +
@@ -358,13 +365,14 @@ class FederationPage {
               kit.tip(field.what) +
               ' value="' + kit.esc(field.sensitive && value ? '' : value) +
                 '"' +
-              (field.sensitive ? ' placeholder="set — not shown"' : '') + '>') +
-          '<button type="submit">Set</button></div></form></td>' +
+              (field.sensitive ? ' placeholder="' +
+               kit.esc(t.text('consoleFederation.setNotShown')) + '"' : '') +
+              '>') +
+          '<button type="submit">' + t.html('consoleFederation.buttonSet') +
+          '</button></div></form></td>' +
           '<td class="sub">' + kit.note(kit.esc(field.what) +
             (field.sensitive
-              ? ' <strong>Never printed on this page or in the audit ' +
-                'log</strong>, though an ldapsearch of this directory will ' +
-                'show it — see the note at the foot.'
+              ? ' ' + t.html('consoleFederation.neverPrinted')
               : '')) + '</td></tr>';
       }).join('');
 
@@ -374,26 +382,18 @@ class FederationPage {
                                        kit.pageParamsOf(ctx.query),
                                        json.linksPaging);
       const linkedSection = row.role !== 'service-provider' ? ''
-        : '<h2 id="linked-people">People linked to this partner</h2>' +
+        : '<h2 id="linked-people">' +
+          t.html('consoleFederation.headingLinkedPeople') + '</h2>' +
           (row.signsIn
-            ? kit.note('Each person below carries a <code>federationLink' +
-              '</code> through this relationship: the partner\'s identifier ' +
-              'for them, which is what signs them in. Under <code>' +
-              'fedSubjectPolicy</code> <code>' +
-              kit.esc(json.subjectPolicy) + '</code>. A link ' +
-              'is added and removed on the person\'s own page, and removing ' +
-              'one ends the sessions this partner signed them in to.')
-            : kit.note('Each person below carries a <code>federationLink' +
-              '</code> through this relationship, written by an ' +
-                'administrator ' +
-              'on the person\'s own page: the issuer and subject the ' +
-                'partner\'s ' +
-              'iss_sub events name them by, or <code>opaque</code> and the ' +
-              'opaque id. It signs nobody in; it is how this partner\'s ' +
-              'events find the person (#374).')) +
+            ? kit.note(t.html('consoleFederation.linkedSignsIn',
+                              { policy: json.subjectPolicy }))
+            : kit.note(t.html('consoleFederation.linkedSignalsOnly'))) +
           linkNav.head +
           (json.links.length
-            ? '<table><tr><th>Person</th><th>Issuer</th><th>Subject</th></tr>' +
+            ? '<table><tr><th>' + t.html('consoleFederation.thPerson') +
+              '</th><th>' + t.html('consoleFederation.thIssuer') +
+              '</th><th>' + t.html('consoleFederation.thSubject') +
+              '</th></tr>' +
               json.links.map(function (one) {
                 return '<tr><td><a href="' + kit.esc('/admin/users' +
                   kit.queryWith({}, { user: one.username })) +
@@ -402,7 +402,7 @@ class FederationPage {
                   kit.esc(one.issuer) + '</code></td><td><code>' +
                   kit.esc(one.subject) + '</code></td></tr>';
               }).join('') + '</table>'
-            : kit.note('Nobody is linked to this partner yet.')) +
+            : kit.note(t.html('consoleFederation.nobodyLinked'))) +
           linkNav.foot;
 
       // An `ssf` relationship (#374) has no sign-in to switch; its two
@@ -424,6 +424,7 @@ class FederationPage {
                      name === 'fedAcceptSignout' ||
                      name === 'fedRequireSignedLogout';
         const on = FederationPage.boolOf(record[name], dflt);
+        // TRUE and FALSE are the attribute's own values, not words.
         return '<tr><td><code>' + kit.esc(name) + '</code></td>' +
           '<td class="' + (on ? 'ok' : 'off') + '">' + (on ? 'TRUE' : 'FALSE') +
           '</td><td><form ' +
@@ -437,7 +438,9 @@ class FederationPage {
           '"><button ' +
           'type="submit"' + (name === 'fedEnabled' && !on && !row.ready ? ' ' +
               'class="danger"' : '') +
-          '>' + (on ? 'Turn off' : 'Turn on') + '</button></div></form></td>' +
+          '>' + (on ? t.html('consoleFederation.turnOff')
+                    : t.html('consoleFederation.turnOn')) +
+          '</button></div></form></td>' +
           '<td class="sub">' + kit.esc(field.what) + '</td></tr>';
       }).join('');
 
@@ -446,7 +449,8 @@ class FederationPage {
         return '<h3><code>' + kit.esc(field.name) + '</code></h3>' +
           kit.note(kit.esc(field.what)) +
           (values.length
-            ? '<table><tr><th>Value</th><th></th></tr>' +
+            ? '<table><tr><th>' + t.html('consoleFederation.thValue') +
+              '</th><th></th></tr>' +
               values.map(function (value) {
                 return '<tr><td class="who"><code>' + kit.esc(value) +
                   '</code></td><td><form ' +
@@ -459,15 +463,16 @@ class FederationPage {
                       field.name) + '"><input ' +
                   'type="hidden" name="value" value="' + kit.esc(value) + '">' +
                   '<button ' +
-                    'type="submit">Remove</button></div></form></td></tr>';
+                    'type="submit">' +
+                  t.html('consoleFederation.buttonRemove') +
+                  '</button></div></form></td></tr>';
               }).join('') + '</table>'
-            : '<p class="sub">None' +
+            : '<p class="sub">' +
+              // The English of the release list's message ends in two full
+              // stops, as the page always drew it; the translations do not.
               (field.name === 'fedRelease'
-                ? ' — <strong>and that means no release policy rather than ' +
-                  'release nothing</strong>. This partner receives exactly ' +
-                  'what /admin/claims and /admin/saml-attributes would give ' +
-                  'anybody. Adding the first name here starts filtering.'
-                : '') + '.</p>') +
+                ? t.html('consoleFederation.noneRelease')
+                : t.html('consoleFederation.noneDot')) + '</p>') +
           '<form method="post" action="/admin/federation"><div ' +
             'class="formrow">' +
           carryBack +
@@ -475,24 +480,32 @@ class FederationPage {
           '<input type="hidden" name="id" value="' + kit.esc(row.id) + '">' +
           '<input type="hidden" name="field" value="' + kit.esc(field.name) +
           '"><input type="text" name="value" size="40" placeholder="' +
-          (field.name === 'fedAttributeMap' ? 'incoming name=ldapAttribute'
-            : (field.name === 'fedRelease' ? 'a claim or attribute name' :
-               'a value')) + '"><button ' +
-          'type="submit">Add</button></div></form>' +
+          kit.esc(field.name === 'fedAttributeMap'
+            ? t.text('consoleFederation.mapPlaceholder')
+            : (field.name === 'fedRelease'
+               ? t.text('consoleFederation.releasePlaceholder') :
+               t.text('consoleFederation.valuePlaceholder'))) + '"><button ' +
+          'type="submit">' + t.html('consoleFederation.buttonAdd') +
+          '</button></div></form>' +
           (field.name === 'fedAttributeMap'
             ? FederationPage.federationUnmappedSection(row,
               json.unmappedAttributes || [],
-                                             carryBack)
+                                             carryBack, t)
             : '');
       }).join('');
 
       inner = '<div class="tiles">' +
-        kit.tile(row.authentications, 'Federated sign-ins') +
-        kit.tile(row.users, 'Distinct people') +
-        kit.tile(row.usable ? 'ready'
-                            : (row.enabled ? 'NOT READY' : 'disabled'),
-                 'State') +
+        kit.tile(row.authentications,
+                 t.text('consoleFederation.tileFederatedSignIns')) +
+        kit.tile(row.users, t.text('consoleFederation.tileDistinctPeople')) +
+        kit.tile(row.usable ? t.text('consoleFederation.stateReady')
+                            : (row.enabled
+                                ? t.text('consoleFederation.stateNotReady')
+                                : t.text('consoleFederation.stateDisabled')),
+                 t.text('consoleFederation.thState')) +
         '</div>' +
+        // A REFUSAL STAYS ENGLISH (#539): this banner is the last refusal
+        // the view recorded, framed, and is drawn as it always was.
         (row.lastError
           ? '<p class="warn"><strong>The last attempt was refused.</strong> ' +
             kit.esc(row.lastError) +
@@ -503,115 +516,115 @@ class FederationPage {
             'worked since.</p>'
           : '') +
         (row.enabled && !row.ready
-          ? '<p class="warn"><strong>Enabled and not configured.</strong> ' +
-            kit.esc(row.missing.join(', ')) + ' still to set. Every endpoint ' +
-            'for this relationship refuses in this state rather than ' +
-            'half-working — a federated sign-in that got half way and ' +
-              'produced ' +
-            'a session would be the worst possible outcome.</p>'
+          ? '<p class="warn">' +
+            t.html('consoleFederation.enabledNotConfiguredWarn',
+                   { missing: row.missing.join(', ') }) + '</p>'
           : '') +
-        '<table><tr><th>What</th><th>Value</th></tr>' +
-        '<tr><td>This service is</td><td>' + kit.esc(row.roleLabel) +
+        '<table><tr><th>' + t.html('consoleFederation.thWhat') +
+        '</th><th>' + t.html('consoleFederation.thValue') + '</th></tr>' +
+        '<tr><td>' + t.html('consoleFederation.thThisServiceIs') +
+        '</td><td>' + kit.esc(row.roleLabel) +
         '</td></tr>' +
-        '<tr><td>Protocol</td><td>' + kit.esc(row.protocolLabel) +
+        '<tr><td>' + t.html('consoleFederation.thProtocol') + '</td><td>' +
+        kit.esc(row.protocolLabel) +
           '</td></tr>' +
-        '<tr><td>Partner</td><td class="who"><code>' +
-        kit.esc(row.peer || '(none ' +
-            'named)') +
+        '<tr><td>' + t.html('consoleFederation.thPartner') +
+        '</td><td class="who"><code>' +
+        kit.esc(row.peer || t.text('consoleFederation.noneNamed')) +
           '</code></td></tr>' +
         (row.role === 'identity-provider'
-          ? '<tr><td>Application</td><td class="who">' +
+          ? '<tr><td>' + t.html('consoleFederation.thApplication') +
+            '</td><td class="who">' +
             (row.application
               ? '<a href="/admin/applications?application=' +
                 encodeURIComponent(row.application) +
                 '"><code>' + kit.esc(row.application) + '</code></a>'
-              : '<span class="sub">none named — this relationship configures ' +
-                'nothing until one is</span>') + '</td></tr>'
+              : '<span class="sub">' +
+                t.html('consoleFederation.noApplicationNamed') + '</span>') +
+            '</td></tr>'
           : '') +
-        '<tr><td>Last used</td><td>' + kit.esc(row.lastSeen || '(never)') +
-          (row.lastUser ? ' <span class="sub">by ' + kit.esc(row.lastUser) +
+        '<tr><td>' + t.html('consoleFederation.lastUsed') + '</td><td>' +
+        kit.esc(row.lastSeen || t.text('consoleFederation.never')) +
+          // The username is kept out of the message (see the header).
+          (row.lastUser ? ' <span class="sub">' +
+           t.html('consoleFederation.by') + ' ' + kit.esc(row.lastUser) +
            '</span>' :
            '') +
           '</td></tr>' +
-        '<tr><td>Directory entry</td><td class="who"><code>' + kit.esc(row.dn) +
+        '<tr><td>' + t.html('consoleFederation.directoryEntry') +
+        '</td><td class="who"><code>' + kit.esc(row.dn) +
         '</code></td></tr></table>' +
         (row.role === 'service-provider' && !row.signsIn
           ? FederationPage.federationSignalsSection(row, record, json,
-            carryBack)
+            carryBack, t)
           : row.role === 'service-provider'
-          ? '<h2>What to configure at the partner</h2>' +
-            kit.note('These are the URLs to give whoever runs the identity ' +
-            'provider. The assertion consumer service is the one that ' +
-              'matters: ' +
-            'a partner sending its answer anywhere else produces a 404 in a ' +
-            'browser AFTER a successful sign-in somewhere else, which is the ' +
-            'least diagnosable failure this feature has.') +
-            '<table><tr><th>What they need</th><th>Value</th></tr>' +
-            '<tr><td>Assertion consumer service / <code>wreply</code> / ' +
-              '<code>redirect_uri</code></td><td class="who"><code>' +
+          ? '<h2>' + t.html('consoleFederation.headingConfigureAtPartner') +
+            '</h2>' +
+            kit.note(t.html('consoleFederation.configureAtPartnerNote')) +
+            '<table><tr><th>' + t.html('consoleFederation.thWhatTheyNeed') +
+            '</th><th>' + t.html('consoleFederation.thValue') + '</th></tr>' +
+            '<tr><td>' + t.html('consoleFederation.acsRow') +
+              '</td><td class="who"><code>' +
               kit.esc(acs) +
               '</code></td></tr>' +
-            '<tr><td>Our entityID / <code>wtrealm</code></td><td ' +
+            '<tr><td>' + t.html('consoleFederation.entityIdRow') + '</td><td ' +
             'class="who"><code>' + kit.esc(acs) +
-              '</code><span class="sub">the same string, deliberately: one ' +
-              'name for this service per partner, so a partner keying its ' +
-              'trust store off an entityID gets one that is only ' +
-              'ours-with-them</span></td></tr>' +
+              '</code><span class="sub">' +
+              t.html('consoleFederation.entityIdSameString') +
+              '</span></td></tr>' +
             ((row.protocol === 'saml2' || row.protocol === 'saml11' ||
               row.protocol === 'wsfed')
-              ? '<tr><td>Our ' + (row.protocol === 'wsfed' ? 'WS-Federation'
-                                                           : 'SAML') +
-                ' metadata</td><td class="who"><a href="' +
+              ? '<tr><td>' + t.html('consoleFederation.ourMetadata',
+                  { protocol: row.protocol === 'wsfed' ? 'WS-Federation'
+                                                       : 'SAML' }) +
+                '</td><td class="who"><a href="' +
                 kit.esc(json.paths.metadata + '/' +
                          encodeURIComponent(row.id)) +
                 '"><code>' +
-                kit.esc(metadata) + '</code></a><span class="sub">unsigned, ' +
-                'deliberately — a signature over it made by the very key it ' +
-                'publishes proves nothing they did not already have to ' +
-                'trust</span></td></tr>'
+                kit.esc(metadata) + '</code></a><span class="sub">' +
+                t.html('consoleFederation.metadataUnsigned') +
+                '</span></td></tr>'
               : '') +
             // A PARTNER'S SIGN-OUT (#167): what the partner registers so it can
             // tell this service a session ended, and — below the table — what
             // this service tells it.
             Object.keys(json.signOut || {}).map(function (name) {
               const words = {
-                singleLogout: 'SingleLogoutService (Redirect and POST), for ' +
-                              'the partner\'s LogoutRequest and its ' +
-                              'LogoutResponse to ours',
-                signOutCleanup: 'Sign-out cleanup URL, for ' +
-                  'wsignoutcleanup1.0 ' +
-                                '— the person confirms it here',
-                backchannelLogout: '<code>backchannel_logout_uri</code>',
-                frontchannelLogout: '<code>frontchannel_logout_uri</code>, ' +
-                                    'with <code>frontchannel_logout_session' +
-                                    '_required</code>',
-                postLogoutRedirect: '<code>post_logout_redirect_uri</code>, ' +
-                                    'for a sign-out here that ends at the ' +
-                                    'partner'
+                singleLogout: t.html('consoleFederation.signOutSingleLogout'),
+                signOutCleanup: t.html('consoleFederation.signOutCleanup'),
+                backchannelLogout:
+                  t.html('consoleFederation.signOutBackchannel'),
+                frontchannelLogout:
+                  t.html('consoleFederation.signOutFrontchannel'),
+                postLogoutRedirect:
+                  t.html('consoleFederation.signOutPostLogout')
               };
               return '<tr><td>' + (words[name] || kit.esc(name)) + '</td><td ' +
                 'class="who"><code>' + kit.esc(json.signOut[name]) +
                 '</code></td></tr>';
             }).join('') +
             ((row.protocol === 'saml11' || row.protocol === 'oauth2')
-              ? '<tr><td>Sign-out</td><td><span class="sub">none — ' +
-                (row.protocol === 'saml11' ? 'SAML 1.1' : 'OAuth 2.0') +
-                ' defines no sign-out, so the partner cannot end a session ' +
-                'here and is not told of one ending</span></td></tr>'
+              ? '<tr><td>' + t.html('consoleFederation.signOut') +
+                '</td><td><span class="sub">' +
+                t.html('consoleFederation.noSignOut',
+                       { protocol: row.protocol === 'saml11' ? 'SAML 1.1'
+                                                             : 'OAuth 2.0' }) +
+                '</span></td></tr>'
               : '') +
             // THE KEY THE PARTNER ENCRYPTS TO (#168): the certificate, or
             // for OpenID Connect the JWKS and the two registration members.
             (json.encryption
-              ? '<tr><td>Encryption certificate (<code>' +
-                kit.esc(json.encryption.policy.keyType) + '</code>)</td>' +
+              ? '<tr><td>' + t.html('consoleFederation.encryptionCertificate',
+                  { keyType: json.encryption.policy.keyType }) + '</td>' +
                 '<td class="who">' + (json.encryption.certificatePem
                   ? '<pre>' + kit.esc(json.encryption.certificatePem) +
                     '</pre>'
-                  : '<span class="warn">none — rotate the key below to ' +
-                    'issue one</span>') + '</td></tr>' +
+                  : '<span class="warn">' +
+                    t.html('consoleFederation.noCertificate') + '</span>') +
+                '</td></tr>' +
                 (json.endpoints.jwks
-                  ? '<tr><td><code>jwks_uri</code> (or its contents as ' +
-                    '<code>jwks</code>)</td><td class="who"><code>' +
+                  ? '<tr><td>' + t.html('consoleFederation.jwksRow') +
+                    '</td><td class="who"><code>' +
                     kit.esc(json.endpoints.jwks) + '</code></td></tr>' +
                     '<tr><td><code>id_token_encrypted_response_alg</code> / ' +
                     '<code>_enc</code></td><td><code>' +
@@ -619,94 +632,72 @@ class FederationPage {
                     '</code> / <code>' +
                     kit.esc(json.encryption.policy.content) + '</code></td>' +
                     '</tr>'
-                  : '<tr><td>Encryption algorithms</td><td><code>' +
-                    kit.esc(json.encryption.policy.content) + '</code> under ' +
-                    '<code>' + kit.esc(json.encryption.policy.management) +
-                    '</code>, published in the metadata</td></tr>')
+                  : '<tr><td>' +
+                    t.html('consoleFederation.encryptionAlgorithms') +
+                    '</td><td>' +
+                    t.html('consoleFederation.algorithmsUnder',
+                      { content: json.encryption.policy.content,
+                        management: json.encryption.policy.management }) +
+                    '</td></tr>')
               : '') +
             '</table>' +
             (json.encryption ? FederationPage.federationEncryptionSection(row,
-                                 json.encryption, carryBack) : '') +
+                                 json.encryption, carryBack, t) : '') +
             kit.note('<a class="btn" href="' + kit.esc(login) +
-                      '">Start a federated ' +
-            'sign-in through this ' +
-            'partner</a> ' + (row.usable ? '' : '<span class="sub">— it will ' +
-            'refuse until this relationship is enabled and ' +
-            'configured</span>')) +
+                      '">' + t.html('consoleFederation.startSignIn') +
+            '</a> ' + (row.usable ? '' : '<span class="sub">' +
+            t.html('consoleFederation.willRefuse') + '</span>')) +
             // THE SAME PARTNER AS A TRANSMITTER (#373).
             FederationPage.federationSignalsSection(row, record, json,
-              carryBack)
-          : '<h2>What this relationship does</h2>' +
-            kit.note('Every protocol endpoint here already issues to anybody ' +
-            'that asks, so this relationship changes nothing about whether ' +
-              'the ' +
-            'partner is answered. What it adds is two things: the partner is ' +
-            'marked as a FEDERATION PARTNER rather than a test client, and ' +
-            '<code>fedRelease</code> below decides which attributes are ' +
-            'released to it.') +
-            kit.note('<strong>The release list can only remove, and only ' +
-              'from ' +
-            'what <a href="/admin/claims">custom claims</a>, <a ' +
-            'href="/admin/saml-attributes">custom SAML attributes</a> and ' +
-              'the ' +
-            'groups claim would add.</strong> It cannot touch ' +
-            '<code>sub</code>, <code>iss</code>, <code>exp</code>, a NameID ' +
-              'or ' +
-            'anything else the protocol puts in an artifact itself — those ' +
-              'are ' +
-            'what make the artifact verifiable, and a release list that ' +
-              'could ' +
-            'drop <code>iss</code> would produce tokens that fail to verify ' +
-            'with nothing pointing back at this page.') +
+              carryBack, t)
+          : '<h2>' + t.html('consoleFederation.headingWhatItDoes') + '</h2>' +
+            kit.note(t.html('consoleFederation.whatItDoesNote')) +
+            // The sentence is split at its two links, which sit inside the
+            // bold opening.
+            kit.note('<strong>' + t.html('consoleFederation.releaseOnlyA') +
+            '<a href="/admin/claims">' +
+            t.html('consoleFederation.customClaims') + '</a>, <a ' +
+            'href="/admin/saml-attributes">' +
+            t.html('consoleFederation.customSamlAttributes') + '</a>' +
+            t.html('consoleFederation.releaseOnlyB') + '</strong>' +
+            t.html('consoleFederation.releaseOnlyC')) +
             // WHAT THIS SERVICE TELLS THE PARTNER (#373).
-            FederationPage.federationOutboundSection(json.outboundSignals)) +
-        '<h2>Settings</h2>' +
-        '<table><tr><th>Field</th><th>Value</th><th>What it is</th></tr>' +
+            FederationPage.federationOutboundSection(json.outboundSignals,
+                                                     t)) +
+        '<h2>' + t.html('consoleFederation.headingSettings') + '</h2>' +
+        '<table><tr><th>' + t.html('consoleFederation.thField') +
+        '</th><th>' + t.html('consoleFederation.thValue') + '</th><th>' +
+        t.html('consoleFederation.thWhatItIs') + '</th></tr>' +
         fieldRows +
-        '</table><h2>Switches</h2><table><tr><th>Field</th><th>Now</th><th>' +
+        '</table><h2>' + t.html('consoleFederation.headingSwitches') +
+        '</h2><table><tr><th>' + t.html('consoleFederation.thField') +
+        '</th><th>' + t.html('consoleFederation.thNow') + '</th><th>' +
         '</th>' +
-        '<th>What it is</th></tr>' + switches +
+        '<th>' + t.html('consoleFederation.thWhatItIs') + '</th></tr>' +
+        switches +
         '</table>' +
-        '<h2>Lists</h2>' + multiSections +
+        '<h2>' + t.html('consoleFederation.headingLists') + '</h2>' +
+        multiSections +
         linkedSection +
-        '<h2>Delete</h2>' +
+        '<h2>' + t.html('consoleFederation.headingDelete') + '</h2>' +
         '<form method="post" action="/admin/federation"><div class="formrow">' +
         carryBack +
         '<input type="hidden" name="action" value="delete">' +
         '<input type="hidden" name="id" value="' + kit.esc(row.id) + '">' +
-        '<button type="submit" class="danger">Delete this ' +
-          'relationship</button>' +
-        '<span class="sub">The entry goes and takes its ' +
-          row.authentications +
-        ' recorded sign-in(s) with it. The PEOPLE it authenticated keep ' +
-          'their ' +
-        'entries under <code>ou=users</code> — nothing is ever deleted from ' +
-        'there — and any session they hold is unaffected until it expires or ' +
-        'is ended.</span></div></form>' +
-        kit.note('<strong>Everything on this page is an attribute on one ' +
-        'directory entry</strong>, so an <code>ldapmodify</code> of <code>' +
-        kit.esc(row.dn) +
-        '</code> does exactly what these forms do — two doors onto one ' +
-        'register, not two registers. That cuts both ways: ' +
-        '<code>fedClientSecret</code> is this service\'s own credential AT ' +
-          'the ' +
-        'partner, held in the clear, in a directory where every bind ' +
-          'succeeds. ' +
-        'It is never shown here and never written to the audit log, and ' +
-        'anybody who can read this directory can authenticate as this ' +
-          'service ' +
-        'at that partner. A deployment federating with something real should ' +
-        'know that. The Shared Signals credentials, <code>fedSignalsClient' +
-        'Secret</code> and <code>fedSignalsBearer</code>, are sealed under ' +
-          'the ' +
-        'key-encryption key wherever keys persist (#373).') +
-        FederationPage.federationCaveat() +
+        '<button type="submit" class="danger">' +
+        t.html('consoleFederation.buttonDelete') + '</button>' +
+        '<span class="sub">' +
+        t.html('consoleFederation.deleteNote',
+               { count: String(row.authentications) }) +
+        '</span></div></form>' +
+        kit.note(t.html('consoleFederation.oneEntryNote', { dn: row.dn })) +
+        FederationPage.federationCaveat(t) +
         '<p class="sub"><a href="' +
         kit.esc('/admin/federation' +
                  kit.queryWith(kit.listViewOf('/admin/federation', ctx.query),
                    {})) +
-        '">back to the list</a></p>' +
-        FederationPage.federationLinks(json.paths.base);
+        '">' + t.html('consoleFederation.backToList') + '</a></p>' +
+        FederationPage.federationLinks(json.paths.base, t);
     }
 
     return inner;
@@ -726,9 +717,10 @@ class FederationPage {
    * @param record - the relationship
    * @param view - the detail view: `signals`, `arrivals`, `signalSetFields`
    * @param carryBack - the hidden `back` field carried into each form
+   * @param t - the page's translator
    * @returns the section as HTML
    */
-  static federationSignalsSection(row, record, view, carryBack) {
+  static federationSignalsSection(row, record, view, carryBack, t) {
     const s = view.signals;
     if (!s) {
       return '';
@@ -758,9 +750,12 @@ class FederationPage {
           : '<input type="' + (field.sensitive ? 'password' : 'text') +
             '" name="value" size="42" autocomplete="off" value="' +
             kit.esc(field.sensitive ? '' : value) + '"' +
-            (field.sensitive && value ? ' placeholder="set — not shown"'
-                                      : '') + '>') +
-        '<button type="submit">Set</button></div></form></td><td ' +
+            (field.sensitive && value
+              ? ' placeholder="' +
+                kit.esc(t.text('consoleFederation.setNotShown')) + '"'
+              : '') + '>') +
+        '<button type="submit">' + t.html('consoleFederation.buttonSet') +
+        '</button></div></form></td><td ' +
         'class="sub">' + kit.note(kit.esc(field.what)) + '</td></tr>';
     };
     const switchRow = function (name, dflt) {
@@ -770,7 +765,8 @@ class FederationPage {
       const on = FederationPage.boolOf(record[name], dflt);
       return '<tr><td><code>' + kit.esc(name) + '</code></td><td class="' +
         (on ? 'ok' : 'off') + '">' + (on ? 'TRUE' : 'FALSE') + '</td><td>' +
-        act('set', on ? 'Turn off' : 'Turn on',
+        act('set', on ? t.text('consoleFederation.turnOff')
+                      : t.text('consoleFederation.turnOn'),
             '<input type="hidden" name="field" value="' + kit.esc(name) +
             '"><input type="hidden" name="value" value="' +
             (on ? 'FALSE' : 'TRUE') + '">') + '</td><td class="sub">' +
@@ -779,127 +775,159 @@ class FederationPage {
     const events = [].concat(record.fedSignalsEvents || []);
     const eventRows = events.map(function (one) {
       return '<tr><td class="who"><code>' + kit.esc(one) + '</code></td>' +
-        '<td>' + act('remove-value', 'Remove',
+        '<td>' + act('remove-value', t.text('consoleFederation.buttonRemove'),
           '<input type="hidden" name="field" value="fedSignalsEvents">' +
           '<input type="hidden" name="value" value="' + kit.esc(one) +
           '">', true) + '</td></tr>';
     }).join('');
     const streamActs = s.streamId
-      ? act('signals-read-stream', 'Read stream') +
-        act('signals-update-stream', 'Send fedSignalsEvents') +
-        act('signals-verify', 'Verify') +
-        (s.streamDelivery === 'poll' ? act('signals-poll-now', 'Poll now')
-                                     : '') +
-        act('signals-set-status', 'Pause',
+      ? act('signals-read-stream', t.text('consoleFederation.actReadStream')) +
+        act('signals-update-stream',
+            t.text('consoleFederation.actSendEvents')) +
+        act('signals-verify', t.text('consoleFederation.actVerify')) +
+        (s.streamDelivery === 'poll'
+          ? act('signals-poll-now', t.text('consoleFederation.actPollNow'))
+          : '') +
+        act('signals-set-status', t.text('consoleFederation.actPause'),
             '<input type="hidden" name="status" value="paused">') +
-        act('signals-set-status', 'Enable',
+        act('signals-set-status', t.text('consoleFederation.actEnable'),
             '<input type="hidden" name="status" value="enabled">') +
-        act('signals-delete-stream', 'Delete stream', '', true)
-      : act('signals-discover', 'Discover') +
-        act('signals-create-stream', 'Create stream');
+        act('signals-delete-stream',
+            t.text('consoleFederation.actDeleteStream'), '', true)
+      : act('signals-discover', t.text('consoleFederation.actDiscover')) +
+        act('signals-create-stream',
+            t.text('consoleFederation.actCreateStream'));
     const blocks = (s.blocks || []).length
-      ? '<h3 id="signal-blocks">Sign-ins this partner has blocked</h3>' +
-        '<table><tr><th>Person</th><th>Since</th><th>Event</th><th></th>' +
+      ? '<h3 id="signal-blocks">' +
+        t.html('consoleFederation.headingBlocked') + '</h3>' +
+        '<table><tr><th>' + t.html('consoleFederation.thPerson') +
+        '</th><th>' + t.html('consoleFederation.thSince') + '</th><th>' +
+        t.html('consoleFederation.thEvent') + '</th><th></th>' +
         '</tr>' + s.blocks.map(function (b) {
           return '<tr><td><a href="' + kit.esc('/admin/users?user=' +
             encodeURIComponent(b.username)) + '">' + kit.esc(b.username) +
             '</a></td><td>' + kit.esc(b.at) + '</td><td><code>' +
             kit.esc(b.event) + '</code></td><td>' +
-            act('signals-unblock', 'Unblock',
+            act('signals-unblock', t.text('consoleFederation.actUnblock'),
                 '<input type="hidden" name="user" value="' +
                 kit.esc(b.username) + '">') + '</td></tr>';
         }).join('') + '</table>'
       : '';
     const arrivals = (view.signalArrivals || []).length
-      ? '<h3>Latest arrivals</h3><table><tr><th>When</th><th>Events</th>' +
-        '<th>Verified</th><th>Person</th><th>Reactions</th></tr>' +
+      ? '<h3>' + t.html('consoleFederation.headingArrivals') +
+        '</h3><table><tr><th>' + t.html('consoleFederation.thWhen') +
+        '</th><th>' + t.html('consoleFederation.thEvents') + '</th>' +
+        '<th>' + t.html('consoleFederation.thVerified') + '</th><th>' +
+        t.html('consoleFederation.thPerson') + '</th><th>' +
+        t.html('consoleFederation.thReactions') + '</th></tr>' +
         view.signalArrivals.map(function (r) {
+          // A refusal is the view's, and stays English; the word drawn
+          // where an arrival carries none is this page's.
           return '<tr><td>' + kit.esc(r.receivedAt) + ' <span class="sub">' +
             kit.esc(r.via) + '</span></td><td>' + (r.events || [])
               .map(function (e) {
                 return '<code>' + kit.esc(String(e).replace(/^.*\//, '')) +
                   '</code>';
-              }).join(' ') + '</td><td>' + (r.verified ? 'verified'
-              : '<strong>' + kit.esc(r.refusal || 'unverified') +
+              }).join(' ') + '</td><td>' + (r.verified
+              ? t.html('consoleFederation.verified')
+              : '<strong>' + kit.esc(r.refusal ||
+                  t.text('consoleFederation.unverified')) +
                 '</strong>') + '</td><td>' + kit.esc(r.person || '—') +
             (r.mapping ? '<br><span class="sub">' + kit.esc(r.mapping) +
                          '</span>' : '') + '</td><td>' +
             (r.reactions || []).map(function (x) {
               return kit.esc(x.reaction || '—') + (x.done ? ' ✓' : '') +
-                (x.observed ? ' (observed only)' : '') +
+                (x.observed ? ' ' + t.html('consoleFederation.observedOnly')
+                            : '') +
                 (x.why ? ' <span class="sub">' + kit.esc(x.why) +
                          '</span>' : '');
             }).join('<br>') + '</td></tr>';
         }).join('') + '</table>' +
-        kit.note('Every arrival from every partner is on <a href="' +
-          '/admin/ssf/transmitters">Monitoring → Shared Signals from ' +
-          'partners</a>.')
+        kit.note(t.html('consoleFederation.everyArrivalA') + '<a href="' +
+          '/admin/ssf/transmitters">' +
+          t.html('consoleFederation.everyArrivalLink') + '</a>' +
+          t.html('consoleFederation.everyArrivalB'))
       : '';
-    return '<h2 id="signals">Shared Signals from this partner</h2>' +
+    return '<h2 id="signals">' +
+      t.html('consoleFederation.headingSignalsFrom') + '</h2>' +
       kit.note(row.signsIn
-        ? 'The partner\'s CAEP and RISC events about the people it signs ' +
-          'in. A verified one is acted on as the <code>signal-response' +
-          '</code> policy permits — by default ending the sessions THIS ' +
-          'relationship started for the person, and on ' +
-          '<code>account-disabled</code> blocking its sign-ins of them until ' +
-          'its <code>account-enabled</code>. A local sign-in and every other ' +
-          'partner are untouched.'
-        : 'This partner signs nobody in: it only sends CAEP and RISC events. ' +
-          'By default they are recorded and nothing more, except a ' +
-          'device\'s compliance, which is set. Its people are the ones ' +
-          'linked to it below (<code>&lt;iss&gt; &lt;sub&gt;</code>, or ' +
-          '<code>opaque &lt;id&gt;</code>), or matched by mail where ' +
-          '<code>fedSignalEmailMatch</code> is on.') +
-      '<table><tr><th>What</th><th>Value</th></tr>' +
-      '<tr><td>Receiving</td><td class="' + (s.receiving ? 'ok' : 'off') +
-      '">' + (s.receiving ? 'yes'
-        : 'no — ' + (s.enabled ? 'fedSignalsEnabled is off'
-                               : 'the relationship is disabled')) +
+        ? t.html('consoleFederation.signalsSignsIn')
+        : t.html('consoleFederation.signalsOnly')) +
+      '<table><tr><th>' + t.html('consoleFederation.thWhat') + '</th><th>' +
+      t.html('consoleFederation.thValue') + '</th></tr>' +
+      '<tr><td>' + t.html('consoleFederation.receiving') +
+      '</td><td class="' + (s.receiving ? 'ok' : 'off') +
+      '">' + (s.receiving ? t.html('consoleFederation.yes')
+        : (s.enabled ? t.html('consoleFederation.noSignalsOff')
+                     : t.html('consoleFederation.noRelationshipDisabled'))) +
       '</td></tr>' +
-      '<tr><td>SSF issuer</td><td class="who"><code>' +
-      kit.esc(s.issuer || '(none)') + '</code></td></tr>' +
-      '<tr><td>Configuration</td><td>' + (s.config
-        ? 'discovered ' + kit.esc(s.discoveredAt) + ' from <code>' +
-          kit.esc(s.discoveryUrl) + '</code>'
-        : '<span class="sub">not discovered yet</span>') + '</td></tr>' +
-      '<tr><td>Stream</td><td>' + (s.streamId
+      '<tr><td>' + t.html('consoleFederation.ssfIssuer') +
+      '</td><td class="who"><code>' +
+      kit.esc(s.issuer || t.text('consoleFederation.none')) +
+      '</code></td></tr>' +
+      '<tr><td>' + t.html('consoleFederation.configuration') + '</td><td>' +
+      (s.config
+        ? t.html('consoleFederation.discoveredFrom',
+                 { at: s.discoveredAt, url: s.discoveryUrl })
+        : '<span class="sub">' +
+          t.html('consoleFederation.notDiscovered') + '</span>') +
+      '</td></tr>' +
+      // The stream's own line is its values and `aud`, the claim's name;
+      // only the verification after it is words.
+      '<tr><td>' + t.html('consoleFederation.stream') + '</td><td>' +
+      (s.streamId
         ? '<code>' + kit.esc(s.streamId) + '</code> (' +
           kit.esc(s.streamDelivery) + ', aud <code>' +
           kit.esc((s.streamAud || []).join(' ')) + '</code>)' +
-          (s.verifiedAt ? ' — verified ' + kit.esc(s.verifiedAt) : '')
-        : '<span class="sub">none</span>') + '</td></tr>' +
+          (s.verifiedAt ? ' ' + t.html('consoleFederation.verifiedAt',
+                                       { at: s.verifiedAt }) : '')
+        : '<span class="sub">' + t.html('consoleFederation.noneLower') +
+          '</span>') + '</td></tr>' +
       (s.streamDelivery === 'push' || s.delivery === 'push'
-        ? '<tr><td>Push endpoint</td><td class="who"><code>' +
+        ? '<tr><td>' + t.html('consoleFederation.pushEndpoint') +
+          '</td><td class="who"><code>' +
           kit.esc(view.base + s.pushEndpoint) + '</code><span class="sub">' +
-          ' given to the partner with the stream</span></td></tr>' : '') +
-      '<tr><td>Counts</td><td>' + kit.esc(String(s.counts.received || 0)) +
-      ' received, ' + kit.esc(String(s.counts.verified || 0)) +
-      ' verified, ' + kit.esc(String(s.counts.refused || 0)) +
-      ' refused, ' + kit.esc(String(s.counts.acted || 0)) +
-      ' reaction(s)' + (s.lastPollAt ? '; last poll ' +
-        kit.esc(s.lastPollAt) + ': ' + kit.esc(s.lastPollResult) : '') +
+          ' ' + t.html('consoleFederation.givenWithStream') +
+          '</span></td></tr>' : '') +
+      '<tr><td>' + t.html('consoleFederation.counts') + '</td><td>' +
+      t.html('consoleFederation.countsLine',
+             { received: String(s.counts.received || 0),
+               verified: String(s.counts.verified || 0),
+               refused: String(s.counts.refused || 0),
+               acted: String(s.counts.acted || 0) }) +
+      // The poll's result is the view's, and is drawn as it comes.
+      (s.lastPollAt ? t.html('consoleFederation.lastPoll',
+                             { at: s.lastPollAt }) +
+        kit.esc(s.lastPollResult) : '') +
       '</td></tr>' +
-      (s.lastError ? '<tr><td>Last error</td><td class="warn">' +
+      (s.lastError ? '<tr><td>' + t.html('consoleFederation.lastError') +
+                     '</td><td class="warn">' +
                      kit.esc(s.lastError) + '</td></tr>' : '') +
-      (s.ready ? '' : '<tr><td>Still to set</td><td class="warn">' +
+      (s.ready ? '' : '<tr><td>' + t.html('consoleFederation.stillToSet') +
+                      '</td><td class="warn">' +
                       kit.esc(s.missing.join(', ')) + '</td></tr>') +
       '</table>' +
       '<p>' + streamActs + '</p>' +
-      '<table><tr><th>Field</th><th>Now</th><th></th><th>What it is</th>' +
+      '<table><tr><th>' + t.html('consoleFederation.thField') + '</th><th>' +
+      t.html('consoleFederation.thNow') + '</th><th></th><th>' +
+      t.html('consoleFederation.thWhatItIs') + '</th>' +
       '</tr>' + (row.signsIn ? switchRow('fedSignalsEnabled', false) : '') +
       switchRow('fedSignalEmailMatch', false) + '</table>' +
-      '<table><tr><th>Field</th><th>Value</th><th>What it is</th></tr>' +
+      '<table><tr><th>' + t.html('consoleFederation.thField') + '</th><th>' +
+      t.html('consoleFederation.thValue') + '</th><th>' +
+      t.html('consoleFederation.thWhatItIs') + '</th></tr>' +
       (view.signalSetFields || []).map(setRow).join('') + '</table>' +
       '<h3><code>fedSignalsEvents</code></h3>' +
       (eventRows ? '<table>' + eventRows + '</table>'
-                 : kit.note('None: the stream asks for whatever the ' +
-                             'partner supports.')) +
+                 : kit.note(t.html('consoleFederation.noEventsListed'))) +
       '<form method="post" action="/admin/federation"><div class="formrow">' +
       carryBack + '<input type="hidden" name="action" value="add-value">' +
       '<input type="hidden" name="id" value="' + kit.esc(row.id) + '">' +
       '<input type="hidden" name="field" value="fedSignalsEvents">' +
-      '<input type="text" name="value" size="60" placeholder="an event ' +
-      'type URI"><button type="submit">Add</button></div></form>' +
+      '<input type="text" name="value" size="60" placeholder="' +
+      kit.esc(t.text('consoleFederation.eventPlaceholder')) +
+      '"><button type="submit">' + t.html('consoleFederation.buttonAdd') +
+      '</button></div></form>' +
       blocks + arrivals;
   }
 
@@ -915,43 +943,48 @@ class FederationPage {
    * @param row - the relationship's row
    * @param encryption - the relationship's encryption state and keys
    * @param carryBack - the hidden `back` field carried into the form
+   * @param t - the page's translator
    * @returns the section as HTML
    */
-  static federationEncryptionSection(row, encryption, carryBack) {
+  static federationEncryptionSection(row, encryption, carryBack, t) {
     const rows = encryption.keys.map(function (key) {
       return '<tr><td><code>' + kit.esc(key.kid) + '</code></td><td>' +
         kit.esc(key.keyType) + '</td><td class="' +
         (key.decrypts ? 'ok' : 'off') + '">' + kit.esc(key.state) +
-        (key.retiresAt ? ' — decrypts until ' +
-          kit.esc(new Date(key.retiresAt).toISOString()) : '') +
+        (key.retiresAt ? ' ' + t.html('consoleFederation.decryptsUntil',
+          { at: new Date(key.retiresAt).toISOString() }) : '') +
         '</td><td>' + kit.esc(key.notAfter || '') + '</td><td>' +
-        (key.sealed ? 'sealed' : 'in clear (keys do not persist)') +
+        (key.sealed ? t.html('consoleFederation.sealed')
+                    : t.html('consoleFederation.inClear')) +
         '</td></tr>';
     }).join('');
-    return '<h2 id="encryption">Encryption</h2>' +
+    return '<h2 id="encryption">' +
+      t.html('consoleFederation.headingEncryption') + '</h2>' +
       kit.note(encryption.required
-        ? '<strong>A plaintext assertion is refused.</strong> The partner ' +
-          'must encrypt to the key above, with the algorithms above.'
+        ? t.html('consoleFederation.plaintextRefused')
         : (encryption.allowUnencrypted
-            ? '<strong class="warn">fedAllowUnencrypted is on: a plaintext ' +
-              'assertion is ACCEPTED</strong>, and the person\'s ' +
-              'identifier and attributes may cross their browser in clear.'
-            : 'A plaintext assertion is accepted in development mode; ' +
-              'product mode refuses it. An encrypted one is decrypted and ' +
-              'held to the algorithms above in both.')) +
+            // The class on the bold opening keeps it out of the message.
+            ? '<strong class="warn">' +
+              t.html('consoleFederation.allowUnencryptedA') + '</strong>' +
+              t.html('consoleFederation.allowUnencryptedB')
+            : t.html('consoleFederation.plaintextDevelopment'))) +
       (rows
-        ? '<table><tr><th>kid</th><th>Type</th><th>State</th><th>Expires' +
-          '</th><th>At rest</th></tr>' + rows + '</table>'
-        : kit.note('No key is held.')) +
+        ? '<table><tr><th>kid</th><th>' + t.html('consoleFederation.thType') +
+          '</th><th>' + t.html('consoleFederation.thState') + '</th><th>' +
+          t.html('consoleFederation.thExpires') +
+          '</th><th>' + t.html('consoleFederation.thAtRest') + '</th></tr>' +
+          rows + '</table>'
+        : kit.note(t.html('consoleFederation.noKeyHeld'))) +
       '<form method="post" action="/admin/federation"><div class="formrow">' +
       carryBack +
       '<input type="hidden" name="action" value="rotate-key">' +
       '<input type="hidden" name="id" value="' + kit.esc(row.id) + '">' +
-      '<button type="submit">Rotate the encryption key</button>' +
-      '<span class="sub">A new key is issued under this realm\'s ' +
-      'Intermediate and published at once; the one it replaces still ' +
-      'decrypts for ' + kit.esc(String(encryption.graceS)) + ' seconds ' +
-      '(federation.encryptionKeyGraceS).</span></div></form>';
+      '<button type="submit">' + t.html('consoleFederation.buttonRotate') +
+      '</button>' +
+      '<span class="sub">' +
+      t.html('consoleFederation.rotateNote',
+             { seconds: String(encryption.graceS) }) +
+      '</span></div></form>';
   }
 
   /**
@@ -959,26 +992,30 @@ class FederationPage {
    * relationship: its application's streams on this service's transmitter.
    *
    * @param outbound - `{ application, streams }`
+   * @param t - the page's translator
    * @returns the section as HTML
    */
-  static federationOutboundSection(outbound) {
+  static federationOutboundSection(outbound, t) {
     if (!outbound || !outbound.application) {
       return '';
     }
-    return '<h2 id="signals-sent">Shared Signals this service sends the ' +
-      'partner</h2>' +
-      kit.note('The streams on this service\'s own transmitter that the ' +
-        'partner\'s application <code>' + kit.esc(outbound.application) +
-        '</code> owns. Read only: a stream belongs to the receiver that ' +
-        'created it, and is managed through SSF\'s stream management API.') +
+    return '<h2 id="signals-sent">' +
+      t.html('consoleFederation.headingSignalsSent') + '</h2>' +
+      kit.note(t.html('consoleFederation.signalsSentNote',
+                      { application: outbound.application })) +
       ((outbound.streams || []).length
-        ? '<table><tr><th>Stream</th><th>Delivery</th><th>Status</th>' +
-          '<th>Events delivered</th><th>Last activity</th><th>Dead letters' +
+        ? '<table><tr><th>' + t.html('consoleFederation.thStream') +
+          '</th><th>' + t.html('consoleFederation.thDelivery') + '</th><th>' +
+          t.html('consoleFederation.thStatus') + '</th>' +
+          '<th>' + t.html('consoleFederation.thEventsDelivered') +
+          '</th><th>' + t.html('consoleFederation.thLastActivity') +
+          '</th><th>' + t.html('consoleFederation.thDeadLetters') +
           '</th></tr>' + outbound.streams.map(function (one) {
             return '<tr><td><code>' + kit.esc(one.streamId) + '</code>' +
               '</td><td>' + kit.esc(one.delivery) + '</td><td class="' +
               (one.dead ? 'warn' : '') + '">' + kit.esc(one.status) +
-              (one.dead ? ' — not delivering' : '') + '</td><td>' +
+              (one.dead ? ' ' + t.html('consoleFederation.notDelivering')
+                        : '') + '</td><td>' +
               (one.eventsDelivered || []).map(function (e) {
                 return '<code>' + kit.esc(String(e).replace(/^.*\//, '')) +
                   '</code>';
@@ -986,7 +1023,7 @@ class FederationPage {
               kit.esc(one.lastActivityAt || '—') + '</td><td>' +
               kit.esc(String(one.deadLetters)) + '</td></tr>';
           }).join('') + '</table>'
-        : kit.note('The partner\'s application holds no stream here.'));
+        : kit.note(t.html('consoleFederation.noOutboundStream')));
   }
 
   // WHAT THE PARTNER SENT AND NOTHING WROTE (#94), under the mapping it
@@ -1000,24 +1037,27 @@ class FederationPage {
    * @param row - the relationship's view
    * @param unmapped - `federation.unmappedOf()`
    * @param carryBack - the hidden `back` field every form carries
+   * @param t - the page's translator
    * @returns the section as HTML, or '' when there is nothing to show
    */
-  static federationUnmappedSection(row, unmapped, carryBack) {
+  static federationUnmappedSection(row, unmapped, carryBack, t) {
     if (!unmapped.length) {
       return '';
     }
-    return '<h3 id="unmapped">Sent and not written</h3>' +
-      kit.note('Names this partner sent at a sign-in that were NOT ' +
-        'written to the directory: nothing maps them, or a mapping sends ' +
-        'them onto an attribute no partner may write. The newest first; a ' +
-        'name is kept for ' + 'as long as minted state is (' +
-        '<code>persistence.mintedRetention</code>).') +
-      '<table><tr><th>Name</th><th>Why</th><th>Last sent</th><th>Map it' +
+    return '<h3 id="unmapped">' +
+      t.html('consoleFederation.headingUnmapped') + '</h3>' +
+      kit.note(t.html('consoleFederation.unmappedNote')) +
+      '<table><tr><th>' + t.html('consoleFederation.thName') + '</th><th>' +
+      t.html('consoleFederation.thWhy') + '</th><th>' +
+      t.html('consoleFederation.thLastSent') + '</th><th>' +
+      t.html('consoleFederation.thMapIt') +
       '</th></tr>' +
       unmapped.map(function (one) {
+        // Why a mapping was refused is the view's, and stays English.
         return '<tr><td class="who"><code>' + kit.esc(one.name) +
           '</code></td><td class="sub">' +
-          (one.refused ? kit.esc(one.refused) : 'nothing maps it') +
+          (one.refused ? kit.esc(one.refused)
+                       : t.html('consoleFederation.nothingMapsIt')) +
           '</td><td class="sub">' + kit.esc(one.last) + '</td><td><form ' +
           'method="post" action="/admin/federation"><div class="formrow">' +
           carryBack +
@@ -1025,7 +1065,8 @@ class FederationPage {
           '<input type="hidden" name="id" value="' + kit.esc(row.id) +
           '"><input type="hidden" name="field" value="fedAttributeMap">' +
           '<input type="text" name="value" size="30" value="' +
-          kit.esc(one.name + '=') + '"><button type="submit">Map' +
+          kit.esc(one.name + '=') + '"><button type="submit">' +
+          t.html('consoleFederation.buttonMap') +
           '</button></div></form></td></tr>';
       }).join('') + '</table>';
   }
@@ -1065,6 +1106,7 @@ class FederationPage {
    * @returns the body as HTML
    */
   static map(ctx: Json, json: Json): string {
+    const t = ctx.t;
     const filter = json.filter || {};
     const wanted = { role: filter.role || '', protocol: filter.protocol || '',
                      q: filter.q || '' };
@@ -1076,13 +1118,15 @@ class FederationPage {
     // be ONE control. It carries no `page`: this view has no paging, and a
     // page number carried into a view with none is a parameter that does
     // nothing and comes back with the reader on the next hop.
-    const roleOptions = ['<option value="">any role</option>'].concat(
+    const roleOptions = ['<option value="">' +
+      t.html('consoleFederation.anyRole') + '</option>'].concat(
       json.roles.map(function (one) {
         return '<option value="' + kit.esc(one.role) + '"' +
           (one.role === wanted.role ? ' selected' : '') + '>' +
           kit.esc(one.short) + '</option>';
       })).join('');
-    const protocolOptions = ['<option value="">any protocol</option>'].concat(
+    const protocolOptions = ['<option value="">' +
+      t.html('consoleFederation.anyProtocol') + '</option>'].concat(
       json.protocols.map(function (one) {
         return '<option value="' + kit.esc(one.protocol) + '"' +
           (one.protocol === wanted.protocol ? ' selected' : '') + '>' +
@@ -1109,88 +1153,87 @@ class FederationPage {
 
     return (
       '<div class="tiles">' +
-      kit.tile(json.counts.relationships, 'Relationships drawn') +
-      kit.tile(json.counts.applications, 'Applications behind them') +
-      kit.tile(json.counts.partners, 'Foreign partners') +
-      kit.tile(json.counts.authentications, 'Federated sign-ins') +
+      kit.tile(json.counts.relationships,
+               t.text('consoleFederation.tileRelationshipsDrawn')) +
+      kit.tile(json.counts.applications,
+               t.text('consoleFederation.tileApplicationsBehind')) +
+      kit.tile(json.counts.partners,
+               t.text('consoleFederation.tileForeignPartners')) +
+      kit.tile(json.counts.authentications,
+               t.text('consoleFederation.tileFederatedSignIns')) +
       '</div>' +
 
-      kit.note('<strong>This is one trust realm.</strong> The federation ' +
-      'register is per realm — an id that names a relationship in another ' +
-      'realm names nothing here — so this picture is of <code>' +
-      kit.esc(json.realm.id) +
-      '</code> and of nothing else. The realm switcher at the top of the ' +
-      'page is how you get to another one, and the realm is drawn on the ' +
-      'hexagon so that a saved copy of this document still says which ' +
-      'realm it is of.') +
+      kit.note(t.html('consoleFederation.mapOneRealm',
+                      { realm: json.realm.id })) +
 
-      kit.note('<strong>Left asks, right authenticates.</strong> ' +
-      'Everything on the left of the hexagon arrives wanting somebody ' +
-      'signed in — an application here, or a foreign service provider. ' +
-      'Everything on the right is a party this service asks to do the ' +
-      'signing in. An identity-provider-side relationship therefore points ' +
-      'INWARD even though this service asserts outward, because the arrow ' +
-      'is the request; and an identity BROKER, which is both at once, is ' +
-      'then a single straight line through the middle instead of two ' +
-      'arrows leaving the same box.') +
+      kit.note(t.html('consoleFederation.mapLeftRight')) +
 
       '<form method="get" action="/admin/federation/map"><div ' +
-      'class="formrow"><label for="q">Relationship</label>' +
+      'class="formrow"><label for="q">' +
+      t.html('consoleFederation.labelRelationship') + '</label>' +
       '<input type="text" id="q" name="q" value="' + kit.esc(wanted.q) +
-      '" size="24" placeholder="id, name, partner or application">' +
-      '<label for="role">Role</label><select id="role" name="role">' +
+      '" size="24" placeholder="' +
+      kit.esc(t.text('consoleFederation.filterPlaceholder')) + '">' +
+      '<label for="role">' + t.html('consoleFederation.labelRole') +
+      '</label><select id="role" name="role">' +
       roleOptions + '</select><label ' +
-      'for="protocol">Protocol</label><select id="protocol" ' +
+      'for="protocol">' + t.html('consoleFederation.thProtocol') +
+      '</label><select id="protocol" ' +
       'name="protocol">' +
       protocolOptions + '</select>' +
-      '<button type="submit">Filter</button>' +
-      (filtering ? ' <a href="/admin/federation/map">clear</a>' : '') +
+      '<button type="submit">' + t.html('consoleFederation.buttonFilter') +
+      '</button>' +
+      (filtering ? ' <a href="/admin/federation/map">' +
+        t.html('consoleFederation.clear') + '</a>' : '') +
       '</div></form>' +
 
       (json.relationships.length
-        ? FederationPage.mapDrawing(json, wanted)
+        ? FederationPage.mapDrawing(json, wanted, t)
         : kit.note(json.empty
-            ? '<strong>This realm federates with nobody, so there is ' +
-              'nothing to draw.</strong> A relationship is created on <a ' +
-              'href="/admin/federation">the federation page</a> and does ' +
-              'nothing until it is enabled, which is a second deliberate ' +
-              'act. Federation is the one feature in this service that ' +
-              'must be configured before it will do anything at all.'
-            : '<strong>No relationship matches this filter.</strong> The ' +
-              'register is not empty — <a ' +
-              'href="/admin/federation/map">clear the filter</a> to see ' +
-              'the rest.')) +
+            ? '<strong>' + t.html('consoleFederation.mapEmptyHeadline') +
+              '</strong>' + t.html('consoleFederation.mapEmptyA') +
+              '<a ' +
+              'href="/admin/federation">' +
+              t.html('consoleFederation.mapEmptyLink') + '</a>' +
+              t.html('consoleFederation.mapEmptyB')
+            : '<strong>' + t.html('consoleFederation.mapNoMatchHeadline') +
+              '</strong>' + t.html('consoleFederation.mapNoMatchA') + '<a ' +
+              'href="/admin/federation/map">' +
+              t.html('consoleFederation.mapNoMatchLink') + '</a>' +
+              t.html('consoleFederation.mapNoMatchB'))) +
 
-      '<h2>The relationships</h2>' +
-      kit.note('The same rows <a href="/admin/federation">the list ' +
-      'page</a> shows, plus the two columns that are facts about TWO ' +
-      'registers rather than about one entry: how many applications are ' +
-      'configured to use a partner, and what the identity-provider side ' +
-      'does about authenticating somebody. Neither has anywhere to live on ' +
-      'a relationship\'s own entry.') +
-      '<table><tr><th>Relationship</th><th>This service ' +
-      'is</th><th>Protocol</th><th>Partner</th><th>State</th><th ' +
-      'class="num">Applications</th><th class="num">People</th><th ' +
-      'class="num">Sign-ins</th><th>Authentication method</th></tr>' +
-      (json.relationships.map(FederationPage.federationMapRow).join('') ||
-        '<tr><td colspan="9">Nothing to show.</td></tr>') +
+      '<h2>' + t.html('consoleFederation.headingRelationships') + '</h2>' +
+      kit.note(t.html('consoleFederation.mapRowsA') +
+      '<a href="/admin/federation">' +
+      t.html('consoleFederation.mapRowsLink') + '</a>' +
+      t.html('consoleFederation.mapRowsB')) +
+      '<table><tr><th>' + t.html('consoleFederation.thRelationship') +
+      '</th><th>' + t.html('consoleFederation.thThisServiceIs') +
+      '</th><th>' + t.html('consoleFederation.thProtocol') + '</th><th>' +
+      t.html('consoleFederation.thPartner') + '</th><th>' +
+      t.html('consoleFederation.thState') + '</th><th ' +
+      'class="num">' + t.html('consoleFederation.thApplications') +
+      '</th><th class="num">' + t.html('consoleFederation.thPeople') +
+      '</th><th ' +
+      'class="num">' + t.html('consoleFederation.thSignIns') + '</th><th>' +
+      t.html('consoleFederation.thAuthenticationMethod') + '</th></tr>' +
+      (json.relationships.map(function (row) {
+        return FederationPage.federationMapRow(row, t);
+      }).join('') ||
+        '<tr><td colspan="9">' + t.html('consoleFederation.nothingToShow') +
+        '</td></tr>') +
       '</table>' +
 
-      '<h2>Applications, per relationship</h2>' +
-      kit.note('<strong>One row per application and relationship, which ' +
-      'is the pair the counts on this page are of.</strong> ' +
-      '<code>fedAuthentications</code> on a relationship answers "how much ' +
-      'has crossed this partner"; this answers "how much has crossed it ' +
-      'for each of the applications behind it", which is a different ' +
-      'question the moment a second application names the same partner. A ' +
-      'pair is counted only where this service is CONFIGURED for it — the ' +
-      'application entry names the relationship, or an ' +
-      'identity-provider-side relationship brokers to it — and the check ' +
-      'is made against the live register when the sign-in completes rather ' +
-      'than trusted from the request that started it.') +
-      '<table><tr><th>Application</th><th>Relationship</th><th>Partner</th>' +
-      '<th class="num">People</th><th class="num">Sign-ins</th>' +
-      '<th>Configured by</th><th>Last</th></tr>' +
+      '<h2>' + t.html('consoleFederation.headingPerRelationship') + '</h2>' +
+      kit.note(t.html('consoleFederation.perRelationshipNote')) +
+      '<table><tr><th>' + t.html('consoleFederation.thApplication') +
+      '</th><th>' + t.html('consoleFederation.thRelationship') +
+      '</th><th>' + t.html('consoleFederation.thPartner') + '</th>' +
+      '<th class="num">' + t.html('consoleFederation.thPeople') +
+      '</th><th class="num">' + t.html('consoleFederation.thSignIns') +
+      '</th>' +
+      '<th>' + t.html('consoleFederation.thConfiguredBy') + '</th><th>' +
+      t.html('consoleFederation.thLast') + '</th></tr>' +
       (useRows.map(function (one) {
         const use = one.use;
         const row = one.row;
@@ -1208,44 +1251,40 @@ class FederationPage {
           '<td class="num">' + use.authentications + '</td>' +
           '<td>' + (use.configured
             ? (use.source === 'broker'
-                ? 'the relationship <a href="' +
+                ? t.html('consoleFederation.brokerA') + '<a href="' +
                   kit.esc('/admin/federation' +
                            kit.queryWith({}, { relationship: use.via })) +
-                  '">' + kit.esc(use.via) + '</a>, which brokers to it'
-                : 'its own <code>appFederationRelationship</code>')
-            : '<span class="bad">nothing, any more</span>' +
-              '<span class="sub">These sign-ins happened and are kept ' +
-              'rather than dropped, so the relationship\'s own totals ' +
-              'still add up. Something named this pair when they happened ' +
-              'and no longer does.</span>') + '</td>' +
+                  '">' + kit.esc(use.via) + '</a>' +
+                  t.html('consoleFederation.brokerB')
+                : t.html('consoleFederation.ownRelationship'))
+            : '<span class="bad">' +
+              t.html('consoleFederation.nothingAnyMore') + '</span>' +
+              '<span class="sub">' +
+              t.html('consoleFederation.keptRatherThanDropped') +
+              '</span>') + '</td>' +
           '<td>' + (use.lastSeen
             ? kit.esc(use.lastSeen) +
               (use.lastUser ?
                '<span class="sub">' + kit.esc(use.lastUser) + '</span>' : '')
-            : '<span class="state-none">never used</span>') + '</td></tr>';
+            : '<span class="state-none">' +
+              t.html('consoleFederation.neverUsed') + '</span>') +
+          '</td></tr>';
       }).join('') ||
-        '<tr><td colspan="7">No application is configured to authenticate ' +
-        'through any relationship in this realm, and none has ever done ' +
-        'so. That is <code>appFederationRelationship</code> on an entry ' +
-        'under <code>ou=applications</code>, which is written by nobody — ' +
-        'no protocol presents it and no sighting derives it.</td></tr>') +
+        '<tr><td colspan="7">' +
+        t.html('consoleFederation.noApplicationConfigured') + '</td></tr>') +
       (json.relationships.filter(function (r) { return r.unattributed; })
         .length
-        ? kit.note('<strong>Some sign-ins belong to no row above, and ' +
-          'that is not a fault.</strong> A relationship\'s own total ' +
-          'counts every credential that crossed it; the rows above count ' +
-          'only the ones that named an application this service is ' +
-          'configured for. Three ordinary things make the difference: the ' +
-          'partner buttons at the foot of the sign-in screen belong to no ' +
-          'application, <code>/federation/login/{id}</code> needs no ' +
-          'configuration at all to reach, and a sign-in naming an ' +
-          'application that does not point here is refused a row and ' +
-          'logged. The difference is named rather than left to be noticed ' +
-          '— this is a page about counting, and a column that does not add ' +
-          'up is worse than one that explains itself.') +
-          '<table><tr><th>Relationship</th><th class="num">Sign-ins</th>' +
-          '<th class="num">Attributed</th>' +
-          '<th class="num">Belonging to no application</th></tr>' +
+        // `{id}` is the route's own placeholder, and a message cannot carry
+        // a brace, so the path goes in as a parameter.
+        ? kit.note(t.html('consoleFederation.unattributedNote',
+                          { path: '/federation/login/{id}' })) +
+          '<table><tr><th>' + t.html('consoleFederation.thRelationship') +
+          '</th><th class="num">' + t.html('consoleFederation.thSignIns') +
+          '</th>' +
+          '<th class="num">' + t.html('consoleFederation.thAttributed') +
+          '</th>' +
+          '<th class="num">' + t.html('consoleFederation.thNoApplication') +
+          '</th></tr>' +
           json.relationships.filter(function (r) { return r.unattributed; })
             .map(function (r) {
               return '<tr><td><a href="' +
@@ -1258,10 +1297,8 @@ class FederationPage {
             }).join('') + '</table>'
         : '') +
 
-      '<h2>The key</h2>' +
-      kit.note('The shapes and the colours are drawn by the same ' +
-      '<code>render()</code> the picture is, so a legend cannot come to ' +
-      'describe a diagram this service no longer draws.') +
+      '<h2>' + t.html('consoleFederation.headingKey') + '</h2>' +
+      kit.note(t.html('consoleFederation.keyNote')) +
       json.mapKey);
   }
 
@@ -1271,22 +1308,24 @@ class FederationPage {
    *
    * @param json - the answer: `svg` and `drawing`
    * @param params - the page's filter, carried into the two links
+   * @param t - the page's translator
    * @returns the drawing and its note as HTML
    */
-  static mapDrawing(json: Json, params: Json): string {
+  static mapDrawing(json: Json, params: Json, t: Json): string {
     const drawn = json.drawing || {};
+    // The layout's failure is a refusal of sorts, and stays English.
     return '<div class="diagram">' + json.svg + '</div>' +
       kit.note(drawn.width + '&times;' + drawn.height + ' &mdash; ' +
       '<a href="' +
       kit.esc('/admin/federation/map' +
               kit.queryWith(params, { format: 'svg' })) +
-      '">the document on its own</a> (SVG, no links in it), or ' +
+      '">' + t.html('consoleFederation.documentOnItsOwn') + '</a>' +
+      t.html('consoleFederation.drawingOr') +
       '<a href="' +
       kit.esc('/admin/federation/map' +
               kit.queryWith(params, { format: 'json' })) +
-      '">the graph as JSON</a>. It does not pan or zoom: it is generated on ' +
-      'the server and arrives as markup, which is what keeps this console ' +
-      'free of scripts. The SVG document does zoom.' +
+      '">' + t.html('consoleFederation.graphAsJson') + '</a>' +
+      t.html('consoleFederation.drawingNoPan') +
       (drawn.failed ? ' <span class="state-revoked">The layout failed: ' +
         kit.esc(drawn.failed) + '</span>' : ''));
   }
@@ -1299,14 +1338,19 @@ class FederationPage {
    * its state, application count, sign-in counts and how it authenticates.
    *
    * @param row - the relationship's row in the graph
+   * @param t - the page's translator
    * @returns the row as HTML
    */
-  static federationMapRow(row) {
+  static federationMapRow(row, t) {
     const state = row.usable
-      ? '<span class="ok">ready</span>'
+      ? '<span class="ok">' + t.html('consoleFederation.stateReady') +
+        '</span>'
       : !row.enabled
-          ? '<span class="off">disabled</span>'
-          : '<span class="bad">ENABLED, not configured</span>';
+          ? '<span class="off">' + t.html('consoleFederation.stateDisabled') +
+            '</span>'
+          : '<span class="bad">' +
+            t.html('consoleFederation.stateEnabledNotConfigured') + '</span>';
+    const noCount = kit.esc(t.text('consoleFederation.nothingCountsTitle'));
     return '<tr><td><a href="' +
       kit.esc('/admin/federation' +
               kit.queryWith({}, { relationship: row.id })) +
@@ -1319,11 +1363,13 @@ class FederationPage {
       '<td>' + kit.esc(row.roleLabel) + '</td>' +
       '<td>' + kit.esc(row.protocolLabel) +
         (row.signsIn !== false && row.signalsEnabled
-          ? '<span class="sub">and its Shared Signals</span>' : '') +
+          ? '<span class="sub">' + t.html('consoleFederation.andItsSignals') +
+            '</span>' : '') +
         '</td>' +
       '<td class="who">' + kit.esc(row.peer || row.application || '') +
         (!row.peer && !row.application
-          ? '<span class="sub">nothing named yet</span>' : '') + '</td>' +
+          ? '<span class="sub">' + t.html('consoleFederation.nothingNamedYet') +
+            '</span>' : '') + '</td>' +
       '<td>' + state + '</td>' +
       // THE ANSWER TO "HOW MANY APPLICATIONS", and a dash where the question
       // does not apply rather than a zero: an identity-provider-side
@@ -1331,9 +1377,9 @@ class FederationPage {
       // there would be false and `1` would be a number nobody needs.
       '<td class="num">' + (row.role === 'service-provider'
         ? row.applicationCount
-        : '<span class="state-none" title="An identity-provider-side ' +
-          'relationship names exactly one application, in fedApplication. ' +
-          'There is no count to make.">&mdash;</span>') + '</td>' +
+        : '<span class="state-none" title="' +
+          kit.esc(t.text('consoleFederation.oneApplicationTitle')) +
+          '">&mdash;</span>') + '</td>' +
       // ---------------------------------------------------------------------
       // THE TWO COUNTS, AND A BARE `0` IS REFUSED ON THE IDENTITY-PROVIDER
       // SIDE.
@@ -1353,20 +1399,16 @@ class FederationPage {
       (row.role === 'identity-provider'
         ? (row.brokeredUse
             ? '<td class="num">' + row.brokeredUse.users +
-              '<span class="sub">via ' + kit.esc(row.brokersTo) +
+              '<span class="sub">' +
+              t.html('consoleFederation.via', { relationship: row.brokersTo }) +
               '</span></td><td class="num">' + row.brokeredUse.authentications +
-              '<span class="sub">via ' + kit.esc(row.brokersTo) +
+              '<span class="sub">' +
+              t.html('consoleFederation.via', { relationship: row.brokersTo }) +
               '</span></td>'
-            : '<td class="num"><span class="state-none" title="Nothing ' +
-              'counts sign-ins on this side. What fedAuthentications counts ' +
-              'is assertions CONSUMED, and an identity-provider-side ' +
-              'relationship issues them — so the figure would be zero ' +
-              'however busy the partner was.">&mdash;</span></td>' +
-              '<td class="num"><span class="state-none" title="Nothing ' +
-              'counts sign-ins on this side. What fedAuthentications counts ' +
-              'is assertions CONSUMED, and an identity-provider-side ' +
-              'relationship issues them — so the figure would be zero ' +
-              'however busy the partner was.">&mdash;</span></td>')
+            : '<td class="num"><span class="state-none" title="' + noCount +
+              '">&mdash;</span></td>' +
+              '<td class="num"><span class="state-none" title="' + noCount +
+              '">&mdash;</span></td>')
         : '<td class="num">' + row.users + '</td>' +
           '<td class="num">' + row.authentications + '</td>') +
       // THE AUTHENTICATION METHOD, WHICH IS THE IDENTITY-PROVIDER SIDE'S
@@ -1375,21 +1417,20 @@ class FederationPage {
       // one.
       '<td>' + (row.role === 'identity-provider'
         ? (row.brokersTo
-            ? 'through <a href="' +
+            ? t.html('consoleFederation.through') + '<a href="' +
               kit.esc('/admin/federation' +
                        kit.queryWith({}, { relationship: row.brokersTo })) +
               '">' + kit.esc(row.brokersTo) + '</a>' +
               (row.brokerUsable ? ''
                 : '<span class="sub bad">' + kit.esc(row.brokerProblem ||
-                    'that relationship is not usable, so the sign-in screen ' +
-                    'is drawn instead') + '</span>')
+                    t.text('consoleFederation.brokerNotUsable')) + '</span>')
             : kit.esc(row.mechanismLabel) +
               (row.mechanismKnown ? ''
-                : '<span class="sub bad">not a mechanism this service ' +
-                  'has</span>'))
-        : '<span class="state-none" title="The authentication happens at the ' +
-          'PARTNER on a service-provider-side relationship, so there is ' +
-          'nothing here to configure.">&mdash;</span>') + '</td>' +
+                : '<span class="sub bad">' +
+                  t.html('consoleFederation.notAMechanism') + '</span>'))
+        : '<span class="state-none" title="' +
+          kit.esc(t.text('consoleFederation.authAtPartnerTitle')) +
+          '">&mdash;</span>') + '</td>' +
       '</tr>';
   }
 }

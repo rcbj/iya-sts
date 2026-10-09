@@ -1,0 +1,3 @@
+{
+  "federation.signedIn.thrownAway": "<strong>Se descartaron {n} atributo(s)</strong> porque nada asigna sus nombres. Es a propósito: este directorio no tiene esquema, así que un atributo escrito con un nombre no reconocido se aceptaría en silencio y nada informaría nunca de que el nombre era incorrecto. Añade una asignación en"
+}

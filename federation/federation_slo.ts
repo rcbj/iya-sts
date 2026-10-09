@@ -138,6 +138,11 @@ import xmldom = require('@xmldom/xmldom');
 // that registers no route; the channel is required lazily, as a dialler.
 import cells = require('../common/cells');
 import realms = require('../common/realms');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
+// no route and closes no cycle. Only the pages a PERSON sees use it — the
+// sign-outs that happened and the confirmation; refusals, and the pages that
+// say nothing was signed out (each carries an error code), stay English.
+import PageLocale = require('../common/page_locale');
 
 type Helpers = typeof helpers;
 
@@ -347,11 +352,15 @@ class FederationSlo {
   // SMALL THINGS EVERY PATH NEEDS.
   // =========================================================================
 
-  private page(title, body) {
+  // `t` is the page's translator (#539), for a page a person sees; without
+  // one the page is English, exactly as it always was.
+  private page(title, body, t?) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering FederationSlo.page().");
     log.debug("Leaving FederationSlo.page().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>' + xmlEscape(title) + '</title><style>' + STYLE +
       '</style></head><body>' + body + '</body></html>';
@@ -595,6 +604,10 @@ class FederationSlo {
     });
     log.info('federation: ' + record.fedId + '\'s partner signed out ' +
              sessions.length + ' session(s) (' + how + ').');
+    // Each session in the page's language (#539) — the ambient request's,
+    // as the page drawing the list works it out. Built on the back channel
+    // too, where nobody reads it, which costs a lookup and nothing else.
+    const t = PageLocale.forPage({});
     log.debug("Leaving FederationSlo.endSessions().");
     return {
       results: results,
@@ -605,8 +618,9 @@ class FederationSlo {
         });
       }),
       summary: sessions.map(function (one) {
-        return '<li>' + xmlEscape((one.user && one.user.username) || '?') +
-               ' — session <code>' + xmlEscape(one.id) + '</code></li>';
+        return '<li>' + t.html('handoff.federation.slo.sessionItem',
+          { username: (one.user && one.user.username) || '?',
+            session: one.id }) + '</li>';
       }).join('')
     };
   }
@@ -1226,24 +1240,30 @@ class FederationSlo {
     log.debug("Entering FederationSlo.answerLogoutRequest(). " + status);
     const destination = String(record.fedSloUrl || '').trim();
     const fan = ended ? ended.fanOut : { html: '', policy: {} };
+    // In the person's language (#539) — but "Nothing was signed out" is a
+    // refusal and stays English, and `message` is the LogoutResponse's own
+    // StatusMessage, protocol data. No language chooser: the page answers
+    // the partner's LogoutRequest, and drawing it again would answer it
+    // again.
+    const t = PageLocale.forPage({});
     const summary = ended
-      ? '<h1>Signed out</h1><p class="ok">The partner ' +
-        xmlEscape(record.fedName || record.fedId) + ' signed you out, and ' +
-        'this service ended the session it had started for you:</p><ul>' +
+      ? '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+        t.html('handoff.federation.slo.partnerSignedYouOut',
+               { partner: record.fedName || record.fedId }) + '</p><ul>' +
         ended.summary + '</ul>'
-      : '<h1>' + (status === STATUS_SUCCESS ? 'Signed out' :
-                  'Nothing was signed out') + '</h1><p>' +
+      : '<h1>' + (status === STATUS_SUCCESS
+                    ? t.html('handoff.common.signedOut')
+                    : 'Nothing was signed out') + '</h1><p>' +
         xmlEscape(message) + '</p>';
     if (!destination) {
       log.debug("Leaving FederationSlo.answerLogoutRequest(). Nowhere to " +
                 "send the LogoutResponse.");
       res.status(200).type('html').set('Cache-Control', 'no-store')
          .set('Content-Security-Policy', app.contentSecurityPolicy(fan.policy))
-         .send(this.page('Signed out', summary + fan.html +
-           '<p class="note">There is nowhere to send the partner its ' +
-           '<code>&lt;LogoutResponse&gt;</code>: this relationship has no ' +
-           '<code>fedSloUrl</code>. Set it to the partner\'s ' +
-           'SingleLogoutService.</p>'));
+         .send(this.page(t.text('handoff.federation.slo.title'),
+           summary + fan.html +
+           '<p class="note">' + t.html('handoff.federation.slo.nowhere',
+             { element: '<LogoutResponse>' }) + '</p>', t));
       return undefined;
     }
     const xml = this.logoutResponseXml(base, record, destination,
@@ -1261,13 +1281,14 @@ class FederationSlo {
     }
     res.status(200).type('html').set('Cache-Control', 'no-store')
        .set('Content-Security-Policy', app.contentSecurityPolicy(fan.policy))
-       .send(this.page('Signed out', summary + fan.html +
-         '<h2>Back to ' + xmlEscape(record.fedName || record.fedId) +
-         '</h2>' + this.continueControl(target, 'Continue to the partner') +
-         '<p class="note">There is no script on this page. A ' +
-         'LogoutResponse is the partner\'s to receive and this service ' +
-         'sends it by the binding the relationship names ' +
-         '(<code>fedSloBinding</code>).</p>'));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         summary + fan.html +
+         '<h2>' + t.html('handoff.federation.slo.backTo',
+                         { partner: record.fedName || record.fedId }) +
+         '</h2>' + this.continueControl(target,
+           t.text('handoff.federation.slo.continueToPartner')) +
+         '<p class="note">' + t.html('handoff.federation.slo.noScript') +
+         '</p>', t));
     log.debug("Leaving FederationSlo.answerLogoutRequest(). Drew the page.");
     return undefined;
   }
@@ -1427,11 +1448,14 @@ class FederationSlo {
       detail: { relationship: record.fedId, request: inResponseTo }
     });
     log.debug("Leaving FederationSlo.samlLogoutResponse(). Success.");
+    // In the person's language (#539), and the username the request was
+    // sent for. No language chooser: the partner's answer is spent.
+    const t = PageLocale.forPage({ username: context.username || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Signed out',
-         '<h1>Signed out</h1><p class="ok">You are signed out here, and ' +
-         xmlEscape(record.fedName || record.fedId) + ' confirmed that you ' +
-         'are signed out there too.</p>'));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+         t.html('handoff.federation.slo.partnerConfirmed',
+                { partner: record.fedName || record.fedId }) + '</p>', t));
     return undefined;
   }
 
@@ -1476,21 +1500,31 @@ class FederationSlo {
                                       id: record.fedId,
                                       sessionId: session.id });
     log.debug("Leaving FederationSlo.wsfedConfirmation(). Asking.");
+    // In the person's language (#539), with a language chooser: this page
+    // waits for a click, and the GET that drew it — it is drawn by a GET
+    // only — draws it again with a fresh confirmation; the one it replaces
+    // is never used, and expires. The chooser is a separate form, before the
+    // confirmation's.
+    const t = PageLocale.forPage({
+      username: (session.user && session.user.username) || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Sign out?',
-         '<h1>Sign out of this service?</h1><p>' +
-         xmlEscape(record.fedName || record.fedId) + ' asked this service to ' +
-         'end the session it signed you in to (WS-Federation ' +
-         '<code>' + xmlEscape(String(params.wa)) + '</code>).</p>' +
+       .send(this.page(t.text('handoff.federation.slo.confirm.title'),
+         PageLocale.chooser(t, realms.currentPrefix(),
+           PageLocale.herePath(realms.currentPrefix() +
+             federation.PATHS.slo + '/' + encodeURIComponent(record.fedId) +
+             '?wa=' + encodeURIComponent(String(params.wa)))) +
+         '<h1>' + t.html('handoff.federation.slo.confirm.heading') +
+         '</h1><p>' + t.html('handoff.federation.slo.confirm.lead',
+           { partner: record.fedName || record.fedId,
+             wa: String(params.wa) }) + '</p>' +
          '<form method="post" action="' +
          xmlEscape(fedSp.sloUrl(this.deps.baseUrlOf(req), record)) + '">' +
          '<input type="hidden" name="wa" value="wsignoutcleanup1.0">' +
          '<input type="hidden" name="confirm" value="' + xmlEscape(handle) +
-         '"><button type="submit">Sign out</button></form>' +
-         '<p class="note">WS-Federation\'s sign-out is not signed by its ' +
-         'specification, so any page can send one. That is why this service ' +
-         'asks rather than acting on it: nothing ends until this button is ' +
-         'pressed, in this browser. There is no script on this page.</p>'));
+         '"><button type="submit">' +
+         t.html('handoff.federation.slo.confirm.button') + '</button></form>' +
+         '<p class="note">' + t.html('handoff.federation.slo.confirm.note') +
+         '</p>', t));
     return undefined;
   }
 
@@ -1527,13 +1561,18 @@ class FederationSlo {
                                    true);
     this.deps.authn.clearSessionCookie(res);
     log.debug("Leaving FederationSlo.wsfedConfirmed(). Ended.");
+    // In the person's language (#539). No language chooser: the POST that
+    // drew it ended the session and spent its confirmation.
+    const t = PageLocale.forPage({
+      username: (session.user && session.user.username) || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
        .set('Content-Security-Policy',
             app.contentSecurityPolicy(ended.fanOut.policy))
-       .send(this.page('Signed out',
-         '<h1>Signed out</h1><p class="ok">The session ' +
-         xmlEscape(record.fedName || record.fedId) + ' signed you in to has ' +
-         'ended.</p><ul>' + ended.summary + '</ul>' + ended.fanOut.html));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+         t.html('handoff.federation.slo.sessionEnded',
+                { partner: record.fedName || record.fedId }) +
+         '</p><ul>' + ended.summary + '</ul>' + ended.fanOut.html, t));
     return undefined;
   }
 
@@ -1557,11 +1596,14 @@ class FederationSlo {
         'expired (federation.requestTtlMin).');
     }
     log.debug("Leaving FederationSlo.endSessionReturned().");
+    // In the person's language (#539). No language chooser: its `state` is
+    // spent, so a GET drawing it again is refused.
+    const t = PageLocale.forPage({ username: context.username || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Signed out',
-         '<h1>Signed out</h1><p class="ok">You are signed out here, and ' +
-         xmlEscape(record.fedName || record.fedId) + ' has sent you back ' +
-         'from its own sign-out.</p>'));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+         t.html('handoff.federation.slo.sentBack',
+                { partner: record.fedName || record.fedId }) + '</p>', t));
     return undefined;
   }
 
@@ -1859,20 +1901,28 @@ class FederationSlo {
                                            FederationSlo.matcherOf(match));
     let body;
     let overrides = {};
+    // In the person's language (#539) where something was signed out; the
+    // "Nothing to sign out" page carries an error code and stays English,
+    // so it is drawn without a translator. No language chooser: the page is
+    // in a frame the partner loaded, and nobody reads it.
+    const t = PageLocale.forPage({});
+    let translated = false;
     if (sessions.length) {
       const ended = this.endSessions(sessions, record, 'Front-Channel Logout',
                                      baseUrlOf(req), true);
       overrides = ended.fanOut.policy;
-      body = '<h1>Signed out</h1><ul>' + ended.summary + '</ul>' +
-             ended.fanOut.html;
+      body = '<h1>' + t.html('handoff.common.signedOut') + '</h1><ul>' +
+             ended.summary + '</ul>' + ended.fanOut.html;
+      translated = true;
     }
     const self = this;
     log.debug("Leaving FederationSlo.frontchannelEndpoint().");
     return this.endAtPeers(record, 'Front-Channel Logout', match,
                            baseUrlOf(req)).then(function (peers) {
       if (!body && peers.ended) {
-        body = '<h1>Signed out</h1><p>The session that partner session ' +
-               'started here has ended.</p>';
+        body = '<h1>' + t.html('handoff.common.signedOut') + '</h1><p>' +
+               t.html('handoff.federation.slo.frontchannelEnded') + '</p>';
+        translated = true;
       } else if (!body) {
         self.recordNoMatch(record, 'Front-Channel Logout', 'sid ' + sid);
         errorCodes.mark(res, peers.failed ? 'STS-CELL-0122'
@@ -1882,10 +1932,16 @@ class FederationSlo {
                (peers.failed ? ' that this service could reach' : '') +
                '.</p>';
       }
+      const partner = record.fedName || record.fedId;
       res.status(200).type('html')
-         .send(framed(self.page('Signed out', body + '<p class="note">' +
-           xmlEscape(record.fedName || record.fedId) + ' loaded this page ' +
-           'in a frame to end the session it signed you in to here.</p>'),
+         .send(framed(translated
+           ? self.page(t.text('handoff.federation.slo.title'), body +
+               '<p class="note">' +
+               t.html('handoff.federation.slo.frontchannelNote',
+                      { partner: partner }) + '</p>', t)
+           : self.page('Signed out', body + '<p class="note">' +
+               xmlEscape(partner) + ' loaded this page ' +
+               'in a frame to end the session it signed you in to here.</p>'),
            overrides));
       return undefined;
     });
@@ -2064,20 +2120,25 @@ class FederationSlo {
       log.debug("Leaving FederationSlo.renderPartnerLogouts(). None.");
       return '';
     }
+    // In the language of the sign-out page it sits on (#539), worked out
+    // from the same ambient request. `target.what` is a technical note and
+    // stays as written.
+    const t = PageLocale.forPage({});
     log.debug("Leaving FederationSlo.renderPartnerLogouts().");
-    return '<h2>Federation partners</h2><table><thead><tr><th>Partner</th>' +
-      '<th>Sign out there too</th></tr></thead><tbody>' +
+    return '<h2>' + t.html('handoff.federation.partners.heading') +
+      '</h2><table><thead><tr><th>' +
+      t.html('handoff.federation.partners.partner') + '</th>' +
+      '<th>' + t.html('handoff.federation.partners.signOutThere') +
+      '</th></tr></thead><tbody>' +
       targets.map(function (target) {
         return '<tr><td><code>' + xmlEscape(target.label) + '</code><br>' +
           '<span class="sub">' + xmlEscape(target.protocol) + '</span></td>' +
-          '<td>' + self.continueControl(target, 'Sign out at ' +
-                                        target.label) +
+          '<td>' + self.continueControl(target,
+            t.text('handoff.federation.partners.signOutAt',
+                   { partner: target.label })) +
           '<span class="sub">' + xmlEscape(target.what) + '</span></td></tr>';
-      }).join('') + '</tbody></table><p class="sub">You signed in here ' +
-      'through these identity providers, and your session there is still ' +
-      'live. Each is a link or a form rather than an automatic redirect: ' +
-      'this page runs no script, and leaving for a partner is a deliberate ' +
-      'click.</p>';
+      }).join('') + '</tbody></table><p class="sub">' +
+      t.html('handoff.federation.partners.note') + '</p>';
   }
 }
 

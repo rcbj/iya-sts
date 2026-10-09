@@ -297,6 +297,20 @@ function childMain() {
     r = await impersonate('gd-imp', 'gd-alice', [right([RS.a, RS.b, RS.c])]);
     const original = r.json && r.json.access_token
       ? r.json.access_token.value : '';
+    // #526: an act chain as this authorization server writes it — each
+    // actor `urn:sts:client:<id>` with the GNAP issuer (the grant endpoint),
+    // the most recent first, and gd-imp, the original client, at its foot.
+    const chainOf = function () {
+      let out = null;
+      for (let i = arguments.length - 1; i >= 0; i--) {
+        const one = { sub: 'urn:sts:client:' + arguments[i], iss: GRANT };
+        if (out) {
+          one.act = out;
+        }
+        out = one;
+      }
+      return out;
+    };
     note(!!original, 'II0. product: a token about gd-alice for A, B and C',
          r.status + ' ' + r.text);
     const derive = function (id, existing, access) {
@@ -332,11 +346,14 @@ function childMain() {
          r.status + ' ' + r.text);
     if (derived) {
       const claims = claimsOf(derived);
-      note(claims.act && claims.act.sub === 'gd-rs-a' && !claims.act.act &&
+      note(JSON.stringify(claims.act) ===
+           JSON.stringify(chainOf('gd-rs-a', 'gd-imp')) &&
            claims.sub === helpers.userFor('gd-alice').sub &&
            claims.aud === 'gd-rs-b',
            'II4. the derived token is about gd-alice, for B, and its act ' +
-           'names A (RFC 8693 section 4.1)', JSON.stringify(claims));
+           'names A over gd-imp, the original client, each entry ' +
+           'urn:sts:client:<id> with the GNAP issuer (RFC 8693 section 4.1, ' +
+           '#443/#471 rules, #526)', JSON.stringify(claims));
     }
     r = await derive('gd-rs-a', original, [right([RS.b], ['read', 'write'])]);
     note(r.status === 403 && lastCode() === 'STS-GNAP-0513',
@@ -365,9 +382,10 @@ function childMain() {
          r.status + ' ' + r.text + ' ' + JSON.stringify(act));
     if (second) {
       const claims = claimsOf(second);
-      note(claims.act && claims.act.sub === 'gd-rs-b' && claims.act.act &&
-           claims.act.act.sub === 'gd-rs-a' && !claims.act.act.act,
-           'II9. the chain NESTS: B outermost, A under it',
+      note(JSON.stringify(claims.act) ===
+           JSON.stringify(chainOf('gd-rs-b', 'gd-rs-a', 'gd-imp')),
+           'II9. the chain NESTS: B outermost, A under it, the original ' +
+           'client at its foot (copied, not added again)',
            JSON.stringify(claims.act));
       r = await derive('gd-rs-b', second, [right([RS.b])]);
       note(r.status === 403 && lastCode() === 'STS-GNAP-0782',
@@ -378,7 +396,7 @@ function childMain() {
                   resource_server: { key: keys['gd-rs-b'].keyObject() } } });
       note(r.status === 200 && r.json && r.json.active &&
            JSON.stringify(r.json.act) ===
-           JSON.stringify({ sub: 'gd-rs-b', act: { sub: 'gd-rs-a' } }),
+           JSON.stringify(chainOf('gd-rs-b', 'gd-rs-a', 'gd-imp')),
            'II11. introspection returns the chain', r.text);
     }
 
@@ -400,9 +418,10 @@ function childMain() {
       }
       note(!!verified && verified.ok && verified.model &&
            JSON.stringify(verified.model.act) ===
-           JSON.stringify({ sub: 'gd-rs-a' }),
+           JSON.stringify(chainOf('gd-rs-a', 'gd-imp')),
            'III. ' + format + ': the derived token, verified back by its ' +
-           'format, carries act naming the deriving resource server',
+           'format, carries act naming the deriving resource server over ' +
+           'the original client, iss and all (#526)',
            r.status + ' ' + JSON.stringify(verified && (verified.model ?
              verified.model.act : verified)));
     }

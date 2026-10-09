@@ -1,0 +1,22 @@
+{
+  "everySettingLives": "<strong>Ang bawat setting ng serbisyong ito ay nasa pahina ng protocol na kino-configure nito.</strong> Ang pahinang ito ang index niyon — at ang form para sa {mine} na row na hindi kabilang sa anumang protocol, dahil mga katotohanan ang mga ito tungkol sa proseso at hindi tungkol sa anumang sinasalita nito. Narito ang lahat ng {total} hanggang 2026-08-27; ang nagbago ay kung saan sila IPINAPAKITA, at walang nagbago sa ginagawa nila o sa kung paano sila binabasa.",
+  "fourPlaces": "Maaaring manggaling ang isang value sa apat na lugar, at sinasabi ng column na <em>Source</em> sa bawat isa sa mga pahinang ito kung alin: isang runtime override na itinakda sa pahina, isang environment variable, ang appconfig file na ginamit sa pagsisimula ng prosesong ito (<code>{configFile}</code>), o <code>{defaultsFile}</code> — ang default na appconfig file na pinagpapatungan niyon. Nananaig ang mas mataas sa mas mababa, kaya ang environment variable na itinakda sa container ay nananaig pa rin sa file — iyan ang dahilan kung bakit gumagana pa rin nang walang pagbabago ang bawat umiiral na deployment.",
+  "noFifthPlace": "<strong>Walang ikalimang lugar.</strong> Ang setting na walang value sa alinmang appconfig file at walang environment variable ay pumipigil sa pagsisimula ng serbisyong ito, at pinangangalanan ito, sa halip na bumalik sa isang constant na nakabaon sa isang module. Kaya ang bawat value sa mga pahinang ito ay mahahanap ng sinuman sa isang file — iyan ang nagpapahalaga sa pagbasa ng column na <em>Source</em>.",
+  "survives": "<strong>NANANATILI ang mga pagbabago PAGKATAPOS NG RESTART.</strong>",
+  "fileLeftAlone": "Sadyang hindi ginagalaw ang file: ang serbisyong nag-e-edit ng file na naka-check in sa isang repository ay mag-iiwan doon nang permanente ng nakalimutang pagbabago ng isang test.",
+  "inMemory": "<strong>Nasa memorya ang mga pagbabago at nawawala pagka-restart.</strong> Walang sumusulat sa appconfig file, sinasadya: ang serbisyong nag-e-edit ng file na naka-check in sa isang repository ay mag-iiwan doon nang permanente ng nakalimutang pagbabago ng isang test.",
+  "settingsHeading": "{total} na setting, {editable} sa mga ito ang mababago habang tumatakbo ang serbisyong ito",
+  "overridesInForce": "{n} runtime override ang umiiral, saanman sa serbisyo:",
+  "resetAll": "I-reset lahat",
+  "noOverrides": "Walang runtime override na umiiral saanman sa serbisyong ito: ang bawat value ay galing sa environment o sa isa sa dalawang appconfig file.",
+  "resetAllHere": "<strong>Narito ang I-reset lahat at wala sa anumang pahina ng protocol</strong>, dahil binubura nito ang bawat override sa serbisyo at hindi lang ang mga nasa ibaba nito. Ang button na ganoon kalayo ang abot mula sa pahina ng Kerberos ang magiging tanging kontrol sa console na ito na hindi makikita ang lawak ng epekto mula sa pinagpindutan nito.",
+  "whereEdited": "Kung saan ine-edit ang bawat setting",
+  "wholeTable": "Ang buong table, grupo-grupo, sa pagkakasunod na idineklara ng <code>config.js</code>. Ang column na <em>Pahina</em> ay kung saan ipinapakita ang form ng grupong iyon; ang mga bilang ay para sa grupo, at ang <em>Na-override</em> ay kung ilan sa mga ito ang may umiiral na runtime override ngayon.",
+  "thGroup": "Grupo",
+  "thSettings": "Mga setting",
+  "thRestartOnly": "Sa restart lang",
+  "thOverridden": "Na-override",
+  "thPage": "Pahina",
+  "pagesAnd": " at ",
+  "overJson": "Ang buong table sa JSON — bawat setting, alinmang pahina ang nag-e-edit nito — ay nasa <code>/admin/config?format=json</code> at <code>GET /admin-api/config</code>; ang apat na aksyon sa mga pahinang ito ay <code>POST /admin-api/config/set</code>, <code>/set-many</code>, <code>/reset</code> at <code>/reset-all</code>."
+}

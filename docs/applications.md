@@ -105,7 +105,10 @@ The checks read the **attributes**, never the registration document, through
 one function (`clientConfigOf()`). The exact-match redirect-URI check, whether
 a client is public or confidential, the client-secret check, the scopes a
 client may be issued (`oauthAllowedScope`), consent, delegated permissions and
-the CORS allowlist all resolve to attributes on an entry. It does not matter
+the CORS allowlist all resolve to attributes on an entry — and so do how its
+ID Tokens, UserInfo responses and JARM responses are signed and encrypted and
+its `default_acr_values` / `default_max_age` (#290; [the
+table](configure-oidc-flows.md#two-things-to-know-first)). It does not matter
 whether a registration, a console form, the management API or `ldapmodify` put
 them there. `appRegistered` records *how* an application got here, not whether
 what it holds counts.
@@ -189,8 +192,8 @@ startup, under `ou=applications` with everything else:
 | `sts-admin-console` | The admin console at `/admin`: a PUBLIC client on the authorization code grant with PKCE, its tokens always DPoP-bound and audienced to the realm's `/admin-api`, redirect URI `/admin/callback` | every realm |
 | `sts-user-portal` | The user portal at `/portal`: a confidential OpenID Connect relying party on the authorization code grant, redirect URI `/portal/callback` | every realm |
 | `sts-management-api` | The [management API](management-api.md): a confidential OAuth client on `client_credentials`, with `client_secret_basic`, scope `admin:read admin:write`, and no redirect URI | every realm |
-| `sts-debugger-api` | The [embedded protocol debugger's](admin-console.md#the-embedded-protocol-debugger) api: a resource server that defines one delegated permission, `urn:sts:debugger-api:debugger` | default realm, only while the debugger is embedded |
-| `sts-debugger-ui` | The embedded debugger's browser client: a relying party granted that permission | default realm, only while the debugger is embedded |
+| `sts-debugger-api` | The [embedded protocol debugger's](admin-console.md#the-embedded-protocol-debugger) api: a resource server that defines one delegated permission, `urn:sts:debugger-api:debugger` | default realm, whether or not the debugger is embedded |
+| `sts-debugger-ui` | The embedded debugger's browser client: a relying party granted that permission | default realm, whether or not the debugger is embedded |
 
 They are **full RFC 7591 registrations rather than labels**, and they are
 load-bearing. `/admin`, `/portal` and the debugger are relying parties of this
@@ -636,7 +639,9 @@ press **Save this application's selection**: from then on the realm's
 selection is not used for it, so an attribute the realm ticks can be dropped
 as well as one added, and saving with every box unticked issues none.
 **Use the realm's selection** takes the application's off again. A typed or
-attribute row above still wins over a selected attribute of the same name.
+attribute row above still wins over a selected attribute of the same name. Both
+rules can be changed per token type: see *How the realm's set and the
+application's own combine*, below.
 
 | Set | Applies to |
 |---|---|
@@ -660,6 +665,117 @@ The management API: `POST /admin-api/applications/set-claim-attributes`
 /admin-api/applications/inherit-claim-attributes`. `GET
 /admin-api/applications?application=<id>&claimsUser=<person>` returns
 `claimSelections`.
+
+#### How the realm's set and the application's own combine
+
+The two rules above — rows **added** and winning by name, a selection
+**replacing** the realm's — are the default. Each application can choose
+another, per token type, in the **Claims in tokens** section of its OAuth 2.0
+/ OpenID Connect sub-tab (`oauthClaimsCombineAccessToken`,
+`oauthClaimsCombineIdToken`, `oauthClaimsCombineUserinfo`) and the
+**Attributes in assertions** section of its SAML sub-tab
+(`saml2ClaimsCombine`, `saml11ClaimsCombine`). One choice covers the rows and
+the ticked attributes of that set:
+
+| Value | What the token carries |
+|---|---|
+| *(unset)* | The realm's rows with the application's added (its own winning by name); the application's selection in place of the realm's. |
+| `application` | Only the application's own rows and selection. |
+| `union` | The realm's and the application's, its own winning by name. |
+| `intersection` | Only the claims both name, with the application's value. |
+| `realm` | Only the realm's. |
+
+An application that holds no rows or selection of its own gets the realm's
+whatever it chose. A value outside the four is refused (`STS-REG-0203`). The
+Kerberos PAC set has no choice: a service ticket's claims are merged inside
+the KDC.
+
+#### Identity claims a resource server wants in its access tokens
+
+OpenID Connect's `profile`, `email`, `address` and `phone` scopes ask for
+**access** to a person's claims, which [OpenID Connect Core 1.0 section
+5.4](https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims)
+returns from the **UserInfo endpoint** (and in the ID Token only when the
+response issues no access token). They are not an access-token claim set:
+[RFC 9068 section 2.2.2](https://www.rfc-editor.org/rfc/rfc9068#section-2.2.2)
+leaves the identity claims of a JWT access token to the authorization server,
+by client, scope and resource. So an access token carries none of them unless
+the **resource server** it is addressed to asks:
+
+* **`oauthAccessTokenClaim`** (multi-valued, on the resource server's entry):
+  the section 5.4 claims it wants — `name`, `email`, `preferred_username`,
+  `address` and the rest. A token addressed to it (one of its `oauthAudience`
+  values, or its `client_id` named as a scope) carries each one **only when
+  the scope that covers it was granted**: `email` needs `email`, `name` needs
+  `profile`. The scope is read as granted, not as it appears on the token
+  (RFC 9068's audience plan takes the OpenID Connect scopes off a token for an
+  API). A claim outside section 5.4 is refused (`STS-REG-0203`); ask for it
+  as one of the client's custom claims instead.
+* **A token for several resource servers** carries only the claims **every**
+  one of them declared, so none receives an attribute it did not ask for.
+* **`oauthAccessTokenClaimsCombine`** (on the resource server's entry): how
+  the declared claims combine with the client's own access-token claims (the
+  realm's and the client's, combined as above) — `union` (the default),
+  `intersection` (only claims both carry), `client` (ignore the declaration)
+  or `resource` (only the declared claims). Where both carry a claim, the
+  client's value is kept. Resource servers that disagree are combined by
+  `intersection`.
+
+**`preferred_username` is no longer on every person's access token.** It is a
+`profile` claim, so it is issued as the others are: when a resource server
+declares it and `profile` was granted. `username`, this service's own claim,
+is unchanged.
+
+**Nothing that was not granted is released, from any layer.** A section 5.4
+claim in a realm's or an application's configured access token, ID Token or
+UserInfo set — a ticked `mail`, a typed `email` — goes out only when its scope
+was granted. A claim the client named in a [section
+5.5](https://openid.net/specs/openid-connect-core-1_0.html#ClaimsParameter)
+`claims` request is its own grant and passes, and a claim no scope covers
+(`groups`, `roles`, a typed `tenant`) is not affected. A GNAP subject
+assertion's ID Token is issued on no scope, so it carries none of these
+claims.
+
+All seven fields are ordinary configuration fields: set them from the
+application's page, `POST /admin-api/applications/update-fields`, or `set` (or
+`add` / `remove` for `oauthAccessTokenClaim`) with `attribute:` the field.
+
+#### Claims mapped to a resource server's own scopes
+
+A resource server's **Scope claims** tab maps each permission it exposes —
+its own custom scopes, `oauthPermission` under `oauthPermissionBaseUri` (the
+Permissions tab) — to directory attributes from the realm's claim catalogue.
+An access token **addressed to it** on which a permission was **granted**
+carries the person's values of that permission's attributes, under the
+catalogue's claim names (`mail` is `email`, `givenName` is `given_name`). The
+token's audience decides which application's mappings apply: a scope naming
+one of its permissions addresses the token to its base URI, and a token sent
+there with `resource` or an `audience` is looked up the same way.
+
+* **Granting the permission is the grant of its claims**, a standard OpenID
+  Connect claim included: `hr.read` mapped to `mail` puts `email` on the
+  token without the `email` scope. A permission that was not granted carries
+  nothing.
+* The mapped claims join the claims the resource server declares
+  (`oauthAccessTokenClaim`) and combine with the client's as
+  `oauthAccessTokenClaimsCombine` says. On a token for several resource
+  servers only the claims every one of them wants go in.
+* A permission removed from the application keeps its mapping on the entry
+  but maps nothing; the tab lists it as stale and the next save drops it.
+
+Tick the attributes under a permission and press **Save the claims of …**;
+**Clear** takes the mapping off. The whole map is one JSON object on the entry,
+`oauthPermissionClaims` (`{"hr.read": ["mail", "departmentNumber"]}`). A
+permission the application does not expose, an attribute the catalogue does
+not hold, or an application not declared for OAuth 2.0 or OpenID Connect is
+refused (`STS-REG-0344`); a stored value that is not a JSON object is ignored
+at issuance (`STS-REG-0343`).
+
+The management API: `POST /admin-api/applications/set-permission-claims`
+(`application`, `permission`, `attributes`) and `POST
+/admin-api/applications/clear-permission-claims` (`application`,
+`permission`). `GET /admin-api/applications?application=<id>` returns the
+tab's data in `page.permissionClaims`.
 
 ### CORS: which pages may read an answer
 

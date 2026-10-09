@@ -69,10 +69,29 @@ class EstPage {
    * Draws a flag as `yes` or a muted `no`.
    *
    * @param flag - the flag
+   * @param t - the page's translator (#539)
    * @returns the HTML
    */
-  static yesNo(flag) {
-    return flag ? 'yes' : '<span class="sub">no</span>';
+  static yesNo(flag, t) {
+    return flag ? t.html('consoleEst.yes')
+                : '<span class="sub">' + t.html('consoleEst.no') + '</span>';
+  }
+
+  /**
+   * Draws the person-or-application `<option>` elements, the values as they
+   * are and the words in the reader's language (#539).
+   *
+   * @param selected - the value selected
+   * @param t - the page's translator
+   * @returns the HTML
+   */
+  static kindOptions(selected, t) {
+    return '<option value="person"' +
+           (selected === 'person' ? ' selected' : '') + '>' +
+           t.html('consoleEst.kindPerson') + '</option>' +
+           '<option value="application"' +
+           (selected === 'application' ? ' selected' : '') + '>' +
+           t.html('consoleEst.kindApplication') + '</option>';
   }
 
   /**
@@ -116,37 +135,50 @@ class EstPage {
    */
   static estPageBody(ctx, json) {
     const self = this;
+    const t = ctx.t;
+    // What an endpoint does, the label form's note, a profile's needs, a
+    // refusal's reason and a credential's description are the view's,
+    // drawn as they come (#539).
     const endpointRows = json.endpoints.map(function (one) {
       return '<tr><td><code>' + esc(one.method) + '</code></td><td><code>' +
              esc(one.url) + '</code>' + (one.labelFormUrl
-               ? '<div class="sub">or <code>' + esc(one.labelFormUrl) +
-                 '</code></div>' : '') + '</td><td>' + esc(one.what) +
+               ? '<div class="sub">' +
+                 t.html('consoleEst.orUrl', { url: one.labelFormUrl }) +
+                 '</div>' : '') + '</td><td>' + esc(one.what) +
              '</td><td>RFC 7030 ' + esc(one.section) + '</td></tr>';
     }).join('');
     const labelFormNote = json.labelForm
-      ? '<p class="sub"><strong>The label form</strong> <code>' +
-        esc(json.labelForm.base) + '</code>. ' + esc(json.labelForm.note) +
+      ? '<p class="sub">' + t.html('consoleEst.labelForm',
+                                   { base: json.labelForm.base }) + ' ' +
+        esc(json.labelForm.note) +
         '</p>'
       : '';
     const authority = json.hierarchy.authority;
     const caBlock = json.hierarchy.built && authority
-      ? '<table class="kv"><tr><th>Subject</th><td><code>' +
-        esc(authority.subject) + '</code></td></tr><tr><th>Serial</th><td>' +
-        '<code>' + esc(authority.serialHex) + '</code></td></tr><tr><th>Key' +
-        '</th><td>' + esc(authority.keyAlg) + '</td></tr><tr><th>Valid' +
+      ? '<table class="kv"><tr><th>' + t.html('consoleEst.subject') +
+        '</th><td><code>' +
+        esc(authority.subject) + '</code></td></tr><tr><th>' +
+        t.html('consoleEst.serial') + '</th><td>' +
+        '<code>' + esc(authority.serialHex) + '</code></td></tr><tr><th>' +
+        t.html('consoleEst.key') +
+        '</th><td>' + esc(authority.keyAlg) + '</td></tr><tr><th>' +
+        t.html('consoleEst.valid') +
         '</th><td>' + esc(authority.notBefore) + ' — ' +
         esc(authority.notAfter) + '</td></tr><tr><th>SHA-256</th><td><code>' +
-        esc(authority.thumbprint) + '</code></td></tr><tr><th>Chain</th><td>' +
-        json.hierarchy.chainPem.length + ' certificate(s): the EST Issuing ' +
-        'CA, this realm\'s Intermediate and the service Root — what ' +
-        '<code>/cacerts</code> returns</td></tr></table>'
+        esc(authority.thumbprint) + '</code></td></tr><tr><th>' +
+        t.html('consoleEst.chain') + '</th><td>' +
+        t.html('consoleEst.chainNote',
+               { n: json.hierarchy.chainPem.length }) + '</td></tr></table>'
       : kit.warn(esc(json.hierarchy.note));
     const profileRows = json.profiles.map(function (one) {
       return '<tr><td><code>' + esc(one.id) + '</code>' +
-             (one.isDefault ? ' <span class="sub">(unlabelled)</span>' : '') +
-             '</td><td>' + self.yesNo(one.allowed) + '</td><td>' +
-             (one.needs ? esc(one.needs) : '<span class="sub">nothing ' +
-              'beyond the identity rule</span>') + '</td><td><code>' +
+             (one.isDefault ? ' <span class="sub">' +
+                              t.html('consoleEst.unlabelled') + '</span>'
+                            : '') +
+             '</td><td>' + self.yesNo(one.allowed, t) + '</td><td>' +
+             (one.needs ? esc(one.needs) : '<span class="sub">' +
+              t.html('consoleEst.nothingBeyond') + '</span>') +
+             '</td><td><code>' +
              esc(one.urls.simpleenroll) + '</code><div class="sub">' +
              esc(one.urls.simplereenroll) + '<br>' +
              esc(one.urls.serverkeygen) + '<br>' + esc(one.urls.csrattrs) +
@@ -169,17 +201,21 @@ class EstPage {
     });
     const issueForm = '<form method="post" action="/admin/est">' +
       this.hidden('action', 'issue-server-key') +
-      '<table class="kv"><tr><th>For</th><td><select name="kind">' +
-      this.options(['person', 'application'], 'person') + '</select> ' +
+      '<table class="kv"><tr><th>' + t.html('consoleEst.for') +
+      '</th><td><select name="kind">' +
+      this.kindOptions('person', t) + '</select> ' +
       '<input type="text" name="identifier" required maxlength="256" ' +
-      'placeholder="username or application identifier"></td></tr>' +
-      '<tr><th>Profile</th><td><select name="profile">' +
+      'placeholder="' + esc(t.text('consoleEst.identifierPlaceholder')) +
+      '"></td></tr>' +
+      '<tr><th>' + t.html('consoleEst.profile') +
+      '</th><td><select name="profile">' +
       this.options(allowedProfiles, json.defaultProfile) +
       '</select></td></tr>' +
-      '<tr><th>Key algorithm</th><td><select name="keyAlg">' +
+      '<tr><th>' + t.html('consoleEst.keyAlgorithm') +
+      '</th><td><select name="keyAlg">' +
       this.options(json.keyAlgorithms, 'ec-p256') +
-      '</select></td></tr></table><button type="submit">Issue with a ' +
-      'server-generated key</button></form>';
+      '</select></td></tr></table><button type="submit">' +
+      t.html('consoleEst.issueServerKey') + '</button></form>';
     const hostRows = json.hostNames.length ? json.hostNames.map(function (row) {
       return '<tr><td>' + self.entryLink(row.entry) + '</td><td>' +
         row.hostNames.map(function (name) {
@@ -188,95 +224,115 @@ class EstPage {
             self.hidden('kind', row.entry.kind) +
             self.hidden('identifier', row.entry.id) +
             self.hidden('hostName', name) + '<code>' + esc(name) + '</code> ' +
-            '<button type="submit" class="danger">Remove</button></form>';
+            '<button type="submit" class="danger">' +
+            t.html('consoleEst.remove') + '</button></form>';
         }).join(' ') + '</td></tr>';
-    }).join('') : '<tr><td colspan="2" class="sub">No entry in this realm ' +
-                  'has ' +
-      'a certificate host name registered, so no tls-server or ' +
-      'tls-server-client certificate can be issued.</td></tr>';
+    }).join('') : '<tr><td colspan="2" class="sub">' +
+      t.html('consoleEst.noHostNames') + '</td></tr>';
     const hostForm = '<form method="post" action="/admin/est">' +
       this.hidden('action', 'add-host-name') + '<select name="kind">' +
-      this.options(['person', 'application'], 'application') + '</select> ' +
+      this.kindOptions('application', t) + '</select> ' +
       '<input type="text" name="identifier" required maxlength="256" ' +
-      'placeholder="identifier"> <input type="text" name="hostName" required ' +
-      'maxlength="253" placeholder="host.example.com or 192.0.2.1"> ' +
-      '<button type="submit">Register</button></form>';
+      'placeholder="' + esc(t.text('consoleEst.identifier')) +
+      '"> <input type="text" name="hostName" required ' +
+      'maxlength="253" placeholder="' +
+      esc(t.text('consoleEst.hostPlaceholder')) + '"> ' +
+      '<button type="submit">' + t.html('consoleEst.register') +
+      '</button></form>';
     const nav = kit.pageNavPair('/admin/est', ctx.query,
       Object.assign({}, json.certificates.paging,
-                    { param: 'certificatesPage' }));
+                    { param: 'certificatesPage' }), t);
     const certificateRows = json.certificates.rows.length
       ? json.certificates.rows.map(function (one) {
         const control = one.status === 'revoked'
-          ? '<span class="sub">revoked ' + esc(one.revoked ? one.revoked.reason
-                                                            : '') + '</span>'
+          ? '<span class="sub">' +
+            t.html('consoleEst.revoked',
+                   { reason: one.revoked ? one.revoked.reason : '' }) +
+            '</span>'
           : '<form method="post" action="/admin/est">' +
             self.hidden('action', 'revoke-certificate') +
             self.hidden('serialHex', one.serialHex) + '<select name="reason">' +
             self.options(json.revocationReasons, 'unspecified') + '</select> ' +
-            '<button type="submit" class="danger">Revoke</button></form>';
+            '<button type="submit" class="danger">' +
+            t.html('consoleEst.revoke') + '</button></form>';
         return '<tr><td><code>' + esc(one.serialHex) + '</code></td><td>' +
           self.entryLink(one.entry) + '</td><td><code>' + esc(one.profile) +
-          '</code><div class="sub">' + esc(one.keyAlg || '') + ' · key from ' +
-          esc(one.keySource) + '</div></td><td>' + one.names.map(function (n) {
+          '</code><div class="sub">' + esc(one.keyAlg || '') + ' · ' +
+          t.html('consoleEst.keyFrom', { source: one.keySource }) +
+          '</div></td><td>' + one.names.map(function (n) {
             return '<code>' + esc(n) + '</code>';
           }).join('<br>') + '</td><td>' + esc(one.status) + '</td><td>' +
           esc(one.notAfter) + '</td><td>' + esc(one.requestedBy
             ? one.requestedBy.kind + ':' + one.requestedBy.id : '') +
           '</td><td>' + control + '</td></tr>';
       }).join('')
-      : '<tr><td colspan="8" class="sub">Nothing has been enrolled over EST ' +
-        'in this realm.</td></tr>';
+      : '<tr><td colspan="8" class="sub">' +
+        t.html('consoleEst.nothingEnrolled') + '</td></tr>';
+    // The mode's sentences are the view's, drawn as they come.
     const html =
-      kit.note('<strong>Enrollment over Secure Transport (RFC 7030, with ' +
-        'RFC 8951).</strong> A client authenticates with a password, a ' +
-        'client secret or a TLS client certificate this realm issued, sends ' +
-        'a base64 PKCS#10 request, and receives a certificate from this ' +
-        'realm\'s EST Issuing CA. A person may enroll only for themselves, ' +
-        'an application only for itself, and a holder of Admin Write for any ' +
-        'entry in the realm. ' + (json.enabled ? '' :
-          '<strong>EST is turned off in this realm.</strong>')) +
-      kit.warn('<strong>Mode: ' + esc(json.mode.current) + '.</strong> ' +
-        'Development: ' + esc(json.mode.development) + ' Product: ' +
+      kit.note(t.html('consoleEst.intro') + ' ' + (json.enabled ? '' :
+          t.html('consoleEst.turnedOff'))) +
+      kit.warn(t.html('consoleEst.mode', { mode: json.mode.current }) + ' ' +
+        t.html('consoleEst.development') + ' ' + esc(json.mode.development) +
+        ' ' + t.html('consoleEst.product') + ' ' +
         esc(json.mode.product)) +
-      '<h2>Endpoints</h2><table><thead><tr><th>Method</th><th>URL</th><th>' +
-      'What</th><th>Section</th></tr></thead><tbody>' + endpointRows +
+      '<h2>' + t.html('consoleEst.hEndpoints') + '</h2><table><thead><tr>' +
+      '<th>' + t.html('consoleEst.thMethod') + '</th><th>URL</th><th>' +
+      t.html('consoleEst.thWhat') + '</th><th>' +
+      t.html('consoleEst.thSection') + '</th></tr></thead><tbody>' +
+      endpointRows +
       '</tbody></table>' + labelFormNote +
-      '<h2>EST Issuing CA</h2>' + caBlock +
-      '<h2>Profiles</h2><p class="sub">A label in the path names the ' +
-      'certificate profile ' +
-      '(<code>/.well-known/est/&lt;profile&gt;/…</code>); ' +
-      'the unlabelled path issues <code>' + esc(json.defaultProfile) +
-      '</code>.</p><table><thead><tr><th>Profile</th><th>Allowed</th><th>' +
-      'Needs</th><th>Labelled URLs</th></tr></thead><tbody>' + profileRows +
+      '<h2>' + t.html('consoleEst.hIssuingCa') + '</h2>' + caBlock +
+      '<h2>' + t.html('consoleEst.hProfiles') + '</h2><p class="sub">' +
+      t.html('consoleEst.profilesNote', { profile: json.defaultProfile }) +
+      '</p><table><thead><tr><th>' + t.html('consoleEst.profile') +
+      '</th><th>' + t.html('consoleEst.thAllowed') + '</th><th>' +
+      t.html('consoleEst.thNeeds') + '</th><th>' +
+      t.html('consoleEst.thLabelledUrls') + '</th></tr></thead><tbody>' +
+      profileRows +
       '</tbody></table>' +
-      '<h3>Never issued over ' +
-      'EST</h3><table><thead><tr><th>Profile</th><th>Why' +
+      '<h3>' + t.html('consoleEst.hNeverIssued') +
+      '</h3><table><thead><tr><th>' + t.html('consoleEst.profile') +
+      '</th><th>' + t.html('consoleEst.thWhy') +
       '</th></tr></thead><tbody>' + refusedRows + '</tbody></table>' +
-      '<h2>Credentials</h2><p class="sub">EST has no credential of its own: ' +
-      'Basic ' + this.yesNo(json.authentication.basic) +
-      ', client certificates ' +
-      this.yesNo(json.authentication.certificate) + ', /serverkeygen ' +
-      this.yesNo(json.authentication.serverKeyGeneration) +
-      '.</p><table><thead><tr><th>Credential</th><th>What</th><th>Managed ' +
-      'at</th></tr></thead><tbody>' + credentialRows + '</tbody></table>' +
-      '<h2>Issue a certificate with a server-generated key</h2><p ' +
-      'class="sub">The console\'s /serverkeygen: the private key is shown ' +
-      'once on the next page and a sealed copy is kept on the entry.</p>' +
+      '<h2>' + t.html('consoleEst.hCredentials') + '</h2><p class="sub">' +
+      t.html('consoleEst.noCredential') + ' ' +
+      'Basic ' + this.yesNo(json.authentication.basic, t) +
+      ', ' + t.html('consoleEst.clientCertificates') + ' ' +
+      this.yesNo(json.authentication.certificate, t) + ', /serverkeygen ' +
+      this.yesNo(json.authentication.serverKeyGeneration, t) +
+      '.</p><table><thead><tr><th>' + t.html('consoleEst.thCredential') +
+      '</th><th>' + t.html('consoleEst.thWhat') + '</th><th>' +
+      t.html('consoleEst.thManagedAt') +
+      '</th></tr></thead><tbody>' + credentialRows + '</tbody></table>' +
+      '<h2>' + t.html('consoleEst.hIssue') + '</h2><p ' +
+      'class="sub">' + t.html('consoleEst.issueNote') + '</p>' +
       issueForm +
-      '<h2>Certificate host names</h2><p class="sub">A dNSName or iPAddress ' +
-      'is issued only when it is registered on the entry.</p><table><thead>' +
-      '<tr><th>Entry</th><th>Host names</th></tr></thead><tbody>' + hostRows +
+      '<h2>' + t.html('consoleEst.hHostNames') + '</h2><p class="sub">' +
+      t.html('consoleEst.hostNamesNote') + '</p><table><thead>' +
+      '<tr><th>' + t.html('consoleEst.thEntry') + '</th><th>' +
+      t.html('consoleEst.thHostNames') + '</th></tr></thead><tbody>' +
+      hostRows +
       '</tbody></table>' + hostForm +
-      '<h2 id="list-certificatesPage">Enrolled certificates</h2>' + nav.head +
-      '<table><thead><tr><th>Serial</th><th>Entry</th><th>Profile</th><th>' +
-      'Names</th><th>Status</th><th>Expires</th><th>Requested by</th><th>' +
+      '<h2 id="list-certificatesPage">' + t.html('consoleEst.hEnrolled') +
+      '</h2>' + nav.head +
+      '<table><thead><tr><th>' + t.html('consoleEst.serial') + '</th><th>' +
+      t.html('consoleEst.thEntry') + '</th><th>' +
+      t.html('consoleEst.profile') + '</th><th>' +
+      t.html('consoleEst.thNames') + '</th><th>' +
+      t.html('consoleEst.thStatus') + '</th><th>' +
+      t.html('consoleEst.thExpires') + '</th><th>' +
+      t.html('consoleEst.thRequestedBy') + '</th><th>' +
       '</th></tr></thead><tbody>' + certificateRows + '</tbody></table>' +
       nav.foot +
-      '<h2>Settings</h2>' + SettingsForms.forms(json.settings, '/admin/est') +
+      '<h2>' + t.html('consoleEst.hSettings') + '</h2>' +
+      SettingsForms.forms(json.settings, '/admin/est', undefined, t) +
       '<p class="links"><a href="/admin/est?format=json">JSON</a> · ' +
-      '<code>GET /admin-api/est</code> · <a href="/admin/est/monitor">EST ' +
-      'enrollments (monitoring)</a> · <a href="/admin/pki">PKI</a> · <a ' +
-      'href="/admin/error-codes">Error codes</a></p>';
+      '<code>GET /admin-api/est</code> · <a href="/admin/est/monitor">' +
+      t.html('consoleEst.linkMonitor') +
+      '</a> · <a href="/admin/pki">PKI</a> · <a ' +
+      'href="/admin/error-codes">' + t.html('consoleEst.linkErrorCodes') +
+      '</a></p>';
     return html;
   }
 
@@ -288,15 +344,17 @@ class EstPage {
    *
    * @param title - the heading
    * @param rows - `{ name, count }` rows
+   * @param t - the page's translator (#539)
    * @returns the HTML
    */
-  static countTable(title, rows) {
+  static countTable(title, rows, t) {
     return '<h3>' + esc(title) + '</h3><table><tbody>' + (rows.length
       ? rows.map(function (row) {
         return '<tr><td><code>' + esc(row.name) + '</code></td><td ' +
                'class="num">' + row.count + '</td></tr>';
       }).join('')
-      : '<tr><td class="sub">none yet</td></tr>') + '</tbody></table>';
+      : '<tr><td class="sub">' + t.html('consoleEst.noneYet') +
+        '</td></tr>') + '</tbody></table>';
   }
 
   // MONITORING → EST ENROLLMENTS' BODY (#446), one method so that it can be
@@ -310,15 +368,21 @@ class EstPage {
    */
   static monitorBody(ctx, json) {
     const self = this;
-    const t = json.totals;
+    // The translator is `t` (#539), so the totals, which were `t`, are
+    // `totals`.
+    const t = ctx.t;
+    const totals = json.totals;
     const tiles = '<div class="tiles">' +
-      kit.tile(t.requests, 'requests') + kit.tile(t.issued, 'issued') +
-      kit.tile(t.refused, 'refused') + kit.tile(t.revoked, 'revoked') +
-      kit.tile(json.certificates.valid, 'valid certificates') +
-      kit.tile(json.certificates.revoked, 'revoked certificates') +
+      kit.tile(totals.requests, t.text('consoleEst.tileRequests')) +
+      kit.tile(totals.issued, t.text('consoleEst.tileIssued')) +
+      kit.tile(totals.refused, t.text('consoleEst.tileRefused')) +
+      kit.tile(totals.revoked, t.text('consoleEst.tileRevoked')) +
+      kit.tile(json.certificates.valid, t.text('consoleEst.tileValid')) +
+      kit.tile(json.certificates.revoked,
+               t.text('consoleEst.tileRevokedCertificates')) +
       '</div>';
     const nav = kit.pageNavPair('/admin/est/monitor', ctx.query,
-      Object.assign({}, json.paging, { param: 'page' }));
+      Object.assign({}, json.paging, { param: 'page' }), t);
     const recentRows = json.recent.length ? json.recent.map(function (row) {
       return '<tr><td>' + esc(row.at) + '</td><td><code>' +
              esc(row.operation) + '</code></td><td>' + esc(row.outcome) +
@@ -329,29 +393,36 @@ class EstPage {
               '') +
              '</td><td><code>' + esc(row.serialHex || '') +
              '</code></td></tr>';
-    }).join('') : '<tr><td colspan="9" class="sub">No EST request has been ' +
-      'answered in this realm since the process started.</td></tr>';
+    }).join('') : '<tr><td colspan="9" class="sub">' +
+      t.html('consoleEst.noRequest') + '</td></tr>';
+    // The audit log's link is markup a message cannot carry, so the
+    // sentence is cut at it.
     const inner =
-      kit.note('<strong>What the EST server has done</strong> in this ' +
-                 'trust ' +
-        'realm since ' + esc(json.since || 'the process started') +
-        ', across ' +
-        json.processes +
-        ' process(es). Every request is counted, issued or ' +
-        'refused; the durable record of each is the <a ' +
-        'href="/admin/audit">Audit log</a>.') + tiles +
-      self.countTable('By operation', json.operations) +
-      self.countTable('By profile', json.profiles) +
-      self.countTable('By principal', json.principals) +
-      self.countTable('Refusals by error code', json.errorCodes) +
-      self.countTable('By HTTP status', json.statuses) +
-      '<h2 id="list-page">Recent requests</h2>' + nav.head +
-      '<table><thead><tr><th>At</th><th>Operation</th><th>Outcome</th><th>' +
-      'Status</th><th>Profile</th><th>Principal</th><th>Target</th><th>Code' +
-      '</th><th>Serial</th></tr></thead><tbody>' + recentRows +
+      kit.note(t.html('consoleEst.monitorIntro',
+                      { since: json.since ||
+                          t.text('consoleEst.processStarted'),
+                        n: json.processes }) +
+        ' <a href="/admin/audit">' + t.html('consoleEst.auditLog') +
+        '</a>.') + tiles +
+      self.countTable(t.text('consoleEst.byOperation'), json.operations, t) +
+      self.countTable(t.text('consoleEst.byProfile'), json.profiles, t) +
+      self.countTable(t.text('consoleEst.byPrincipal'), json.principals, t) +
+      self.countTable(t.text('consoleEst.byErrorCode'), json.errorCodes, t) +
+      self.countTable(t.text('consoleEst.byStatus'), json.statuses, t) +
+      '<h2 id="list-page">' + t.html('consoleEst.recent') + '</h2>' +
+      nav.head +
+      '<table><thead><tr><th>' + t.html('consoleEst.thAt') + '</th><th>' +
+      t.html('consoleEst.thOperation') + '</th><th>' +
+      t.html('consoleEst.thOutcome') + '</th><th>' +
+      t.html('consoleEst.thStatus') + '</th><th>' +
+      t.html('consoleEst.profile') + '</th><th>' +
+      t.html('consoleEst.thPrincipal') + '</th><th>' +
+      t.html('consoleEst.thTarget') + '</th><th>' +
+      t.html('consoleEst.thCode') +
+      '</th><th>' + t.html('consoleEst.serial') + '</th></tr></thead><tbody>' +
+      recentRows +
       '</tbody></table>' + nav.foot +
-      kit.note('There is no reset. The counters are per realm and start ' +
-        'with the process.') +
+      kit.note(t.html('consoleEst.noReset')) +
       '<p class="links"><a href="/admin/est/monitor?format=json">JSON</a> ' +
       '· <code>GET /admin-api/est/monitor</code> · <a ' +
       'href="/admin/est">EST</a></p>';

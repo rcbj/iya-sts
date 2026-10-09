@@ -5133,7 +5133,8 @@ class AdminConsole {
       navAuthority: navState ? String(navState.authority || '') : '',
       roleLabels: roleLabels,
       realm: { id: realms.currentId(), name: realms.current().name },
-      wsTrustIssuer: IssuerNames.wstrustIssuer(),
+      // #523: the realm's one issuer, in every protocol.
+      wsTrustIssuer: IssuerNames.issuer(),
       realms: realms.active()
         ? realms.list().map(function (one) {
           // `prefix` for the static console's switcher, which moves between
@@ -5714,7 +5715,7 @@ class AdminConsole {
     log.debug("Entering AdminConsole.consoleJson().");
     const snap = stats.snapshot();
     const json = {
-      issuer: IssuerNames.wstrustIssuer(),
+      issuer: IssuerNames.issuer(),
       startedAt: new Date(snap.startedAt).toISOString(),
       uptimeMs: snap.uptimeMs,
       calls: snap.calls.total, tokensHeld: snap.tokens.held,
@@ -6836,17 +6837,15 @@ class AdminConsole {
   // list of them here would be the second list that disagrees with the first.
   //
   // This page draws TWO groups, and the second is worth knowing about: `SAML`
-  // holds `saml.issuer`, the Issuer of every assertion this service builds —
-  // 2.0, 1.1 and WS-Federation's, which come out of the same two functions — so
-  // it is drawn on the SAML 1.1 page as well and configFormsFor() says so on
-  // both.
+  // governs every assertion this service builds — 2.0, 1.1 and
+  // WS-Federation's, which come out of the same two functions — so it is drawn
+  // on the SAML 1.1 page as well and configFormsFor() says so on both.
 
   // The settings that decide what a relying party receives are DRAWN ON THIS
   // PAGE, for the reason the SAML 2.0 page's equivalent comment gives and
   // through the same function. The `SAML` group appears on both pages because
-  // `saml.issuer` governs both profiles; configFormsFor() says so where it
-  // draws it, so a reader who sets it here is told it is the same value the 2.0
-  // page shows.
+  // it governs both profiles; configFormsFor() says so where it draws it, so a
+  // reader who sets one here is told it is the same value the 2.0 page shows.
 
   // ===========================================================================
   // `/admin/mfa` WAS HERE AND IT IS GONE (2026-09-10).
@@ -7165,8 +7164,8 @@ class AdminConsole {
   //
   // EVERY ROW SAYS WHERE ITS VALUE CAME FROM. That is the question this page
   // exists to answer and it is the one that used to require a grep: a value can
-  // arrive from a runtime override, from an environment variable (its own or
-  // the legacy STS_ISSUER), from the appconfig file this process was started
+  // arrive from a runtime override, from an environment variable (its own, or
+  // a legacy one — none since #523 retired STS_ISSUER), from the appconfig file this process was started
   // with, or from env/defaults.js under it — and the four are indistinguishable
   // once they have been read.
   //
@@ -8816,12 +8815,13 @@ class AdminConsole {
         if (choice.error) {
           errorCodes.mark(res, 'STS-ADMIN-0790');
         }
+        // A PAGE OF ITS OWN, not the console's frame: every control the
+        // frame draws leads to a sign-in this page has not let the reader
+        // start (`RealmChooser.page()`).
         res.status(choice.error ? 400 : 200)
            .set('Cache-Control', 'no-store')
-           .type('text/html').send(self.page('Choose your realm', null,
-             '<div class="card"><h2>Choose your realm</h2>' +
-             loginRealmChooser.form(req, 'admin', choice.error) + '</div>',
-             null, null, req));
+           .type('text/html')
+           .send(loginRealmChooser.page(req, 'admin', choice.error));
         log.debug("Leaving the static console shell. The realm chooser.");
         return;
       }
@@ -8928,14 +8928,14 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
 //     asking for the group to be split in `config.js`, where the reasoning for
 //     what belongs together lives.
 //   * **`SAML` IS THE ONE ROW WITH TWO PAGES, and it is not an untidiness.**
-//     `saml.issuer` is the Issuer of every assertion this service builds — SAML
-//     2.0's, SAML 1.1's, and WS-Federation's, which are built by the same two
-//     functions — so there is no one page it belongs to. It is drawn on both
+//     It governs every assertion this service builds — SAML 2.0's, SAML 1.1's,
+//     and WS-Federation's, which are built by the same two functions — so
+//     there is no one page it belongs to (its `saml.issuer` was the case that
+//     argued it, until #523 retired that). It is drawn on both
 //     SAML pages, each form writing through `config.setOverride()` like every
 //     other, and `configFormsFor()` says so on both rather than letting a
 //     reader discover that the value they set on one page had appeared on the
-//     other. The WS-Federation page names it too, as a link: three forms onto
-//     one setting is where "shown in more than one place" stops being useful.
+//     other. The WS-Federation page links to it rather than drawing a third.
 //   * **THE PAGE IS NOT A SECOND STORE, which is what makes any of this
 //     allowed.** Every form these pages draw is `configSection()`, posting
 //     `set-many` to `POST /admin/config` — the same action function, the same
@@ -9032,8 +9032,7 @@ const SETTING_HOMES = [
   // so this row governs the same kind of document as the ten above it. Drawing
   // it on /admin/wsfed would have put the only setting that decides how long a
   // WS-Federation token lives on a different page from every other assertion
-  // lifetime in this service. `wsfed.entityId` stays over there because it is
-  // this service's own name and no application can have an opinion about it.
+  // lifetime in this service.
   { group: 'WS-Federation assertions', pages: ['/admin/saml-assertions'] },
   // THE FIVE OAUTH SETTINGS A CLIENT MAY ANSWER FOR ITSELF, on the page that
   // already drew three of them. /admin/token-lifetimes was a bespoke page
@@ -9155,7 +9154,7 @@ const SETTING_HOMES = [
   // put them where half the readers would not look.
   { group: 'Backup codes', pages: ['/admin/backup-codes'] },
   // A POLICY ABOUT THE TWO MECHANISMS ABOVE (2026-09-13), and drawn on BOTH of
-  // their pages — `saml.issuer`'s arrangement — because either one satisfies
+  // their pages — the `SAML` group's arrangement — because either one satisfies
   // it and a reader of either page must see that it is in force.
   // Since #101 (2026-09-22) the group also holds `authn.passwordAloneDoors`
   // and the two `appPasswords.*` settings: what the requirement does at the
@@ -10689,24 +10688,18 @@ const PROTOCOL_SETTINGS_PAGES = [
           '<code>RequestSecurityToken</code> over SOAP for Issue, Validate, ' +
           'Renew and Cancel, in whichever of the four namespace versions the ' +
           'request used, and it will issue a SAML 1.1 or a SAML 2.0 ' +
-          'assertion. One setting is its own: who its tokens say issued them.',
+          'assertion. Who its tokens say issued them is the realm\'s OAuth ' +
+          'issuer, as in every protocol here (#523).',
     also: ['<strong>What an assertion CONTAINS is configured on the SAML ' +
            'pages</strong>, because it is built by the same two functions ' +
            'the two identity providers use — <a ' +
            'href="/admin/saml-attributes">Custom SAML attributes</a> adds ' +
-           'attributes to it, and <code>saml.issuer</code> on <a ' +
-           'href="/admin/saml2">SAML 2.0</a> is the Issuer inside the ' +
-           'assertion. <code>wstrust.issuer</code> here is the token ' +
-           'service\'s own name and they share a default rather than being ' +
-           'one setting: they were one until they had to differ, which is ' +
-           'the kind of thing that is discovered the hard way.',
-           '<strong>Unset, both are the SAML 2.0 entityID, in either mode ' +
-           '(#494)</strong>, and an assertion for a REGISTERED AppliesTo ' +
-           'carries that application\'s own entityID — ' +
-           '<code>&lt;entityID&gt;:&lt;application&gt;</code> while ' +
-           '<code>saml2.perApplicationEntityId</code> is on, the name SAML ' +
-           'SSO and WS-Federation give it. A JWT\'s <code>iss</code> is the ' +
-           'realm\'s OAuth issuer.',
+           'attributes to it.',
+           '<strong>Every token names one issuer (#523)</strong>: the ' +
+           'realm\'s OAuth issuer, which is a SAML assertion\'s ' +
+           '<code>Issuer</code>, a JWT\'s <code>iss</code>, and the ' +
+           'entityID SAML SSO and WS-Federation publish. There is no ' +
+           'setting for it; it follows the public base URL.',
            '<strong>Nothing about a request is checked.</strong> An ' +
            '<code>OnBehalfOf</code> or <code>ActAs</code> element names ' +
            'anybody and gets an assertion for them — this service polices no ' +
@@ -10722,19 +10715,16 @@ const PROTOCOL_SETTINGS_PAGES = [
           'WS-Federation 1.2.</strong> A browser arrives with ' +
           '<code>wa=wsignin1.0</code> and leaves with a SAML 1.1 assertion ' +
           'in a self-submitting form; <code>wa=wsignout1.0</code> ends the ' +
-          'session. One setting is its own — the entity ID its metadata and ' +
-          'its responses name this service by.',
-    also: ['<strong>The assertion is a SAML 1.1 one, so its issuer and its ' +
-           'attributes are configured next door.</strong> ' +
-           '<code>saml.issuer</code> is on <a href="/admin/saml11">SAML ' +
-           '1.1</a> and <a href="/admin/saml2">SAML 2.0</a>, and it is the ' +
-           'same setting in both places — unset, the SAML 2.0 entityID, and ' +
-           'for a REGISTERED wtrealm that application\'s own (#494), which ' +
-           'its own metadata at <code>/wsfed/metadata/{rp}</code> ' +
-           'publishes; <a ' +
+          'session. The entity ID its metadata and its responses name this ' +
+          'service by is the realm\'s OAuth issuer, as in every protocol ' +
+          'here (#523), and not a setting.',
+    also: ['<strong>The assertion is a SAML 1.1 one, so its attributes are ' +
+           'configured next door.</strong> <a ' +
            'href="/admin/saml-attributes">Custom SAML attributes</a> decides ' +
-           'what the assertion carries. This page links to them rather than ' +
-           'drawing a third form onto one value.',
+           'what the assertion carries, and the <code>SAML</code> group on ' +
+           '<a href="/admin/saml11">SAML 1.1</a> and <a ' +
+           'href="/admin/saml2">SAML 2.0</a> how it is signed. This page ' +
+           'links to them rather than drawing a third form.',
            '<strong>Single sign-on with OAuth 2.0 / OIDC is the point of the ' +
            'require order.</strong> This module is loaded after the ' +
            'authorization server so that both read one session: sign in at ' +

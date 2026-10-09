@@ -1,0 +1,22 @@
+{
+  "logoAlt": "IYA STS — service de jetons de sécurité",
+  "sub": "Un service d’identité fictif et permissif qui parle seize familles de protocoles. Il existe pour mettre à l’épreuve les CLIENTS.",
+  "version": "version {version}",
+  "warn": "Il ne vérifie aucun mot de passe, ne valide aucun jeton d’accès et n’atteste aucune charge de travail. N’exposez pas ce port sur une adresse publique.",
+  "repoLabel": "Le projet sur GitHub",
+  "repoNote": "Le code source, le README et les seize familles en détail.",
+  "issuesLabel": "Tickets",
+  "issuesNote": "Ce que l’on sait être défaillant, et où signaler ce qui ne l’est pas encore.",
+  "docsLabel": "Documentation",
+  "docsNote": "Le site GitHub Pages : prise en main, configuration, et ce qui n’est délibérément pas vérifié.",
+  "consoleLabel": "La console d’administration de cette instance",
+  "consoleNote": "Tout ce que ce processus a fait, et les paramètres qui modifient le comportement de ses points de terminaison.",
+  "consoleRoles": "Elle demande également l’un de deux rôles.",
+  "consoleOpen": "Elle est ouverte sur cette instance.",
+  "consoleMetadata": "Tous les points de terminaison enregistrés par ce service y sont répertoriés, à /admin/sts-metadata.",
+  "portalLabel": "Le portail utilisateur de cette instance",
+  "portalNote": "Les pages de compte de la personne qui les consulte : comment elle se connecte à ce service, ce qu’il détient à son sujet, et où il la connectera.",
+  "portalNoRole": "Il ne demande aucun rôle, et c’est toute la différence avec la console ci-dessus : chacune de ses pages concerne la personne qui la consulte, donc dire qui vous êtes est la seule question.",
+  "signInProduct": "Vous devrez vous connecter, et cette instance est en mode produit : le mot de passe est donc vérifié par rapport au compte.",
+  "signInDevelopment": "Vous devrez vous connecter — n’importe quel nom d’utilisateur, et aucun mot de passe n’est vérifié."
+}

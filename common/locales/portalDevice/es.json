@@ -1,0 +1,16 @@
+{
+  "request.heading": "¿Es este tu dispositivo?",
+  "request.asks": "{client} solicita iniciar sesión por ti en un dispositivo que muestra el código {code}.",
+  "request.access": "Acceso: <code>{scope}</code>. Caduca el {when}.",
+  "request.noScope": "(ninguno indicado)",
+  "request.warning": "<strong>Aprueba solo un dispositivo que tengas delante</strong> y en el que tú mismo hayas empezado a iniciar sesión. Quien te haya enviado este código te está pidiendo que inicies sesión como tú en SU dispositivo.",
+  "request.approve": "Aprobar",
+  "request.deny": "Denegar",
+  "find.heading": "Iniciar sesión en un dispositivo",
+  "find.sub": "Un televisor, una consola o una línea de comandos que muestra un código y esta dirección te pide que inicies sesión aquí en su lugar (RFC 8628).",
+  "find.off": "Iniciar sesión de esta forma está desactivado aquí.",
+  "find.code": "El código que muestra el dispositivo",
+  "find.continue": "Continuar",
+  "done.approved": "Aprobado: el dispositivo está iniciando tu sesión.",
+  "done.denied": "Denegado."
+}

@@ -1,0 +1,15 @@
+{
+  "heading": "Mga nakakonektang pinagmumulan ng claim",
+  "sub": "Puwedeng magsagot ang ibang identity provider para sa mga impormasyon tungkol sa iyo na wala sa serbisyong ito. Kapag nag-link ka ng isa, matatanggap ng application na humihingi ng mga impormasyong iyon ang mga ito ayon sa pagkakapirma ng provider (OpenID Connect aggregated at distributed claims). Sa pag-link, dadalhin ka sa provider para mag-sign in at pumayag.",
+  "none": "Walang maiaalok na pinagmumulan ng claim ang serbisyong ito.",
+  "supplies": "Nagbibigay ng",
+  "distributed": ", sa pamamagitan ng pag-abot sa application ng token mo sa provider na ito, para ito mismo ang kumuha ng mga ito.",
+  "aggregated": ", na kinukuha ng serbisyong ito at ipinapasa ayon sa pagkakapirma ng provider.",
+  "linked": "Na-link noong {when}.",
+  "linkedStale": "Na-link noong {when} — <strong>hindi na magagamit</strong>; i-link itong muli.",
+  "link": "I-link",
+  "linkAgain": "I-link muli",
+  "unlink": "I-unlink",
+  "doneUnlinked": "Na-unlink na.",
+  "doneLinked": "Na-link na ang \"{provider}\"."
+}

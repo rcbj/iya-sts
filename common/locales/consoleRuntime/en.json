@@ -1,0 +1,17 @@
+{
+  "reauth.title": "Your session has ended.",
+  "reauth.text": "Sign in again to carry on. This page and what you typed stay as they are, and what you pressed is sent once you are back.",
+  "reauth.again": "Sign in again",
+  "reauth.here": "Sign in on this page",
+  "reauth.hereInstead": "Sign in on this page instead",
+  "reauth.noPopup": "This browser cannot hand a sign-in back from another window, so sign in on this page.",
+  "reauth.finish": "Finish signing in in the window that opened.",
+  "otherPerson.waiting": "A different person signed in, so what was waiting on this page was not sent.",
+  "otherPerson.typed": "A different person signed in, so what was typed on this page before was not put back.",
+  "restored": "You are signed in again. What you had typed on this page was put back, and nothing was sent: press the button again to send it.",
+  "restored.unplaced": " {n, plural, one {{n} value could not be put back, because the page no longer has a place for it.} other {{n} values could not be put back, because the page no longer has a place for them.}}",
+  "signedInAgain": "Signed in again",
+  "signedInAgain.text": "The console carries on where you were. This window can be closed.",
+  "openConsole": "Open the console",
+  "copied": "Copied"
+}

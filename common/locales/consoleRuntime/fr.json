@@ -1,0 +1,17 @@
+{
+  "reauth.title": "Votre session a pris fin.",
+  "reauth.text": "Reconnectez-vous pour continuer. Cette page et ce que vous avez saisi restent tels quels, et l’action que vous avez déclenchée sera envoyée dès votre retour.",
+  "reauth.again": "Se reconnecter",
+  "reauth.here": "Se connecter sur cette page",
+  "reauth.hereInstead": "Se connecter plutôt sur cette page",
+  "reauth.noPopup": "Ce navigateur ne peut pas récupérer une connexion effectuée dans une autre fenêtre : connectez-vous donc sur cette page.",
+  "reauth.finish": "Terminez la connexion dans la fenêtre qui s’est ouverte.",
+  "otherPerson.waiting": "Une autre personne s’est connectée : ce qui attendait sur cette page n’a donc pas été envoyé.",
+  "otherPerson.typed": "Une autre personne s’est connectée : ce qui avait été saisi sur cette page n’a donc pas été restauré.",
+  "restored": "Vous êtes de nouveau connecté. Ce que vous aviez saisi sur cette page a été restauré, et rien n’a été envoyé : appuyez de nouveau sur le bouton pour l’envoyer.",
+  "restored.unplaced": " {n, plural, one {{n} valeur n’a pas pu être restaurée, car la page n’a plus d’emplacement pour elle.} other {{n} valeurs n’ont pas pu être restaurées, car la page n’a plus d’emplacement pour elles.}}",
+  "signedInAgain": "De nouveau connecté",
+  "signedInAgain.text": "La console reprend là où vous en étiez. Vous pouvez fermer cette fenêtre.",
+  "openConsole": "Ouvrir la console",
+  "copied": "Copié"
+}

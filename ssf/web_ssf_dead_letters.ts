@@ -76,11 +76,11 @@ class SsfDeadLettersPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    const t = ctx.t;
     if (!json.installed) {
-      const missing = '<h1>Dead letters</h1><div ' +
-        'class="err"><strong>Shared Signals is not loaded in this ' +
-        'process</strong>, so there are no dead-letter queues to report ' +
-        'on.</div>';
+      const missing = '<h1>' + t.html('consoleSsfDeadLetters.heading') +
+        '</h1><div class="err">' +
+        t.html('consoleSsfDeadLetters.notLoaded') + '</div>';
       return missing;
     }
     const totals = json.totals;
@@ -101,28 +101,31 @@ class SsfDeadLettersPage {
     };
 
     const tiles = '<div class="tiles">' +
-      kit.tile(totals.held, 'dead letters held') +
-      kit.tile(totals.streamsHolding, 'streams holding them') +
-      kit.tile(totals.deadStreams, 'dead streams') +
-      kit.tile(totals.halfOpenStreams, 'half-open') +
-      kit.tile(totals.failingStreams, 'failing') +
-      kit.tile(totals.unsigned, 'never signed') +
+      kit.tile(totals.held,
+               t.text('consoleSsfDeadLetters.tile.held')) +
+      kit.tile(totals.streamsHolding,
+               t.text('consoleSsfDeadLetters.tile.streamsHolding')) +
+      kit.tile(totals.deadStreams,
+               t.text('consoleSsfDeadLetters.tile.deadStreams')) +
+      kit.tile(totals.halfOpenStreams,
+               t.text('consoleSsfDeadLetters.tile.halfOpen')) +
+      kit.tile(totals.failingStreams,
+               t.text('consoleSsfDeadLetters.tile.failing')) +
+      kit.tile(totals.unsigned,
+               t.text('consoleSsfDeadLetters.tile.unsigned')) +
       kit.tile(totals.newestAgeS === null ? '—'
-        : kit.durationText(totals.newestAgeS * 1000), 'since the newest') +
+        : kit.durationText(totals.newestAgeS * 1000),
+               t.text('consoleSsfDeadLetters.tile.newest')) +
       kit.tile(totals.oldestAgeS === null ? '—'
-        : kit.durationText(totals.oldestAgeS * 1000), 'since the oldest') +
+        : kit.durationText(totals.oldestAgeS * 1000),
+               t.text('consoleSsfDeadLetters.tile.oldest')) +
       '</div>';
 
     const off = (!json.enabled
-      ? kit.warn('<strong>Shared Signals is turned off</strong> ' +
-        '(<code>ssf.enabled</code>), so nothing new is sent or ' +
-        'dead-lettered. What is below is held until ' +
-        '<code>ssf.deadLetterRetentionS</code> passes.')
+      ? kit.warn(t.html('consoleSsfDeadLetters.off'))
       : '') +
       (json.enabled && !json.pushDelivery
-        ? kit.warn('<strong>Push delivery is off</strong> ' +
-          '(<code>ssf.pushDelivery</code>), so no push is made and none ' +
-          'can fail. Poll streams have no dead letters.')
+        ? kit.warn(t.html('consoleSsfDeadLetters.pushOff'))
         : '');
 
     // WHEN. The chart, its legend, and the same numbers as a table.
@@ -138,12 +141,17 @@ class SsfDeadLettersPage {
       return bucket.total > 0;
     });
     const timelineTable = busy.length
-      ? '<details><summary>The same as a table (' + busy.length + ' of ' +
-        timeline.buckets.length + ' columns hold anything)</summary>' +
-        kit.wideTable('Dead letters by time', '<table><tr><th>From</th>' +
+      ? '<details><summary>' +
+        t.html('consoleSsfDeadLetters.when.asTable',
+               { busy: busy.length, all: timeline.buckets.length }) +
+        '</summary>' +
+        kit.wideTable(t.text('consoleSsfDeadLetters.when.tableLabel'),
+                      '<table><tr><th>' +
+                      t.html('consoleSsfDeadLetters.th.from') + '</th>' +
         json.causes.map(function (cause) {
           return '<th class="num">' + kit.esc(cause.label) + '</th>';
-        }).join('') + '<th class="num">All</th></tr>' +
+        }).join('') + '<th class="num">' +
+        t.html('consoleSsfDeadLetters.th.all') + '</th></tr>' +
         busy.map(function (bucket) {
           return '<tr><td class="sub">' +
             kit.esc(kit.whenText(Date.parse(bucket.start))) + '</td>' +
@@ -153,11 +161,8 @@ class SsfDeadLettersPage {
         }).join('') + '</table>') + '</details>'
       : '';
     const older = timeline.olderThanWindow
-      ? kit.note(kit.esc(String(timeline.olderThanWindow)) + ' letter(s) ' +
-        'are older than the window and are not drawn: the next sweep ' +
-        'deletes them. That happens when ' +
-        '<code>ssf.deadLetterRetentionS</code> is shortened, and before a ' +
-        'process has swept since it started.')
+      ? kit.note(t.html('consoleSsfDeadLetters.when.older',
+                        { n: String(timeline.olderThanWindow) }))
       : '';
 
     // WHY.
@@ -182,56 +187,71 @@ class SsfDeadLettersPage {
       return '<tr><td>' + (row.errorCode
           ? '<a href="/admin/error-codes#' + kit.esc(row.errorCode) + '">' +
             '<code class="ec">' + kit.esc(row.errorCode) + '</code></a>'
-          : '<span class="sub">none recorded</span>') + '</td>' +
+          : '<span class="sub">' +
+            t.html('consoleSsfDeadLetters.why.noneRecorded') + '</span>') +
+          '</td>' +
         '<td>' + kit.esc(cause.label) + '</td>' +
         '<td>' + kit.esc(row.summary) + '</td>' +
         '<td class="num">' + (row.errorCode
           ? '<a href="' + lettersOf({ dlq: row.errorCode }) + '">' +
             row.count + '</a>'
           : String(row.count)) + '</td></tr>';
-    }).join('') || '<tr><td colspan="4">Nothing held.</td></tr>';
+    }).join('') || '<tr><td colspan="4">' +
+      t.html('consoleSsfDeadLetters.nothingHeld') + '</td></tr>';
     const statusRows = json.byStatus.map(function (row) {
       return '<tr><td>' + (row.status
           ? 'HTTP ' + kit.esc(String(row.status))
-          : '<span class="sub">no HTTP answer &mdash; not pushed, or ' +
-            'nothing answered</span>') + '</td>' +
+          : '<span class="sub">' +
+            t.html('consoleSsfDeadLetters.why.noAnswer') + '</span>') +
+          '</td>' +
         '<td class="num">' + row.count + '</td>' +
         '<td class="num">' + share(row.count) + '</td></tr>';
-    }).join('') || '<tr><td colspan="3">Nothing held.</td></tr>';
+    }).join('') || '<tr><td colspan="3">' +
+      t.html('consoleSsfDeadLetters.nothingHeld') + '</td></tr>';
     const typeRows = json.byEventType.map(function (row) {
-      return '<tr><td>' + kit.esc(row.name || '(unreadable)') + '</td>' +
+      return '<tr><td>' + kit.esc(row.name ||
+        t.text('consoleSsfDeadLetters.why.unreadable')) + '</td>' +
         '<td class="sub"><code>' + kit.esc(row.type || '') + '</code></td>' +
         '<td class="num">' + (row.name
           ? '<a href="' + lettersOf({ dlq: row.type || row.name }) + '">' +
             row.count + '</a>'
           : String(row.count)) + '</td>' +
         '<td class="num">' + share(row.count) + '</td></tr>';
-    }).join('') || '<tr><td colspan="4">Nothing held.</td></tr>';
+    }).join('') || '<tr><td colspan="4">' +
+      t.html('consoleSsfDeadLetters.nothingHeld') + '</td></tr>';
 
     // WHICH STREAMS.
     const stateText = {
-      dead: '<span class="state-revoked">dead</span>',
-      'half-open': '<span class="state-expired">half-open</span>',
-      failing: '<span class="state-expired">failing</span>',
-      healthy: '<span class="state-valid">delivering</span>',
-      poll: '<span class="sub">poll</span>',
-      unknown: '<span class="sub">not held here</span>'
+      dead: '<span class="state-revoked">' +
+        t.html('consoleSsfDeadLetters.state.dead') + '</span>',
+      'half-open': '<span class="state-expired">' +
+        t.html('consoleSsfDeadLetters.state.halfOpen') + '</span>',
+      failing: '<span class="state-expired">' +
+        t.html('consoleSsfDeadLetters.state.failing') + '</span>',
+      healthy: '<span class="state-valid">' +
+        t.html('consoleSsfDeadLetters.state.healthy') + '</span>',
+      poll: '<span class="sub">' +
+        t.html('consoleSsfDeadLetters.state.poll') + '</span>',
+      unknown: '<span class="sub">' +
+        t.html('consoleSsfDeadLetters.state.unknown') + '</span>'
     };
     const streamRows = json.streams.map(function (row) {
       const when = row.state === 'dead'
-        ? 'dead since ' + kit.whenText(Date.parse(row.deadSince)) +
+        ? t.text('consoleSsfDeadLetters.state.deadSince',
+                 { at: kit.whenText(Date.parse(row.deadSince)) }) +
           (row.nextProbeAt
-            ? '; next probe ' + kit.whenText(Date.parse(row.nextProbeAt)) :
+            ? t.text('consoleSsfDeadLetters.state.nextProbe',
+                     { at: kit.whenText(Date.parse(row.nextProbeAt)) }) :
               '')
         : (row.failingSince
-          ? 'failing since ' + kit.whenText(Date.parse(row.failingSince)) :
+          ? t.text('consoleSsfDeadLetters.state.failingSince',
+                   { at: kit.whenText(Date.parse(row.failingSince)) }) :
             '');
       return '<tr><td class="who">' + (row.state === 'unknown'
           ? '<code>' + kit.esc(row.stream_id) + '</code>'
           : '<a href="/admin/ssf#stream-' + kit.esc(row.stream_id) +
             '" title="' +
-            kit.esc('This stream\'s card on Protocols → Shared Signals, ' +
-                     'where Revive and Drop its dead letters are.') +
+            kit.esc(t.text('consoleSsfDeadLetters.streams.cardTip')) +
                      '"><code>' +
             kit.esc(row.stream_id) + '</code></a>') +
         (row.aud
@@ -252,38 +272,39 @@ class SsfDeadLettersPage {
         }).join('<br>') + '</td>' +
         '<td class="num">' + row.deadLetteredEver + '</td></tr>';
     }).join('') ||
-      '<tr><td colspan="6">Every push stream is delivering and ' +
-      'none holds a dead letter.</td></tr>';
+      '<tr><td colspan="6">' +
+      t.html('consoleSsfDeadLetters.streams.none') + '</td></tr>';
 
     // THE LETTERS.
     const search = kit.sectionSearchForm({
       path: '/admin/ssf/dead-letters', param: 'dlq', pageParam: 'lettersPage',
-      query: ctx.query, label: 'Find',
-      placeholder: 'a jti, STS-SSF-0092, session-revoked, 503',
-      what: 'Over the jti, the stream, the reason, the error code, the ' +
-            'receiver\'s status, the event name and type URI and the ' +
-            'subject. The counts above are the whole realm\'s whatever is ' +
-            'searched.' });
+      query: ctx.query, label: t.text('consoleSsfDeadLetters.find.label'),
+      placeholder: t.text('consoleSsfDeadLetters.find.placeholder'),
+      what: t.html('consoleSsfDeadLetters.find.what') }, t);
     const narrowed = [];
     if (json.filter.stream) {
-      narrowed.push('stream <code>' + kit.esc(json.filter.stream) +
-                    '</code> ' +
-        '(<a href="' + lettersOf({ dlstream: '' }) + '">any stream</a>)');
+      narrowed.push(t.html('consoleSsfDeadLetters.narrow.stream',
+                           { stream: json.filter.stream }) + ' ' +
+        '(<a href="' + lettersOf({ dlstream: '' }) + '">' +
+        t.html('consoleSsfDeadLetters.narrow.anyStream') + '</a>)');
     }
     if (json.filter.cause) {
-      narrowed.push('cause ' + kit.esc((causeById[json.filter.cause] ||
-        { label: json.filter.cause }).label) + ' (<a href="' +
-        lettersOf({ dlcause: '' }) + '">any cause</a>)');
+      narrowed.push(t.html('consoleSsfDeadLetters.narrow.cause', {
+        cause: (causeById[json.filter.cause] ||
+                { label: json.filter.cause }).label }) + ' (<a href="' +
+        lettersOf({ dlcause: '' }) + '">' +
+        t.html('consoleSsfDeadLetters.narrow.anyCause') + '</a>)');
     }
     const nav = kit.pageNavPair('/admin/ssf/dead-letters',
                                  kit.pageParamsOf(ctx.query),
-      Object.assign({ param: 'lettersPage', noun: 'dead letters' },
-                    json.paging.letters));
+      Object.assign({ param: 'lettersPage',
+                      noun: t.text('consoleSsfDeadLetters.letters.noun') },
+                    json.paging.letters), t);
     const letterRows = SsfDeadLettersPage.deadLetterRows(json, causeById,
-      listView) ||
+      listView, t) ||
       '<tr><td colspan="7">' + (json.matched === 0 && totals.held
-        ? 'No dead letter matches.'
-        : 'No dead letters are held in this realm.') + '</td></tr>';
+        ? t.html('consoleSsfDeadLetters.letters.noMatch')
+        : t.html('consoleSsfDeadLetters.letters.none')) + '</td></tr>';
 
     // THIS PROCESS.
     const proc = json.process;
@@ -298,155 +319,170 @@ class SsfDeadLettersPage {
         '<td class="num">' + row.orphaned + '</td>' +
         '<td class="num">' + row.deadStreams + '</td>' +
         '<td class="num">' + row.probes + '</td></tr>';
-    }).join('') || '<tr><td colspan="8">This process has not swept this ' +
-      'realm yet. It sweeps every ' +
-      '<code>ssf.deadLetterSweepS</code>.</td></tr>';
+    }).join('') || '<tr><td colspan="8">' +
+      t.html('consoleSsfDeadLetters.process.noSweeps') + '</td></tr>';
     const since = proc.sinceStart;
 
     const s = json.settings;
     const settingRows = [
-      ['ssf.deadLetterRetentionS', s.retentionS, 'seconds a letter is kept'],
+      ['ssf.deadLetterRetentionS', s.retentionS,
+        t.text('consoleSsfDeadLetters.setting.retention')],
       ['ssf.deadLetterMaxPerStream', s.maxPerStream,
-       'letters one stream keeps; past it the oldest go'],
+       t.text('consoleSsfDeadLetters.setting.maxPerStream')],
       ['ssf.deadStreamTimeoutS', s.deadStreamTimeoutS,
-       'seconds of failed pushes before a stream is dead (0: never)'],
-      ['ssf.deadLetterSweepS', s.sweepS, 'seconds between sweeps'],
+       t.text('consoleSsfDeadLetters.setting.deadStreamTimeout')],
+      ['ssf.deadLetterSweepS', s.sweepS,
+        t.text('consoleSsfDeadLetters.setting.sweep')],
       ['ssf.pushConcurrency', s.pushConcurrency,
-       'pushes in flight per process (0: no cap)'],
+       t.text('consoleSsfDeadLetters.setting.pushConcurrency')],
       ['ssf.pushBacklog', s.pushBacklog,
-       'pushes waiting per process before STS-SSF-0092'],
-      ['ssf.pushRetries', s.pushRetries, 'retries before a push has failed']
+       t.text('consoleSsfDeadLetters.setting.pushBacklog')],
+      ['ssf.pushRetries', s.pushRetries,
+        t.text('consoleSsfDeadLetters.setting.pushRetries')]
     ].map(function (row) {
       return '<tr><td><code>' + kit.esc(row[0]) + '</code></td>' +
         '<td class="num">' + kit.esc(String(row[1])) + '</td>' +
         '<td>' + kit.esc(row[2]) + '</td></tr>';
     }).join('');
 
-    const inner = '<h1>Dead letters</h1><p>Every Security Event Token the ' +
-      'transmitter <strong>could not deliver</strong> and is still ' +
-      'holding, in the &ldquo;' + kit.esc(json.realm) + '&rdquo; realm ' +
-      '&mdash; each realm has dead-letter queues of its own. A letter is ' +
-      'kept for <code>ssf.deadLetterRetentionS</code> with the reason, and ' +
-      'nothing resends it except the probe that tries to revive a dead ' +
-      'stream.</p>' +
+    const inner = '<h1>' + t.html('consoleSsfDeadLetters.heading') +
+      '</h1><p>' +
+      t.html('consoleSsfDeadLetters.intro', { realm: json.realm }) + '</p>' +
       off +
       tiles +
-      kit.note('<strong>This page reports; it changes nothing.</strong> ' +
-      'Revive a dead stream or drop its letters on that stream\'s card at ' +
-      '<a href="/admin/ssf">Protocols &rarr; Shared Signals</a> &mdash; ' +
-      'every stream below links to it. Counted ' +
-      kit.esc(kit.whenText(Date.parse(json.generatedAt))) + '.') +
+      // The link is markup a message cannot carry (#539).
+      kit.note(t.html('consoleSsfDeadLetters.reports.before') +
+      '<a href="/admin/ssf">' + t.html('consoleSsfDeadLetters.link.ssf') +
+      '</a>' + t.html('consoleSsfDeadLetters.reports.after',
+        { when: kit.whenText(Date.parse(json.generatedAt)) })) +
 
-      '<h2>When</h2>' +
-      kit.note('Held letters by when they were dead-lettered, in ' +
-      kit.esc(SsfDeadLettersPage.deadLetterSpan(timeline.bucketS)) +
-        ' columns over the ' +
-        'last ' +
-      kit.esc(SsfDeadLettersPage.deadLetterSpan(timeline.windowS)) +
-        ' &mdash; the ' +
-      'whole retention window, so a letter that has aged out is gone from ' +
-      'the chart as it is from the queue. Point at a column for its ' +
-      'counts.') +
+      '<h2>' + t.html('consoleSsfDeadLetters.when.heading') + '</h2>' +
+      kit.note(t.html('consoleSsfDeadLetters.when.note', {
+        bucket: SsfDeadLettersPage.deadLetterSpan(timeline.bucketS),
+        window: SsfDeadLettersPage.deadLetterSpan(timeline.windowS) })) +
       legend +
-      SsfDeadLettersPage.deadLetterTimeline(timeline, json.causes) +
+      SsfDeadLettersPage.deadLetterTimeline(timeline, json.causes, t) +
       timelineTable +
       older +
 
-      '<h2>Why</h2>' +
-      kit.note('Four causes, each a different thing to do about it. Every ' +
-      'other code a failed push can carry is a push that failed, and is ' +
-      'broken out below.') +
-      '<table><tr><th>Cause</th><th>What it means</th>' +
-      '<th class="num">Held</th><th class="num">Share</th></tr>' +
+      '<h2>' + t.html('consoleSsfDeadLetters.why.heading') + '</h2>' +
+      kit.note(t.html('consoleSsfDeadLetters.why.note')) +
+      '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.cause') +
+      '</th><th>' + t.html('consoleSsfDeadLetters.th.meaning') + '</th>' +
+      '<th class="num">' + t.html('consoleSsfDeadLetters.th.held') +
+      '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.share') +
+      '</th></tr>' +
       causeRows + '</table>' +
-      '<h3>By error code</h3>' +
-      '<table><tr><th>Code</th><th>Cause</th><th>What the code means</th>' +
-      '<th class="num">Held</th></tr>' + codeRows + '</table>' +
-      '<h3>By the receiver\'s answer</h3>' +
-      '<table><tr><th>Status</th><th class="num">Held</th>' +
-      '<th class="num">Share</th></tr>' + statusRows + '</table>' +
-      '<h3>By event type</h3>' +
-      '<table><tr><th>Event</th><th>Type</th><th class="num">Held</th>' +
-      '<th class="num">Share</th></tr>' + typeRows + '</table>' +
+      '<h3>' + t.html('consoleSsfDeadLetters.why.byCode') + '</h3>' +
+      '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.code') +
+      '</th><th>' + t.html('consoleSsfDeadLetters.th.cause') + '</th><th>' +
+      t.html('consoleSsfDeadLetters.th.codeMeaning') + '</th>' +
+      '<th class="num">' + t.html('consoleSsfDeadLetters.th.held') +
+      '</th></tr>' + codeRows + '</table>' +
+      '<h3>' + t.html('consoleSsfDeadLetters.why.byAnswer') + '</h3>' +
+      '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.status') +
+      '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.held') +
+      '</th>' +
+      '<th class="num">' + t.html('consoleSsfDeadLetters.th.share') +
+      '</th></tr>' + statusRows + '</table>' +
+      '<h3>' + t.html('consoleSsfDeadLetters.why.byType') + '</h3>' +
+      '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.event') +
+      '</th><th>' + t.html('consoleSsfDeadLetters.th.type') +
+      '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.held') +
+      '</th>' +
+      '<th class="num">' + t.html('consoleSsfDeadLetters.th.share') +
+      '</th></tr>' + typeRows + '</table>' +
 
-      '<h2>Streams</h2>' +
-      kit.note('Every stream that holds a dead letter or is not ' +
-      'delivering. <strong>Dead</strong>: nothing is pushed to it and one ' +
-      'letter is pushed as a probe each ' +
-      '<code>ssf.deadStreamTimeoutS</code>. <strong>Half-open</strong>: ' +
-      'failing for that long without being dead, so the next failure kills ' +
-      'it. <strong>Failing</strong>: younger than that. <em>Ever</em> is ' +
-      'the stream\'s own count of every letter it was given, including the ' +
-      'ones since deleted.') +
-      kit.wideTable('Streams with dead letters',
-                     '<table><tr><th>Stream</th>' +
-      '<th>State</th><th>Last failure</th><th class="num">Held</th>' +
-      '<th>Held, by cause</th><th class="num">Ever</th></tr>' +
+      '<h2>' + t.html('consoleSsfDeadLetters.streams.heading') + '</h2>' +
+      kit.note(t.html('consoleSsfDeadLetters.streams.note')) +
+      kit.wideTable(t.text('consoleSsfDeadLetters.streams.tableLabel'),
+                     '<table><tr><th>' +
+      t.html('consoleSsfDeadLetters.th.stream') + '</th>' +
+      '<th>' + t.html('consoleSsfDeadLetters.th.state') + '</th><th>' +
+      t.html('consoleSsfDeadLetters.th.lastFailure') +
+      '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.held') +
+      '</th>' +
+      '<th>' + t.html('consoleSsfDeadLetters.th.heldByCause') +
+      '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.ever') +
+      '</th></tr>' +
       streamRows + '</table>') +
 
-      '<h2 id="letters">The letters</h2>' +
+      '<h2 id="letters">' + t.html('consoleSsfDeadLetters.letters.heading') +
+      '</h2>' +
       search +
       (narrowed.length
-        ? '<p class="sub">Showing only ' + narrowed.join(' and ') + '.</p>'
+        ? '<p class="sub">' + t.html('consoleSsfDeadLetters.narrow.before') +
+          narrowed.join(t.html('consoleSsfDeadLetters.narrow.and')) +
+          t.html('consoleSsfDeadLetters.narrow.after') + '</p>'
         : '') +
       nav.head +
-      kit.wideTable('Dead letters', '<table><tr><th>Dead-lettered</th>' +
-      '<th>Stream</th><th>Event</th><th>Cause</th>' +
-      '<th class="num">Status</th><th>Reason</th><th>SET</th></tr>' +
+      kit.wideTable(t.text('consoleSsfDeadLetters.letters.tableLabel'),
+                    '<table><tr><th>' +
+      t.html('consoleSsfDeadLetters.th.deadLettered') + '</th>' +
+      '<th>' + t.html('consoleSsfDeadLetters.th.stream') + '</th><th>' +
+      t.html('consoleSsfDeadLetters.th.event') + '</th><th>' +
+      t.html('consoleSsfDeadLetters.th.cause') + '</th>' +
+      '<th class="num">' + t.html('consoleSsfDeadLetters.th.status') +
+      '</th><th>' + t.html('consoleSsfDeadLetters.th.reason') +
+      '</th><th>SET</th></tr>' +
       letterRows + '</table>') +
       nav.foot +
-      kit.note('No token is shown or returned: a SET is a signed ' +
-      'statement about somebody. <em>Not signed</em> is a SET for a dead ' +
-      'stream, kept as its claims because signing what nothing would ' +
-      'receive is the cost dead streams exist to stop.') +
+      kit.note(t.html('consoleSsfDeadLetters.letters.note')) +
 
-      '<h2>This process</h2>' +
-      kit.warn('<strong>Everything in this section is process ' +
-      kit.esc(String(proc.pid)) + '\'s alone</strong> (' +
-      kit.esc(proc.role) + '). ' +
-      'In a service with request workers the next refresh may be answered ' +
-      'by another process with different numbers, and the push cap is not ' +
-      'per realm: every realm\'s pushes from one process share it, so a ' +
-      'burst in one realm can dead-letter another\'s with ' +
-      '<code>STS-SSF-0092</code>.') +
+      '<h2>' + t.html('consoleSsfDeadLetters.process.heading') + '</h2>' +
+      kit.warn(t.html('consoleSsfDeadLetters.process.warn',
+                      { pid: String(proc.pid), role: proc.role })) +
       '<div class="tiles">' +
       kit.tile(String(pushes.active || 0) + ' / ' +
                 (pushes.concurrency ? String(pushes.concurrency) : '∞'),
-                'pushes in flight') +
+                t.text('consoleSsfDeadLetters.tile.inFlight')) +
       kit.tile(String(pushes.waiting || 0) + ' / ' +
-                String(pushes.backlog || 0), 'pushes waiting') +
-      kit.tile(since.sweeps, 'sweeps of this realm') +
-      kit.tile(since.letters, 'dead-lettered here') +
-      kit.tile(since.expired, 'expired') +
-      kit.tile(since.trimmed, 'over the per-stream cap') +
-      kit.tile(since.probes, 'probes') +
+                String(pushes.backlog || 0),
+               t.text('consoleSsfDeadLetters.tile.pushesWaiting')) +
+      kit.tile(since.sweeps, t.text('consoleSsfDeadLetters.tile.sweeps')) +
+      kit.tile(since.letters,
+               t.text('consoleSsfDeadLetters.tile.deadLetteredHere')) +
+      kit.tile(since.expired, t.text('consoleSsfDeadLetters.tile.expired')) +
+      kit.tile(since.trimmed, t.text('consoleSsfDeadLetters.tile.overCap')) +
+      kit.tile(since.probes, t.text('consoleSsfDeadLetters.tile.probes')) +
       '</div>' +
-      '<h3>Recent sweeps</h3>' +
-      kit.note('The last twenty sweeps of this realm by this process, ' +
-      'newest first. <em>New</em> counts the letters this process added ' +
-      'since its previous sweep; <em>held</em>, <em>expired</em>, <em>over ' +
-      'cap</em> and <em>orphaned</em> (a letter whose stream is gone) are ' +
-      'the shared store as this process found it.') +
-      kit.wideTable('Recent sweeps', '<table><tr><th>When</th>' +
-      '<th class="num">New</th><th class="num">Held</th>' +
-      '<th class="num">Expired</th><th class="num">Over cap</th>' +
-      '<th class="num">Orphaned</th><th class="num">Dead streams</th>' +
-      '<th class="num">Probes</th></tr>' + sweepRows + '</table>') +
+      '<h3>' + t.html('consoleSsfDeadLetters.sweeps.heading') + '</h3>' +
+      kit.note(t.html('consoleSsfDeadLetters.sweeps.note')) +
+      kit.wideTable(t.text('consoleSsfDeadLetters.sweeps.heading'),
+                    '<table><tr><th>' +
+      t.html('consoleSsfDeadLetters.th.when') + '</th>' +
+      '<th class="num">' + t.html('consoleSsfDeadLetters.th.new') +
+      '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.held') +
+      '</th>' +
+      '<th class="num">' + t.html('consoleSsfDeadLetters.th.expired') +
+      '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.overCap') +
+      '</th>' +
+      '<th class="num">' + t.html('consoleSsfDeadLetters.th.orphaned') +
+      '</th><th class="num">' +
+      t.html('consoleSsfDeadLetters.th.deadStreams') + '</th>' +
+      '<th class="num">' + t.html('consoleSsfDeadLetters.th.probes') +
+      '</th></tr>' + sweepRows + '</table>') +
 
-      '<h2>Settings</h2>' +
-      kit.note('What decides what is dead-lettered and for how long. ' +
-      'Changed on <a href="/admin/ssf">Protocols &rarr; Shared ' +
-      'Signals</a>, with every other <code>ssf.*</code> setting.') +
-      '<table><tr><th>Setting</th><th ' +
-      'class="num">Value</th><th>Meaning</th></tr>' + settingRows +
+      '<h2>' + t.html('consoleSsfDeadLetters.settings.heading') + '</h2>' +
+      kit.note(t.html('consoleSsfDeadLetters.settings.before') +
+      '<a href="/admin/ssf">' + t.html('consoleSsfDeadLetters.link.ssf') +
+      '</a>' + t.html('consoleSsfDeadLetters.settings.after')) +
+      '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.setting') +
+      '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.value') +
+      '</th><th>' + t.html('consoleSsfDeadLetters.th.settingMeaning') +
+      '</th></tr>' + settingRows +
       '</table>' +
 
-      kit.note('<a href="/admin/ssf/dead-letters?format=json">this page ' +
-      'as JSON</a> &middot; <a href="/admin-api/ssf/dead-letters">the same ' +
-      'over the management API</a> &middot; <a href="/admin/ssf">the ' +
-      'streams and their controls</a> &middot; <a ' +
-      'href="/admin/error-codes">every error code</a> &middot; <a ' +
-      'href="/admin/audit">the audit log</a>');
+      kit.note('<a href="/admin/ssf/dead-letters?format=json">' +
+      t.html('consoleSsfDeadLetters.foot.json') + '</a> &middot; ' +
+      '<a href="/admin-api/ssf/dead-letters">' +
+      t.html('consoleSsfDeadLetters.foot.api') + '</a> &middot; ' +
+      '<a href="/admin/ssf">' + t.html('consoleSsfDeadLetters.foot.ssf') +
+      '</a> &middot; <a ' +
+      'href="/admin/error-codes">' +
+      t.html('consoleSsfDeadLetters.foot.codes') + '</a> &middot; <a ' +
+      'href="/admin/audit">' + t.html('consoleSsfDeadLetters.foot.audit') +
+      '</a>');
 
     return inner;
   }
@@ -458,17 +494,19 @@ class SsfDeadLettersPage {
    * @param json - the report, whose `letters` are drawn
    * @param causeById - each cause's description, keyed by its id
    * @param listView - the list's query, carried into each stream link
+   * @param t - the page's translator (#539)
    * @returns the table rows as HTML
    */
-  static deadLetterRows(json, causeById, listView) {
+  static deadLetterRows(json, causeById, listView, t) {
     const rows = json.letters.map(function (row) {
       const cause = causeById[row.cause] || { label: row.cause };
       const event = row.event;
       return '<tr>' +
         '<td class="sub">' + kit.esc(kit.whenText(Date.parse(row.deadAt))) +
         (row.ageS !== null
-          ? '<div>' + kit.esc(kit.durationText(row.ageS * 1000)) +
-            ' ago</div>' : '') +
+          ? '<div>' + t.html('consoleSsfDeadLetters.row.ago',
+              { span: kit.durationText(row.ageS * 1000) }) +
+            '</div>' : '') +
         '</td>' +
         '<td class="who"><a href="' + kit.esc('/admin/ssf/dead-letters' +
           kit.queryWith(listView, { dlstream: row.stream_id,
@@ -476,13 +514,17 @@ class SsfDeadLettersPage {
         '#find-dlq"><code>' + kit.esc(row.stream_id) + '</code></a>' +
         (row.streamKnown
           ? ''
-          : '<div class="sub">no such stream here</div>') + '</td>' +
+          : '<div class="sub">' +
+            t.html('consoleSsfDeadLetters.row.noStream') + '</div>') +
+        '</td>' +
         '<td>' + (event
           ? kit.esc(event.name) + '<div class="sub"><code>' +
             kit.esc(event.types[0] || '') + '</code></div>' +
             (event.subject
               ? '<div class="sub">' + kit.esc(event.subject) + '</div>' : '')
-          : '<span class="sub">unreadable</span>') + '</td><td>' +
+          : '<span class="sub">' +
+            t.html('consoleSsfDeadLetters.row.unreadable') + '</span>') +
+        '</td><td>' +
         SsfDeadLettersPage.deadLetterSwatch(
           DEAD_LETTER_COLOURS[row.cause] || '#8a8a99') +
         ' ' + kit.esc(cause.label) +
@@ -493,11 +535,13 @@ class SsfDeadLettersPage {
           : '') + '</td>' +
         '<td class="num">' + (row.status ? kit.esc(String(row.status))
           : '<span class="sub" title="' +
-            kit.esc('No HTTP answer: the push was ' +
-              'never made, or nothing answered it.') + '">&mdash;</span>') +
+            kit.esc(t.text('consoleSsfDeadLetters.row.noAnswerTip')) +
+            '">&mdash;</span>') +
         '</td>' +
         '<td>' + kit.esc(row.reason) + '</td>' +
-        '<td class="sub">' + (row.signed ? 'signed' : 'not signed') +
+        '<td class="sub">' + (row.signed
+          ? t.html('consoleSsfDeadLetters.row.signed')
+          : t.html('consoleSsfDeadLetters.row.notSigned')) +
         '<div><code>' + kit.esc(row.jti) + '</code></div></td>' +
         '</tr>';
     }).join('');
@@ -542,9 +586,10 @@ class SsfDeadLettersPage {
    *
    * @param timeline - the buckets, peak, bucket length and window length
    * @param causes - the report's causes, in order
+   * @param t - the page's translator (#539)
    * @returns the chart as HTML wrapping an SVG
    */
-  static deadLetterTimeline(timeline, causes) {
+  static deadLetterTimeline(timeline, causes, t) {
     const W = 760;
     const H = 230;
     const left = 46;
@@ -579,8 +624,9 @@ class SsfDeadLettersPage {
                                                                  : 'middle');
       return '<text x="' + x.toFixed(1) + '" y="' + (baseline + 20) +
         '" text-anchor="' + anchor + '" font-size="11" fill="#666">' +
-        kit.esc(ago ? SsfDeadLettersPage.deadLetterSpan(ago) +
-          ' ago' : 'now') + '</text>';
+        kit.esc(ago ? t.text('consoleSsfDeadLetters.chart.ago',
+          { span: SsfDeadLettersPage.deadLetterSpan(ago) })
+          : t.text('consoleSsfDeadLetters.chart.now')) + '</text>';
     }).join('');
 
     const columns = timeline.buckets.map(function (bucket, i) {
@@ -592,10 +638,12 @@ class SsfDeadLettersPage {
       }).map(function (cause) {
         return cause.label + ' ' + bucket.counts[cause.id];
       }).join(', ');
-      const title = kit.whenText(from) + ' to ' + kit.whenText(until) + ': ' +
-        (bucket.total
-          ? bucket.total + ' dead-lettered (' + what + ')'
-          : 'nothing dead-lettered');
+      const title = bucket.total
+        ? t.text('consoleSsfDeadLetters.chart.column',
+                 { from: kit.whenText(from), until: kit.whenText(until),
+                   n: bucket.total, what: what })
+        : t.text('consoleSsfDeadLetters.chart.columnEmpty',
+                 { from: kit.whenText(from), until: kit.whenText(until) });
       return '<g><title>' + kit.esc(title) + '</title>' +
         '<rect x="' + x.toFixed(1) + '" y="' + top + '" width="' +
         band.toFixed(1) + '" height="' + plotH + '" fill="#fff" ' +
@@ -612,17 +660,15 @@ class SsfDeadLettersPage {
       ? ''
       : '<text x="' + (left + plotW / 2) + '" y="' + (top + plotH / 2) +
         '" text-anchor="middle" font-size="13" fill="#666">' +
-        'Nothing held was dead-lettered in this window.</text>';
+        t.html('consoleSsfDeadLetters.chart.empty') + '</text>';
 
     const label = timeline.peak
-      ? 'Dead letters held, by when they were dead-lettered, in ' +
-        SsfDeadLettersPage.deadLetterSpan(timeline.bucketS) +
-          ' columns over the last ' +
-        SsfDeadLettersPage.deadLetterSpan(timeline.windowS) +
-          '; the busiest column holds ' +
-        timeline.peak + '. The same numbers are in the table below.'
-      : 'No dead letter held was dead-lettered in the last ' +
-        SsfDeadLettersPage.deadLetterSpan(timeline.windowS) + '.';
+      ? t.text('consoleSsfDeadLetters.chart.label', {
+        bucket: SsfDeadLettersPage.deadLetterSpan(timeline.bucketS),
+        window: SsfDeadLettersPage.deadLetterSpan(timeline.windowS),
+        peak: timeline.peak })
+      : t.text('consoleSsfDeadLetters.chart.labelEmpty', {
+        window: SsfDeadLettersPage.deadLetterSpan(timeline.windowS) });
     return '<div class="chart"><svg xmlns="http://www.w3.org/2000/svg" ' +
       'viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' +
       kit.esc(label) +

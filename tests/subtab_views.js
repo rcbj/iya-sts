@@ -32,6 +32,9 @@ delete process.env.CONFIG_FILE;
 const applications = require('../common/applications');
 const personEditor = require('../ldap/person_editor');
 const WebKit = require('../admin-ui/web_kit');
+// A renderer given no translator draws node's default, which common/i18n.ts
+// installs (#539) — English.
+require('../common/i18n');
 
 const log = require('bunyan').createLogger({
   name: 'subtab_views',

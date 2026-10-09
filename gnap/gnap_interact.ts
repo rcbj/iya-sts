@@ -102,6 +102,12 @@ import gnapRights = require('./gnap_rights');
 // #432 phase 6: the step-up an approval needs, and approval by an absent
 // resource owner. A library.
 import gnapApproval = require('./gnap_approval');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539), and the realm prefix the language
+// chooser posts under.
+import realms = require('../common/realms');
+import PageLocale = require('../common/page_locale');
+
+type Translator = ReturnType<typeof PageLocale.forPage>;
 
 type Req = import('express').Request;
 type Res = import('express').Response;
@@ -183,15 +189,27 @@ class GnapInteract {
     deps.log.debug("Leaving GnapInteract.constructor().");
   }
 
+  // A page drawn in the reader's language (#539) passes its translator, and
+  // — where a GET redraws it — the path the language chooser returns to. One
+  // drawn without a translator is a refusal, which stays English as every
+  // error here does (`lang="en"`, no chooser).
   private sendPage(res: Res, status: number, title: string,
-                   inner: string): void {
+                   inner: string, t?: Translator, returnTo?: string): void {
     const { log, xmlEscape, authn } = this.deps;
     log.debug("Entering GnapInteract.sendPage().");
-    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    const html = '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') + '><head><meta ' +
                  'charset="utf-8"><title>' +
-      xmlEscape(title) + ' — GNAP authorization server</title><style>' +
+      (t ? xmlEscape(t.text('gnap.pageTitle', { title: title }))
+         : xmlEscape(title) + ' — GNAP authorization server') +
+      '</title><style>' +
                  authn.CARD_CSS + PAGE_CSS +
-      '</style></head><body><div class="card">' + inner +
+      '</style></head><body><div class="card">' +
+      // The chooser is a form of its own, above the page's own form.
+      (t && returnTo ? PageLocale.chooser(t, realms.currentPrefix(),
+                                          PageLocale.herePath(returnTo))
+                     : '') +
+      inner +
                  '</div></body></html>\n';
     res.status(status)
        .type('text/html')
@@ -345,39 +363,45 @@ class GnapInteract {
     const { log, authn, xmlEscape, websecurity } = this.deps;
     log.debug("Entering GnapInteract.codePage().");
     const session = authn.sessionOf(req);
-    this.sendPage(res, status, 'Enter your code',
-      '<h1>Enter the code</h1><p class="sub">The code your device or ' +
-      'application is showing ' +
-      'you.</p>' +
+    // THE LANGUAGE (#539): no client is known until the code is entered, so
+    // only the person, where signed in. The problem stays English.
+    const t = PageLocale.forPage({ username: session && session.user
+      ? String(session.user.username || '') : undefined });
+    this.sendPage(res, status, t.text('gnap.code.title'),
+      '<h1>' + t.html('gnap.code.heading') + '</h1><p class="sub">' +
+      t.html('gnap.code.sub') + '</p>' +
       (problem ? '<p class="err">' + xmlEscape(problem) + '</p>' : '') +
       '<form method="post" action="/gnap/code">' +
       websecurity.field(session ? session.id : '') +
       '<input class="code" name="code" autocomplete="one-time-code" ' +
       'autofocus ' +
       'required><div class="row"><button ' +
-      'type="submit">Continue</button></div></form><div ' +
-      'class="meta"><div>Spaces and dashes are ignored, and letters may be ' +
-      'typed in either case (RFC 9635 section 4.1.2).</div></div>');
+      'type="submit">' + t.html('gnap.code.continue') +
+      '</button></div></form><div ' +
+      'class="meta"><div>' + t.html('gnap.code.meta') + '</div></div>',
+      // Drawn by the GET, or by a refused POST, which the GET redraws.
+      t, realms.currentPrefix() + '/gnap/code');
     log.debug("Leaving GnapInteract.codePage().");
   }
 
   // -------------------------------------------------------------------------
   // THE APPROVAL PAGE.
   // -------------------------------------------------------------------------
-  private describeRight(right: any): string {
+  // In the page's language (#539); the dimension names and values are the
+  // request's own (RFC 9635 section 8), and stay as they are.
+  private describeRight(right: any, t: Translator): string {
     const { log, store, xmlEscape } = this.deps;
     log.debug("Entering GnapInteract.describeRight().");
     if (typeof right === 'string') {
       const registered: any = store.resourceByReference(right);
       log.debug("Leaving GnapInteract.describeRight().");
       return '<code>' + xmlEscape(right) + '</code><span>' + (registered
-        ? 'a resource set registered by <code>' +
-          xmlEscape(registered.rsIdentifier) + '</code>: ' +
-          xmlEscape(registered.access.map(function (one) {
+        ? t.html('gnap.right.registered', {
+          rs: registered.rsIdentifier,
+          access: registered.access.map(function (one) {
             return typeof one === 'string' ? one : one.type;
-          }).join(', '))
-        : 'an access reference this authorization server attaches no ' +
-          'further meaning to') +
+          }).join(', ') })
+        : t.html('gnap.right.reference')) +
         '</span>';
     }
     const parts = [];
@@ -392,7 +416,8 @@ class GnapInteract {
     }
     log.debug("Leaving GnapInteract.describeRight().");
     return '<code>' + xmlEscape(right.type) + '</code><span>' +
-      xmlEscape(parts.join('; ') || 'every action this API defines') +
+      (parts.length ? xmlEscape(parts.join('; '))
+                    : t.html('gnap.right.everyAction')) +
       '</span>';
   }
 
@@ -420,11 +445,13 @@ class GnapInteract {
 
   // The controls of one right's limits (`common/limits_form.ts`, shared with
   // the portal's absent-owner approvals).
-  private limitsControls(right: any, t: number, r: number): string {
+  // (The token's index is `ti`, not `t`, which is a page's translator by
+  // convention, #539.)
+  private limitsControls(right: any, ti: number, r: number): string {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering GnapInteract.limitsControls().");
     log.debug("Leaving GnapInteract.limitsControls().");
-    return LimitsForm.controls(right, t, r, xmlEscape);
+    return LimitsForm.controls(right, ti, r, xmlEscape);
   }
 
   // The ticked rights with the limits the person sent back: `{ ok: true,
@@ -478,6 +505,11 @@ class GnapInteract {
     const self = this;
     const { log, xmlEscape, websecurity } = this.deps;
     log.debug("Entering GnapInteract.approvalPage().");
+    // THE LANGUAGE (#539): the GNAP client the request came from, as an
+    // application, and the person deciding.
+    const t = PageLocale.forPage({
+      application: String(grant.client.identifier || ''),
+      username: String(session.user.username || '') });
     const display = grant.client.display || {};
     // ---------------------------------------------------------------------
     // WHAT THE CLIENT SAID ABOUT ITSELF IS SAID TO BE ITS OWN CLAIM (#432
@@ -495,20 +527,22 @@ class GnapInteract {
       /^data:image\//i.test(display.logoUri)
       ? '<img class="logo" alt="" src="' + xmlEscape(display.logoUri) + '">'
       : '';
-    const unverified = ' <span class="sub">(as it describes itself; this ' +
-      'service has not verified it)</span>';
+    const unverified = ' <span class="sub">' +
+      t.html('gnap.approve.unverified') + '</span>';
     let rows = '';
-    grant.request.tokens.forEach(function (token, t) {
+    // The token's index is `ti`: `t` is the translator (#539).
+    grant.request.tokens.forEach(function (token, ti) {
       rows += (grant.request.tokens.length > 1 || token.label
-        ? '<li><strong>Token ' + xmlEscape(token.label || String(t + 1)) +
+        ? '<li><strong>' + t.html('gnap.approve.token',
+                                  { label: token.label || String(ti + 1) }) +
           '</strong>' +
-          (token.bearer ? ' — a bearer token, usable by whoever holds it' :
+          (token.bearer ? ' ' + t.html('gnap.approve.bearer') :
            '') + '</li>' : '');
       token.access.forEach(function (right, r) {
         rows += '<li><label><input type="checkbox" name="right" value="t' +
-          t + 'r' + r +
-          '" checked><span>' + self.describeRight(right) +
-          '</span></label>' + self.limitsControls(right, t, r) + '</li>';
+          ti + 'r' + r +
+          '" checked><span>' + self.describeRight(right, t) +
+          '</span></label>' + self.limitsControls(right, ti, r) + '</li>';
       });
     });
     // WHAT THE ISSUANCE POLICY NARROWED BEFORE THIS PAGE WAS DRAWN (#432
@@ -529,34 +563,36 @@ class GnapInteract {
           if (off.length) {
             taken.push(dim + ' ' + off.join(', '));
           } else if (!was && now.length) {
-            taken.push(dim + ' limited to ' + now.join(', '));
+            taken.push(t.text('gnap.approve.limitedTo',
+                              { dimension: dim, values: now.join(', ') }));
           }
         });
         return '<li><code>' + xmlEscape(String(one.type || '')) +
-          '</code>: ' + xmlEscape(taken.join('; ') || 'narrowed') + '</li>';
+          '</code>: ' + xmlEscape(taken.join('; ') ||
+                                  t.text('gnap.approve.narrowed')) + '</li>';
       }).join('');
     const subjectAsked = grant.request.subject &&
       (grant.request.subject.subIdFormats.length ||
        grant.request.subject.assertionFormats.length);
     if (subjectAsked) {
       rows += '<li><label><input type="checkbox" name="subject" value="yes" ' +
-        'checked><span><strong>Who you are</strong><span>identifiers (' +
-        xmlEscape(grant.request.subject.subIdFormats.join(', ') || 'none') +
-        ') ' +
-            'and assertions (' +
-        xmlEscape(grant.request.subject.assertionFormats.join(', ') ||
-                  'none') +
-        ')</span></span></label></li>';
+        'checked><span><strong>' + t.html('gnap.approve.subject') +
+        '</strong><span>' + t.html('gnap.approve.subjectDetail', {
+          ids: grant.request.subject.subIdFormats.join(', ') ||
+               t.text('gnap.approve.none'),
+          assertions: grant.request.subject.assertionFormats.join(', ') ||
+                      t.text('gnap.approve.none') }) +
+        '</span></span></label></li>';
     }
     const finish = grant.interaction.finish;
-    const inner = logo + '<h1>Allow access?</h1>' +
-      '<p class="sub">Signed in as <code>' +
-      xmlEscape(session.user.username) +
-      '</code></p><p ' +
+    const inner = logo + '<h1>' + t.html('gnap.approve.heading') + '</h1>' +
+      '<p class="sub">' + t.html('gnap.approve.signedInAs',
+                                 { name: session.user.username }) +
+      '</p><p ' +
       'class="app"><strong>' +
       xmlEscape(display.name || grant.client.identifier) +
       '</strong>' + (declared.indexOf('name') >= 0 ? unverified : '') +
-      ' is asking for access on your behalf.' +
+      ' ' + t.html('gnap.approve.asking') +
       (display.uri ? '<br><a href="' + xmlEscape(display.uri) + '" ' +
           'rel="noreferrer">' +
         xmlEscape(display.uri) + '</a>' +
@@ -564,38 +600,38 @@ class GnapInteract {
       '<form method="post" action="/gnap/approve/' +
       xmlEscape(grant.interaction.approvalId) + '">' +
       websecurity.field(session.id) +
-      (narrowed ? '<p class="sub">This service\'s issuance policy ' +
-        'narrowed what the application asked for before you were asked; ' +
-        'it cannot be widened here:</p><ul class="rights">' + narrowed +
+      (narrowed ? '<p class="sub">' + t.html('gnap.approve.narrowedIntro') +
+        '</p><ul class="rights">' + narrowed +
         '</ul>' : '') +
-      '<ul class="rights">' + (rows || '<li>Nothing specific — this ' +
-        'request ' +
-        'asks only to be continued.</li>') + '</ul><div class="row"><button ' +
+      '<ul class="rights">' + (rows || '<li>' +
+        t.html('gnap.approve.nothing') + '</li>') +
+      '</ul><div class="row"><button ' +
       'type="submit" id="gnap-allow" name="action" ' +
-      'value="allow">Allow</button><button type="submit" id="gnap-deny" ' +
+      'value="allow">' + t.html('gnap.approve.allow') +
+      '</button><button type="submit" id="gnap-deny" ' +
       'name="action" value="deny" ' +
-      'class="secondary">Deny</button></div></form><div ' +
-      'class="meta"><div>Untick anything you do not want to allow; the ' +
-      'application receives only what stays ticked (RFC 9635 section ' +
-      '4).</div>' +
-      (finish ? '<div>Afterwards ' + (finish.method === 'redirect'
-        ? 'you are sent back to <code>' + xmlEscape(finish.uri) + '</code>.'
-        : 'the application is notified directly at <code>' +
-          xmlEscape(finish.uri) + '</code>.') + '</div>'
-        : '<div>Afterwards you can close this page and return to the ' +
-          'application.</div>') +
-      '<div>Client instance: <code>' + xmlEscape(grant.client.identifier) +
-      '</code> ' +
-          '· proof: <code>' +
-      xmlEscape(grant.client.proof) + '</code>' +
+      'class="secondary">' + t.html('gnap.approve.deny') +
+      '</button></div></form><div ' +
+      'class="meta"><div>' + t.html('gnap.approve.untick') + '</div>' +
+      (finish ? '<div>' + (finish.method === 'redirect'
+        ? t.html('gnap.approve.afterRedirect', { uri: finish.uri })
+        : t.html('gnap.approve.afterPush', { uri: finish.uri })) + '</div>'
+        : '<div>' + t.html('gnap.approve.afterClose') + '</div>') +
+      '<div>' + t.html('gnap.approve.client', {
+        id: grant.client.identifier, proof: grant.client.proof }) +
       (grant.client.classId ? ' · ' +
-          'class: <code>' +
-      xmlEscape(grant.client.classId) + '</code>' +
-        (grant.client.classIdDeclared ? ' (self-declared)' : '') : '') +
+        t.html('gnap.approve.class', { classId: grant.client.classId }) +
+        (grant.client.classIdDeclared
+          ? ' (' + t.html('gnap.approve.selfDeclared') + ')' : '') : '') +
       '</div>' +
-      '<div>Authorization server: <code>' + xmlEscape(grant.grantEndpoint) +
-      '</code></div></div>';
-    this.sendPage(res, 200, 'Allow access?', inner);
+      '<div>' + t.html('gnap.approve.server',
+                       { endpoint: grant.grantEndpoint }) +
+      '</div></div>';
+    // A GET draws it (and redraws it after a step-up), so the chooser comes
+    // back to the same approval.
+    this.sendPage(res, 200, t.text('gnap.approve.heading'), inner, t,
+                  realms.currentPrefix() + '/gnap/approve/' +
+                  grant.interaction.approvalId);
     log.debug("Leaving GnapInteract.approvalPage().");
   }
 
@@ -613,20 +649,22 @@ class GnapInteract {
     const approved = grant.decision && grant.decision.approved;
     const name = (grant.client.display &&
                   grant.client.display.name) || grant.client.identifier;
+    // THE LANGUAGE (#539), for the client's application. No chooser: the
+    // page answers a POST, and no GET draws it again.
+    const t = PageLocale.forPage({
+      application: String(grant.client.identifier || '') });
     log.debug("Leaving GnapInteract.afterDecision().");
-    return this.sendPage(res, 200, approved ? 'Approved' : 'Not approved',
-      '<h1>' + (approved ? 'You approved the request' : 'The request was ' +
-                                                        'not ' +
-                                                        'approved') +
+    return this.sendPage(res, 200, approved ? t.text('gnap.done.approvedTitle')
+                                            : t.text('gnap.done.deniedTitle'),
+      '<h1>' + (approved ? t.html('gnap.done.approved')
+                         : t.html('gnap.done.denied')) +
       '</h1><p ' +
       'class="sub">' + (finished.pushed === true
-        ? xmlEscape(name) + ' has been told.'
+        ? t.html('gnap.done.told', { name: name })
         : (finished.pushed === false
-          ? xmlEscape(name) + ' could not be told directly; it will find ' +
-                              'out when it next checks.'
-          : 'Return to ' + xmlEscape(name) + '; it will pick up the ' +
-            'answer.')) +
-      '</p>');
+          ? t.html('gnap.done.notTold', { name: name })
+          : t.html('gnap.done.returnTo', { name: name }))) +
+      '</p>', t);
   }
 
   // -------------------------------------------------------------------------
@@ -724,11 +762,14 @@ class GnapInteract {
               return self.afterDecision(res, grant,
                                         (out && out.finished) || {});
             }
-            return self.sendPage(res, 200, 'Sent for approval',
-              '<h1>Sent to the person it names</h1><p class="sub">This ' +
-              'request is for somebody else\'s account, so you cannot ' +
-              'approve it. It is waiting for them on their own portal; the ' +
-              'application finds out when they answer.</p>');
+            // In the reader's language (#539); no chooser, as after any
+            // decision: no GET draws this page again.
+            const t = PageLocale.forPage({
+              application: String(grant.client.identifier || ''),
+              username: String(session.user.username || '') });
+            return self.sendPage(res, 200, t.text('gnap.sent.title'),
+              '<h1>' + t.html('gnap.sent.heading') + '</h1><p class="sub">' +
+              t.html('gnap.sent.sub') + '</p>', t);
           });
       }).catch(function (e) {
         log.debug("Caught in GnapInteract.beforeApproval(): " +

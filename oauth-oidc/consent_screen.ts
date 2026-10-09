@@ -112,6 +112,9 @@ import LimitsForm = require('../common/limits_form');
 // RFC 9396: what an authorization_details row says, and the one-time Allow.
 // A library that registers nothing, so requiring it here moves no route.
 import authorizationDetails = require('./authorization_details');
+// The page's language (#539): the authorization request's `ui_locales`, the
+// person, the client's locale policy. A library that registers nothing.
+import PageLocale = require('../common/page_locale');
 
 // A loose JSON-shaped object: a pending record, a row, an answer.
 type Json = any;
@@ -347,6 +350,14 @@ class ConsentScreen {
       rawAuthorizationDetails: Array.isArray(info.rawAuthorizationDetails)
         ? info.rawAuthorizationDetails : [],
       protocol: String(info.protocol || 'OAuth 2.0 / OIDC'),
+      // OpenID Connect Core 1.0 section 3.1.2.1 (#539): the languages the
+      // relying party asked the consent screen to be drawn in. The caller
+      // passes them; where it did not, the request the person resumes has
+      // them on its query — `returnTo` is that request whole, unless it is a
+      // request object, whose `ui_locales` is inside the JWT and is only
+      // known to a caller that resolved it.
+      uiLocales: String(info.uiLocales ||
+                        ConsentScreen.uiLocalesOf(returnTo)),
       expires: Date.now() + this.consentTtlMs()
     };
     pending.set(record.id, record);
@@ -368,6 +379,17 @@ class ConsentScreen {
     log.debug("Leaving ConsentScreen.beginConsent(). " + record.id +
               " will return to " + returnTo + ".");
     return CONSENT_PATH + '?consent=' + encodeURIComponent(record.id);
+  }
+
+  // The `ui_locales` on a return path's query, or ''.
+  private static uiLocalesOf(returnTo: string): string {
+    helpers.log.debug("Entering ConsentScreen.uiLocalesOf().");
+    const at = returnTo.indexOf('?');
+    const out = at < 0 ? ''
+      : String(new URLSearchParams(returnTo.slice(at + 1))
+        .get('ui_locales') || '');
+    helpers.log.debug("Leaving ConsentScreen.uiLocalesOf().");
+    return out;
   }
 
   // The record a request names, or null. Expired ones are dropped on the way
@@ -459,7 +481,13 @@ class ConsentScreen {
   //     `meta` block, because this is a debugging tool and the redirect_uri is
   //     the thing somebody is usually here to check.
   // -------------------------------------------------------------------------
-  private consentPage(base: string, record: Json): string {
+  //
+  // IN THE PERSON'S LANGUAGE (#539): `t` is built by the caller from the
+  // authorization request's `ui_locales`, the person and the client. What
+  // the request carried (scope names, the client_id, a permission's own
+  // description, the parameters at the foot) is data and is drawn as it is.
+  private consentPage(base: string, record: Json,
+                      t: ReturnType<typeof PageLocale.forPage>): string {
     const { log, xmlEscape, authn, consent } = this.deps;
     log.debug("Entering ConsentScreen.consentPage(). " +
               record.scopes.length + " scope(s).");
@@ -467,28 +495,26 @@ class ConsentScreen {
       const permission = one.permission;
       return '<li><code>' + xmlEscape(one.scope) + '</code>' +
         (permission
-          ? '<span>' + xmlEscape(permission.description ||
-              ('the permission "' + permission.name + '"')) +
-            ' — exposed by <code>' + xmlEscape(permission.identifier) +
-            '</code>, ' +
-            'and the access token will be addressed to ' +
-            '<code>' + xmlEscape(permission.baseUri) +
-            '</code></span>'
-          : '<span>an ordinary scope: this service attaches no meaning to ' +
-            'it and will put it on the token\'s scope claim as it ' +
-            'stands</span>') +
+          ? '<span>' + t.html('consent.scope.permission', {
+              description: permission.description ||
+                t.text('consent.scope.permissionNamed',
+                       { name: permission.name }),
+              identifier: permission.identifier,
+              baseUri: permission.baseUri }) + '</span>'
+          : '<span>' + t.html('consent.scope.ordinary') + '</span>') +
         '</li>';
     }).join('');
     // RFC 9396 section 11.2's SHOULD: every detail is shown, member by member,
     // because the person is agreeing to THIS payment or THIS account access
     // and a type name alone says nothing about the amount.
     const detailRows = record.authorizationDetails.map(function (one) {
+      const where = { resource: one.resourceName || one.resource,
+                      audience: one.audience };
       return '<li class="detail"><code>' + xmlEscape(one.type) + '</code>' +
-        '<span>' + (one.description ? xmlEscape(one.description) + ' — '
-                                    : '') +
-        'understood by <code>' + xmlEscape(one.resourceName || one.resource) +
-        '</code>, and the access token will be addressed to <code>' +
-        xmlEscape(one.audience) + '</code></span>' +
+        '<span>' + (one.description
+          ? t.html('consent.detail.described',
+                   Object.assign({ description: one.description }, where))
+          : t.html('consent.detail.understood', where)) + '</span>' +
         (one.members.length
           ? '<dl>' + one.members.map(function (member) {
             return '<dt>' + xmlEscape(member.name) + '</dt><dd><code>' +
@@ -498,41 +524,42 @@ class ConsentScreen {
         '</li>';
     }).join('');
     const already = record.already.length
-      ? '<details><summary>' + record.already.length + ' scope(s) you have ' +
-        'already agreed to for this application</summary><ul ' +
+      ? '<details><summary>' + t.html('consent.already.summary',
+                                      { count: record.already.length }) +
+        '</summary><ul ' +
         'class="scopes">' +
         record.already.map(function (one) {
           return '<li><code>' + xmlEscape(one.scope) + '</code><span>' +
             (one.global
-              ? 'consented for everybody on this application\'s entry ' +
-                '(<code>oauthGlobalConsent</code>) — you were never asked'
-              : 'agreed by you' +
-                (one.at ? ' at ' + xmlEscape(one.at) : '')) +
+              ? t.html('consent.already.global')
+              : (one.at ? t.html('consent.already.byYouAt', { at: one.at })
+                        : t.html('consent.already.byYou'))) +
             '</span></li>';
         }).join('') + '</ul></details>'
       : '';
-    const page = '<!DOCTYPE html>\n<html lang="en"><head>' +
+    const page = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+      '><head>' +
       '<meta charset="utf-8">' +
-      '<title>Allow access? — mock authorization server</title><style>' +
+      '<title>' + xmlEscape(t.text('consent.title')) + '</title><style>' +
       authn.CARD_CSS + CONSENT_CSS + '</style></head><body>' +
       '<div class="card">' +
-      '<h1>Allow access?</h1>' +
-      '<p class="sub">Signed in as <code>' + xmlEscape(record.username) +
-      '</code> ' +
-          'at <code>' +
-      xmlEscape(base) + '</code></p>' +
-      '<p class="app"><strong>' + xmlEscape(record.clientName) +
-      '</strong> is ' +
-      'asking for access on your behalf.' +
+      // Drawn only by the GET, which the chooser's return redraws: the
+      // record is spent by the POST alone.
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + CONSENT_PATH +
+                            '?consent=' + encodeURIComponent(record.id))) +
+      '<h1>' + t.html('consent.heading') + '</h1>' +
+      '<p class="sub">' + t.html('consent.signedInAs',
+                                 { username: record.username, base: base }) +
+      '</p>' +
+      '<p class="app">' + t.html('consent.asking',
+                                 { client: record.clientName }) +
       (record.clientName === record.clientId ? ''
         : '<br><code>' + xmlEscape(record.clientId) + '</code>') + '</p>' +
       '<ul class="scopes">' + rows + detailRows + '</ul>' +
       (record.authorizationDetails.length
-        ? '<p class="app">This request carries <strong>' +
-          record.authorizationDetails.length + ' authorization detail' +
-          (record.authorizationDetails.length === 1 ? '' : 's') +
-          '</strong> (RFC 9396). You are asked about them every time: Allow ' +
-          'agrees to exactly what is listed, for this one request.</p>'
+        ? '<p class="app">' + t.html('consent.detailsNote',
+            { count: record.authorizationDetails.length }) + '</p>'
         : '') +
       already +
       '<form method="post" action="' + CONSENT_PATH + '">' +
@@ -540,19 +567,16 @@ class ConsentScreen {
       xmlEscape(record.id) +
       '">' + this.limitsBlock(record) + '<div ' +
       'class="row"><button type="submit" id="consent-allow" name="action" ' +
-      'value="allow">Allow</button><button type="submit" id="consent-deny" ' +
+      'value="allow">' + t.html('consent.allow') +
+      '</button><button type="submit" id="consent-deny" ' +
       'name="action" value="deny" ' +
-      'class="secondary">Deny</button></div></form><div ' +
-      'class="meta"><div>Allow writes one ' +
-      '<code>' + xmlEscape(consent.USER_ATTRIBUTE) + '</code> ' +
-      'value per scope onto your entry under <code>ou=users</code>, so you ' +
-      'are not asked again for these. Deny returns ' +
-      '<code>access_denied</code> to ' +
-      'the application and records nothing.</div><div>Nothing has been ' +
-      'issued yet. This screen is <code>oauth2.consentRequired</code>, which ' +
-      'is on by default; /admin/consent is where every answer given here ' +
-      'can be read and taken back.</div><div>Consenting for: ' +
-      '<code>' + xmlEscape(record.protocol) + '</code></div>' +
+      'class="secondary">' + t.html('consent.deny') +
+      '</button></div></form><div ' +
+      'class="meta"><div>' + t.html('consent.meta.allow',
+                                    { attribute: consent.USER_ATTRIBUTE }) +
+      '</div><div>' + t.html('consent.meta.nothingIssued') +
+      '</div><div>' + t.html('consent.meta.consentingFor',
+                             { protocol: record.protocol }) + '</div>' +
       record.details.map(function (d) {
         return '<div>' + xmlEscape(d.label) + ': <code>' +
           xmlEscape(d.value == null ? '' : d.value) + '</code>' +
@@ -714,7 +738,13 @@ class ConsentScreen {
               'the one failure at this door that would write something ' +
               'untrue into the directory.');
       }
-      self.sendConsentPage(res, self.consentPage(baseUrlOf(req), record));
+      // THE LANGUAGE (#539): the request's `ui_locales`, then the person
+      // answering, then the chooser, the browser and the client's policy.
+      const t = PageLocale.translatorFor(req, {
+        application: record.clientId,
+        uiLocales: String(record.uiLocales || ''),
+        username: record.username });
+      self.sendConsentPage(res, self.consentPage(baseUrlOf(req), record, t));
       log.debug("Leaving the consent screen. Showed " +
                 record.scopes.length + " scope(s) for " + record.id + ".");
     });

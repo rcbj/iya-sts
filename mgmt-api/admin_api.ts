@@ -131,6 +131,11 @@ import app = require('../common/app');
 // The error-code registry, a leaf. A refusal here is MARKED on the response for
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
+// THE CONSOLE'S LANGUAGE (#539 phase 5): the catalogs and the negotiation,
+// and the hosted surfaces' table for the console's own client id. Libraries.
+import i18n = require('../common/i18n');
+import PageLocale = require('../common/page_locale');
+import oidcRp = require('../common/oidc_rp');
 import lingeringClose = require('../common/lingering_close');
 // Whether a create can race another node's, and the sentence a refused one
 // carries (#46 section 3). A LIBRARY that registers nothing.
@@ -1241,6 +1246,61 @@ class AdminApi {
               '`allow*` door fields say which password doors a service ' +
               'account may use.',
         example: { rotationEnabled: false, allowBrowserSignIn: false }
+      },
+      // #527: the fourth kind.
+      passkey: {
+        save: 'Writes `cn=default,ou=passkeyPolicies` in this realm\'s ' +
+              'directory, REPLACING what is there; a realm with no entry of ' +
+              'its own follows the default realm\'s. `allowUsernameless` ' +
+              '(off by default) offers a passkey sign-in with no username. ' +
+              'While it is off, "Use a security key" asks the authenticator ' +
+              'for a discoverable credential (`residentKey: required`), as ' +
+              '"Create a passkey" always does; while it is on, it asks ' +
+              '`securityKeyResidentKey` (`discouraged`, `preferred` or ' +
+              '`required`, default `required`). `backupEligibility` ' +
+              '(`allow` by default) set to `disallow` refuses a synced ' +
+              '(backup-eligible) passkey at registration and at sign-in. ' +
+              '`enforcePinLength` (off) asks a key for its minimum PIN ' +
+              'length (CTAP 2.1 minPinLength) and holds it to ' +
+              '`minPinLength` (4 to 63); `pinLengthOnlyIfSupported` (off) ' +
+              'accepts a key that does not report. ' +
+              '`enforceAttestationAtSignIn` (off) holds every passkey ' +
+              'sign-in to the attestation rules in force. ' +
+              '`passkeyHints`, `securityKeyHints` and `signInHints` are ' +
+              'the WebAuthn hints each ceremony sends, in order, or `none`. ' +
+              '`enterpriseSerialAttribute` (empty) names the attribute of ' +
+              'a person\'s entry holding their security-key serials, which ' +
+              'a registration\'s trusted enterprise attestation must name. ' +
+              '`userDisplayName`, `rpNameExtras` and `credentialLabel` ' +
+              'are the names a passkey prompt and a new key show. ' +
+              '`aggregateDevices` (on) offers a person\'s passkeys as one ' +
+              'sign-in choice; off, one per passkey.',
+        example: { allowUsernameless: false,
+                   securityKeyResidentKey: 'required',
+                   backupEligibility: 'allow',
+                   enforcePinLength: false, minPinLength: 4,
+                   pinLengthOnlyIfSupported: false,
+                   enforceAttestationAtSignIn: false,
+                   passkeyHints: 'client-device,hybrid',
+                   securityKeyHints: 'security-key', signInHints: 'none',
+                   enterpriseSerialAttribute: '',
+                   userDisplayName: 'displayName, givenName sn',
+                   rpNameExtras: 'none', credentialLabel: '',
+                   aggregateDevices: true }
+      },
+      // #539: the fifth kind, with named profiles chosen by application.
+      locale: {
+        save: 'Writes `cn=<profile>,ou=localePolicies` in this realm\'s ' +
+              'directory, REPLACING what is there; a realm with no ' +
+              '`default` of its own follows the default realm\'s, and named ' +
+              'profiles are the realm\'s own. `defaultLocale` (`en`) is a ' +
+              'BCP 47 language tag: the language a page falls back to, and ' +
+              'mail to a person who names none is written in. ' +
+              '`populatePreferredLanguage` (on) gives a person created ' +
+              'without a `preferredLanguage` that tag. A named profile ' +
+              'applies to the applications in `selectApplications`, and an ' +
+              'application is on one named profile at most.',
+        example: { defaultLocale: 'fr-CA', populatePreferredLanguage: true }
       }
     };
     const cap = function (text) {
@@ -1256,13 +1316,53 @@ class AdminApi {
               '`, REPLACING what is there.',
         example: {}
       };
-      const properties = {
-        profile: { type: 'string', enum: [module.DEFAULT_PROFILE],
-                   description: 'Which profile. Only `default` exists.' },
+      // A KIND WITH NAMED PROFILES (#535, the passkey policy) takes any
+      // profile name and the selectors; the others have `default` only.
+      const named = Array.isArray(module.SELECTORS);
+      const profileSchema = named
+        ? { type: 'string', pattern: '^(default|[a-z0-9][a-z0-9-]{0,63})$',
+            description: 'Which profile: `default`, or a named profile ' +
+                         '(lower-case letters, digits and hyphens), which ' +
+                         'is created by its first save.' }
+        : { type: 'string', enum: [module.DEFAULT_PROFILE],
+            description: 'Which profile. Only `default` exists.' };
+      const properties: Record<string, any> = {
+        profile: profileSchema,
         description: { type: 'string',
                        description: 'What the profile is for, for the next ' +
                                     'person. Optional.' }
       };
+      // Each selector the kind declares, and no other (#539: the locale
+      // policy selects by application alone).
+      const selects = function (key: string): boolean {
+        log.debug("Entering selects().");
+        log.debug("Leaving selects().");
+        return named && module.SELECTORS.some(function (one: any) {
+          return one.key === key;
+        });
+      };
+      if (selects('selectApplications')) {
+        properties.selectApplications = {
+          oneOf: [{ type: 'array', items: { type: 'string' } },
+                  { type: 'string' }],
+          description: 'A named profile only: the applications it applies ' +
+                       'to (identifier or client_id), a list or comma-' +
+                       'separated.' };
+      }
+      if (selects('selectGroups')) {
+        properties.selectGroups = {
+          oneOf: [{ type: 'array', items: { type: 'string' } },
+                  { type: 'string' }],
+          description: 'A named profile only: the groups (cn or DN) whose ' +
+                       'members it applies to.' };
+      }
+      if (selects('precedence')) {
+        properties.precedence = {
+          oneOf: [{ type: 'integer', minimum: 1, maximum: 1000 },
+                  { type: 'string' }],
+          description: 'A named profile only: the lowest matching ' +
+                       'precedence wins. Default 100.' };
+      }
       module.FIELDS.forEach(function (field) {
         properties[field.key] = field.type === 'bool'
           ? { oneOf: [{ type: 'boolean' }, { type: 'string' }],
@@ -1272,6 +1372,21 @@ class AdminApi {
           : field.type === 'enum'
             ? { type: 'string', enum: field.values,
                 description: field.what + ' Default `' + field.dflt + '`.' }
+          : field.type === 'attributes' || field.type === 'text'
+            ? { type: 'string',
+                description: field.what + ' Default empty.' }
+          : field.type === 'attribute'
+            ? { type: 'string',
+                description: field.what + ' A directory attribute name, or ' +
+                             'empty for none. Default empty.' }
+          : field.type === 'locale'
+            ? { type: 'string',
+                description: field.what + ' Default `' + field.dflt + '`.' }
+          : field.type === 'list'
+            ? { type: 'string',
+                description: field.what + ' An ordered, comma-separated ' +
+                             'list of ' + (field.values || []).join(', ') +
+                             ', or `none`. Default `' + field.dflt + '`.' }
             : { oneOf: [{ type: 'integer', minimum: field.min,
                           maximum: field.max },
                         { type: 'string' }],
@@ -1314,8 +1429,13 @@ class AdminApi {
         requestBody: {
           type: 'object',
           properties: {
-            profile: { type: 'string', enum: [module.DEFAULT_PROFILE],
-                       description: 'Which profile. Only `default` exists.' }
+            profile: Array.isArray(module.SELECTORS)
+              ? { type: 'string',
+                  pattern: '^(default|[a-z0-9][a-z0-9-]{0,63})$',
+                  description: 'Which profile: `default` goes back to ' +
+                               'inheriting; a named one is removed.' }
+              : { type: 'string', enum: [module.DEFAULT_PROFILE],
+                  description: 'Which profile. Only `default` exists.' }
           },
           examples: [{ profile: module.DEFAULT_PROFILE }],
           additionalProperties: false
@@ -2043,12 +2163,11 @@ class AdminApi {
       { path: '/wstrust', console: '/admin/wstrust', tag: 'WS-Trust',
         operationId: 'getWsTrustSettings',
         summary: 'The security token service\'s own settings',
-        description: 'The `wstrust.*` settings: who a WS-Trust JWT says ' +
-                     'issued it, the token lifetime and its ceiling, and ' +
-                     'the JWT signing algorithm. `wstrust.issuer` is a ' +
-                     'different setting from `saml.issuer`, which is the ' +
-                     'Issuer INSIDE an assertion; they share a default and ' +
-                     'were one setting until they had to differ.\n\n' +
+        description: 'The `wstrust.*` settings: the token lifetime and its ' +
+                     'ceiling, and the JWT signing algorithm. Who a token ' +
+                     'says issued it is not a setting (#523): it is the ' +
+                     'realm\'s OAuth issuer, a JWT\'s `iss` and an ' +
+                     'assertion\'s Issuer alike.\n\n' +
                      'WS-Trust here issues a JWT when the request\'s ' +
                      'TokenType is `urn:ietf:params:oauth:token-type:jwt` ' +
                      'and a SAML 2.0 assertion for any other TokenType, ' +
@@ -2058,12 +2177,12 @@ class AdminApi {
       { path: '/wsfed', console: '/admin/wsfed', tag: 'WS-Federation',
         operationId: 'getWsFedSettings',
         summary: 'The passive requestor profile\'s own setting',
-        description: 'One setting — the entity ID this service names itself ' +
-                     'by in the WS-Federation metadata and in a sign-in ' +
-                     'response.\n\nThe assertion it carries is a SAML 1.1 ' +
-                     'one, so its Issuer is `saml.issuer` (on `GET /saml2` ' +
-                     'and `GET /saml11`) and its contents are `GET ' +
-                     '/saml-attributes`. A `wauth` the session cannot meet ' +
+        description: 'One setting — how long the mock relying party keeps ' +
+                     'a wctx. The entity ID this service names itself by ' +
+                     'in the metadata and a sign-in response is the ' +
+                     'realm\'s OAuth issuer, not a setting (#523).\n\nThe ' +
+                     'assertion it carries is a SAML 1.1 one, whose ' +
+                     'contents are `GET /saml-attributes`. A `wauth` the session cannot meet ' +
                      'is a step-up through the sign-in screen, and ' +
                      '`wreqptr` is never dereferenced; neither is a ' +
                      'setting, and the page says so rather than implying a ' +
@@ -5458,8 +5577,46 @@ class AdminApi {
           // its own, so who is signed in, and what they may see, is what
           // this API decided for the caller (`meJson()`).
           const gate = self.consoleGateOf(self.meJson(req, res));
-          self.sendJson(res, 200, admin.shellJson(req, gate, gate));
+          // AND THE LANGUAGE IT IS DRAWN IN (#539 phase 5): the negotiation
+          // for this administrator and the console's own client, and the
+          // console's catalogs along its chain, for the browser's translator.
+          self.sendJson(res, 200, Object.assign(
+            admin.shellJson(req, gate, gate),
+            { locale: self.consoleLocale(req, res) }));
           log.debug("Leaving the management API console shell endpoint.");
+        } },
+
+      // THE CONSOLE'S LANGUAGE CHOOSER (#539 phase 5): the signed-in
+      // administrator's own preferredLanguage, written through the person
+      // editor as the portal's and the sign-in screen's choosers write it,
+      // and the console's catalogs in the new language answered so the page
+      // is drawn again without a second request. An empty `lang` removes the
+      // preference and follows the browser. It needs the console role
+      // alone (the gate's frame list): it changes nothing but the caller's
+      // own entry. A refused tag is English, as every refusal is.
+      { method: 'POST', path: BASE + '/console/language', kind: 'console',
+        tag: 'Service',
+        operationId: 'setConsoleLanguage',
+        summary: 'Set the language the console is drawn in, for yourself',
+        description: 'Writes the signed-in person\'s own ' +
+                     '`preferredLanguage` (RFC 2798), or removes it when ' +
+                     '`lang` is empty, and answers the console\'s catalogs ' +
+                     'in the language now in force. A tag no catalog ' +
+                     'answers is refused (400, STS-I18N-0008).',
+        mirrors: 'GET /admin',
+        requestBody: {
+          type: 'object',
+          properties: {
+            lang: { type: 'string', description: 'A BCP 47 tag a catalog ' +
+                    'answers, such as `fr-CA`, or empty to follow the ' +
+                    'browser.' }
+          }
+        },
+        responseDescription: 'The console\'s language and catalogs.',
+        handler: function (req, res) {
+          log.debug("Entering the console language endpoint.");
+          self.consoleSetLanguage(req, res);
+          log.debug("Leaving the console language endpoint.");
         } },
 
       { method: 'GET', path: BASE + '/status', tag: 'Service',
@@ -9713,7 +9870,7 @@ class AdminApi {
               required: ['id'],
               examples: [{ id: 'acme', name: 'Acme Corporation',
                            domain: 'acme.example.com',
-                           overrides: { 'saml2.entityId': 'urn:acme:idp' } }],
+                           overrides: { 'saml.organizationName': 'Acme' } }],
               additionalProperties: false
             },
             responseDescription: 'The realm id, in `realm`.' },
@@ -9761,8 +9918,8 @@ class AdminApi {
               properties: { id: { type: 'string' }, key: { type: 'string' },
                             value: {} },
               required: ['id', 'key', 'value'],
-              examples: [{ id: 'acme', key: 'saml2.entityId',
-                           value: 'urn:acme:idp' }],
+              examples: [{ id: 'acme', key: 'saml.organizationName',
+                           value: 'Acme' }],
               additionalProperties: false
             },
             responseDescription:
@@ -9782,7 +9939,7 @@ class AdminApi {
               type: 'object',
               properties: { id: { type: 'string' }, key: { type: 'string' } },
               required: ['id', 'key'],
-              examples: [{ id: 'acme', key: 'saml2.entityId' }],
+              examples: [{ id: 'acme', key: 'saml.organizationName' }],
               additionalProperties: false
             },
             responseDescription:
@@ -9910,7 +10067,7 @@ class AdminApi {
                                       'is accepted where the type takes one.' }
               },
               required: ['key', 'value'],
-              examples: [{ key: 'saml.issuer', value: 'urn:example:idp' }],
+              examples: [{ key: 'saml.organizationName', value: 'Example' }],
               additionalProperties: false
             },
             responseDescription:
@@ -9958,7 +10115,7 @@ class AdminApi {
               type: 'object',
               properties: { key: { type: 'string' } },
               required: ['key'],
-              examples: [{ key: 'saml.issuer' }],
+              examples: [{ key: 'saml.organizationName' }],
               additionalProperties: false
             },
             responseDescription:
@@ -13238,6 +13395,63 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: '`inherited: true`.' },
+
+          // THE SCOPE CLAIMS TAB (2026-10-09): the claims a resource
+          // server's own permissions carry on access tokens addressed to it.
+          { action: 'set-permission-claims',
+            operationId: 'setApplicationPermissionClaims',
+            summary: 'Map claims to one of a resource server\'s own scopes',
+            description: 'Writes the directory attributes, from the claim ' +
+                         'catalogue `GET /admin-api/claims` lists, that an ' +
+                         'access token addressed to this application ' +
+                         'carries when `permission` — one of the ' +
+                         'permissions it exposes (`oauthPermission`) — was ' +
+                         'GRANTED. Granting the permission is the grant of ' +
+                         'those claims, a standard OpenID Connect claim ' +
+                         'included. They join the resource server\'s ' +
+                         'declared claims and combine with the client\'s ' +
+                         'as `oauthAccessTokenClaimsCombine` says; on a ' +
+                         'token for several resource servers only what ' +
+                         'every one wants goes in. An empty `attributes` ' +
+                         'maps none. Refused (`STS-REG-0344`) for a ' +
+                         'permission it does not expose, an attribute the ' +
+                         'catalogue does not hold, or an application not ' +
+                         'declared for OAuth 2.0 or OpenID Connect.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                permission: { type: 'string' },
+                attributes: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['application', 'permission', 'attributes'],
+              examples: [{ application: 'hr-api', permission: 'hr.read',
+                           attributes: ['departmentNumber', 'employeeNumber',
+                                        'mail'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The permission\'s attributes now held, ' +
+                                 'in `attributes`, and the whole map, in ' +
+                                 '`mappings`.' },
+          { action: 'clear-permission-claims',
+            operationId: 'clearApplicationPermissionClaims',
+            summary: 'Take the claims off one of a resource server\'s ' +
+                     'own scopes',
+            description: 'Removes the mapping of one permission, so ' +
+                         'granting it adds no claim to an access token.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                permission: { type: 'string' }
+              },
+              required: ['application', 'permission'],
+              examples: [{ application: 'hr-api', permission: 'hr.read' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The whole map left, in `mappings`.' },
 
           // THE ACCESS TYPES TAB (#432 phase 4): one entry of the access-type
           // catalogue RFC 9396 and GNAP share.
@@ -22693,6 +22907,85 @@ class AdminApi {
    * @returns the caller, the authority, the scopes and roles, `read` and
    *   `write`, the roster's state and the console pages the caller may reach
    */
+  // THE CONSOLE'S LANGUAGE (#539 phase 5), for the signed-in person and the
+  // console's own client id.
+  /**
+   * Answers the console's `locale` member: the negotiation, the catalogs
+   * along its chain and the offered locales.
+   *
+   * @param req - the request
+   * @param res - the response, whose `locals.apiCaller` names the caller
+   * @returns the console's language data
+   */
+  consoleLocale(req, res) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.consoleLocale().");
+    const caller = (res && res.locals && res.locals.apiCaller) || null;
+    const out = PageLocale.consoleData(req, {
+      application: String(oidcRp.SURFACES.admin.clientId),
+      username: caller && caller.kind === 'person' ? String(caller.name) : ''
+    });
+    log.debug("Leaving AdminApi.consoleLocale(). " + out.negotiated.locale);
+    return out;
+  }
+
+  /**
+   * Handles `POST /admin-api/console/language`: writes or removes the
+   * caller's own preferredLanguage and answers the console's language data.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns nothing
+   */
+  consoleSetLanguage(req, res) {
+    const { log, parseBody } = this.deps;
+    log.debug("Entering AdminApi.consoleSetLanguage().");
+    const caller = (res && res.locals && res.locals.apiCaller) || null;
+    const asked = String((parseBody(req) || {}).lang || '').trim();
+    const tag = asked ? i18n.canonical(asked) : '';
+    if (asked && (!tag || !i18n.answers(tag))) {
+      errorCodes.mark(res, 'STS-I18N-0008');
+      this.sendJson(res, 400, { ok: false, errors: ['"' +
+        asked.slice(0, 64) + '" is not a language this service has a ' +
+        'catalog for.'] });
+      log.debug("Leaving AdminApi.consoleSetLanguage(). Not offered.");
+      return;
+    }
+    if (!caller || caller.kind !== 'person') {
+      errorCodes.mark(res, 'STS-I18N-0010');
+      this.sendJson(res, 400, { ok: false, errors: ['Only a person signed ' +
+        'in to the console has a language of their own to set.'] });
+      log.debug("Leaving AdminApi.consoleSetLanguage(). Not a person.");
+      return;
+    }
+    const who = String(caller.name);
+    const editor = require('../ldap/person_editor');
+    const current = String(require('../common/locale_policy')
+      .preferredLanguageOf(who) || '');
+    const written = tag
+      ? editor.update(who, { attribute: 'preferredLanguage', mode: 'set',
+                             value: tag },
+                      { actor: who, via: 'the admin console' })
+      : (current
+        ? editor.update(who, { attribute: 'preferredLanguage',
+                               mode: 'remove', value: current },
+                        { actor: who, via: 'the admin console' })
+        : { ok: true });
+    if (!written || !written.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(written) || 'STS-I18N-0009');
+      this.sendJson(res, 400, { ok: false,
+        errors: (written && written.errors) ||
+                ['The language could not be written.'] });
+      log.debug("Leaving AdminApi.consoleSetLanguage(). Refused.");
+      return;
+    }
+    if (tag) {
+      res.append('Set-Cookie', PageLocale.cookieLine(tag));
+    }
+    this.sendJson(res, 200, { ok: true, locale: this.consoleLocale(req, res) });
+    log.debug("Leaving AdminApi.consoleSetLanguage(). " + (tag || 'removed'));
+  }
+
   meJson(req, res) {
     const { log, config, realms, mode, adminScope } = this.deps;
     log.debug("Entering AdminApi.meJson().");
@@ -23251,7 +23544,10 @@ class AdminApi {
         // helper. `/me` is either kind's: who-am-I is the console's first
         // question and an integrator's.
         const path = String(req.path || '').replace(/\/+$/, '');
-        const frameOnly = path === '/console' || path === '/console/operations';
+        // `/console/language` (#539) is the caller's own preferredLanguage,
+        // and shows no realm data: the frame's terms.
+        const frameOnly = path === '/console' ||
+          path === '/console/operations' || path === '/console/language';
         const requiredRoles = mdmFeed ? ['DEVICE_COMPLIANCE']
           : (consoleOp ? ['ADMIN_CONSOLE']
             : (path === '/me' ? ['ADMIN_READ', 'ADMIN_CONSOLE']

@@ -136,6 +136,9 @@ import audit = require('./audit');
 // The registry of failure codes, a LEAF. A refused change carries its code on
 // the audit row and, NON-ENUMERABLY, on the result a caller serialises.
 import errorCodes = require('./error_codes');
+// How an application's selection combines with the realm's (#395). A
+// library that requires only helpers.js.
+import scopeClaims = require('./scope_claims');
 import InstanceSlot = require('./instance_slot');
 
 const { log } = helpers;
@@ -304,6 +307,10 @@ const APP_SELECTION_ATTRIBUTES: Record<string, string> = {
   saml11: 'saml11ClaimAttributes'
 };
 
+// A resource server's own scopes mapped to catalogue attributes — see
+// permissionClaimsProblem() below.
+const PERMISSION_CLAIMS_ATTRIBUTE = 'oauthPermissionClaims';
+
 // setId -> list of lower-cased attribute names (see below for why a list).
 // Empty on a fresh start, in every one of them; see the header for why that is
 // the only defensible default. This comment used to say it was held in memory
@@ -360,6 +367,11 @@ class ClaimAttributes {
    * The application attribute holding its own selection, per set (#495).
    */
   static readonly APP_SELECTION_ATTRIBUTES = APP_SELECTION_ATTRIBUTES;
+  /**
+   * The resource-server attribute mapping its permissions to catalogue
+   * attributes.
+   */
+  static readonly PERMISSION_CLAIMS_ATTRIBUTE = PERMISSION_CLAIMS_ATTRIBUTE;
 
   /**
    * Builds the selection service.
@@ -566,8 +578,10 @@ class ClaimAttributes {
   }
 
   /**
-   * Returns the catalogue rows in force for a set: an application's own
-   * selection when it holds one, else the realm's.
+   * Returns the catalogue rows in force for a set: the realm's selection and
+   * an application's own, combined as the application's mode for the set
+   * says (#395) — unset, its own replaces the realm's (#495). An application
+   * holding no selection gets the realm's whatever its mode.
    *
    * @param setId - the claim set id
    * @param application - the application's view, or null for the realm's
@@ -582,11 +596,161 @@ class ClaimAttributes {
       log.debug("Leaving ClaimAttributes.effectiveRows(). The realm's.");
       return this.selectedRows(setId);
     }
-    const keys = own.map(function (name) { return name.toLowerCase(); });
-    log.debug("Leaving ClaimAttributes.effectiveRows(). The application's.");
+    const mode = scopeClaims.realmModeOf(setId, application) ||
+      'application';
+    const keys = scopeClaims.combineNames(
+      this.selectedRows(setId).map(function (row) {
+        return row.ldap.toLowerCase();
+      }),
+      own.map(function (name) { return name.toLowerCase(); }), mode);
+    log.debug("Leaving ClaimAttributes.effectiveRows(). " + mode + ".");
     return CATALOGUE.filter(function (row) {
       return keys.indexOf(row.ldap.toLowerCase()) >= 0;
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // CLAIMS MAPPED TO A RESOURCE SERVER'S OWN SCOPES (2026-10-09, after #395).
+  // A resource server maps each permission it exposes (`oauthPermission`) to
+  // catalogue attributes, one JSON object on its entry:
+  // `{"<permission name>": ["<ldap name>", ...]}`. An access token addressed
+  // to it on which that permission was GRANTED carries those attributes'
+  // claims (`oauth2.ts`'s resourceServerClaims()). The names are the
+  // catalogue's, as an application's selection's are (#495), so one
+  // vocabulary and one resolver serve both.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Checks a permission-claims value at the write: a JSON object whose keys
+   * are permissions the application exposes and whose values are lists of
+   * catalogue attribute names.
+   *
+   * @param value - the JSON text ('' clears it and is always acceptable)
+   * @param exposed - the names of the permissions the application exposes
+   * @returns '' when acceptable, the refusal sentence otherwise
+   */
+  permissionClaimsProblem(value: unknown, exposed: string[]): string {
+    const { log } = this.deps;
+    log.debug("Entering ClaimAttributes.permissionClaimsProblem().");
+    const text = String(value == null ? '' : value).trim();
+    if (!text) {
+      log.debug("Leaving ClaimAttributes.permissionClaimsProblem(). Empty.");
+      return '';
+    }
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in ClaimAttributes.permissionClaimsProblem(): " +
+                ((e && e.message) || e));
+      parsed = null;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      log.debug("Leaving ClaimAttributes.permissionClaimsProblem(). Not " +
+                "an object.");
+      return PERMISSION_CLAIMS_ATTRIBUTE + ' holds a JSON object from a ' +
+        'permission name to a list of attribute names.';
+    }
+    const self = this;
+    const problems: string[] = [];
+    Object.keys(parsed).forEach(function (name) {
+      if (exposed.indexOf(name) < 0) {
+        problems.push('"' + name.slice(0, 80) + '" is not a permission ' +
+          'this application exposes (oauthPermission). Define it on the ' +
+          'Permissions tab first.');
+        return;
+      }
+      if (!Array.isArray(parsed[name])) {
+        problems.push('The claims of "' + name.slice(0, 80) + '" are not ' +
+                      'a list of attribute names.');
+        return;
+      }
+      const checked = self.checkNames(parsed[name]);
+      if (!checked.ok) {
+        problems.push.apply(problems, checked.errors);
+      }
+    });
+    log.debug("Leaving ClaimAttributes.permissionClaimsProblem(). " +
+              problems.length + " problem(s).");
+    return problems.join(' ');
+  }
+
+  /**
+   * Returns a resource server's permission-to-attributes map, keeping only
+   * the permissions it still exposes and the names the catalogue holds. A
+   * value that does not parse is ignored with a warning, never costing an
+   * issuance.
+   *
+   * @param application - the application's view, or null
+   * @param exposed - the names of the permissions it exposes
+   * @returns the map, canonically spelled; `{}` when it holds none
+   */
+  permissionClaimsOf(application: any,
+                     exposed: string[]): Record<string, string[]> {
+    const { log } = this.deps;
+    log.debug("Entering ClaimAttributes.permissionClaimsOf().");
+    const raw = application && application.fields
+      ? [].concat(application.fields[PERMISSION_CLAIMS_ATTRIBUTE] || [])[0]
+      : '';
+    const out: Record<string, string[]> = {};
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+      log.debug("Leaving ClaimAttributes.permissionClaimsOf(). None.");
+      return out;
+    }
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(String(raw));
+    } catch (e) {
+      log.debug("Caught in ClaimAttributes.permissionClaimsOf(): " +
+                ((e && e.message) || e));
+      parsed = null;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      log.warn(errorCodes.tag('STS-REG-0343') + 'admin: the application "' +
+               application.identifier + '" carries ' +
+               PERMISSION_CLAIMS_ATTRIBUTE + ' that is not a JSON object; ' +
+               'its permissions map no claim.');
+      log.debug("Leaving ClaimAttributes.permissionClaimsOf(). Refused.");
+      return out;
+    }
+    const self = this;
+    Object.keys(parsed).forEach(function (name) {
+      if (exposed.indexOf(name) < 0 || !Array.isArray(parsed[name])) {
+        return;
+      }
+      out[name] = self.checkNames(parsed[name]).names;
+    });
+    log.debug("Leaving ClaimAttributes.permissionClaimsOf(). " +
+              Object.keys(out).length + " permission(s).");
+    return out;
+  }
+
+  /**
+   * Resolves catalogue attributes for one person, under the catalogue's
+   * claim names.
+   *
+   * @param names - the catalogue attribute names
+   * @param username - the person
+   * @returns the claims, the per-claim report and whether an entry was found
+   */
+  claimsForAttributes(names: string[], username: unknown): any {
+    const { log, vcClaims } = this.deps;
+    log.debug("Entering ClaimAttributes.claimsForAttributes(). " +
+              names.length + " name(s).");
+    const keys = names.map(function (name) {
+      return String(name).toLowerCase();
+    });
+    const rows = CATALOGUE.filter(function (row) {
+      return keys.indexOf(row.ldap.toLowerCase()) >= 0;
+    });
+    if (!rows.length) {
+      log.debug("Leaving ClaimAttributes.claimsForAttributes(). None.");
+      return { claims: {}, report: [], entryFound: false };
+    }
+    const built = vcClaims.subjectClaimsFor(username, {}, rows);
+    log.debug("Leaving ClaimAttributes.claimsForAttributes(). " +
+              built.report.length + " claim(s).");
+    return built;
   }
 
   // Every name in the catalogue, for the "select all" button and for the
@@ -1433,6 +1597,10 @@ export = {
   SET_IDS: ClaimAttributes.SET_IDS,
   APP_SELECTION_ATTRIBUTES: ClaimAttributes.APP_SELECTION_ATTRIBUTES,
   checkNames: slot.forward('checkNames'),
+  PERMISSION_CLAIMS_ATTRIBUTE: ClaimAttributes.PERMISSION_CLAIMS_ATTRIBUTE,
+  permissionClaimsProblem: slot.forward('permissionClaimsProblem'),
+  permissionClaimsOf: slot.forward('permissionClaimsOf'),
+  claimsForAttributes: slot.forward('claimsForAttributes'),
   applicationSelection: slot.forward('applicationSelection'),
   effectiveRows: slot.forward('effectiveRows'),
   selectedRows: slot.forward('selectedRows'),

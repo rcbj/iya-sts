@@ -2848,7 +2848,11 @@ function recordAuthentication(detail) {
         // The attributes inside it are ALREADY MAPPED to this directory's own
         // names — federation_map.js owns that vocabulary — so nothing here or
         // in ldap_server.js has to know what a `urn:oid:` name is.
-        federation: info.federation || null
+        federation: info.federation || null,
+        // THE APPLICATION THE SIGN-IN WAS FOR (#539): an OAuth client_id or a
+        // relationship's application, where the door named one. A person
+        // this sign-in creates is given the locale policy's language for it.
+        application: String(info.application || '')
       });
     } catch (e) {
       log.error(errorCodes.tag('STS-REG-0039') +
@@ -4102,8 +4106,9 @@ function claimApplicationOf(id, context) {
 }
 
 /**
- * Returns the claim rows in force for an issuance: the realm's set, with the
- * application's own rows added and winning by name.
+ * Returns the claim rows in force for an issuance: the realm's set and the
+ * application's own rows, combined as the application's mode for the set
+ * says (#395) — unset, its rows are added and win by name.
  *
  * @param id - the claim set id
  * @param context - the issuance's context: `client_id` for the JSON sets,
@@ -4119,12 +4124,33 @@ function effectiveClaimSet(id, context) {
     log.debug("Leaving effectiveClaimSet(). The realm's.");
     return realmRows;
   }
-  const ownNames = own.map(function (row) { return row.name; });
+  // HOW THE TWO ARE COMBINED (#395): the application's own choice for this
+  // set, `scope_claims.ts`'s four modes over the names, the application's
+  // row winning wherever both hold one. Unset is `union`, which is what
+  // this function did before the choice existed.
+  // REQUIRED HERE, LAZILY: this module is in the parent project's Kerberos
+  // COPY closure (`kerberos/CLAUDE.md`) and the KDC never reaches this line,
+  // so a load-time require would owe a COPY line for nothing.
+  const scopeClaims = require('./scope_claims');
+  const mode = scopeClaims.realmModeOf(id, applicationForClaims(name)) ||
+    'union';
+  if (mode === 'realm') {
+    log.debug("Leaving effectiveClaimSet(). The realm's, as chosen.");
+    return realmRows;
+  }
+  const ownByName = {};
+  own.forEach(function (row) { ownByName[row.name] = row; });
+  const names = scopeClaims.combineNames(
+    realmRows.map(function (row) { return row.name; }),
+    own.map(function (row) { return row.name; }), mode);
   const merged = realmRows.filter(function (row) {
-    return ownNames.indexOf(row.name) < 0;
-  }).concat(own);
-  log.debug("Leaving effectiveClaimSet(). " + own.length + " of the " +
-            "application's over " + realmRows.length + " of the realm's.");
+    return names.indexOf(row.name) >= 0 && !ownByName[row.name];
+  }).concat(own.filter(function (row) {
+    return names.indexOf(row.name) >= 0;
+  }));
+  log.debug("Leaving effectiveClaimSet(). " + mode + ": " + merged.length +
+            " row(s) from " + own.length + " of the application's and " +
+            realmRows.length + " of the realm's.");
   return merged;
 }
 

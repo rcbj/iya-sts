@@ -37,24 +37,56 @@ type Json = any;
  */
 class ProtocolSettingsPage {
   // The status blocks drawn here, by page (#446): a page whose view carries
-  // a `status` and has a row here is drawn whole from its view.
-  static readonly STATUS: Record<string, (info: Json) => string> = {
-    '/admin/persistence': function (info: Json): string {
-      return ProtocolSettingsPage.persistenceStatus(info);
+  // a `status` and has a row here is drawn whole from its view. Each is
+  // handed the page's translator (#539).
+  static readonly STATUS: Record<string, (info: Json, t: Json) => string> = {
+    '/admin/persistence': function (info: Json, t: Json): string {
+      return ProtocolSettingsPage.persistenceStatus(info, t);
     },
-    '/admin/kerberos': function (info: Json): string {
-      return ProtocolSettingsPage.kerberosPreauthStatus(info);
+    '/admin/kerberos': function (info: Json, t: Json): string {
+      return ProtocolSettingsPage.kerberosPreauthStatus(info, t);
     },
-    '/admin/webauthn': function (info: Json): string {
-      return ProtocolSettingsPage.webauthnStatus(info);
+    '/admin/webauthn': function (info: Json, t: Json): string {
+      return ProtocolSettingsPage.webauthnStatus(info, t);
     },
-    '/admin/backup-codes': function (info: Json): string {
-      return ProtocolSettingsPage.backupCodesStatus(info);
+    '/admin/backup-codes': function (info: Json, t: Json): string {
+      return ProtocolSettingsPage.backupCodesStatus(info, t);
     },
-    '/admin/totp': function (info: Json): string {
-      return ProtocolSettingsPage.totpStatus(info);
+    '/admin/totp': function (info: Json, t: Json): string {
+      return ProtocolSettingsPage.totpStatus(info, t);
     }
   };
+
+  // THE TRANSLATOR A STATUS BLOCK DRAWS WITH (#539). A NUMBER goes into a
+  // message as a parameter; a STRING from the view stays outside it and
+  // goes through `kit.esc()`, because a message escapes `'` as `&#39;` and
+  // `kit.esc()` as `&apos;`, and the English must not change by a byte.
+  // The server-rendered console (`admin.ts`) still calls the blocks with the
+  // JSON alone, so a block given no translator takes the default one —
+  // English in node.
+  /**
+   * Answers the translator a status block was given, or the default.
+   *
+   * @param given - the translator passed in, if any
+   * @returns a translator
+   */
+  static translator(given?: Json): Json {
+    return given || kit.context().t;
+  }
+
+  // The head of every What / Answer table a status block draws (#539: its
+  // two words translated once, here).
+  /**
+   * Opens a What / Answer key table.
+   *
+   * @param t - the page's translator
+   * @returns the table's opening markup and header row
+   */
+  static keyHead(t: Json): string {
+    return '<table class="key"><tr><th>' +
+      t.html('consoleProtocolSettings.thWhat') + '</th><th>' +
+      t.html('consoleProtocolSettings.thAnswer') + '</th></tr>';
+  }
 
   // The page, written once. The settings block is the whole of the second
   // half; everything above it is the row.
@@ -72,6 +104,7 @@ class ProtocolSettingsPage {
    * @returns the page body as HTML
    */
   static render(view: Json, ctx?: Json, statusHtml?: string): string {
+    const t = ProtocolSettingsPage.translator(ctx && ctx.t);
     return kit.note(view.leadHtml) +
       (view.alsoHtml || []).map(function (text) { return kit.warn(text); })
         .join('') +
@@ -80,8 +113,8 @@ class ProtocolSettingsPage {
       // that produced it are the answer to the follow-up question. See the
       // `status` member in protocolSettingsJson().
       (statusHtml || (view.status && ProtocolSettingsPage.STATUS[view.page]
-        ? ProtocolSettingsPage.STATUS[view.page](view.status) : '')) +
-      SettingsForms.forms(view.settings, view.page) +
+        ? ProtocolSettingsPage.STATUS[view.page](view.status, t) : '')) +
+      SettingsForms.forms(view.settings, view.page, undefined, t) +
       // A `<p class="sub">` AND NOT A `note()`, which is the rule bullet()
       // states for a list item that opens with a link, applied one helper
       // across. A row of links is longer than a line and note() would
@@ -93,10 +126,11 @@ class ProtocolSettingsPage {
         return '<a href="' + kit.esc(link.href) + '">' + kit.esc(link.what) +
                '</a>';
       }).concat(['<a href="' + kit.esc(view.page) +
-                 '?format=json">this page as ' +
-                                               'JSON</a>',
-                 '<a href="/admin/sts-metadata">every endpoint this service ' +
-                 'registers</a>']).join(' &middot; ') + '</p>';
+                 '?format=json">' +
+                 t.html('consoleProtocolSettings.asJson') + '</a>',
+                 '<a href="/admin/sts-metadata">' +
+                 t.html('consoleProtocolSettings.everyEndpoint') +
+                 '</a>']).join(' &middot; ') + '</p>';
   }
 
   // The /admin/totp status block (#446): what the console drew from its JSON.
@@ -104,45 +138,55 @@ class ProtocolSettingsPage {
    * Draws the status block of /admin/totp from its JSON.
    *
    * @param info - the block's JSON, the page view's `status`
+   * @param tr - optional; the page's translator (#539)
    * @returns the block as HTML
    */
-  static totpStatus(info: Json): string {
+  static totpStatus(info: Json, tr?: Json): string {
+    const t = ProtocolSettingsPage.translator(tr);
     const algorithmRows = info.algorithms.map(function (alg) {
       return '<tr><td><code>' + kit.esc(alg.name) + '</code></td>' +
         '<td>' + (alg.inUse
-          ? '<span class="state-valid">in use</span>'
-          : '<span class="state-none">available</span>') + '</td>' +
+          ? '<span class="state-valid">' +
+            t.html('consoleProtocolSettings.inUse') + '</span>'
+          : '<span class="state-none">' +
+            t.html('consoleProtocolSettings.available') + '</span>') +
+        '</td>' +
         '<td>' + kit.esc(alg.note || '') + '</td></tr>';
     }).join('');
-    const html = '<h2>The mechanism</h2>' +
+    // The two links are markup a message cannot carry (#539): the warning is
+    // split around them.
+    const html = '<h2>' + t.html('consoleProtocolSettings.totpHeading') +
+      '</h2>' +
       (info.offered
         ? ''
-        : kit.warn('<strong>The authentication policy turns authenticator ' +
-          'apps off</strong> (<a href="/admin/policies#authn">Policies</a>), ' +
-          'so ' +
-          'nobody new can enrol an authenticator app. <strong>It does not ' +
-          'disable a secret somebody already holds</strong> — that account ' +
-          'is still configured for two factors and the sign-in screen still ' +
-          'asks for the code, because a switch that silently downgraded it ' +
-          'would be a security control whose off position does something ' +
-          'other than what it says. Clearing an existing enrolment is on ' +
-          'that person\'s row under <a href="/admin/users">Users</a>.')) +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      '<tr><th>Code</th><td>' + kit.esc(String(info.digits)) + ' digits, a ' +
-        'new one every ' + kit.esc(String(info.period)) + ' ' +
-      'seconds</td></tr><tr><th>Skew forgiven</th><td>' +
-      kit.esc(String(info.window)) + ' step(s) ' +
-        'either side, so a code lives about ' +
-        kit.esc(String(info.period * (1 + 2 * info.window))) + ' seconds. ' +
-        '<strong>This one applies to everybody</strong>, existing enrolments ' +
-        'included.</td></tr>' +
-      '<tr><th>Shared secret</th><td>' + kit.esc(String(info.secretBits)) +
-      ' bits, ' +
-        kit.esc(info.encoding) + '</td></tr>' +
-      '<tr><th>Truncation</th><td>' + kit.esc(info.truncation) + '</td></tr>' +
+        : kit.warn(t.html('consoleProtocolSettings.totpOff1') +
+          '<a href="/admin/policies#authn">' +
+          t.html('consoleProtocolSettings.policiesLink') + '</a>' +
+          t.html('consoleProtocolSettings.totpOff2') +
+          '<a href="/admin/users">' +
+          t.html('consoleProtocolSettings.usersLink') + '</a>' +
+          t.html('consoleProtocolSettings.period'))) +
+      ProtocolSettingsPage.keyHead(t) +
+      '<tr><th>' + t.html('consoleProtocolSettings.thCode') + '</th><td>' +
+      t.html('consoleProtocolSettings.totpCode',
+             { digits: String(info.digits), period: String(info.period) }) +
+      '</td></tr><tr><th>' + t.html('consoleProtocolSettings.thSkew') +
+      '</th><td>' +
+      t.html('consoleProtocolSettings.totpSkew',
+             { window: String(info.window),
+               life: String(info.period * (1 + 2 * info.window)) }) +
+      '</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thSecret') + '</th><td>' +
+      t.html('consoleProtocolSettings.totpSecret',
+             { bits: String(info.secretBits) }) + kit.esc(info.encoding) +
+      '</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thTruncation') +
+      '</th><td>' + kit.esc(info.truncation) + '</td></tr>' +
       '</table>' +
-      '<h3>Digests</h3>' +
-      '<table><tr><th>Algorithm</th><th>State</th><th>Note</th></tr>' +
+      '<h3>' + t.html('consoleProtocolSettings.digestsHeading') + '</h3>' +
+      '<table><tr><th>' + t.html('consoleProtocolSettings.thAlgorithm') +
+      '</th><th>' + t.html('consoleProtocolSettings.thState') + '</th><th>' +
+      t.html('consoleProtocolSettings.thNote') + '</th></tr>' +
       algorithmRows + '</table>';
     return html;
   }
@@ -153,73 +197,57 @@ class ProtocolSettingsPage {
    * Draws the status block of /admin/backup-codes from its JSON.
    *
    * @param info - the block's JSON, the page view's `status`
+   * @param tr - optional; the page's translator (#539)
    * @returns the block as HTML
    */
-  static backupCodesStatus(info: Json): string {
+  static backupCodesStatus(info: Json, tr?: Json): string {
+    const t = ProtocolSettingsPage.translator(tr);
+    // The links are markup a message cannot carry (#539), so the prose is
+    // split around each one; the view's own strings stay outside messages.
     const html =
-      '<h3>What a code is</h3>' +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      '<tr><th>Offered</th><td>' + (info.offered
-        ? '<span class="state-valid">yes</span> — a set is issued the first ' +
-          'time somebody enrols a second factor.'
-        : '<span class="state-none">no</span> — no NEW set will be issued. ' +
-          '<strong>A set already issued goes on working</strong>, which is ' +
-          'the contract the authentication policy\'s TOTP row and ' +
-          '<code>webauthn.enabled</code> both keep: a switch that took away ' +
-          'the only way back into an account whose phone is lost would be ' +
-          'the worst one on this console.') +
+      '<h3>' + t.html('consoleProtocolSettings.bcHeading') + '</h3>' +
+      ProtocolSettingsPage.keyHead(t) +
+      '<tr><th>' + t.html('consoleProtocolSettings.thOffered') + '</th><td>' +
+      (info.offered
+        ? '<span class="state-valid">' +
+          t.html('consoleProtocolSettings.yes') + '</span>' +
+          t.html('consoleProtocolSettings.bcOfferedYes')
+        : '<span class="state-none">' +
+          t.html('consoleProtocolSettings.no') + '</span>' +
+          t.html('consoleProtocolSettings.bcOfferedNo')) +
         '</td></tr>' +
-      '<tr><th>Set</th><td>' + kit.esc(String(info.count)) + ' codes of ' +
-        kit.esc(String(info.length)) + ' characters, printed in groups of ' +
-        kit.esc(String(info.groupSize || 0)) + '.</td></tr>' +
-      '<tr><th>Strength</th><td><strong>' + kit.esc(String(info.bitsPerCode)) +
-        ' bits</strong> per code, out of an alphabet of ' +
-        kit.esc(String(info.alphabetSize)) + '. That is the number that ' +
-        'matters rather than the length, and it is what makes the rate limit ' +
-        'on the recovery screen a belt rather than the whole ' +
-      'trousers.</td></tr><tr><th>Alphabet</th><td><code>' +
-      kit.esc(info.alphabet) + '</code> — the ' +
-        'same thirty-two characters RFC 4648 base32 uses, and <strong>not ' +
-        'shared with <a href="/admin/totp">TOTP</a></strong>. That one is ' +
-        'base32 because the <code>otpauth</code> URI says so; this one is ' +
-        'these characters because <strong>no pair of them is ' +
-        'confusable</strong> — no <code>0</code> beside <code>O</code>, no ' +
-        '<code>1</code> beside <code>I</code> — and a recovery code is the ' +
-        'one credential here that somebody writes on paper and types back ' +
-        'months later.</td></tr><tr><th>Generated</th><td>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thSet') + '</th><td>' +
+      t.html('consoleProtocolSettings.bcSet',
+             { count: String(info.count), length: String(info.length),
+               group: String(info.groupSize || 0) }) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thStrength') +
+      '</th><td>' +
+      t.html('consoleProtocolSettings.bcStrength',
+             { bits: String(info.bitsPerCode),
+               alphabet: String(info.alphabetSize) }) +
+      '</td></tr><tr><th>' + t.html('consoleProtocolSettings.thAlphabet') +
+      '</th><td><code>' +
+      kit.esc(info.alphabet) + '</code>' +
+      t.html('consoleProtocolSettings.bcAlphabet1') + '<strong>' +
+      t.html('consoleProtocolSettings.bcNotShared') +
+      '<a href="/admin/totp">TOTP</a></strong>' +
+      t.html('consoleProtocolSettings.bcAlphabet2') +
+      '</td></tr><tr><th>' + t.html('consoleProtocolSettings.thGenerated') +
+      '</th><td>' +
         kit.esc(info.source) +
-      '</td></tr><tr><th>Compared</th><td>' + kit.esc(info.comparison) + ' ' +
-        'Every code in the set is compared even after a match, so the time ' +
-        'taken does not depend on WHICH one matched.</td></tr><tr><th>At ' +
-        'rest</th><td>' + kit.esc(info.atRest) + '</td></tr>' +
+      '</td></tr><tr><th>' + t.html('consoleProtocolSettings.thCompared') +
+      '</th><td>' + kit.esc(info.comparison) + ' ' +
+      t.html('consoleProtocolSettings.bcCompared') + '</td></tr><tr><th>' +
+      t.html('consoleProtocolSettings.thAtRest') + '</th><td>' +
+      kit.esc(info.atRest) + '</td></tr>' +
       '</table>' +
-      '<h3>What this service will not do with them</h3>' +
-      kit.note('<strong>There is no control anywhere that issues a set on ' +
-      'request.</strong> Not on this console, not on ' +
-      '<code>/admin-api</code>, not on <code>/portal</code>. A set is ' +
-      'created by the ACT of enrolling a second factor and by nothing else, ' +
-      'because a way back that somebody has to remember to ask for produces ' +
-      'exactly the population it exists to protect — the people who did not ' +
-      'ask are the people who will need it.') +
-      kit.note('<strong>A set is issued ONCE and is never topped ' +
-      'up.</strong> Enrolling a different second factor does not reissue: ' +
-      'somebody who printed a list in March and replaced their authenticator ' +
-      'app in June would otherwise be holding a page of strings that had ' +
-      'stopped working with nothing having said so. The only route to a ' +
-      'second set is an operator\'s Clear on that person\'s row under <a ' +
-      'href="/admin/users">Users</a>, after which the next enrolment issues ' +
-      'one.') +
-      kit.note('<strong>This console never shows a code.</strong> The ' +
-      'person reads their own set back on <code>/portal/mfa</code> and ' +
-      'nowhere else. Showing them here would hand a working second factor to ' +
-      'whoever holds Admin Read, which is the same door this console already ' +
-      'refuses to open for an authenticator enrolment.') +
-      kit.note('<strong>A recovery code is never a FIRST factor and never ' +
-      'the factor a sign-in asks for.</strong> ' +
-      '<code>credentials.mechanismsFor().secondFactor</code> answers ' +
-      '<code>webauthn</code> or <code>totp</code> and never this; the ' +
-      'recovery screen is reachable only as a way OUT of one of those two, ' +
-      'with a step id the person already holds.');
+      '<h3>' + t.html('consoleProtocolSettings.bcWillNotHeading') + '</h3>' +
+      kit.note(t.html('consoleProtocolSettings.bcNoteRequest')) +
+      kit.note(t.html('consoleProtocolSettings.bcNoteOnce1') + '<a ' +
+      'href="/admin/users">' + t.html('consoleProtocolSettings.usersLink') +
+      '</a>' + t.html('consoleProtocolSettings.bcNoteOnce2')) +
+      kit.note(t.html('consoleProtocolSettings.bcNoteNeverShown')) +
+      kit.note(t.html('consoleProtocolSettings.bcNoteNotFirst'));
     return html;
   }
 
@@ -229,242 +257,225 @@ class ProtocolSettingsPage {
    * Draws the status block of /admin/webauthn from its JSON.
    *
    * @param info - the block's JSON, the page view's `status`
+   * @param tr - optional; the page's translator (#539)
    * @returns the block as HTML
    */
-  static webauthnStatus(info: Json): string {
+  static webauthnStatus(info: Json, tr?: Json): string {
+    const t = ProtocolSettingsPage.translator(tr);
+    const state = function (cls: string, words: string): string {
+      return '<span class="' + cls + '">' + words + '</span>';
+    };
     const algorithmRows = info.algorithms.map(function (alg) {
       return '<tr><td><code>' + kit.esc(alg.name) + '</code></td>' +
         '<td class="num"><code>' + kit.esc(String(alg.coseAlg)) +
         '</code></td><td>' + (alg.offered
-          ? '<span class="state-valid">offered</span>'
-          : '<span class="state-none">verifiable, not offered</span>') +
+          ? state('state-valid', t.html('consoleProtocolSettings.offered'))
+          : state('state-none',
+                  t.html('consoleProtocolSettings.verifiableNotOffered'))) +
         '</td></tr>';
     }).join('');
-    const html = '<h2>The ceremony</h2>' +
+    // Every link is markup a message cannot carry (#539), so the prose is
+    // split around each one; the view's own strings stay outside messages.
+    const html = '<h2>' + t.html('consoleProtocolSettings.waHeading') +
+      '</h2>' +
       (info.offered
         ? ''
-        : kit.warn('<strong><code>webauthn.enabled</code> is off</strong>, ' +
-          'so no new security key can be enrolled here. <strong>It does not ' +
-          'disable a key somebody already holds</strong>, for ' +
-          'the TOTP row\'s reason — and there is a sharper ' +
-          'edge: somebody whose only credential is a <code>primary</code> ' +
-          'key would be locked out of their own account by this switch. ' +
-          'Removing a key is on that person\'s row under <a ' +
-          'href="/admin/users">Users</a>.')) +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      '<tr><th>RP ID</th><td>' +
+        : kit.warn(t.html('consoleProtocolSettings.waOff') + '<a ' +
+          'href="/admin/users">' +
+          t.html('consoleProtocolSettings.usersLink') + '</a>' +
+          t.html('consoleProtocolSettings.period'))) +
+      ProtocolSettingsPage.keyHead(t) +
+      '<tr><th>' + t.html('consoleProtocolSettings.thRpId') + '</th><td>' +
         (info.rpId
-          ? '<code>' + kit.esc(info.rpId) + '</code> — configured. It is ' +
-            'used only where it is a <strong>registrable domain ' +
-            'suffix</strong> of the host this service was reached on; ' +
-            'anything else is refused here, with the reason in the log, ' +
-            'because a browser would refuse it with an error ' +
-            'indistinguishable from a hardware failure.'
-          : 'the host this service was reached on. That is the default and ' +
-            'it is what a credential is bound to.') + '</td></tr>' +
-      '<tr><th>RP name</th><td><code>' + kit.esc(info.rpName) + '</code> — ' +
-        'what a browser shows while somebody decides. It has no security ' +
-        'meaning: WebAuthn binds a credential to the RP ID and to nothing ' +
-        'else.</td></tr><tr><th>User ' +
-        'verification</th><td><code>' + kit.esc(info.userVerification) +
+          ? '<code>' + kit.esc(info.rpId) + '</code>' +
+            t.html('consoleProtocolSettings.waRpIdSet')
+          : t.html('consoleProtocolSettings.waRpIdDefault')) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thRpName') +
+      '</th><td><code>' + kit.esc(info.rpName) + '</code>' +
+      t.html('consoleProtocolSettings.waRpName') + '</td></tr><tr><th>' +
+      t.html('consoleProtocolSettings.thUv') + '</th><td><code>' +
+      kit.esc(info.userVerification) +
         '</code> — ' + (info.userVerificationEnforced
-          ? '<strong>requested AND CHECKED</strong>. The UV flag is inside ' +
-            'the bytes the authenticator signed, so an authenticator that ' +
-            'did not verify the person is refused rather than quietly ' +
-            'accepted. It is the only ceremony option on this page this ' +
-            'service can check, because it is the only one anything signed ' +
-            'says anything about.'
-          : 'requested only. Nothing is refused on it.') + '</td></tr>' +
-      '<tr><th>Attestation</th><td><code>' + kit.esc(info.attestation) +
-      '</code>, conveyance requested' +
+          ? t.html('consoleProtocolSettings.waUvEnforced')
+          : t.html('consoleProtocolSettings.waUvRequested')) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thAttestation') +
+      '</th><td><code>' + kit.esc(info.attestation) +
+      '</code>' + t.html('consoleProtocolSettings.waConveyance') +
         (info.attestationDemandsTrust && info.attestation !== 'enterprise' &&
          info.attestation !== 'direct'
-          ? ' — and <strong>sent as <code>direct</code></strong>, because ' +
-            'this realm requires a trusted statement and a browser asked ' +
-            'for less may strip it'
+          ? t.html('consoleProtocolSettings.waSentDirect')
           : '') +
-        '. What is done with the statement is the next section.</td></tr>' +
-      '<tr><th>Timeout</th><td>' + kit.esc(String(info.timeoutMs)) + 'ms, ' +
-        'and it is a HINT: the specification lets a client clamp it and ' +
-        'browsers do. The pending step this service holds expires on its own ' +
-        'five-minute clock regardless.</td></tr><tr><th>Signature ' +
-        'counter</th><td>' + kit.esc(info.signatureCounter) +
+        t.html('consoleProtocolSettings.waAttNext') + '</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thTimeout') + '</th><td>' +
+      t.html('consoleProtocolSettings.waTimeout',
+             { ms: String(info.timeoutMs) }) + '</td></tr><tr><th>' +
+      t.html('consoleProtocolSettings.thCounter') + '</th><td>' +
+      kit.esc(info.signatureCounter) +
         '</td></tr>' +
       '</table>' +
-      ProtocolSettingsPage.attestationPolicyBlock(info) +
+      ProtocolSettingsPage.attestationPolicyBlock(info, t) +
       '<h3>CTAP</h3>' +
-      kit.note('These three are what a browser translates into what it asks ' +
-      'the AUTHENTICATOR for. <strong>They are requests and not ' +
-      'checks</strong>: nothing signed says what the browser was asked for, ' +
-      'so a check here would be a comparison against a value this service ' +
-      'itself supplied. What this service does instead is RECORD what came ' +
-      'back, beside the key.') +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      '<tr><th>Attachment</th><td>' +
+      kit.note(t.html('consoleProtocolSettings.waCtapNote')) +
+      ProtocolSettingsPage.keyHead(t) +
+      '<tr><th>' + t.html('consoleProtocolSettings.thAttachment') +
+      '</th><td>' +
         (info.authenticatorAttachment === 'any'
-          ? 'no preference sent, so any authenticator may answer — the ' +
-            'member is omitted from the options rather than sent as a wide ' +
-            'value, because the dictionary has no value meaning ' +
-            '&ldquo;any&rdquo;'
-          : '<code>' + kit.esc(info.authenticatorAttachment) + '</code> ' +
-            'only. The browser filters; this service does not refuse a ' +
-            'credential whose attachment turned out to be the other one.') +
+          ? t.html('consoleProtocolSettings.waAttachAny')
+          : '<code>' + kit.esc(info.authenticatorAttachment) + '</code>' +
+            t.html('consoleProtocolSettings.waAttachOnly')) +
             '</td></tr>' +
-      '<tr><th>Discoverable credential</th><td><code>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thDiscoverable') +
+      '</th><td><code>' +
       kit.esc(info.residentKey) +
-        '</code> — a CTAP2 <em>resident key</em>, stored on the ' +
-        'authenticator itself, for the sign-in screen\'s ceremony and ' +
-        '<em>Use a security key</em>. <strong>A passkey (<em>Create a ' +
-        'passkey</em>) always asks <code>required</code></strong> (#474): ' +
-        'it is what the usernameless sign-in below finds. ' +
-        '<code>required</code> here consumes one of the small number of ' +
-        'slots a roaming authenticator has — which cannot always be freed ' +
-        'again.</td></tr>' +
+        '</code>' + t.html('consoleProtocolSettings.waResident1') + '<a ' +
+        'href="/admin/policies#passkey">' +
+        t.html('consoleProtocolSettings.passkeyPolicyLink') + '</a>' +
+        t.html('consoleProtocolSettings.waResident2') + '</td></tr>' +
       '<tr><th>credProps</th><td>' + (info.credProps
-        ? 'asked for. It is the only way to find out whether a ' +
-          '<code>preferred</code> ceremony actually produced a discoverable ' +
-          'credential — nothing in the attestation says. The answer is ' +
-          'recorded beside the key and decides nothing.'
-        : 'not asked for, so nothing here knows whether an enrolled ' +
-          'credential is discoverable.') + '</td></tr></table><h3>What a key ' +
-      'may BE here</h3>' +
-      kit.note('The three rows below are <strong>not WebAuthn</strong>. ' +
-      'They are what THIS service will do with a key once the ceremony is ' +
-      'over, decided here rather than by any specification — and all three ' +
-      'refuse an <strong>enrolment</strong> and never an authentication. A ' +
-      'key already on somebody\'s entry goes on working when the role that ' +
-      'produced it is switched off.') +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      '<tr><th>Primary (passwordless)</th><td>' + (info.primaryAllowed
-        ? '<span class="state-valid">allowed</span> — a key may be the only ' +
-          'credential on an account. The session then records <code>amr ' +
-          '["hwk"]</code> and <code>acr "1"</code>.'
-        : '<span class="state-none">not allowed</span> — the passwordless ' +
-          'box is off the sign-in screen and the <code>primary</code> choice ' +
-          'is off the portal.') + '</td></tr>' +
-      '<tr><th>No username</th><td>' + (info.usernameless &&
+        ? t.html('consoleProtocolSettings.waCredPropsYes')
+        : t.html('consoleProtocolSettings.waCredPropsNo')) +
+      '</td></tr></table><h3>' +
+      t.html('consoleProtocolSettings.waMayBeHeading') + '</h3>' +
+      kit.note(t.html('consoleProtocolSettings.waMayBeNote')) +
+      ProtocolSettingsPage.keyHead(t) +
+      '<tr><th>' + t.html('consoleProtocolSettings.thPrimary') + '</th><td>' +
+      (info.primaryAllowed
+        ? state('state-valid', t.html('consoleProtocolSettings.allowed')) +
+          t.html('consoleProtocolSettings.waPrimaryYes')
+        : state('state-none', t.html('consoleProtocolSettings.notAllowed')) +
+          t.html('consoleProtocolSettings.waPrimaryNo')) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thNoUsername') +
+      '</th><td>' + (info.usernameless &&
                                          info.primaryAllowed
-        ? '<span class="state-valid">offered</span> — the sign-in screen ' +
-          'draws <em>Sign in with a passkey</em> and its username field ' +
-          'offers passkeys (autofill). The passkey names the account by its ' +
-          'user handle, user verification is <strong>required</strong>, and ' +
-          'the session records <code>amr ["hwk","user"]</code> and <code>acr ' +
-          '"mfa"</code> (#474).'
-        : '<span class="state-none">not offered</span> — ' +
-          '<code>webauthn.usernameless</code> is off' +
-          (info.primaryAllowed ? '' : ', and a primary key is not allowed') +
-          '. A passkey still signs in where the username is typed.') +
+        ? state('state-valid', t.html('consoleProtocolSettings.offered')) +
+          t.html('consoleProtocolSettings.waUsernamelessYes')
+        : state('state-none', t.html('consoleProtocolSettings.notOffered')) +
+          t.html('consoleProtocolSettings.waUsernamelessNo1') +
+          '<a href="/admin/policies#passkey">' +
+          t.html('consoleProtocolSettings.passkeyPolicyLink') + '</a>' +
+          t.html('consoleProtocolSettings.waUsernamelessNo2') +
+          (info.primaryAllowed ? ''
+            : t.html('consoleProtocolSettings.waNoPrimary')) +
+          t.html('consoleProtocolSettings.waUsernamelessNo3')) +
         '</td></tr>' +
-      '<tr><th>Second factor</th><td>' + (info.mfaAllowed
-        ? '<span class="state-valid">allowed</span> — beside a password. The ' +
-          'session then records <code>amr ["pwd","hwk"]</code> and <code>acr ' +
-          '"mfa"</code>.'
-        : '<span class="state-none">not allowed</span> — the other second ' +
-          'factor is <a href="/admin/totp">an authenticator ' +
-          'app</a>.') + '</td></tr>' +
-      '<tr><th>Keys per person</th><td>' +
-      kit.esc(String(info.maxKeysPerPerson)) +
-        '. Several is the ordinary case and the specification expects it: an ' +
-        'assertion NAMES the credential that produced it, so there is none ' +
-        'of the ambiguity two shared secrets would have.</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thSecondFactor') +
+      '</th><td>' + (info.mfaAllowed
+        ? state('state-valid', t.html('consoleProtocolSettings.allowed')) +
+          t.html('consoleProtocolSettings.waMfaYes')
+        : state('state-none', t.html('consoleProtocolSettings.notAllowed')) +
+          t.html('consoleProtocolSettings.waMfaNo') +
+          '<a href="/admin/totp">' +
+          t.html('consoleProtocolSettings.waAuthApp') + '</a>' +
+          t.html('consoleProtocolSettings.period')) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thKeysPerPerson') +
+      '</th><td>' +
+      t.html('consoleProtocolSettings.waKeysPerPerson',
+             { n: String(info.maxKeysPerPerson) }) + '</td></tr>' +
       '</table>' +
-      '<h3>Algorithms</h3>' +
-      kit.note('<code>pubKeyCredParams</code> is built from the OFFERED ' +
-      'rows, in order. The list is filtered against what ' +
-      '<code>authn/webauthn.js</code> can actually verify — a name outside ' +
-      'that table is dropped with a warning rather than sent, because ' +
-      'offering an algorithm this service cannot check produces a credential ' +
-      'that enrols perfectly and then fails every assertion it is ever used ' +
-      'for, at sign-in rather than at enrolment.') +
-      '<table><tr><th>Algorithm</th><th ' +
-      'class="num">COSE</th><th>State</th></tr>' +
+      '<h3>' + t.html('consoleProtocolSettings.waAlgorithmsHeading') +
+      '</h3>' +
+      kit.note(t.html('consoleProtocolSettings.waAlgNote')) +
+      '<table><tr><th>' + t.html('consoleProtocolSettings.thAlgorithm') +
+      '</th><th ' +
+      'class="num">COSE</th><th>' + t.html('consoleProtocolSettings.thState') +
+      '</th></tr>' +
       algorithmRows + '</table>' +
-      '<p class="sub">Curves: ' +
+      '<p class="sub">' + t.html('consoleProtocolSettings.waCurves') +
       info.curves.map(function (curve) {
         return '<code>' + kit.esc(curve.name) + '</code>';
-      }).join(', ') + '.</p>';
+      }).join(', ') + t.html('consoleProtocolSettings.period') + '</p>';
     return html;
   }
 
-  static attestationPolicyBlock(info) {
+  // The attestation half of the /admin/webauthn block, given the page's
+  // translator by its caller (#539).
+  /**
+   * Draws the attestation statement's table of /admin/webauthn.
+   *
+   * @param info - the block's JSON, the page view's `status`
+   * @param tr - optional; the page's translator
+   * @returns the table as HTML
+   */
+  static attestationPolicyBlock(info, tr?: Json) {
+    const t = ProtocolSettingsPage.translator(tr);
     const mds = info.mds;
     const policyText = {
-      off: 'nothing is verified — the format is recorded and the ' +
-           'statement believed. Development only.',
-      'verify-if-present': 'every statement that arrives is VERIFIED by ' +
-           'its format\'s procedure and refused if it does not verify; a ' +
-           'chain is checked against the anchors below, and a model the ' +
-           'FIDO Metadata Service lists must chain to the roots it lists ' +
-           'and is refused when MDS reports it compromised. ' +
-           '<code>none</code> and self attestation are accepted as ' +
-           'untrusted — which is what a synced passkey sends.',
-      'require-trusted': 'only a statement that CHAINS TO AN ANCHOR is ' +
-           'accepted: no <code>none</code>, no self attestation, and so no ' +
-           'synced passkey.'
+      off: t.html('consoleProtocolSettings.attPolicyOff'),
+      'verify-if-present': t.html('consoleProtocolSettings.attPolicyVerify'),
+      'require-trusted': t.html('consoleProtocolSettings.attPolicyRequire')
     };
-    const html = '<h3>The attestation statement</h3>' +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      '<tr><th>Policy</th><td><code>' + kit.esc(info.attestationPolicy) +
+    const html = '<h3>' + t.html('consoleProtocolSettings.attHeading') +
+      '</h3>' +
+      ProtocolSettingsPage.keyHead(t) +
+      '<tr><th>' + t.html('consoleProtocolSettings.thPolicy') +
+      '</th><td><code>' + kit.esc(info.attestationPolicy) +
         '</code>' + (info.attestationPolicyConfigured === 'by-mode'
           ? ' (<code>by-mode</code>)' : '') + ' — ' +
         (policyText[info.attestationPolicy] || '') +
         (info.attestationDemandsTrust &&
          info.attestationPolicy !== 'require-trusted'
-          ? ' <strong>A trusted statement is required anyway</strong>, by ' +
-            'the allow-list, certification level or FIPS rows below.'
+          ? t.html('consoleProtocolSettings.attTrustAnyway')
           : '') + '</td></tr>' +
-      '<tr><th>Formats verified</th><td>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thFormats') + '</th><td>' +
         info.attestationFormats.map((f) => {
           return '<code>' + kit.esc(f) + '</code>';
-        }).join(', ') + ' — all eight of WebAuthn Level 3 section 8.' +
+        }).join(', ') + t.html('consoleProtocolSettings.attFormats') +
         '</td></tr>' +
-      '<tr><th>Trust anchors</th><td>' +
-        kit.esc(String(info.attestationTrustAnchors)) + ' configured ' +
-        '(<code>webauthn.attestationTrustAnchors</code>), and the roots ' +
-        'the FIDO Metadata Service lists for each model.</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thAnchors') + '</th><td>' +
+        t.html('consoleProtocolSettings.attAnchors',
+               { n: String(info.attestationTrustAnchors) }) + '</td></tr>' +
       '<tr><th>FIDO Metadata Service</th><td>' +
         (!mds || !mds.known
-          ? 'not read in this process yet — the next draw has it.'
+          ? t.html('consoleProtocolSettings.attMdsUnknown')
           : (mds.active
-              ? 'BLOB <code>' + kit.esc(String(mds.serial)) + '</code> (' +
-                kit.esc(String(mds.rows)) + ' key(s)), next due ' +
-                kit.esc(mds.nextUpdateAt
-                  ? new Date(mds.nextUpdateAt).toISOString().slice(0, 10)
-                  : 'unstated') +
-                (mds.stale ? ' — <strong>STALE</strong>, so no model is ' +
-                             'known from it' : '')
-              : 'no BLOB is active, so no model\'s roots or status are ' +
-                'known.') +
+              ? t.html('consoleProtocolSettings.attMdsBlob1') + '<code>' +
+                kit.esc(String(mds.serial)) + '</code>' +
+                t.html('consoleProtocolSettings.attMdsBlob2',
+                       { rows: String(mds.rows) }) +
+                (mds.nextUpdateAt
+                  ? kit.esc(new Date(mds.nextUpdateAt).toISOString()
+                    .slice(0, 10))
+                  : t.html('consoleProtocolSettings.attUnstated')) +
+                (mds.stale ? t.html('consoleProtocolSettings.attMdsStale')
+                  : '')
+              : t.html('consoleProtocolSettings.attMdsNone')) +
             ' ' + (mds.url
-              ? 'Downloaded from <code>' + kit.esc(mds.url) + '</code> by ' +
-                'the <code>' + kit.esc(mds.job) + '</code> job.'
-              : 'Uploaded on <a href="/admin/risk">Monitoring → Risk</a> ' +
-                '(<code>risk.mdsUrl</code> is empty).')) +
+              ? t.html('consoleProtocolSettings.attMdsFrom') + '<code>' +
+                kit.esc(mds.url) + '</code>' +
+                t.html('consoleProtocolSettings.attMdsBy') + '<code>' +
+                kit.esc(mds.job) + '</code>' +
+                t.html('consoleProtocolSettings.attMdsJob')
+              : t.html('consoleProtocolSettings.attMdsUploaded') +
+                '<a href="/admin/risk">' +
+                t.html('consoleProtocolSettings.riskLink') + '</a>' +
+                t.html('consoleProtocolSettings.attMdsEmpty'))) +
         '</td></tr>' +
-      '<tr><th>Allowed models</th><td>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thAllowedModels') +
+      '</th><td>' +
         (info.attestationAllowedAaguids.length
           ? info.attestationAllowedAaguids.map((a) => {
             return '<code>' + kit.esc(a) + '</code>';
           }).join(', ')
-          : 'any the policy accepts') + '</td></tr>' +
-      '<tr><th>Certification</th><td>at least <code>' +
+          : t.html('consoleProtocolSettings.attAnyModel')) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleProtocolSettings.thCertification') +
+      '</th><td>' + t.html('consoleProtocolSettings.attAtLeast') + '<code>' +
         kit.esc(info.attestationMinCertificationLevel) + '</code>' +
-        (info.attestationRequireFips ? ', and FIPS 140 certified' : '') +
+        (info.attestationRequireFips
+          ? t.html('consoleProtocolSettings.attFips') : '') +
         '</td></tr>' +
       '<tr><th>android-safetynet</th><td>' +
         (info.attestationAllowSafetynet
-          ? '<strong>trusted</strong> — deprecated, and Google no longer ' +
-            'runs the service'
-          : 'verified and recorded as untrusted (deprecated)') + '</td></tr>' +
+          ? t.html('consoleProtocolSettings.attSafetynetYes')
+          : t.html('consoleProtocolSettings.attSafetynetNo')) + '</td></tr>' +
       '<tr><th>android-key</th><td>' +
         (info.attestationAndroidSoftwareKeys
-          ? 'the software- and hardware-enforced lists'
-          : 'the hardware-enforced (TEE) list only') + '</td></tr>' +
+          ? t.html('consoleProtocolSettings.attAndroidSoftware')
+          : t.html('consoleProtocolSettings.attAndroidHardware')) +
+        '</td></tr>' +
       '</table>' +
-      kit.note('What a key\'s statement proved is on its row under <a ' +
-      'href="/admin/users">Users</a> and on <code>/portal/keys</code>: ' +
-      'the format, whether it was verified and trusted, and the model the ' +
-      'metadata names.');
+      kit.note(t.html('consoleProtocolSettings.attNote1') + '<a ' +
+      'href="/admin/users">' + t.html('consoleProtocolSettings.usersLink') +
+      '</a>' + t.html('consoleProtocolSettings.attNote2'));
     return html;
   }
 
@@ -474,103 +485,122 @@ class ProtocolSettingsPage {
    * Draws the status block of /admin/kerberos from its JSON.
    *
    * @param info - the block's JSON, the page view's `status`
+   * @param tr - optional; the page's translator (#539)
    * @returns the block as HTML
    */
-  static kerberosPreauthStatus(info: Json): string {
+  static kerberosPreauthStatus(info: Json, tr?: Json): string {
+    const t = ProtocolSettingsPage.translator(tr);
     const row = (what: string, answer: string) => {
       return '<tr><th>' + kit.esc(what) + '</th><td>' + answer + '</td></tr>';
     };
+    const state = function (cls: string, words: string): string {
+      return '<span class="' + cls + '">' + words + '</span>';
+    };
+    // The view's own strings stay outside the messages (#539): see
+    // `translator()`.
     const krbtgtHtml = !info.krbtgt ? '' :
-      '<h3>The krbtgt key</h3>' +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      row('Key from', kit.esc(info.krbtgt.source === 'stored'
-        ? 'a random key stored on the directory'
+      '<h3>' + t.html('consoleProtocolSettings.krbHeading') + '</h3>' +
+      ProtocolSettingsPage.keyHead(t) +
+      row(t.text('consoleProtocolSettings.thKeyFrom'),
+        info.krbtgt.source === 'stored'
+        ? t.html('consoleProtocolSettings.krbFromStored')
         : info.krbtgt.source === 'password'
-          ? 'krb5.krbtgtPassword (development)'
+          ? t.html('consoleProtocolSettings.krbFromPassword')
           : info.krbtgt.source === 'unreadable'
-            ? 'a stored record this service cannot open — no TGT is issued'
-            : 'nothing yet — no TGT is issued')) +
+            ? t.html('consoleProtocolSettings.krbFromUnreadable')
+            : t.html('consoleProtocolSettings.krbFromNothing')) +
       row('kvno',
         kit.esc(info.krbtgt.kvno == null ? '—' : String(info.krbtgt.kvno))) +
-      row('Last rotated', kit.esc(info.krbtgt.lastRotatedAt || 'never')) +
-      row('Next scheduled rotation', info.krbtgt.scheduled
+      row(t.text('consoleProtocolSettings.thLastRotated'),
+          info.krbtgt.lastRotatedAt ? kit.esc(info.krbtgt.lastRotatedAt)
+            : t.html('consoleProtocolSettings.never')) +
+      row(t.text('consoleProtocolSettings.thNextRotation'),
+        info.krbtgt.scheduled
         ? kit.esc(String(info.krbtgt.nextDueAt || '—'))
-        : 'none — ' + kit.esc(String(info.krbtgt.offReason || ''))) +
-      row('Previous versions kept', kit.esc((info.krbtgt.retained || [])
+        : t.html('consoleProtocolSettings.krbNoneDash') +
+          kit.esc(String(info.krbtgt.offReason || ''))) +
+      row(t.text('consoleProtocolSettings.thPreviousKept'),
+        (info.krbtgt.retained || [])
         .map(function (one: any) {
-          return 'kvno ' + one.kvno + ' until ' + one.expiresAt;
-        }).join('; ') || 'none')) +
+          return 'kvno ' + kit.esc(String(one.kvno)) +
+            t.html('consoleProtocolSettings.krbUntil') +
+            kit.esc(String(one.expiresAt));
+        }).join('; ') || t.html('consoleProtocolSettings.none')) +
       '</table>' +
-      '<p><a href="/admin/kerberos/principals">Rotate it on ' +
-      'Principals</a></p>';
+      '<p><a href="/admin/kerberos/principals">' +
+      t.html('consoleProtocolSettings.krbRotateLink') + '</a></p>';
     // PKINIT (#179): a certificate as the pre-authentication, and anonymous
     // PKINIT as FAST armor — `kerberos/krb5_pkinit.ts`'s policy().
     const pkinit = info.pkinit;
     const pkinitHtml = !pkinit ? '' :
-      '<h3>PKINIT: a certificate as the pre-authentication</h3>' +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      '<h3>' + t.html('consoleProtocolSettings.pkHeading') + '</h3>' +
+      ProtocolSettingsPage.keyHead(t) +
       row('PKINIT (RFC 4556)', pkinit.pkinit
-        ? '<span class="state-valid">on</span> — ' +
-          kit.esc(pkinit.clientCertificates)
-        : '<span class="state-none">off</span> (<code>krb5.pkinit</code>)') +
-      row('Key agreement', kit.esc((pkinit.keyAgreement || []).join(', ')) +
-          '; RSA key transport ' + kit.esc(pkinit.rsaKeyTransport)) +
-      row('Reply key (RFC 8636)', kit.esc((pkinit.kdfs || []).join(', ')) +
-          (pkinit.legacyKdf ? '; RFC 4556\'s own derivation ACCEPTED ' +
-                              '(<code>krb5.pkinitLegacyKdf</code>)'
-                            : '; RFC 4556\'s own derivation refused')) +
-      row('Freshness token (RFC 8070)', pkinit.freshnessRequired
-        ? 'required' : 'accepted, not required') +
-      row('KDC certificate', pkinit.kdcCertificate
-        ? kit.esc(pkinit.kdcCertificate.keyAlg + ', serial ' +
-                  pkinit.kdcCertificate.serialHex + ', expires ' +
-                  pkinit.kdcCertificate.notAfter) +
-          ' — from the Kerberos KDC Issuing CA on <a href="/admin/pki">' +
-          'PKI</a>; clients trust the service Root'
-        : 'none yet in this process — issued on the first PKINIT request, ' +
-          'with ' + kit.esc(pkinit.kdcKeyAlgorithm)) +
-      row('What the ticket says', 'the indicators <code>pkinit</code>, and ' +
-          '<code>pkinit-hardware</code> with hw-authent for a smart-card ' +
-          'logon certificate over a key this service never held; ' +
-          '<code>/authn/spnego</code> reads them as <code>swk</code> and ' +
-          '<code>hwk</code>, never <code>pwd</code>') +
-      row('Anonymous PKINIT (RFC 8062)', pkinit.anonymousPkinit
-        ? '<span class="state-valid">on</span> — ' +
-          kit.esc(pkinit.anonymousTickets) +
-          ' (<code>kinit -n</code>, then <code>kinit -T</code>)'
-        : '<span class="state-none">off</span> ' +
+        ? state('state-valid', t.html('consoleProtocolSettings.on')) +
+          ' — ' + kit.esc(pkinit.clientCertificates)
+        : state('state-none', t.html('consoleProtocolSettings.off')) +
+          ' (<code>krb5.pkinit</code>)') +
+      row(t.text('consoleProtocolSettings.thKeyAgreement'),
+          kit.esc((pkinit.keyAgreement || []).join(', ')) +
+          t.html('consoleProtocolSettings.pkRsa') +
+          kit.esc(pkinit.rsaKeyTransport)) +
+      row(t.text('consoleProtocolSettings.thReplyKey'),
+          kit.esc((pkinit.kdfs || []).join(', ')) +
+          (pkinit.legacyKdf
+            ? t.html('consoleProtocolSettings.pkLegacyAccepted')
+            : t.html('consoleProtocolSettings.pkLegacyRefused'))) +
+      row(t.text('consoleProtocolSettings.thFreshness'),
+          pkinit.freshnessRequired
+        ? t.html('consoleProtocolSettings.pkRequired')
+        : t.html('consoleProtocolSettings.pkAcceptedNotRequired')) +
+      row(t.text('consoleProtocolSettings.thKdcCert'), pkinit.kdcCertificate
+        ? kit.esc(pkinit.kdcCertificate.keyAlg) +
+          t.html('consoleProtocolSettings.pkSerial') +
+          kit.esc(pkinit.kdcCertificate.serialHex) +
+          t.html('consoleProtocolSettings.pkExpires') +
+          kit.esc(pkinit.kdcCertificate.notAfter) +
+          t.html('consoleProtocolSettings.pkFromCa') +
+          '<a href="/admin/pki">PKI</a>' +
+          t.html('consoleProtocolSettings.pkClientsTrust')
+        : t.html('consoleProtocolSettings.pkNoCert') +
+          kit.esc(pkinit.kdcKeyAlgorithm)) +
+      row(t.text('consoleProtocolSettings.thTicketSays'),
+          t.html('consoleProtocolSettings.pkTicketSays')) +
+      row(t.text('consoleProtocolSettings.thAnonymous'),
+          pkinit.anonymousPkinit
+        ? state('state-valid', t.html('consoleProtocolSettings.on')) +
+          ' — ' + kit.esc(pkinit.anonymousTickets) +
+          t.html('consoleProtocolSettings.pkKinitThen')
+        : state('state-none', t.html('consoleProtocolSettings.off')) + ' ' +
           '(<code>krb5.anonymousPkinit</code>)') +
-      row('Post-quantum', kit.esc(pkinit.postQuantum)) +
+      row(t.text('consoleProtocolSettings.thPostQuantum'),
+          kit.esc(pkinit.postQuantum)) +
       '</table>';
     const html =
-      '<h3>Pre-authentication, and a second factor</h3>' +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      row('A password alone, for a person who holds or owes a second factor',
+      '<h3>' + t.html('consoleProtocolSettings.krbPreauthHeading') + '</h3>' +
+      ProtocolSettingsPage.keyHead(t) +
+      row(t.text('consoleProtocolSettings.thPasswordAlone'),
           info.passwordAloneRefused
-            ? '<span class="state-valid">refused</span> — ' +
-              '<code>KDC_ERR_POLICY</code> (12), only after the password ' +
-              'verified; a wrong one is <code>KDC_ERR_PREAUTH_FAILED</code> ' +
-              'as for anybody (product mode)'
-            : '<span class="state-none">accepted</span> — development mode ' +
-              'issues a ticket on any password it accepts') +
+            ? state('state-valid',
+                    t.html('consoleProtocolSettings.refused')) +
+              t.html('consoleProtocolSettings.krbPasswordRefused')
+            : state('state-none',
+                    t.html('consoleProtocolSettings.accepted')) +
+              t.html('consoleProtocolSettings.krbPasswordAccepted')) +
       row('FAST (RFC 6113)', info.fast
-        ? '<span class="state-valid">yes</span> — armor ' +
-          'FX_FAST_ARMOR_AP_REQUEST: a TGT the client host got with its own ' +
-          'keytab (a service principal from <a href="/admin/kerberos/' +
-          'principals">Principals</a>)'
-        : '<span class="state-none">no</span> — ' + kit.esc(info.note)) +
-      row('Second factor over Kerberos', info.fast
-        ? 'RFC 6560 OTP pre-authentication inside FAST: the password as the ' +
-          'PIN and the person\'s authenticator app code, checked by the ' +
-          'sign-in screen\'s own verifier and once-only step ' +
-          '(<code>kinit -T &lt;armor ccache&gt;</code>). A smart-card or ' +
-          'security-key certificate is PKINIT, below.'
-        : 'none') +
-      row('What the ticket says', info.fast
-        ? 'the RFC 8129 authentication indicator <code>' +
-          kit.esc(info.otpIndicator || 'otp') + '</code>, carried into ' +
-          'service tickets; <code>/authn/spnego</code> counts it as the ' +
-          'second factor (<code>amr</code> pwd, otp; <code>acr</code> mfa)'
+        ? state('state-valid', t.html('consoleProtocolSettings.yes')) +
+          t.html('consoleProtocolSettings.krbFastYes') +
+          '<a href="/admin/kerberos/principals">' +
+          t.html('consoleProtocolSettings.principalsLink') + '</a>)'
+        : state('state-none', t.html('consoleProtocolSettings.no')) +
+          ' — ' + kit.esc(info.note)) +
+      row(t.text('consoleProtocolSettings.thSecondFactorKrb'), info.fast
+        ? t.html('consoleProtocolSettings.krbOtp')
+        : t.html('consoleProtocolSettings.none')) +
+      row(t.text('consoleProtocolSettings.thTicketSays'), info.fast
+        ? t.html('consoleProtocolSettings.krbIndicator1') + '<code>' +
+          kit.esc(info.otpIndicator || 'otp') + '</code>' +
+          t.html('consoleProtocolSettings.krbIndicator2')
         : '—') +
       '</table>' + pkinitHtml + krbtgtHtml;
     return html;
@@ -582,89 +612,89 @@ class ProtocolSettingsPage {
    * Draws the status block of /admin/persistence from its JSON.
    *
    * @param info - the block's JSON, the page view's `status`
+   * @param tr - optional; the page's translator (#539)
    * @returns the block as HTML
    */
-  static persistenceStatus(info: Json): string {
+  static persistenceStatus(info: Json, tr?: Json): string {
+    const t = ProtocolSettingsPage.translator(tr);
     const off = info.mode === 'memory';
+    // Every row's words are messages (#539); the view's own strings stay
+    // outside them (`translator()`), and so does markup a message cannot
+    // carry — a link, a `<strong class="bad">`.
+    const gap = t.html('consoleProtocolSettings.sentenceGap');
+    const period = t.html('consoleProtocolSettings.period');
 
     const rows = [
-      ['Mode', off
-        ? '<strong>memory</strong> — nothing is written down. This is what ' +
-          'this service did until 2026-08-27 and is still the default.'
+      [t.text('consoleProtocolSettings.thMode'), off
+        ? t.html('consoleProtocolSettings.perModeMemory')
         : '<strong>' + kit.esc(info.mode) + '</strong>' +
           (info.configuredMode !== info.mode
-            ? ' — though <code>persistence.mode</code> is set to <code>' +
-              kit.esc(info.configuredMode) + '</code>. IT FELL BACK, which ' +
-              'means the store could not be opened or read; the reason is ' +
-              'below and in the log. Nothing is being written down. ' +
-              '<strong>THIS SHOULD NOT BE REACHABLE</strong>: since ' +
-              '2026-08-28 a configured store that cannot be opened stops the ' +
-              'process at startup rather than letting it run as something it ' +
-              'is not, so a service drawing this page has one. Seeing it ' +
-              'means something re-introduced the fallback — the row is kept ' +
-              'as the net under that.'
+            ? t.html('consoleProtocolSettings.perFellBack1') + '<code>' +
+              kit.esc(info.configuredMode) + '</code>' +
+              t.html('consoleProtocolSettings.perFellBack2')
             : '')],
-      ['Where', off ? 'nowhere'
+      [t.text('consoleProtocolSettings.thWhere'), off
+        ? t.html('consoleProtocolSettings.perNowhere')
         : info.mode === 'ldif'
-          ? '<code>' + kit.esc(info.dataDir || '') + '</code> — one RFC ' +
-            '2849 LDIF file per realm, plus <code>realms.json</code> and ' +
-            '<code>appconfig.json</code>'
+          ? '<code>' + kit.esc(info.dataDir || '') + '</code>' +
+            t.html('consoleProtocolSettings.perLdif')
           : info.database
             ? 'PostgreSQL <code>' + kit.esc(String(info.database.host)) + ':' +
               kit.esc(String(info.database.port)) + '/' +
-              kit.esc(String(info.database.database)) + '</code> as <code>' +
+              kit.esc(String(info.database.database)) + '</code>' +
+              t.html('consoleProtocolSettings.perAs') + '<code>' +
               kit.esc(String(info.database.user ||
-                              'the connection string\'s user')) +
-              '</code>. The connection string itself is never shown here: it ' +
-              'carries a password and this page is one fetch away from a log.'
-            : 'a PostgreSQL connection string'],
+                t.text('consoleProtocolSettings.perConnUser'))) +
+              '</code>' + t.html('consoleProtocolSettings.perNeverShown')
+            : t.html('consoleProtocolSettings.perConnString')],
       // WHERE THE PASSWORD COMES FROM (2026-09-12), as its own row and never
       // the password itself. A deployment that moved it into a secret store has
       // no other way to see that this process agreed: the row above looks
       // identical either way, because it never printed the password.
-      ['Password', off || info.mode !== 'postgres'
-        ? 'no connection is dialled, so there is no credential'
+      [t.text('consoleProtocolSettings.thPassword'),
+        off || info.mode !== 'postgres'
+        ? t.html('consoleProtocolSettings.perNoCred')
         : (info.database
             ? (info.database.passwordProvider &&
                info.database.passwordProvider !== 'none'
                 ? '<strong>' + kit.esc(String(info.database.passwordFrom)) +
-                  '</strong> &mdash; read once at startup and put into the ' +
-                  'connection string. The same mechanism, and by default the ' +
-                  'same file or secret, as the key-encryption key on ' +
-                  '<a href="/admin/encryption">the encryption report</a>.'
-                : 'the connection string ' +
-                  '(<code>persistence.databaseUrl</code>), in plain text. ' +
-                  '<code>persistence.databasePasswordProvider</code> reads ' +
-                  'it from a mounted file, AWS Secrets Manager, Google ' +
-                  'Secret Manager, Azure Key Vault or HashiCorp Vault instead.')
-            : 'unknown')],
+                  '</strong>' + t.html('consoleProtocolSettings.perPwdFrom') +
+                  '<a href="/admin/encryption">' +
+                  t.html('consoleProtocolSettings.perEncLink') + '</a>' +
+                  period
+                : t.html('consoleProtocolSettings.perPwdPlain'))
+            : t.html('consoleProtocolSettings.unknown'))],
       // TLS TO THE DATABASE, as its own row rather than folded into the one
       // above. Encryption and authentication are two answers and this page has
       // room to give both — which matters here more than in most places,
       // because the honest state of the compose stack is "encrypted and not
       // authenticated" and a single tick would have to round that one way or
       // the other.
-      ['Transport', off || info.mode !== 'postgres'
+      [t.text('consoleProtocolSettings.thTransport'),
+        off || info.mode !== 'postgres'
         ? (info.mode === 'ldif'
-            ? 'a file on this machine — no connection, so nothing to encrypt'
-            : 'nothing is written, so nothing is dialled')
+            ? t.html('consoleProtocolSettings.perTransportFile')
+            : t.html('consoleProtocolSettings.perTransportNone'))
         : (info.database
             ? (info.database.encrypted
                 ? '<strong>TLS</strong> &mdash; ' +
                   kit.esc(String(info.database.tls))
-                : '<strong class="bad">NOT TLS</strong> &mdash; ' +
+                : '<strong class="bad">' +
+                  t.html('consoleProtocolSettings.perNotTls') +
+                  '</strong> &mdash; ' +
                   kit.esc(String(info.database.tls)))
-            : 'unknown')],
-      ['What is written', off ? 'nothing' : [
-          info.persistsDirectory ? 'the embedded directory' : null,
-          info.persistsRealms ? 'the trust realm registry' : null,
-          info.persistsAppconfig ? 'runtime setting changes' : null,
+            : t.html('consoleProtocolSettings.unknown'))],
+      [t.text('consoleProtocolSettings.thWritten'), off
+        ? t.html('consoleProtocolSettings.perNothing') : [
+          info.persistsDirectory
+            ? t.html('consoleProtocolSettings.perWDirectory') : null,
+          info.persistsRealms
+            ? t.html('consoleProtocolSettings.perWRealms') : null,
+          info.persistsAppconfig
+            ? t.html('consoleProtocolSettings.perWAppconfig') : null,
           info.minted && info.minted.persisting
-            ? '<strong>and everything this process mints</strong> — ' +
-              'sessions, tokens, codes, artifacts, Kerberos principals, the ' +
-              'replay caches, the counters and the audit log, across ' +
-              kit.esc(String(info.minted.stores)) +
-              ' stores, every row encrypted'
+            ? t.html('consoleProtocolSettings.perWMinted',
+                     { stores: String(info.minted.stores) })
             : null
         ].filter(Boolean).join(', ')],
       // -----------------------------------------------------------------------
@@ -676,133 +706,108 @@ class ProtocolSettingsPage {
       // when the answer was long would be a page that stopped answering it
       // exactly when the answer got interesting.
       // -----------------------------------------------------------------------
-      ['What is NEVER written', off
-        ? 'everything — nothing at all is written in this mode'
+      [t.text('consoleProtocolSettings.thNeverWritten'), off
+        ? t.html('consoleProtocolSettings.perNeverAll')
         : (info.minted && info.minted.persisting
-            ? 'nothing, beyond the two caches that are re-derivable ' +
-              '(the signed-metadata cache and the parsed-policy cache) and ' +
-              'the plaintext of the signing keys, which are held encrypted. ' +
-              '<strong>The private keys themselves are never written in the ' +
-              'clear</strong>, and neither is any minted row.'
-            : 'sessions, access tokens, ID Tokens, refresh tokens, ' +
-              'authorization codes, pre-authorized codes, SAML artifacts, ' +
-              'Kerberos tickets, the replay caches, the statistics and the ' +
-              'audit log' +
+            ? t.html('consoleProtocolSettings.perNeverMinted')
+            : t.html('consoleProtocolSettings.perNeverList') +
               (info.minted && info.minted.unsupportedReason
-                ? ' — because ' + kit.esc(info.minted.unsupportedReason)
-                : ' — because the signing key is regenerated on every start ' +
-                  'in development mode, so a token that outlived it would ' +
-                  'verify against nothing') + '.')],
+                ? t.html('consoleProtocolSettings.perBecause') +
+                  kit.esc(info.minted.unsupportedReason)
+                : t.html('consoleProtocolSettings.perBecauseDev')) + period)],
       // -----------------------------------------------------------------------
       // AND WHETHER THIS PROCESS IS ALONE WITH ITS COPY. This row is the
       // reversal of the sentence that used to be two paragraphs of prose above:
       // "one process per database".
       // -----------------------------------------------------------------------
-      ['Other processes', off || !info.replication
+      [t.text('consoleProtocolSettings.thOtherProcesses'),
+        off || !info.replication
         ? '—'
         : info.replication.coordinating
-          ? '<strong>coordinating</strong> — applied up to change ' +
-            kit.esc(String(info.replication.appliedSeq)) + ', ' +
-            kit.esc(String(info.replication.rowsApplied)) + ' row(s) taken ' +
-              'from ' +
-            kit.esc(String(info.replication.otherProcesses)) + ' other ' +
-            'process(es), polling ' +
-            'every ' + kit.esc(String(info.replication.pollIntervalMs)) +
-            'ms with a LISTEN/NOTIFY nudge on top' +
+          ? t.html('consoleProtocolSettings.perCoord',
+                   { seq: String(info.replication.appliedSeq),
+                     rows: String(info.replication.rowsApplied),
+                     others: String(info.replication.otherProcesses),
+                     ms: String(info.replication.pollIntervalMs) }) +
             (info.replication.lastError
-              ? '. <strong class="bad">THE LAST PULL FAILED</strong> — ' +
-                kit.esc(info.replication.lastError) + '. This process is ' +
-                'BEHIND and is serving its own copy until it catches up.'
-              : '.')
-          : '<strong>not coordinating</strong> — this process holds its own ' +
-            'copy and will not see another\'s writes until it restarts. ' +
+              ? gap + '<strong class="bad">' +
+                t.html('consoleProtocolSettings.perPullFailed') +
+                '</strong> — ' + kit.esc(info.replication.lastError) +
+                t.html('consoleProtocolSettings.perBehind')
+              : period)
+          : t.html('consoleProtocolSettings.perNotCoord') +
             (info.replication.supported
-              ? 'Set <code>persistence.coordinate</code> to change that.'
-              : 'The ' + kit.esc(info.mode) + ' store cannot coordinate: a ' +
-                'change log needs a transaction and a sequence, and that ' +
-                'store writes whole files.')],
-      ['When', off ? '—'
+              ? t.html('consoleProtocolSettings.perSetCoordinate')
+              : t.html('consoleProtocolSettings.perCannot1') +
+                kit.esc(info.mode) +
+                t.html('consoleProtocolSettings.perCannot2'))],
+      [t.text('consoleProtocolSettings.thWhen'), off ? '—'
         : info.writeDelayMs === 0
-          ? 'immediately — every change made while handling one request ' +
-            'commits as one transaction the moment that request is done, ' +
-            'plus a final flush on SIGTERM and SIGINT'
-          : kit.esc(String(info.writeDelayMs)) + 'ms after a change, so a ' +
-            'burst costs one file write, plus a final flush on SIGTERM and ' +
-            'SIGINT. A <code>kill -9</code> cannot be trapped and would lose ' +
-            'up to that much.'],
-      ['Health', off ? '—'
+          ? t.html('consoleProtocolSettings.perImmediate')
+          : t.html('consoleProtocolSettings.perDelay',
+                   { ms: String(info.writeDelayMs) })],
+      [t.text('consoleProtocolSettings.thHealth'), off ? '—'
         : info.lastError
-          ? '<strong>THE LAST WRITE FAILED</strong> — ' +
+          ? t.html('consoleProtocolSettings.perLastWriteFailed') +
             kit.esc(info.lastError) +
-            '. Reads are still answered out of memory, and the write is ' +
-            'retried on its own' + (info.retryArmed ? ' (a retry is armed)'
-              : '') + '. ' + (info.answersAfterCommit
-              ? 'A request whose change was in it was answered 503 (LDAP: ' +
-                'unavailable), never its success (#351).'
-              : 'The request that made the change was answered before it.')
-          : 'writing normally'],
+            t.html('consoleProtocolSettings.perReadsAnswered') +
+            (info.retryArmed ? t.html('consoleProtocolSettings.perRetryArmed')
+              : '') + gap + (info.answersAfterCommit
+              ? t.html('consoleProtocolSettings.per503')
+              : t.html('consoleProtocolSettings.perAnsweredBefore'))
+          : t.html('consoleProtocolSettings.perWritingNormally')],
       // ANSWER AFTER COMMIT AND THE EVENT LOOP (#351): what
       // persistence.status() carries for them, drawn so an operator does not
       // need the API to see a refused write waiting or a blocked loop.
-      ['Answered after commit', off ? '—'
+      [t.text('consoleProtocolSettings.thAnsweredAfterCommit'), off ? '—'
         : (info.answersAfterCommit
-          ? 'yes — a request that changed the store is answered once that ' +
-            'change has committed, and 503 (LDAP: unavailable) when it has ' +
-            'not'
-          : 'no — this store is written after the answer') +
+          ? t.html('consoleProtocolSettings.perAacYes')
+          : t.html('consoleProtocolSettings.perAacNo')) +
           (info.commitBacklog
-            ? '. <strong class="bad">A REFUSED WRITE IS WAITING FOR ITS ' +
-              'RETRY</strong>; writing requests are held for it.'
-            : '.')],
-      ['Event loop', !info.eventLoop ? '—'
-        : 'worst delay ' +
-          kit.esc(String((info.eventLoop.sinceReport || {}).maxMs)) +
-          ' ms since the last report' +
+            ? gap + '<strong class="bad">' +
+              t.html('consoleProtocolSettings.perRefusedWaiting') +
+              '</strong>' + t.html('consoleProtocolSettings.perHeld')
+            : period)],
+      [t.text('consoleProtocolSettings.thEventLoop'), !info.eventLoop ? '—'
+        : t.html('consoleProtocolSettings.perWorst',
+                 { max: String((info.eventLoop.sinceReport || {}).maxMs) }) +
           (info.eventLoop.lastReport
-            ? ', ' + kit.esc(String(info.eventLoop.lastReport.maxMs)) +
-              ' ms in the window before it'
-            : '') + ' (a warning is logged over ' +
-          kit.esc(String(info.eventLoop.warnAboveMs)) + ' ms).'],
-      ['Written so far', off ? '—'
-        : kit.esc(String(info.writes)) + ' flush(es), ' +
-          kit.esc(String(info.failures)) +
-          ' failure(s), ' + kit.esc(String(info.entriesTracked)) + ' ' +
-          'entry/entries across ' + kit.esc(String(info.realmsTracked)) + ' ' +
-            'realm(s). Last write ' +
-          (info.lastWriteAt ? kit.esc(info.lastWriteAt) : 'not yet') +
-          (info.pending ? '; a change is waiting to be written.' : '.')],
-      ['Restored at startup', off ? '—'
+            ? t.html('consoleProtocolSettings.perWindow',
+                     { max: String(info.eventLoop.lastReport.maxMs) })
+            : '') +
+          t.html('consoleProtocolSettings.perWarnOver',
+                 { ms: String(info.eventLoop.warnAboveMs) })],
+      [t.text('consoleProtocolSettings.thWrittenSoFar'), off ? '—'
+        : t.html('consoleProtocolSettings.perWrittenSoFar',
+                 { writes: String(info.writes),
+                   failures: String(info.failures),
+                   entries: String(info.entriesTracked),
+                   realms: String(info.realmsTracked) }) +
+          (info.lastWriteAt ? kit.esc(info.lastWriteAt)
+            : t.html('consoleProtocolSettings.perNotYet')) +
+          (info.pending ? t.html('consoleProtocolSettings.perPendingChange')
+            : period)],
+      [t.text('consoleProtocolSettings.thRestored'), off ? '—'
         : info.restoredAt
-          ? kit.esc(String(info.restored.entries)) + ' directory ' +
-            'entry/entries, ' +
-            kit.esc(String(info.restored.realms)) + ' trust realm(s) and ' +
-            kit.esc(String(info.restored.overrides)) + ' setting ' +
-              'override(s), at ' +
-            kit.esc(info.restoredAt) + '. Zero across the board means this ' +
-            'was the first run against an empty store, which then had the ' +
-            'seeded directory written into it.'
-          : 'nothing was restored'],
-      ['Coordination', '<strong>NO.</strong> ' + kit.esc(info.note)]
+          ? t.html('consoleProtocolSettings.perRestored',
+                   { entries: String(info.restored.entries),
+                     realms: String(info.restored.realms),
+                     overrides: String(info.restored.overrides) }) +
+            kit.esc(info.restoredAt) +
+            t.html('consoleProtocolSettings.perRestoredZero')
+          : t.html('consoleProtocolSettings.perNothingRestored')],
+      [t.text('consoleProtocolSettings.thCoordination'),
+        t.html('consoleProtocolSettings.perNo') + kit.esc(info.note)]
     ];
 
-    const html = '<h2>Right now</h2>' +
+    const html = '<h2>' + t.html('consoleProtocolSettings.perRightNow') +
+      '</h2>' +
       (off
-        ? kit.note('Nothing on this page is in force: ' +
-                    '<code>persistence.mode</code> is <code>memory</code>, ' +
-                    'so this service is holding everything in memory and ' +
-                    'will lose all of it when the process ends — which is ' +
-                    'exactly what it has always done. The settings below ' +
-                    'change that, and all but one of them are restart-only, ' +
-                    'because the store is opened and READ before the ' +
-                    'listener binds.')
+        ? kit.note(t.html('consoleProtocolSettings.perOffNote'))
         : (info.lastError
-            ? kit.warn('<strong>The persistent store is not currently ' +
-                        'accepting writes.</strong> Everything below still ' +
-                        'describes what this service is trying to do; the ' +
-                        'Health row says what went wrong. Nothing has been ' +
-                        'lost — see the note above about a failed write.')
+            ? kit.warn(t.html('consoleProtocolSettings.perNotAccepting'))
             : '')) +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      ProtocolSettingsPage.keyHead(t) +
       rows.map(function (row) {
         return '<tr><th>' + kit.esc(row[0]) + '</th><td>' + row[1] +
                '</td></tr>';

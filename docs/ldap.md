@@ -47,12 +47,14 @@ LDAPTLS_CACERT=/tmp/sts.pem ldapsearch -H ldaps://localhost:636 -x \
   -b "dc=example,dc=com" "(objectClass=*)"
 ```
 
-The certificate is regenerated on every start, unless `tls.certificateFile`
-supplies one, so fetch it again after a restart rather than switching
-verification off — `LDAPTLS_REQCERT=never` is the habit that endpoint exists to
-avoid, and here it would also hide the one thing on this listener worth
-checking. The certificate is re-keyed on 636 whenever the listener certificate
-is re-issued, for example after a new Root is built on `/admin/pki`.
+The certificate is issued under this service's Root, unless
+`tls.certificateFile` supplies one. Its key is kept across restarts only where
+minted state persists ([TLS](tls.md)), so fetch the Root again after a restart
+in development rather than switching verification off —
+`LDAPTLS_REQCERT=never` is the habit that endpoint exists to avoid, and here
+it would also hide the one thing on this listener worth checking. The
+certificate is re-keyed on 636 whenever the listener certificate is
+re-issued, for example after a new Root is built on `/admin/pki`.
 
 **No client certificate is asked for on 636.** This listener proves the
 *server* to the client and nothing more; a certificate offered to it is not

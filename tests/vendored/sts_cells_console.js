@@ -316,6 +316,22 @@ async function test() {
   // THE PAGE, as the console draws it at cell B: its operation asked with
   // the console's token, the answer drawn by the console's renderers.
   const table = consoleBundle();
+  // IN THE READER'S LANGUAGE (#539), as the console's runtime draws it: the
+  // shell's `locale` member, built into this bundle's translator and made
+  // its default.
+  const shell = await dpopFetch(walked.key, "GET",
+                                walked.origin + "/admin-api/console",
+                                walked.token, {});
+  const shellJson = await shell.json().catch(function () {
+    return null;
+  });
+  const translator = shellJson && shellJson.locale && table.messages
+    ? table.messages.WebTranslator.fromData(shellJson.locale) : null;
+  if (translator) {
+    table.messages.WebTranslator.setDefault(function () {
+      return translator;
+    });
+  }
   const row = table.pageFor("/admin/cells");
   const operationUrl = walked.origin + row.operation;
   const asked = await dpopFetch(walked.key, "GET", operationUrl,
@@ -326,7 +342,9 @@ async function test() {
   const page = { status: asked.status,
                  text: asked.status === 200 && answer
                    ? table.render("/admin/cells", answer,
-                                  table.kit.context({}, false)) || ""
+                                  table.kit.context({}, false,
+                                                    translator || undefined))
+                     || ""
                    : "" };
   check("its operation answers at cell B and the page is drawn", function () {
     assert.strictEqual(page.status, 200, page.status + " at " +

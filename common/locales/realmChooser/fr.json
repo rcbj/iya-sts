@@ -1,0 +1,10 @@
+{
+  "title": "Choisissez votre domaine",
+  "heading": "Choisissez votre domaine",
+  "lead": "Choisissez un domaine pour accéder à {surface, select, portal {votre compte} other {la console d’administration}}. Rien d’autre ici n’est utilisable tant que vous ne l’avez pas fait.",
+  "explain": "Ce service héberge plusieurs domaines de confiance, chacun avec ses propres personnes et ses propres administrateurs. Choisissez le domaine auquel vous appartenez ; vous serez alors invité à vous y connecter.",
+  "realm": "Domaine",
+  "continue": "Continuer vers {surface, select, portal {votre compte} other {la console d’administration}}",
+  "defaultRealm": "(le domaine par défaut)",
+  "idNote": "Votre administrateur peut vous indiquer l’identifiant de votre domaine. L’identifiant du domaine par défaut est <code>{id}</code>."
+}

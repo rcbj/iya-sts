@@ -1,0 +1,22 @@
+{
+  "logoAlt": "IYA STS — 安全權杖服務",
+  "sub": "一個寬鬆的模擬身分服務，支援十六個協定族。它的存在是為了測試用戶端。",
+  "version": "版本 {version}",
+  "warn": "它不檢查密碼、不驗證存取權杖，也不證明工作負載。請勿將此連接埠公開在公用位址上。",
+  "repoLabel": "GitHub 上的專案",
+  "repoNote": "原始碼、README，以及十六個協定族的完整說明。",
+  "issuesLabel": "問題回報",
+  "issuesNote": "已知的問題，以及回報尚未發現之問題的地方。",
+  "docsLabel": "說明文件",
+  "docsNote": "GitHub Pages 網站：入門、設定，以及刻意不檢查的內容。",
+  "consoleLabel": "此執行個體上的管理主控台",
+  "consoleNote": "此程序所做的一切，以及改變其協定端點行為的設定。",
+  "consoleRoles": "它還會要求您具備兩種角色之一。",
+  "consoleOpen": "它在此執行個體上是開放的。",
+  "consoleMetadata": "此服務註冊的每個端點都列在其中，位於 /admin/sts-metadata。",
+  "portalLabel": "此執行個體上的使用者入口網站",
+  "portalNote": "屬於正在檢視之人的帳戶頁面：您如何登入此服務、它保存了您的哪些資料，以及它會將您登入到哪裡。",
+  "portalNoRole": "它不要求任何角色，這正是它與上方主控台的全部差別：它的每一頁都與正在檢視的人有關，因此說明您是誰就是唯一的問題。",
+  "signInProduct": "它會要求您登入，而此執行個體處於產品模式，因此會依帳戶檢查密碼。",
+  "signInDevelopment": "它會要求您登入——任何使用者名稱皆可，且不檢查密碼。"
+}

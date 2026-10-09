@@ -198,9 +198,10 @@ As with SAML 2.0 it is **per relying party and, in development, minted for
 anything asked for** — in product mode `/saml11/metadata/{rp}`,
 `/saml11/sso/{rp}` and `/saml11/responder/{rp}` answer 404 for a name that is
 not a registered SAML 1.1 relying party:
-the providerID becomes `{providerID}:{slug}` and the endpoints sit under the
-same segment (`saml11.perApplicationProviderId`). The slug is the same one the
-SAML 2.0 profile uses for the same application. In development, a relying
+the endpoints sit under the relying party's own segment, and the slug is the
+same one the SAML 2.0 profile uses for the same application. The providerID is
+the realm's OAuth 2.0 issuer, the same for every relying party, and the
+document is the SAML 2.0 one — one entity describing both versions (#523). In development, a relying
 party named for the first time — by a `TARGET`, a metadata request or an
 artifact resolution — gets an application entry when
 `saml11.autocreateApplications` is on; product mode creates nothing because
@@ -238,7 +239,6 @@ subject and the attributes.
 | `AttributeQuery`, `AuthenticationQuery` | answered, to anybody who can reach the port — logged as such | answered only to a registered, authenticated relying party about a person it holds a live session for, by the NameIdentifier it was given |
 | Artifact resolver authentication | not required (follows `saml2.requireSignedAuthnRequests`) | required |
 | Given name, surname, mail, display name | invented | read off the directory entry, or omitted |
-| Empty `saml11.providerId` | replaced with `urn:sts:idp:saml11` | SSO and metadata refuse, naming the setting |
 
 The query policy in product is not a bare client-certificate gate on purpose:
 a gate alone would answer any holder of any trusted certificate about anybody,
@@ -251,8 +251,6 @@ session hold in **both** modes. See [What is not checked](what-is-not-checked.md
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `saml11.providerId` | `STS_SAML11_PROVIDER_ID` | `urn:sts:idp:saml11` | yes | This identity provider's name: the assertion `Issuer`, the metadata `entityID`, and what every artifact's SourceID is a hash of. |
-| `saml11.perApplicationProviderId` | `STS_SAML11_PER_APPLICATION_PROVIDER_ID` | `true` | yes | Give each relying party its own providerID, `{providerID}:{slug}`; this also changes every artifact's SourceID. |
 | `saml11.assertionLifetimeMin` | `STS_SAML11_ASSERTION_LIFETIME_MIN` | `60` | yes | Assertion lifetime; per relying party with `saml11AssertionLifetimeMin`. |
 | `saml11.signAssertion` | `STS_SAML11_SIGN_ASSERTION` | `true` | yes | Sign the assertion (required by Browser/POST); per relying party with `saml11SignAssertion`. Off is development mode only: product signs every assertion, and turning it off is refused, here and per relying party (#181). |
 | `saml11.signResponse` | `STS_SAML11_SIGN_RESPONSE` | `true` | yes | Sign the Response; per relying party with `saml11SignResponse`. Off is development mode only: Browser/POST requires a signed Response, so product always signs it and refuses turning it off (#181). |

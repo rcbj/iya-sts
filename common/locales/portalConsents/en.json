@@ -1,0 +1,19 @@
+{
+  "sub": "What you have agreed each application may ask this identity provider for on your behalf. <strong>Withdrawing takes effect at once</strong>: every token the application holds for you under what you withdraw stops working — including one that lets it act while you are away (<code>offline_access</code>) — and it cannot renew them even if you agree again later; it has to ask you afresh. Withdrawing one thing ends everything the application was given together with it.",
+  "adminNote": "Some applications are agreed for everybody by whoever runs this service, and you were never asked about those; they are listed under <strong>Administrative consents</strong> below, and are not yours to withdraw.",
+  "agreed": "You agreed it may ask for",
+  "when": "When",
+  "withdraw": "Withdraw",
+  "withdrawAll": "Withdraw everything for this application",
+  "none": "You have not agreed to anything that is written down. An application asks you the first time it wants something on your behalf, and your answer appears here.",
+  "previous": "Previous",
+  "next": "Next",
+  "pageOf": "Page {page} of {pages}",
+  "adminHeading": "Administrative consents",
+  "adminSub": "Whoever runs this service has agreed these on behalf of everybody who uses the application, so you were not asked about them. They were applied when you signed in to the application. Only an administrator can withdraw them; ask yours if you want one taken away.",
+  "forEverybody": "Agreed for everybody",
+  "firstApplied": "First applied to you",
+  "adminNone": "No application has used a consent agreed for everybody when you signed in to it.",
+  "doneScope": "Withdrawn: {name} may no longer ask for {scope}. It asks you again next time.",
+  "doneApplication": "Withdrawn: {name} may no longer ask for anything. It asks you again next time."
+}

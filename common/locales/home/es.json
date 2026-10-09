@@ -1,0 +1,22 @@
+{
+  "logoAlt": "IYA STS — Servicio de tokens de seguridad",
+  "sub": "Un servicio de identidad simulado y permisivo que habla dieciséis familias de protocolos. Existe para poner a prueba a los CLIENTES.",
+  "version": "versión {version}",
+  "warn": "No comprueba ninguna contraseña, no valida ningún token de acceso y no atestigua ninguna carga de trabajo. No expongas este puerto en una dirección pública.",
+  "repoLabel": "El proyecto en GitHub",
+  "repoNote": "El código fuente, el README y las dieciséis familias al completo.",
+  "issuesLabel": "Incidencias",
+  "issuesNote": "Lo que se sabe que falla, y dónde informar de lo que aún no se sabe.",
+  "docsLabel": "Documentación",
+  "docsNote": "El sitio de GitHub Pages: primeros pasos, configuración y lo que deliberadamente no se comprueba.",
+  "consoleLabel": "La consola de administración de esta instancia",
+  "consoleNote": "Todo lo que ha hecho este proceso, y los ajustes que cambian el comportamiento de sus endpoints de protocolo.",
+  "consoleRoles": "También pide uno de dos roles.",
+  "consoleOpen": "Está abierta en esta instancia.",
+  "consoleMetadata": "Todos los endpoints que ha registrado este servicio aparecen en ella, en /admin/sts-metadata.",
+  "portalLabel": "El portal de usuario de esta instancia",
+  "portalNote": "Las páginas de cuenta de quien las está viendo: cómo inicia sesión en este servicio, qué guarda sobre esa persona y dónde la conectará.",
+  "portalNoRole": "No pide ningún rol, y esa es toda la diferencia con la consola de arriba: cada una de sus páginas trata de la persona que la está viendo, así que decir quién eres es la única pregunta.",
+  "signInProduct": "Te pide iniciar sesión, y esta instancia está en modo producto, así que la contraseña se comprueba con la cuenta.",
+  "signInDevelopment": "Te pide iniciar sesión: cualquier nombre de usuario, y no se comprueba ninguna contraseña."
+}

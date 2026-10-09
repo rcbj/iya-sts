@@ -29,10 +29,15 @@
 // `consent.revoke()` refuses one that is not on their entry
 // (`STS-PORTAL-0085`): the `/portal/keys` credential id's arrangement.
 //
-// **A SCOPE UNDER GLOBAL CONSENT IS NOT LISTED**, because it is not the
-// person's to withdraw: nothing about them was ever written, and the
-// override is an operator's configuration of the application. The page says
-// that in a sentence rather than drawing rows with no button.
+// **A SCOPE UNDER GLOBAL CONSENT IS LISTED APART, UNDER ADMINISTRATIVE
+// CONSENTS (#537)**, with no button: it is not the person's to withdraw — the
+// override is an operator's configuration of the application. Until #537
+// nothing about the person was ever written and the page said so in a
+// sentence; the authorization endpoint now records each scope a global
+// consent answered for them (`consent.noteApplied()`), and the section draws
+// those that still stand (`consent.appliedConsentsOf()`) — the application
+// still carries the global consent, and the person has not also agreed to the
+// scope themselves. A sign-in made before #537 recorded nothing.
 //
 // **NO SCRIPT**: a real form per row and per application, under the
 // service-wide `script-src 'none'`. Paged by application, `/portal/
@@ -77,6 +82,9 @@ interface PortalContext {
   audit: Json;
   errorCodes: Json;
   config: { value(key: string): any };
+  // The portal's translator for a page drawn for this session (#539
+  // phase 3): the portal's application and the person's own language.
+  translatorFor(session: Json): any;
 }
 
 interface PortalConsentsDeps {
@@ -144,15 +152,22 @@ class PortalConsentsPage {
     return groups;
   }
 
-  // A GeneralizedTime as a reader writes a date.
-  private readable(at: string): string {
+  // A GeneralizedTime as a reader writes a date — in the reader's own
+  // language and their locale's way of writing it (#539), still in UTC
+  // and saying so (`Translator.date()`). Anything shorter is drawn as it
+  // came, as it always was.
+  private readable(at: string, t: Json): string {
     const { log } = this.ctx;
     log.debug("Entering PortalConsentsPage.readable().");
     const text = String(at || '');
     log.debug("Leaving PortalConsentsPage.readable().");
     return text.length >= 14
-      ? text.slice(0, 4) + '-' + text.slice(4, 6) + '-' + text.slice(6, 8) +
-        ' ' + text.slice(8, 10) + ':' + text.slice(10, 12) + ' UTC'
+      ? t.date(Date.UTC(Number(text.slice(0, 4)),
+                        Number(text.slice(4, 6)) - 1,
+                        Number(text.slice(6, 8)),
+                        Number(text.slice(8, 10)),
+                        Number(text.slice(10, 12))),
+               { dateStyle: 'medium', timeStyle: 'short' }) + ' UTC'
       : text;
   }
 
@@ -176,6 +191,7 @@ class PortalConsentsPage {
     const { log, esc, shell } = this.ctx;
     const self = this;
     log.debug("Entering PortalConsentsPage.page().");
+    const t = this.ctx.translatorFor(session);
     const groups = this.groupsOf(session);
     const pages = Math.max(1, Math.ceil(groups.length / PER_PAGE));
     const at = Math.min(Math.max(1, wanted || 1), pages);
@@ -188,51 +204,97 @@ class PortalConsentsPage {
             ? entry.name : group.client;
           return '<div class="card"><h2>' + esc(name) + '</h2>' +
             '<p class="sub"><code>' + esc(group.client) + '</code></p>' +
-            '<table><tr><th>You agreed it may ask for</th><th>When</th>' +
+            '<table><tr><th>' + t.html('portalConsents.agreed') +
+            '</th><th>' + t.html('portalConsents.when') + '</th>' +
             '<th></th></tr>' +
             group.rows.map(function (one: Json): string {
               return '<tr><td><code>' + esc(one.scope) + '</code></td><td>' +
-                esc(self.readable(one.at)) + '</td><td>' +
+                esc(self.readable(one.at, t)) + '</td><td>' +
                 self.form(session, { action: 'scope', client: group.client,
                                      scope: one.scope, page: String(at) },
-                          'Withdraw') + '</td></tr>';
+                          t.text('portalConsents.withdraw')) + '</td></tr>';
             }).join('') + '</table><p>' +
             self.form(session, { action: 'application',
                                  client: group.client, page: String(at) },
-                      'Withdraw everything for this application') +
+                      t.text('portalConsents.withdrawAll')) +
             '</p></div>';
         }).join('')
-      : '<div class="card"><p class="sub">You have not agreed to anything ' +
-        'that is written down. An application asks you the first time it ' +
-        'wants something on your behalf, and your answer appears here.</p>' +
-        '</div>';
+      : '<div class="card"><p class="sub">' + t.html('portalConsents.none') +
+        '</p></div>';
     const paging = pages > 1
       ? '<p class="pagenav">' +
         (at > 1
           ? '<a href="' + esc(this.PATH + '?page=' + (at - 1)) +
-            '">Previous</a>'
-          : '<span class="off">Previous</span>') +
-        '<span class="here">Page ' + esc(String(at)) + ' of ' +
-        esc(String(pages)) + '</span>' +
+            '">' + t.html('portalConsents.previous') + '</a>'
+          : '<span class="off">' + t.html('portalConsents.previous') +
+            '</span>') +
+        '<span class="here">' +
+        t.html('portalConsents.pageOf', { page: at, pages: pages }) +
+        '</span>' +
         (at < pages
-          ? '<a href="' + esc(this.PATH + '?page=' + (at + 1)) + '">Next</a>'
-          : '<span class="off">Next</span>') +
+          ? '<a href="' + esc(this.PATH + '?page=' + (at + 1)) + '">' +
+            t.html('portalConsents.next') + '</a>'
+          : '<span class="off">' + t.html('portalConsents.next') +
+            '</span>') +
         '</p>'
       : '';
     log.debug("Leaving PortalConsentsPage.page(). Page " + at + ".");
     return shell(this.PATH, session, message, error,
-      '<div class="card"><p class="sub">What you have agreed each ' +
-      'application may ask this identity provider for on your behalf. ' +
-      '<strong>Withdrawing takes effect at once</strong>: every token the ' +
-      'application holds for you under what you withdraw stops working — ' +
-      'including one that lets it act while you are away ' +
-      '(<code>offline_access</code>) — and it cannot renew them even if you ' +
-      'agree again later; it has to ask you afresh. Withdrawing one thing ' +
-      'ends everything the application was given together with it.</p>' +
-      '<p class="note">Some applications are agreed for everybody by ' +
-      'whoever runs this service, and you were never asked about those; ' +
-      'they are not yours to withdraw here and are not listed.</p></div>' +
-      body + paging);
+      '<div class="card"><p class="sub">' + t.html('portalConsents.sub') +
+      '</p><p class="note">' + t.html('portalConsents.adminNote') +
+      '</p></div>' +
+      body + paging + this.administrative(session, t));
+  }
+
+  // ADMINISTRATIVE CONSENTS (#537): the scopes an application's global
+  // consent answered for this person when they signed in to it, grouped by
+  // application, newest first. No button: an administrator's consent is not
+  // the person's to withdraw. Not paged: an operator configures global consent
+  // on a handful of applications, and every row here is one of theirs.
+  private administrative(session: Json, t: Json): string {
+    const { log, esc } = this.ctx;
+    const self = this;
+    log.debug("Entering PortalConsentsPage.administrative().");
+    const rows = this.deps.consent()
+      .appliedConsentsOf(session.user.username) || [];
+    const byClient: Record<string, Json> = {};
+    rows.forEach(function (one: Json) {
+      const group = byClient[one.client] ||
+        (byClient[one.client] = { client: one.client, rows: [], newest: '' });
+      group.rows.push(one);
+      if (String(one.at) > group.newest) {
+        group.newest = String(one.at);
+      }
+    });
+    const groups = Object.keys(byClient).map(function (client) {
+      return byClient[client];
+    }).sort(function (a: Json, b: Json) {
+      return String(b.newest).localeCompare(String(a.newest));
+    });
+    const applications = this.deps.applications();
+    const body = groups.length
+      ? groups.map(function (group: Json): string {
+          const entry = applications.get(group.client);
+          const name = entry && entry.name && entry.name !== group.client
+            ? entry.name : group.client;
+          return '<div class="card"><h3>' + esc(name) + '</h3>' +
+            '<p class="sub"><code>' + esc(group.client) + '</code></p>' +
+            '<table><tr><th>' + t.html('portalConsents.forEverybody') +
+            '</th><th>' + t.html('portalConsents.firstApplied') +
+            '</th></tr>' +
+            group.rows.map(function (one: Json): string {
+              return '<tr><td><code>' + esc(one.scope) + '</code></td><td>' +
+                esc(self.readable(one.at, t)) + '</td></tr>';
+            }).join('') + '</table></div>';
+        }).join('')
+      : '<div class="card"><p class="sub">' +
+        t.html('portalConsents.adminNone') + '</p></div>';
+    log.debug("Leaving PortalConsentsPage.administrative(). " +
+              groups.length + " application(s).");
+    return '<h2 id="administrative-consents">' +
+      t.html('portalConsents.adminHeading') + '</h2>' +
+      '<div class="card"><p class="sub">' + t.html('portalConsents.adminSub') +
+      '</p></div>' + body;
   }
 
   // -------------------------------------------------------------------------
@@ -323,11 +385,13 @@ class PortalConsentsPage {
     const entry = this.deps.applications().get(client);
     const name = entry && entry.name ? entry.name : client;
     log.debug('Leaving POST ' + PATH + '. Withdrawn.');
+    // In the person's language (#539): the text rides the redirect, and
+    // the application's name and the scope are data, parameters.
+    const t = ctx.translatorFor(session);
     res.redirect(303, PATH + '?page=' + at + '&done=' + encodeURIComponent(
-      (body.action === 'scope'
-        ? 'Withdrawn: ' + name + ' may no longer ask for ' + scope + '.'
-        : 'Withdrawn: ' + name + ' may no longer ask for anything.') +
-      ' It asks you again next time.'));
+      body.action === 'scope'
+        ? t.text('portalConsents.doneScope', { name: name, scope: scope })
+        : t.text('portalConsents.doneApplication', { name: name })));
     return undefined;
   }
 

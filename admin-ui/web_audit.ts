@@ -40,6 +40,10 @@ class AuditPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // The page's words are its catalog's (#539); what the view answered —
+    // the category labels and their explanations, every row's summary —
+    // is drawn as it came.
+    const t = ctx.t;
     const paging = json.paging;
     const summary = json;
     const known = json.knownActors;
@@ -59,13 +63,14 @@ class AuditPage {
     const nav = kit.pageNavPair('/admin/audit', filterParams, paging);
 
     const rows = json.events.map(function (row) {
-      return AuditPage.auditRow(row, known);
+      return AuditPage.auditRow(row, known, t);
     }).join('');
 
     const categoryOptions = ['<option value=""' +
                              ((json.filter.category || '') ? '' : ' ' +
         'selected') +
-                             '>any category</option>']
+                             '>' + t.html('consoleAudit.anyCategory') +
+                             '</option>']
       .concat(json.categories.map(function (entry) {
         return '<option value="' + kit.esc(entry.category) + '"' +
                (entry.category === (json.filter.category || '')
@@ -82,7 +87,7 @@ class AuditPage {
     const actionOptions = '<option value=""' +
       ((json.filter.action || '') ? '' : ' ' +
         'selected') +
-      '>any action</option>' +
+      '>' + t.html('consoleAudit.anyAction') + '</option>' +
       json.categories.map(function (entry) {
         const inGroup = json.actions.filter(function (a) {
           return a.category === entry.category;
@@ -101,7 +106,8 @@ class AuditPage {
     const outcomeOptions = ['<option value=""' +
                             ((json.filter.outcome || '') ? '' : ' ' +
         'selected') +
-                            '>any outcome</option>']
+                            '>' + t.html('consoleAudit.anyOutcome') +
+                            '</option>']
       .concat(json.outcomes.map(function (name) {
         return '<option value="' + kit.esc(name) + '"' +
                (name === (json.filter.outcome || '') ? ' selected' : '') + '>' +
@@ -116,143 +122,113 @@ class AuditPage {
                       f.q || f.code || f.address || '';
 
     const inner = '<div class="tiles">' +
-        kit.tile(summary.held, 'events held') +
-        kit.tile(summary.recorded, 'events recorded') +
-        kit.tile(summary.dropped, 'dropped (oldest first)') +
-        kit.tile(summary.byCategory.directory || 0, 'directory') +
-        kit.tile(summary.byCategory.authentication || 0, 'authentications') +
-        kit.tile(summary.byCategory.session || 0, 'session events') +
+        kit.tile(summary.held, t.text('consoleAudit.tileHeld')) +
+        kit.tile(summary.recorded, t.text('consoleAudit.tileRecorded')) +
+        kit.tile(summary.dropped, t.text('consoleAudit.tileDropped')) +
+        kit.tile(summary.byCategory.directory || 0,
+                 t.text('consoleAudit.tileDirectory')) +
+        kit.tile(summary.byCategory.authentication || 0,
+                 t.text('consoleAudit.tileAuthentications')) +
+        kit.tile(summary.byCategory.session || 0,
+                 t.text('consoleAudit.tileSessions')) +
       '</div>' +
 
-      kit.note('What this service has been asked to do, in the order it ' +
-      'was asked, newest first. The other pages here are <em>state</em> — ' +
-      'how many calls, which tokens are still valid, who is in ' +
-      '<code>cn=developers</code>. This one is <em>history</em>: the ' +
-      'metrics page can say the directory holds eleven entries, and only ' +
-      'this page can say that a twelfth was created at 14:02 and deleted ' +
-      'at 14:03 by somebody bound as <code>uid=carol</code>, over LDAPS.') +
+      kit.note(t.html('consoleAudit.history')) +
 
-      kit.note('<strong>No credential is ever recorded here.</strong> Not ' +
-      'a password, not a bearer token, not an assertion, and no request or ' +
-      'response body. An event carries the facts of what happened — who, ' +
-      'what, where, the outcome — and the identifiers that are already ' +
-      'safe to show. A modify names the attributes it changed and never ' +
-      'their values, because a modify is where a <code>userPassword</code> ' +
-      'gets set; a compare says whether it matched and not what was tried; ' +
-      'an <code>authorization code</code> in a query string is replaced ' +
-      'with <code>(redacted)</code>. The debug log is where somebody who ' +
-      'wants the bodies looks, and it is a log rather than a web page.') +
+      kit.note(t.html('consoleAudit.noCredential')) +
 
-      kit.note('<strong>One act usually produces several rows, and they ' +
-      'are not duplicates.</strong> Signing in at ' +
-      '<code>/authn/login</code> writes three: the HTTP call ' +
-      '(<code>protocol.call</code>), the credential being accepted ' +
-      '(<code>authentication</code>) and the session that came out of it ' +
-      '(<code>session.start</code>). Those are three facts at three ' +
-      'layers, and which one answers your question depends on the question ' +
-      '— a Kerberos AS-REQ authenticates somebody and starts no session at ' +
-      'all, and an LDAP bind does both without an HTTP request anywhere in ' +
-      'it. Collapsing them would mean choosing, once and for everybody, ' +
-      'which of the three this page can answer.') +
+      kit.note(t.html('consoleAudit.severalRows')) +
 
-      kit.note('<strong>This log observes itself.</strong> Drawing this ' +
-      'page is console access, so fetching it records an ' +
-      '<code>admin.view</code> event and the list is one row longer than ' +
-      'it was when you asked. That is not a defect being left unfixed: ' +
-      'suppressing it would put a blind spot exactly where the person ' +
-      'reading the audit log stands. Filter by category to read past it.') +
+      kit.note(t.html('consoleAudit.observesItself')) +
 
-      '<h2>What happened</h2>' +
+      '<h2>' + t.html('consoleAudit.whatHappened') + '</h2>' +
       // No `page` input in this form, deliberately: changing a filter or the
       // page size returns to page 1. Carrying the old page number over would
       // land somebody on page 6 of a two-page result and the clamp in
       // pagingOf() would then move them again, which reads as the form
       // ignoring them.
       '<form method="get" action="/admin/audit"><div ' +
-        'class="formrow"><label for="category">Category</label><select ' +
+        'class="formrow"><label for="category">' +
+        t.html('consoleAudit.category') + '</label><select ' +
         'id="category" name="category">' +
           categoryOptions + '</select>' +
-        '<label for="action">Action</label><select id="action" ' +
+        '<label for="action">' + t.html('consoleAudit.action') +
+        '</label><select id="action" ' +
         'name="action">' +
           actionOptions + '</select>' +
-        '<label for="outcome">Outcome</label><select id="outcome" ' +
+        '<label for="outcome">' + t.html('consoleAudit.outcome') +
+        '</label><select id="outcome" ' +
         'name="outcome">' +
           outcomeOptions + '</select>' +
-        '<label for="per">Per page</label><select id="per" name="per">' +
+        '<label for="per">' + t.html('consoleAudit.perPage') +
+        '</label><select id="per" name="per">' +
       perOptions +
           '</select>' +
       '</div><div class="formrow">' +
-        '<label for="actor">Actor</label>' +
+        '<label for="actor">' + t.html('consoleAudit.actor') + '</label>' +
         '<input type="text" id="actor" name="actor" size="20" value="' +
           kit.esc((json.filter.actor || '')) + '" placeholder="alice">' +
-        '<label for="q">Text</label>' +
+        '<label for="q">' + t.html('consoleAudit.text') + '</label>' +
         '<input type="text" id="q" name="q" size="30" value="' +
       kit.esc((json.filter.q || '')) +
-          '" placeholder="a DN, a path, anything in the summary">' +
-        '<label for="code">Error code</label>' +
+          '" placeholder="' +
+          kit.esc(t.text('consoleAudit.textPlaceholder')) + '">' +
+        '<label for="code">' + t.html('consoleAudit.errorCode') +
+        '</label>' +
         '<input type="text" id="code" name="code" size="16" value="' +
           kit.esc((json.filter.code || '')) + '" placeholder="STS-OAUTH">' +
-        '<label for="address">From</label>' +
+        '<label for="address">' + t.html('consoleAudit.from') + '</label>' +
         '<input type="text" id="address" name="address" size="16" ' +
           'value="' + kit.esc((json.filter.address || '')) +
           '" placeholder="10.0.0.">' +
-        '<button class="secondary">Filter</button>' +
-        (filtering ? ' <a href="/admin/audit">clear</a>' : '') +
+        '<button class="secondary">' + t.html('consoleAudit.filter') +
+        '</button>' +
+        (filtering ? ' <a href="/admin/audit">' +
+          t.html('consoleAudit.clear') + '</a>' : '') +
       '</div></form>' +
-      kit.note('Category and Action narrow together, like any two ' +
-      'filters, so an action from another category matches nothing — which ' +
-      'is what an empty table below then means. Actor matches a substring ' +
-      'of either spelling of the name, because the actor on a directory ' +
-      'row is a bind DN and the one on a Kerberos row is ' +
-      '<code>alice@REALM</code>; the collapse to a single key can only be ' +
-      'done where an identity is normalised. Error code matches the front ' +
-      'of a code, so <code>STS-OAUTH</code> is every OAuth failure and a ' +
-      'whole code is one condition; every refused or failed request ' +
-      'carries one, listed on the <em>Error codes</em> page of the ' +
-      'documentation. A code is recorded here and in the service log and ' +
-      'is never sent to the client; <a href="/admin/error-codes">Error ' +
-      'codes</a> says what each one means.') +
+      // The link to Error codes is markup, so it sits between two messages.
+      kit.note(t.html('consoleAudit.filterNoteHead') +
+      ' <a href="/admin/error-codes">' + t.html('consoleAudit.errorCodes') +
+      '</a> ' + t.html('consoleAudit.filterNoteTail')) +
       nav.head +
-      '<table><tr><th class="num">#</th><th>When</th><th>Category</th><th>' +
-      'Action</th><th>Outcome</th><th>Actor</th><th>From</th>' +
-      '<th>Target</th><th>What happened</th><th>Detail</th></tr>' +
-      (rows || '<tr><td colspan="10">Nothing matches.</td></tr>') +
+      '<table><tr><th class="num">#</th><th>' +
+      t.html('consoleAudit.when') + '</th><th>' +
+      t.html('consoleAudit.category') + '</th><th>' +
+      t.html('consoleAudit.action') + '</th><th>' +
+      t.html('consoleAudit.outcome') + '</th><th>' +
+      t.html('consoleAudit.actor') + '</th><th>' +
+      t.html('consoleAudit.from') + '</th>' +
+      '<th>' + t.html('consoleAudit.target') + '</th><th>' +
+      t.html('consoleAudit.whatHappened') + '</th><th>' +
+      t.html('consoleAudit.detail') + '</th></tr>' +
+      (rows || '<tr><td colspan="10">' +
+        t.html('consoleAudit.nothingMatches') + '</td></tr>') +
       '</table>' +
       nav.foot +
 
-      kit.note(json.matched + ' row(s) match' +
-      (paging.pages > 1 ?
-       ', of which rows ' + paging.firstRow + '&ndash;' + paging.lastRow +
-                          ' are on this page (' + paging.page + ' of ' +
-                          paging.pages + ')' : '') +
-      '; ' + summary.held + ' held of ' + summary.recorded + ' recorded ' +
-      'since this process started' +
+      kit.note(t.html('consoleAudit.rowsMatch',
+                      { n: String(json.matched) }) +
+      (paging.pages > 1
+        ? t.html('consoleAudit.rowsOnPage',
+                 { first: String(paging.firstRow),
+                   last: String(paging.lastRow),
+                   page: String(paging.page),
+                   pages: String(paging.pages) })
+        : '') +
+      t.html('consoleAudit.heldOf',
+             { held: String(summary.held),
+               recorded: String(summary.recorded) }) +
       (summary.dropped
-        ? ', and <strong>' + summary.dropped + ' dropped</strong> — the ' +
-                                               'log holds at most ' +
-          summary.maxEvents + ' events and discards the oldest first. ' +
-          'Raise <code>audit.maxEvents</code> in the settings at the foot ' +
-          'of this page if that is losing something you need.'
-        : '. The cap is ' + summary.maxEvents + ' events and nothing has ' +
-                                                'been dropped yet.')) +
+        ? t.html('consoleAudit.someDropped',
+                 { dropped: String(summary.dropped),
+                   max: String(summary.maxEvents) })
+        : t.html('consoleAudit.noneDropped',
+                 { max: String(summary.maxEvents) }))) +
 
-      kit.note('The <strong>#</strong> column is a sequence number, ' +
-      'unique across every process of this service and never reused — ' +
-      'including across a drop and a restart — and rising within each ' +
-      'process. That is what makes it a stable name for an event, where a ' +
-      'row number would silently name a different event as soon as ' +
-      'anything was discarded. It is NOT one order across processes: ' +
-      'several worker threads or cluster nodes each number from blocks of ' +
-      'their own. To read what is new, resume by time ' +
-      '(<code>at</code>), with <code>seq</code> as the tie-break. ' +
-      '<code>?format=json</code> carries <code>oldestSeq</code> and ' +
-      '<code>newestSeq</code>, the numbers of the oldest and newest ' +
-      'events held.') +
+      kit.note(t.html('consoleAudit.seqNote')) +
 
-      '<h3>Where the rows come from</h3>' +
-      kit.note('Six categories and five recording points, rather than a ' +
-      'recording site per feature. Each of these is a funnel this service ' +
-      'already had:') +
+      '<h3>' + t.html('consoleAudit.whereRowsComeFrom') + '</h3>' +
+      kit.note(t.html('consoleAudit.sixCategories')) +
       '<ul>' + json.categories.map(function (entry) {
         // The label, the category and the count stay on the row and the
         // paragraph explaining the category folds under them, which is the
@@ -264,72 +240,31 @@ class AuditPage {
                kit.note(kit.esc(entry.what)) + '</li>';
       }).join('') + '</ul>' +
 
-      kit.note('<strong>Every row says where it came from</strong> ' +
-      '(since 2026-09-18): <em>From</em> is the client\'s IP address for ' +
-      'whatever the request, LDAP operation, Kerberos message or SPIRE ' +
-      'Server API call caused — an authentication, a refused sign-in, a ' +
-      'consent, a sign-out — and is empty for what this service did on its ' +
-      'own. It is the address <code>global.trustProxy</code> and ' +
-      '<code>global.trustedProxies</code> resolve: the right-most ' +
-      '<code>X-Forwarded-For</code> hop that is not a proxy you named, or ' +
-      'the client in a PROXY protocol header. <strong>With neither set ' +
-      'behind a proxy, it is the proxy</strong> — on a laptop, the compose ' +
-      'bridge — because that is the nearest hop that did not say who it ' +
-      'forwarded for. The CHANNEL is still under the target: ' +
-      '<code>http</code>, <code>ldap</code>, <code>ldaps</code>, ' +
-      '<code>kerberos</code>, <code>grpc</code>, <code>tls</code>, ' +
-      '<code>console</code> (an act on this console or ' +
-      '<code>/admin-api</code>), <code>internal</code> (something this ' +
-      'service did on its own), or <code>none</code> (a session that ' +
-      'expired).') +
+      kit.note(t.html('consoleAudit.fromNote')) +
 
-      kit.note('<strong>It is in memory and dies with the ' +
-      'process</strong>, like the counters, the sessions and the signing ' +
-      'key. There is no compliance story here to serve: this service ' +
-      'checks no password anywhere, so an audit log of it is a debugging ' +
-      'aid and not a record of anything. It also has no clear button, and ' +
-      'that is a decision rather than an omission — an erase control on an ' +
-      'unprotected console would make the page unable to answer the one ' +
-      'question an audit log exists for. Restarting the service is how you ' +
-      'get an empty one.') +
+      kit.note(t.html('consoleAudit.inMemory')) +
 
       // THE TWO SETTINGS ARE ON THIS PAGE NOW rather than being described
       // here and typed in somewhere else. `audit.protocolCalls` is the reason
       // this one matters: it is the noisy category, and somebody turning it
       // off is doing it BECAUSE they are looking at this page and cannot read
       // it.
-      SettingsForms.forms(json.settings, '/admin/audit') +
-      kit.note('<code>audit.protocolCalls</code> (now ' +
-      (summary.protocolCalls ? 'on' : '<strong>off</strong>') + ') is the ' +
-      'noisy one — every JWKS poll and metadata fetch is an event — so ' +
-      'turning it off is how somebody watching the directory or the ' +
-      'console gets a readable page. It never affects the other five ' +
-      'categories, and <a href="/admin/metrics">the metrics page</a> ' +
-      'counts every call either way. Both take effect immediately, and ' +
-      'lowering <code>audit.maxEvents</code> ' +
-      '(now ' + summary.maxEvents + ') discards ' +
-      'the oldest rows at once rather than on the next event.') +
+      SettingsForms.forms(json.settings, '/admin/audit', undefined,
+                          t) +
+      // Each link to the metrics page is markup, so it sits between two
+      // messages.
+      kit.note(t.html('consoleAudit.protocolCallsHead',
+                      { state: summary.protocolCalls ? 'on' : 'off' }) +
+      ' <a href="/admin/metrics">' + t.html('consoleAudit.theMetricsPage') +
+      '</a> ' + t.html('consoleAudit.protocolCallsTail',
+                       { max: String(summary.maxEvents) })) +
 
-      kit.note('<strong>One request is deliberately never a row here: ' +
-      '<code>GET /healthcheck</code> when it answered 200.</strong> It is ' +
-      'asked every few seconds for the whole life of this service — by the ' +
-      'compose healthcheck and by every launcher that waits for it to come ' +
-      'up — and it always answers the same thing, so recorded it would be ' +
-      'by a wide margin the most common row on this page and would push ' +
-      'everything you came here to read off the end of the cap above. A ' +
-      'probe that answered anything ELSE is recorded as usual, which is ' +
-      'the half worth knowing: a failing healthcheck is exactly the event ' +
-      'somebody hunting a start-up failure is looking for. <a ' +
-      'href="/admin/metrics">The metrics page</a> counts every probe ' +
-      'either way.') +
+      kit.note(t.html('consoleAudit.healthcheckHead') + ' <a ' +
+      'href="/admin/metrics">' + t.html('consoleAudit.metricsPageStart') +
+      '</a> ' + t.html('consoleAudit.healthcheckTail')) +
 
-      kit.note('Paging is <code>?page=</code> and <code>?per=</code> (at ' +
-        'most ' +
-      kit.MAX_ROWS + ' rows a page) and both work with ' +
-      '<code>?format=json</code>, whose reply carries <code>page</code>, ' +
-      '<code>pages</code> and <code>matched</code> so a test can walk the ' +
-      'whole list without guessing where it ends. The same list is at ' +
-      '<code>GET /admin-api/audit</code> with the same parameters.');
+      kit.note(t.html('consoleAudit.paging',
+                      { max: String(kit.MAX_ROWS) }));
 
     return inner;
   }
@@ -339,9 +274,12 @@ class AuditPage {
    *
    * @param row - an audit row
    * @param known - the usernames this console has seen, as object keys
+   * @param t - the page's translator; the default (English in node) when
+   *   omitted, which is how `admin.ts` calls it
    * @returns a <tr> as HTML
    */
-  static auditRow(row, known) {
+  static auditRow(row, known, t?) {
+    t = t || kit.context().t;
     return '<tr>' +
       '<td class="num">' + kit.esc(row.seq) + '</td>' +
       '<td>' + kit.esc(kit.whenText(row.at)) + '</td>' +
@@ -352,8 +290,8 @@ class AuditPage {
                          encodeURIComponent(row.errorCode) + '"><code>' +
                          kit.esc(row.errorCode) + '</code></a>' : '') +
                              '</td>' +
-      '<td class="who">' + AuditPage.auditActorCell(row, known) + '</td>' +
-      '<td class="who">' + AuditPage.auditAddressCell(row) + '</td>' +
+      '<td class="who">' + AuditPage.auditActorCell(row, known, t) + '</td>' +
+      '<td class="who">' + AuditPage.auditAddressCell(row, t) + '</td>' +
       '<td class="who">' +
       (row.target ? '<code>' + kit.esc(row.target) + '</code>'
                                        : '<span class="state-none">—</span>') +
@@ -380,14 +318,13 @@ class AuditPage {
    *
    * @param row - an audit row
    * @param known - the usernames this console has seen, as object keys
+   * @param t - the page's translator
    * @returns the cell's content as HTML
    */
-  static auditActorCell(row, known) {
+  static auditActorCell(row, known, t) {
     if (!row.actor && !row.actorForm) {
-      return '<span class="state-none" title="Nothing here names an actor. ' +
-        'An unauthenticated protocol call and an anonymous LDAP bind both ' +
-        'look like this, and both are ordinary on a service that ' +
-        'authenticates nobody.">—</span>';
+      return '<span class="state-none" title="' +
+        kit.esc(t.text('consoleAudit.noActorTitle')) + '">—</span>';
     }
     const parts = [];
     if (row.actor) {
@@ -395,11 +332,10 @@ class AuditPage {
         ? '<a href="' +
           kit.esc('/admin/users' + kit.queryWith({ user: row.actor }, {})) +
           '">' + kit.esc(row.actor) + '</a>'
-        : '<span class="state-none" title="The console has no row for this ' +
-          'name: nothing has authenticated as them in this process. A ' +
-          'directory bind DN yields a name without there being anybody ' +
-          'behind it.">' +
-          kit.esc(row.actor) + ' <em>(never here)</em></span>');
+        : '<span class="state-none" title="' +
+          kit.esc(t.text('consoleAudit.neverHereTitle')) + '">' +
+          kit.esc(row.actor) + ' ' + t.html('consoleAudit.neverHere') +
+          '</span>');
     }
     if (row.actorForm && row.actorForm !== row.actor) {
       parts.push('<code>' + kit.esc(row.actorForm) + '</code>');
@@ -415,14 +351,13 @@ class AuditPage {
    * Draws an audit row's client address as a link to its other rows.
    *
    * @param row - an audit row
+   * @param t - the page's translator
    * @returns the link as HTML, or a dash when no address was recorded
    */
-  static auditAddressCell(row) {
+  static auditAddressCell(row, t) {
     if (!row.address) {
-      return '<span class="state-none" title="No client address: this was ' +
-        'done by the service on its own (a timer, an expiry, a background ' +
-        'delivery, start-up), arrived over a Unix socket, or was recorded ' +
-        'before rows carried an address.">—</span>';
+      return '<span class="state-none" title="' +
+        kit.esc(t.text('consoleAudit.noAddressTitle')) + '">—</span>';
     }
     return '<a href="/admin/audit?address=' +
            encodeURIComponent(row.address) + '"><code>' +

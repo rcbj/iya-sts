@@ -81,10 +81,11 @@ class RiskPage {
   // One person in a Who cell: their username linked to their Directory →
   // Users page in this realm, with the subject under it; the subject alone
   // when the directory no longer holds them.
-  static whoCell(row: Json): string {
+  static whoCell(row: Json, t: Json): string {
     const subject = '<code>' + kit.esc(row.subject) + '</code>';
     if (!row.username) {
-      return subject + '<br><small>(no directory entry)</small>';
+      return subject + '<br><small>' + t.html('consoleRisk.noEntry') +
+        '</small>';
     }
     const link = row.userHref;
     return '<a href="' + kit.esc(link) + '"><strong>' +
@@ -94,7 +95,7 @@ class RiskPage {
 
   // One table of counts with a bar each, largest first. `colour` gives a
   // row's bar colour; `limit` keeps the longest tables short.
-  static bars(id: string, head: string, counts: Json, total: number,
+  static bars(t: Json, id: string, head: string, counts: Json, total: number,
                colour?: (k: string) => string, limit?: number,
                order?: string[]): string {
     const esc = kit.esc.bind(kit);
@@ -108,7 +109,8 @@ class RiskPage {
     const rows = shown.map(function (k: string): string {
       const n = Number(counts[k]) || 0;
       const share = total ? n / total : 0;
-      return '<tr><td>' + esc(k || '(none)') + '</td><td class="num">' + n +
+      return '<tr><td>' + esc(k || t.text('consoleRisk.none')) +
+        '</td><td class="num">' + n +
         '</td><td class="num">' + (share * 100).toFixed(1) + '%</td>' +
         '<td style="width:45%"><div style="height:12px;border-radius:3px;' +
         'width:' + Math.max(share * 100, n ? 0.5 : 0).toFixed(1) + '%;' +
@@ -116,16 +118,19 @@ class RiskPage {
         '</tr>';
     }).join('');
     return '<table class="grid" id="' + id + '"><thead><tr><th>' +
-      esc(head) + '</th><th>Count</th><th>Share</th><th></th></tr></thead>' +
-      '<tbody>' + (rows || '<tr><td colspan="4">None in this window.</td>' +
+      esc(head) + '</th><th>' + t.html('consoleRisk.th.count') + '</th><th>' +
+      t.html('consoleRisk.th.share') + '</th><th></th></tr></thead>' +
+      '<tbody>' + (rows || '<tr><td colspan="4">' +
+                           t.html('consoleRisk.noneInWindow') + '</td>' +
                            '</tr>') + '</tbody></table>' +
-      (limit && keys.length > limit ? '<p><small>' + (keys.length - limit) +
-       ' more not shown; the JSON has every one.</small></p>' : '');
+      (limit && keys.length > limit ? '<p><small>' +
+       t.html('consoleRisk.moreNotShown', { n: keys.length - limit }) +
+       '</small></p>' : '');
   }
 
   // The levels over time: a column per bucket, stacked by level, drawn as
   // markup — no script, for the reason the console has none.
-  static timeline(m: Json): string {
+  static timeline(m: Json, t: Json): string {
     const esc = kit.esc.bind(kit);
     const byAt = new Map<number, Json>();
     (m.assessments.series || []).forEach(function (b: Json): void {
@@ -150,8 +155,9 @@ class RiskPage {
         return '<div style="height:' + (Number(c[l]) / peak * 100)
           .toFixed(2) + '%;background:' + LEVEL_COLOURS[l] + '"></div>';
       }).join('');
-      const title = stamp(c.at) + ' UTC: ' + (Number(c.total) || 0) +
-        ' assessment(s)' + LEVELS.filter(function (l: string): boolean {
+      const title = t.text('consoleRisk.timeline.column',
+                           { at: stamp(c.at), n: Number(c.total) || 0 }) +
+        LEVELS.filter(function (l: string): boolean {
           return Number(c[l]) > 0;
         }).map(function (l: string): string {
           return ', ' + c[l] + ' ' + l;
@@ -167,9 +173,9 @@ class RiskPage {
     return '<div id="risk-timeline" style="display:flex;align-items:' +
       'flex-end;gap:2px;height:160px;padding:6px;border:1px solid #dadce0;' +
       'border-radius:6px">' + bars + '</div><p><small>' +
-      esc(stamp(first)) + ' UTC to now, a column per ' +
-      esc(RiskPage.duration(m.bucketMs)) + '; the tallest is ' + peak +
-      '. Hover a column for its counts.' + legend + '</small></p>';
+      t.html('consoleRisk.timeline.caption', {
+        from: stamp(first), bucket: RiskPage.duration(m.bucketMs, t),
+        peak: peak }) + legend + '</small></p>';
   }
 
   // A duration in the largest unit that divides it.
@@ -177,41 +183,47 @@ class RiskPage {
    * Says a duration in the largest unit that divides it.
    *
    * @param ms - the duration in milliseconds
+   * @param t - the page's translator (#539)
    * @returns the duration as text
    */
-  static duration(ms: number): string {
+  static duration(ms: number, t: Json): string {
     if (ms % 86400000 === 0) {
-      return ms / 86400000 + ' day' + (ms === 86400000 ? '' : 's');
+      return t.text('consoleRisk.duration.days', { n: ms / 86400000 });
     }
     if (ms % 3600000 === 0) {
-      return ms / 3600000 + ' hour' + (ms === 3600000 ? '' : 's');
+      return t.text('consoleRisk.duration.hours', { n: ms / 3600000 });
     }
-    return ms / 60000 + ' minutes';
+    return t.text('consoleRisk.duration.minutes', { n: ms / 60000 });
   }
 
   // THE CALIBRATION REPORT (`RiskEngine.calibrate()`): advice, drawn beside
   // what is set now, with the setting that would apply it named.
-  static calibrationHtml(m: Json): string {
+  static calibrationHtml(m: Json, t: Json): string {
     const esc = kit.esc.bind(kit);
     const c = m.calibration;
     const pct = function (x: number): string {
       return (x * 100).toFixed(1) + '%';
     };
-    const threshold = function (name: string, t: Json, key: string): string {
-      return '<tr><td>' + name + '</td><td class="num">' + esc(t.current) +
-        '</td><td class="num">' + pct(t.share) + '</td><td class="num">' +
-        pct(t.target) + '</td><td class="num">' + (t.suggested === null
-          ? '<small>fewer than ' + c.minimums.assessments + ' assessments' +
+    // The threshold is `th`, not `t` as it was: `t` is the translator
+    // (#539).
+    const threshold = function (name: string, th: Json, key: string): string {
+      return '<tr><td>' + name + '</td><td class="num">' + esc(th.current) +
+        '</td><td class="num">' + pct(th.share) + '</td><td class="num">' +
+        pct(th.target) + '</td><td class="num">' + (th.suggested === null
+          ? '<small>' + t.html('consoleRisk.calibration.fewer',
+                               { n: c.minimums.assessments }) +
             '</small>'
-          : esc(Number(t.suggested).toPrecision(3)) + ' <small>(<code>' +
-            key + '</code> = ' + Math.max(1, Math.round(t.suggested * 100)) +
+          : esc(Number(th.suggested).toPrecision(3)) + ' <small>(<code>' +
+            key + '</code> = ' + Math.max(1, Math.round(th.suggested * 100)) +
             ')</small>') + '</td></tr>';
     };
     const rows = c.signals.map(function (s: Json): string {
       return '<tr><td><code>' + esc(s.signal) + '</code></td>' +
         '<td class="num">&times;' + esc(s.factor) +
-        (s.factor !== s.builtIn ? ' <small>(built in &times;' +
-                                  esc(s.builtIn) + ')</small>' : '') +
+        (s.factor !== s.builtIn ? ' <small>' +
+                                  t.html('consoleRisk.calibration.builtIn',
+                                         { factor: s.builtIn }) +
+                                  '</small>' : '') +
         '</td><td class="num">' + s.fired + '</td><td class="num">' +
         s.high + '</td><td class="num">' + s.answered + '</td>' +
         '<td class="num">' + s.notMe + '</td><td>' +
@@ -224,34 +236,46 @@ class RiskPage {
     }).map(function (s: Json): string {
       return s.signal + '=' + s.suggested;
     });
-    return '<h3 id="risk-calibration">Calibration</h3><p>Advice from this ' +
-      'window, never applied by itself. <strong>Thresholds</strong>: the ' +
-      'score the target share of sign-ins reaches. <strong>Factors</strong>' +
-      ': how often a sign-in carrying the signal was answered "not me" on ' +
-      '/portal/sign-ins, against how often any answered sign-in was (' +
-      pct(c.notMeRate) + ' of ' + c.answered + '), scaled onto the current ' +
-      'factor. The answers are a biased sample — a flagged sign-in is ' +
-      'likelier to be asked about — so read a suggestion as a direction.' +
+    return '<h3 id="risk-calibration">' +
+      t.html('consoleRisk.calibration.heading') + '</h3><p>' +
+      t.html('consoleRisk.calibration.note',
+             { rate: pct(c.notMeRate), answered: c.answered }) +
       '</p><table class="grid" id="risk-calibration-thresholds"><thead><tr>' +
-      '<th>Level</th><th>From score</th><th>Share now</th><th>Target</th>' +
-      '<th>Suggested</th></tr></thead><tbody>' +
-      threshold('MEDIUM or worse', c.thresholds.medium,
-                'risk.mediumScorePercent') +
+      '<th>' + t.html('consoleRisk.th.level') + '</th><th>' +
+      t.html('consoleRisk.th.fromScore') + '</th><th>' +
+      t.html('consoleRisk.th.shareNow') + '</th><th>' +
+      t.html('consoleRisk.th.target') + '</th>' +
+      '<th>' + t.html('consoleRisk.th.suggested') + '</th></tr></thead>' +
+      '<tbody>' +
+      threshold(t.html('consoleRisk.calibration.mediumOrWorse'),
+                c.thresholds.medium, 'risk.mediumScorePercent') +
       threshold('HIGH', c.thresholds.high, 'risk.highScorePercent') +
       '</tbody></table><table class="grid" id="risk-calibration-signals">' +
-      '<thead><tr><th>Signal</th><th>Factor</th><th>Fired</th>' +
-      '<th>Ended HIGH</th><th>Answered</th><th>"Not me"</th>' +
-      '<th>Suggestion</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-      (suggested.length ? '<p>To apply every suggestion, set <code>' +
-        'risk.signalFactors</code> to <code id="risk-calibration-apply">' +
-        esc(suggested.join(',')) + '</code> on Monitoring &rarr; Risk.</p>'
+      '<thead><tr><th>' + t.html('consoleRisk.th.signal') + '</th><th>' +
+      t.html('consoleRisk.th.factor') + '</th><th>' +
+      t.html('consoleRisk.th.fired') + '</th>' +
+      '<th>' + t.html('consoleRisk.th.endedHigh') + '</th><th>' +
+      t.html('consoleRisk.th.answered') + '</th><th>' +
+      t.html('consoleRisk.th.notMe') + '</th>' +
+      '<th>' + t.html('consoleRisk.th.suggestion') + '</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table>' +
+      // The code element carries an id, which a message cannot, so the
+      // sentence is drawn around it (#539).
+      (suggested.length ? '<p>' +
+        t.html('consoleRisk.calibration.applyBefore') +
+        '<code id="risk-calibration-apply">' +
+        esc(suggested.join(',')) + '</code>' +
+        t.html('consoleRisk.calibration.applyAfter') + '</p>'
         : '') +
       (c.invalidFactors.length ? '<div class="err">risk.signalFactors ' +
         'entries ignored (STS-RISK-0026): ' +
         esc(c.invalidFactors.join(', ')) + '</div>' : '');
   }
 
-  static metricsHtml(m: Json): string {
+  // `ctx` is optional: the console's page table calls this with the view
+  // alone, and then the default translator draws it (#539).
+  static metricsHtml(m: Json, ctx?: Json): string {
+    const t = (ctx || kit.context()).t;
     const esc = kit.esc.bind(kit);
     const a = m.assessments;
     const p = m.process;
@@ -282,89 +306,103 @@ class RiskPage {
       const keys = Object.keys(table || {});
       return keys.length ? keys.map(function (k: string): string {
         return esc(k) + ' ' + table[k];
-      }).join(', ') : 'none';
+      }).join(', ') : t.html('consoleRisk.metrics.none');
     };
     const d = p ? p.durationMs : { samples: 0 };
     const breach = p ? p.breachedPasswords : null;
-    return kit.note('The scoring system measured: what it assessed, how ' +
-        'the levels and signals fell, how long it took and what it did. ' +
-        'The first sections are counted in the ' + (m.database
-          ? 'database, over every node' : 'memory of THIS process (there ' +
-            'is no database)') + ' for the realm <code>' + esc(m.realm) +
-        '</code>' + (p ? '; <em>This process</em>, at the bottom, is ' +
-                         'since this process started' : '') + '. Every ' +
-        'person\'s own assessments are on ' +
-        '<a href="' + PAGE + '">Monitoring &rarr; Risk</a>; the numbers ' +
-        'are also <code>GET /admin-api/risk/metrics</code>.') +
-      '<p id="risk-window">Window: ' + windows + '</p>' +
+    // The link is markup a message cannot carry, so the note is drawn
+    // around it (#539).
+    return kit.note(t.html('consoleRisk.metrics.noteBefore', {
+        where: m.database ? 'database' : 'memory', realm: m.realm,
+        process: p ? 'yes' : 'no' }) +
+        '<a href="' + PAGE + '">' + t.html('consoleRisk.link.risk') +
+        '</a>' + t.html('consoleRisk.metrics.noteAfter')) +
+      '<p id="risk-window">' + t.html('consoleRisk.metrics.window') + ' ' +
+      windows + '</p>' +
       '<div class="tiles">' +
-        kit.tile(a.total, 'assessments') +
-        kit.tile(a.subjects, 'people assessed') +
+        kit.tile(a.total, t.text('consoleRisk.tile.assessments')) +
+        kit.tile(a.subjects, t.text('consoleRisk.tile.peopleAssessed')) +
         kit.tile(high, 'HIGH') +
         kit.tile(a.total ? (high / a.total * 100).toFixed(1) + '%' : '—',
-                   'of them HIGH') +
-        kit.tile(a.meanScore.toPrecision(3), 'mean score') +
-        kit.tile(a.bots, 'automated clients') +
+                   t.text('consoleRisk.tile.ofThemHigh')) +
+        kit.tile(a.meanScore.toPrecision(3),
+                 t.text('consoleRisk.tile.meanScore')) +
+        kit.tile(a.bots, t.text('consoleRisk.tile.bots')) +
         (p ? kit.tile(d.samples ? Math.round(d.p95) + ' ms' : '—',
-                        'p95 to assess') : '') +
+                        t.text('consoleRisk.tile.p95')) : '') +
       '</div>' +
-      '<h3>Assessments over time</h3>' + this.timeline(m) +
-      '<h3>By level</h3>' +
-      this.bars('risk-by-level', 'Level', a.byLevel, a.total, level,
-                undefined, LEVELS) +
-      '<p><small>MEDIUM from a score of ' + esc(m.thresholds.medium) +
-      ', HIGH from ' + esc(m.thresholds.high) + ' (<code>risk.' +
-      'mediumScorePercent</code>, <code>risk.highScorePercent</code>). ' +
-      (m.enforced ? 'Decisions are ENFORCED.' : 'Development mode: ' +
-       'decisions are OBSERVED, not enforced.') + '</small></p>' +
-      '<h3>Scores</h3>' +
-      this.bars('risk-by-band', 'Score', a.byBand, a.total, undefined,
-                undefined, m.bands) +
-      '<h3>People by current standing</h3>' +
-      this.bars('risk-standings', 'Level', m.standings, people, level,
-                undefined, LEVELS) +
-      '<h3>Signals</h3><p>Each signal with the factor it multiplies a ' +
-      'score by and how often it fired in the window: a signal that fires ' +
-      'on most sign-ins, or never, is the first thing to calibrate.</p>' +
-      '<table class="grid" id="risk-signals"><thead><tr><th>Signal</th>' +
-      '<th>What</th><th>Factor</th><th>Fired</th><th>Of assessments</th>' +
+      '<h3>' + t.html('consoleRisk.metrics.overTime') + '</h3>' +
+      this.timeline(m, t) +
+      '<h3>' + t.html('consoleRisk.metrics.byLevel') + '</h3>' +
+      this.bars(t, 'risk-by-level', t.text('consoleRisk.th.level'),
+                a.byLevel, a.total, level, undefined, LEVELS) +
+      '<p><small>' + t.html('consoleRisk.metrics.thresholds', {
+        medium: m.thresholds.medium, high: m.thresholds.high }) + ' ' +
+      (m.enforced ? t.html('consoleRisk.metrics.enforced')
+        : t.html('consoleRisk.metrics.observed')) + '</small></p>' +
+      '<h3>' + t.html('consoleRisk.metrics.scores') + '</h3>' +
+      this.bars(t, 'risk-by-band', t.text('consoleRisk.th.score'), a.byBand,
+                a.total, undefined, undefined, m.bands) +
+      '<h3>' + t.html('consoleRisk.standings.heading') + '</h3>' +
+      this.bars(t, 'risk-standings', t.text('consoleRisk.th.level'),
+                m.standings, people, level, undefined, LEVELS) +
+      '<h3>' + t.html('consoleRisk.metrics.signals') + '</h3><p>' +
+      t.html('consoleRisk.metrics.signalsNote') + '</p>' +
+      '<table class="grid" id="risk-signals"><thead><tr><th>' +
+      t.html('consoleRisk.th.signal') + '</th>' +
+      '<th>' + t.html('consoleRisk.th.what') + '</th><th>' +
+      t.html('consoleRisk.th.factor') + '</th><th>' +
+      t.html('consoleRisk.th.fired') + '</th><th>' +
+      t.html('consoleRisk.th.ofAssessments') + '</th>' +
       '</tr></thead><tbody>' + signals + '</tbody></table>' +
-      this.calibrationHtml(m) +
-      '<h3>Decisions</h3>' +
-      this.bars('risk-by-decision', 'Decision', a.byDecision, a.total) +
-      '<h3>Doors</h3>' +
-      this.bars('risk-by-door', 'Door', a.byDoor, a.total) +
-      '<h3>When assessed</h3>' +
-      this.bars('risk-by-phase', 'Phase', a.byPhase, a.total) +
-      '<h3>Countries</h3>' +
-      this.bars('risk-by-country', 'Country', a.byCountry, a.total,
-                undefined, 15) +
-      '<h3>What people said</h3>' +
-      '<p id="risk-feedback">Of the sign-ins in this window, people said ' +
-      '<strong>' + a.feedback.confirmed + '</strong> were them and <strong>' +
-      a.feedback.denied + '</strong> were NOT, on /portal/sign-ins.</p>' +
-      (!p ? '' : '<h3>This process</h3>' +
+      this.calibrationHtml(m, t) +
+      '<h3>' + t.html('consoleRisk.metrics.decisions') + '</h3>' +
+      this.bars(t, 'risk-by-decision', t.text('consoleRisk.th.decision'),
+                a.byDecision, a.total) +
+      '<h3>' + t.html('consoleRisk.metrics.doors') + '</h3>' +
+      this.bars(t, 'risk-by-door', t.text('consoleRisk.th.door'), a.byDoor,
+                a.total) +
+      '<h3>' + t.html('consoleRisk.metrics.whenAssessed') + '</h3>' +
+      this.bars(t, 'risk-by-phase', t.text('consoleRisk.th.phase'),
+                a.byPhase, a.total) +
+      '<h3>' + t.html('consoleRisk.metrics.countries') + '</h3>' +
+      this.bars(t, 'risk-by-country', t.text('consoleRisk.th.country'),
+                a.byCountry, a.total, undefined, 15) +
+      '<h3>' + t.html('consoleRisk.metrics.said') + '</h3>' +
+      '<p id="risk-feedback">' + t.html('consoleRisk.metrics.saidText', {
+        confirmed: a.feedback.confirmed, denied: a.feedback.denied }) +
+      '</p>' +
+      (!p ? '' : '<h3>' + t.html('consoleRisk.process.heading') + '</h3>' +
       '<table class="grid" id="risk-process"><tbody>' +
-      '<tr><th>Since</th><td>' + esc(this.when(p.since)) + '</td></tr>' +
-      '<tr><th>Assessed</th><td>' + p.assessed + ' (' + p.failed +
-      ' could not be assessed and stood unassessed)</td></tr>' +
-      '<tr><th>Time to assess</th><td>' + (d.samples
-        ? 'mean ' + d.mean.toFixed(1) + ' ms, p50 ' + d.p50 + ', p95 ' +
-          d.p95 + ', p99 ' + d.p99 + ', max ' + d.max + ' ms, over the ' +
-          'last ' + d.samples : 'nothing assessed yet') + '</td></tr>' +
-      '<tr><th>Reactions taken</th><td>' + counts(p.reactions.taken) +
-      '</td></tr><tr><th>Observed only</th><td>' +
-      counts(p.reactions.observed) + '</td></tr><tr><th>Failed</th><td>' +
+      '<tr><th>' + t.html('consoleRisk.process.since') + '</th><td>' +
+      esc(this.when(p.since)) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleRisk.process.assessed') + '</th><td>' +
+      t.html('consoleRisk.process.assessedText',
+             { n: p.assessed, failed: p.failed }) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleRisk.process.time') + '</th><td>' +
+      (d.samples
+        ? t.html('consoleRisk.process.timeText', {
+          mean: d.mean.toFixed(1), p50: d.p50, p95: d.p95, p99: d.p99,
+          max: d.max, n: d.samples })
+        : t.html('consoleRisk.process.nothingAssessed')) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleRisk.process.taken') + '</th><td>' +
+      counts(p.reactions.taken) +
+      '</td></tr><tr><th>' + t.html('consoleRisk.process.observed') +
+      '</th><td>' +
+      counts(p.reactions.observed) + '</td></tr><tr><th>' +
+      t.html('consoleRisk.process.failed') + '</th><td>' +
       counts(p.reactions.failed) + '</td></tr>' +
-      '<tr><th>Live sessions re-checked</th><td>' + p.rescore.runs +
-      ' run(s) of <code>risk.rescore</code>, ' + p.rescore.sessions +
-      ' session(s) checked, ' + p.rescore.raised + ' raised</td></tr>' +
-      '<tr><th>Breached passwords</th><td>' + (breach
-        ? (breach.enabled ? 'screening on' : 'screening off') + ': ' +
-          breach.screened + ' screened, ' + breach.breached + ' found ' +
-          'breached, ' + breach.unanswered + ' unanswered, ' +
-          breach.fromCache + ' answered from the cache'
-        : 'not loaded in this process') + '</td></tr>' +
+      '<tr><th>' + t.html('consoleRisk.process.rechecked') + '</th><td>' +
+      t.html('consoleRisk.process.rescoreText', {
+        runs: p.rescore.runs, sessions: p.rescore.sessions,
+        raised: p.rescore.raised }) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleRisk.process.breached') + '</th><td>' +
+      (breach
+        ? t.html('consoleRisk.process.breachText', {
+          on: breach.enabled ? 'yes' : 'no', screened: breach.screened,
+          breached: breach.breached, unanswered: breach.unanswered,
+          cache: breach.fromCache })
+        : t.html('consoleRisk.process.breachNotLoaded')) + '</td></tr>' +
       '</tbody></table>');
   }
 
@@ -383,11 +421,13 @@ class RiskPage {
    * @param view - the page's view: `datasets` (each with its `formats`) and
    *   `formats`
    * @param id - the element's id
+   * @param t - the page's translator (#539)
    * @returns the labelled select
    */
-  static pairSelect(view: Json, id: string): string {
+  static pairSelect(view: Json, id: string, t: Json): string {
     const formatLabel = RiskPage.formatLabels(view);
-    return '<label>Dataset and its format <select name="dataset|format" ' +
+    return '<label>' + t.html('consoleRisk.pair.label') +
+      ' <select name="dataset|format" ' +
       'id="' + kit.esc(id) + '" required>' +
       view.datasets.map(function (d: Json): string {
         return '<optgroup label="' + kit.esc(d.title + ' (' + d.dataset +
@@ -415,9 +455,10 @@ class RiskPage {
    * Draws the table of which file format each dataset is read from.
    *
    * @param view - the page's view
+   * @param t - the page's translator (#539)
    * @returns a collapsible table
    */
-  static pairGuide(view: Json): string {
+  static pairGuide(view: Json, t: Json): string {
     const byFormat = {};
     (view.formats || []).forEach(function (f: Json): void {
       byFormat[f.format] = f;
@@ -428,17 +469,21 @@ class RiskPage {
         return '<tr>' + (i === 0
           ? '<td rowspan="' + d.formats.length + '"><strong>' +
             kit.esc(d.title) + '</strong><br><code>' + kit.esc(d.dataset) +
-            '</code>' + (d.perRealm ? '<br><small>a list per realm</small>'
+            '</code>' + (d.perRealm ? '<br><small>' +
+                                      t.html('consoleRisk.pair.perRealm') +
+                                      '</small>'
                                     : '') + '</td>'
           : '') + '<td><code>' + kit.esc(format) + '</code></td><td>' +
           kit.esc(f.what || '') + '</td></tr>';
       }).join('');
     }).join('');
-    return '<details open><summary>Which file goes with which dataset' +
-      '</summary><p>Each dataset is read from the formats listed beside it ' +
-      'and no other; the drop-downs below offer only these pairs.</p>' +
-      '<table class="grid"><thead><tr><th>Dataset</th><th>Format</th>' +
-      '<th>What the file looks like</th></tr></thead><tbody>' + rows +
+    return '<details open><summary>' + t.html('consoleRisk.pair.summary') +
+      '</summary><p>' + t.html('consoleRisk.pair.note') + '</p>' +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleRisk.th.dataset') + '</th><th>' +
+      t.html('consoleRisk.th.format') + '</th>' +
+      '<th>' + t.html('consoleRisk.th.fileLooks') + '</th></tr></thead>' +
+      '<tbody>' + rows +
       '</tbody></table></details>';
   }
 
@@ -447,6 +492,7 @@ class RiskPage {
   }
 
   static html(ctx: Json, view: Json): string {
+    const t = ctx.t;
     const self = this;
     // Called for every value drawn, so no Entering/Leaving pair: a hot path,
     // which the code style allows when it says so.
@@ -461,80 +507,83 @@ class RiskPage {
       return d.state === 'stale';
     }).length;
     const tiles = '<div class="tiles">' +
-      kit.tile(String(active), 'datasets active') +
-      kit.tile(String(stale), 'stale (counted for nothing)') +
+      kit.tile(String(active), t.text('consoleRisk.tile.active')) +
+      kit.tile(String(stale), t.text('consoleRisk.tile.stale')) +
       kit.tile(String(view.failures.total),
-                 'refused passwords in ' + view.failures.windowDays + ' days') +
+                 t.text('consoleRisk.tile.refused',
+                        { days: view.failures.windowDays })) +
       '</div>';
     const about = kit.note(
-      '<p>The external datasets a risk score reads, and the refused ' +
-      'passwords it counts (#62). <strong>Nothing here is fetched while ' +
-      'anybody signs in</strong>: a dataset arrives as a file, is checked ' +
-      '(its SHA-256 where one is named, and a version much smaller than the ' +
-      'active one is refused as a likely truncated download), and only then ' +
-      'becomes active. A dataset older than its staleness limit counts for ' +
-      'nothing and never refuses anybody.</p><p>' + esc(view.store.why) +
-      '</p><p>A file of millions of rows is <strong>uploaded</strong> ' +
-      'with the first form below — as the provider publishes it, ' +
-      '<code>.gz</code>, <code>.zip</code> or plain; it is expanded as it ' +
-      'is read and nothing expanded is written to disk — or dropped in ' +
-      '<code>risk.datasetsDirectory</code> with a manifest' +
-      (view.directory ? ' (now <code>' + esc(view.directory) + '</code>)'
-                      : ' (not set)') +
-      '. An upload answers as soon as the file is stored: the version ' +
-      'shows as <em>loading</em>, then <em>active</em> or <em>refused</em> ' +
-      'with its reason — reload this page to follow it. The second form is ' +
-      'for a list you can paste.</p>',
-      'What this page is');
+      '<p>' + t.html('consoleRisk.about.datasets') + '</p><p>' +
+      esc(view.store.why) +
+      '</p><p>' + t.html('consoleRisk.about.upload', {
+        set: view.directory ? 'yes' : 'no', directory: view.directory }) +
+      '</p>',
+      t.text('consoleRisk.about.label'));
     const rows = view.datasets.map(function (d: Json): string {
       const versions = d.versions.slice(0, 6).map(function (v: Json): string {
         const controls = !canWrite ? '' :
           ((v.state === 'ready' || v.state === 'superseded')
-            ? self.form('activate', d, v.version, 'Activate') : '') +
+            ? self.form('activate', d, v.version,
+                        t.text('consoleRisk.dataset.activate')) : '') +
           (v.state !== 'active' && v.state !== 'loading' &&
            v.state !== 'deleted'
-            ? self.form('delete', d, v.version, 'Delete rows') : '');
+            ? self.form('delete', d, v.version,
+                        t.text('consoleRisk.dataset.deleteRows')) : '');
         return '<tr><td><code>' + esc(v.version) + '</code></td><td>' +
           esc(v.state) + (v.refusal ? '<br><small>' + esc(v.refusal) +
                           '</small>' : '') + '</td><td class="num">' +
           v.rowCount + '</td><td><small>' + esc(v.provider) + ', ' +
           esc(v.licence) + '<br>' + esc(v.source) + ', ' +
-          esc(v.verification) + '</small></td><td><small>published ' +
-          esc(self.when(v.publishedAt)) + '<br>loaded ' +
-          esc(self.when(v.loadedAt)) + '</small></td><td>' + controls +
+          esc(v.verification) + '</small></td><td><small>' +
+          t.html('consoleRisk.dataset.published',
+                 { at: self.when(v.publishedAt) }) + '<br>' +
+          t.html('consoleRisk.dataset.loaded',
+                 { at: self.when(v.loadedAt) }) +
+          '</small></td><td>' + controls +
           '</td></tr>';
       }).join('');
       return '<h3>' + esc(d.title) + ' <small><code>' + esc(d.dataset) +
-        '</code>' + (d.perRealm ? ' in realm ' + esc(d.realm) : '') +
+        '</code>' + (d.perRealm
+          ? t.html('consoleRisk.dataset.inRealm', { realm: d.realm }) : '') +
         '</small></h3><p>' + esc(d.what) + '</p><p><strong>' +
         esc(d.state) + '</strong>' +
-        (d.activeVersion ? ': version <code>' + esc(d.activeVersion) +
-                           '</code>, ' + d.rows + ' rows, published ' +
-                           esc(self.when(d.publishedAt)) : '') +
+        (d.activeVersion
+          ? t.html('consoleRisk.dataset.activeVersion', {
+            version: d.activeVersion, rows: d.rows,
+            at: self.when(d.publishedAt) }) : '') +
         (d.attribution ? '<br><small>' + self.credit(
           view.attributions.filter(function (c: Json): boolean {
             return c.provider === d.provider;
-          })[0] || { text: d.attribution, url: d.attributionUrl }) +
+          })[0] || { text: d.attribution, url: d.attributionUrl }, t) +
                          '</small>' : '') +
         (canWrite && d.previousVersion
-          ? ' ' + self.form('rollback', d, '', 'Roll back to ' +
-                            d.previousVersion) : '') + '</p>' +
-        (versions ? '<table class="grid"><thead><tr><th>Version</th>' +
-                    '<th>State</th><th>Rows</th><th>Source</th>' +
-                    '<th>When</th><th></th></tr></thead><tbody>' + versions +
+          ? ' ' + self.form('rollback', d, '',
+                            t.text('consoleRisk.dataset.rollBack',
+                                   { version: d.previousVersion })) : '') +
+        '</p>' +
+        (versions ? '<table class="grid"><thead><tr><th>' +
+                    t.html('consoleRisk.th.version') + '</th>' +
+                    '<th>' + t.html('consoleRisk.th.state') + '</th><th>' +
+                    t.html('consoleRisk.th.rows') + '</th><th>' +
+                    t.html('consoleRisk.th.source') + '</th>' +
+                    '<th>' + t.html('consoleRisk.th.when') +
+                    '</th><th></th></tr></thead><tbody>' + versions +
                     '</tbody></table>' : '');
     }).join('');
     const lookupForm = '<form method="get" action="' + PAGE + '">' +
       '<input type="hidden" name="realm" value="' + esc(view.realm) + '">' +
-      '<label>What do the datasets say about <input type="text" ' +
+      '<label>' + t.html('consoleRisk.lookup.label') +
+      ' <input type="text" ' +
       'name="address" id="risk-lookup-address" value="' +
       esc(view.lookup ? view.lookup.address : '') + '"></label> ' +
-      '<button type="submit" id="risk-lookup">Look up</button></form>' +
+      '<button type="submit" id="risk-lookup">' +
+      t.html('consoleRisk.lookup.button') + '</button></form>' +
       (view.lookup ? '<pre>' + esc(JSON.stringify(view.lookup, null, 2)) +
                      '</pre>' + (view.lookup.attributions || [])
                        .map(function (a: Json): string {
                          return '<p class="attribution"><small>' +
-                           self.credit(a) + '</small></p>';
+                           self.credit(a, t) + '</small></p>';
                        }).join('') : '');
     // THE UPLOAD (#215): a real form with a real submit button and no
     // script. Its FIELDS COME BEFORE ITS FILE, and that order is load-bearing:
@@ -542,89 +591,115 @@ class RiskPage {
     // shell adds is the first of them, and `risk_upload.ts` checks the token
     // and the fields before it writes a byte of the file.
     const uploadForm = !canWrite ? '' :
-      self.pairGuide(view) +
-      '<h3>Upload a file</h3><form method="post" action="' + UPLOAD +
+      self.pairGuide(view, t) +
+      '<h3>' + t.html('consoleRisk.upload.heading') +
+      '</h3><form method="post" action="' + UPLOAD +
       '" enctype="multipart/form-data" id="risk-upload-form">' +
-      self.pairSelect(view, 'risk-upload-pair') + ' ' + (view.realmOnly
+      self.pairSelect(view, 'risk-upload-pair', t) + ' ' + (view.realmOnly
         ? '<input type="hidden" name="realm" value="' + esc(view.realm) +
           '">'
-        : '<label>Realm (an operator list only) <input type="text" ' +
+        : '<label>' + t.html('consoleRisk.form.realm') +
+          ' <input type="text" ' +
           'name="realm" value=""></label>') + '<br>' +
-      '<label>Version <input type="text" name="version" ' +
-      'placeholder="default: its SHA-256"></label> <label>SHA-256 of the ' +
-      'file as sent <input type="text" name="sha256"></label><br>' +
+      '<label>' + t.html('consoleRisk.form.version') +
+      ' <input type="text" name="version" ' +
+      'placeholder="' + esc(t.text('consoleRisk.form.versionPlaceholder')) +
+      '"></label> <label>' + t.html('consoleRisk.upload.sha256') +
+      ' <input type="text" name="sha256"></label><br>' +
       (view.realmOnly ? '' :
         '<label><input type="checkbox" name="acceptTerms" ' +
-        'id="risk-upload-accept"> I have read and accept the provider\'s ' +
-        'terms (below), recorded in my name</label><br>') +
+        'id="risk-upload-accept"> ' + t.html('consoleRisk.form.acceptTerms') +
+        '</label><br>') +
       // THE SIGNATURE OVERRIDE, for the FIDO MDS3 BLOB only: FIDO has
       // published BLOBs whose signature does not verify, and this loads one
       // anyway, recorded as `overridden` with the reason, in this
       // administrator's name (`risk_datasets.importMds()`).
       '<label><input type="checkbox" name="overrideSignature" ' +
-      'id="risk-upload-override-signature"> FIDO MDS3 only: load the BLOB ' +
-      'even if its signature or signing chain does not verify. <strong>Its ' +
-      'contents are then unauthenticated</strong>; the version is recorded ' +
-      'as <code>overridden</code>, with the reason, in my name</label><br>' +
-      '<label>File (<code>.gz</code>, <code>.zip</code> holding one file, ' +
-      'or plain text) <input type="file" name="file" id="risk-upload-file" ' +
+      'id="risk-upload-override-signature"> ' +
+      t.html('consoleRisk.upload.override') + '</label><br>' +
+      '<label>' + t.html('consoleRisk.upload.file') +
+      ' <input type="file" name="file" id="risk-upload-file" ' +
       'required></label><br><button type="submit" id="risk-upload">' +
-      'Upload and import</button></form>';
+      t.html('consoleRisk.upload.button') + '</button></form>';
     const importForm = !canWrite ? '' :
-      '<h3>Paste a list</h3><form method="post" action="' + PAGE + '">' +
+      '<h3>' + t.html('consoleRisk.paste.heading') +
+      '</h3><form method="post" action="' + PAGE + '">' +
       '<input type="hidden" name="action" value="import">' +
-      self.pairSelect(view, 'risk-import-pair') + ' ' + (view.realmOnly
+      self.pairSelect(view, 'risk-import-pair', t) + ' ' + (view.realmOnly
         ? '<input type="hidden" name="realm" value="' + esc(view.realm) +
           '">'
-        : '<label>Realm (an operator list only) <input type="text" ' +
+        : '<label>' + t.html('consoleRisk.form.realm') +
+          ' <input type="text" ' +
           'name="realm" value=""></label>') + '<br>' +
-      '<label>Version <input type="text" name="version" ' +
-      'placeholder="default: its SHA-256"></label> <label>SHA-256 ' +
+      '<label>' + t.html('consoleRisk.form.version') +
+      ' <input type="text" name="version" ' +
+      'placeholder="' + esc(t.text('consoleRisk.form.versionPlaceholder')) +
+      '"></label> <label>SHA-256 ' +
       '<input type="text" name="sha256"></label><br>' +
       (view.realmOnly ? '' :
         '<label><input type="checkbox" name="acceptTerms" ' +
-        'id="risk-import-accept"> I have read and accept the provider\'s ' +
-        'terms (below), recorded in my name</label><br>') +
+        'id="risk-import-accept"> ' + t.html('consoleRisk.form.acceptTerms') +
+        '</label><br>') +
       '<textarea name="content" rows="8" cols="80" id="risk-import-content" ' +
-      'placeholder="One address, CIDR block or range per line"></textarea>' +
-      '<br><button type="submit" id="risk-import">Import and activate' +
+      'placeholder="' + esc(t.text('consoleRisk.paste.placeholder')) +
+      '"></textarea>' +
+      '<br><button type="submit" id="risk-import">' +
+      t.html('consoleRisk.paste.button') +
       '</button></form>';
     const failureRows = view.failures.rows.map(function (f: Json): string {
       return '<tr><td><small>' + esc(self.when(f.at)) + '</small></td><td>' +
-        (f.subject ? self.whoCell(f)
+        (f.subject ? self.whoCell(f, t)
                    : '<small>' + esc(f.name) + '</small>') + '</td><td>' +
         esc(f.door) + '</td><td><code>' + esc(f.prefix) + '</code>' +
         (f.asn ? '<br><small>AS' + f.asn + '</small>' : '') + '</td><td>' +
         '<code>' + esc(f.errorCode) + '</code></td></tr>';
     }).join('');
-    const failures = '<h3>Refused passwords in realm ' + esc(view.realm) +
-      ' <small>(last ' + view.failures.windowDays + ' days)</small></h3><p>' +
+    const failures = '<h3>' + t.html('consoleRisk.failures.heading', {
+        realm: view.realm }) +
+      ' <small>' + t.html('consoleRisk.failures.lastDays',
+                          { days: view.failures.windowDays }) +
+      '</small></h3><p>' +
       esc(view.failures.store.why) + '</p><table class="grid"><thead><tr>' +
-      '<th>When</th><th>Who</th><th>Door</th><th>Network</th><th>Code</th>' +
+      '<th>' + t.html('consoleRisk.th.when') + '</th><th>' +
+      t.html('consoleRisk.th.who') + '</th><th>' +
+      t.html('consoleRisk.th.door') + '</th><th>' +
+      t.html('consoleRisk.th.network') + '</th><th>' +
+      t.html('consoleRisk.th.code') + '</th>' +
       '</tr></thead><tbody>' +
-      (failureRows || '<tr><td colspan="5">None recorded.</td></tr>') +
+      (failureRows || '<tr><td colspan="5">' +
+       t.html('consoleRisk.failures.none') + '</td></tr>') +
       '</tbody></table>';
-    const providers = '<h3>Whose data, on what terms</h3><p><strong>' +
-      esc(view.redistribution) + '</strong> Each provider\'s terms bind ' +
-      'the deployment that downloads its data, and some of them bind ' +
-      'whoever redistributes it.</p><table class="grid"><thead><tr>' +
-      '<th>Provider</th><th>Licence</th><th>Terms</th><th>Accepted</th>' +
+    const providers = '<h3>' + t.html('consoleRisk.providers.heading') +
+      '</h3><p><strong>' +
+      esc(view.redistribution) + '</strong> ' +
+      t.html('consoleRisk.providers.note') +
+      '</p><table class="grid"><thead><tr>' +
+      '<th>' + t.html('consoleRisk.th.provider') + '</th><th>' +
+      t.html('consoleRisk.th.licence') + '</th><th>' +
+      t.html('consoleRisk.th.terms') + '</th><th>' +
+      t.html('consoleRisk.th.accepted') + '</th>' +
       '</tr></thead><tbody>' + view.providers.map(function (p: Json): string {
-        const acceptance = !p.supported ? 'not supported'
-          : !p.needsAcceptance ? 'nothing to accept'
-          : p.accepted ? 'by ' + esc(p.accepted.acceptedBy) + ' through ' +
-                         esc(p.accepted.acceptedVia) + '<br><small>' +
-                         esc(self.when(p.accepted.acceptedAt)) + ' on ' +
-                         esc(p.accepted.deployment) + '</small>'
-          : '<strong>' + (p.changed ? 'the terms changed since they were ' +
-                                      'accepted' : 'not accepted') +
+        const acceptance = !p.supported
+          ? t.html('consoleRisk.providers.notSupported')
+          : !p.needsAcceptance
+            ? t.html('consoleRisk.providers.nothingToAccept')
+          : p.accepted ? t.html('consoleRisk.providers.acceptedBy', {
+            by: p.accepted.acceptedBy, via: p.accepted.acceptedVia }) +
+                         '<br><small>' +
+                         t.html('consoleRisk.providers.acceptedOn', {
+                           at: self.when(p.accepted.acceptedAt),
+                           deployment: p.accepted.deployment }) + '</small>'
+          : '<strong>' + (p.changed
+            ? t.html('consoleRisk.providers.changed')
+            : t.html('consoleRisk.providers.notAccepted')) +
             '</strong>';
         const form = canWrite && p.needsAcceptance && !p.accepted
           ? '<form method="post" action="' + PAGE + '" class="inline">' +
             '<input type="hidden" name="action" value="accept-terms">' +
             '<input type="hidden" name="provider" value="' + esc(p.provider) +
             '"><button type="submit" id="risk-accept-' + esc(p.provider) +
-            '">I have read and accept these terms</button></form>' : '';
+            '">' + t.html('consoleRisk.providers.acceptButton') +
+            '</button></form>' : '';
         return '<tr><td>' + (p.url ? '<a href="' + esc(p.url) + '">' +
           esc(p.title) + '</a>' : esc(p.title)) + '</td><td>' +
           (p.licenceUrl ? '<a href="' + esc(p.licenceUrl) + '">' +
@@ -636,26 +711,26 @@ class RiskPage {
     // everything on this page — the failures' networks and the assessments'
     // locations included — as CC BY 4.0 and CC BY-SA 4.0 ask.
     const credits = view.attributions.length
-      ? '<h3>Data credits</h3>' + view.attributions.map(function (c: Json) {
-          return '<p class="attribution"><small>' + self.credit(c) +
+      ? '<h3>' + t.html('consoleRisk.credits.heading') + '</h3>' +
+        view.attributions.map(function (c: Json) {
+          return '<p class="attribution"><small>' + self.credit(c, t) +
             '</small></p>';
         }).join('') : '';
     const assessments = this.assessmentsHtml(ctx, view);
     if (view.realmOnly) {
-      return tiles + kit.note('This is the <code>' + esc(view.realm) +
-        '</code> realm\'s risk: its assessments, its people\'s standings, ' +
-        'its operator allow and deny lists and its refused passwords. The ' +
-        'datasets every realm shares — geolocation, networks, Tor exits, ' +
-        'reputation, security-key metadata — their providers\' terms and ' +
-        'the <code>risk.</code> settings are the whole service\'s, and a ' +
-        'service administrator manages them.', 'What this page is') +
-        assessments + '<h3>Look up an address</h3>' + lookupForm + rows +
+      return tiles + kit.note(t.html('consoleRisk.about.realmOnly',
+                                     { realm: view.realm }),
+                              t.text('consoleRisk.about.label')) +
+        assessments + '<h3>' + t.html('consoleRisk.lookup.heading') +
+        '</h3>' + lookupForm + rows +
         uploadForm + importForm + failures + credits;
     }
-    return tiles + about + assessments + '<h3>Look up an address</h3>' +
+    return tiles + about + assessments + '<h3>' +
+      t.html('consoleRisk.lookup.heading') + '</h3>' +
       lookupForm + rows + uploadForm + importForm + providers + failures +
       credits +
-      '<h2>Settings</h2>' + SettingsForms.forms(view.settings, PAGE);
+      '<h2>' + t.html('consoleRisk.settings.heading') + '</h2>' +
+      SettingsForms.forms(view.settings, PAGE, undefined, t);
   }
 
   // ---------------------------------------------------------------------------
@@ -669,14 +744,15 @@ class RiskPage {
   // DB-IP's licence asks of every page that displays its results.
   // ---------------------------------------------------------------------------
   static assessmentsHtml(ctx: Json, view: Json): string {
+    const t = ctx.t;
     const self = this;
     // Each pager carries every other parameter (the realm, the level, the
     // person, the other list's page) so the reader keeps their place.
     const params = kit.pageParamsOf(ctx.query);
     const assessmentsNav = kit.pageNavPair(PAGE, params,
-                                             view.assessmentsPaging);
+                                             view.assessmentsPaging, t);
     const subjectsNav = kit.pageNavPair(PAGE, params,
-                                          view.subjectsPaging);
+                                          view.subjectsPaging, t);
     // Called for every value drawn: a hot path, with no Entering/Leaving.
     const esc = function (v: unknown): string {
       return kit.esc(v);
@@ -698,17 +774,18 @@ class RiskPage {
       const modelRow = (a.signals || []).filter(function (x: Json) {
         return x.signal === 'model';
       })[0] || {};
-      const model = RiskPage.modelCell(modelRow);
+      const model = RiskPage.modelCell(modelRow, t);
       const dev = modelRow.device;
-      const deviceCell = dev ? '<br>registered device <a href="' +
+      const deviceCell = dev ? '<br>' +
+        t.html('consoleRisk.device.registered') + ' <a href="' +
         esc('/admin/devices?device=' + encodeURIComponent(dev.id)) +
         '"><code>' + esc(String(dev.id).slice(0, 8)) + '</code></a> (' +
         esc(dev.via) + ', ' + esc(dev.compliance) + ', ' +
         esc(dev.attestation) + (dev.status === 'compromised'
-          ? ', <strong>compromised</strong>' : '') +
-        (dev.own ? '' : ', not theirs') + ')' : '';
+          ? t.html('consoleRisk.device.compromised') : '') +
+        (dev.own ? '' : t.html('consoleRisk.device.notTheirs')) + ')' : '';
       return '<tr><td><small>' + esc(self.when(a.at)) + '</small></td><td>' +
-        self.whoCell(a) + '<br><small>' + esc(a.door) +
+        self.whoCell(a, t) + '<br><small>' + esc(a.door) +
         '</small></td><td><code>' + esc(a.addressPrefix) + '</code>' +
         (a.asn ? '<br><small>AS' + a.asn + ' ' + esc(a.asOrg) + '</small>'
                : '') + (a.country ? '<br><small>' + esc(a.city ? a.city +
@@ -716,7 +793,8 @@ class RiskPage {
                                     esc(a.country) + '</small>' : '') +
         '</td><td><small>' + esc([a.uaFamily, a.uaOs, a.uaPlatform]
           .filter(Boolean).join(' / ') || '—') +
-        (a.bot ? ' (automated)' : '') + '<br>' + esc(a.credentialKind) +
+        (a.bot ? t.html('consoleRisk.assessment.automated') : '') + '<br>' +
+        esc(a.credentialKind) +
         deviceCell + '</small></td><td class="num">' +
         esc(Number(a.score).toPrecision(3)) + '</td><td><strong>' +
         esc(a.level) + '</strong></td><td><small>' + model +
@@ -724,38 +802,57 @@ class RiskPage {
         '</small></td><td>' + esc(a.decision) +
         // What the person said about it on /portal/sign-ins (#62 P6).
         (a.feedback ? '<br><small>' + (a.feedback === 'denied'
-          ? '<strong>not them</strong>' : 'confirmed by them') + '</small>'
+          ? '<strong>' + t.html('consoleRisk.assessment.notThem') +
+            '</strong>'
+          : t.html('consoleRisk.assessment.confirmed')) + '</small>'
           : '') + '</td></tr>';
     }).join('');
     const people = view.subjects.map(function (p: Json): string {
-      return '<tr><td>' + self.whoCell(p) + '</td><td>' +
+      return '<tr><td>' + self.whoCell(p, t) + '</td><td>' +
         '<strong>' + esc(p.level) + '</strong>' +
         (p.previousLevel && p.previousLevel !== p.level
-          ? ' <small>(was ' + esc(p.previousLevel) + ')</small>' : '') +
+          ? ' <small>' + t.html('consoleRisk.standings.was',
+                                { level: p.previousLevel }) +
+            '</small>' : '') +
         '</td><td class="num">' + esc(Number(p.score).toPrecision(3)) +
         '</td><td><small>' + esc(p.reason) + '</small></td><td><small>' +
         esc(self.when(p.updatedAt)) + '</small></td></tr>';
     }).join('');
     let credit = '';
     credits.forEach(function (c: Json): void {
-      credit += '<p class="attribution"><small>' + self.credit(c) +
+      credit += '<p class="attribution"><small>' + self.credit(c, t) +
         '</small></p>';
     });
-    return '<h3>Sign-ins assessed <small>(the last 7 days, and what the ' +
-      'issuance policy decided)</small></h3><p>' + (view.assessmentsInDatabase
-        ? 'Held in the database.'
-        : 'Held in this process: there is no database with a key to seal ' +
-          'them under.') + ' ' + view.assessments.total +
-      ' assessment(s).</p>' + assessmentsNav.head +
+    return '<h3>' + t.html('consoleRisk.assessments.heading') + ' <small>' +
+      t.html('consoleRisk.assessments.sub') + '</small></h3><p>' +
+      (view.assessmentsInDatabase
+        ? t.html('consoleRisk.assessments.inDatabase')
+        : t.html('consoleRisk.assessments.inProcess')) + ' ' +
+      t.html('consoleRisk.assessments.count',
+             { n: view.assessments.total }) +
+      '</p>' + assessmentsNav.head +
       '<table class="grid" id="risk-assessments"><thead>' +
-      '<tr><th>When</th><th>Who</th><th>Network</th><th>Device</th>' +
-      '<th>Score</th><th>Level</th><th>Signals</th><th>Decision</th></tr>' +
-      '</thead><tbody>' + (rows || '<tr><td colspan="8">None yet.</td></tr>') +
+      '<tr><th>' + t.html('consoleRisk.th.when') + '</th><th>' +
+      t.html('consoleRisk.th.who') + '</th><th>' +
+      t.html('consoleRisk.th.network') + '</th><th>' +
+      t.html('consoleRisk.th.device') + '</th>' +
+      '<th>' + t.html('consoleRisk.th.score') + '</th><th>' +
+      t.html('consoleRisk.th.level') + '</th><th>' +
+      t.html('consoleRisk.th.signals') + '</th><th>' +
+      t.html('consoleRisk.th.decision') + '</th></tr>' +
+      '</thead><tbody>' + (rows || '<tr><td colspan="8">' +
+                           t.html('consoleRisk.noneYet') + '</td></tr>') +
       '</tbody></table>' + assessmentsNav.foot + credit +
-      '<h3>People by current standing</h3>' + subjectsNav.head +
-      '<table class="grid" id="risk-subjects"><thead><tr><th>Who</th>' +
-      '<th>Level</th><th>Score</th><th>Why</th><th>Updated</th></tr>' +
-      '</thead><tbody>' + (people || '<tr><td colspan="5">None yet.</td>' +
+      '<h3>' + t.html('consoleRisk.standings.heading') + '</h3>' +
+      subjectsNav.head +
+      '<table class="grid" id="risk-subjects"><thead><tr><th>' +
+      t.html('consoleRisk.th.who') + '</th>' +
+      '<th>' + t.html('consoleRisk.th.level') + '</th><th>' +
+      t.html('consoleRisk.th.score') + '</th><th>' +
+      t.html('consoleRisk.th.why') + '</th><th>' +
+      t.html('consoleRisk.th.updated') + '</th></tr>' +
+      '</thead><tbody>' + (people || '<tr><td colspan="5">' +
+                          t.html('consoleRisk.noneYet') + '</td>' +
                           '</tr>') + '</tbody></table>' + subjectsNav.foot;
   }
 
@@ -773,38 +870,46 @@ class RiskPage {
   // unseen on both sides, so they are what makes a new unmapped address's
   // ip factor what it is; drawn for an unscored sign-in too.
   // ---------------------------------------------------------------------------
-  static modelCell(row: Json): string {
+  static modelCell(row: Json, t: Json): string {
     const f = row && row.factors;
     const unknown = row && Array.isArray(row.unknown) && row.unknown.length
-      ? 'unknown: ' + row.unknown.map(function (l: unknown): string {
+      ? t.html('consoleRisk.model.unknown') + ' ' +
+        row.unknown.map(function (l: unknown): string {
         return kit.esc(l);
       }).join(', ') : '';
     if (!f || typeof f !== 'object') {
-      return unknown ? 'model: ' + unknown : '';
+      return unknown ? t.html('consoleRisk.model.model') + ' ' + unknown
+        : '';
     }
     const parts = ['ip', 'ua', 'user'].filter(function (k: string): boolean {
       return typeof f[k] === 'number';
     }).map(function (k: string): string {
       return kit.esc(k) + ' ×' + kit.esc(Number(f[k]).toPrecision(3));
     });
-    const t = row.terms;
-    const counts = t && typeof t === 'object' && typeof f.user === 'number'
-      ? ' (' + kit.esc(t.userSignIns) + ' of ' + kit.esc(t.signIns) +
-        ' sign-ins, ' + kit.esc(t.users) + ' people)' : '';
+    // The user term's counts are `terms`, no longer `t`: `t` is the
+    // translator (#539).
+    const terms = row.terms;
+    const counts = terms && typeof terms === 'object' &&
+      typeof f.user === 'number'
+      ? ' ' + t.html('consoleRisk.model.counts', {
+        mine: terms.userSignIns, all: terms.signIns, people: terms.users })
+      : '';
     const said = parts.length ? parts.join(' · ') + counts : '';
     return said || unknown
-      ? 'model: ' + said + (said && unknown ? ' · ' : '') + unknown : '';
+      ? t.html('consoleRisk.model.model') + ' ' + said +
+        (said && unknown ? ' · ' : '') + unknown : '';
   }
 
   // A provider's credit as its licence asks (`risk_terms.attributionOf()`):
   // the attribution LINKED to the source, the licence named and linked, and
   // that the data was modified here — CC BY 4.0 section 3(a), which DB-IP's
   // licence asks for on every page that displays its results.
-  static credit(c: Json): string {
+  static credit(c: Json, t: Json): string {
     const esc = kit.esc.bind(kit);
     const source = c.url ? '<a href="' + esc(c.url) + '" rel="noopener">' +
       esc(c.text) + '</a>' : esc(c.text);
-    const licence = c.licence ? ', licensed under ' + (c.licenceUrl
+    const licence = c.licence ? t.html('consoleRisk.licensedUnder') +
+      (c.licenceUrl
       ? '<a href="' + esc(c.licenceUrl) + '" rel="noopener">' +
         esc(c.licence) + '</a>' : esc(c.licence)) : '';
     return source + licence + (c.modified ? '; ' + esc(c.modified) : '') +

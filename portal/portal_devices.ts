@@ -85,6 +85,8 @@ interface PortalContext {
     info(message: string): void;
   };
   esc(value: unknown): string;
+  // The portal's translator for a session (#539 phase 3).
+  translatorFor(session: Json): any;
   shell(path: string, session: Json, message: unknown, error: unknown,
         body: string): string;
   send(res: Res, status: number, body: string): unknown;
@@ -201,27 +203,36 @@ class PortalDevicesPage {
   }
 
   // The device choice and the descriptive fields, shared by both forms.
-  private targetFields(held: Json[]): string {
+  private targetFields(held: Json[], t: Json): string {
     const { esc } = this.ctx;
     const { devices } = this.deps;
     this.ctx.log.debug("Entering PortalDevicesPage.targetFields().");
-    const out = '<label for="dev-target">Which device</label>' +
-      '<select id="dev-target" name="device"><option value="">A new ' +
-      'device</option>' + held.map(function (one: Json) {
-        return '<option value="' + esc(one.id) + '">' + esc(one.label) +
-               ' (another key on it)</option>';
+    const out = '<label for="dev-target">' +
+      t.html('portalDevices.target.which') + '</label>' +
+      '<select id="dev-target" name="device"><option value="">' +
+      t.html('portalDevices.target.newDevice') + '</option>' +
+      held.map(function (one: Json) {
+        return '<option value="' + esc(one.id) + '">' +
+               t.html('portalDevices.target.anotherKey',
+                      { name: one.label }) + '</option>';
       }).join('') + '</select>' +
-      '<label for="dev-label">Name it (a new device only)</label>' +
+      '<label for="dev-label">' + t.html('portalDevices.target.name') +
+      '</label>' +
       '<input type="text" id="dev-label" name="label" maxlength="128" ' +
-      'placeholder="my phone">' +
-      '<label for="dev-platform">Platform</label>' +
+      'placeholder="' + esc(t.text('portalDevices.target.namePlaceholder')) +
+      '">' +
+      // The platform names are data (`devices.PLATFORMS`), drawn as they are.
+      '<label for="dev-platform">' + t.html('portalDevices.target.platform') +
+      '</label>' +
       '<select id="dev-platform" name="platform"><option value="">—' +
       '</option>' + devices.PLATFORMS.map(function (p: string) {
         return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
       }).join('') + '</select>' +
-      '<label for="dev-model">Model</label>' +
+      '<label for="dev-model">' + t.html('portalDevices.target.model') +
+      '</label>' +
       '<input type="text" id="dev-model" name="model" maxlength="128">' +
-      '<label for="dev-os">Operating system</label>' +
+      '<label for="dev-os">' + t.html('portalDevices.target.os') +
+      '</label>' +
       '<input type="text" id="dev-os" name="os" maxlength="128">';
     this.ctx.log.debug("Leaving PortalDevicesPage.targetFields().");
     return out;
@@ -229,7 +240,8 @@ class PortalDevicesPage {
 
   // THE JWK PROOF block: the challenge form, or the proof form while one
   // is held.
-  private proofBlock(session: Json, held: Json[], audience: string): string {
+  private proofBlock(session: Json, held: Json[], audience: string,
+                     t: Json): string {
     const { esc, websecurity } = this.ctx;
     const { deviceEnrolment } = this.deps;
     this.ctx.log.debug("Entering PortalDevicesPage.proofBlock().");
@@ -238,56 +250,58 @@ class PortalDevicesPage {
     const PATH = this.PATH;
     if (!pending) {
       this.ctx.log.debug("Leaving PortalDevicesPage.proofBlock(). Form.");
-      return '<h2>Register a device by proving its key</h2>' +
-        '<p class="sub">Your device\'s app signs a challenge from this page ' +
-        'with the key it will be known by — or, on an iPhone, attests the ' +
-        'key with Apple App Attest — and you paste what it produced. An ' +
-        'Android key attested by the phone\'s secure hardware, or an App ' +
-        'Attest key, is recorded <strong>attested</strong>; any other key ' +
-        'is self-asserted, which a product deployment does not ' +
-        'register.</p><form method="post" action="' + esc(PATH) + '">' +
+      return '<h2>' + t.html('portalDevices.proof.heading') + '</h2>' +
+        '<p class="sub">' + t.html('portalDevices.proof.intro') +
+        '</p><form method="post" action="' + esc(PATH) + '">' +
         csrf + '<input type="hidden" name="action" value="challenge">' +
-        '<button type="submit">Get a challenge</button></form>';
+        '<button type="submit">' + t.html('portalDevices.proof.getChallenge') +
+        '</button></form>';
     }
     this.ctx.log.debug("Leaving PortalDevicesPage.proofBlock(). Held.");
-    return '<h2>Register a device by proving its key</h2>' +
-      '<p class="sub">Answer this challenge before ' +
-      esc(new Date(Number(pending.expiresAt)).toISOString()) + ', once.</p>' +
-      '<table><tr><th>Challenge (the proof\'s <code>nonce</code>)</th><td>' +
+    return '<h2>' + t.html('portalDevices.proof.heading') + '</h2>' +
+      '<p class="sub">' + t.html('portalDevices.proof.answerBefore',
+        { when: t.date(Number(pending.expiresAt)) }) + '</p>' +
+      '<table><tr><th>' + t.html('portalDevices.proof.challenge') +
+      '</th><td>' +
       '<code id="dev-challenge">' + esc(pending.challenge) + '</code></td>' +
-      '</tr><tr><th>Audience (<code>aud</code>)</th><td><code ' +
+      '</tr><tr><th>' + t.html('portalDevices.proof.audience') +
+      '</th><td><code ' +
       'id="dev-audience">' + esc(audience) + '</code></td></tr><tr><th>' +
-      'Header <code>typ</code></th><td><code>' +
-      esc(deviceAttestation.PROOF_TYP) + '</code>, with the public key in ' +
-      '<code>jwk</code> (and an Android attestation chain in ' +
-      '<code>x5c</code>)</td></tr></table>' +
+      t.html('portalDevices.proof.header') + '</th><td><code>' +
+      esc(deviceAttestation.PROOF_TYP) + '</code>' +
+      t.html('portalDevices.proof.headerKey') + '</td></tr></table>' +
       '<form method="post" action="' + esc(PATH) + '">' + csrf +
       '<input type="hidden" name="action" value="prove">' +
       '<input type="hidden" name="challenge" value="' +
       esc(pending.challenge) + '">' +
-      '<label for="dev-proof">The key proof (a compact JWS)</label>' +
+      '<label for="dev-proof">' + t.html('portalDevices.proof.jws') +
+      '</label>' +
       '<textarea id="dev-proof" name="proof" rows="4"></textarea>' +
-      '<p class="sub">Or, from an iPhone app, the App Attest key id and ' +
-      'attestation object (base64), made with the challenge\'s SHA-256 as ' +
-      'the client data hash:</p>' +
-      '<label for="dev-aa-key">App Attest key id</label>' +
+      '<p class="sub">' + t.html('portalDevices.proof.appAttestIntro') +
+      '</p>' +
+      '<label for="dev-aa-key">' + t.html('portalDevices.proof.aaKeyId') +
+      '</label>' +
       '<input type="text" id="dev-aa-key" name="app_attest_key_id" ' +
       'maxlength="128">' +
-      '<label for="dev-aa-object">App Attest attestation object</label>' +
+      '<label for="dev-aa-object">' +
+      t.html('portalDevices.proof.aaObject') + '</label>' +
       '<textarea id="dev-aa-object" name="app_attest_object" rows="4">' +
       '</textarea>' +
-      '<label for="dev-key-label">Name the key (optional)</label>' +
+      '<label for="dev-key-label">' + t.html('portalDevices.proof.keyName') +
+      '</label>' +
       '<input type="text" id="dev-key-label" name="key_label" ' +
-      'maxlength="128">' + this.targetFields(held) +
-      '<button type="submit">Register</button></form>' +
+      'maxlength="128">' + this.targetFields(held, t) +
+      '<button type="submit">' + t.html('portalDevices.proof.register') +
+      '</button></form>' +
       '<form method="post" action="' + esc(PATH) + '">' + csrf +
       '<input type="hidden" name="action" value="cancel-proof">' +
-      '<button class="secondary" type="submit">Cancel</button></form>';
+      '<button class="secondary" type="submit">' +
+      t.html('portalDevices.cancel') + '</button></form>';
   }
 
   // The person's keys that cannot be linked, each named with the reason —
   // or nothing when there are none.
-  private passedOver(enrolled: Json[]): string {
+  private passedOver(enrolled: Json[], t: Json): string {
     const { esc } = this.ctx;
     const { credentials } = this.deps;
     this.ctx.log.debug("Entering PortalDevicesPage.passedOver().");
@@ -299,20 +313,22 @@ class PortalDevicesPage {
       return '';
     }
     this.ctx.log.debug("Leaving PortalDevicesPage.passedOver().");
+    // THE NAMES ARE MARKUP, so they sit between two messages rather than in
+    // one as a parameter (a parameter is escaped); each message picks its
+    // singular or plural by the count (#539).
     return '<p class="note" id="devices-roaming">' +
-      (roaming.length === 1 ? 'This passkey is' : 'These passkeys are') +
-      ' not offered: ' + roaming.map(function (k: Json) {
+      t.html('portalDevices.roaming.lead', { count: roaming.length }) + ' ' +
+      roaming.map(function (k: Json) {
         return '<strong>' + esc(credentials.keyKind(k).name) + '</strong>';
-      }).join(', ') + '. ' + (roaming.length === 1 ? 'It is' : 'Each is') +
-      ' on a security key or reached from another phone (USB, NFC, ' +
-      'Bluetooth or a QR code), so it cannot say which device you are on. ' +
-      'It still signs you in.</p>';
+      }).join(', ') + '. ' +
+      t.html('portalDevices.roaming.why', { count: roaming.length }) +
+      '</p>';
   }
 
   // "REMEMBER THIS BROWSER" (#265): the other way to register the browser
   // this page is open in — one that works in every browser, and says it is
   // the weaker kind. A browser already remembered is issued its token again.
-  private rememberBlock(session: Json): string {
+  private rememberBlock(session: Json, t: Json): string {
     const { esc, websecurity } = this.ctx;
     const { browserDevices } = this.deps;
     this.ctx.log.debug("Entering PortalDevicesPage.rememberBlock().");
@@ -321,22 +337,18 @@ class PortalDevicesPage {
       return '';
     }
     this.ctx.log.debug("Leaving PortalDevicesPage.rememberBlock().");
-    return '<div class="card"><h2>Remember this browser</h2>' +
-      '<p class="sub">Works in any browser: this service puts a signed and ' +
-      'encrypted token in a cookie and recognises the browser by it next ' +
-      'time. It is the WEAKEST kind of device here — anybody who copies the ' +
-      'cookie is this browser until the copy is caught, which ends every ' +
-      'session it holds — so it only stops sign-ins from it looking new, ' +
-      'and never counts as a compliant device. Do not use it on a shared ' +
-      'computer.</p>' +
+    return '<div class="card"><h2>' +
+      t.html('portalDevices.remember.heading') + '</h2>' +
+      '<p class="sub">' + t.html('portalDevices.remember.intro') + '</p>' +
       '<form method="post" action="' + esc(this.PATH) + '">' +
       websecurity.field(session.id) +
       '<input type="hidden" name="action" value="remember-browser">' +
-      '<button type="submit">Remember this browser</button></form></div>';
+      '<button type="submit">' + t.html('portalDevices.remember.button') +
+      '</button></form></div>';
   }
 
   // THE WEBAUTHN LINK block, step one: which credential, and which device.
-  private linkBlock(session: Json, held: Json[]): string {
+  private linkBlock(session: Json, held: Json[], t: Json): string {
     const { esc, websecurity } = this.ctx;
     const { credentials } = this.deps;
     this.ctx.log.debug("Entering PortalDevicesPage.linkBlock().");
@@ -349,52 +361,54 @@ class PortalDevicesPage {
     // was a YubiKey saw this card without a form and could not tell which
     // key had been refused or why; `passedOver()` says both, with the model
     // the attestation named, and what to do instead.
-    const roaming = this.passedOver(enrolled);
+    const roaming = this.passedOver(enrolled, t);
     if (!keys.length) {
       this.ctx.log.debug("Leaving PortalDevicesPage.linkBlock(). None.");
-      return '<h2>Link a passkey on this device</h2>' +
+      // The link is markup, so the sentence is three messages around it.
+      return '<h2>' + t.html('portalDevices.link.heading') + '</h2>' +
         '<p class="note">' + (enrolled.length
-          ? 'None of your passkeys can be linked to a device.'
-          : 'You have no passkeys yet.') + '</p>' + roaming +
-        '<p class="note">To link this device, open <a href="' +
-        esc(this.ctx.BASE + '/keys') + '">Passkeys</a> <strong>on this ' +
-        'device</strong>, choose <em>Create a passkey</em> and save it to ' +
-        'this device — Touch ID, Face ID, Windows Hello or the phone\'s ' +
-        'screen lock. Then come back here, on the same device, and link ' +
-        'it. Or register the device by proving its key, above.</p>';
+          ? t.html('portalDevices.link.noneLinkable')
+          : t.html('portalDevices.link.noPasskeys')) + '</p>' + roaming +
+        '<p class="note">' + t.html('portalDevices.link.howBefore') +
+        ' <a href="' +
+        esc(this.ctx.BASE + '/keys') + '">' +
+        t.html('portalDevices.link.howLink') + '</a> ' +
+        t.html('portalDevices.link.howAfter') + '</p>';
     }
     this.ctx.log.debug("Leaving PortalDevicesPage.linkBlock(). Form.");
-    return '<h2>Link a passkey on this device</h2>' + roaming +
-      '<p class="sub">You will be asked to use the passkey once more, on ' +
-      'the device it is saved on. A passkey whose attestation this service ' +
-      'verified and trusted when you created it is recorded attested.</p>' +
+    return '<h2>' + t.html('portalDevices.link.heading') + '</h2>' +
+      roaming +
+      '<p class="sub">' + t.html('portalDevices.link.intro') + '</p>' +
       '<form method="post" action="' + esc(this.PATH) + '">' +
       websecurity.field(session.id) +
       '<input type="hidden" name="action" value="link-begin">' +
-      '<label for="dev-cred">Which passkey</label>' +
+      '<label for="dev-cred">' + t.html('portalDevices.link.which') +
+      '</label>' +
       '<select id="dev-cred" name="credential_id">' +
       keys.map(function (k: Json) {
         const att = k.attestation || {};
         return '<option value="' + esc(k.credentialId) + '">' +
           esc(credentials.keyName(k)) + ' — ' +
-          esc(att.verified && att.trusted ? 'attestation trusted'
-                                          : 'attestation not trusted') +
+          (att.verified && att.trusted
+            ? t.html('portalDevices.link.trusted')
+            : t.html('portalDevices.link.notTrusted')) +
           '</option>';
-      }).join('') + '</select>' + this.targetFields(held) +
-      '<button type="submit">Link it</button></form>';
+      }).join('') + '</select>' + this.targetFields(held, t) +
+      '<button type="submit">' + t.html('portalDevices.link.button') +
+      '</button></form>';
   }
 
   // THE WEBAUTHN LINK, step two: the armed ceremony.
-  private ceremonyBlock(session: Json, pending: Json, base: string): string {
+  private ceremonyBlock(session: Json, pending: Json, base: string,
+                        t: Json): string {
     const { esc, websecurity } = this.ctx;
     const { authn, webauthnPolicy } = this.deps;
     this.ctx.log.debug("Entering PortalDevicesPage.ceremonyBlock().");
     const rpId = authn.rpIdOf(base);
     const csrf = websecurity.field(session.id);
     this.ctx.log.debug("Leaving PortalDevicesPage.ceremonyBlock().");
-    return '<h2>Use your passkey</h2>' +
-      '<p class="note">Your browser is about to ask for the passkey you ' +
-      'chose, on the device it is saved on.</p>' +
+    return '<h2>' + t.html('portalDevices.ceremony.heading') + '</h2>' +
+      '<p class="note">' + t.html('portalDevices.ceremony.intro') + '</p>' +
       '<div id="wa-data" data-challenge="' + esc(pending.challenge) + '"' +
       ' data-rpid="' + esc(rpId) + '"' +
       ' data-user="' + esc(session.user.username) + '"' +
@@ -403,17 +417,19 @@ class PortalDevicesPage {
       ' data-options="' +
       esc(JSON.stringify(webauthnPolicy.requestOptions(rpId))) + '"' +
       ' data-mode="get"></div>' +
-      '<button id="wa-go" type="button">Use passkey</button>' +
+      '<button id="wa-go" type="button">' +
+      t.html('portalDevices.ceremony.use') + '</button>' +
       '<form method="post" action="' + esc(this.PATH) + '" id="wa-form">' +
       csrf + '<input type="hidden" name="action" value="link-finish">' +
       '<input type="hidden" name="challenge" value="' +
       esc(pending.challenge) + '">' +
       '<input type="hidden" name="credential" id="wa-credential">' +
-      '<button class="secondary" type="submit">My browser did not ask ' +
-      '&mdash; tell me why</button></form>' +
+      '<button class="secondary" type="submit">' +
+      t.html('portalDevices.ceremony.didNotAsk') + '</button></form>' +
       '<form method="post" action="' + esc(this.PATH) + '">' + csrf +
       '<input type="hidden" name="action" value="link-cancel">' +
-      '<button class="secondary" type="submit">Cancel</button></form>' +
+      '<button class="secondary" type="submit">' +
+      t.html('portalDevices.cancel') + '</button></form>' +
       '<script src="' + esc(authn.WEBAUTHN_SCRIPT_PATH) + '"></script>';
   }
 
@@ -432,6 +448,10 @@ class PortalDevicesPage {
     const { devices, deviceEnrolment } = this.deps;
     const self = this;
     log.debug("Entering PortalDevicesPage.page().");
+    // THE LANGUAGE (#539): the portal's translator for this person. The
+    // device names, applications, key kinds, attestation levels and
+    // enrolment methods are data and are drawn as they are.
+    const t = this.ctx.translatorFor(session);
     const who = String(session.user.username);
     const held = devices.listFor(who).map(function (one: Json) {
       return devices.view(one, function (sid: string) {
@@ -445,37 +465,41 @@ class PortalDevicesPage {
         esc(one.applications.map(function (dn: string) {
           return String(dn).split(',')[0].replace(/^cn=/i, '');
         }).join(', ') || '—') + '</td><td>' +
-        (one.nativeSso ? (one.sessionLive ? 'signed in' : 'signed out')
+        (one.nativeSso ? (one.sessionLive
+          ? t.html('portalDevices.devices.signedIn')
+          : t.html('portalDevices.devices.signedOut'))
                        : '—') + '</td><td>' + self.keysCell(one) +
         '</td><td>' + esc(one.attestation.level) + '</td><td>' +
         esc(one.enrolment.method) + '</td><td>' +
-        esc(one.lastUsed || '') +
+        esc(one.lastUsed ? t.date(one.lastUsed) : '') +
         '</td><td><form method="post" action="' + esc(PATH) + '">' + csrf +
         '<input type="hidden" name="action" value="remove">' +
         '<input type="hidden" name="id" value="' + esc(one.id) + '">' +
-        '<button class="danger" type="submit">Remove</button></form>' +
+        '<button class="danger" type="submit">' +
+        t.html('portalDevices.devices.remove') + '</button></form>' +
         '</td></tr>';
     });
     const linking = deviceEnrolment.pendingFor(session.id, 'webauthn');
-    const body = '<div class="card"><h2>Your devices</h2>' +
-      '<p class="sub">The phones and computers that are yours: the ones ' +
-      'you registered here, the ones you have signed in on with an app ' +
-      'that shares its sign-in with the other apps on the device (OpenID ' +
-      'Connect Native SSO), the ones a certificate was issued to, and any ' +
-      'an administrator registered for you. Remove one you no longer ' +
-      'have: its apps can no longer share a sign-in, and ask you to sign ' +
-      'in again.</p>' +
+    const body = '<div class="card"><h2>' +
+      t.html('portalDevices.devices.heading') + '</h2>' +
+      '<p class="sub">' + t.html('portalDevices.devices.intro') + '</p>' +
       (held.length
-        ? '<table><tr><th>Device</th><th>Applications</th><th>Shared ' +
-          'sign-in</th><th>Keys</th><th>Attestation</th><th>Registered ' +
-          'by</th><th>Last used</th><th></th></tr>' + rows.join('') +
+        ? '<table><tr><th>' + t.html('portalDevices.devices.colDevice') +
+          '</th><th>' + t.html('portalDevices.devices.colApplications') +
+          '</th><th>' + t.html('portalDevices.devices.colShared') +
+          '</th><th>' + t.html('portalDevices.devices.colKeys') +
+          '</th><th>' + t.html('portalDevices.devices.colAttestation') +
+          '</th><th>' + t.html('portalDevices.devices.colRegisteredBy') +
+          '</th><th>' + t.html('portalDevices.devices.colLastUsed') +
+          '</th><th></th></tr>' + rows.join('') +
           '</table>'
-        : '<p id="devices-none">None.</p>') + '</div>' +
+        : '<p id="devices-none">' + t.html('portalDevices.devices.none') +
+          '</p>') + '</div>' +
       '<div class="card">' + (linking
-        ? this.ceremonyBlock(session, linking, base)
-        : this.proofBlock(session, held, base + PATH) +
-          this.linkBlock(session, held)) + '</div>' +
-      this.rememberBlock(session);
+        ? this.ceremonyBlock(session, linking, base, t)
+        : this.proofBlock(session, held, base + PATH, t) +
+          this.linkBlock(session, held, t)) + '</div>' +
+      this.rememberBlock(session, t);
     log.debug("Leaving PortalDevicesPage.page().");
     return { html: shell(this.PATH, session, message, error, body),
              ceremony: !!linking };
@@ -586,6 +610,9 @@ class PortalDevicesPage {
                                                base));
     }
     const action = String(body.action || 'remove');
+    // THE SUCCESS SENTENCES (#539) are put in `?done=` already translated,
+    // in this person's language; a refusal stays English.
+    const t = ctx.translatorFor(session);
     if (action === 'remember-browser') {
       // Not counted as a second factor given on this browser: the portal's
       // session says nothing about which browser gave it. The next sign-in
@@ -598,8 +625,8 @@ class PortalDevicesPage {
       }
       log.debug('Leaving POST ' + PATH + '. Remembered.');
       return this.back(req, res, done.acted === 'already'
-        ? 'This browser is already remembered.'
-        : 'This browser is remembered.');
+        ? t.text('portalDevices.done.alreadyRemembered')
+        : t.text('portalDevices.done.remembered'));
     }
     if (action === 'challenge') {
       const issued = deviceEnrolment.issueChallenge({ sessionId: session.id,
@@ -631,7 +658,7 @@ class PortalDevicesPage {
         return this.refusedPage(req, res, session, done, 'STS-DEVICE-0017');
       }
       log.debug('Leaving POST ' + PATH + '. Registered.');
-      return this.back(req, res, 'That key is registered.');
+      return this.back(req, res, t.text('portalDevices.done.registered'));
     }
     if (action === 'link-begin') {
       const begun = deviceEnrolment.beginLink({ username: who,
@@ -678,7 +705,7 @@ class PortalDevicesPage {
         return this.refusedPage(req, res, session, done, 'STS-DEVICE-0022');
       }
       log.debug('Leaving POST ' + PATH + '. Linked.');
-      return this.back(req, res, 'That passkey is linked.');
+      return this.back(req, res, t.text('portalDevices.done.linked'));
     }
     const result = devices.remove(body.id, who, who);
     ctx.audit.record({
@@ -697,7 +724,7 @@ class PortalDevicesPage {
                                                base));
     }
     log.debug('Leaving POST ' + PATH + '. Removed.');
-    return this.back(req, res, 'That device is removed.');
+    return this.back(req, res, t.text('portalDevices.done.removed'));
   }
 
   // A JSON answer.

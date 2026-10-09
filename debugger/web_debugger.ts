@@ -39,10 +39,12 @@ class DebuggerPage {
    * Draws the page's body from its view.
    *
    * @param view - the answer of the page's management API operation
+   * @param ctx - the render context (`WebKit.context()`), whose translator
+   *   the page is drawn with (#539); the default context when none is given
    * @returns the body as HTML
    */
-  static render(view: Json): string {
-    return DebuggerPage.body(view);
+  static render(view: Json, ctx?: Json): string {
+    return DebuggerPage.body(view, (ctx || kit.context()).t);
   }
 
   /**
@@ -60,11 +62,12 @@ class DebuggerPage {
    * Draws a value in a code element, or a muted `none` when it is empty.
    *
    * @param text - the value, escaped here
+   * @param t - the page's translator (#539), for the word `none`
    * @returns the HTML
    */
-  static code(text) {
+  static code(text, t) {
     return text === null || text === undefined || text === ''
-      ? '<span class="muted">none</span>'
+      ? '<span class="muted">' + t.html('consoleDebugger.none') + '</span>'
       : '<code>' + kit.esc(String(text)) + '</code>';
   }
 
@@ -73,79 +76,98 @@ class DebuggerPage {
    * listener and api-process tables, and the settings forms.
    *
    * @param json - the view from debuggerView()
+   * @param t - the page's translator (#539)
    * @returns the HTML
    */
-  static body(json) {
+  static body(json, t) {
     const api = json.api || {};
+    // `code()` with this page's translator, for the `.map()` below.
+    const code = (text) => this.code(text, t);
     const origin = json.publicBaseUrl ||
                    (json.scheme + '://&lt;this host&gt;:' + json.port);
     const tiles = '<div class="tiles">' +
-      kit.tile(json.embedded ? 'embedded' : 'off', 'debugger') +
-      kit.tile(json.listening ? String(json.port) : 'not bound', 'listener') +
-      kit.tile(String(api.state || 'stopped'), 'api process') +
+      kit.tile(json.embedded ? t.text('consoleDebugger.tile.embedded')
+                             : t.text('consoleDebugger.tile.off'),
+               t.text('consoleDebugger.tile.debugger')) +
+      kit.tile(json.listening ? String(json.port)
+                              : t.text('consoleDebugger.tile.notBound'),
+               t.text('consoleDebugger.tile.listener')) +
+      kit.tile(api.state ? String(api.state)
+                         : t.text('consoleDebugger.tile.stopped'),
+               t.text('consoleDebugger.tile.apiProcess')) +
       kit.tile(api.allowList ? String((api.allowedRanges || []).length)
-                               : 'none', 'allow-listed ranges') +
+                             : t.text('consoleDebugger.none'),
+               t.text('consoleDebugger.tile.ranges')) +
       '</div>';
+    // Split around the three values and the link (#539): a parameter is
+    // escaped, so a value drawn as markup by `code()` sits between messages.
     const what = kit.note(
-      'The identity protocol debugger, served by this process on a listener ' +
-      'of its own so that its pages — which carry inline scripts and render ' +
-      'tokens from any identity provider — are on an origin other than this ' +
-      'console\'s. Its user interface is static files; its api runs as a ' +
-      'child process on a unix socket, forwarded at <code>/api</code>. It is ' +
-      'signed in to through this service\'s authorization server as ' +
-      this.code(json.clientId) + ', and every request needs an access token ' +
-      'addressed to ' + this.code(json.audience) + ' carrying ' +
-      this.code(json.permission) +
-      ' — which the authorization server issues to members of the two groups ' +
-      'on <a href="/admin/rbac">Admin roles</a> and leaves off for anybody ' +
-      'else. <strong>No setting below opens it.</strong>');
+      t.html('consoleDebugger.what.a') + code(json.clientId) +
+      t.html('consoleDebugger.what.b') + code(json.audience) +
+      t.html('consoleDebugger.what.c') + code(json.permission) +
+      t.html('consoleDebugger.what.d') + '<a href="/admin/rbac">' +
+      t.html('consoleDebugger.what.link') + '</a>' +
+      t.html('consoleDebugger.what.e'));
     const problems = [json.startProblem, json.listenError, api.lastError]
       .filter(Boolean);
     const warning = !json.embedded ? '' : (problems.length
       ? kit.warn(problems.map(kit.esc).join('<br>'), 'Not running')
       : '');
-    const listener = '<h2>Listener</h2><table class="kv">' +
-      this.row('Embedded', this.code(json.embedded ? 'yes' : 'no') + ' — ' +
-               'debugger.enabled is ' + this.code(json.setting) + ' in ' +
-               this.code(json.mode) + ' mode') +
-      this.row('Port', this.code(json.port) + (json.listening ? ' (bound)' :
-                                                ' (not bound)')) +
-      this.row('Origin', json.listening
+    const listener = '<h2>' + t.html('consoleDebugger.listener.heading') +
+      '</h2><table class="kv">' +
+      this.row(t.text('consoleDebugger.listener.embedded'),
+               code(json.embedded ? 'yes' : 'no') +
+               t.html('consoleDebugger.listener.enabledIs') +
+               code(json.setting) + t.html('consoleDebugger.listener.in') +
+               code(json.mode) + t.html('consoleDebugger.listener.mode')) +
+      this.row(t.text('consoleDebugger.listener.port'), code(json.port) +
+               (json.listening ? t.html('consoleDebugger.listener.bound') :
+                                 t.html('consoleDebugger.listener.notBound'))) +
+      this.row(t.text('consoleDebugger.listener.origin'), json.listening
         ? '<code>' + origin + '</code>'
-        : '<span class="muted">not serving</span>') +
-      this.row('Static site', this.code(json.uiDirectory)) +
-      this.row('Client', this.code(json.clientId)) +
-      this.row('Resource server', this.code(json.resource)) +
-      this.row('Permission', this.code(json.permission)) +
+        : '<span class="muted">' +
+          t.html('consoleDebugger.listener.notServing') + '</span>') +
+      this.row(t.text('consoleDebugger.listener.staticSite'),
+               code(json.uiDirectory)) +
+      this.row(t.text('consoleDebugger.listener.client'),
+               code(json.clientId)) +
+      this.row(t.text('consoleDebugger.listener.resource'),
+               code(json.resource)) +
+      this.row(t.text('consoleDebugger.listener.permission'),
+               code(json.permission)) +
       '</table>';
-    const process = '<h2>Api process</h2><table class="kv">' +
-      this.row('State', this.code(api.state)) +
-      this.row('Process id', this.code(api.pid)) +
-      this.row('Socket', this.code(api.socket)) +
-      this.row('Tree', this.code(api.apiDirectory)) +
-      this.row('Starts', this.code(api.starts)) +
-      this.row('Failures in a row', this.code(api.consecutiveFailures)) +
-      this.row('Listening since', this.code(api.listeningAt)) +
-      this.row('Last exit', api.lastExit
-        ? this.code((api.lastExit.signal ? 'signal ' + api.lastExit.signal
-                                         : 'code ' + api.lastExit.code) +
-                    ' at ' + api.lastExit.at + ' after ' +
-                    api.lastExit.upSeconds + 's')
-        : this.code('')) +
-      this.row('May dial', api.allowList
-        ? (api.allowedRanges || []).map(this.code.bind(this)).join(' ') +
+    // The last exit's wording is inside <code> and stays as written (#539).
+    const process = '<h2>' + t.html('consoleDebugger.api.heading') +
+      '</h2><table class="kv">' +
+      this.row(t.text('consoleDebugger.api.state'), code(api.state)) +
+      this.row(t.text('consoleDebugger.api.pid'), code(api.pid)) +
+      this.row(t.text('consoleDebugger.api.socket'), code(api.socket)) +
+      this.row(t.text('consoleDebugger.api.tree'), code(api.apiDirectory)) +
+      this.row(t.text('consoleDebugger.api.starts'), code(api.starts)) +
+      this.row(t.text('consoleDebugger.api.failures'),
+               code(api.consecutiveFailures)) +
+      this.row(t.text('consoleDebugger.api.since'), code(api.listeningAt)) +
+      this.row(t.text('consoleDebugger.api.lastExit'), api.lastExit
+        ? code((api.lastExit.signal ? 'signal ' + api.lastExit.signal
+                                    : 'code ' + api.lastExit.code) +
+               ' at ' + api.lastExit.at + ' after ' +
+               api.lastExit.upSeconds + 's')
+        : code('')) +
+      this.row(t.text('consoleDebugger.api.mayDial'), api.allowList
+        ? (api.allowedRanges || []).map(function (one) {
+            return code(one);
+          }).join(' ') +
                ((api.allowListProblems || []).length
                  ? '<br>' + kit.warn('Left out, not ranges: ' +
                                        api.allowListProblems.map(kit.esc)
                                          .join(', '),
                                          'debugger.allowedDestinations')
                  : '')
-        : 'anything, private networks included — development mode passes the ' +
-               'api no allow-list') +
+        : t.html('consoleDebugger.api.anything')) +
       '</table>';
     return tiles + what + warning + listener + process +
-           '<h2>Settings</h2>' +
-           SettingsForms.forms(json.settings, PAGE_PATH);
+           '<h2>' + t.html('consoleDebugger.settings') + '</h2>' +
+           SettingsForms.forms(json.settings, PAGE_PATH, undefined, t);
   }
 }
 

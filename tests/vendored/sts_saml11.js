@@ -578,8 +578,19 @@ async function main() {
         res.headers['cache-control']);
   let doc = parse(res.body);
   const unscopedEntityId = doc.documentElement.getAttribute('entityID');
+  // ONE ISSUER PER REALM (iya-sts #523): the providerID is the realm's OAuth
+  // issuer, the `issuer` its authorization server metadata publishes.
+  const asMeta = await request('GET', '/.well-known/oauth-authorization-server');
+  const oauthIssuer = asMeta.status === 200
+    ? String(JSON.parse(asMeta.body).issuer || '') : '';
+  check('the providerID is the realm\'s OAuth issuer (#523)',
+        !!oauthIssuer && unscopedEntityId === oauthIssuer,
+        unscopedEntityId + ' vs ' + oauthIssuer);
+  // #523: the one document for both SAML versions — the enumeration is a
+  // list, and SAML 1.1 is in it.
   check('protocolSupportEnumeration names the SAML 1.1 PROTOCOL',
-        res.body.indexOf('protocolSupportEnumeration="urn:oasis:names:tc:SAML:1.1:protocol"') >= 0);
+        /protocolSupportEnumeration="[^"]*urn:oasis:names:tc:SAML:1\.1:protocol[\s"]/
+          .test(res.body));
   check('there is an IDPSSODescriptor', !!byLocal(doc, 'IDPSSODescriptor'));
   // A Shibboleth service provider looks for its attribute authority in the
   // second descriptor and will not find it inside the first.
@@ -593,10 +604,13 @@ async function main() {
         res.body.indexOf('urn:mace:shibboleth:1.0:profiles:AuthnRequest') >= 0);
   check('it publishes an AttributeService over the SOAP binding',
         /AttributeService Binding="urn:oasis:names:tc:SAML:1.0:bindings:SOAP-binding"/.test(res.body));
-  // Not an omission: SAML 1.1 has no Single Logout. Publishing one would be
-  // advertising an endpoint the protocol cannot reach.
-  check('there is NO SingleLogoutService, because SAML 1.1 has no Single Logout',
-        res.body.indexOf('SingleLogoutService') < 0);
+  // Not an omission: SAML 1.1 has no Single Logout. Since #523 the document
+  // is SAML 2.0's as well, so its SingleLogoutServices are there — every one
+  // on a SAML 2.0 binding, none on a 1.x one.
+  check('no SingleLogoutService on a SAML 1.x binding, because SAML 1.1 has ' +
+        'no Single Logout',
+        !/SingleLogoutService Binding="urn:oasis:names:tc:SAML:1\./
+          .test(res.body));
   check('ds:Signature is the FIRST child of EntityDescriptor',
         doc.documentElement.firstChild &&
         doc.documentElement.firstChild.localName === 'Signature',
@@ -614,6 +628,13 @@ async function main() {
   // asserts the refusal instead. `RP` is registered further down.
   const productHere = await registry.isProduct(registry.baseOf(BASE));
   let scopedEntityId = null;
+  // The relying party's path segment, read off the endpoints its document
+  // publishes (the providerID is no longer per relying party, #523).
+  let slug = null;
+  const slugIn = function (body) {
+    const m = /\/saml11\/sso\/([^"?<]+)/.exec(body || '');
+    return m ? decodeURIComponent(m[1]) : null;
+  };
   res = await request('GET', '/saml11/metadata/' + encodeURIComponent(RP));
   if (productHere && res.status === 404) {
     check('product: an unregistered relying party gets no metadata document (404)',
@@ -621,9 +642,9 @@ async function main() {
   } else {
     doc = parse(res.body);
     scopedEntityId = doc.documentElement.getAttribute('entityID');
-    check('a scoped document names a providerID of its own',
-          scopedEntityId !== unscopedEntityId &&
-          scopedEntityId.indexOf(unscopedEntityId + ':') === 0,
+    slug = slugIn(res.body);
+    check('a scoped document names the SAME providerID, the realm\'s one ' +
+          'issuer (#523)', scopedEntityId === unscopedEntityId,
           scopedEntityId + ' vs ' + unscopedEntityId);
     check('its endpoints carry the same path segment',
           res.body.indexOf('/saml11/sso/') >= 0 && res.body.indexOf('/saml11/responder/') >= 0);
@@ -677,9 +698,10 @@ async function main() {
     res = await request('GET', '/saml11/metadata/' + encodeURIComponent(RP));
     scopedEntityId = res.status === 200
       ? parse(res.body).documentElement.getAttribute('entityID') : null;
-    check('product: the registered relying party gets its scoped document',
-          !!scopedEntityId && scopedEntityId !== unscopedEntityId &&
-          scopedEntityId.indexOf(unscopedEntityId + ':') === 0,
+    slug = res.status === 200 ? slugIn(res.body) : null;
+    check('product: the registered relying party gets its scoped document, ' +
+          'under the realm\'s one providerID (#523)',
+          !!scopedEntityId && scopedEntityId === unscopedEntityId && !!slug,
           'status ' + res.status + ' ' + scopedEntityId);
   }
   res = await signIn({ providerId: RP, shire: acs, TARGET: target, profile: 'post' }, USER_POST);
@@ -749,8 +771,9 @@ async function main() {
   check('the Issuer is an ATTRIBUTE of Assertion, not a child element',
         !!assertionEl.getAttribute('Issuer') && !childByLocal(assertionEl, 'Issuer'),
         assertionEl.getAttribute('Issuer'));
-  check('the issuer is this relying party\'s own providerID',
-        assertionEl.getAttribute('Issuer') === scopedEntityId,
+  check('the issuer is the realm\'s one providerID, its OAuth issuer (#523)',
+        assertionEl.getAttribute('Issuer') === scopedEntityId &&
+        assertionEl.getAttribute('Issuer') === oauthIssuer,
         assertionEl.getAttribute('Issuer') + ', expected ' + scopedEntityId);
   check('ds:Signature is the LAST child of the assertion',
         assertionEl.lastChild && assertionEl.lastChild.localName === 'Signature',
@@ -842,20 +865,10 @@ async function main() {
   const resolveBody = samlRequest('<samlp:AssertionArtifact>' + artifact +
                                   '</samlp:AssertionArtifact>', requestId);
   // A RESPONDER ANSWERS ONLY FOR ITS OWN SourceID (rcbj/iya-sts#160,
-  // saml-bindings-1.1 section 4.1.1.6). This artifact's SourceID is the SHA-1
-  // of the relying party's SCOPED providerID (checked above), so it belongs to
-  // /saml11/responder/{rp}. The unscoped responder answers it with the empty
-  // response — Success, no assertion, no StatusMessage — and leaves it
-  // UNSPENT, which the scoped resolution below then shows.
-  const artSlug = scopedEntityId.slice(unscopedEntityId.length + 1);
-  const scopedResponder = '/saml11/responder/' + encodeURIComponent(artSlug);
-  res = await request('POST', '/saml11/responder', resolveBody, XML);
-  doc = parse(res.body);
-  check('the UNSCOPED responder answers a relying party\'s artifact with the ' +
-        'empty response', res.status === 200 &&
-        statusOf(doc) === 'samlp:Success' && !byLocal(doc, 'Assertion') &&
-        !byLocal(doc, 'StatusMessage'),
-        res.status + ' ' + statusOf(doc));
+  // saml-bindings-1.1 section 4.1.1.6). Since #523 that is the realm's one
+  // providerID, checked above, so the relying party's own responder answers
+  // it — as the unscoped one would; one entity, one SourceID.
+  const scopedResponder = '/saml11/responder/' + encodeURIComponent(slug);
   res = await request('POST', scopedResponder, resolveBody, XML);
   check('the responder answers 200', res.status === 200, 'status ' + res.status);
   check('the answer is a SOAP envelope', /soap:Envelope/i.test(res.body));
@@ -996,7 +1009,6 @@ async function main() {
 
   // -------------------------------------------------------------------------
   heading('the scoped endpoints the per-relying-party metadata publishes');
-  const slug = scopedEntityId.slice(unscopedEntityId.length + 1);
   // Driven through resume() rather than signIn(), because signIn() always starts
   // at the unscoped path and the scoped one is the whole point here.
   cookie = '';
@@ -1243,15 +1255,6 @@ async function main() {
         !!xml && !!childByLocal(byLocal(parse(xml), 'Assertion'), 'Signature'));
   await setSetting('saml11.signResponse', true);
 
-  await setSetting('saml11.perApplicationProviderId', false);
-  res = await request('GET', '/saml11/metadata/' + encodeURIComponent(RP));
-  check('perApplicationProviderId=false makes every document name one identity provider',
-        parse(res.body).documentElement.getAttribute('entityID') === unscopedEntityId,
-        parse(res.body).documentElement.getAttribute('entityID'));
-  // The endpoints stay per-application either way, because that is what makes
-  // the documents worth having separately.
-  check('but the ENDPOINTS stay per-application', res.body.indexOf('/saml11/sso/') >= 0);
-  await setSetting('saml11.perApplicationProviderId', true);
 
   await setSetting('saml11.defaultProfile', 'artifact');
   cookie = '';

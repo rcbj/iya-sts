@@ -199,6 +199,18 @@ import gnapRevocation = require('../gnap/gnap_revocation');
 // hit: it is built with `oauth2` at 9.
 import grantManagement = require('../oauth-oidc/grant_management');
 import InstanceSlot = require('../common/instance_slot');
+// THE CONSOLE'S FOLDS, for this page's prose (2026-10-08). `web_kit` is a
+// leaf that requires nothing, so this is a cache hit with no load-time effect
+// and no route — the same require `scim/web_scim.ts` and the other family
+// renderers make. One fold rule for the console and this page, rather than a
+// second copy of when a paragraph is long enough to collapse.
+import kit = require('../admin-ui/web_kit');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539), and the realm prefix the language
+// chooser posts under. Both libraries: `page_locale` requires only leaves and
+// `helpers`/`config`, and `realms` is loaded at 2a, so each is a cache hit
+// that registers no route and closes no cycle.
+import PageLocale = require('../common/page_locale');
+import realms = require('../common/realms');
 
 /**
  * The path of the protocol-independent sign-out.
@@ -222,6 +234,7 @@ interface LogoutDeps {
   app: typeof app;
   log: typeof helpers.log;
   xmlEscape: typeof helpers.xmlEscape;
+  kit: typeof kit;
   baseUrlOf: typeof helpers.baseUrlOf;
   parseBody: typeof helpers.parseBody;
   nowSec: typeof helpers.nowSec;
@@ -301,6 +314,7 @@ class Logout {
       app: app,
       log: helpers.log,
       xmlEscape: helpers.xmlEscape,
+      kit: kit,
       baseUrlOf: helpers.baseUrlOf,
       parseBody: helpers.parseBody,
       nowSec: helpers.nowSec,
@@ -2969,21 +2983,27 @@ class Logout {
   // one. The checkboxes are checkboxes and the buttons are submit buttons; the
   // selective and global forms are two forms rather than one with a script
   // deciding, because that is what makes both work with `script-src 'none'`.
+  //
+  // IN THE READER'S LANGUAGE (#539): `t` is the page's translator, which sets
+  // `lang` and `dir` on <html>; `title` arrives already translated. The
+  // language chooser is the first thing in the body, a form of its own and
+  // never inside another, returning to `returnTo` — the GET that redraws the
+  // page. Every refusal on these pages stays English (rcbj's decision).
   // ---------------------------------------------------------------------------
-  private page(title?, inner?, policy?) {
+  private page(t?, returnTo?, title?, inner?, policy?) {
     const { log, app, xmlEscape } = this.deps;
     log.debug("Entering Logout.page().");
     log.debug("Leaving Logout.page().");
     return { policy: policy || app.contentSecurityPolicy({}),
-      html: '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+      html: '<!doctype html><html' + PageLocale.htmlAttributes(t) +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<title>' + xmlEscape(title) +
       '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
       'Roboto,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;' +
       'line-height:1.5;color:#111}h1{font-size:1.5rem;margin-bottom:.2rem}' +
       'h2{font-size:1.05rem;margin:1.6rem 0 .3rem}.sub{color:#555;' +
-      'font-size:.9rem}.what{color:#444;font-size:.88rem;margin:.2rem 0 ' +
-      '.6rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;' +
+      'font-size:.9rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;' +
       'padding:.6rem .8rem;margin:1rem 0}.warn{background:#fff8e1;' +
       'border-left:4px solid #f9a825;padding:.6rem .8rem;margin:1rem 0}' +
       '.err{background:#ffebee;border-left:4px solid #b00020;padding:.6rem ' +
@@ -2997,8 +3017,26 @@ class Logout {
       '.9rem;border-radius:4px;border:1px solid #999;background:#f6f6f6;' +
       'cursor:pointer}button.global{background:#b00020;border-color:#8a0018;' +
       'color:#fff;font-weight:600}.actions{margin:1.2rem 0;display:flex;' +
-      'gap:.8rem;flex-wrap:wrap;align-items:center}</style></head>' +
-      '<body>' + inner + '</body></html>' };
+      'gap:.8rem;flex-wrap:wrap;align-items:center}' +
+      // The console's fold, restyled for this page's palette: a `<details>`
+      // whose summary is the prose's opening sentence (`WebKit.note()`), so
+      // the explanation is one line until somebody asks for the rest.
+      '.note{color:#444;font-size:.88rem;margin:.2rem 0 .6rem}' +
+      'details.fold{margin:.3rem 0 .8rem}details.fold>summary{cursor:' +
+      'pointer;list-style:none;display:flex;gap:.45em;align-items:' +
+      'baseline}details.fold>summary::-webkit-details-marker{display:' +
+      'none}details.fold>summary::before{content:"\\25b8";flex:none;' +
+      'font-size:.9em}details.fold[open]>summary::before{content:' +
+      '"\\25be"}details.fold>summary:focus-visible{outline:2px solid ' +
+      '#555;outline-offset:2px}.foldbody{margin:.3rem 0 0 1.05em}' +
+      'details.note.fold>summary:hover{color:#111}' +
+      // The language chooser (#539), small and to one side, as on the
+      // sign-in screen: the page's first business is the sign-out.
+      'form.language-chooser{float:right;font-size:.8rem;margin:0 0 .5rem ' +
+      '1rem}form.language-chooser button{padding:.15rem .5rem}' +
+      'form.language-chooser label{margin-right:.3rem}</style></head>' +
+      '<body>' + PageLocale.chooser(t, realms.currentPrefix(), returnTo) +
+      inner + '</body></html>' };
   }
 
   private whenText(ms?) {
@@ -3016,13 +3054,18 @@ class Logout {
   // that cannot be ended, rather than drawn disabled: a disabled control
   // invites somebody to work out why it is disabled, and the sentence in the
   // row already says.
-  private familyTable(family?) {
+  //
+  // The family's label, protocol, prose and rows are the MODEL's words — the
+  // same strings `/admin/logout` and the API answer with — and stay as they
+  // are; `t` translates what this table adds around them (#539). A family
+  // that could not be read is a failure, and stays English.
+  private familyTable(family?, t?) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering Logout.familyTable().");
     const head = '<h2>' + xmlEscape(family.label) + '</h2>' +
       '<div class="spec">' + xmlEscape(family.protocol) + ' — ' +
-      xmlEscape(family.spec) + '</div><div ' +
-      'class="what">' + xmlEscape(family.what) + '</div>';
+      xmlEscape(family.spec) + '</div>' +
+      this.deps.kit.note(xmlEscape(family.what));
     if (family.failure) {
       log.debug("Leaving Logout.familyTable().");
       return head + '<div class="err">This could not be read: ' +
@@ -3032,7 +3075,8 @@ class Logout {
     }
     if (!family.rows.length) {
       log.debug("Leaving Logout.familyTable().");
-      return head + '<p class="sub">Nothing live here.</p>';
+      return head + '<p class="sub">' + t.html('logout.family.nothingLive') +
+        '</p>';
     }
     const body = family.rows.map((r) => {
       const box = r.terminable
@@ -3051,79 +3095,94 @@ class Logout {
     }).join('');
     log.debug("Leaving Logout.familyTable().");
     return head +
-      '<table><thead><tr><th>End</th><th>What</th><th>Kind</th><th>Since</th>' +
-      '<th>Until</th></tr></thead><tbody>' + body + '</tbody></table>' +
+      '<table><thead><tr><th>' + t.html('logout.family.colEnd') +
+      '</th><th>' + t.html('logout.family.colWhat') + '</th><th>' +
+      t.html('logout.family.colKind') + '</th><th>' +
+      t.html('logout.family.colSince') + '</th><th>' +
+      t.html('logout.family.colUntil') + '</th></tr></thead><tbody>' + body +
+      '</tbody></table>' +
       (family.notListed
-        ? '<p class="sub">' + family.notListed + ' more not listed ' +
-          '(logout.maxRows is ' +
-          '<code>' + family.held + '</code> held against a cap). A GLOBAL ' +
-          'logout still ends every one of them — the cap is on what is ' +
-          'drawn, never on what a termination reaches.</p>'
+        ? this.deps.kit.note(t.html('logout.family.notListed',
+          { count: family.notListed, held: family.held }))
         : '');
   }
 
   private inventoryPage(base?, inventory?, username?, message?, error?) {
-    const { log, mode, xmlEscape } = this.deps;
+    const { log, mode, xmlEscape, kit } = this.deps;
     log.debug("Entering Logout.inventoryPage(). key=" + inventory.key);
-    const inner =
-      '<h1>Sign out</h1>' +
-      '<p class="sub">Everything this service is still holding for <code>' +
-      xmlEscape(username) +
-      '</code>, across every protocol family it speaks.</p>' +
-      (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
-      (message ? '<div class="ok">' + xmlEscape(message) + '</div>' : '') +
-      '<div class="warn"><strong>' + inventory.total + ' live ' +
-                                                       'item(s)</strong> in ' +
-      inventory.families.filter((f) => { return f.rows.length; }).length +
-      ' famil' +
-      (inventory.families.filter((f) => {
-        return f.rows.length;
-      }).length === 1
-                  ? 'y' : 'ies') + '. Some of them cannot be ended by ' +
-      'anybody — they are listed with the reason, because a sign-out that ' +
-      'hid them would look complete when it is not.</div><form method="post" ' +
-      'action="' + xmlEscape(LOGOUT_PATH) + '">' +
-      '<input type="hidden" name="username" value="' + xmlEscape(username) +
-      '">' +
-      inventory.families.map((family) => {
-        return this.familyTable(family);
-      }).join('') +
-      '<div class="actions"><button type="submit" name="scope" ' +
-      'value="selected">End the ticked items</button><span ' +
-      'class="sub">Nothing ticked ends nothing.</span></div></form><form ' +
-      'method="post" ' +
+    // THE LANGUAGE (#539): the person the page is drawn for, the chooser, the
+    // browser. No application — /logout is drawn for none. The notice and
+    // the error passed in stay as they came.
+    const t = PageLocale.forPage({ username: username });
+    const familiesHeld = inventory.families.filter((f) => {
+      return f.rows.length;
+    }).length;
+    // THE GLOBAL LOGOUT IS AT THE TOP (2026-10-08), above the inventory it
+    // ends, because it is what nearly everybody arriving here came to press
+    // and the inventory runs to a dozen tables. It is the default too — a
+    // POST that selects nothing does the same — so the page leads with what
+    // the endpoint does when asked nothing. The ticked-items button is up
+    // there with it, as the FIRST thing in its own form — the form has to
+    // wrap the tables whose checkboxes it posts, so the button opens it
+    // rather than closing it, and nobody has to scroll past a dozen tables
+    // to press it. Every paragraph of explanation goes
+    // through the console's fold (`kit.note()` / `kit.warn()`): one line
+    // until somebody opens it, the amber box keeping its colour closed.
+    const globalForm = '<form method="post" ' +
       'action="' + xmlEscape(LOGOUT_PATH) + '">' +
       '<input type="hidden" name="username" value="' + xmlEscape(username) +
       '"><input type="hidden" name="scope" value="global"><div ' +
-      'class="actions"><button type="submit" class="global">Global logout — ' +
-      'end everything above</button><span class="sub">The default. A POST to ' +
-      '<code>/logout</code> with nothing selected does exactly ' +
-      'this.</span></div></form>' +
+      'class="actions"><button type="submit" class="global">' +
+      t.html('logout.inventory.globalButton') + '</button><span ' +
+      'class="sub">' + t.html('logout.inventory.globalNote') +
+      '</span></div></form>';
+    const inner =
+      '<h1>' + t.html('logout.heading') + '</h1>' +
+      '<p class="sub">' + t.html('logout.inventory.holding',
+                                 { username: username }) + '</p>' +
+      (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
+      (message ? '<div class="ok">' + xmlEscape(message) + '</div>' : '') +
+      globalForm +
+      '<form method="post" action="' + xmlEscape(LOGOUT_PATH) + '">' +
+      '<input type="hidden" name="username" value="' + xmlEscape(username) +
+      '"><div class="actions"><button type="submit" name="scope" ' +
+      'value="selected">' + t.html('logout.inventory.selectedButton') +
+      '</button><span class="sub">' +
+      t.html('logout.inventory.selectedNote') + '</span></div>' +
+      kit.warn(t.html('logout.inventory.liveCount',
+                      { total: inventory.total, families: familiesHeld })) +
+      inventory.families.map((family) => {
+        return this.familyTable(family, t);
+      }).join('') + '</form>' +
       // BUILT FROM THE MODE, because "this service checks no password anywhere"
       // was printed on a product-mode page for as long as that mode existed.
-      '<p class="sub">' +
-      (this.anyUserAllowed()
-        ? 'This service checks no password anywhere, so ' +
-          '<code>?username=</code> names anybody and grants nothing that was ' +
-          'not already true — signing in as them takes one request. ' +
-          '<code>logout.anyUser</code> turns that off.'
-        : (mode.opensTestControls()
-            ? '<code>logout.anyUser</code> is off, so this endpoint acts ' +
-              'only on the session you are holding.'
-            : 'This service is in product mode, so this endpoint acts only ' +
-              'on the session you are holding.')) +
-      ' The operator\'s view of the same lists, with an undo, is ' +
-      '<code>/admin/logout</code>.</p>';
+      kit.note(
+        (this.anyUserAllowed()
+          ? t.html('logout.inventory.anyUserOpen')
+          : (mode.opensTestControls()
+              ? t.html('logout.inventory.anyUserOff')
+              : t.html('logout.inventory.productMode'))) +
+        ' ' + t.html('logout.inventory.operatorView'));
     log.debug("Leaving Logout.inventoryPage().");
-    return this.page('Sign out', inner);
+    // A GET draws this page, so the chooser returns to that GET, query and
+    // all; drawn otherwise, to /logout under the realm.
+    return this.page(t, PageLocale.herePath(realms.currentPrefix() +
+                                            LOGOUT_PATH),
+                     t.text('logout.title'), inner);
   }
 
   // The page a termination answers with: what was ended, what was not and why,
   // and the three things only the BROWSER can do — the front-channel iframes,
   // the WS-Federation cleanup images, and the SAML LogoutRequests as links.
   private resultPage(base?, result?, inventory?) {
-    const { log, app, federationSlo, xmlEscape } = this.deps;
+    const { log, app, federationSlo, xmlEscape, kit } = this.deps;
     log.debug("Entering Logout.resultPage().");
+    // THE LANGUAGE (#539), for the person signed out. `result.message` and
+    // each row's message are the model's words — the JSON answer carries the
+    // same — and stay as they are; so does the fan-out below, which
+    // `federation/federation_slo.ts` draws too and whose tables are the
+    // front- and back-channel modules' own.
+    const t = PageLocale.forPage({ username: result.key });
     const listOf = (rows, cls) => {
       log.debug("Entering listOf().");
       log.debug("Leaving listOf().");
@@ -3135,37 +3194,42 @@ class Logout {
     };
     const fan = this.fanOutOf([result]);
     const inner =
-      '<h1>' + (result.scope === 'global' ? 'Signed out everywhere' :
-                'Signed ' +
-          'out of what was ticked') +
+      '<h1>' + (result.scope === 'global'
+        ? t.html('logout.result.headingGlobal')
+        : t.html('logout.result.headingSelected')) +
       '</h1>' +
       '<p class="sub">' + xmlEscape(result.message) + '</p>' +
       (result.terminated.length
-        ? '<h2>Ended</h2>' + listOf(result.terminated, 'sub')
-        : '<div class="warn">Nothing was ended. Either nothing was live, or ' +
-          'everything ticked had already gone.</div>') +
+        ? '<h2>' + t.html('logout.result.ended') + '</h2>' +
+          listOf(result.terminated, 'sub')
+        : '<div class="warn">' + t.html('logout.result.nothingEnded') +
+          '</div>') +
       (result.skipped.length
-        ? '<h2>Not ended</h2>' + listOf(result.skipped, 'cannot') +
-          '<p class="sub">These are the honest half. Most of them cannot be ' +
-          'ended by anybody: nothing consults this service when an ' +
-          'assertion, a service ticket or an SVID is presented, so there is ' +
-          'no revocation to perform.</p>'
+        ? '<h2>' + t.html('logout.result.notEnded') + '</h2>' +
+          listOf(result.skipped, 'cannot') +
+          kit.note(t.html('logout.result.notEndedNote'))
         : '') +
       fan.html +
       // The federation partners the sessions were signed in THROUGH (#167):
       // links and forms this browser follows, never an automatic redirect.
       federationSlo.renderPartnerLogouts(result.partnerLogouts || []) +
-      '<h2>What is still live</h2>' +
+      '<h2>' + t.html('logout.result.stillLive') + '</h2>' +
       (inventory.total
-        ? '<p class="sub">' + inventory.total + ' item(s) remain. <a href="' +
+        // The link is markup, so it is not in the message: the sentence and
+        // the link's words are two messages, joined here.
+        ? '<p class="sub">' + t.html('logout.result.remain',
+                                     { total: inventory.total }) +
+          ' <a href="' +
           xmlEscape(LOGOUT_PATH + '?username=' +
           encodeURIComponent(result.key)) +
-          '">Look again</a>.</p>'
-        : '<div class="ok">Nothing. This service is holding no live session ' +
-          'or credential for ' +
-          xmlEscape(result.key) + ' that it can still see.</div>');
+          '">' + t.html('logout.result.lookAgain') + '</a>' +
+          t.html('logout.result.lookAgainEnd') + '</p>'
+        : '<div class="ok">' + t.html('logout.result.nothingLeft',
+                                      { key: result.key }) + '</div>');
     log.debug("Leaving Logout.resultPage().");
-    return this.page('Signed out', inner,
+    // Drawn by the POST; the GET that draws the sign-out again is /logout.
+    return this.page(t, realms.currentPrefix() + LOGOUT_PATH,
+                     t.text('logout.result.title'), inner,
                      app.contentSecurityPolicy(fan.policy));
   }
 
@@ -3195,7 +3259,7 @@ class Logout {
    *   `app.contentSecurityPolicy()`
    */
   fanOutOf(results?) {
-    const { log, frontchannel, backchannel, xmlEscape } = this.deps;
+    const { log, frontchannel, backchannel, xmlEscape, kit } = this.deps;
     log.debug("Entering Logout.fanOutOf().");
     const all = (Array.isArray(results) ? results : [results])
       .filter(Boolean);
@@ -3244,20 +3308,21 @@ class Logout {
         ? '<h2>WS-Federation cleanup ' +
           'requests</h2><table><thead><tr><th>Realm</th><th>Cleanup ' +
           'URL</th></tr></thead><tbody>' +
-          cleanupRows + '</tbody></table><p class="sub">Each was fetched as ' +
+          cleanupRows + '</tbody></table>' +
+          kit.note('Each was fetched as ' +
           'a one-pixel image as this page loaded — front-channel logout — ' +
           'and the links are the same URLs so a failed ping can be seen ' +
-          'rather ' +
-          'than guessed at.</p>' + images
+          'rather than guessed at.') + images
         : '') +
       (logoutRequests.length
         ? '<h2>SAML 2.0 LogoutRequests</h2><table><thead><tr><th>Service ' +
           'provider</th><th>LogoutRequest</th></tr></thead><tbody>' +
-          logoutRows + '</tbody></table><p class="sub">Links rather than an ' +
+          logoutRows + '</tbody></table>' +
+          kit.note('Links rather than an ' +
           'automatic fan-out, which is /saml2/slo\'s own decision reused: a ' +
           'LogoutRequest is a signed message a service provider ANSWERS, and ' +
           'firing those into hidden frames would claim a federation-wide ' +
-          'logout this service cannot observe.</p>'
+          'logout this service cannot observe.')
         : '');
     const origins = frontchannel.frameOriginsOf(notifications);
     const policy = {};
@@ -3418,7 +3483,7 @@ class Logout {
   }
 
   private refusedNamedUser(req?, res?, asked?) {
-    const { log, errorCodes, mode, xmlEscape } = this.deps;
+    const { log, authn, errorCodes, mode, xmlEscape } = this.deps;
     log.debug("Entering Logout.refusedNamedUser().");
     // THE REASON NAMES WHICH OF THE TWO CLOSED IT, because the fixes differ: a
     // setting somebody can turn back on, or a mode in which it is not offered.
@@ -3440,9 +3505,17 @@ class Logout {
       log.debug("Leaving Logout.refusedNamedUser().");
       return;
     }
+    // THE LANGUAGE (#539) of the person holding the session, where there is
+    // one. Only the title and heading are translated: the refusal, and the
+    // paragraph that is the rest of it, stay English (rcbj's decision).
+    const own = authn.sessionOf(req);
+    const t = PageLocale.forPage({
+      username: (own && own.user && own.user.username) || undefined });
     this.send(res,
-         this.page('Sign out',
-              '<h1>Sign out</h1><div class="err">' + xmlEscape(message) +
+         this.page(t, realms.currentPrefix() + LOGOUT_PATH,
+              t.text('logout.title'),
+              '<h1>' + t.html('logout.heading') + '</h1><div class="err">' +
+                   xmlEscape(message) +
                    '</div><p class="sub">' +
                    (mode.verifiesCredentials()
                      ? 'Signing yourself out needs no role; signing somebody ' +
@@ -3599,12 +3672,20 @@ class Logout {
              .send(JSON.stringify({ error: 'no_subject',
                                     error_description: message }, null, 2));
         } else {
+          // THE LANGUAGE (#539): nobody is known here, so the chooser and
+          // the browser decide. The refusal stays English; the link back is
+          // the page's own words, and the link is markup, so its words and
+          // the full stop after it are two messages.
+          const t = PageLocale.forPage({});
           this.send(res,
-               this.page('Sign out',
-                    '<h1>Sign out</h1><div class="err">' + xmlEscape(message) +
+               this.page(t, realms.currentPrefix() + LOGOUT_PATH,
+                    t.text('logout.title'),
+                    '<h1>' + t.html('logout.heading') + '</h1><div ' +
+                         'class="err">' + xmlEscape(message) +
                          '</div><p class="sub"><a href="' +
                          xmlEscape(LOGOUT_PATH) +
-                         '">Start again</a>.</p>'), 401);
+                         '">' + t.html('logout.startAgain') + '</a>' +
+                         t.html('logout.startAgainEnd') + '</p>'), 401);
         }
         log.debug("Leaving the logout action endpoint. No subject.");
         return;
@@ -3639,9 +3720,13 @@ class Logout {
       if (!asked.ok) {
         log.debug("Leaving the sign-out endpoint. " + asked.detail);
         errorCodes.mark(res, 'STS-LOGOUT-0003');
-        return this.send(res, this.page('Sign out',
-          '<h1>Sign out</h1><div class="err">' + xmlEscape(asked.detail) +
-          '</div>'), 400);
+        // THE LANGUAGE (#539) of the person signing out; the refusal itself
+        // stays English.
+        const t = PageLocale.forPage({ username: subject.username });
+        return this.send(res, this.page(t,
+          realms.currentPrefix() + LOGOUT_PATH, t.text('logout.title'),
+          '<h1>' + t.html('logout.heading') + '</h1><div class="err">' +
+          xmlEscape(asked.detail) + '</div>'), 400);
       }
       const explicitGlobal = String(body.scope || '') === 'global';
       const raw = body.select === undefined ? [] : body.select;

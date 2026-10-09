@@ -31,8 +31,8 @@
 //                                  persistence.realms for a realm's own),
 //                                  gone on restart with persistence.mode=memory
 //   2. the setting's ENV VAR       STS_PORT, KRB5_REALM, ...
-//   3. its LEGACY env var, if any  STS_ISSUER still feeds the three issuers
-//                                  that were carved out of it
+//   3. its LEGACY env var, if any  none since #523, when STS_ISSUER went
+//                                  with the three issuers it fed
 //   4. the APPCONFIG file          the CONFIG_FILE module, e.g. env/local.js
 //   5. env/defaults.js             the DEFAULT appconfig file, which 4 is
 //                                  unioned on top of
@@ -1563,10 +1563,12 @@ const SETTINGS = [
     path: 'gnap.maxDerivationDepth', env: 'STS_GNAP_MAX_DERIVATION_DEPTH',
     type: 'int', dflt: 2, min: 1, max: 16,
     runtime: true,
-    description: 'How many resource servers a derived token\'s actor chain ' +
-                 '(act) may name: each RFC 9767 section 4 derivation adds ' +
-                 'the deriving resource server, and a derivation past this ' +
-                 'depth is refused (request_denied) in every mode.' },
+    description: 'How many times a token may be derived: how many deriving ' +
+                 'resource servers its actor chain (act) may name, the ' +
+                 'original client at its foot not counted (#526). Each RFC ' +
+                 '9767 section 4 derivation adds the deriving resource ' +
+                 'server, and one past this depth is refused ' +
+                 '(request_denied) in every mode.' },
   { key: 'gnap.pushFinish', group: 'GNAP', label: 'Deliver push interaction ' +
                                                   'finishes',
     path: 'gnap.pushFinish', env: 'STS_GNAP_PUSH_FINISH', type: 'bool',
@@ -2329,12 +2331,13 @@ const SETTINGS = [
   //     `attestation`, `userVerification`. These go to the BROWSER, in the
   //     options this service hands it, and what happens to them after that is
   //     the browser's and the authenticator's business.
-  //   * **CTAP2** — `authenticatorAttachment`, `residentKey`, `credProps`.
-  //     These are the ones a browser translates into what it asks the
-  //     AUTHENTICATOR for: which kind of authenticator may answer, whether the
-  //     credential is discoverable (a CTAP2 resident key, which is what makes
-  //     usernameless sign-in possible), and whether the browser is asked to
-  //     report back which it made.
+  //   * **CTAP2** — `authenticatorAttachment`, `credProps`. These are the
+  //     ones a browser translates into what it asks the AUTHENTICATOR for:
+  //     which kind of authenticator may answer, and whether the browser is
+  //     asked to report back whether the credential is discoverable. WHETHER
+  //     IT IS ASKED TO BE DISCOVERABLE (a CTAP2 resident key, which is what
+  //     makes usernameless sign-in possible) is the passkey policy's since
+  //     #527, not a row here.
   //   * **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`,
   //     `maxKeysPerPerson`. These are not WebAuthn at all: they are what THIS
   //     service will do with a key once the ceremony is over, and they are
@@ -2344,8 +2347,8 @@ const SETTINGS = [
   // that distinction is the one to keep: `userVerification` is sent to the
   // browser AND checked in `authn/webauthn.js` when the ceremony comes back,
   // so `required` really does refuse an authenticator that did not verify the
-  // person. `attestation`, `residentKey` and `authenticatorAttachment` are
-  // REQUESTS — this service records what came back and refuses nothing on
+  // person. `attestation`, `authenticatorAttachment` and the passkey
+  // policy's resident key (#527) are REQUESTS — this service records what came back and refuses nothing on
   // them. What is done with the attestation STATEMENT that comes back is the
   // fourth kind, below the policy rows: `webauthn.attestationPolicy` and the
   // six settings beside it (#105), which do refuse.
@@ -2713,25 +2716,15 @@ const SETTINGS = [
                  'whose attachment turned out to be the other one. What it ' +
                  'does do is RECORD what came back, where the browser said.' },
 
-  { key: 'webauthn.residentKey', group: 'WebAuthn',
-    label: 'Discoverable credential (CTAP resident key)',
-    path: 'webauthn.residentKey', env: 'STS_WEBAUTHN_RESIDENT_KEY',
-    type: 'enum', enumValues: ['discouraged', 'preferred', 'required'],
-    dflt: 'discouraged', runtime: true,
-    description: 'Whether the credential is stored ON the authenticator — a ' +
-                 'CTAP2 *resident key* — so that it can be found without ' +
-                 'this service naming it first. That is what makes a ' +
-                 'usernameless sign-in possible, and it is what a passkey ' +
-                 'is. `discouraged` is the default because a resident key ' +
-                 'consumes one of the small number of slots a roaming ' +
-                 'authenticator has and CANNOT ALWAYS BE DELETED FROM IT — a ' +
-                 'debugging service should not fill somebody\'s security key ' +
-                 'without being asked. It decides the sign-in screen\'s ' +
-                 'ceremony and *Use a security key*; **a passkey (*Create a ' +
-                 'passkey*) always asks `required`** (#474), because a ' +
-                 'passkey is a credential that can be found without a ' +
-                 'username, which is what `webauthn.usernameless` signs in ' +
-                 'with.' },
+  // ---------------------------------------------------------------------
+  // `webauthn.residentKey` and `webauthn.usernameless` WERE HERE until #527
+  // (2026-10-08). The passkey policy decides both now, per realm and
+  // inherited from the default realm (`common/passkey_policy.ts`, Directory
+  // → Policies): `allowUsernameless`, off by default, and
+  // `securityKeyResidentKey`, which a security key is asked for — `required`
+  // while usernameless sign-in is off. No shim; REPLACED_SETTINGS refuses a
+  // start that still names either.
+  // ---------------------------------------------------------------------
 
   { key: 'webauthn.credProps', group: 'WebAuthn',
     label: 'Ask for the credProps extension',
@@ -2765,25 +2758,6 @@ const SETTINGS = [
                  'flipping a switch, which is not a thing a setting should ' +
                  'be able to do.' },
 
-  { key: 'webauthn.usernameless', group: 'WebAuthn',
-    label: 'Sign in with a passkey and no username',
-    path: 'webauthn.usernameless', env: 'STS_WEBAUTHN_USERNAMELESS',
-    type: 'bool', dflt: false, runtime: true,
-    description: 'Offers a passkey sign-in that asks for NO username (#474): ' +
-                 'the sign-in screen\'s *Sign in with a passkey* button and ' +
-                 'the username field\'s autofill ask the browser for any ' +
-                 'discoverable credential of this realm (WebAuthn Level 3 ' +
-                 'section 5.4, `allowCredentials` empty), and the user ' +
-                 'handle it returns names the account. **User verification ' +
-                 'is required and checked** whatever ' +
-                 '`webauthn.userVerification` says, and the session records ' +
-                 '`amr ["hwk","user"]` and `acr "mfa"` — the key and the ' +
-                 'PIN or biometric that unlocked it. Only a PRIMARY key ' +
-                 'registered since #474 answers it; one registered before ' +
-                 'was made under the username and works only where the ' +
-                 'username is typed. Off by default (rcbj\'s decision); it ' +
-                 'also needs `webauthn.enabled` and ' +
-                 '`webauthn.primaryAllowed`.' },
 
   { key: 'webauthn.mfaAllowed', group: 'WebAuthn',
     label: 'Allow a key as a SECOND factor',
@@ -8268,22 +8242,15 @@ const SETTINGS = [
                  'window drops the older one.' },
 
   // --- SAML ----------------------------------------------------------------
-  { key: 'saml.issuer', group: 'SAML', label: 'Assertion issuer',
-    env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: '', runtime: true,
-    description: 'The <saml:Issuer> of every SAML 2.0 assertion and the Issuer ' +
-                 'attribute of every SAML 1.1 one that WS-Trust and ' +
-                 'WS-Federation build (the SAML SSO profile names itself by ' +
-                 'saml2.entityId), and what /wsfed/rp checks a presented ' +
-                 'assertion against. Unset, in either mode (#480, #494), it ' +
-                 'is the realm\'s SAML 2.0 entityID - and for a token to a ' +
-                 'REGISTERED application (a WS-Trust AppliesTo, a ' +
-                 'WS-Federation wtrealm) that application\'s own entityID, ' +
-                 '<entityID>:<application> where ' +
-                 'saml2.perApplicationEntityId is on, the name SAML SSO and ' +
-                 '/saml2/metadata/{sp} give it. An address nobody registered ' +
-                 'gets the shared entityID. Set, it is every assertion\'s ' +
-                 'Issuer.' },
+  // ---------------------------------------------------------------------
+  // `saml.issuer`, `saml2.entityId`, `saml2.perApplicationEntityId`,
+  // `saml11.providerId`, `saml11.perApplicationProviderId`, `wstrust.issuer`
+  // and `wsfed.entityId` WERE HERE until #523 (2026-10-08). Every SAML
+  // Issuer, every identity provider entityID and providerID, and the WS-Trust
+  // STS's name are the realm's OAuth issuer, the `iss` of every JWT —
+  // `common/issuer_names.ts`. There is no override: the name follows
+  // `global.publicBaseUrl`. There is no shim: every install is rebuilt.
+  // ---------------------------------------------------------------------
 
   // The one setting on this page that changes what goes INTO an assertion's
   // validity window rather than how long that window is. It is deliberately
@@ -8430,44 +8397,12 @@ const SETTINGS = [
 
   // --- SAML 2.0 Web Browser SSO --------------------------------------------
   // The profile arrived on 2026-08-24 and brought its own group, which is a
-  // decision rather than a formality: `saml.issuer` above governs what SIGNED
-  // an assertion and is shared by WS-Trust and WS-Federation, and every row
+  // decision rather than a formality: the group SAML above governs the
+  // assertions WS-Trust and WS-Federation share, and every row
   // here governs how this service behaves as an IDENTITY PROVIDER in a browser
   // profile. Folding the two together would have made a change to one of these
   // look like a change to the assertions WS-Trust hands out, which it is not.
-  { key: 'saml2.entityId', group: 'SAML 2.0', label: 'Identity provider ' +
-                                                     'entityID',
-    env: 'STS_SAML2_ENTITY_ID', type: 'string', dflt: 'urn:sts:idp',
-    runtime: true,
-    description: 'The entityID this identity provider publishes in its SAML ' +
-                 '2.0 metadata, and the <saml:Issuer> of every Response and ' +
-                 'Assertion the Web Browser SSO profile issues. It is NOT ' +
-                 'the SAML issuer above, which is a setting of its own; but ' +
-                 'where saml.issuer, wstrust.issuer and wsfed.entityId are ' +
-                 'unset (#494, both modes), they are this entityID - per ' +
-                 'application for a registered one, as here - so WS-Trust ' +
-                 'and WS-Federation sign under the name this metadata ' +
-                 'publishes.' },
 
-  { key: 'saml2.perApplicationEntityId', group: 'SAML 2.0',
-    label: 'An entityID per service provider',
-    env: 'STS_SAML2_PER_APPLICATION_ENTITY_ID', type: 'bool', dflt: true,
-    runtime: true,
-    description: 'ON by default, and it is what makes the metadata at ' +
-                 '/saml2/metadata/{sp} UNIQUE PER APPLICATION: the identity ' +
-                 'provider names itself <entityID>:{sp} in that document and ' +
-                 'in everything it issues to that service provider, the way ' +
-                 'Okta and Ping give each application its own identity ' +
-                 'provider. OFF makes every document carry the entityID ' +
-                 'above and differ only in its endpoint URLs, which is what ' +
-                 'a service provider library that keys its trust store off ' +
-                 'the entityID expects. Both are real deployments, which is ' +
-                 'why it is a setting and not a decision. It governs ' +
-                 'WS-Trust and WS-Federation too (#494): a registered ' +
-                 'application gets the same <entityID>:{sp} as the Issuer of ' +
-                 'a WS-Trust or WS-Federation assertion, and in its own ' +
-                 '/wsfed/metadata/{rp}, unless saml.issuer or wsfed.entityId ' +
-                 'is set.' },
 
   { key: 'saml2.assertionLifetimeMin', group: 'SAML 2.0 assertions',
     label: 'Assertion lifetime (minutes)',
@@ -8858,8 +8793,8 @@ const SETTINGS = [
 
   // --- SAML 1.1 browser profiles -------------------------------------------
   // A group of its own, for the reason the SAML 2.0 rows above have one and for
-  // one more besides. The shared reason: `saml.issuer` (group SAML) governs who
-  // SIGNED an assertion and is read by WS-Trust and WS-Federation, and these
+  // one more besides. The shared reason: the group SAML governs the
+  // assertions WS-Trust and WS-Federation share, and these
   // rows govern how this service behaves as an identity provider in a BROWSER
   // profile. The reason peculiar to this group: SAML 1.1 and SAML 2.0 are
   // different specifications rather than two dialects, their profiles differ in
@@ -8867,37 +8802,7 @@ const SETTINGS = [
   // make `signResponse` mean two things — over there it is an XML signature or
   // a signed query string depending on the binding, and here there is no
   // redirect binding for a response at all.
-  { key: 'saml11.providerId', group: 'SAML 1.1', label: 'Identity provider ' +
-                                                        'providerID',
-    env: 'STS_SAML11_PROVIDER_ID', type: 'string', dflt: 'urn:sts:idp:saml11',
-    runtime: true,
-    description: 'What this identity provider calls itself in the SAML 1.1 ' +
-                 'browser profiles: the `Issuer` ATTRIBUTE of every ' +
-                 'assertion they issue, the `entityID` of the metadata ' +
-                 'document at /saml11/metadata, and the string whose SHA-1 ' +
-                 'becomes the SourceID inside every type 0x0001 artifact. ' +
-                 'SAML 1.1 calls it a providerID and SAML 2.0 metadata calls ' +
-                 'the same thing an entityID; they are one value and this ' +
-                 'row is it. It is deliberately NOT saml2.entityId — a ' +
-                 'relying party that trusts this service for 1.1 and not for ' +
-                 '2.0 is the ordinary case, and one value would make that ' +
-                 'unexpressible.' },
 
-  { key: 'saml11.perApplicationProviderId', group: 'SAML 1.1',
-    label: 'A providerID per relying party',
-    env: 'STS_SAML11_PER_APPLICATION_PROVIDER_ID', type: 'bool', dflt: true,
-    runtime: true,
-    description: 'Give every relying party its own providerID — ' +
-                 '`{providerID}:{slug}` — and its own endpoints under the ' +
-                 'same path segment, which is what /saml11/metadata/{rp} ' +
-                 'publishes. Turn it off for a relying party whose trust ' +
-                 'store is keyed off the providerID and which is surprised ' +
-                 'to meet a new one per application. THE ENDPOINTS STAY ' +
-                 'PER-APPLICATION either way, because that is what makes the ' +
-                 'documents worth having separately. It also changes every ' +
-                 'artifact this service mints: the SourceID is a hash of the ' +
-                 'providerID, so turning this off makes one SourceID where ' +
-                 'there were many.' },
 
   { key: 'saml11.assertionLifetimeMin', group: 'SAML 1.1 assertions',
     label: 'Assertion lifetime (minutes)',
@@ -9047,17 +8952,6 @@ const SETTINGS = [
                  'ASSERTION_CACHE_MAX in saml11_sso.js.' },
 
   // --- WS-Trust ------------------------------------------------------------
-  { key: 'wstrust.issuer', group: 'WS-Trust', label: 'Token issuer',
-    env: 'STS_WSTRUST_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: '', runtime: true,
-    description: 'The name this STS publishes on GET /sts. Unset, in either ' +
-                 'mode (#480, #494), it is the realm\'s SAML 2.0 entityID. A ' +
-                 'SAML assertion this STS issues carries saml.issuer - for a ' +
-                 'registered AppliesTo, that application\'s own entityID - ' +
-                 'and a JWT the realm\'s OAuth 2.0 issuer, the one ' +
-                 '/.well-known/oauth-authorization-server publishes, which GET ' +
-                 '/sts names on a line of its own. When this and saml.issuer ' +
-                 'differ GET /sts says so and the process logs it at startup.' },
 
   { key: 'wstrust.tokenLifetimeMin', group: 'WS-Trust',
     label: 'Token lifetime (minutes)',
@@ -9105,9 +8999,8 @@ const SETTINGS = [
   // --- WS-Federation assertions --------------------------------------------
   // A GROUP OF ONE, and it earns that the way the two SAML assertion groups do:
   // it is a DEFAULT an application may overrule, and the page it is drawn on is
-  // the page that says so. `wsfed.entityId` beside it is this service's own
-  // name and no application can have an opinion about it, which is the line
-  // between the two groups.
+  // the page that says so. `wsfed.entityId` beside it, this service's own
+  // name, was the other group until #523 retired it.
   //
   // IT IS DRAWN ON /admin/saml-assertions rather than on /admin/wsfed, and that
   // is not filing it under the wrong protocol: a WS-Federation sign-in response
@@ -9136,16 +9029,6 @@ const SETTINGS = [
                  'the page it signed them into. An application may overrule ' +
                  'it with wsfedAssertionLifetimeMin on its entry.' },
 
-  { key: 'wsfed.entityId', group: 'WS-Federation', label: 'Entity ID',
-    env: 'STS_WSFED_ENTITY_ID', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: '', runtime: true,
-    description: 'The entityID in the federation metadata at ' +
-                 '/FederationMetadata/2007-06/FederationMetadata.xml. Unset, ' +
-                 'in either mode (#480, #494), it is the realm\'s SAML 2.0 ' +
-                 'entityID, and a registered relying party\'s own document, ' +
-                 '/wsfed/metadata/{rp}, names that application\'s entityID - ' +
-                 'the Issuer of the assertions it is sent - so the metadata ' +
-                 'and the SAML issuer agree unless one of them is set.' },
 
   { key: 'wsfed.mockRpContextTtlMin', group: 'WS-Federation',
     label: 'Mock relying party wctx lifetime (minutes)',
@@ -15932,9 +15815,13 @@ const SETTINGS = [
     restartReason: 'the name is written on the membership row when the node ' +
                    'joins',
     description: 'What /admin/cluster calls this node. Empty means the host ' +
-                 'name, which in a container is the container id. It ' +
-                 'identifies nothing: membership is a UUID made at every ' +
-                 'start, so two nodes given one name are still two nodes.' },
+                 'name, which in a container is the container id. ' +
+                 'Membership is a UUID made at every start, so two nodes ' +
+                 'given one name are still two members — but the name is ' +
+                 'what this node\'s TLS listener key is kept under where ' +
+                 'minted state persists (tls.listenerKeys), so two nodes ' +
+                 'given one name would share that key, and a renamed node ' +
+                 'makes a new one.' },
 
   { key: 'cluster.nodeSnapshotRetentionHours', group: 'Cluster',
     label: 'Keep a gone node\'s snapshot (hours)',
@@ -16467,13 +16354,10 @@ const SETTINGS = [
     env: 'STS_MAIL_FROM_NAME', type: 'string', dflt: '', runtime: true,
     description: 'The display name beside the From address. Empty means ' +
                  'none.' },
-  { key: 'mail.defaultLanguage', group: 'Mail',
-    label: 'Default message language',
-    env: 'STS_MAIL_DEFAULT_LANGUAGE', type: 'string', dflt: 'en',
-    runtime: true,
-    description: 'The language a message is written in when the recipient\'s ' +
-                 'entry names no preferredLanguage this realm has a template ' +
-                 'for. A BCP 47 tag; every built-in template exists in `en`.' },
+  // `mail.defaultLanguage` WAS HERE until #539 (2026-10-09): the locale
+  // policy's `defaultLocale` (`common/locale_policy.ts`, Directory →
+  // Policies) is the one default language now, read by the pages and the
+  // mail alike. No shim; REPLACED_SETTINGS refuses a start that names it.
 
   { key: 'mail.smtpPreset', group: 'Mail', label: 'SMTP preset',
     env: 'STS_MAIL_SMTP_PRESET', type: 'enum',
@@ -17018,6 +16902,30 @@ const REALM_LISTENER_REPLACED = ' It was removed on 2026-10-07 (#472): a ' +
   'tls block of the per-listener settings), and the realm is served on it ' +
   'where its listeners.applications maps * (or an application) to it.';
 
+// What #527's two rows say when either is still named.
+// Each row's sentence names the row that replaced the setting first, as
+// every other refusal names its replacement (`tests/outbound_tls.js` holds
+// each to `now[0]`), and then says this.
+const PASSKEY = ' decides it now — the passkey policy on Directory → ' +
+  'Policies, per realm and inherited from the default realm — POST ' +
+  '/admin-api/policies/save-passkey-policy, or the console. Usernameless ' +
+  'sign-in is off by default, and while it is off a security key is asked ' +
+  'for a discoverable credential.';
+
+// What #539's row says when it is still named.
+const LOCALE = ' decides it now — the locale policy on Directory → ' +
+  'Policies, per realm and inherited from the default realm, with named ' +
+  'profiles chosen by application — POST ' +
+  '/admin-api/policies/save-locale-policy, or the console. It is the one ' +
+  'default language: a page falls back to it and mail to a person who ' +
+  'names none is written in it.';
+
+// What every one of #523's rows says when it is still named.
+const ONE_ISSUER = ' It was removed on 2026-10-08 (#523): every SAML Issuer, ' +
+  'identity provider entityID and providerID, and the WS-Trust STS\'s name ' +
+  'are the realm\'s OAuth issuer, the iss of every JWT, which follows ' +
+  'global.publicBaseUrl. There is no per-protocol or per-application name.';
+
 /**
  * The settings that were replaced, and what replaced them; one still named
  * anywhere stops the service starting.
@@ -17109,7 +17017,45 @@ const REPLACED_SETTINGS = [
     now: ['oidfed.authorityHints'],
     why: ' It was removed on 2026-09-23 (#132) and replaced by ' +
          'oidfed.authorityHints: the realm is an OpenID Federation entity in ' +
-         'every role now, not only as a verifier.' }
+         'every role now, not only as a verifier.' },
+  // #523 (2026-10-08): ONE ISSUER PER REALM. Every SAML Issuer, identity
+  // provider entityID and providerID, and the WS-Trust STS's name are the
+  // realm's OAuth issuer (`common/issuer_names.ts`), which follows the public
+  // base URL; the seven names that set them apart are gone, and so is the
+  // one legacy environment variable, `STS_ISSUER`, that fed three of them.
+  // #527 (2026-10-08): two WebAuthn settings became rows of the passkey
+  // policy, a directory entry per realm rather than a setting, so `now`
+  // names the policy and its row rather than a setting key.
+  // #539 (2026-10-09): the mail's default language became the locale
+  // policy's, a directory entry per realm rather than a setting.
+  { key: 'mail.defaultLanguage', env: 'STS_MAIL_DEFAULT_LANGUAGE',
+    now: ['the locale policy\'s defaultLocale'],
+    why: ' It was removed on 2026-10-09 (#539): the locale policy\'s ' +
+         'defaultLocale' + LOCALE },
+  { key: 'webauthn.residentKey', env: 'STS_WEBAUTHN_RESIDENT_KEY',
+    now: ['the passkey policy\'s securityKeyResidentKey'],
+    why: ' It was removed on 2026-10-08 (#527): the passkey policy\'s ' +
+         'securityKeyResidentKey' + PASSKEY },
+  { key: 'webauthn.usernameless', env: 'STS_WEBAUTHN_USERNAMELESS',
+    now: ['the passkey policy\'s allowUsernameless'],
+    why: ' It was removed on 2026-10-08 (#527): the passkey policy\'s ' +
+         'allowUsernameless' + PASSKEY },
+  { key: 'saml.issuer', env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml2.entityId', env: 'STS_SAML2_ENTITY_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml2.perApplicationEntityId',
+    env: 'STS_SAML2_PER_APPLICATION_ENTITY_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml11.providerId', env: 'STS_SAML11_PROVIDER_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml11.perApplicationProviderId',
+    env: 'STS_SAML11_PER_APPLICATION_PROVIDER_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'wstrust.issuer', env: 'STS_WSTRUST_ISSUER',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'wsfed.entityId', env: 'STS_WSFED_ENTITY_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER }
 ];
 
 // The sentence for a replaced key, or '' for any other.
@@ -18771,12 +18717,18 @@ function refuseReplacedSettings() {
                  'the appconfig file') + ') is now ' + row.now.join(', ') +
                  '.' + replacedBy(row.key));
     }
-    if (process.env[row.env] !== undefined) {
-      named.push('  ' + row.env + ' (in the environment) is now ' +
-                 row.now.map(function (key) {
-                   return byKey[key].env;
-                 }).join(', ') + '.' + replacedBy(row.key));
-    }
+    // `legacyEnv` (#523): the one legacy variable, `STS_ISSUER`, went with
+    // the settings it fed.
+    [row.env, row.legacyEnv].forEach(function (name) {
+      if (name && process.env[name] !== undefined) {
+        // A replacement that is a setting is named by its variable; one
+        // that is not (#527: a policy row) is named as it is written.
+        named.push('  ' + name + ' (in the environment) is now ' +
+                   row.now.map(function (key) {
+                     return byKey[key] ? byKey[key].env : key;
+                   }).join(', ') + '.' + replacedBy(row.key));
+      }
+    });
   });
   if (!named.length) {
     log.debug("Leaving refuseReplacedSettings(). None named.");

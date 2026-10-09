@@ -281,9 +281,242 @@ removed here disappears there too, and gives it their display name. A person
 whose passkeys were all registered before the user handle existed (when it
 was the username, which every realm shares) is sent nothing.
 
-**Signing in with a passkey and no username** (`webauthn.usernameless`, off
-by default). Where it is on, the sign-in screen draws *Sign in with a
-passkey*, and the username field offers passkeys as autofill in browsers that
+### The passkey policy
+
+How passkeys behave in a realm is a policy on **Directory → Policies**, beside
+the password, authentication and service-account policies: the **passkey
+policy**, `cn=default,ou=passkeyPolicies`. A realm without its own follows the
+default realm's, and the built-in defaults apply where neither exists. Change
+it on the console or with `POST /admin-api/policies/save-passkey-policy`;
+`reset-passkey-policy` goes back to inheriting.
+
+These rows say how the realm's passkeys behave. Since #536 the **issuance
+policy** decides whether a given passkey may be registered or may sign
+somebody in, from the key's facts and these rows: the actions
+`register-passkey` and `use-passkey`, with the built-in rules giving the
+refusals described below. A realm's own issuance policy may decide
+differently. For example, one rule can let synced passkeys sign in where the
+row says `disallow`. See [XACML](xacml.md).
+
+| Field | Default | What it does |
+|---|---|---|
+| `allowUsernameless` | off | Offers a passkey sign-in with **no username**, described below. |
+| `securityKeyResidentKey` | `required` | What *Use a security key* asks the authenticator to store **while usernameless sign-in is on**: `discouraged`, `preferred` or `required`. |
+| `backupEligibility` | `allow` | `disallow` accepts only **device-bound** passkeys, refusing a synced one at registration and at sign-in (below). |
+| `enforcePinLength` | off | Requires a minimum **security-key PIN length**, as the key reports it (below). |
+| `minPinLength` | 4 | The minimum, 4 to 63 characters, while `enforcePinLength` is on. |
+| `pinLengthOnlyIfSupported` | off | On, a key that does not report its PIN length is accepted. |
+| `enforceAttestationAtSignIn` | off | Holds every passkey sign-in to the attestation rules in force, not only registration (below). |
+| `passkeyHints` | `client-device,hybrid` | The WebAuthn hints *Create a passkey* sends, in order (below). |
+| `securityKeyHints` | `security-key` | The hints *Use a security key* sends. |
+| `signInHints` | `none` | The hints a passkey sign-in sends. |
+| `userDisplayName` | empty | The directory attributes a passkey prompt shows as the person's name (below). |
+| `rpNameExtras` | `none` | `realm`, `organisation` or `realm-and-organisation`: appended to the service's name in a passkey prompt. |
+| `credentialLabel` | empty | The name a new passkey is given; `{provider}` and `{kind}` are filled in. |
+| `aggregateDevices` | on | A person's passkeys are one sign-in choice; off, one per passkey (below). |
+| `enterpriseSerialAttribute` | empty | The attribute of a person's entry holding the serials of the security keys issued to them; set, a key registers only if its enterprise attestation names one of them (below). |
+
+**Both portal buttons ask for a discoverable credential by default.** *Create
+a passkey* always asks `residentKey: required`. *Use a security key* asks
+`required` too while usernameless sign-in is off, whatever
+`securityKeyResidentKey` says, so one security key gives the same result
+through either button; while it is on, it asks `securityKeyResidentKey`. A
+realm can lower that to `preferred` or `discouraged` to spare a security key's
+few resident slots, and a key enrolled that way may need the username to sign
+in.
+
+**Synced passkeys** (`backupEligibility`). A *synced* passkey is one its
+provider copies to the person's other devices, or keeps a backup of: a
+passkey in a phone's or a browser's password manager usually is. A
+*device-bound* one never leaves the authenticator it was made on: a hardware
+security key usually is. The authenticator says which in every registration
+and every sign-in, with the **backup eligible** (BE) flag of WebAuthn Level 3
+section 6.1, and the BE flag never changes for a credential's life.
+
+A realm may refuse synced passkeys because a copy of the key is a copy of the
+credential: it is only as safe as the person's account with the provider that
+syncs it, and it can sign in from a device the realm has never seen. A realm
+that needs to know which physical authenticator holds a key — the usual case
+for an administrator, or for a regulated deployment — sets `disallow`. Most
+passkeys people already hold are synced, which is why the default is `allow`.
+
+While it is `disallow`:
+
+- a passkey with BE set is **not registered**, at the sign-in screen, on
+  `/portal/keys` or through an activation link (`STS-AUTHN-0312`), and the
+  page says why;
+- a passkey with BE set **does not sign anybody in**, whether it is the
+  first factor, the step after a password, or a sign-in with no username
+  (`STS-AUTHN-0313`, a `session.refuse` audit row). That catches a synced
+  passkey registered before the realm said no, and `/portal/keys` marks
+  such a key so its owner can replace it.
+
+The console lists a person's keys with what the authenticator said about
+backup: *device-bound*, *eligible, not backed up*, or *backed up*.
+
+**A minimum PIN length** (`enforcePinLength`, `minPinLength`,
+`pinLengthOnlyIfSupported`). User verification on a security key is usually a
+PIN, and a key with a four-digit PIN satisfies `required` user verification
+as well as one with a twelve-character PIN. While `enforcePinLength` is on,
+every registration asks the authenticator for the minimum PIN length it
+enforces, through the CTAP 2.1 `minPinLength` extension (CTAP 2.1 section
+12.4), records the answer on the key, and:
+
+- refuses a key that reports less than `minPinLength`, at registration
+  (`STS-AUTHN-0314`) **and at every sign-in** (`STS-AUTHN-0315`, a
+  `session.refuse` audit row). Raising the minimum therefore stops a key
+  registered under a lower one; `/portal/keys` marks such a key so its owner
+  can replace it;
+- refuses a key that reports nothing, unless `pinLengthOnlyIfSupported` is on.
+
+**A key reports its minimum PIN length only to relying parties it was
+configured to tell.** The key's administrator sets that up with CTAP 2.1's
+`setMinPINLength` command, naming this service's RP ID (the host name it is
+reached at, or `webauthn.rpId`). A key nobody configured, every platform
+authenticator and every synced passkey reports nothing. So with
+`pinLengthOnlyIfSupported` off, the default, only configured security keys
+can be registered at all. With it on, every other key is accepted, and the
+rule then binds only the keys that report: **it is weaker, and is meant for a
+realm moving its keys over one at a time.** The browser must also pass the
+extension on; one that does not is a key that reports nothing.
+
+**The attestation rules at sign-in** (`enforceAttestationAtSignIn`). The
+`webauthn.attestation*` settings — the attestation policy, the list of
+allowed authenticator models (`webauthn.attestationAllowedAaguids`), the
+minimum certification level and FIPS — decide which keys may be
+**registered**. A key registered before a rule was tightened would otherwise
+go on working. With `enforceAttestationAtSignIn` on, every passkey sign-in
+holds the key to the rules in force now, using what was recorded when it was
+registered (its model, and whether its attestation was verified and trusted)
+and the FIDO Metadata Service as it is now:
+
+- a key whose model is no longer on the list, or below the level or FIPS
+  certification asked for, is refused (`STS-AUTHN-0316`);
+- a key the metadata service now reports **compromised** is refused;
+- a key registered with **no trusted attestation** — `none`, self
+  attestation, or before this service verified attestations — fails every
+  rule that demands one, an AAGUID list included: its model is only what the
+  authenticator claimed.
+
+The first refusal of a key marks it, sends a Shared Signals CAEP
+`credential-change`, and `/portal/keys` tells its owner. If the metadata
+service cannot be asked, the sign-in is refused (`STS-AUTHN-0317`).
+
+**Hints** (`passkeyHints`, `securityKeyHints`, `signInHints`). WebAuthn
+Level 3 section 5.4.8 lets a relying party tell the browser which kind of
+authenticator to lead with: `security-key`, `client-device` (the device's
+own) or `hybrid` (a phone, by QR code). Each row is an ordered list of them,
+or `none`. The defaults are what this service always sent: *Create a passkey*
+leads with this device then a phone, *Use a security key* with a security
+key, and a sign-in names none, so the browser offers every way it knows.
+
+A hint must agree with the authenticator attachment the same request asks
+for: `client-device` implies `platform`, `security-key` and `hybrid` imply
+`cross-platform`. *Use a security key* always asks for `cross-platform`, and
+*Create a passkey* asks for whatever `webauthn.authenticatorAttachment` says,
+so a list that contradicts its request is refused when the policy is saved,
+naming the hint. If the setting changes later, a hint it now contradicts is
+not sent, and the log says so (`STS-AUTHN-0319`).
+
+**Binding security keys to the people they were issued to**
+(`enterpriseSerialAttribute`). An organisation that hands out security keys
+usually wants each key to work only for the person it was given to. With
+*enterprise attestation* (WebAuthn Level 3 section 5.4.7, CTAP 2.1 section
+7.1) a key's attestation certificate carries its serial number, and this
+service reads it from either of two places:
+
+- the certificate subject's `serialNumber` attribute, or
+- Yubico's device serial extension (`1.3.6.1.4.1.41482.13.1`), written in
+  decimal as printed on the key.
+
+A key whose certificate keeps its serial anywhere else has no serial this
+service can read, and is refused.
+
+Set `enterpriseSerialAttribute` to the attribute of a person's entry that
+lists their keys' serials (for example `serialNumber`, which may hold
+several values). Then a security key registers only if:
+
+- its attestation verifies and chains to a trusted anchor, because a serial
+  is worth only what the certificate naming it is worth; and
+- the serial it names is one of that person's values (`STS-AUTHN-0320`).
+
+A key whose certificate names no readable serial is refused
+(`STS-AUTHN-0321`). The serial is recorded on the key and shown on the
+console and on `/portal/keys`.
+
+**Enterprise attestation must be switched on outside this service.** Set
+`webauthn.attestation` to `enterprise`, and arrange with the key's vendor or
+the platform (a managed browser policy, or the vendor's RP ID list) for
+enterprise attestation to be released to this service's RP ID. Without that,
+the browser quietly sends ordinary attestation, which carries no serial, and
+every registration is refused.
+
+**The names a passkey prompt shows** (`userDisplayName`, `rpNameExtras`,
+`credentialLabel`). When a browser or phone asks somebody to create or use a
+passkey, it shows the service's name (`rp.name`) and the person's
+(`user.displayName`; the username is always `user.name`).
+
+- `userDisplayName` lists up to six directory attributes in order, separated
+  by commas, for example `displayName, givenName sn, mail`. A group joined
+  by spaces combines its values. The first group whose every attribute has a
+  value becomes the display name. Empty, the default, keeps the name the
+  sign-in already knows, or the username.
+- `rpNameExtras` appends the realm's name and/or `saml.organizationName` to
+  `webauthn.rpName`, so somebody with accounts in several realms can tell
+  the prompts apart.
+- `credentialLabel` is what a new passkey is called on `/portal/keys` and the
+  console, for example `Work {kind}`. Empty keeps the default: the provider's
+  name, or *Passkey* or *Security key*. The person can still rename it.
+
+Every value shown goes through the same cleaning: control characters and
+characters that change text direction are removed, whitespace is collapsed,
+and the result is at most 64 characters (60 for a label). A person who can
+edit their own `displayName` therefore cannot make a prompt read right to
+left, or hide part of it. The service's name is built only from settings an
+administrator controls. A label is not translated per language, because the
+portal has no translations.
+
+**One choice, or one per passkey** (`aggregateDevices`). By default a person
+with several passkeys is shown one *Use passkey* button, and the request lists
+all of them so the browser offers whichever is present. With
+`aggregateDevices` off, somebody with more than one first chooses which to use
+from a list of their passkeys by name, and the request then names only that
+one, with a link back to choose another. The choice is a list of links and
+needs no script. The rule applies to the passwordless step and to the passkey
+asked for after a password. Either way the assertion is checked against the
+passkey it names; only the request changes.
+
+**Named passkey policies** (#535). Beside `default`, a realm may keep named
+passkey policies, for example a strict one for administrators. Each has all
+the rows above and three selectors:
+
+- the applications it applies to (identifier or client_id);
+- the groups whose members it applies to (by cn or DN);
+- a precedence, from 1 to 1000.
+
+At a sign-in, the named policy that applies is one listing the application
+being signed in to, or a group the person is in. Where several match, the
+one with the **lowest precedence** wins, and where none matches, `default`
+applies. An application's policy and a person's are not ranked by kind: give
+the stricter one the lower number. For example, a strict application at 5
+beats a lenient group at 50.
+
+Registration on `/portal/keys` or through an activation link has no
+application, so only group selectors apply there. A realm's named policies
+are its own: unlike `default`, they are not inherited from the default realm.
+
+Manage them on Directory → Policies (*Named profiles*), or with
+`POST /admin-api/policies/save-passkey-policy` naming `profile`,
+`selectApplications`, `selectGroups` and `precedence`.
+`reset-passkey-policy` with a named `profile` removes it.
+
+The policy replaced the settings `webauthn.usernameless` and
+`webauthn.residentKey` (#527); a configuration that still names either is
+refused at start.
+
+**Signing in with a passkey and no username** (the passkey policy's
+`allowUsernameless`, off by default). Where it is on, the sign-in screen draws
+*Sign in with a passkey*, and the username field offers passkeys as autofill in browsers that
 support conditional mediation. The browser is asked for any passkey of this
 service, the user handle it returns names the account, and:
 
@@ -612,10 +845,8 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | The attestation conveyance asked for at registration. Whether a statement is verified is `webauthn.attestationPolicy`'s decision, not this setting's ([WebAuthn](#webauthn), above). |
 | `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` hint handed to the browser. |
 | `webauthn.authenticatorAttachment` | `STS_WEBAUTHN_ATTACHMENT` | `any` | yes | `platform`, `cross-platform` or `any`; a filter in the browser. |
-| `webauthn.residentKey` | `STS_WEBAUTHN_RESIDENT_KEY` | `discouraged` | yes | Whether the credential should be discoverable on the authenticator, for the sign-in screen's ceremony and *Use a security key*; *Create a passkey* always asks `required`. |
 | `webauthn.credProps` | `STS_WEBAUTHN_CRED_PROPS` | `true` | yes | Ask the browser to report whether the credential is discoverable. |
 | `webauthn.primaryAllowed` | `STS_WEBAUTHN_PRIMARY_ALLOWED` | `true` | yes | Allow a key to be the only credential (passwordless). |
-| `webauthn.usernameless` | `STS_WEBAUTHN_USERNAMELESS` | `false` | yes | Offer a passkey sign-in with no username: a button and autofill on the sign-in screen; user verification required, `acr "mfa"`. |
 | `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` | yes | Allow a key to be enrolled as a second factor. |
 | `webauthn.maxKeysPerPerson` | `STS_WEBAUTHN_MAX_KEYS` | `10` | yes | How many keys one person may hold; refuses the enrolment, never a sign-in. |
 

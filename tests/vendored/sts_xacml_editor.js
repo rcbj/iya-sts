@@ -794,9 +794,12 @@ async function signIn(driver, username) {
   const secret = await driver.findElement(By.css("input[name='password']"));
   await secret.clear();
   await secret.sendKeys(CONSOLE_PASSWORD);
-  const button = await driver.findElement(
-      By.xpath("//button[@type='submit'] | //input[@type='submit'] | " +
-               "//button"));
+  // THE PASSWORD FORM'S OWN BUTTON, not the page's first: since #539 the
+  // screen carries a language chooser, a form of its own with a submit
+  // button drawn above this one.
+  const button = await secret.findElement(
+      By.xpath("ancestor::form//button[@type='submit' or not(@type)] | " +
+               "ancestor::form//input[@type='submit']"));
   await button.click();
   // An administrator is OFFERED a second factor since #246, on a page drawn
   // at the same URL; this suite ignores it, as rcbj asked ("just click

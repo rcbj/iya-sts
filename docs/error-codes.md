@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4212** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4241** of them, in **44** subsystems.
 
 ## Where a code appears
 
@@ -63,10 +63,10 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 267
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 284
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 708
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 31
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -76,11 +76,12 @@ is an ordinary outcome.
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 146
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 47
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 48
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 112
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 47
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
+* [Languages and locales (`STS-I18N`)](#sts-i18n) — 10
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 351
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
@@ -90,7 +91,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 81
 * [User portal (`STS-PORTAL`)](#sts-portal) — 84
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 156
+* [Registries (`STS-REG`)](#sts-reg) — 162
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -1417,13 +1418,30 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0298` | A sign-in was refused at the sign-in door because it used a mechanism the application being signed in to does not allow (appAuthnMechanism, #457). The screen is drawn again, naming the mechanisms it allows. | the sign-in screen, drawn again |
 | `STS-AUTHN-0299` | Renaming a passkey named a credential id that is not registered for that person (#470). | action result with the reason |
 | `STS-AUTHN-0300` | Renaming a passkey was refused: the name is longer than 60 characters or carries a control character (#470). | action result with the reason |
-| `STS-AUTHN-0301` | A passkey sign-in with no username was asked for where it is not offered: webauthn.usernameless, webauthn.primaryAllowed or webauthn.enabled is off, the authentication policy does not accept a passkey as a first factor, the application does not allow one, or the sign-in is linking an account (#474). | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0301` | A passkey sign-in with no username was asked for where it is not offered: the passkey policy's allowUsernameless (#527; webauthn.usernameless until then), webauthn.primaryAllowed or webauthn.enabled is off, the authentication policy does not accept a passkey as a first factor, the application does not allow one, or the sign-in is linking an account (#474). | none — the sign-in screen is drawn again |
 | `STS-AUTHN-0302` | A passkey sign-in with no username named no account: the authenticator returned no user handle, or one nobody in this realm holds (#474). Where only one realm and one cell exist, the page asks the browser to forget the credential (signalUnknownCredential). | none — the sign-in screen is drawn again |
 | `STS-AUTHN-0303` | A passkey assertion's user handle is not the one its key was registered under — WebAuthn Level 3 section 7.2 step 6 (#474). | none — the sign-in screen or the passkey step is drawn again |
 | `STS-AUTHN-0304` | A passkey registered before #474 — under the username's bytes as its user handle — was used to sign in with no username. It works only where the username is typed; registering it again makes it usable without one. | none — the sign-in screen is drawn again |
 | `STS-AUTHN-0305` | A sign-in was refused at the sign-in door because its second factor is one the application being signed in to does not allow (appMfaMechanism, #475). The screen is drawn again, naming the second factors it allows. | the sign-in screen, drawn again |
 | `STS-AUTHN-0306` | A second factor was needed of a person who holds none the application allows (appMfaMechanism, #475), and none of the allowed ones (a security key, an authenticator app) can be set up at sign-in in this realm; refused rather than signed in on one factor. | the sign-in screen, drawn again |
 | `STS-AUTHN-0307` | A second factor was DEMANDED — a security key by the relying party or on risk, or a second factor on risk — and the second factors the application allows (appMfaMechanism, #475) leave the person none that answers it. A step-up never enrols one. | the sign-in screen, drawn again |
+| `STS-AUTHN-0308` | A passkey policy profile name was refused: it is neither `default` nor a name of lower-case letters, digits and hyphens of at most 64 (#527, #535). | HTTP 400 (management API) |
+| `STS-AUTHN-0309` | A passkey policy save was refused: a field was missing, not a yes-or-no value, or not one of its values — discouraged, preferred, required; allow, disallow; or a minimum PIN length outside 4 to 63; or a hint list that is not one, or contradicts the attachment its request sends (#527, #528, #529, #531). | HTTP 400 (management API) |
+| `STS-AUTHN-0310` | There is no embedded directory in this process, so a passkey policy could not be saved (#527). | HTTP 400 (management API) |
+| `STS-AUTHN-0311` | The directory would not store the passkey policy profile: it holds its maximum number of entries (#527). | HTTP 400 (management API) |
+| `STS-AUTHN-0312` | A synced passkey was not registered: its authenticator data set the backup-eligible flag (BE, WebAuthn Level 3 section 6.1) and the realm's passkey policy takes only device-bound passkeys (backupEligibility disallow, #528). Asked where every key is written, so the sign-in screen, /portal/keys and an activation link all refuse it. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0313` | A sign-in with a synced passkey was refused: the key's assertion set the backup-eligible flag and the realm's passkey policy takes only device-bound passkeys (backupEligibility disallow, #528). BE never changes for a credential, so this is what refuses a synced key registered before the realm said no. | the sign-in screen, drawn again with the reason |
+| `STS-AUTHN-0314` | A passkey was not registered: the realm's passkey policy enforces a minimum security-key PIN length (enforcePinLength, #529) and the key reported a shorter minimum through CTAP 2.1's minPinLength extension, or reported none while pinLengthOnlyIfSupported is off. Asked where every key is written. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0315` | A sign-in with a passkey was refused: the realm's passkey policy enforces a minimum security-key PIN length (#529) and the minimum the key reported at registration — recorded on its row — is shorter, or none was recorded while pinLengthOnlyIfSupported is off. | the sign-in screen, drawn again with the reason |
+| `STS-AUTHN-0316` | A passkey sign-in was refused by the attestation rules in force (#530, the passkey policy's enforceAttestationAtSignIn): the key's recorded attestation is not trusted where a rule demands it, its AAGUID is not on webauthn.attestationAllowedAaguids, its model is below the certification level or FIPS asked for, or the FIDO Metadata Service now reports the model compromised. The first refusal of a key for a reason marks its row and sends a CAEP credential-change. | the passkey page or the sign-in screen, with the reason |
+| `STS-AUTHN-0317` | A passkey's attestation could not be held to the rules at sign-in: the FIDO metadata lookup or the check threw (#530). The sign-in is refused, since the rule is on and an unchecked key is not a checked one. | the passkey page or the sign-in screen, with the reason |
+| `STS-AUTHN-0318` | The mark of a passkey the attestation rules refused at sign-in could not be written to its row (#530); the refusal stands and no credential-change is sent for it. | none — logged |
+| `STS-AUTHN-0319` | A passkey-policy hint list contradicts webauthn.authenticatorAttachment, which changed after the policy was saved (#531): client-device implies platform, security-key and hybrid cross-platform. The contradicting hints are not sent; save the policy again to fix it. | none — logged; the ceremony is sent without them |
+| `STS-AUTHN-0320` | A security key was not registered: the realm binds keys to the serials issued to each person (the passkey policy's enterpriseSerialAttribute, #532), and the serial its trusted enterprise attestation names is not among the person's values. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0321` | A security key was not registered: the realm binds keys to serials (#532), and the key's attestation names no device serial this service can read — no subject serialNumber and no Yubico serial extension, or no trusted enterprise attestation at all. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0322` | A passkey was refused by a rule of the realm's own issuance policy (#536) that named no error code of its own and gave a reason the built-in passkey rules do not give. | the ceremony's page or the sign-in screen, with the reason |
+| `STS-AUTHN-0323` | No issuance policy, not even the built-in one, gave a verdict on a passkey question (#536); the passkey rules read from the facts answered instead. A defect: the built-in document should always answer. | none: the passkey is decided by the same rules |
+| `STS-AUTHN-0324` | The engine could not be loaded to ask the built-in issuance policy a passkey question (#536); the passkey rules read from the facts decided instead. | none: the passkey is decided by the same rules |
 
 ## STS-OAUTH
 
@@ -1909,10 +1927,10 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0594` | A discovery path named no issuer: not [realm/<id>][/<server>], an unknown realm, or more than one server segment. Answered with Express's 404 and no authorization server created (#119). | HTTP 404 |
 | `STS-OAUTH-0595` | An RFC 7592 update named a client_id other than the one it updates, or a client_secret other than the one this server issued (section 2.2) (#120). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0596` | A registration access token was presented for a client that no longer exists; the token was revoked and refused (RFC 7592 section 3) (#120). Logged at warn. | HTTP 401 {error: invalid_token} |
-| `STS-OAUTH-0597` | An authorization request asked for a response_type the client did not register in response_types (OpenID Connect Registration section 2) (#120). | redirect {error: unauthorized_client} |
-| `STS-OAUTH-0598` | A token request used a grant_type the client did not register in grant_types (RFC 7591 section 2) (#120). | HTTP 400 {error: unauthorized_client} |
+| `STS-OAUTH-0597` | An authorization request asked for a response_type the client did not declare in oauthResponseType — registered as response_types (OpenID Connect Registration section 2) or written by an administrator (#120, #289). | redirect {error: unauthorized_client} |
+| `STS-OAUTH-0598` | A token request used a grant_type the client did not declare in oauthGrantType — registered as grant_types (RFC 7591 section 2) or written by an administrator (#120, #289). | HTTP 400 {error: unauthorized_client} |
 | `STS-OAUTH-0599` | A client's registered jwks_uri could not be read: the outbound policy refused it, it did not answer 200, or it did not answer a JSON Web Key Set (#120). Logged at warn; the verification or encryption that needed the key is refused with its own code. | none (log only) |
-| `STS-OAUTH-0600` | A client that registered grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120). Recorded, not refused. | none (the token response omits refresh_token) |
+| `STS-OAUTH-0600` | A client that declares grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120, #289). Recorded, not refused. | none (the token response omits refresh_token) |
 | `STS-OAUTH-0601` | The OP iframe or its script was asked for while oauth2.sessionManagement is off in the realm (#121): a 404 naming the setting. | HTTP 404 |
 | `STS-OAUTH-0602` | An RP-Initiated Logout id_token_hint did not verify as an ID Token this authorization server issued to the client the request names — or a client_id it was not issued to was given beside it (section 2's MUST, #124, #115). Refused in every mode; the session is not ended. | HTTP 400 (an HTML page) |
 | `STS-OAUTH-0603` | In product mode, an RP-Initiated Logout post_logout_redirect_uri named no client that registered it (#124): not followed. Development still follows one. | none (the sign-out page says so) |
@@ -2004,7 +2022,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0689` | The device authorization grant or endpoint was used in a realm where oauth2.deviceAuthorization is off (RFC 8628, #150). | HTTP 404 {error: invalid_request} at the endpoint; {error: unsupported_grant_type} at the token endpoint |
 | `STS-OAUTH-0690` | A device authorization request was malformed (RFC 8628 section 3.1, #150). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0691` | A device authorization request's client did not authenticate as it registered to (RFC 8628 section 3.1, #150). | HTTP 401 {error: invalid_client} |
-| `STS-OAUTH-0692` | A client that did not register the device_code grant asked the device authorization endpoint for codes (#150). | HTTP 400 {error: unauthorized_client} |
+| `STS-OAUTH-0692` | A client whose declared grant types omit device_code asked the device authorization endpoint for codes (#150, #289). | HTTP 400 {error: unauthorized_client} |
 | `STS-OAUTH-0693` | The DPoP proof on a device authorization request did not verify (RFC 9449, OpenID Connect Key Binding, #150). | HTTP 400 {error: invalid_dpop_proof} |
 | `STS-OAUTH-0694` | The device authorization endpoint failed unexpectedly (#150). | HTTP 500 {error: server_error} |
 | `STS-OAUTH-0695` | A device_code grant named no device authorization of this client (RFC 8628 section 3.5, #150). | HTTP 400 {error: invalid_grant} |
@@ -2153,7 +2171,7 @@ Raised from: saml/.
 | `STS-SAML-0001` | A SAML 2.0 sign-in resumed with a held-request id that is unknown or has expired (saml2.requestTtlMin), so there is no AuthnRequest to answer. | HTTP 400 page |
 | `STS-SAML-0002` | The SAMLRequest at the SAML 2.0 Single Sign-On service is not a readable <samlp:AuthnRequest>: malformed XML, or another message. | HTTP 400 page |
 | `STS-SAML-0003` | A SAML 2.0 AuthnRequest names no <saml:Issuer> and the path names no service provider, so there is no audience to issue for. | HTTP 400 page |
-| `STS-SAML-0004` | saml2.entityId is empty in a product-mode realm, so the SAML 2.0 identity provider has no name to issue or publish metadata under. | HTTP 503 (a page at the SSO service, text/plain at the metadata endpoint) |
+| `STS-SAML-0004` *(retired)* | saml2.entityId is empty in a product-mode realm, so the SAML 2.0 identity provider has no name to issue or publish metadata under. Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 (a page at the SSO service, text/plain at the metadata endpoint) |
 | `STS-SAML-0005` | In product mode, a SAML 2.0 AuthnRequest's AssertionConsumerServiceURL is not a samlAssertionConsumerService registered on the service provider's entry, or none is registered. | HTTP 400 page |
 | `STS-SAML-0006` | The SAML 2.0 assertion consumer service URL is not an absolute http(s) URL. | HTTP 400 page |
 | `STS-SAML-0007` | A SAML 2.0 AuthnRequest asked for a ProtocolBinding this identity provider does not implement (for example PAOS). | HTTP 400 page |
@@ -2163,7 +2181,7 @@ Raised from: saml/.
 | `STS-SAML-0011` | In product mode, a SAML 2.0 assertion configured to be encrypted could not be encrypted (no usable certificate), so none was sent. | samlp:Response with status Responder and no assertion |
 | `STS-SAML-0012` | A SAML 2.0 assertion or logout NameID could not be encrypted to the service provider's certificate (usually a non-RSA key) and went out in clear. | — |
 | `STS-SAML-0013` | A SAML 2.0 protocol message (Response, LogoutResponse or LogoutRequest) could not be signed and was sent unsigned. | — |
-| `STS-SAML-0014` | The SAML 2.0 identity provider metadata could not be signed and was served unsigned. | — |
+| `STS-SAML-0014` | The realm's identity provider metadata (one document for SAML 2.0, SAML 1.1 and WS-Federation since #523 and #524) could not be signed and was served unsigned. | — |
 | `STS-SAML-0015` | The body posted to the SAML 2.0 Artifact Resolution Service is not XML. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
 | `STS-SAML-0016` | The SOAP body posted to the SAML 2.0 Artifact Resolution Service carries no <samlp:ArtifactResolve>. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
 | `STS-SAML-0017` | A SAML 2.0 ArtifactResolve carries no <samlp:Artifact>. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
@@ -2176,14 +2194,14 @@ Raised from: saml/.
 | `STS-SAML-0024` | A SAML 1.1 assertion could not be signed and was returned unsigned. | — |
 | `STS-SAML-0025` | A SAML 1.1 browser flow resumed with a held-flow id that is unknown or has expired (saml11.requestTtlMin). | HTTP 400 page |
 | `STS-SAML-0026` | A SAML 1.1 flow named a profile other than post or artifact in the non-spec profile parameter. | HTTP 400 page |
-| `STS-SAML-0027` | saml11.providerId is empty in a product-mode realm, so the SAML 1.1 identity provider has no name to issue or publish metadata under. | HTTP 503 page or text/plain at the inter-site transfer service and metadata; samlp:Response status Responder at the SAML responder |
+| `STS-SAML-0027` *(retired)* | saml11.providerId is empty in a product-mode realm, so the SAML 1.1 identity provider has no name to issue or publish metadata under. Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 page or text/plain at the inter-site transfer service and metadata; samlp:Response status Responder at the SAML responder |
 | `STS-SAML-0028` | In product mode, a SAML 1.1 flow's shire is not a samlAssertionConsumerService registered on the relying party's entry, or none is registered. | HTTP 400 page |
 | `STS-SAML-0029` | The SAML 1.1 assertion consumer URL is not an absolute http(s) URL. | HTTP 400 page |
 | `STS-SAML-0030` | A SAML 1.1 flow names no relying party: no providerId, no path segment and no TARGET origin to take one from. | HTTP 400 page |
 | `STS-SAML-0031` | The sign-in screen reported that a SAML 1.1 sign-in was cancelled or failed. | HTTP 400 page |
 | `STS-SAML-0032` | The issuance policy refused a SAML 1.1 assertion for this person to this relying party. | HTTP 403 page |
 | `STS-SAML-0033` | A SAML 1.1 <samlp:Response> could not be signed and was sent unsigned. | — |
-| `STS-SAML-0034` | The SAML 1.1 identity provider metadata could not be signed and was served unsigned. | — |
+| `STS-SAML-0034` *(retired)* | The SAML 1.1 identity provider metadata could not be signed and was served unsigned. Retired 2026-10-08 (#523): there is one document for both SAML versions, and STS-SAML-0014 names its failure. | — |
 | `STS-SAML-0035` | The body posted to the SAML 1.1 SAML responder is not XML. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0036` | The SOAP body posted to the SAML 1.1 SAML responder carries no <samlp:Request>. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0037` | A SAML 1.1 artifact does not resolve: never issued here, expired (saml11.artifactTtlS), or already resolved once. | SOAP samlp:Response with status samlp:Success and no assertion (HTTP 200) — saml-bindings-1.1 4.1.1.6 (#160) |
@@ -2247,7 +2265,7 @@ Raised from: saml/.
 | `STS-SAML-0095` | The SAML 2.0 attribute authority received no <samlp:AttributeQuery>, or one naming no Issuer. #189. | SOAP samlp:Response, Requester (HTTP 200) |
 | `STS-SAML-0096` | A SAML 1.1 AttributeQuery or AuthenticationQuery in product mode named a subject no live session here gave the asking relying party (by the NameIdentifier it was issued). #189. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0097` | The TLS certificate the SAML back channel presents (this process's main-port leaves, or another cluster node's off its membership row) could not be read while a SAML 2.0 or SAML 1.1 metadata document was built, so the document went out without that KeyDescriptor and a service provider authenticating the back channel from metadata will refuse the node it names none for. #248. | none — the metadata is served (HTTP 200) without the key |
-| `STS-SAML-0098` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request reached a resolver whose entityID (providerID) the artifact's SourceID does not name — with saml2.perApplicationEntityId or saml11.perApplicationProviderId on, an artifact minted for one party presented at the unscoped resolver or at another party's. The artifact is not spent; it stays resolvable at its own resolver. #160. | SOAP response with status Success and nothing embedded (HTTP 200) — the empty response |
+| `STS-SAML-0098` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request reached a resolver whose entityID (providerID) the artifact's SourceID does not name — since #523 every artifact of a realm is minted under its one issuer, so an artifact of another realm, or one minted at another base URL. The artifact is not spent; it stays resolvable at its own resolver. #160. | SOAP response with status Success and nothing embedded (HTTP 200) — the empty response |
 | `STS-SAML-0099` | A SAML 2.0 sign-in reached a session whose sign-in mechanism the service provider does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-SAML-0100` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a sign-in mechanism the service provider does not allow (appAuthnMechanism, #457). | Responder / RequestDenied |
 | `STS-SAML-0101` | A SAML 1.1 sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
@@ -2293,12 +2311,13 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0023` | An OnBehalfOf or ActAs request was refused because the subject has no authority for the application the act stands on (#186). | SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11) |
 | `STS-WSTRUST-0024` | An OnBehalfOf or ActAs request named no AppliesTo, or one no application registers, and is not a self request (#186). | SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11) |
 | `STS-WSTRUST-0025` | A request carried both <wst:OnBehalfOf> and <wst14:ActAs>, which ask for impersonation and delegation at once (#186). | SOAP Fault wst:InvalidRequest (WS-Trust 1.4 section 11) |
-| `STS-WSTRUST-0026` | Product mode: a JWT inside OnBehalfOf/ActAs does not verify with this STS's own key, or was not issued by this realm (its iss is not the realm's OAuth issuer, #480) (#477). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0027` | Product mode: a JWT inside OnBehalfOf/ActAs has expired (#477). | SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0028` | Product mode: a JWT inside OnBehalfOf/ActAs names, in its sub, nobody this directory holds (#477). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0029` | A SAML token was asked for with no name to sign it under: product mode, saml2.entityId empty and saml.issuer unset (#494). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0026` | Product mode: a JWT inside OnBehalfOf/ActAs (#477), or presented as the requester's credential (#519), does not verify with this STS's own key, or was not issued by this realm (its iss is not the realm's OAuth issuer, #480). | SOAP Fault wst:InvalidRequest for a delegated JWT, wst:FailedAuthentication for the requester's (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0027` | Product mode: a JWT inside OnBehalfOf/ActAs (#477), or presented as the requester's credential (#519), has expired. | SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0028` | Product mode: a JWT inside OnBehalfOf/ActAs (#477), or presented as the requester's credential (#519), names, in its sub, nobody this directory holds. | SOAP Fault wst:InvalidRequest for a delegated JWT, wst:FailedAuthentication for the requester's (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0029` *(retired)* | A SAML token was asked for with no name to sign it under: product mode, saml2.entityId empty and saml.issuer unset (#494). Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0030` | Product mode: an RST asked for a token for an AppliesTo that resolves to no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidScope (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0031` | Product mode: an RST asked for a token and carried no AppliesTo, so it names no application a token could be for; refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0032` | Product mode: a SAML assertion or JWT presented as the requester's credential is addressed neither to its holder (an audience the holder's application registers) nor to this IdP (its WS-Trust issuer name, SAML entityID, OAuth issuer or /sts address) (#519). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 
@@ -2322,12 +2341,12 @@ Raised from: ws-federation/.
 | `STS-WSFED-0012` | The request asked for wattr1.0 (attribute service) or wpseudo1.0 (pseudonym service), neither of which is implemented. | HTTP 501 error page |
 | `STS-WSFED-0013` | The passive requestor endpoint was sent a wa value it does not understand. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0014` | The wreq parameter is not readable XML; it is ignored and the default token type is used. | — |
-| `STS-WSFED-0015` | The WS-Federation metadata document could not be signed and was served unsigned. | — |
+| `STS-WSFED-0015` *(retired)* | The WS-Federation metadata document could not be signed and was served unsigned. Retired 2026-10-08 (#524): the realm has one metadata document, and STS-SAML-0014 names its failure. | — |
 | `STS-WSFED-0016` | The mock relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. | HTTP 200 page listing the failed checks |
 | `STS-WSFED-0017` | A WS-Federation sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-WSFED-0018` | A WS-Federation request back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
 | `STS-WSFED-0019` | /wsfed/metadata/{rp} named no registered relying party, which has no metadata of its own: an unregistered wtrealm is issued under the shared entityID (#494). | HTTP 404, text/plain |
-| `STS-WSFED-0020` | A WS-Federation sign-in or metadata document had no name to issue or publish under: product mode, saml2.entityId empty and saml.issuer or wsfed.entityId unset (#494). | HTTP 503 page or text/plain |
+| `STS-WSFED-0020` *(retired)* | A WS-Federation sign-in or metadata document had no name to issue or publish under: product mode, saml2.entityId empty and saml.issuer or wsfed.entityId unset (#494). Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 page or text/plain |
 | `STS-WSFED-0021` | Product mode: a wsignin1.0 named a wtrealm that is no registered relying party (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the sign-in screen and before anything was issued or recorded (#496). | HTTP 404 error page (the profile defines no error response) |
 | `STS-WSFED-0022` | A WS-Federation sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-WSFED-0023` | A WS-Federation request back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
@@ -3217,6 +3236,7 @@ Raised from: tls/.
 | `STS-TLS-0045` | A TLS listener's own trustAnchorsFile (listener<Id>.trustAnchorsFile, #429) could not be read or holds no certificate, so that listener's client truststore would be empty while configured to be filled. | the service does not start |
 | `STS-TLS-0046` | This node offers no TLSSocket.prototype._init, so the TLS session cache cannot see the server name a ClientHello offers and cannot hold a resumption to the name its session was made under (RFC 6066 section 3). | logged; no TLS 1.2 session is resumed by ID (every such client gets a full handshake); tickets are unaffected |
 | `STS-TLS-0047` | A request asked a listener for a path of a hosted application that is not mapped to it (listeners.applications, #472): the console on a listener it was moved off, the management API on one that answers only the sign-in service. The answer names where the application is. | 404 |
+| `STS-TLS-0048` | The listener key stored for this node and algorithm unit (tls.listenerKeys) cannot be used: another algorithm, an RSA modulus other than tls.selfSignedKeyBits, or a key that will not parse. The key made at this start replaces it. | logged; a new certificate is issued over the new key, and the restart is announced (tls-certificate-changed, restarted) |
 
 ## STS-VC
 
@@ -3572,6 +3592,25 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0038` | A followed verification link for a NEW address could not write it to the entry (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0039` | A person asked to change their address to something that is not an address this service can send to (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0180` | The notice telling a person that a GNAP grant waits for their approval on the portal could not be queued; the request still waits there (#432 phase 6). | log only |
+
+## STS-I18N
+
+**Languages and locales.** The catalogs a page is drawn from, the negotiation of a reader's languages against them, the locale policy (#539) and the language chooser. Refusals and errors are never translated (rcbj's decision on #539), so nothing here changes what a refusal says.
+
+Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, authn/authn.ts (the language chooser).
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-I18N-0001` | A catalog file under common/locales or a built-in mail translation under common/mail_locales could not be read or parsed (or catalogs.json itself, in which case every page is drawn in English); the messages it held fall back along their chain to English (#539). | none — an error in the log |
+| `STS-I18N-0002` | A page asked for a message no catalog has, or one whose text is malformed; the key itself, or the text as written, was drawn. tests/i18n_catalogs.js is what keeps this from shipping (#539). | none — a warning in the log |
+| `STS-I18N-0003` | A locale policy profile name was refused: it is neither `default` nor a name of lower-case letters, digits and hyphens of at most 64 (#539). | HTTP 400 (management API) |
+| `STS-I18N-0004` | A locale policy save was refused: a field was missing, the default language was not a BCP 47 tag, a yes-or-no field was neither, or a named profile named no application or too many (#539). | HTTP 400 (management API) |
+| `STS-I18N-0005` | A locale policy could not be saved: this process has no embedded directory, so there is no ou=localePolicies (#539). | HTTP 400 (management API) |
+| `STS-I18N-0006` | A locale policy could not be saved: the directory is at its maximum number of entries (#539). | HTTP 400 (management API) |
+| `STS-I18N-0007` | A named locale policy save was refused: an application it names is already on another named locale profile, and an application is on one at most (#539). | HTTP 400 (management API) |
+| `STS-I18N-0008` | The language chooser was posted a value that is not a BCP 47 tag a catalog answers, or a malformed form; nothing was set (#539). | HTTP 400 |
+| `STS-I18N-0009` | The language chooser set its cookie but could not write the signed-in person's preferredLanguage; the person editor refused or could not be asked. Their entry still names the old language, which outranks the cookie (#539). | none — a warning in the log |
+| `STS-I18N-0010` | POST /admin-api/console/language was called by a caller that is not a person — an application's token — which has no preferredLanguage of its own to set (#539 phase 5). | HTTP 400 (management API) |
 
 ## STS-GNAP
 
@@ -4774,6 +4813,12 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0336` | A Kerberos PAC claim row's name is neither letters, digits, ".", "_" and "-" (which become ad://ext/<name>:<hex>) nor a whole ad://ext/<name>:<hex> claim id (#493). | HTTP 400 (console and API) |
 | `STS-REG-0337` | A Kerberos PAC claim row named a type that is not string, int64, uint64 or boolean (#493). | HTTP 400 (console and API); [MS-ADTS] 2.2.18.2 |
 | `STS-REG-0338` | A Kerberos PAC claim row's fixed value is not its type: not an integer in range, not true or false, or an empty string (#493). | HTTP 400 (console and API) |
+| `STS-REG-0339` | A registration's UserInfo encryption members were malformed: userinfo_encrypted_response_alg not one of the asymmetric families this service encrypts a response with, an enc it does not have, or an enc without an alg (OpenID Connect Registration section 2, #290). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0340` | A console or /admin-api write put a value a registration would refuse on one of the ID Token, UserInfo or JARM signing and encryption attributes (oauthIdToken*, oauthUserinfo*, oauthAuthorization*ResponseAlg / Enc) or on oauthDefaultAcrValues / oauthDefaultMaxAge, or an enc onto an entry with no alg (#290). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0341` | An application entry holds an oauthDefaultAcrValues or oauthDefaultMaxAge value the registration grammar refuses (only an ldapmodify can leave one); it is ignored rather than required of every sign-in (#290). | none — logged; the request is answered without the default |
+| `STS-REG-0342` | A global consent answered for a person at sign-in, and the record of it (oauthConsentApplied, #537) could not be written on their entry, so /portal/consents will not list it. | none — logged; the sign-in goes on |
+| `STS-REG-0343` | A resource server carries an oauthPermissionClaims value that is not a JSON object (only an ldapmodify can leave one); its permissions map no claim onto the access tokens addressed to it. | none — logged; the token is issued without those claims |
+| `STS-REG-0344` | A claim mapping for a resource server's permission was refused: the permission is not one it exposes (oauthPermission), an attribute is not in the claim catalogue, the value is not a JSON object of lists, or the application is not declared for OAuth 2.0 or OpenID Connect. | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

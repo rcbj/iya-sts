@@ -859,6 +859,20 @@ class SpiffeAuth {
   // absent rather than empty when none was sent — grpc-js only sets it when the
   // DER is there — which is what distinguishes "no certificate" from "a
   // certificate that did not verify", and those are two different refusals.
+  //
+  // **SINCE grpc-js 1.14.5 THE AUTH CONTEXT IS EMPTY FOR A CERTIFICATE OPENSSL
+  // DID NOT AUTHORIZE** (GHSA-m9gg-hp2v-232j: `getAuthContext()` returns `{}`
+  // when `socket.authorized` is false), so it can no longer tell this function
+  // what was presented — and every certificate OpenSSL cannot chain to this
+  // realm's anchors is unauthorized there: a FEDERATED broker's or agent's
+  // SVID, which `verifyPresentedCertificate()` exists to verify against the
+  // federated bundle, and one that is expired or signed by nothing here,
+  // which must be refused as THAT rather than as "none was presented". The
+  // advisory is about a caller that believed grpc-js's verdict; this one never
+  // did (see VERIFYING THE CERTIFICATE, below). So when the context carries
+  // no certificate, `tlsPeerCertificateOf()` reads it off the call's TLS
+  // socket. `sts_spiffe_broker`'s federated stranger was answered
+  // UNAUTHENTICATED instead of PERMISSION_DENIED on the day of the bump.
   /**
    * Returns the certificate the client presented.
    *
@@ -871,18 +885,55 @@ class SpiffeAuth {
     try {
       const context = call && typeof call.getAuthContext === 'function'
         ? call.getAuthContext() : null;
-      if (!context || !context.sslPeerCertificate) {
+      if (context && context.sslPeerCertificate &&
+          context.sslPeerCertificate.raw) {
         log.debug("Leaving SpiffeAuth.peerCertificateOf().");
-        return null;
+        return context.sslPeerCertificate;
       }
-      log.debug("Leaving SpiffeAuth.peerCertificateOf().");
-      return context.sslPeerCertificate.raw ? context.sslPeerCertificate : null;
+      log.debug("Leaving SpiffeAuth.peerCertificateOf(). From the socket.");
+      return this.tlsPeerCertificateOf(call);
     } catch (e) {
       log.debug('peerCertificateOf(): no readable auth context (' + e.message +
                 ').');
       log.debug("Leaving SpiffeAuth.peerCertificateOf().");
       return null;
     }
+  }
+
+  // The certificate on the call's TLS socket, whether or not OpenSSL
+  // authorized it — see peerCertificateOf() for why that is needed since
+  // grpc-js 1.14.5. **THIS IS A REACH INTO grpc-js's INTERNALS**, as
+  // `spiffe_grpc.ts`'s `_getConstructorOptions()` is, and for the same
+  // reason: there is no public door. A handler's call holds the intercepting
+  // call as `call`, each interceptor the next as `nextCall`, and the base
+  // call the HTTP/2 stream as `stream`, whose session's socket is the
+  // TLSSocket. The walk is bounded and stops at the first socket that can
+  // answer; anything else — a Unix socket, a stream already gone, a grpc-js
+  // that renamed a member — is "no certificate", which is refused, never
+  // accepted. `tests/spiffe_broker.js` holds the federated broker over a
+  // real handshake, so a rename fails there rather than here.
+  /**
+   * Reads the peer certificate off the TLS socket a gRPC call arrived on.
+   *
+   * @param call - the gRPC call
+   * @returns the certificate, or null when none was sent or none is reachable
+   */
+  tlsPeerCertificateOf(call) {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeAuth.tlsPeerCertificateOf().");
+    let at = call;
+    for (let depth = 0; at && depth < 16; depth++) {
+      const session = at.stream && at.stream.session;
+      const socket = session && session.socket;
+      if (socket && typeof socket.getPeerCertificate === 'function') {
+        const certificate = socket.getPeerCertificate();
+        log.debug("Leaving SpiffeAuth.tlsPeerCertificateOf().");
+        return certificate && certificate.raw ? certificate : null;
+      }
+      at = at.call || at.nextCall;
+    }
+    log.debug("Leaving SpiffeAuth.tlsPeerCertificateOf(). No TLS socket.");
+    return null;
   }
 
   // ---------------------------------------------------------------------------

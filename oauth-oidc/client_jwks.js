@@ -218,7 +218,10 @@ function ensureFor(clientId, kid) {
     return Promise.resolve(null);
   }
   const applications = require('../common/applications');
-  const registered = applications.registrationOf(String(clientId)) || {};
+  // The ATTRIBUTES (#290): an encrypted response may be asked for by the
+  // console or the management API as well as by a registration.
+  /** @type {any} */
+  const registered = applications.clientConfigOf(String(clientId));
   const encrypts = ENCRYPTION_MEMBERS.some(function (member) {
     return !!registered[member];
   });

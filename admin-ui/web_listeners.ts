@@ -42,24 +42,34 @@ class ListenersPage {
    * Draws the page's body from its view.
    *
    * @param view - the answer of the page's management API operation
+   * @param ctx - the render context (`WebKit.context()`); the server's
+   *   own drawing passes none, and gets English
    * @returns the body as HTML
    */
-  static render(view: Json): string {
-    return ListenersPage.html(view);
+  static render(view: Json, ctx?: Json): string {
+    return ListenersPage.html(view, ctx || kit.context());
   }
 
+  // The helpers below have no context, so each is handed the page's
+  // translator `t` by its caller (#539).
+
   // One policy as table cells.
-  static policyCells(policy: Json): string {
+  static policyCells(policy: Json, t: Json): string {
     if (!policy) {
-      return '<td colspan="4"><em>not TLS</em></td>';
+      return '<td colspan="4"><em>' + t.html('consoleListeners.notTls') +
+        '</em></td>';
     }
     const suites = policy.tls13Suites.map(function (one: Json): string {
       return '<code>' + kit.esc(one.name) + '</code>' +
-        (one.postQuantum ? ' <small>(post-quantum safe)</small>' : '');
+        (one.postQuantum ? ' <small>' +
+                           t.html('consoleListeners.pqSafe') + '</small>'
+                         : '');
     }).join('<br>');
     return '<td>' + kit.esc(policy.minVersion) +
-      (policy.tls12 ? '' : '<br><small>TLS 1.2 off</small>') +
-      (policy.pqcOnly ? '<br><strong>post-quantum only</strong>' : '') +
+      (policy.tls12 ? '' : '<br><small>' +
+                           t.html('consoleListeners.tls12Off') + '</small>') +
+      (policy.pqcOnly ? '<br><strong>' + t.html('consoleListeners.pqOnly') +
+                        '</strong>' : '') +
       '</td><td>' + suites + '</td><td><small><code>' +
       kit.esc(policy.groups) + '</code></small></td><td>' +
       kit.esc(String(policy.clientAuth || '—')) + '</td>';
@@ -67,25 +77,31 @@ class ListenersPage {
 
   // One custom listener's row: its address, owner, state on this node and
   // the policy in force.
-  static customRow(one: Json): string {
+  static customRow(one: Json, t: Json): string {
     return '<tr id="listener-' + kit.esc(one.id) + '"><th>' +
-      kit.esc(one.id) + '<br><small>' + kit.esc(one.publicBaseUrl) +
-      (one.owner !== 'default' ? ' · realm <code>' + kit.esc(one.owner) +
-                                 '</code>' : ' · every realm') +
-      ' · ' + kit.esc(one.certificateSource) + ' certificate · ' +
+      kit.esc(one.id) + '<br><small>' + kit.esc(one.publicBaseUrl) + ' ' +
+      (one.owner !== 'default'
+        ? t.html('consoleListeners.ownerRealm', { realm: String(one.owner) })
+        : t.html('consoleListeners.everyRealm')) +
+      ' · ' + t.html('consoleListeners.certificateFrom',
+                     { source: String(one.certificateSource) }) + ' · ' +
       kit.esc(one.state) + (one.why ? ' — ' + kit.esc(one.why) : '') +
       '</small></th><td>' + kit.esc(String(one.port)) + '</td>' +
-      ListenersPage.policyCells(one.policy) + '</tr>';
+      ListenersPage.policyCells(one.policy, t) + '</tr>';
   }
 
   // Which application is on which listener: the mapping as it stands.
-  static mappingTable(rows: Json[]): string {
-    return '<table class="grid"><thead><tr><th>Application</th>' +
-      '<th>Listeners</th><th>Advertised on</th><th>Decided by</th></tr>' +
+  static mappingTable(rows: Json[], t: Json): string {
+    return '<table class="grid"><thead><tr><th>' +
+      t.html('consoleListeners.thApplication') + '</th>' +
+      '<th>' + t.html('consoleListeners.thListeners') + '</th><th>' +
+      t.html('consoleListeners.thAdvertised') + '</th><th>' +
+      t.html('consoleListeners.thDecidedBy') + '</th></tr>' +
       '</thead><tbody>' + rows.map(function (row: Json): string {
         return '<tr id="application-' + kit.esc(row.application) + '"><th>' +
           kit.esc(row.label) + ' <small><code>' + kit.esc(row.application) +
-          '</code>' + (row.session ? ' · reads the sign-on session' : '') +
+          '</code>' + (row.session
+            ? ' ' + t.html('consoleListeners.readsSession') : '') +
           '</small><br><small>' + kit.esc(row.what) + '</small></th><td>' +
           row.listeners.map(function (id: string): string {
             return '<code>' + kit.esc(id) + '</code>';
@@ -96,9 +112,13 @@ class ListenersPage {
 
   // The two writes: the listeners this realm defines, and its mapping, each
   // as the JSON a person reads and edits.
-  static forms(json: Json): string {
+  //
+  // The two notes name JSON shapes in <code>, which carry braces a message
+  // cannot hold (#539), so each shape stays in the code between messages.
+  static forms(json: Json, t: Json): string {
     const d = json.definitions || {};
     const isDefault = json.realm === 'default';
+    const whose = isDefault ? 'default' : 'realm';
     const pretty = function (text: string): string {
       try {
         return text ? JSON.stringify(JSON.parse(text), null, 2) : '';
@@ -109,110 +129,115 @@ class ListenersPage {
         return text;
       }
     };
-    return '<h2>' + (isDefault ? 'The service\'s custom listeners'
-                               : 'This realm\'s own listeners') + '</h2>' +
-      kit.note('<p>A JSON array of <code>{ "id", "port", "publicBaseUrl", ' +
+    return '<h2>' + (isDefault ? t.html('consoleListeners.headServiceCustom')
+                               : t.html('consoleListeners.headRealmOwn')) +
+      '</h2>' +
+      kit.note('<p>' + t.html('consoleListeners.defArray') +
+        ' <code>{ "id", "port", "publicBaseUrl", ' +
         '"hostnames", "certificateFile", "privateKeyFile", "clientAuth", ' +
-        '"tls" }</code>. <code>clientAuth</code> is <code>none</code>, ' +
-        '<code>optional</code> (the default) or <code>required</code> — a ' +
-        'listener for mutual TLS. Without certificate files the ' +
-        (isDefault ? 'default realm\'s' : 'realm\'s') + ' certificate ' +
-        'authority issues one for <code>hostnames</code>. ' +
-        '<code>tls</code> takes the per-listener TLS settings by their ' +
-        'short names (<code>disableTls12</code>, ' +
-        '<code>tls13CipherSuites</code>, <code>pqcOnly</code>, ...). ' +
-        (isDefault ? 'These answer every realm.'
-                   : 'These answer this realm alone.') +
-        ' Empty for none.</p>', 'The listener definition') +
+        '"tls" }</code>. ' + t.html('consoleListeners.defClientAuth') + ' ' +
+        t.html('consoleListeners.defFiles', { whose: whose }) + ' ' +
+        t.html('consoleListeners.defTls') + ' ' +
+        t.html('consoleListeners.defAnswers', { whose: whose }) + '</p>',
+        t.text('consoleListeners.defLabel')) +
       '<form method="post" action="/admin/listeners"><div class="formrow">' +
       '<input type="hidden" name="action" value="set-listeners">' +
       '<textarea name="value" rows="10" cols="90" spellcheck="false">' +
       kit.esc(pretty(d.listeners || '')) + '</textarea></div>' +
-      '<div class="formrow"><button>Save the listeners</button></div>' +
+      '<div class="formrow"><button>' +
+      t.html('consoleListeners.saveListeners') + '</button></div>' +
       '</form>' +
-      '<h2>' + (isDefault ? 'Which application is on which listener'
-                          : 'This realm\'s mapping') + '</h2>' +
-      kit.note('<p>A JSON object from an application id, or <code>*</code> ' +
-        'for every one not named, to <code>{ "listeners": [...], ' +
-        '"advertised": "..." }</code>. <code>main</code> is the main port. ' +
-        'An application not named is on <code>main</code> alone. ' +
+      '<h2>' + (isDefault ? t.html('consoleListeners.headWhichOn')
+                          : t.html('consoleListeners.headRealmMapping')) +
+      '</h2>' +
+      kit.note('<p>' + t.html('consoleListeners.mapObject') +
+        ' <code>{ "listeners": [...], ' +
+        '"advertised": "..." }</code>. ' +
+        t.html('consoleListeners.mapMain') + ' ' +
         (isDefault ? ''
-          : 'This realm\'s entries are read before the service\'s, ' +
-            'which are <code>' + kit.esc(d.serviceApplications || '{}') +
-            '</code>. ') +
-        'Changing where <code>oauth-oidc</code> is advertised changes the ' +
-        'issuer every token and client names. Taking ' +
-        '<code>management-api</code> off the listener this page was ' +
-        'reached on needs the confirmation below; ' +
-        '<code>STS_LISTENERS_ADMIN_ON_MAIN=true</code> puts the console and ' +
-        'the API back on the main port at the next start.</p>',
-        'The mapping') +
+          : t.html('consoleListeners.mapRealmFirst') + ' <code>' +
+            kit.esc(d.serviceApplications || '{}') + '</code>. ') +
+        t.html('consoleListeners.mapIssuer') + '</p>',
+        t.text('consoleListeners.mapLabel')) +
       '<form method="post" action="/admin/listeners"><div class="formrow">' +
       '<input type="hidden" name="action" value="set-applications">' +
       '<textarea name="value" rows="10" cols="90" spellcheck="false">' +
       kit.esc(pretty(d.applications || '')) + '</textarea></div>' +
       '<div class="formrow"><label><input type="checkbox" name="confirm" ' +
-      'value="true"> Take the management API off the listener this page ' +
-      'was reached on, if this does</label></div>' +
-      '<div class="formrow"><button>Save the mapping</button></div></form>';
+      'value="true"> ' + t.html('consoleListeners.confirmOff') +
+      '</label></div>' +
+      '<div class="formrow"><button>' +
+      t.html('consoleListeners.saveMapping') + '</button></div></form>';
   }
 
-  static html(json: Json): string {
+  // The page's words are its translator's (#539 phase 6); what the view
+  // carries — a listener's name and purpose, a warning, a state — is drawn
+  // as it comes, and the problem box stays English.
+  static html(json: Json, ctx: Json): string {
+    const t = ctx.t;
     const self = this;
-    const head = '<table class="grid"><thead><tr><th>Listener</th>' +
-      '<th>Port</th><th>Floor</th><th>TLS 1.3 suites</th><th>Groups</th>' +
-      '<th>Client certificate</th></tr></thead><tbody>';
+    const head = '<table class="grid"><thead><tr><th>' +
+      t.html('consoleListeners.thListener') + '</th>' +
+      '<th>' + t.html('consoleListeners.thPort') + '</th><th>' +
+      t.html('consoleListeners.thFloor') + '</th><th>' +
+      t.html('consoleListeners.thSuites') + '</th><th>' +
+      t.html('consoleListeners.thGroups') + '</th>' +
+      '<th>' + t.html('consoleListeners.thClientCert') +
+      '</th></tr></thead><tbody>';
     const custom: Json[] = json.custom || [];
     const status = (json.problem
       ? kit.warn('<p>' + kit.esc(json.problem.message) + ' <small>(' +
                  kit.esc(json.problem.code) + ')</small></p>',
                  'What is wrong with the listeners') : '') +
       (json.warnings || []).map(function (one: string): string {
-        return kit.warn('<p>' + kit.esc(one) + '</p>', 'Worth knowing');
+        return kit.warn('<p>' + kit.esc(one) + '</p>',
+                        t.text('consoleListeners.worthKnowing'));
       }).join('') +
       (json.rescue
-        ? kit.warn('<p><code>listeners.adminOnMain</code> is on: the ' +
-                   'console and the management API are on the main port ' +
-                   'and advertised there, whatever the mapping says.</p>',
-                   'The rescue is on') : '');
+        ? kit.warn('<p>' + t.html('consoleListeners.rescueText') + '</p>',
+                   t.text('consoleListeners.rescueLabel')) : '');
+    // The two links carry an href, which a message may not, so the
+    // paragraph around them is messages with the anchors in the code.
     const builtIn = kit.note('<p>' + (json.realm === 'default'
-        ? 'The built-in listeners, which every realm is served on.'
-        : 'The built-in listeners. Their settings are the service\'s and ' +
-          'are changed in the default realm; this realm is served on them ' +
-          'under its <code>/realm/' + kit.esc(json.realm) + '</code> ' +
-          'prefix, and on its own listeners where its mapping says.') +
-        '</p><p>"Client certificate" is <strong>none</strong> (no ' +
-        'CertificateRequest), <strong>optional</strong> (asked for, not ' +
-        'required) or <strong>required</strong> (a handshake without one ' +
-        'that chains to the <a href="/admin/tls/trust">client ' +
-        'truststore</a> is refused). What a presented certificate is worth ' +
-        'to a protocol — RFC 8705, GET /tls/sign-in, the remote PEP — is on ' +
-        '<a href="/admin/tls">TLS / mutual TLS</a>. The TLS policy is ' +
-        'applied at the next handshake when a setting changes.</p>',
-        'Which listeners') + head +
+        ? t.html('consoleListeners.builtInDefault')
+        : t.html('consoleListeners.builtInRealm',
+                 { realm: String(json.realm) })) +
+        '</p><p>' + t.html('consoleListeners.clientCertBefore') +
+        ' <a href="/admin/tls/trust">' +
+        t.html('consoleListeners.clientCertLink') + '</a> ' +
+        t.html('consoleListeners.clientCertAfter') +
+        ' <a href="/admin/tls">TLS / mutual TLS</a>. ' +
+        t.html('consoleListeners.appliedNext') + '</p>',
+        t.text('consoleListeners.builtInLabel')) + head +
       json.listeners.map(function (row: Json): string {
         return '<tr id="listener-' + kit.esc(row.id) + '"><th>' +
           kit.esc(row.name) + '<br><small>' + kit.esc(row.what) +
           '</small></th><td>' + kit.esc(String(row.port)) +
           '<br><small><code>' + kit.esc(row.setting) + '</code></small>' +
-          '</td>' + self.policyCells(row.policy) + '</tr>';
+          '</td>' + self.policyCells(row.policy, t) + '</tr>';
       }).join('') + '</tbody></table>';
-    const customPanel = kit.note('<p>Listeners an administrator defined ' +
-        '(#472): HTTPS, bound on every node, each answering only the hosted ' +
-        'applications mapped to it — a path of any other is a 404 there. ' +
-        'Its TLS settings follow the service\'s unless its definition\'s ' +
-        '<code>tls</code> says otherwise.</p>', 'Custom listeners') +
+    const customPanel = kit.note('<p>' +
+        t.html('consoleListeners.customText') + '</p>',
+        t.text('consoleListeners.customLabel')) +
       (custom.length ? head + custom.map(function (one: Json): string {
-        return self.customRow(one);
+        return self.customRow(one, t);
       }).join('') + '</tbody></table>'
-        : '<p><em>None: every application is on the main port.</em></p>') +
-      self.forms(json);
+        : '<p><em>' + t.html('consoleListeners.customNone') + '</em></p>') +
+      self.forms(json, t);
+    const onOff = function (on: boolean): string {
+      return on ? t.text('consoleListeners.on')
+                : t.text('consoleListeners.off');
+    };
     const tiles = '<div class="tiles">' +
-      kit.tile(json.process.tls12 ? 'on' : 'off', 'TLS 1.2') +
-      kit.tile(String(json.process.tls13Suites.length), 'TLS 1.3 suites') +
-      kit.tile(json.process.pqcOnly ? 'on' : 'off', 'post-quantum only') +
-      kit.tile(String(custom.length), 'custom listeners') +
-      kit.tile(String(json.live.length), 'TLS listeners live here') +
+      kit.tile(onOff(json.process.tls12), 'TLS 1.2') +
+      kit.tile(String(json.process.tls13Suites.length),
+               t.text('consoleListeners.thSuites')) +
+      kit.tile(onOff(json.process.pqcOnly),
+               t.text('consoleListeners.pqOnly')) +
+      kit.tile(String(custom.length),
+               t.text('consoleListeners.tileCustom')) +
+      kit.tile(String(json.live.length),
+               t.text('consoleListeners.tileLive')) +
       '</div>';
     // TABS, AS AN APPLICATION'S PAGE HAS THEM (rcbj, 2026-10-02), AND ONE
     // PER LISTENER SINCE #429 ("all of the settings ... to be per
@@ -222,58 +247,69 @@ class ListenersPage {
     // each custom one's policy in force. `kit.tabbedPanels()`, no script; a
     // Save lands back on its tab.
     const settings = function (groups: string[]): string {
-      return SettingsForms.forms(json.settings, PAGE, groups);
+      return SettingsForms.forms(json.settings, PAGE, groups, t);
     };
     const inForce = function (policy: Json, pooling?: Json): string {
       if (!policy && !pooling) {
         return '';
       }
       const tlsRows: string[][] = !policy ? [] : [
-        ['Protocol', policy.tls12 ? 'TLS 1.2 and 1.3 (floor ' +
-                                     policy.minVersion + ')' : 'TLS 1.3 only'],
-         ['TLS 1.3 suites', policy.tls13Suites.map(function (one: Json) {
-           return one.name + (one.postQuantum ? ' (post-quantum safe)' : '');
-         }).join(', ')],
-         ['TLS 1.2 ciphers', policy.tls12 ? policy.tls12Ciphers.join(', ')
-                                           : '—'],
-         ['Post-quantum only', policy.pqcOnly ? 'yes' : 'no'],
-         ['Groups', policy.groups],
-         ['Signature algorithms', policy.signatureAlgorithms],
-         ['Client certificate', String(policy.clientAuth || '—')],
-         ['Client truststore', policy.truststore],
-         ['TLS session lifetime', policy.sessionTimeoutS + ' s'],
-         ['TLS session cache', policy.sessionCacheSize
-           ? policy.sessionCacheSize + ' session ID(s)'
-           : 'none (tickets only)']];
+        [t.text('consoleListeners.rowProtocol'), policy.tls12
+          ? t.text('consoleListeners.tls12And13',
+                   { floor: String(policy.minVersion) })
+          : t.text('consoleListeners.tls13Only')],
+         [t.text('consoleListeners.thSuites'),
+          policy.tls13Suites.map(function (one: Json) {
+            return one.name + (one.postQuantum
+              ? ' ' + t.text('consoleListeners.pqSafe') : '');
+          }).join(', ')],
+         [t.text('consoleListeners.rowTls12Ciphers'),
+          policy.tls12 ? policy.tls12Ciphers.join(', ') : '—'],
+         [t.text('consoleListeners.rowPqOnly'), policy.pqcOnly
+           ? t.text('consoleListeners.yes') : t.text('consoleListeners.no')],
+         [t.text('consoleListeners.thGroups'), policy.groups],
+         [t.text('consoleListeners.rowSigAlgs'), policy.signatureAlgorithms],
+         [t.text('consoleListeners.thClientCert'),
+          String(policy.clientAuth || '—')],
+         [t.text('consoleListeners.rowTruststore'), policy.truststore],
+         [t.text('consoleListeners.rowSessionLifetime'),
+          policy.sessionTimeoutS + ' s'],
+         [t.text('consoleListeners.rowSessionCache'), policy.sessionCacheSize
+           ? t.text('consoleListeners.sessionIds',
+                    { n: String(policy.sessionCacheSize) })
+           : t.text('consoleListeners.ticketsOnly')]];
       const httpRows: string[][] = !pooling ? [] : [
-        ['Idle connection kept', pooling.keepAliveTimeoutS + ' s'],
-        ['Request header timeout', pooling.headersTimeoutS + ' s'],
-        ['Requests per connection', pooling.maxRequestsPerSocket
-          ? String(pooling.maxRequestsPerSocket) : 'no limit'],
-        ['Open connections at most', pooling.maxConnections
-          ? String(pooling.maxConnections) : 'no limit']];
-      return '<h2>In force on this listener</h2><table class="grid"><tbody>' +
+        [t.text('consoleListeners.rowIdle'), pooling.keepAliveTimeoutS + ' s'],
+        [t.text('consoleListeners.rowHeaderTimeout'),
+         pooling.headersTimeoutS + ' s'],
+        [t.text('consoleListeners.rowRequestsPer'),
+         pooling.maxRequestsPerSocket
+           ? String(pooling.maxRequestsPerSocket)
+           : t.text('consoleListeners.noLimit')],
+        [t.text('consoleListeners.rowMaxConnections'), pooling.maxConnections
+          ? String(pooling.maxConnections)
+          : t.text('consoleListeners.noLimit')]];
+      return '<h2>' + t.html('consoleListeners.headInForce') +
+        '</h2><table class="grid"><tbody>' +
         tlsRows.concat(httpRows).map(function (row) {
           return '<tr><th>' + kit.esc(row[0]) + '</th><td><code>' +
             kit.esc(String(row[1])) + '</code></td></tr>';
         }).join('') + '</tbody></table>' +
-        kit.note('Each value is this listener\'s own where its row below ' +
-                   'sets one, and the service-wide default otherwise ' +
-                   '(<em>inherit</em>, an empty box, or -1 for a number).');
+        kit.note(t.html('consoleListeners.inForceNote'));
     };
     const panels: Json[] = [
-      { id: 'tab-listeners', label: 'Listeners', html: status + builtIn },
-      { id: 'tab-custom', label: 'Custom listeners', html: customPanel },
-      { id: 'tab-applications', label: 'Applications',
-        html: kit.note('<p>Where each hosted application is: the listeners ' +
-          'that answer it, and the one its URLs — its issuer, metadata, ' +
-          'redirects and mailed links — are built on.</p>',
-          'Which application is on which listener') +
-          self.mappingTable(json.applications || []) +
+      { id: 'tab-listeners', label: t.text('consoleListeners.tabListeners'),
+        html: status + builtIn },
+      { id: 'tab-custom', label: t.text('consoleListeners.customLabel'),
+        html: customPanel },
+      { id: 'tab-applications',
+        label: t.text('consoleListeners.tabApplications'),
+        html: kit.note('<p>' + t.html('consoleListeners.applicationsText') +
+          '</p>', t.text('consoleListeners.headWhichOn')) +
+          self.mappingTable(json.applications || [], t) +
           settings(['Custom listeners']) },
-      { id: 'tab-defaults', label: 'Service-wide defaults',
-        html: kit.note('What every TLS listener inherits unless its own ' +
-                       'tab or definition says otherwise.') +
+      { id: 'tab-defaults', label: t.text('consoleListeners.tabDefaults'),
+        html: kit.note(t.html('consoleListeners.defaultsNote')) +
               settings(['Listeners', 'HTTP connections', 'TLS']) }
     ];
     // Every built-in listener with settings of its own: the TLS ones, and
@@ -288,8 +324,7 @@ class ListenersPage {
     custom.forEach(function (one: Json): void {
       panels.push({ id: 'tab-custom-' + one.id, label: one.id,
                     html: inForce(one.policy, one.http) +
-                          kit.note('Set in the listener\'s definition, on ' +
-                                   'the Custom listeners tab.') });
+                          kit.note(t.html('consoleListeners.customTabNote')) });
     });
     return tiles + kit.tabbedPanels('listeners', panels);
   }

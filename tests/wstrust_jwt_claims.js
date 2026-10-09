@@ -42,6 +42,48 @@
 //       each by its own code; development believes a tampered one, as it
 //       believes a NameID.
 //
+// AND A JWT THIS STS ISSUED IS ACCEPTED AS THE REQUESTER'S CREDENTIAL
+// (#519), in the security header, beside a UsernameToken and an assertion:
+//
+//   R1. a tier's own JWT (issued to it, for itself) authenticates it on an
+//       OnBehalfOf for every issued type — the SAML 2.0 and SAML 1.1
+//       assertions and the JWT about the person, the JWT's client_id the
+//       tier's application, so the requester was read from the JWT;
+//   R2. a SAML assertion issued on a JWT credential states PreviousSession;
+//   R3. product refuses a JWT credential that does not verify, one another
+//       issuer signed, an expired one (`wst:ExpiredData`) and one naming
+//       nobody, each by its own code, as FailedAuthentication; development
+//       believes a tampered one;
+//   R4. a JWT inside OnBehalfOf is not the requester's credential: with
+//       nothing in the security header product still refuses
+//       (STS-WSTRUST-0009).
+//
+// AND AN APPLICATION AUTHENTICATES AS ITSELF, WITH NO PERSON ENTRY (#519,
+// section S; rcbj: no service account beside the application):
+//
+//   S1. a UsernameToken naming the application, with one of its client
+//       secrets, is issued its own JWT: sub its client subject
+//       (`urn:sts:client:` in product, bare in development), client_id its
+//       own, and no person of its name is made;
+//   S2. product refuses a wrong secret with the fault a wrong password gets
+//       (STS-WSTRUST-0003); both modes refuse the reserved `invalid`;
+//   S3. the application's own JWT, and its own SAML 2.0 and SAML 1.1
+//       assertions, authenticate it in the security header on an
+//       OnBehalfOf, and the token issued names it as the client;
+//   S4. after all of it the directory still holds no person of its name.
+//
+// AND A TOKEN AS THE CREDENTIAL MUST BE ADDRESSED TO ITS HOLDER OR TO THE
+// IdP (#519, section T; rcbj: "A caller's credential AppliesTo element can
+// either be the audience registered in the application object or a generic
+// audience that references the IdP"):
+//
+//   T1. product refuses a token about a person addressed to an application
+//       (STS-WSTRUST-0032, FailedAuthentication) — the tier holding it is
+//       not that person; development accepts it, verifying nothing;
+//   T2. an RST whose AppliesTo is the IdP's own name is issued in product
+//       (not #496's unregistered AppliesTo), for every name it answers to;
+//   T3. and that token is accepted as the person's credential.
+//
 // AND THE REGISTER'S ROW FOR EACH ACT SAYS WHAT HAPPENED (section N):
 //
 //   N1. an ActAs act's note says the token issued names who acted — the
@@ -84,6 +126,9 @@ const FINAL = 'https://wj-final.example';
 const FRONT = 'https://wj-front.example';
 // The base the RSTs are handed, as the route hands its request's (#480).
 const AS_BASE = 'https://sts.wj.example';
+// A requester's credential is addressed to this IdP (#519): its WS-Trust
+// endpoint at that base, one of the audiences a credential may carry.
+const IDP = AS_BASE + '/sts';
 
 function inMode(m, fn) {
   log.debug("Entering inMode(). " + m);
@@ -210,7 +255,7 @@ function inBothModes(t) {
       log.debug("Entering ask().");
       log.debug("Leaving ask().");
       return inMode(m, function () {
-        return wstrust.handleRst(rst(signed(requester, 'https://sts.test'),
+        return wstrust.handleRst(rst(signed(requester, IDP),
                                      appliesTo, body, tokenType),
                                  'application/soap+xml', { base: AS_BASE });
       });
@@ -315,7 +360,7 @@ function jwtInside(t) {
       log.debug("Entering ask().");
       log.debug("Leaving ask().");
       return inMode(m, function () {
-        return wstrust.handleRst(rst(signed(requester, 'https://sts.test'),
+        return wstrust.handleRst(rst(signed(requester, IDP),
                                      appliesTo, body, tokenType),
                                  'application/soap+xml', { base: AS_BASE });
       });
@@ -422,6 +467,273 @@ function jwtInside(t) {
   log.debug("Leaving jwtInside().");
 }
 
+// R. A JWT this STS issued, as the requester's credential (#519).
+function jwtCredential(t) {
+  log.debug("Entering jwtCredential().");
+  const wstrust = require('../ws-trust/wstrust');
+  const saml2 = require('../saml/saml2');
+  const SAML11 = 'http://docs.oasis-open.org/wss/oasis-wss-saml-token-' +
+    'profile-1.1#SAMLV1.1';
+  const SAML2 = 'http://docs.oasis-open.org/wss/oasis-wss-saml-token-' +
+    'profile-1.1#SAMLV2.0';
+  const bst = function (token) {
+    log.debug("Entering bst().");
+    log.debug("Leaving bst().");
+    return '<wsse:BinarySecurityToken ValueType="' + JWT + '">' + token +
+      '</wsse:BinarySecurityToken>';
+  };
+  // The tier authenticates as a person entry of its own name, the service
+  // account `ws-trust/CLAUDE.md` describes; development may have made it
+  // already from an earlier section's sign-in.
+  if (!helpers.subjectForName('wj-front')) {
+    dir.createUser('wj-front', { invent: false });
+  }
+  ['development', 'product'].forEach(function (m) {
+    t.log.info('=== R. a JWT as the requester\'s credential, ' + m +
+               ' mode ===');
+    const product = m === 'product';
+    const ask = function (security, appliesTo, body, tokenType) {
+      log.debug("Entering ask().");
+      log.debug("Leaving ask().");
+      return inMode(m, function () {
+        return wstrust.handleRst(rst(security, appliesTo, body, tokenType),
+                                 'application/soap+xml', { base: AS_BASE });
+      });
+    };
+    const issuer = String(require('../oauth-oidc/oauth2').issuerOf(AS_BASE));
+    const aliceSub = helpers.subjectForName('wj-alice');
+    // The tier's own JWT, for itself (rcbj's decision on #519).
+    const own = jwtOf(ask(saml2.buildSamlAssertion('wj-front',
+                                                    IDP, 5),
+                          FRONT, '', JWT));
+    t.check(own.verified &&
+            own.claims.sub === helpers.subjectForName('wj-front') &&
+            own.claims.aud === FRONT,
+            'R0 (' + m + '). precondition: the tier\'s own JWT, about itself ' +
+            'and for itself', JSON.stringify(own.claims));
+    const about = onBehalfOf(saml2.buildSamlAssertion('wj-alice', 'wj-front',
+                                                       5));
+    [['SAML 2.0', SAML2], ['SAML 1.1', SAML11], ['JWT', JWT]]
+      .forEach(function (kind) {
+        const r = ask(bst(own.token), BACK, about, kind[1]);
+        const body = String(r.body || '');
+        let ok = r.status === 200;
+        if (kind[1] === JWT) {
+          const out = jwtOf(r);
+          ok = ok && out.verified && out.claims.sub === aliceSub &&
+            out.claims.aud === BACK &&
+            out.claims.client_id === 'wj-front-client';
+        } else {
+          ok = ok && body.indexOf('wj-alice') > 0 && body.indexOf(BACK) > 0;
+        }
+        t.check(ok, 'R1 (' + m + ', ' + kind[0] + '). the tier\'s own JWT ' +
+                'in the security header authenticates its OnBehalfOf',
+                r.status + ' ' + r.errorCode + ' ' + body.slice(0, 400));
+      });
+    let r = ask(bst(own.token), FRONT, '', SAML2);
+    t.check(r.status === 200 &&
+            /classes:PreviousSession</.test(String(r.body)),
+            'R2 (' + m + '). a SAML assertion issued on a JWT credential ' +
+            'states PreviousSession', String(r.body).slice(0, 400));
+
+    const parts = own.token.split('.');
+    const tampered = parts[0] + '.' + Buffer.from(JSON.stringify(
+      Object.assign({}, own.claims, { name: 'someone-else' })))
+      .toString('base64url') + '.' + parts[2];
+    const now = Math.floor(Date.now() / 1000);
+    const sign = function (claims) {
+      log.debug("Entering sign().");
+      log.debug("Leaving sign().");
+      return helpers.signJwtAs(claims, 'RS256', null, {});
+    };
+    const base = { sub: own.claims.sub, aud: FRONT, iat: now, exp: now + 300,
+                   jti: 'wj-r3-' + m, iss: issuer };
+    [['R3a', 'a JWT whose signature does not verify', tampered,
+      'STS-WSTRUST-0026', 'FailedAuthentication'],
+     ['R3b', 'a JWT another issuer named',
+      sign(Object.assign({}, base, { iss: 'https://elsewhere.example' })),
+      'STS-WSTRUST-0026', 'FailedAuthentication'],
+     ['R3c', 'an expired JWT',
+      sign(Object.assign({}, base, { iat: now - 7200, exp: now - 3600 })),
+      'STS-WSTRUST-0027', 'ExpiredData'],
+     ['R3d', 'a JWT naming nobody this directory holds',
+      sign(Object.assign({}, base, {
+        sub: 'urn:uuid:00000000-0000-4000-8000-000000000000' })),
+      'STS-WSTRUST-0028', 'FailedAuthentication']].forEach(function (one) {
+      r = ask(bst(one[2]), BACK, about, JWT);
+      if (product) {
+        t.check(r.status === 500 && r.errorCode === one[3] &&
+                new RegExp('wst:' + one[4] + '<').test(String(r.body)),
+                one[0] + ' (product). ' + one[1] + ' as the credential is ' +
+                'refused: ' + one[3] + ', wst:' + one[4], r.status + ' ' +
+                r.errorCode + ' ' + String(r.body).slice(0, 400));
+      } else if (one[0] === 'R3a') {
+        t.check(r.status === 200,
+                'R3a (development). a tampered JWT credential is believed, ' +
+                'as a NameID is', r.status + ' ' +
+                String(r.body).slice(0, 300));
+      }
+    });
+    if (product) {
+      r = ask('', BACK, onBehalfOf(bst(own.token)), JWT);
+      t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0009',
+              'R4 (product). a JWT inside OnBehalfOf is not the requester\'s ' +
+              'credential', r.status + ' ' + r.errorCode + ' ' +
+              String(r.body).slice(0, 300));
+    }
+  });
+  log.debug("Leaving jwtCredential().");
+}
+
+// S. An application with no person entry, by its client secrets (#519).
+function applicationCredential(t) {
+  log.debug("Entering applicationCredential().");
+  const wstrust = require('../ws-trust/wstrust');
+  const saml2 = require('../saml/saml2');
+  const MID = 'https://wj-mid.example';
+  const SECRET = 'wj-mid-secret-' + process.pid + '-Zq7!';
+  const SAML11 = 'http://docs.oasis-open.org/wss/oasis-wss-saml-token-' +
+    'profile-1.1#SAMLV1.1';
+  const SAML2 = 'http://docs.oasis-open.org/wss/oasis-wss-saml-token-' +
+    'profile-1.1#SAMLV2.0';
+  const made = applications.createApplication({ identifier: 'wj-mid',
+    protocols: ['wstrust', 'oauth2'],
+    fields: { oauthClientSecret: SECRET, wstrustAppliesTo: [MID],
+              appAllowedToDelegateTo: ['wj-final'],
+              appDelegationSemantics: ['impersonation', 'delegation'] } });
+  t.check(made && made.ok && !helpers.subjectForName('wj-mid'),
+          'S0. precondition: the application wj-mid, and no person of its ' +
+          'name', JSON.stringify(made));
+  const ut = function (user, password) {
+    log.debug("Entering ut().");
+    log.debug("Leaving ut().");
+    return '<wsse:UsernameToken><wsse:Username>' + user +
+      '</wsse:Username><wsse:Password>' + password +
+      '</wsse:Password></wsse:UsernameToken>';
+  };
+  const bst = function (token) {
+    log.debug("Entering bst().");
+    log.debug("Leaving bst().");
+    return '<wsse:BinarySecurityToken ValueType="' + JWT + '">' + token +
+      '</wsse:BinarySecurityToken>';
+  };
+  ['development', 'product'].forEach(function (m) {
+    t.log.info('=== S. an application by its client secrets, ' + m +
+               ' mode ===');
+    const product = m === 'product';
+    const ask = function (security, appliesTo, body, tokenType) {
+      log.debug("Entering ask().");
+      log.debug("Leaving ask().");
+      return inMode(m, function () {
+        return wstrust.handleRst(rst(security, appliesTo, body, tokenType),
+                                 'application/soap+xml', { base: AS_BASE });
+      });
+    };
+    const clientSub = product ? 'urn:sts:client:wj-mid' : 'wj-mid';
+    let r = ask(ut('wj-mid', SECRET), MID, '', JWT);
+    const own = jwtOf(r);
+    t.check(r.status === 200 && own.verified &&
+            own.claims.sub === clientSub && own.claims.aud === MID &&
+            own.claims.client_id === 'wj-mid',
+            'S1 (' + m + '). the application\'s client secret in a ' +
+            'UsernameToken issues its own JWT, about itself',
+            r.status + ' ' + r.errorCode + ' ' + JSON.stringify(own.claims) +
+            ' ' + String(r.body).slice(0, 300));
+    if (product) {
+      r = ask(ut('wj-mid', 'not-the-secret'), MID, '', JWT);
+      t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0003' &&
+              /wst:FailedAuthentication</.test(String(r.body)),
+              'S2 (product). a wrong client secret is refused as a wrong ' +
+              'password is', r.status + ' ' + r.errorCode);
+    }
+    r = ask(ut('wj-mid', 'invalid'), MID, '', JWT);
+    t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0003',
+            'S2 (' + m + '). the reserved password is refused',
+            r.status + ' ' + r.errorCode);
+    const about = onBehalfOf(saml2.buildSamlAssertion('wj-alice', 'wj-mid',
+                                                       5));
+    const ownSaml2 = assertionOf(ask(ut('wj-mid', SECRET), MID, '', SAML2));
+    const ownSaml11 = assertionOf(ask(ut('wj-mid', SECRET), MID, '',
+                                      SAML11));
+    [['its own JWT', bst(own.token)], ['its own SAML 2.0 assertion',
+      ownSaml2], ['its own SAML 1.1 assertion', ownSaml11]]
+      .forEach(function (one) {
+        r = ask(one[1], FINAL, about, JWT);
+        const out = jwtOf(r);
+        t.check(r.status === 200 &&
+                out.claims.sub === helpers.subjectForName('wj-alice') &&
+                out.claims.client_id === 'wj-mid',
+                'S3 (' + m + '). ' + one[0] + ' authenticates the ' +
+                'application on an OnBehalfOf', r.status + ' ' + r.errorCode +
+                ' ' + JSON.stringify(out.claims) + ' ' +
+                String(r.body).slice(0, 300));
+      });
+    t.check(!helpers.subjectForName('wj-mid'),
+            'S4 (' + m + '). the directory still holds no person named ' +
+            'wj-mid', String(helpers.subjectForName('wj-mid')));
+  });
+  log.debug("Leaving applicationCredential().");
+}
+
+// T. A credential token's audience (#519).
+function credentialAudience(t) {
+  log.debug("Entering credentialAudience().");
+  const wstrust = require('../ws-trust/wstrust');
+  const saml2 = require('../saml/saml2');
+  const names = require('../common/issuer_names');
+  ['development', 'product'].forEach(function (m) {
+    t.log.info('=== T. a credential token\'s audience, ' + m + ' mode ===');
+    const product = m === 'product';
+    const ask = function (security, appliesTo, tokenType) {
+      log.debug("Entering ask().");
+      log.debug("Leaving ask().");
+      return inMode(m, function () {
+        return wstrust.handleRst(rst(security, appliesTo, '', tokenType),
+                                 'application/soap+xml', { base: AS_BASE });
+      });
+    };
+    // alice's token for wj-front, presented by somebody as alice.
+    let r = ask(saml2.buildSamlAssertion('wj-alice', FRONT, 5), BACK, JWT);
+    if (product) {
+      t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0032' &&
+              /wst:FailedAuthentication</.test(String(r.body)),
+              'T1 (product). a token about wj-alice addressed to wj-front is ' +
+              'not her credential', r.status + ' ' + r.errorCode + ' ' +
+              String(r.body).slice(0, 300));
+    } else {
+      t.check(r.status === 200,
+              'T1 (development). it is accepted: development verifies no ' +
+              'credential', r.status + ' ' + r.errorCode);
+    }
+    const idp = inMode(m, function () {
+      // #523: the IdP's one name IS the OAuth issuer; `/sts` beside it.
+      return [IDP, String(require('../oauth-oidc/oauth2').issuerOf(AS_BASE)),
+              names.issuer(AS_BASE)];
+    });
+    idp.forEach(function (name, i) {
+      const asked = ask(saml2.buildSamlAssertion('wj-alice', IDP, 5), name,
+                        '');
+      const xml = assertionOf(asked);
+      t.check(asked.status === 200 &&
+              xml.indexOf('<saml:Audience>' + name + '</saml:Audience>') > 0,
+              'T2 (' + m + ', ' + ['/sts', 'OAuth issuer',
+                                    'IssuerNames.issuer()'][i] +
+              '). an RST for the IdP\'s own name "' + name + '" is issued',
+              asked.status + ' ' + asked.errorCode + ' ' +
+              String(asked.body).slice(0, 300));
+      if (i === 1) {
+        r = ask(xml, BACK, JWT);
+        t.check(r.status === 200 &&
+                jwtOf(r).claims.sub === helpers.subjectForName('wj-alice'),
+                'T3 (' + m + '). a token about wj-alice addressed to the IdP ' +
+                'is her credential', r.status + ' ' + r.errorCode + ' ' +
+                String(r.body).slice(0, 300));
+      }
+    });
+  });
+  log.debug("Leaving credentialAudience().");
+}
+
 // N. The register's row for each act (#478, #479, #481).
 function registerRows(t) {
   log.debug("Entering registerRows().");
@@ -439,7 +751,7 @@ function registerRows(t) {
       log.debug("Entering ask().");
       log.debug("Leaving ask().");
       return inMode(m, function () {
-        return wstrust.handleRst(rst(signed('wj-front', 'https://sts.test'),
+        return wstrust.handleRst(rst(signed('wj-front', IDP),
                                      BACK, body, tokenType),
                                  'application/soap+xml', { base: AS_BASE });
       });
@@ -513,6 +825,9 @@ function run(t) {
       fixtures(t);
       inBothModes(t);
       jwtInside(t);
+      jwtCredential(t);
+      applicationCredential(t);
+      credentialAudience(t);
       registerRows(t);
     });
   } finally {
@@ -528,6 +843,6 @@ module.exports = {
             'client_id the requester\'s application, RFC 8693 act in this ' +
             'service\'s OAuth shape, and the SAML assertion untouched ' +
             '(#476); a JWT this STS issued accepted inside OnBehalfOf / ' +
-            'ActAs (#477)',
+            'ActAs (#477) and as the requester\'s credential (#519)',
   run: run
 };

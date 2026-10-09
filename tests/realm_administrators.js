@@ -370,6 +370,29 @@ function childMain() {
          /<button type="submit">/.test(drawn),
          'development lists every realm in a form with a real button, no ' +
          'script, and an escaped sentence');
+    // THE CHOOSER IS A PAGE OF ITS OWN (2026-10-08): a whole document with
+    // the form in it and nothing of either surface's frame — no sidebar, no
+    // navigation, no account menu — because none of those can be used
+    // before a realm is chosen.
+    const req = { headers: { host: 'localhost' }, protocol: 'https',
+                  get: function () { return 'localhost'; } };
+    ['admin', 'portal'].forEach(function (surface) {
+      const doc = inRealm(realms.DEFAULT_ID, function () {
+        return chooser.page(req, surface, '');
+      });
+      const formHtml = inRealm(realms.DEFAULT_ID, function () {
+        return chooser.form(req, surface, '');
+      });
+      note(/^<!DOCTYPE html>/.test(doc) &&
+           doc.indexOf(formHtml) >= 0 &&
+           /<h1>Choose your realm<\/h1>/.test(doc) &&
+           /Choose a realm to continue/.test(doc) &&
+           /<select id="realmchoice" name="realm" autofocus>/.test(doc) &&
+           !/<aside|<nav|class="side"|class="acct"|<script/.test(doc),
+           '6b. the ' + surface + ' chooser is a page of its own: the form ' +
+           'and a note, a large list with the focus, and no frame or script',
+           doc.slice(0, 300));
+    });
 
     // ---------------------------------------------------------------------
     // 7. ENROLLMENT ASKS THE AMBIENT REALM'S ROSTER OF A SESSION.

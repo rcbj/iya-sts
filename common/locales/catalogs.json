@@ -1,0 +1,28 @@
+{
+  "source": "en",
+  "catalogs": [
+    { "tag": "en", "name": "English", "english": "English", "status": "source" },
+    { "tag": "fr", "name": "Français", "english": "French", "status": "machine-unreviewed" },
+    { "tag": "fr-CA", "name": "Français (Canada)", "english": "French (Canada)", "status": "machine-unreviewed", "base": "fr" },
+    { "tag": "es", "name": "Español", "english": "Spanish", "status": "machine-unreviewed" },
+    { "tag": "es-ES", "name": "Español (España)", "english": "Spanish (Spain)", "status": "machine-unreviewed", "base": "es" },
+    { "tag": "zh-Hans", "name": "简体中文", "english": "Chinese (Simplified)", "status": "machine-unreviewed" },
+    { "tag": "zh-Hant", "name": "繁體中文", "english": "Chinese (Traditional)", "status": "machine-unreviewed" },
+    { "tag": "zh-Hant-HK", "name": "繁體中文（香港）", "english": "Chinese (Traditional, Hong Kong)", "status": "machine-unreviewed", "base": "zh-Hant" },
+    { "tag": "fil", "name": "Filipino", "english": "Filipino (Tagalog)", "status": "machine-unreviewed" },
+    { "tag": "sv", "name": "Svenska", "english": "Swedish", "status": "machine-unreviewed" }
+  ],
+  "offered": [
+    { "tag": "en", "name": "English" },
+    { "tag": "fr-FR", "name": "Français (France)" },
+    { "tag": "fr-CA", "name": "Français (Canada)" },
+    { "tag": "es-MX", "name": "Español (México)" },
+    { "tag": "es-PA", "name": "Español (Panamá)" },
+    { "tag": "es-ES", "name": "Español (España)" },
+    { "tag": "zh-CN", "name": "简体中文（中国）" },
+    { "tag": "zh-HK", "name": "繁體中文（香港）" },
+    { "tag": "zh-TW", "name": "繁體中文（台灣）" },
+    { "tag": "fil-PH", "name": "Filipino (Pilipinas)" },
+    { "tag": "sv-SE", "name": "Svenska (Sverige)" }
+  ]
+}

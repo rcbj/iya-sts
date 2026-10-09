@@ -1,0 +1,17 @@
+{
+  "reauth.title": "您的工作階段已結束。",
+  "reauth.text": "請重新登入以繼續。此頁面和您輸入的內容都會保持原樣，您按下的操作會在您回來後送出。",
+  "reauth.again": "重新登入",
+  "reauth.here": "在此頁面登入",
+  "reauth.hereInstead": "改為在此頁面登入",
+  "reauth.noPopup": "此瀏覽器無法從另一個視窗傳回登入結果，請在此頁面登入。",
+  "reauth.finish": "請在已開啟的視窗中完成登入。",
+  "otherPerson.waiting": "登入的是另一個人，因此此頁面上等待送出的內容並未送出。",
+  "otherPerson.typed": "登入的是另一個人，因此先前在此頁面上輸入的內容並未放回。",
+  "restored": "您已重新登入。您在此頁面上輸入的內容已放回，且沒有送出任何東西：請再按一次按鈕以送出。",
+  "restored.unplaced": "{n, plural, other {有 {n} 個值無法放回，因為頁面上已沒有放置它們的位置。}}",
+  "signedInAgain": "已重新登入",
+  "signedInAgain.text": "主控台會從您離開的地方繼續。您可以關閉此視窗。",
+  "openConsole": "開啟主控台",
+  "copied": "已複製"
+}

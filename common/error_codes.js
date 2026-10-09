@@ -338,6 +338,17 @@ const SUBSYSTEMS = [
           'ceilings, and the uses — self-service password reset, address ' +
           'verification, an administrator\'s links mailed, and the security ' +
           'notices. No code here is ever sent to a recipient.' },
+  // LANGUAGES (#539, 2026-10-09): the catalogs, the locale policy and the
+  // language chooser. Its own subsystem because it is no protocol's and no
+  // surface's: every page a person reads asks it.
+  { id: 'I18N', label: 'Languages and locales',
+    where: 'common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, ' +
+           'authn/authn.ts (the language chooser)',
+    what: 'The catalogs a page is drawn from, the negotiation of a ' +
+          'reader\'s languages against them, the locale policy (#539) and ' +
+          'the language chooser. Refusals and errors are never translated ' +
+          '(rcbj\'s decision on #539), so nothing here changes what a ' +
+          'refusal says.' },
   { id: 'GNAP', label: 'GNAP (RFC 9635 / RFC 9767)',
     where: 'gnap/',
     what: 'The grant request and continuation endpoints; interaction ' +
@@ -5906,7 +5917,8 @@ const CODES = [
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0301',
     summary: 'A passkey sign-in with no username was asked for where it is ' +
-      'not offered: webauthn.usernameless, webauthn.primaryAllowed or ' +
+      'not offered: the passkey policy\'s allowUsernameless (#527; ' +
+      'webauthn.usernameless until then), webauthn.primaryAllowed or ' +
       'webauthn.enabled is off, the authentication policy does not accept ' +
       'a passkey as a first factor, the application does not allow one, or ' +
       'the sign-in is linking an account (#474).',
@@ -5945,6 +5957,110 @@ const CODES = [
       'factors the application allows (appMfaMechanism, #475) leave the ' +
       'person none that answers it. A step-up never enrols one.',
     spec: 'the sign-in screen, drawn again' },
+  { code: 'STS-AUTHN-0308',
+    summary: 'A passkey policy profile name was refused: it is neither ' +
+      '`default` nor a name of lower-case letters, digits and hyphens of ' +
+      'at most 64 (#527, #535).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-AUTHN-0309',
+    summary: 'A passkey policy save was refused: a field was missing, not ' +
+      'a yes-or-no value, or not one of its values — discouraged, ' +
+      'preferred, required; allow, disallow; or a minimum PIN length ' +
+      'outside 4 to 63; or a hint list that is not one, or contradicts ' +
+      'the attachment its request sends (#527, #528, #529, #531).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-AUTHN-0310',
+    summary: 'There is no embedded directory in this process, so a passkey ' +
+      'policy could not be saved (#527).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-AUTHN-0311',
+    summary: 'The directory would not store the passkey policy profile: it ' +
+      'holds its maximum number of entries (#527).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-AUTHN-0312',
+    summary: 'A synced passkey was not registered: its authenticator data ' +
+      'set the backup-eligible flag (BE, WebAuthn Level 3 section 6.1) and ' +
+      'the realm\'s passkey policy takes only device-bound passkeys ' +
+      '(backupEligibility disallow, #528). Asked where every key is ' +
+      'written, so the sign-in screen, /portal/keys and an activation link ' +
+      'all refuse it.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0313',
+    summary: 'A sign-in with a synced passkey was refused: the key\'s ' +
+      'assertion set the backup-eligible flag and the realm\'s passkey ' +
+      'policy takes only device-bound passkeys (backupEligibility ' +
+      'disallow, #528). BE never changes for a credential, so this is what ' +
+      'refuses a synced key registered before the realm said no.',
+    spec: 'the sign-in screen, drawn again with the reason' },
+  { code: 'STS-AUTHN-0314',
+    summary: 'A passkey was not registered: the realm\'s passkey policy ' +
+      'enforces a minimum security-key PIN length (enforcePinLength, #529) ' +
+      'and the key reported a shorter minimum through CTAP 2.1\'s ' +
+      'minPinLength extension, or reported none while ' +
+      'pinLengthOnlyIfSupported is off. Asked where every key is written.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0315',
+    summary: 'A sign-in with a passkey was refused: the realm\'s passkey ' +
+      'policy enforces a minimum security-key PIN length (#529) and the ' +
+      'minimum the key reported at registration — recorded on its row — is ' +
+      'shorter, or none was recorded while pinLengthOnlyIfSupported is off.',
+    spec: 'the sign-in screen, drawn again with the reason' },
+  { code: 'STS-AUTHN-0316',
+    summary: 'A passkey sign-in was refused by the attestation rules in ' +
+      'force (#530, the passkey policy\'s enforceAttestationAtSignIn): ' +
+      'the key\'s recorded attestation is not trusted where a rule demands ' +
+      'it, its AAGUID is not on webauthn.attestationAllowedAaguids, its ' +
+      'model is below the certification level or FIPS asked for, or the ' +
+      'FIDO Metadata Service now reports the model compromised. The first ' +
+      'refusal of a key for a reason marks its row and sends a CAEP ' +
+      'credential-change.',
+    spec: 'the passkey page or the sign-in screen, with the reason' },
+  { code: 'STS-AUTHN-0317',
+    summary: 'A passkey\'s attestation could not be held to the rules at ' +
+      'sign-in: the FIDO metadata lookup or the check threw (#530). The ' +
+      'sign-in is refused, since the rule is on and an unchecked key is ' +
+      'not a checked one.',
+    spec: 'the passkey page or the sign-in screen, with the reason' },
+  { code: 'STS-AUTHN-0318',
+    summary: 'The mark of a passkey the attestation rules refused at ' +
+      'sign-in could not be written to its row (#530); the refusal stands ' +
+      'and no credential-change is sent for it.',
+    spec: 'none — logged' },
+  { code: 'STS-AUTHN-0319',
+    summary: 'A passkey-policy hint list contradicts ' +
+      'webauthn.authenticatorAttachment, which changed after the policy was ' +
+      'saved (#531): client-device implies platform, security-key and ' +
+      'hybrid cross-platform. The contradicting hints are not sent; save ' +
+      'the policy again to fix it.',
+    spec: 'none — logged; the ceremony is sent without them' },
+  { code: 'STS-AUTHN-0320',
+    summary: 'A security key was not registered: the realm binds keys to ' +
+      'the serials issued to each person (the passkey policy\'s ' +
+      'enterpriseSerialAttribute, #532), and the serial its trusted ' +
+      'enterprise attestation names is not among the person\'s values.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0321',
+    summary: 'A security key was not registered: the realm binds keys to ' +
+      'serials (#532), and the key\'s attestation names no device serial ' +
+      'this service can read — no subject serialNumber and no Yubico ' +
+      'serial extension, or no trusted enterprise attestation at all.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0322',
+    summary: 'A passkey was refused by a rule of the realm\'s own issuance ' +
+      'policy (#536) that named no error code of its own and gave a reason ' +
+      'the built-in passkey rules do not give.',
+    spec: 'the ceremony\'s page or the sign-in screen, with the reason' },
+  { code: 'STS-AUTHN-0323',
+    summary: 'No issuance policy, not even the built-in one, gave a verdict ' +
+      'on a passkey question (#536); the passkey rules read from the facts ' +
+      'answered instead. A defect: the built-in document should always ' +
+      'answer.',
+    spec: 'none: the passkey is decided by the same rules' },
+  { code: 'STS-AUTHN-0324',
+    summary: 'The engine could not be loaded to ask the built-in issuance ' +
+      'policy a passkey question (#536); the passkey rules read from the ' +
+      'facts decided instead.',
+    spec: 'none: the passkey is decided by the same rules' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -8097,12 +8213,14 @@ const CODES = [
     spec: 'HTTP 401 {error: invalid_token}' },
   { code: 'STS-OAUTH-0597',
     summary: 'An authorization request asked for a response_type the ' +
-      'client did not register in response_types (OpenID Connect ' +
-      'Registration section 2) (#120).',
+      'client did not declare in oauthResponseType — registered as ' +
+      'response_types (OpenID Connect Registration section 2) or written ' +
+      'by an administrator (#120, #289).',
     spec: 'redirect {error: unauthorized_client}' },
   { code: 'STS-OAUTH-0598',
-    summary: 'A token request used a grant_type the client did not register ' +
-      'in grant_types (RFC 7591 section 2) (#120).',
+    summary: 'A token request used a grant_type the client did not declare ' +
+      'in oauthGrantType — registered as grant_types (RFC 7591 section 2) ' +
+      'or written by an administrator (#120, #289).',
     spec: 'HTTP 400 {error: unauthorized_client}' },
   { code: 'STS-OAUTH-0599',
     summary: 'A client\'s registered jwks_uri could not be read: the ' +
@@ -8111,8 +8229,9 @@ const CODES = [
       'or encryption that needed the key is refused with its own code.',
     spec: 'none (log only)' },
   { code: 'STS-OAUTH-0600',
-    summary: 'A client that registered grant_types without refresh_token ' +
-      'was answered with no refresh token (RFC 7591 section 2) (#120). ' +
+    summary: 'A client that declares grant_types without refresh_token ' +
+      'was answered with no refresh token (RFC 7591 section 2) (#120, ' +
+      '#289). ' +
       'Recorded, not refused.',
     spec: 'none (the token response omits refresh_token)' },
   { code: 'STS-OAUTH-0601',
@@ -8540,8 +8659,8 @@ const CODES = [
       'authenticate as it registered to (RFC 8628 section 3.1, #150).',
     spec: 'HTTP 401 {error: invalid_client}' },
   { code: 'STS-OAUTH-0692',
-    summary: 'A client that did not register the device_code grant ' +
-      'asked the device authorization endpoint for codes (#150).',
+    summary: 'A client whose declared grant types omit device_code ' +
+      'asked the device authorization endpoint for codes (#150, #289).',
     spec: 'HTTP 400 {error: unauthorized_client}' },
   { code: 'STS-OAUTH-0693',
     summary: 'The DPoP proof on a device authorization request did ' +
@@ -9226,9 +9345,10 @@ const CODES = [
   { code: 'STS-SAML-0004',
     summary: 'saml2.entityId is empty in a product-mode realm, so the SAML ' +
       '2.0 identity provider has no name to issue or publish metadata ' +
-      'under.',
+      'under. Retired 2026-10-08 (#523): the name is the realm\'s OAuth ' +
+      'issuer, which is never empty.',
     spec: 'HTTP 503 (a page at the SSO service, text/plain at the ' +
-      'metadata endpoint)' },
+      'metadata endpoint)', retired: true },
   { code: 'STS-SAML-0005',
     summary: 'In product mode, a SAML 2.0 AuthnRequest\'s ' +
       'AssertionConsumerServiceURL is not a ' +
@@ -9271,8 +9391,9 @@ const CODES = [
       'LogoutRequest) could not be signed and was sent unsigned.',
     spec: '' },
   { code: 'STS-SAML-0014',
-    summary: 'The SAML 2.0 identity provider metadata could not be signed ' +
-      'and was served unsigned.',
+    summary: 'The realm\'s identity provider metadata (one document for ' +
+      'SAML 2.0, SAML 1.1 and WS-Federation since #523 and #524) could not ' +
+      'be signed and was served unsigned.',
     spec: '' },
   { code: 'STS-SAML-0015',
     summary: 'The body posted to the SAML 2.0 Artifact Resolution Service is ' +
@@ -9325,10 +9446,11 @@ const CODES = [
   { code: 'STS-SAML-0027',
     summary: 'saml11.providerId is empty in a product-mode realm, so the ' +
       'SAML 1.1 identity provider has no name to issue or publish ' +
-      'metadata under.',
+      'metadata under. Retired 2026-10-08 (#523): the name is the ' +
+      'realm\'s OAuth issuer, which is never empty.',
     spec: 'HTTP 503 page or text/plain at the inter-site transfer service ' +
       'and metadata; samlp:Response status Responder at the SAML ' +
-      'responder' },
+      'responder', retired: true },
   { code: 'STS-SAML-0028',
     summary: 'In product mode, a SAML 1.1 flow\'s shire is not a ' +
       'samlAssertionConsumerService registered on the relying party\'s ' +
@@ -9356,8 +9478,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-SAML-0034',
     summary: 'The SAML 1.1 identity provider metadata could not be signed ' +
-      'and was served unsigned.',
-    spec: '' },
+      'and was served unsigned. Retired 2026-10-08 (#523): there is one ' +
+      'document for both SAML versions, and STS-SAML-0014 names its failure.',
+    spec: '', retired: true },
   { code: 'STS-SAML-0035',
     summary: 'The body posted to the SAML 1.1 SAML responder is not XML.',
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
@@ -9692,11 +9815,10 @@ const CODES = [
   { code: 'STS-SAML-0098',
     summary: 'A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request ' +
       'reached a resolver whose entityID (providerID) the artifact\'s ' +
-      'SourceID does not name — with saml2.perApplicationEntityId or ' +
-      'saml11.perApplicationProviderId on, an artifact minted for one ' +
-      'party presented at the unscoped resolver or at another party\'s. ' +
-      'The artifact is not spent; it stays resolvable at its own resolver. ' +
-      '#160.',
+      'SourceID does not name — since #523 every artifact of a realm is ' +
+      'minted under its one issuer, so an artifact of another realm, or ' +
+      'one minted at another base URL. The artifact is not spent; it ' +
+      'stays resolvable at its own resolver. #160.',
     spec: 'SOAP response with status Success and nothing embedded ' +
       '(HTTP 200) — the empty response' },
   { code: 'STS-SAML-0099',
@@ -9893,26 +10015,32 @@ const CODES = [
       'which ask for impersonation and delegation at once (#186).',
     spec: 'SOAP Fault wst:InvalidRequest (WS-Trust 1.4 section 11)' },
   { code: 'STS-WSTRUST-0026',
-    summary: 'Product mode: a JWT inside OnBehalfOf/ActAs does not verify ' +
+    summary: 'Product mode: a JWT inside OnBehalfOf/ActAs (#477), or ' +
+      'presented as the requester\'s credential (#519), does not verify ' +
       'with this STS\'s own key, or was not issued by this realm (its iss ' +
-      'is not the realm\'s OAuth issuer, #480) (#477).',
-    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
-      '11' },
+      'is not the realm\'s OAuth issuer, #480).',
+    spec: 'SOAP Fault wst:InvalidRequest for a delegated JWT, ' +
+      'wst:FailedAuthentication for the requester\'s (HTTP 500), WS-Trust ' +
+      '1.4 section 11' },
   { code: 'STS-WSTRUST-0027',
-    summary: 'Product mode: a JWT inside OnBehalfOf/ActAs has expired ' +
-      '(#477).',
+    summary: 'Product mode: a JWT inside OnBehalfOf/ActAs (#477), or ' +
+      'presented as the requester\'s credential (#519), has expired.',
     spec: 'SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section ' +
       '11' },
   { code: 'STS-WSTRUST-0028',
-    summary: 'Product mode: a JWT inside OnBehalfOf/ActAs names, in its sub, ' +
-      'nobody this directory holds (#477).',
-    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
-      '11' },
+    summary: 'Product mode: a JWT inside OnBehalfOf/ActAs (#477), or ' +
+      'presented as the requester\'s credential (#519), names, in its sub, ' +
+      'nobody this directory holds.',
+    spec: 'SOAP Fault wst:InvalidRequest for a delegated JWT, ' +
+      'wst:FailedAuthentication for the requester\'s (HTTP 500), WS-Trust ' +
+      '1.4 section 11' },
   { code: 'STS-WSTRUST-0029',
     summary: 'A SAML token was asked for with no name to sign it under: ' +
-      'product mode, saml2.entityId empty and saml.issuer unset (#494).',
+      'product mode, saml2.entityId empty and saml.issuer unset (#494). ' +
+      'Retired 2026-10-08 (#523): the name is the realm\'s OAuth issuer, ' +
+      'which is never empty.',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section ' +
-      '11' },
+      '11', retired: true },
   { code: 'STS-WSTRUST-0030',
     summary: 'Product mode: an RST asked for a token for an AppliesTo that ' +
       'resolves to no registered application (no appRegisteredBy; an entry ' +
@@ -9925,6 +10053,14 @@ const CODES = [
       'before anything was issued or recorded (#496).',
     spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
       '11' },
+  { code: 'STS-WSTRUST-0032',
+    summary: 'Product mode: a SAML assertion or JWT presented as the ' +
+      'requester\'s credential is addressed neither to its holder (an ' +
+      'audience the holder\'s application registers) nor to this IdP (its ' +
+      'WS-Trust issuer name, SAML entityID, OAuth issuer or /sts address) ' +
+      '(#519).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -9988,8 +10124,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-WSFED-0015',
     summary: 'The WS-Federation metadata document could not be signed and ' +
-      'was served unsigned.',
-    spec: '' },
+      'was served unsigned. Retired 2026-10-08 (#524): the realm has one ' +
+      'metadata document, and STS-SAML-0014 names its failure.',
+    spec: '', retired: true },
   { code: 'STS-WSFED-0016',
     summary: 'The mock relying party at /wsfed/rp received a sign-in ' +
       'response that failed one or more of its verification checks.',
@@ -10012,8 +10149,9 @@ const CODES = [
   { code: 'STS-WSFED-0020',
     summary: 'A WS-Federation sign-in or metadata document had no name to ' +
       'issue or publish under: product mode, saml2.entityId empty and ' +
-      'saml.issuer or wsfed.entityId unset (#494).',
-    spec: 'HTTP 503 page or text/plain' },
+      'saml.issuer or wsfed.entityId unset (#494). Retired 2026-10-08 ' +
+      '(#523): the name is the realm\'s OAuth issuer, which is never empty.',
+    spec: 'HTTP 503 page or text/plain', retired: true },
   { code: 'STS-WSFED-0021',
     summary: 'Product mode: a wsignin1.0 named a wtrealm that is no ' +
       'registered relying party (no appRegisteredBy; an entry a sighting ' +
@@ -13707,6 +13845,13 @@ const CODES = [
       'that answers only the sign-in service. The answer names where the ' +
       'application is.',
     spec: '404' },
+  { code: 'STS-TLS-0048',
+    summary: 'The listener key stored for this node and algorithm unit ' +
+      '(tls.listenerKeys) cannot be used: another algorithm, an RSA ' +
+      'modulus other than tls.selfSignedKeyBits, or a key that will not ' +
+      'parse. The key made at this start replaces it.',
+    spec: 'logged; a new certificate is issued over the new key, and the ' +
+      'restart is announced (tls-certificate-changed, restarted)' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
@@ -15234,6 +15379,57 @@ const CODES = [
       'approval on the portal could not be queued; the request still waits ' +
       'there (#432 phase 6).',
     spec: 'log only' },
+  // ===== I18N ==============================================================
+  { code: 'STS-I18N-0001',
+    summary: 'A catalog file under common/locales or a built-in mail ' +
+      'translation under common/mail_locales could not be read or parsed ' +
+      '(or catalogs.json itself, in which case every page is drawn in ' +
+      'English); the messages it held fall back along their chain to ' +
+      'English (#539).',
+    spec: 'none — an error in the log' },
+  { code: 'STS-I18N-0002',
+    summary: 'A page asked for a message no catalog has, or one whose text ' +
+      'is malformed; the key itself, or the text as written, was drawn. ' +
+      'tests/i18n_catalogs.js is what keeps this from shipping (#539).',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-I18N-0003',
+    summary: 'A locale policy profile name was refused: it is neither ' +
+      '`default` nor a name of lower-case letters, digits and hyphens of ' +
+      'at most 64 (#539).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0004',
+    summary: 'A locale policy save was refused: a field was missing, the ' +
+      'default language was not a BCP 47 tag, a yes-or-no field was ' +
+      'neither, or a named profile named no application or too many (#539).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0005',
+    summary: 'A locale policy could not be saved: this process has no ' +
+      'embedded directory, so there is no ou=localePolicies (#539).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0006',
+    summary: 'A locale policy could not be saved: the directory is at its ' +
+      'maximum number of entries (#539).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0007',
+    summary: 'A named locale policy save was refused: an application it ' +
+      'names is already on another named locale profile, and an ' +
+      'application is on one at most (#539).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0008',
+    summary: 'The language chooser was posted a value that is not a BCP 47 ' +
+      'tag a catalog answers, or a malformed form; nothing was set (#539).',
+    spec: 'HTTP 400' },
+  { code: 'STS-I18N-0009',
+    summary: 'The language chooser set its cookie but could not write the ' +
+      'signed-in person\'s preferredLanguage; the person editor refused or ' +
+      'could not be asked. Their entry still names the old language, which ' +
+      'outranks the cookie (#539).',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-I18N-0010',
+    summary: 'POST /admin-api/console/language was called by a caller that ' +
+      'is not a person — an application\'s token — which has no ' +
+      'preferredLanguage of its own to set (#539 phase 5).',
+    spec: 'HTTP 400 (management API)' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -20470,6 +20666,42 @@ const CODES = [
     summary: 'A Kerberos PAC claim row\'s fixed value is not its type: not ' +
       'an integer in range, not true or false, or an empty string (#493).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-REG-0339',
+    summary: 'A registration\'s UserInfo encryption members were malformed: ' +
+      'userinfo_encrypted_response_alg not one of the asymmetric families ' +
+      'this service encrypts a response with, an enc it does not have, or ' +
+      'an enc without an alg (OpenID Connect Registration section 2, #290).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0340',
+    summary: 'A console or /admin-api write put a value a registration ' +
+      'would refuse on one of the ID Token, UserInfo or JARM signing and ' +
+      'encryption attributes (oauthIdToken*, oauthUserinfo*, ' +
+      'oauthAuthorization*ResponseAlg / Enc) or on oauthDefaultAcrValues / ' +
+      'oauthDefaultMaxAge, or an enc onto an entry with no alg (#290).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0341',
+    summary: 'An application entry holds an oauthDefaultAcrValues or ' +
+      'oauthDefaultMaxAge value the registration grammar refuses (only an ' +
+      'ldapmodify can leave one); it is ignored rather than required of ' +
+      'every sign-in (#290).',
+    spec: 'none — logged; the request is answered without the default' },
+  { code: 'STS-REG-0342',
+    summary: 'A global consent answered for a person at sign-in, and the ' +
+      'record of it (oauthConsentApplied, #537) could not be written on ' +
+      'their entry, so /portal/consents will not list it.',
+    spec: 'none — logged; the sign-in goes on' },
+  { code: 'STS-REG-0343',
+    summary: 'A resource server carries an oauthPermissionClaims value that ' +
+      'is not a JSON object (only an ldapmodify can leave one); its ' +
+      'permissions map no claim onto the access tokens addressed to it.',
+    spec: 'none — logged; the token is issued without those claims' },
+  { code: 'STS-REG-0344',
+    summary: 'A claim mapping for a resource server\'s permission was ' +
+      'refused: the permission is not one it exposes (oauthPermission), an ' +
+      'attribute is not in the claim catalogue, the value is not a JSON ' +
+      'object of lists, or the application is not declared for OAuth 2.0 ' +
+      'or OpenID Connect.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

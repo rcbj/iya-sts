@@ -71,10 +71,41 @@ function waitMs(ms) {
 
 // A request to THIS service, through `fetch`, verified against the stack's
 // trust as in every other job.
+// A CONNECTION THE SERVICE DROPPED BEFORE ANSWERING is tried again, twice.
+// The memory mode's service has stalls of five to seven seconds a run
+// (STS-STORE-0068), and a request sent on a kept-alive connection the service
+// closes as it comes out of one fails with nothing answered — which ended a
+// whole plan as "could not run: fetch failed" (2026-10-09). Only those codes:
+// a request the service answered, however badly, is the caller's to judge.
+const DROPPED = ["ECONNRESET", "EPIPE", "UND_ERR_SOCKET",
+                 "UND_ERR_CONNECT_TIMEOUT", "ECONNREFUSED"];
+
+async function fetchAnswered(url, options) {
+  log.debug("Entering fetchAnswered(). " + url);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const r = await fetch(url, options);
+      log.debug("Leaving fetchAnswered(). " + r.status);
+      return r;
+    } catch (e) {
+      const code = (e && e.cause && (e.cause.code || e.cause.name)) || "";
+      log.debug("Caught in fetchAnswered(): " + ((e && e.message) || e) +
+                " (" + code + ")");
+      if (attempt >= 3 || DROPPED.indexOf(code) < 0) {
+        log.debug("Leaving fetchAnswered(). Giving up.");
+        throw e;
+      }
+      log.info("The service dropped the connection to " + url + " (" +
+               code + ") with nothing answered; sending it again.");
+      await waitMs(1000 * attempt);
+    }
+  }
+}
+
 async function send(url, options) {
   log.debug("Entering send(). " + url);
-  let r = await fetch(url, Object.assign({ redirect: "manual" },
-                                         options || {}));
+  let r = await fetchAnswered(url, Object.assign({ redirect: "manual" },
+                                                 options || {}));
   // A PLAN RUN OUTLIVES ITS /admin-api TOKEN. The runner hands each job a
   // token good for an hour, and the OpenID Connect plans take longer: a
   // management call that is refused 401 mints a fresh one through the
@@ -84,8 +115,8 @@ async function send(url, options) {
       typeof globalThis.stsAdminApiToken.refresh === "function") {
     log.info("The /admin-api token was refused; minting a fresh one.");
     await globalThis.stsAdminApiToken.refresh();
-    r = await fetch(url, Object.assign({ redirect: "manual" },
-                                       options || {}));
+    r = await fetchAnswered(url, Object.assign({ redirect: "manual" },
+                                               options || {}));
   }
   const raw = await r.text();
   let body = null;

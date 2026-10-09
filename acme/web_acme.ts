@@ -72,7 +72,8 @@ class AcmePage {
   static nav(ctx, list, param) {
     return kit.pageNavPair('/admin/acme', ctx.query,
                              Object.assign({}, list.paging,
-                                           { param: param, noun: 'rows' }));
+                                           { param: param, noun: 'rows' }),
+                           ctx.t);
   }
 
   /**
@@ -90,11 +91,14 @@ class AcmePage {
   /**
    * Draws the person-or-application selector.
    *
+   * @param t - the page's translator (#539)
    * @returns the markup
    */
-  static kindSelect() {
-    return '<select name="kind"><option value="person">person</option>' +
-           '<option value="application">application</option></select>';
+  static kindSelect(t) {
+    return '<select name="kind"><option value="person">' +
+           t.html('consoleAcme.kindPerson') + '</option>' +
+           '<option value="application">' +
+           t.html('consoleAcme.kindApplication') + '</option></select>';
   }
 
   // ---------------------------------------------------------------------------
@@ -118,57 +122,70 @@ class AcmePage {
    * Draws the ACME Issuing CA.
    *
    * @param json - the view model's answer
+   * @param t - the page's translator (#539)
    * @returns the markup
    */
-  static authorityHtml(json) {
+  static authorityHtml(json, t) {
     const a = json.authority;
+    // The note is the view's sentence, drawn as it comes.
     if (!a.present) {
       return kit.warn(esc(a.note));
     }
-    return '<table class="kv"><tr><th>Subject</th><td>' + this.code(a.subject) +
-      '</td></tr><tr><th>Serial</th><td>' + this.code(a.serialHex) +
+    // The link is markup a message cannot carry, so the sentence is cut at
+    // it; the CRL's path goes in as a parameter because of its braces.
+    return '<table class="kv"><tr><th>' + t.html('consoleAcme.subject') +
+      '</th><td>' + this.code(a.subject) +
+      '</td></tr><tr><th>' + t.html('consoleAcme.serial') + '</th><td>' +
+      this.code(a.serialHex) +
       '</td></tr>' +
-      '<tr><th>Key / signs with</th><td>' + this.code(a.keyAlg) + ' / ' +
-      this.code(a.signatureAlg) + '</td></tr><tr><th>Valid until</th><td>' +
-      esc(a.notAfter) + '</td></tr><tr><th>Under</th><td>' +
+      '<tr><th>' + t.html('consoleAcme.keySignsWith') + '</th><td>' +
+      this.code(a.keyAlg) + ' / ' +
+      this.code(a.signatureAlg) + '</td></tr><tr><th>' +
+      t.html('consoleAcme.validUntil') + '</th><td>' +
+      esc(a.notAfter) + '</td></tr><tr><th>' + t.html('consoleAcme.under') +
+      '</th><td>' +
       this.code(a.intermediate) + ' &larr; ' + this.code(a.root) +
       '</td></tr></table>' +
-      '<p class="sub">A certificate is served with this Issuing CA and the ' +
-      'realm Intermediate, never the Root. <a href="/admin/pki">PKI</a> ' +
-      'manages the hierarchy; the CRL is ' +
-      '<code>/pki/crl/{realm}/acme</code>.</p>';
+      '<p class="sub">' + t.html('consoleAcme.servedWith') +
+      ' <a href="/admin/pki">PKI</a> ' +
+      t.html('consoleAcme.managesHierarchy',
+             { crl: '/pki/crl/{realm}/acme' }) + '</p>';
   }
 
   /**
    * Draws the certificate profiles and the refused ones.
    *
    * @param json - the view model's answer
+   * @param t - the page's translator (#539)
    * @returns the markup
    */
-  static profilesHtml(json) {
+  static profilesHtml(json, t) {
+    // A profile's description and needs, and a refused one's reason, are
+    // the view's, drawn as they come.
     const rows = json.profiles.map(function (p) {
       return '<tr><td><code>' + esc(p.id) + '</code>' +
-        (p.isDefault ? ' <span class="sub">default</span>' : '') + '</td><td>' +
+        (p.isDefault ? ' <span class="sub">' + t.html('consoleAcme.default') +
+                       '</span>' : '') + '</td><td>' +
         esc(p.description) + '</td><td>' + (p.needs ? esc(p.needs) :
                                              '<span class="sub">—</span>') +
-        '</td><td>' + (p.allowed ? 'yes' : '<strong>no</strong> ' +
-                       '<span class="sub">not in acme.allowedProfiles</span>') +
+        '</td><td>' + (p.allowed ? t.html('consoleAcme.yes')
+                                 : t.html('consoleAcme.no') + ' ' +
+                       '<span class="sub">' +
+                       t.html('consoleAcme.notAllowed') + '</span>') +
         '</td></tr>';
     }).join('');
     const refused = json.refusedProfiles.map(function (p) {
       return '<tr><td><code>' + esc(p.id) + '</code></td><td colspan="3">' +
-             '<strong>never issued over ACME.</strong> ' + esc(p.why) +
+             t.html('consoleAcme.neverIssued') + ' ' + esc(p.why) +
              '</td></tr>';
     }).join('');
-    return '<table><thead><tr><th>Profile</th><th>What</th><th>Needs</th>' +
-           '<th>Allowed here</th></tr></thead><tbody>' + rows + refused +
-           '</tbody></table><p class="sub">An order names one in its ' +
-           '<code>profile</code> member (draft-ietf-acme-profiles); the ' +
-           'directory advertises the allowed ones in ' +
-           '<code>meta.profiles</code>. An order naming none is issued ' +
-           '<code>tls-server</code> when every identifier is a ' +
-           '<code>dns</code> or <code>ip</code> name and that profile is ' +
-           'allowed here, and the default above otherwise.</p>';
+    return '<table><thead><tr><th>' + t.html('consoleAcme.thProfile') +
+           '</th><th>' + t.html('consoleAcme.thWhat') + '</th><th>' +
+           t.html('consoleAcme.thNeeds') + '</th>' +
+           '<th>' + t.html('consoleAcme.thAllowed') + '</th></tr></thead>' +
+           '<tbody>' + rows + refused +
+           '</tbody></table><p class="sub">' +
+           t.html('consoleAcme.profilesNote') + '</p>';
   }
 
   /**
@@ -181,31 +198,42 @@ class AcmePage {
    */
   static eabHtml(ctx, json) {
     const self = this;
+    const t = ctx.t;
     const list = json.eabKeys;
     const pager = this.nav(ctx, list, 'credentialsPage');
     const rows = list.rows.length ? list.rows.map(function (k) {
       return '<tr><td><code>' + esc(k.kid) + '</code></td><td>' +
         self.code(k.entryUri) + '</td><td>' + esc(k.status) + '</td><td>' +
-        esc(k.createdAt) + '<div class="sub">by ' + esc(k.createdBy || '—') +
+        esc(k.createdAt) + '<div class="sub">' +
+        t.html('consoleAcme.by', { who: k.createdBy || '—' }) +
         '</div></td><td>' + esc(k.expiresAt) + '</td><td>' +
         self.code(k.boundAccount) + '</td><td><form method="post" ' +
         'action="/admin/acme">' + self.hidden('action', 'delete-eab') +
         self.hidden('kid', k.kid) +
-        '<button type="submit" class="danger">Delete' +
+        '<button type="submit" class="danger">' +
+        t.html('consoleAcme.delete') +
         '</button></form></td></tr>';
-    }).join('') : '<tr><td colspan="7" class="sub">No External Account ' +
-                  'Binding key has been issued in this realm.</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="sub">' +
+                  t.html('consoleAcme.noEab') + '</td></tr>';
     return '<form method="post" action="/admin/acme" class="inline">' +
-      this.hidden('action', 'create-eab') + '<label>For ' + this.kindSelect() +
-      '</label> <label>identifier <input name="identifier" size="24" ' +
-      'required></label> <label>lifetime (s) <input name="lifetimeS" ' +
+      this.hidden('action', 'create-eab') + '<label>' +
+      t.html('consoleAcme.for') + ' ' + this.kindSelect(t) +
+      '</label> <label>' + t.html('consoleAcme.identifier') +
+      ' <input name="identifier" size="24" ' +
+      'required></label> <label>' + t.html('consoleAcme.lifetime') +
+      ' <input name="lifetimeS" ' +
       'size="8" placeholder="' + esc(String(json.eabLifetimeS || '')) +
-      '"></label> <button type="submit">Create EAB key</button></form>' +
-      '<p class="sub">The key is shown once, on the page that answers this ' +
-      'form, with a ready-to-paste certbot line. It binds ONE account, which ' +
-      'is bound to that entry for life.</p>' + pager.head +
-      '<table id="list-credentialsPage"><thead><tr><th>Key id</th><th>Entry' +
-      '</th><th>Status</th><th>Created</th><th>Expires</th><th>Bound account' +
+      '"></label> <button type="submit">' + t.html('consoleAcme.createEab') +
+      '</button></form>' +
+      '<p class="sub">' + t.html('consoleAcme.eabNote') + '</p>' +
+      pager.head +
+      '<table id="list-credentialsPage"><thead><tr><th>' +
+      t.html('consoleAcme.thKeyId') + '</th><th>' +
+      t.html('consoleAcme.thEntry') +
+      '</th><th>' + t.html('consoleAcme.thStatus') + '</th><th>' +
+      t.html('consoleAcme.thCreated') + '</th><th>' +
+      t.html('consoleAcme.thExpires') + '</th><th>' +
+      t.html('consoleAcme.thBoundAccount') +
       '</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
       pager.foot;
   }
@@ -219,6 +247,7 @@ class AcmePage {
    */
   static accountsHtml(ctx, json) {
     const self = this;
+    const t = ctx.t;
     const list = json.accounts;
     const pager = this.nav(ctx, list, 'accountsPage');
     const rows = list.rows.length ? list.rows.map(function (a) {
@@ -230,14 +259,21 @@ class AcmePage {
         (a.status === 'valid' ? '<form method="post" action="/admin/acme">' +
          self.hidden('action', 'deactivate-account') +
          self.hidden('account', a.id) +
-         '<button type="submit" class="danger">Deactivate</button></form>'
+         '<button type="submit" class="danger">' +
+         t.html('consoleAcme.deactivate') + '</button></form>'
                               : '<span class="sub">' + esc(a.status) +
                                 '</span>') + '</td></tr>';
-    }).join('') : '<tr><td colspan="8" class="sub">No ACME account exists in ' +
-                  'this realm.</td></tr>';
-    return pager.head + '<table id="list-accountsPage"><thead><tr><th>Account' +
-      '</th><th>Bound to</th><th>Status</th><th>EAB key</th><th>Contact</th>' +
-      '<th>Orders</th><th>Created</th><th></th></tr></thead><tbody>' + rows +
+    }).join('') : '<tr><td colspan="8" class="sub">' +
+                  t.html('consoleAcme.noAccount') + '</td></tr>';
+    return pager.head + '<table id="list-accountsPage"><thead><tr><th>' +
+      t.html('consoleAcme.thAccount') +
+      '</th><th>' + t.html('consoleAcme.thBoundTo') + '</th><th>' +
+      t.html('consoleAcme.thStatus') + '</th><th>' +
+      t.html('consoleAcme.thEabKey') + '</th><th>' +
+      t.html('consoleAcme.thContact') + '</th>' +
+      '<th>' + t.html('consoleAcme.thOrders') + '</th><th>' +
+      t.html('consoleAcme.thCreated') + '</th><th></th></tr></thead><tbody>' +
+      rows +
       '</tbody></table>' + pager.foot;
   }
 
@@ -251,6 +287,7 @@ class AcmePage {
    */
   static certificatesHtml(ctx, json) {
     const self = this;
+    const t = ctx.t;
     const list = json.certificates;
     const pager = this.nav(ctx, list, 'certificatesPage');
     const reasons = json.revocationReasons.map(function (r) {
@@ -258,24 +295,32 @@ class AcmePage {
     }).join('');
     const rows = list.rows.length ? list.rows.map(function (c) {
       const control = c.revoked
-        ? '<span class="sub">revoked ' + esc(c.revoked.at || '') + ' (' +
-          esc(c.revoked.reason || '') + ')</span>'
+        ? '<span class="sub">' +
+          t.html('consoleAcme.revokedAt', { at: c.revoked.at || '',
+                                            reason: c.revoked.reason || '' }) +
+          '</span>'
         : '<form method="post" action="/admin/acme">' +
           self.hidden('action', 'revoke-certificate') +
           self.hidden('serial', c.serialHex) +
           '<select name="reason">' + reasons + '</select> <button ' +
-          'type="submit" class="danger">Revoke</button></form>';
+          'type="submit" class="danger">' + t.html('consoleAcme.revoke') +
+          '</button></form>';
       return '<tr><td><code>' + esc(c.serialHex) + '</code></td><td>' +
         self.code(c.profile) + '</td><td>' + self.code(c.entryUri) +
         '<div class="sub">' +
         esc((c.names || []).join(', ')) + '</div></td><td>' + esc(c.status) +
         '</td><td>' + esc(c.notAfter) + '</td><td>' + self.code(c.account) +
         '</td><td>' + control + '</td></tr>';
-    }).join('') : '<tr><td colspan="7" class="sub">No certificate has been ' +
-                  'issued over ACME in this realm.</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="sub">' +
+                  t.html('consoleAcme.noCertificate') + '</td></tr>';
     return pager.head + '<table id="list-certificatesPage"><thead><tr><th>' +
-      'Serial</th><th>Profile</th><th>Entry and names</th><th>Status</th><th>' +
-      'Expires</th><th>Account</th><th></th></tr></thead><tbody>' + rows +
+      t.html('consoleAcme.serial') + '</th><th>' +
+      t.html('consoleAcme.thProfile') + '</th><th>' +
+      t.html('consoleAcme.thEntryNames') + '</th><th>' +
+      t.html('consoleAcme.thStatus') + '</th><th>' +
+      t.html('consoleAcme.thExpires') + '</th><th>' +
+      t.html('consoleAcme.thAccount') + '</th><th></th></tr></thead><tbody>' +
+      rows +
       '</tbody></table>' + pager.foot;
   }
 
@@ -289,6 +334,7 @@ class AcmePage {
    */
   static hostNamesHtml(ctx, json) {
     const self = this;
+    const t = ctx.t;
     const list = json.hostNames;
     const pager = this.nav(ctx, list, 'hostNamesPage');
     const rows = list.rows.length ? list.rows.map(function (h) {
@@ -300,21 +346,26 @@ class AcmePage {
             self.hidden('identifier', h.entry.id) +
             self.hidden('hostName', name) +
             '<code>' + esc(name) + '</code> <button type="submit" ' +
-            'class="danger">Remove</button></form>';
+            'class="danger">' + t.html('consoleAcme.remove') +
+            '</button></form>';
         }).join(' ') + '</td></tr>';
-    }).join('') : '<tr><td colspan="2" class="sub">No host name is ' +
-                  'registered on any entry in this realm.</td></tr>';
+    }).join('') : '<tr><td colspan="2" class="sub">' +
+                  t.html('consoleAcme.noHostName') + '</td></tr>';
     return '<form method="post" action="/admin/acme" class="inline">' +
-      this.hidden('action', 'add-host-name') + '<label>On ' +
-      this.kindSelect() +
-      '</label> <label>identifier <input name="identifier" size="20" ' +
-      'required></label> <label>host name or address <input name="hostName" ' +
-      'size="28" required></label> <button type="submit">Register</button>' +
-      '</form><p class="sub">A dns or ip identifier is authorized for an ' +
-      'account only when it is registered on the entry the account is bound ' +
-      'to. Nothing is ever fetched to prove control of a name.</p>' +
-      pager.head + '<table id="list-hostNamesPage"><thead><tr><th>Entry</th>' +
-      '<th>Registered host names</th></tr></thead><tbody>' + rows +
+      this.hidden('action', 'add-host-name') + '<label>' +
+      t.html('consoleAcme.on') + ' ' +
+      this.kindSelect(t) +
+      '</label> <label>' + t.html('consoleAcme.identifier') +
+      ' <input name="identifier" size="20" ' +
+      'required></label> <label>' + t.html('consoleAcme.hostNameLabel') +
+      ' <input name="hostName" ' +
+      'size="28" required></label> <button type="submit">' +
+      t.html('consoleAcme.register') + '</button>' +
+      '</form><p class="sub">' + t.html('consoleAcme.hostNameNote') + '</p>' +
+      pager.head + '<table id="list-hostNamesPage"><thead><tr><th>' +
+      t.html('consoleAcme.thEntry') + '</th>' +
+      '<th>' + t.html('consoleAcme.thHostNames') +
+      '</th></tr></thead><tbody>' + rows +
       '</tbody></table>' + pager.foot;
   }
 
@@ -326,14 +377,18 @@ class AcmePage {
    *
    * @param title - the table's heading
    * @param rows - `{ name, count }` rows
+   * @param t - the page's translator (#539)
    * @returns the markup
    */
-  static countsTable(title, rows) {
-    return '<h2>' + esc(title) + '</h2><table><thead><tr><th>Name</th><th>' +
-      'Count</th></tr></thead><tbody>' + (rows.length ? rows.map(function (r) {
+  static countsTable(title, rows, t) {
+    return '<h2>' + esc(title) + '</h2><table><thead><tr><th>' +
+      t.html('consoleAcme.thName') + '</th><th>' +
+      t.html('consoleAcme.thCount') + '</th></tr></thead><tbody>' +
+      (rows.length ? rows.map(function (r) {
         return '<tr><td><code>' + esc(r.name) + '</code></td><td class="num">' +
                r.count + '</td></tr>';
-      }).join('') : '<tr><td colspan="2" class="sub">none</td></tr>') +
+      }).join('') : '<tr><td colspan="2" class="sub">' +
+                    t.html('consoleAcme.none') + '</td></tr>') +
       '</tbody></table>';
   }
 
@@ -348,43 +403,47 @@ class AcmePage {
    */
   static body(ctx, json) {
     const self = this;
+    const t = ctx.t;
+    // The directory link is markup a message cannot carry, so the first
+    // note is cut at it. The mode's sentences are the view's.
     const inner =
-      kit.note('<strong>ACME (RFC 8555), one server per trust ' +
-        'realm.</strong> A client registers an account with an External ' +
-        'Account Binding issued for one person or application, orders ' +
-        'certificates for identifiers that ' +
-        'entry owns, and finalizes with a ' +
-        'CSR. The directory is <a href="' + esc(json.directory) + '"><code>' +
+      kit.note(t.html('consoleAcme.intro') + ' <a href="' +
+        esc(json.directory) + '"><code>' +
         esc(json.directory) + '</code></a>.' +
-        (json.enabled ? '' : ' <strong>ACME is turned off in this realm.' +
-                             '</strong>')) +
-      kit.warn('<strong>No challenge dials out.</strong> An ' +
-                 'authorization is ' +
-        'created valid, with one <code>' + esc(json.challengeType) +
-        '</code> challenge, for an identifier the bound entry owns — a ' +
-        'registered host name, the person\'s mail, the entry itself — and ' +
-        'an identifier it does not own is refused at newOrder with ' +
-        'rejectedIdentifier. EAB MACs are verified in every mode.') +
-      '<h2>Directory</h2><p><code>' + esc(json.directory) + '</code></p>' +
-      '<h2>Endpoints</h2>' + self.endpointsHtml(json) +
-      '<h2>ACME Issuing CA</h2>' + self.authorityHtml(json) +
-      '<h2>Profiles</h2>' + self.profilesHtml(json) +
-      '<h2 id="eab">External Account Binding keys</h2>' +
+        (json.enabled ? '' : ' ' + t.html('consoleAcme.turnedOff'))) +
+      kit.warn(t.html('consoleAcme.noDialOut',
+                      { challenge: json.challengeType })) +
+      '<h2>' + t.html('consoleAcme.hDirectory') + '</h2><p><code>' +
+      esc(json.directory) + '</code></p>' +
+      '<h2>' + t.html('consoleAcme.hEndpoints') + '</h2>' +
+      self.endpointsHtml(json) +
+      '<h2>' + t.html('consoleAcme.hIssuingCa') + '</h2>' +
+      self.authorityHtml(json, t) +
+      '<h2>' + t.html('consoleAcme.hProfiles') + '</h2>' +
+      self.profilesHtml(json, t) +
+      '<h2 id="eab">' + t.html('consoleAcme.hEab') + '</h2>' +
       self.eabHtml(ctx, json) +
-      '<h2>Accounts</h2>' + self.accountsHtml(ctx, json) +
-      '<h2>Certificates issued over ACME</h2>' +
+      '<h2>' + t.html('consoleAcme.hAccounts') + '</h2>' +
+      self.accountsHtml(ctx, json) +
+      '<h2>' + t.html('consoleAcme.hCertificates') + '</h2>' +
       self.certificatesHtml(ctx, json) +
-      '<h2>Registered host names</h2>' + self.hostNamesHtml(ctx, json) +
-      '<h2>Mode</h2>' + kit.note('<strong>' + esc(json.mode.current) +
+      '<h2>' + t.html('consoleAcme.hHostNames') + '</h2>' +
+      self.hostNamesHtml(ctx, json) +
+      '<h2>' + t.html('consoleAcme.hMode') + '</h2>' +
+      kit.note('<strong>' + esc(json.mode.current) +
         '</strong>: ' + esc(json.mode.inForce) + '<div class="sub">' +
-        'Development: ' + esc(json.mode.development) + '</div><div ' +
-        'class="sub">Product: ' + esc(json.mode.product) + '</div>') +
-      '<h2>Settings</h2>' + SettingsForms.forms(json.settings, '/admin/acme') +
+        t.html('consoleAcme.development') + ' ' +
+        esc(json.mode.development) + '</div><div ' +
+        'class="sub">' + t.html('consoleAcme.product') + ' ' +
+        esc(json.mode.product) + '</div>') +
+      '<h2>' + t.html('consoleAcme.hSettings') + '</h2>' +
+      SettingsForms.forms(json.settings, '/admin/acme', undefined, t) +
       '<p class="links"><a href="/admin/acme?format=json">JSON</a> · ' +
       '<code>GET /admin-api/acme</code> · <a ' +
-      'href="/admin/acme/monitor">ACME enrollments (monitoring)</a> · <a ' +
-      'href="/admin/pki">PKI</a> · <a href="/admin/error-codes">Error ' +
-      'codes</a></p>';
+      'href="/admin/acme/monitor">' + t.html('consoleAcme.linkMonitor') +
+      '</a> · <a ' +
+      'href="/admin/pki">PKI</a> · <a href="/admin/error-codes">' +
+      t.html('consoleAcme.linkErrorCodes') + '</a></p>';
     return inner;
   }
 
@@ -397,11 +456,14 @@ class AcmePage {
    */
   static monitorBody(ctx, json) {
     const self = this;
-    const t = json.totals;
+    // The translator is `t` (#539), so the totals, which were `t`, are
+    // `totals`.
+    const t = ctx.t;
+    const totals = json.totals;
     const pager = kit.pageNavPair('/admin/acme/monitor', ctx.query,
                                     Object.assign({}, json.paging,
                                                   { param: 'page',
-                                                    noun: 'requests' }));
+                                                    noun: 'requests' }), t);
     const recent = json.recent.length ? json.recent.map(function (r) {
       return '<tr><td>' + esc(r.at) + '</td><td><code>' + esc(r.operation) +
         '</code></td><td>' + esc(r.outcome) + '</td><td class="num">' +
@@ -411,32 +473,44 @@ class AcmePage {
         '</td><td>' +
         self.code(r.errorCode) + '</td><td>' + self.code(r.serialHex) +
         '</td></tr>';
-    }).join('') : '<tr><td colspan="9" class="sub">Nothing has been asked ' +
-                  'of the ACME server in this realm since the process ' +
-                  'started.</td></tr>';
+    }).join('') : '<tr><td colspan="9" class="sub">' +
+                  t.html('consoleAcme.nothingAsked') + '</td></tr>';
     const inner =
-      kit.note('<strong>What the ACME server has done</strong> ' +
-        'in this realm since ' + esc(json.since) + ', across ' +
-        esc(json.processes) + ' process(es).') +
-      '<div class="tiles">' + kit.tile(t.requests, 'requests') +
-      kit.tile(t.issued, 'certificates issued') +
-      kit.tile(t.revoked, 'revoked') + kit.tile(t.refused, 'refused') +
-      kit.tile(t.accountsBound, 'accounts bound') +
-      kit.tile(t.accounts, 'accounts held') +
-      kit.tile(t.certificatesHeld, 'certificates held') + '</div>' +
-      self.countsTable('By operation', json.operations) +
-      self.countsTable('By profile', json.profiles) +
-      self.countsTable('Refusals by error code', json.errorCodes) +
-      self.countsTable('By HTTP status', json.statuses) +
-      self.countsTable('Who asked', json.principals) +
-      '<h2 id="list-page">Recent requests</h2>' + pager.head +
-      '<table><thead><tr><th>At</th><th>Operation</th><th>Outcome</th><th>' +
-      'Status</th><th>Profile</th><th>Principal</th><th>Entry</th><th>Code' +
-      '</th><th>Serial</th></tr></thead><tbody>' + recent +
+      kit.note(t.html('consoleAcme.monitorIntro',
+                      { since: json.since, n: json.processes })) +
+      '<div class="tiles">' +
+      kit.tile(totals.requests, t.text('consoleAcme.tileRequests')) +
+      kit.tile(totals.issued, t.text('consoleAcme.tileIssued')) +
+      kit.tile(totals.revoked, t.text('consoleAcme.tileRevoked')) +
+      kit.tile(totals.refused, t.text('consoleAcme.tileRefused')) +
+      kit.tile(totals.accountsBound, t.text('consoleAcme.tileBound')) +
+      kit.tile(totals.accounts, t.text('consoleAcme.tileAccounts')) +
+      kit.tile(totals.certificatesHeld,
+               t.text('consoleAcme.tileCertificates')) + '</div>' +
+      self.countsTable(t.text('consoleAcme.byOperation'), json.operations,
+                       t) +
+      self.countsTable(t.text('consoleAcme.byProfile'), json.profiles, t) +
+      self.countsTable(t.text('consoleAcme.byErrorCode'), json.errorCodes,
+                       t) +
+      self.countsTable(t.text('consoleAcme.byStatus'), json.statuses, t) +
+      self.countsTable(t.text('consoleAcme.whoAsked'), json.principals, t) +
+      '<h2 id="list-page">' + t.html('consoleAcme.recent') + '</h2>' +
+      pager.head +
+      '<table><thead><tr><th>' + t.html('consoleAcme.thAt') + '</th><th>' +
+      t.html('consoleAcme.thOperation') + '</th><th>' +
+      t.html('consoleAcme.thOutcome') + '</th><th>' +
+      t.html('consoleAcme.thStatus') + '</th><th>' +
+      t.html('consoleAcme.thProfile') + '</th><th>' +
+      t.html('consoleAcme.thPrincipal') + '</th><th>' +
+      t.html('consoleAcme.thEntry') + '</th><th>' +
+      t.html('consoleAcme.thCode') +
+      '</th><th>' + t.html('consoleAcme.serial') +
+      '</th></tr></thead><tbody>' + recent +
       '</tbody></table>' +
       pager.foot +
-      kit.note('There is no reset. The durable record of each act is the ' +
-                 '<a href="/admin/audit">Audit log</a>.') +
+      kit.note(t.html('consoleAcme.noReset') +
+                 ' <a href="/admin/audit">' + t.html('consoleAcme.auditLog') +
+                 '</a>.') +
       '<p class="links"><a href="/admin/acme/monitor?format=json">JSON</a> ' +
       '· <code>GET /admin-api/acme/monitor</code> · <a ' +
       'href="/admin/acme">ACME</a></p>';

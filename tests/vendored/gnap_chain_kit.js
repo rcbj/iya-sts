@@ -662,13 +662,19 @@ async function assertToken(G, cast, token, expect) {
            introspection: seen };
 }
 
-// RFC 8693 section 4.1's chain, the most recent actor outermost.
-function actChain(tiers) {
+// RFC 8693 section 4.1's chain, the most recent actor outermost, as the
+// OAuth2 token exchange writes it (#526, after #443 and #471): the original
+// client — webapp1, whose token the first derivation was made from — at the
+// foot, and every entry `urn:sts:client:<id>` with the GNAP authorization
+// server's issuer, the grant endpoint.
+function actChain(G, cast, tiers) {
   log.debug("Entering actChain().");
-  let out = null;
+  const entry = function (identifier) {
+    return { sub: "urn:sts:client:" + identifier, iss: G.h.GRANT };
+  };
+  let out = tiers.length ? entry(cast.webapp.identifier) : null;
   for (let i = 0; i < tiers.length; i++) {
-    out = out ? { sub: tiers[i].identifier, act: out }
-              : { sub: tiers[i].identifier };
+    out = Object.assign(entry(tiers[i].identifier), { act: out });
   }
   log.debug("Leaving actChain().");
   return out;

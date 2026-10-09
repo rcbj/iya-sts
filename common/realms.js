@@ -972,33 +972,18 @@ function validateId(id) {
 // process's value with the id stuck on. The rule the list exists for is
 // unchanged — two realms may not share an identifier — and a unique domain
 // now carries it: `urn:iyasec.io:idp` and `urn:dev.iyasec.io:idp` are
-// distinct because the domains are. rcbj chose URNs over `https://` URLs,
-// because an entityID built from a domain would otherwise read as an ADDRESS
-// the service may not answer at (see the domain's note above). The three that
-// shared `urn:wstrust:mock:sts` by default share `urn:<domain>:sts`, so the
-// relationship between them is kept — and since #480/#494 that seed is READ
-// AS A DEFAULT (`common/issuer_names.ts`): unset or seeded, all three are the
-// realm's SAML 2.0 entityID. `oid4vp.clientId` is a client id rather
+// distinct because the domains are. `oid4vp.clientId` is a client id rather
 // than a name in a domain, and keeps the id suffix it always had.
+//
+// THE FIVE SAML, WS-TRUST AND WS-FEDERATION NAMES WERE SEEDED HERE until #523
+// (2026-10-08) — `urn:<domain>:idp`, `urn:<domain>:idp:saml11` and
+// `urn:<domain>:sts`. Every one of them is the realm's OAuth issuer now
+// (`common/issuer_names.ts`), which is already distinct per realm by its
+// prefix, so there is nothing left to seed.
 //
 // `from(domain, id, base)` answers the seeded value; `base` is the process's
 // own value, read outside any realm.
 const NAMED_BY_REALM = [
-  { key: 'saml2.entityId', from: function (domain) {
-    return 'urn:' + domain + ':idp';
-  } },
-  { key: 'saml11.providerId', from: function (domain) {
-    return 'urn:' + domain + ':idp:saml11';
-  } },
-  { key: 'wsfed.entityId', from: function (domain) {
-    return 'urn:' + domain + ':sts';
-  } },
-  { key: 'wstrust.issuer', from: function (domain) {
-    return 'urn:' + domain + ':sts';
-  } },
-  { key: 'saml.issuer', from: function (domain) {
-    return 'urn:' + domain + ':sts';
-  } },
   { key: 'oid4vp.clientId', from: function (domain, id, base) {
     return base ? String(base) + '-' + id : '';
   } },

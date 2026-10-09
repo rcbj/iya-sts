@@ -36,6 +36,8 @@ import helpers = require('../common/helpers');
 import passwordPolicy = require('../common/password_policy');
 import authnPolicy = require('../common/authn_policy');
 import serviceAccountPolicy = require('../common/service_account_policy');
+import passkeyPolicy = require('../common/passkey_policy');
+import localePolicy = require('../common/locale_policy');
 
 const { log } = helpers;
 
@@ -54,6 +56,9 @@ interface PolicyModule {
     { ok: boolean; errors?: string[]; removed?: boolean;
       profile?: Record<string, any> };
   describe(profile?: Record<string, any> | null): string[];
+  // A kind whose profiles may be NAMED and selected (#535, the passkey
+  // policy): the selectors each named profile carries.
+  SELECTORS?: ReadonlyArray<Record<string, any>>;
 }
 
 interface PolicyKind {
@@ -250,6 +255,41 @@ PolicyKinds.register({
   auditAction: 'admin.service-account-policy.change',
   appliesTo: 'every service account in this realm from the next time it ' +
              'signs in, binds or is rotated',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in defaults where it has not'
+});
+
+// #527: the fourth kind, rcbj's "a new policy (which can be overridden per
+// realm) that governs the behavior of passkeys".
+PolicyKinds.register({
+  id: 'passkey',
+  label: 'Passkey policy',
+  container: 'ou=passkeyPolicies',
+  governs: 'how passkeys behave — whether a sign-in may name no username, ' +
+           'and what a security key is asked to store',
+  module: passkeyPolicy as unknown as PolicyModule,
+  auditAction: 'admin.passkey-policy.change',
+  appliesTo: 'the NEXT sign-in and the NEXT passkey enrolled in this realm; ' +
+             'a passkey already enrolled keeps what its authenticator stored',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in defaults where it has not'
+});
+
+// #539: the fifth kind, rcbj's "a policy default per realm that automatically
+// populates user locale parameter", with named profiles "assign[ed] ... to
+// application objects".
+PolicyKinds.register({
+  id: 'locale',
+  label: 'Locale policy',
+  container: 'ou=localePolicies',
+  governs: 'the language a page falls back to, the language mail is ' +
+           'written in when a person names none, and the preferredLanguage ' +
+           'a new person is given',
+  module: localePolicy as unknown as PolicyModule,
+  auditAction: 'admin.locale-policy.change',
+  appliesTo: 'the NEXT page drawn and the NEXT person created in this ' +
+             'realm; a person created before keeps the preferredLanguage ' +
+             'they have, or none',
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
                'built-in defaults where it has not'
 });

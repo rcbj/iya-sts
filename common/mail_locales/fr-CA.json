@@ -1,0 +1,19 @@
+{
+  "templates": {
+    "address-verification": {
+      "subject": "Confirmez votre adresse pour {{service}}",
+      "text": "Le compte {{username}} indique {{address}} comme adresse courriel.\n\nPour confirmer qu’il s’agit bien de votre adresse, ouvrez ce lien dans les {{expiresMinutes}} minutes :\n\n{{link}}\n\nS’il ne s’agit pas de votre compte, ignorez ce message.\n",
+      "html": "<p>Le compte <strong>{{username}}</strong> indique {{address}} comme adresse courriel.</p><p><a href=\"{{link}}\">Confirmez qu’il s’agit bien de votre adresse</a> dans les {{expiresMinutes}} minutes.</p><p>S’il ne s’agit pas de votre compte, ignorez ce message.</p>"
+    },
+    "address-changed": {
+      "subject": "L’adresse courriel de votre compte {{service}} a été modifiée",
+      "text": "L’adresse courriel du compte {{username}} a été modifiée le {{when}} : c’est désormais {{address}}. Ce message a été envoyé à l’adresse précédente.\n\nSi vous ne vous y attendiez pas, contactez dès maintenant la personne qui gère votre compte.\n",
+      "html": "<p>L’adresse courriel du compte <strong>{{username}}</strong> a été modifiée le {{when}} : c’est désormais {{address}}. Ce message a été envoyé à l’adresse précédente.</p><p>Si vous ne vous y attendiez pas, contactez dès maintenant la personne qui gère votre compte.</p>"
+    },
+    "test-message": {
+      "subject": "Courriel de test de {{service}}",
+      "text": "Ceci est un courriel de test, envoyé le {{when}} par le transport {{transport}} à la demande de {{username}}.\n",
+      "html": "<p>Ceci est un courriel de test, envoyé le {{when}} par le transport {{transport}} à la demande de <strong>{{username}}</strong>.</p>"
+    }
+  }
+}

@@ -115,25 +115,32 @@ class OAuth2MonitorPage {
   // ---------------------------------------------------------------------------
   // THE PARTS OF THE RFC 9126 SECTION.
   // ---------------------------------------------------------------------------
-  static tilesHtml(section: Json) {
-    const t = section.totals;
+  // The totals were `t` until #539 made `t` the translator's name on every
+  // page; they are `totals` now.
+  static tilesHtml(section: Json, t: Json) {
+    const totals = section.totals;
     const held = section.pushedRequests;
     return '<div class="tiles">' +
-      kit.tile(t.pushed || 0, 'pushed') +
-      kit.tile(t.pushRefused || 0, 'pushes refused') +
-      kit.tile(t.resolved || 0, 'request_uris read') +
-      kit.tile(t.spent || 0, 'spent') +
-      kit.tile(t.expired || 0, 'expired unspent') +
-      kit.tile(t.resolveRefused || 0, 'refused at /authorize') +
-      kit.tile(t.deleted || 0, 'withdrawn') +
+      kit.tile(totals.pushed || 0, t.text('consoleOauth2Monitor.tPushed')) +
+      kit.tile(totals.pushRefused || 0,
+               t.text('consoleOauth2Monitor.tPushRefused')) +
+      kit.tile(totals.resolved || 0,
+               t.text('consoleOauth2Monitor.tResolved')) +
+      kit.tile(totals.spent || 0, t.text('consoleOauth2Monitor.tSpent')) +
+      kit.tile(totals.expired || 0, t.text('consoleOauth2Monitor.tExpired')) +
+      kit.tile(totals.resolveRefused || 0,
+               t.text('consoleOauth2Monitor.tResolveRefused')) +
+      kit.tile(totals.deleted || 0, t.text('consoleOauth2Monitor.tDeleted')) +
       kit.tile(held.filter.state === 'all' && !held.filter.client_id
-                   ? held.total : '—', 'held now') +
+                   ? held.total : '—', t.text('consoleOauth2Monitor.tHeld')) +
       '</div>';
   }
 
-  static countersHtml(section: Json) {
-    return '<table id="counters-' + esc(section.id) + '"><thead><tr><th>What ' +
-      'was counted</th><th>Counter</th><th>Total</th></tr></thead><tbody>' +
+  static countersHtml(section: Json, t: Json) {
+    return '<table id="counters-' + esc(section.id) + '"><thead><tr><th>' +
+      t.html('consoleOauth2Monitor.colCounted') + '</th><th>' +
+      t.html('consoleOauth2Monitor.colCounter') + '</th><th>' +
+      t.html('consoleOauth2Monitor.colTotal') + '</th></tr></thead><tbody>' +
       section.events.map(function (one) {
         return '<tr><td>' + esc(one.label) + '</td><td><code>' +
                esc(one.event) + '</code></td><td class="num">' + one.count +
@@ -141,13 +148,16 @@ class OAuth2MonitorPage {
       }).join('') + '</tbody></table>';
   }
 
-  static errorsHtml(rows: Json) {
-    return '<table><thead><tr><th>OAuth error returned</th><th>Count</th>' +
+  static errorsHtml(rows: Json, t: Json) {
+    return '<table><thead><tr><th>' +
+      t.html('consoleOauth2Monitor.colError') + '</th><th>' +
+      t.html('consoleOauth2Monitor.colCount') + '</th>' +
       '</tr>' +
       '</thead><tbody>' + (rows.length ? rows.map(function (r) {
         return '<tr><td><code>' + esc(r.name) + '</code></td><td class="num">' +
                r.count + '</td></tr>';
-      }).join('') : '<tr><td colspan="2" class="sub">none</td></tr>') +
+      }).join('') : '<tr><td colspan="2" class="sub">' +
+        t.html('consoleOauth2Monitor.none') + '</td></tr>') +
       '</tbody></table>';
   }
 
@@ -156,10 +166,12 @@ class OAuth2MonitorPage {
   // page parameter is carried on the section's paging (`pagingOf()` decides
   // it).
   static clientsHtml(ctx: Json, section: Json, emptyText: Json) {
+    const t = ctx.t;
+    const noun = t.text('consoleOauth2Monitor.nounClients');
     const nav = kit.pageNavPair(PAGE, ctx.query,
                                   Object.assign({ param: section.clientsParam ||
                                                          'clientsPage',
-                                                  noun: 'clients' },
+                                                  noun: noun },
                                                 section.clientsPaging));
     const heads = section.events.map(function (one) {
       return '<th title="' + esc(one.label) + '">' + esc(one.counter) + '</th>';
@@ -171,50 +183,61 @@ class OAuth2MonitorPage {
           return '<td class="num">' + (c.counters[one.counter] || 0) + '</td>';
         }).join('') + '<td>' + (c.errors.length ? c.errors.map(function (e) {
           return '<code>' + esc(e.name) + '</code> ' + e.count;
-        }).join(', ') : '<span class="sub">none</span>') + '</td><td>' +
+        }).join(', ') : '<span class="sub">' +
+          t.html('consoleOauth2Monitor.none') + '</span>') + '</td><td>' +
         esc(c.lastAt || '—') + '<div class="sub">' + esc(c.lastEvent || '') +
         '</div></td></tr>';
     }).join('') : '<tr><td colspan="' + (section.events.length + 3) +
                   '" class="sub">' + esc(emptyText) + '</td></tr>';
-    return nav.head + '<table><thead><tr><th>Client</th>' + heads +
-      '<th>Errors returned</th><th>Last activity</th></tr></thead><tbody>' +
+    return nav.head + '<table><thead><tr><th>' +
+      t.html('consoleOauth2Monitor.colClient') + '</th>' + heads +
+      '<th>' + t.html('consoleOauth2Monitor.colErrors') + '</th><th>' +
+      t.html('consoleOauth2Monitor.colLast') + '</th></tr></thead><tbody>' +
       rows + '</tbody></table>' + nav.foot;
   }
 
-  static filterHtml(held: Json) {
+  static filterHtml(held: Json, t: Json) {
     const options = STATES.map(function (state) {
       return '<option value="' + esc(state) + '"' +
              (held.filter.state === state ? ' selected' : '') + '>' +
              esc(state) + '</option>';
     }).join('');
     return '<form method="get" action="' + esc(PAGE) + '#held" ' +
-      'class="inline"><label>State <select name="state">' + options +
+      'class="inline"><label>' + t.html('consoleOauth2Monitor.state') +
+      ' <select name="state">' + options +
       '</select></label> <label>client_id <input name="client_id" size="24" ' +
-      'value="' + esc(held.filter.client_id) + '"></label> <label>Rows ' +
+      'value="' + esc(held.filter.client_id) + '"></label> <label>' +
+      t.html('consoleOauth2Monitor.rows') + ' ' +
       '<input name="per" size="4" value="' + esc(String(held.limit)) +
-      '"></label> <button type="submit" class="secondary">Show</button>' +
+      '"></label> <button type="submit" class="secondary">' +
+      t.html('consoleOauth2Monitor.show') + '</button>' +
       '</form>';
   }
 
-  static pushedRow(one: Json, back: Json) {
+  static pushedRow(one: Json, back: Json, t: Json) {
     const self = this;
     const source = one.source === 'request'
-      ? 'request object<div class="sub">' + esc(one.request_object_alg || '?') +
-        (one.request_object_encrypted ? ', encrypted ' +
-         esc(one.request_object_encrypted) : '') + '</div>'
-      : 'form';
+      ? t.html('consoleOauth2Monitor.requestObject') + '<div class="sub">' +
+        esc(one.request_object_alg || '?') +
+        (one.request_object_encrypted
+          ? t.html('consoleOauth2Monitor.encrypted',
+                   { alg: one.request_object_encrypted }) : '') + '</div>'
+      : t.html('consoleOauth2Monitor.form');
     const redirect = self.code(one.redirect_uri) +
       (one.redirect_uri_unregistered
-      ? '<div class="state-invalid">unregistered — accepted under RFC 9126 ' +
-        'section 2.4 for an authenticated client</div>' : '');
+      ? '<div class="state-invalid">' +
+        t.html('consoleOauth2Monitor.unregistered') + '</div>' : '');
     return '<tr><td>' + self.requestUriCell(one.request_uri) + '</td><td>' +
       self.code(one.client_id) + '</td><td>' +
       self.code(one.authorization_server) +
       '</td><td>' + esc(one.state) + (one.spent_at ? '<div class="sub">' +
       esc(one.spent_at) + '</div>' : '') + '</td><td>' + esc(one.created_at) +
-      '</td><td>' + esc(one.expires_at) + '<div class="sub">in ' +
-      one.expires_in + 's</div></td><td class="num">' + one.reads +
-      '</td><td>' + (one.client_authenticated ? 'yes' : '<strong>no</strong>') +
+      '</td><td>' + esc(one.expires_at) + '<div class="sub">' +
+      t.html('consoleOauth2Monitor.expiresIn', { s: one.expires_in }) +
+      '</div></td><td class="num">' + one.reads +
+      '</td><td>' + (one.client_authenticated
+        ? t.html('consoleOauth2Monitor.yes')
+        : '<strong>' + t.html('consoleOauth2Monitor.no') + '</strong>') +
       '<div class="sub">' + esc(one.authentication_method || 'none') +
       '</div></td><td>' + source + '</td><td>' + redirect +
       '<div class="sub">' + esc(one.response_type) +
@@ -222,60 +245,67 @@ class OAuth2MonitorPage {
       self.code(one.dpop_jkt) + '</td><td><form method="post" action="' +
       esc(PAGE) + '">' + self.hidden('action', 'delete-pushed-request') +
       self.hidden('request_uri', one.request_uri) + self.hidden('back', back) +
-      '<button type="submit" class="danger" title="Withdraw this ' +
-      'request_uri: the authorization endpoint refuses it from now ' +
-      'on">Withdraw</button>' +
+      '<button type="submit" class="danger" title="' +
+      esc(t.text('consoleOauth2Monitor.withdrawTitle')) + '">' +
+      t.html('consoleOauth2Monitor.withdraw') + '</button>' +
       '</form></td></tr>';
   }
 
   static pushedRequestsHtml(ctx: Json, section: Json) {
     const self = this;
+    const t = ctx.t;
     const held = section.pushedRequests;
     const back = kit.queryWith(self.listViewOf(ctx.query), {});
+    const noun = t.text('consoleOauth2Monitor.nounPushed');
     const nav = kit.pageNavPair(PAGE, ctx.query,
                                   Object.assign({ param: 'page',
-                                                  noun: 'pushed requests' },
+                                                  noun: noun },
                                                 held.paging));
     const rows = held.items.length ? held.items.map(function (one) {
-      return self.pushedRow(one, back);
-    }).join('') : '<tr><td colspan="12" class="sub">No pushed authorization ' +
-                  'request ' + (held.filter.state === 'all' &&
-                                !held.filter.client_id
-                    ? 'is held in this realm.' : 'matches this filter.') +
+      return self.pushedRow(one, back, t);
+    }).join('') : '<tr><td colspan="12" class="sub">' +
+                  (held.filter.state === 'all' && !held.filter.client_id
+                    ? t.html('consoleOauth2Monitor.noneHeld')
+                    : t.html('consoleOauth2Monitor.noneMatch')) +
                   '</td></tr>';
-    return self.filterHtml(held) + nav.head + '<table id="pushed-requests">' +
-      '<thead><tr><th>request_uri</th><th>Client</th><th>Authorization server' +
-      '</th><th>State</th><th>Created</th><th>Expires</th><th>Reads</th>' +
-      '<th>Client authenticated</th><th>Source</th><th>redirect_uri</th>' +
+    const th = function (key: string): string {
+      return '<th>' + t.html(key) + '</th>';
+    };
+    return self.filterHtml(held, t) + nav.head +
+      '<table id="pushed-requests">' +
+      '<thead><tr><th>request_uri</th>' +
+      th('consoleOauth2Monitor.colClient') +
+      th('consoleOauth2Monitor.colAs') + th('consoleOauth2Monitor.colState') +
+      th('consoleOauth2Monitor.colCreated') +
+      th('consoleOauth2Monitor.colExpires') +
+      th('consoleOauth2Monitor.colReads') +
+      th('consoleOauth2Monitor.colAuthenticated') +
+      th('consoleOauth2Monitor.colSource') + '<th>redirect_uri</th>' +
       '<th>DPoP jkt</th>' +
       '<th></th></tr></thead><tbody>' + rows + '</tbody></table>' + nav.foot +
-      '<p class="sub">Held: ' + held.total + ' matching, at most ' +
-      held.capacity + ' live per realm (oauth2.parMaxRequests), each for ' +
-      held.lifetime_s + ' seconds (oauth2.parRequestUriLifetimeS). A spent ' +
-      'request_uri is kept until it would have expired, so a replay is ' +
-      'refused as already used rather than as unknown. Withdrawing needs ' +
-      'Admin Write.' +
+      '<p class="sub">' +
+      t.html('consoleOauth2Monitor.heldNote',
+             { total: held.total, capacity: held.capacity,
+               lifetime: held.lifetime_s }) +
       '</p>';
   }
 
   static parSectionHtml(ctx: Json, section: Json) {
     const self = this;
+    const t = ctx.t;
     return '<h2 id="section-' + esc(section.id) + '">' + esc(section.title) +
       '</h2>' +
-      kit.note('A client pushes the parameters of an authorization request ' +
-        'to /oauth2/par over the back channel and is answered a request_uri; ' +
-        'the browser then carries only that reference to /oauth2/authorize. ' +
-        'The request is read there at least twice in one browser flow and is ' +
-        'spent when an authorization response is issued on it.') +
-      self.tilesHtml(section) +
-      '<h3>Every counter</h3>' + self.countersHtml(section) +
-      '<h3>By client</h3>' +
-      self.clientsHtml(ctx, section, 'No client has pushed an authorization ' +
-                                'request in this realm since the process ' +
-                                'started.') +
-      '<h3>Errors returned, all clients</h3>' +
-      self.errorsHtml(section.errors) +
-      '<h3 id="held">Pushed requests still held</h3>' +
+      kit.note(t.html('consoleOauth2Monitor.parNote')) +
+      self.tilesHtml(section, t) +
+      '<h3>' + t.html('consoleOauth2Monitor.everyCounter') + '</h3>' +
+      self.countersHtml(section, t) +
+      '<h3>' + t.html('consoleOauth2Monitor.byClient') + '</h3>' +
+      self.clientsHtml(ctx, section,
+                       t.text('consoleOauth2Monitor.parNoClients')) +
+      '<h3>' + t.html('consoleOauth2Monitor.allErrors') + '</h3>' +
+      self.errorsHtml(section.errors, t) +
+      '<h3 id="held">' + t.html('consoleOauth2Monitor.heldHeading') +
+      '</h3>' +
       self.pushedRequestsHtml(ctx, section);
   }
 
@@ -285,62 +315,59 @@ class OAuth2MonitorPage {
   // server demands. No list and no control — a requirement is a property of a
   // request that has already been answered, so there is nothing held to show.
   // ---------------------------------------------------------------------------
-  static stepUpTilesHtml(section: Json) {
-    const t = section.totals;
+  static stepUpTilesHtml(section: Json, t: Json) {
+    const totals = section.totals;
     return '<div class="tiles">' +
-      kit.tile(t.stepUpMetBySession || 0, 'met by the session') +
-      kit.tile((t.stepUpReauthMaxAge || 0) + (t.stepUpReauthAcr || 0),
-                 'sent to sign in again') +
-      kit.tile(t.stepUpMetAfterSignIn || 0, 'met after signing in') +
-      kit.tile(t.stepUpUnmet || 0, 'unmet_authentication_requirements') +
-      kit.tile(t.stepUpLoginRequired || 0, 'login_required') +
-      kit.tile(t.stepUpChallenged || 0, 'resource challenges') +
+      kit.tile(totals.stepUpMetBySession || 0,
+               t.text('consoleOauth2Monitor.tMetBySession')) +
+      kit.tile((totals.stepUpReauthMaxAge || 0) +
+                 (totals.stepUpReauthAcr || 0),
+               t.text('consoleOauth2Monitor.tSentAgain')) +
+      kit.tile(totals.stepUpMetAfterSignIn || 0,
+               t.text('consoleOauth2Monitor.tMetAfter')) +
+      kit.tile(totals.stepUpUnmet || 0, 'unmet_authentication_requirements') +
+      kit.tile(totals.stepUpLoginRequired || 0, 'login_required') +
+      kit.tile(totals.stepUpChallenged || 0,
+               t.text('consoleOauth2Monitor.tChallenges')) +
       '</div>';
   }
 
   static stepUpSectionHtml(ctx: Json, section: Json) {
     const self = this;
+    const t = ctx.t;
     const own = section.ownResourceRequirement || {};
     const ownText = (own.acr_values || own.max_age !== null)
       ? (own.acr_values ? 'acr_values <code>' + esc(own.acr_values) +
                           '</code>' : '') +
-        (own.acr_values && own.max_age !== null ? ' and ' : '') +
-        (own.max_age !== null ? 'max_age <code>' + esc(String(own.max_age)) +
-                                '</code> seconds' : '')
-      : 'nothing';
+        (own.acr_values && own.max_age !== null
+          ? t.html('consoleOauth2Monitor.and') : '') +
+        (own.max_age !== null
+          ? t.html('consoleOauth2Monitor.maxAge',
+                   { s: String(own.max_age) }) : '')
+      : t.html('consoleOauth2Monitor.nothing');
+    // The step-up note's last sentence lists the acr values, and the own
+    // resource server paragraph runs into a link and a path holding braces;
+    // each is split where markup or a brace would have to go (#539).
     return '<h2 id="section-' + esc(section.id) + '">' + esc(section.title) +
       '</h2>' +
-      kit.note('A resource server that finds the authentication behind a ' +
-        'token too weak or too old answers 401 ' +
-        '<code>insufficient_user_authentication</code> with the ' +
-        '<code>acr_values</code> and <code>max_age</code> it needs, and the ' +
-        'client repeats them in an authorization request. The authorization ' +
-        'endpoint answers from the session when the session meets them, ' +
-        'sends the person to sign in again once when it does not, and ' +
-        'refuses <code>unmet_authentication_requirements</code> when that ' +
-        'sign-in did not meet them either. Each authorization-endpoint count ' +
-        'is one pass, so a step-up that succeeds counts once as sent to sign ' +
-        'in again and once as met after signing in. The context classes this ' +
-        'service ' +
-        'produces are ' + section.acrValuesSupported.map(function (one) {
+      kit.note(t.html('consoleOauth2Monitor.stepUpNote') +
+        section.acrValuesSupported.map(function (one) {
           return '<code>' + esc(one) + '</code>';
-        }).join(' &lt; ') + '.') +
-      self.stepUpTilesHtml(section) +
-      '<p>This service\'s own resource server (UserInfo, the OpenID4VCI ' +
-      'endpoints, SCIM, Shared Signals) requires ' + ownText + ' — ' +
-      '<a href="/admin/oauth2">oauth2.stepUpAcrValues and ' +
-      'oauth2.stepUpMaxAgeS</a>. A registered API\'s requirement is on its ' +
-      'application entry (<code>oauthStepUpAcrValues</code>, ' +
-      '<code>oauthStepUpMaxAge</code>), enforced by ' +
-      '<code>/oauth2/step-up/resource/{application}</code>.</p>' +
-      '<h3>Every counter</h3>' + self.countersHtml(section) +
-      '<h3>By client</h3>' +
-      self.clientsHtml(ctx, section, 'No authorization request in this realm ' +
-                                'has carried acr_values or max_age, and no ' +
-                                'resource server here has challenged a ' +
-                                'token, ' +
-                                'since the process started.') +
-      '<h3>Errors returned, all clients</h3>' + self.errorsHtml(section.errors);
+        }).join(' &lt; ') + t.html('consoleOauth2Monitor.stepUpNoteEnd')) +
+      self.stepUpTilesHtml(section, t) +
+      '<p>' + t.html('consoleOauth2Monitor.ownRequires') + ownText +
+      ' — ' +
+      '<a href="/admin/oauth2">' + t.html('consoleOauth2Monitor.ownLink') +
+      '</a>' +
+      t.html('consoleOauth2Monitor.ownApi',
+             { path: '/oauth2/step-up/resource/{application}' }) + '</p>' +
+      '<h3>' + t.html('consoleOauth2Monitor.everyCounter') + '</h3>' +
+      self.countersHtml(section, t) +
+      '<h3>' + t.html('consoleOauth2Monitor.byClient') + '</h3>' +
+      self.clientsHtml(ctx, section,
+                       t.text('consoleOauth2Monitor.stepUpNoClients')) +
+      '<h3>' + t.html('consoleOauth2Monitor.allErrors') + '</h3>' +
+      self.errorsHtml(section.errors, t);
   }
 
   // THE PAGE'S BODY, one method so that it can be one renderer (#446): what
@@ -356,6 +383,7 @@ class OAuth2MonitorPage {
    */
   static body(ctx: Json, json: Json) {
     const self = this;
+    const t = ctx.t;
     const sections = json.sections.map(function (section) {
       if (section.id === 'par') {
         return self.parSectionHtml(ctx, section);
@@ -364,27 +392,22 @@ class OAuth2MonitorPage {
         self.stepUpSectionHtml(ctx, section) : '';
     }).join('');
     const inner =
-      kit.note('<strong>What the authorization server has done</strong> ' +
-                 'in ' +
-                 'this realm since ' + esc(json.since) + ', one section ' +
-                 'per mechanism. The counters are merged across every ' +
-                 'process ' +
-                 'answering this realm.') +
+      kit.note(t.html('consoleOauth2Monitor.lead', { since: json.since })) +
       '<p class="links">' + json.sections.map(function (section) {
         return '<a href="#section-' + esc(section.id) + '">' +
                esc(section.title) + '</a>';
       }).join(' · ') + '</p>' +
       sections +
-      kit.note('There is no reset: a console that could zero its own ' +
-                 'monitoring would make every number on it one somebody ' +
-                 'might have zeroed. The durable record of each withdrawal ' +
-                 'is the ' +
-                 '<a href="/admin/audit">Audit log</a>.') +
+      kit.note(t.html('consoleOauth2Monitor.noReset') +
+                 '<a href="/admin/audit">' +
+                 t.html('consoleOauth2Monitor.auditLog') + '</a>' +
+                 t.html('consoleOauth2Monitor.noResetEnd')) +
       '<p class="links"><a href="' + esc(PAGE) + '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/oauth2/monitor</code> · <a ' +
-      'href="/admin/oauth2">OAuth 2.0 / OIDC settings</a> · <a ' +
-      'href="/admin/error-codes">Error ' +
-      'codes</a></p>';
+      'href="/admin/oauth2">' + t.html('consoleOauth2Monitor.settingsLink') +
+      '</a> · <a ' +
+      'href="/admin/error-codes">' +
+      t.html('consoleOauth2Monitor.errorCodesLink') + '</a></p>';
     return inner;
   }
 }

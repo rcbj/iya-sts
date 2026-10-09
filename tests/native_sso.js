@@ -37,6 +37,10 @@ const devices = require('../common/devices');
 const scopePolicy = require('../common/scope_policy');
 const oauth2 = require('../oauth-oidc/oauth2');
 
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({ name: 'native_sso',
   level: process.env.LOG_LEVEL || 'info' });
 
@@ -216,8 +220,9 @@ function body(t) {
   const mfaData = JSON.parse(JSON.stringify(
     require('../admin-core/admin_views')
       .userDetailJson({ query: {}, headers: {} }, 'nsso-alice').json.page.mfa));
-  const drawn = UsersPage.mfaSection({ name: 'nsso-alice' }, 'nsso-alice',
-    { write: true }, '', mfaData);
+  const ctxOf = require('../admin-ui/web_kit').context;
+  const drawn = UsersPage.mfaSection(ctxOf({}, true).t,
+    { name: 'nsso-alice' }, 'nsso-alice', { write: true }, '', mfaData);
   t.check(/<h3>Devices<\/h3>/.test(drawn) &&
           /value="remove-device"/.test(drawn) &&
           drawn.indexOf(second.device.id) >= 0,

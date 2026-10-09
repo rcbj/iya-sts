@@ -40,11 +40,12 @@ class ModePage {
    * Draws a setting's value: a string as itself, anything else as JSON.
    *
    * @param value - the value
+   * @param t - the page's translator (#539)
    * @returns the value as HTML
    */
-  static shown(value: unknown): string {
+  static shown(value: unknown, t: Json): string {
     if (typeof value === 'string') {
-      return value === '' ? '<em>(empty)</em>'
+      return value === '' ? t.html('consoleMode.empty')
                           : '<code>' + WebKit.esc(value) + '</code>';
     }
     return '<code>' + WebKit.esc(JSON.stringify(value)) + '</code>';
@@ -54,47 +55,52 @@ class ModePage {
    * Draws the page's body from the mode report.
    *
    * @param json - `GET /admin-api/mode`'s answer
+   * @param ctx - optional; the render context (`WebKit.context()`), whose
+   *   translator draws the words (#539). `mode_admin.ts` passes none, and
+   *   gets the default translator — English in node.
    * @returns the body as HTML
    */
-  static render(json: Json): string {
+  static render(json: Json, ctx?: Json): string {
+    const t = (ctx || WebKit.context()).t;
     const product = !!json.isProduct;
     const ignored = json.developmentOnlySettings.filter(function (
       row: Json): boolean {
       return row.ignored;
     });
     const tiles = '<div class="tiles">' +
-      WebKit.tile(json.mode, 'mode of this realm') +
-      WebKit.tile(String(json.requirements.length), 'requirements it changes') +
+      WebKit.tile(json.mode, t.text('consoleMode.tileMode')) +
+      WebKit.tile(String(json.requirements.length),
+                  t.text('consoleMode.tileRequirements')) +
       WebKit.tile(String(json.developmentOnlySettings.length),
-                 'development-only settings') +
-      WebKit.tile(String(ignored.length), 'stored and ignored here') +
+                 t.text('consoleMode.tileDevOnly')) +
+      WebKit.tile(String(ignored.length), t.text('consoleMode.tileIgnored')) +
       '</div>';
+    // The link is markup a message cannot carry (#539), so the sentence is
+    // split around it.
     const about = WebKit.note(
-      '<p><code>global.mode</code> says what this realm IS: ' +
-      '<strong>development</strong>, a mock that exercises a client by ' +
-      'saying yes, or <strong>product</strong>, the same protocol ' +
-      'implementations with the permissiveness taken out. It is set per ' +
-      'trust realm on <a href="/admin/config">Configuration</a> (the Global ' +
-      'group); this page changes nothing.</p><p>Every row below is ' +
-      '<code>common/mode.js</code>\'s own table, so this page, ' +
-      '<code>GET /admin-api/mode</code> and the code cannot disagree. The ' +
-      'answer in force here is in bold.</p>',
-      'What this page is');
+      '<p>' + t.html('consoleMode.about1') + ' ' +
+      t.html('consoleMode.about2') + '<a href="/admin/config">' +
+      t.html('consoleMode.aboutConfigLink') + '</a>' +
+      t.html('consoleMode.about3') + '</p><p>' +
+      t.html('consoleMode.about4') + '</p>',
+      t.text('consoleMode.aboutLabel'));
     const warning = ignored.length ? WebKit.warn(
-      '<p>' + ignored.length + ' development-only setting' +
-      (ignored.length === 1 ? ' is' : 's are') + ' stored in this realm and ' +
-      'IGNORED, because it is in product mode: ' +
+      '<p>' + t.html('consoleMode.ignoredLead',
+                     { n: String(ignored.length) }) +
       ignored.map(function (row: Json): string {
         return '<code>' + WebKit.esc(row.key) + '</code>';
-      }).join(', ') + '. Each is read as its default (logged once, ' +
-      '<code>STS-CORE-0106</code>) until it is reset.</p>') : '';
+      }).join(', ') + t.html('consoleMode.ignoredTail') + '</p>') : '';
     const cell = function (text: string, inForce: boolean): string {
       return '<td>' + (inForce ? '<strong>' : '') + WebKit.esc(text) +
         (inForce ? '</strong>' : '') + '</td>';
     };
-    const requirements = '<h2>What the mode changes</h2>' +
-      '<table class="grid"><thead><tr><th>Requirement</th>' +
-      '<th>Development</th><th>Product</th><th>Where</th></tr></thead>' +
+    const requirements = '<h2>' + t.html('consoleMode.changesHeading') +
+      '</h2>' +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleMode.thRequirement') + '</th>' +
+      '<th>' + t.html('consoleMode.thDevelopment') + '</th><th>' +
+      t.html('consoleMode.thProduct') + '</th><th>' +
+      t.html('consoleMode.thWhere') + '</th></tr></thead>' +
       '<tbody>' + json.requirements.map(function (row: Json): string {
         return '<tr id="requirement-' + WebKit.esc(row.id) + '"><th>' +
           WebKit.esc(row.what) + '<br><small><code>' + WebKit.esc(row.id) +
@@ -102,14 +108,14 @@ class ModePage {
           cell(row.product, product) + '<td><small>' +
           WebKit.esc(row.where || '') + '</small></td></tr>';
       }).join('') + '</tbody></table>';
-    const settings = '<h2>Development-only settings</h2>' +
-      '<p>A setting marked development-only may hold a value other than ' +
-      'its default only while the named predicate of ' +
-      '<code>common/mode.js</code> answers yes; in product such a value is ' +
-      'refused on write (<code>STS-CORE-0103</code>) and ignored where it ' +
-      'is read.</p>' +
-      '<table class="grid"><thead><tr><th>Setting</th><th>Development-only ' +
-      'values</th><th>Stored here</th><th>In force</th><th>Why</th></tr>' +
+    const settings = '<h2>' + t.html('consoleMode.devOnlyHeading') + '</h2>' +
+      '<p>' + t.html('consoleMode.devOnlyLead') + '</p>' +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleMode.thSetting') + '</th><th>' +
+      t.html('consoleMode.thDevOnlyValues') + '</th><th>' +
+      t.html('consoleMode.thStored') + '</th><th>' +
+      t.html('consoleMode.thInForce') + '</th><th>' +
+      t.html('consoleMode.thWhy') + '</th></tr>' +
       '</thead><tbody>' +
       json.developmentOnlySettings.map(function (row: Json): string {
         return '<tr id="setting-' + WebKit.esc(row.key) + '"><th><code>' +
@@ -117,15 +123,17 @@ class ModePage {
           ' · <code>' + WebKit.esc(row.predicate) + '()</code></small></th>' +
           '<td>' + (row.developmentOnlyValues
             ? row.developmentOnlyValues.map(function (v: unknown): string {
-              return ModePage.shown(v);
+              return ModePage.shown(v, t);
             }).join(', ')
-            : 'anything but ' + ModePage.shown(row.default)) + '</td>' +
-          '<td>' + ModePage.shown(row.value) + '</td><td>' +
-          (row.ignored ? '<strong>' + ModePage.shown(row.inForce) +
-                         '</strong> — ignored' : ModePage.shown(row.inForce)) +
+            : t.html('consoleMode.anythingBut') +
+              ModePage.shown(row.default, t)) + '</td>' +
+          '<td>' + ModePage.shown(row.value, t) + '</td><td>' +
+          (row.ignored ? '<strong>' + ModePage.shown(row.inForce, t) +
+                         '</strong>' + t.html('consoleMode.ignoredMark')
+            : ModePage.shown(row.inForce, t)) +
           '</td><td><small>' + WebKit.esc(row.why) + '</small></td></tr>';
       }).join('') + '</tbody></table>';
-    const notYet = '<h2>What product mode still does not check</h2>' +
+    const notYet = '<h2>' + t.html('consoleMode.notYetHeading') + '</h2>' +
       '<ul>' + json.notYet.map(function (row: Json): string {
         return '<li id="not-yet-' + WebKit.esc(row.id) + '">' +
           WebKit.esc(row.what) + '</li>';

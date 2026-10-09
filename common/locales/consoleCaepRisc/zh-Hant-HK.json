@@ -1,0 +1,7 @@
+{
+  "chooser.accountPlaceholder": "使用者名稱、主體或電郵地址的一部分",
+  "risc.emitNote": "十四種中有十種描述的是這裡沒有任何東西會做的事 &mdash; 本服務不搜尋任何外洩資料庫，也不執行任何復原流程 &mdash; 因此此表單是產生它們的唯一途徑。<strong>這十種中有四種在發出時會改變真實狀態</strong>：RISC 第 2.8 節將每個退出事件定義為<em>帳戶處於此狀態</em>，而不是回報狀態發生了變化，所以在這裡發出一個就是完成了轉換。主體由您選擇的帳戶組成，格式由 <code>risc.subjectFormat</code> 指定 &mdash; 兩個識別碼事件除外，它們無論如何都使用電郵地址，因為對這兩個事件而言，識別碼就是訊息。",
+  "accounts.searchPlaceholder": "使用者名稱、主體、電郵地址或 DN",
+  "accounts.searchWhat": "它比對帳戶識別碼、<code>sub</code>、電郵地址、電話號碼、傳送給接收端的 SSF 主體、目錄 DN &mdash; 以及此帳戶以前使用過的每個識別碼。最後一項並非求全：<code>identifier-changed</code> 是關於金鑰本身的事件，因此讀者手上拿著的地址往往正是該帳戶已不再使用的那個。",
+  "facts.email": "電郵"
+}

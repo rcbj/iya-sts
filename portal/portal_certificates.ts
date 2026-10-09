@@ -78,6 +78,8 @@ interface PortalContext {
     info(message: string): void;
   };
   esc(value: unknown): string;
+  // The portal's translator for a session (#539 phase 3).
+  translatorFor(session: Json): any;
   shell(path: string, session: Json, message: unknown, error: unknown,
         body: string): string;
   send(res: Res, status: number, body: string): unknown;
@@ -158,13 +160,14 @@ class PortalCertificatesPage {
     return { kind: 'person', id: String(session.user.username) };
   }
 
-  private readable(when: unknown): string {
+  // A time for a person to read, in the page's language (#539): the
+  // translator's date, which is UTC and says so.
+  private readable(when: unknown, t: Json): string {
     const { log } = this.ctx;
     log.debug("Entering PortalCertificatesPage.readable().");
     const at = new Date(when as any);
     log.debug("Leaving PortalCertificatesPage.readable().");
-    return isNaN(at.getTime()) ? String(when || '')
-      : at.toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
+    return isNaN(at.getTime()) ? String(when || '') : t.date(at);
   }
 
   private enabled(family: string): boolean {
@@ -185,46 +188,49 @@ class PortalCertificatesPage {
     log.debug("Entering PortalCertificatesPage.page().");
     const entry = this.selfEntry(session);
     const csrf = websecurity.field(session.id);
+    // THE LANGUAGE (#539): the portal's translator for this person. The
+    // refusal passed in as `error` stays English.
+    const t = this.ctx.translatorFor(session);
     const resolved = core.resolveEntry(entry.kind, entry.id);
     const cards: string[] = [];
 
     if (fresh) {
-      cards.push(this.freshCard(fresh, base));
+      cards.push(this.freshCard(fresh, base, t));
     }
 
     if (!resolved.ok) {
-      cards.push('<div class="card"><h2>No directory entry</h2><p ' +
-        'class="sub">You are signed in as <code>' + esc(entry.id) +
-        '</code>, and there is no person of that name in this realm\'s ' +
-        'directory. A certificate issued over ACME, EST or SCEP always ' +
-        'names an entry and is kept on it, so there is nothing to issue to ' +
-        'until one exists.</p></div>');
+      cards.push('<div class="card"><h2>' +
+        t.html('portalCertificates.noEntry.heading') + '</h2><p ' +
+        'class="sub">' + t.html('portalCertificates.noEntry.text',
+          { name: entry.id }) + '</p></div>');
       log.debug("Leaving PortalCertificatesPage.page(). No entry.");
       return shell(PATH, session, message, error, cards.join(''));
     }
 
-    cards.push(this.certificatesCard(core.enrolledOf(entry), csrf));
+    cards.push(this.certificatesCard(core.enrolledOf(entry), csrf, t));
     if (this.enabled('acme')) {
-      cards.push(this.acmeCard(core.eabsOf(entry), csrf, base));
+      cards.push(this.acmeCard(core.eabsOf(entry), csrf, base, t));
     }
     if (this.enabled('est')) {
-      cards.push(this.estCard(base));
+      cards.push(this.estCard(base, t));
     }
     if (this.enabled('scep')) {
-      cards.push(this.scepCard(core.scepChallengesOf(entry), csrf, base));
+      cards.push(this.scepCard(core.scepChallengesOf(entry), csrf, base, t));
     }
-    cards.push(this.hostNamesCard(resolved.hostNames));
-    cards.push('<div class="card"><h2>Other certificates</h2><p ' +
-      'class="sub">A TLS client certificate this portal issues you ' +
-      'directly, and your RFC 7523 and RFC 7522 signing keys, are on <a ' +
-      'href="' + BASE + '/signing-key">Signing keys</a>. This page is ' +
-      'about the three enrollment protocols a client or a device speaks to ' +
-      'get one.</p></div>');
+    cards.push(this.hostNamesCard(resolved.hostNames, t));
+    // The link is markup a message may not carry (#539), so the sentence is
+    // two messages around it.
+    cards.push('<div class="card"><h2>' +
+      t.html('portalCertificates.other.heading') + '</h2><p ' +
+      'class="sub">' + t.html('portalCertificates.other.before') + ' <a ' +
+      'href="' + BASE + '/signing-key">' +
+      t.html('portalCertificates.other.link') + '</a>' +
+      t.html('portalCertificates.other.after') + '</p></div>');
     log.debug("Leaving PortalCertificatesPage.page().");
     return shell(PATH, session, message, error, cards.join(''));
   }
 
-  private freshCard(fresh: Fresh, base: string): string {
+  private freshCard(fresh: Fresh, base: string, t: Json): string {
     const { log, esc } = this.ctx;
     log.debug("Entering PortalCertificatesPage.freshCard(). kind=" +
               fresh.kind);
@@ -232,43 +238,55 @@ class PortalCertificatesPage {
       const directory = helpers.rebaseTo(base, 'acme') +
                         '/enroll/acme/directory';
       log.debug("Leaving PortalCertificatesPage.freshCard(). EAB.");
-      return '<div class="card"><h2>Your new ACME account binding key</h2>' +
-        '<div class="err"><strong>Copy it now.</strong> The HMAC key is ' +
-        'shown on this page once and cannot be shown again.</div>' +
-        '<table><tr><th>Directory</th><td><code>' + esc(directory) +
-        '</code></td></tr><tr><th>Key id</th><td><code>' + esc(fresh.kid) +
-        '</code></td></tr><tr><th>HMAC key (HS256)</th><td><code>' +
-        esc(fresh.hmacKey) + '</code></td></tr><tr><th>Binds an account ' +
-        'until</th><td>' + esc(this.readable(fresh.expiresAt)) +
-        '</td></tr></table><p class="sub">For example:</p><pre class="pem">' +
+      return '<div class="card"><h2>' +
+        t.html('portalCertificates.fresh.eabHeading') + '</h2>' +
+        '<div class="err">' + t.html('portalCertificates.fresh.eabCopy') +
+        '</div>' +
+        '<table><tr><th>' + t.html('portalCertificates.fresh.directory') +
+        '</th><td><code>' + esc(directory) +
+        '</code></td></tr><tr><th>' + t.html('portalCertificates.keyId') +
+        '</th><td><code>' + esc(fresh.kid) +
+        '</code></td></tr><tr><th>' +
+        t.html('portalCertificates.fresh.hmacKey') + '</th><td><code>' +
+        esc(fresh.hmacKey) + '</code></td></tr><tr><th>' +
+        t.html('portalCertificates.fresh.bindsUntil') + '</th><td>' +
+        esc(this.readable(fresh.expiresAt, t)) +
+        '</td></tr></table><p class="sub">' +
+        t.html('portalCertificates.fresh.example') + '</p><pre class="pem">' +
         esc('certbot certonly --server ' + directory + ' \\\n' +
             '  --eab-kid ' + fresh.kid + ' \\\n' +
             '  --eab-hmac-key ' + fresh.hmacKey + ' ...') + '</pre>' +
-        '<p class="note">The key binds ONE account, and that account can ' +
-        'only ever be issued certificates for you.</p></div>';
+        '<p class="note">' + t.html('portalCertificates.fresh.eabNote') +
+        '</p></div>';
     }
     log.debug("Leaving PortalCertificatesPage.freshCard(). Challenge.");
-    return '<div class="card"><h2>Your new SCEP challenge password</h2>' +
-      '<div class="err"><strong>Copy it now.</strong> It is shown on this ' +
-      'page once and cannot be shown again.</div>' +
-      '<table><tr><th>SCEP URL</th><td><code>' +
+    return '<div class="card"><h2>' +
+      t.html('portalCertificates.fresh.challengeHeading') + '</h2>' +
+      '<div class="err">' + t.html('portalCertificates.fresh.challengeCopy') +
+      '</div>' +
+      '<table><tr><th>' + t.html('portalCertificates.fresh.scepUrl') +
+      '</th><td><code>' +
       esc(helpers.rebaseTo(base, 'scep') +
           '/enroll/scep/' + fresh.profile) + '</code></td></tr>' +
       // The plain-HTTP address too (#210): sscep and most device firmware
       // speak no TLS, and SCEP secures its own messages.
-      '<tr><th>Plain-HTTP SCEP URL</th><td><code>' +
+      '<tr><th>' + t.html('portalCertificates.fresh.plainScepUrl') +
+      '</th><td><code>' +
       esc(require('../common/pki_revocation').httpBaseInRealm() +
           '/enroll/scep/' + fresh.profile) +
       '</code></td></tr>' +
-      '<tr><th>Challenge password</th><td><code>' + esc(fresh.challenge) +
-      '</code></td></tr><tr><th>Profile</th><td><code>' +
-      esc(fresh.profile) + '</code></td></tr><tr><th>Usable until</th><td>' +
-      esc(this.readable(fresh.expiresAt)) + '</td></tr></table>' +
-      '<p class="note">It is spent by the first certificate request that ' +
-      'uses it, and that certificate names you.</p></div>';
+      '<tr><th>' + t.html('portalCertificates.fresh.challenge') +
+      '</th><td><code>' + esc(fresh.challenge) +
+      '</code></td></tr><tr><th>' + t.html('portalCertificates.profile') +
+      '</th><td><code>' +
+      esc(fresh.profile) + '</code></td></tr><tr><th>' +
+      t.html('portalCertificates.fresh.usableUntil') + '</th><td>' +
+      esc(this.readable(fresh.expiresAt, t)) + '</td></tr></table>' +
+      '<p class="note">' + t.html('portalCertificates.fresh.challengeNote') +
+      '</p></div>';
   }
 
-  private certificatesCard(records: Json[], csrf: string): string {
+  private certificatesCard(records: Json[], csrf: string, t: Json): string {
     const self = this;
     const { log, esc } = this.ctx;
     const { core } = this.deps;
@@ -277,9 +295,10 @@ class PortalCertificatesPage {
               records.length + ".");
     if (!records.length) {
       log.debug("Leaving PortalCertificatesPage.certificatesCard(). None.");
-      return '<div class="card"><h2>Your enrolled certificates</h2><p ' +
-        'class="sub">You hold no certificate issued over ACME, EST or ' +
-        'SCEP.</p></div>';
+      return '<div class="card"><h2>' +
+        t.html('portalCertificates.enrolled.heading') + '</h2><p ' +
+        'class="sub">' + t.html('portalCertificates.enrolled.none') +
+        '</p></div>';
     }
     const rows = records.map(function (one) {
       const revoke = one.status === 'valid'
@@ -287,10 +306,13 @@ class PortalCertificatesPage {
           '<input type="hidden" name="action" value="revoke">' +
           '<input type="hidden" name="serial" value="' +
           esc(one.serialHex) + '"><select name="reason" aria-label="' +
-          'Revocation reason">' + REVOCATION_REASONS.map(function (reason) {
+          esc(t.text('portalCertificates.enrolled.reason')) + '">' +
+          // The reasons are RFC 5280's names, and stay as they are.
+          REVOCATION_REASONS.map(function (reason) {
             return '<option value="' + reason + '">' + esc(reason) +
               '</option>';
-          }).join('') + '</select> <button class="danger">Revoke</button>' +
+          }).join('') + '</select> <button class="danger">' +
+          t.html('portalCertificates.enrolled.revoke') + '</button>' +
           '</form>'
         : '';
       return '<tr><td>' + esc(core.FAMILY_LABELS[one.family] || one.family) +
@@ -298,59 +320,69 @@ class PortalCertificatesPage {
         esc(one.serialHex) + '</code></td><td>' +
         (one.names || []).map(function (name) {
           return '<code>' + esc(name) + '</code>';
-        }).join('<br>') + '</td><td>' + esc(self.readable(one.notAfter)) +
+        }).join('<br>') + '</td><td>' +
+        esc(self.readable(one.notAfter, t)) +
         '</td><td>' + esc(one.status) +
-        (one.keySource === 'server' ? '<br><span class="sub">key made ' +
-          'here</span>' : '') + '</td><td>' + revoke + '</td></tr>';
+        (one.keySource === 'server' ? '<br><span class="sub">' +
+          t.html('portalCertificates.enrolled.keyMadeHere') + '</span>'
+          : '') + '</td><td>' + revoke + '</td></tr>';
     }).join('');
     log.debug("Leaving PortalCertificatesPage.certificatesCard().");
-    return '<div class="card"><h2>Your enrolled certificates</h2>' +
-      '<table><tr><th>Protocol</th><th>Profile</th><th>Serial</th>' +
-      '<th>Names</th><th>Until</th><th>Status</th><th></th></tr>' + rows +
-      '</table><p class="note">Revoking puts the certificate on its ' +
-      'authority\'s CRL and makes OCSP answer <code>revoked</code>. It ' +
-      'cannot ' +
-      'be undone.</p></div>';
+    return '<div class="card"><h2>' +
+      t.html('portalCertificates.enrolled.heading') + '</h2>' +
+      '<table><tr><th>' + t.html('portalCertificates.enrolled.protocol') +
+      '</th><th>' + t.html('portalCertificates.profile') + '</th><th>' +
+      t.html('portalCertificates.enrolled.serial') + '</th><th>' +
+      t.html('portalCertificates.enrolled.names') + '</th><th>' +
+      t.html('portalCertificates.enrolled.until') + '</th><th>' +
+      t.html('portalCertificates.status') + '</th><th></th></tr>' + rows +
+      '</table><p class="note">' +
+      t.html('portalCertificates.enrolled.note') + '</p></div>';
   }
 
-  private acmeCard(keys: Json[], csrf: string, base: string): string {
+  private acmeCard(keys: Json[], csrf: string, base: string,
+                   t: Json): string {
     const self = this;
     const { log, esc } = this.ctx;
     const PATH = this.PATH;
     log.debug("Entering PortalCertificatesPage.acmeCard().");
     const rows = keys.map(function (one) {
       return '<tr><td><code>' + esc(one.kid) + '</code></td><td>' +
-        esc(one.status) + '</td><td>' + esc(self.readable(one.expiresAt)) +
+        esc(one.status) + '</td><td>' +
+        esc(self.readable(one.expiresAt, t)) +
         '</td><td>' + (one.status === 'bound' ? '' :
           '<form method="post" action="' + PATH + '">' + csrf +
           '<input type="hidden" name="action" value="delete-eab">' +
           '<input type="hidden" name="kid" value="' + esc(one.kid) + '">' +
-          '<button class="secondary">Delete</button></form>') + '</td></tr>';
+          '<button class="secondary">' +
+          t.html('portalCertificates.delete') + '</button></form>') +
+        '</td></tr>';
     }).join('');
     log.debug("Leaving PortalCertificatesPage.acmeCard().");
-    return '<div class="card"><h2>ACME</h2><p class="sub">An ACME client ' +
-      'registers an account at <code>' +
-      esc(helpers.rebaseTo(base, 'acme') +
-          '/enroll/acme/directory') + '</code> with an External ' +
-      'Account Binding key; the account is then bound to you for life.</p>' +
-      (rows ? '<table><tr><th>Key id</th><th>Status</th><th>Expires</th>' +
+    return '<div class="card"><h2>ACME</h2><p class="sub">' +
+      t.html('portalCertificates.acme.text', {
+        url: helpers.rebaseTo(base, 'acme') + '/enroll/acme/directory' }) +
+      '</p>' +
+      (rows ? '<table><tr><th>' + t.html('portalCertificates.keyId') +
+        '</th><th>' + t.html('portalCertificates.status') + '</th><th>' +
+        t.html('portalCertificates.expires') + '</th>' +
         '<th></th></tr>' + rows + '</table>' : '') +
       '<form method="post" action="' + PATH + '">' + csrf +
-      '<input type="hidden" name="action" value="create-eab"><button>Make ' +
-      'an ACME account binding key</button></form></div>';
+      '<input type="hidden" name="action" value="create-eab"><button>' +
+      t.html('portalCertificates.acme.make') + '</button></form></div>';
   }
 
-  private estCard(base: string): string {
+  private estCard(base: string, t: Json): string {
     const { log, esc } = this.ctx;
     const { core } = this.deps;
     log.debug("Entering PortalCertificatesPage.estCard().");
     const profiles: string[] = core.allowedProfiles('est');
     log.debug("Leaving PortalCertificatesPage.estCard().");
-    return '<div class="card"><h2>EST</h2><p class="sub">An EST client ' +
-      'authenticates with your username and password (or a certificate you ' +
-      'were issued over EST, ACME or SCEP) and posts a certificate request. ' +
-      'Nothing needs to be made here first.</p><table><tr><th>Profile</th>' +
-      '<th>Enroll at</th></tr>' + profiles.map(function (profile) {
+    return '<div class="card"><h2>EST</h2><p class="sub">' +
+      t.html('portalCertificates.est.text') + '</p><table><tr><th>' +
+      t.html('portalCertificates.profile') + '</th>' +
+      '<th>' + t.html('portalCertificates.est.enrollAt') + '</th></tr>' +
+      profiles.map(function (profile) {
         return '<tr><td><code>' + esc(profile) + '</code></td><td><code>' +
           esc(helpers.rebaseTo(base, 'est') +
               '/.well-known/est/' + profile + '/simpleenroll') +
@@ -358,7 +390,8 @@ class PortalCertificatesPage {
       }).join('') + '</table></div>';
   }
 
-  private scepCard(challenges: Json[], csrf: string, base: string): string {
+  private scepCard(challenges: Json[], csrf: string, base: string,
+                   t: Json): string {
     const self = this;
     const { log, esc } = this.ctx;
     const { core } = this.deps;
@@ -367,12 +400,13 @@ class PortalCertificatesPage {
     const rows = challenges.map(function (one) {
       return '<tr><td><code>' + esc(one.id) + '</code></td><td><code>' +
         esc(one.profile) + '</code></td><td>' + esc(one.status) +
-        '</td><td>' + esc(self.readable(one.expiresAt)) + '</td><td>' +
+        '</td><td>' + esc(self.readable(one.expiresAt, t)) + '</td><td>' +
         (one.status === 'unused'
           ? '<form method="post" action="' + PATH + '">' + csrf +
             '<input type="hidden" name="action" value="delete-challenge">' +
             '<input type="hidden" name="id" value="' + esc(one.id) + '">' +
-            '<button class="secondary">Delete</button></form>'
+            '<button class="secondary">' +
+            t.html('portalCertificates.delete') + '</button></form>'
           : '') + '</td></tr>';
     }).join('');
     const options = core.allowedProfiles('scep').map(function (profile) {
@@ -381,32 +415,36 @@ class PortalCertificatesPage {
         esc(profile) + '</option>';
     }).join('');
     log.debug("Leaving PortalCertificatesPage.scepCard().");
-    return '<div class="card"><h2>SCEP</h2><p class="sub">A SCEP client ' +
-      'puts a challenge password in its certificate request to <code>' +
-      esc(helpers.rebaseTo(base, 'scep') +
-          '/enroll/scep') + '</code>. Each is for one profile and ' +
-      'is spent once.</p>' +
-      (rows ? '<table><tr><th>Id</th><th>Profile</th><th>Status</th>' +
-        '<th>Expires</th><th></th></tr>' + rows + '</table>' : '') +
+    return '<div class="card"><h2>SCEP</h2><p class="sub">' +
+      t.html('portalCertificates.scep.text', {
+        url: helpers.rebaseTo(base, 'scep') + '/enroll/scep' }) + '</p>' +
+      (rows ? '<table><tr><th>' + t.html('portalCertificates.scep.id') +
+        '</th><th>' + t.html('portalCertificates.profile') + '</th><th>' +
+        t.html('portalCertificates.status') + '</th>' +
+        '<th>' + t.html('portalCertificates.expires') +
+        '</th><th></th></tr>' + rows + '</table>' : '') +
       '<form method="post" action="' + PATH + '">' + csrf +
       '<input type="hidden" name="action" value="create-challenge">' +
-      '<label>Profile <select name="profile">' + options + '</select>' +
-      '</label> <button>Make a SCEP challenge password</button></form></div>';
+      '<label>' + t.html('portalCertificates.profile') +
+      ' <select name="profile">' + options + '</select>' +
+      '</label> <button>' + t.html('portalCertificates.scep.make') +
+      '</button></form></div>';
   }
 
-  private hostNamesCard(names: string[]): string {
+  private hostNamesCard(names: string[], t: Json): string {
     const { log, esc } = this.ctx;
     log.debug("Entering PortalCertificatesPage.hostNamesCard().");
     log.debug("Leaving PortalCertificatesPage.hostNamesCard().");
-    return '<div class="card"><h2>Host names registered to you</h2>' +
+    return '<div class="card"><h2>' +
+      t.html('portalCertificates.hostNames.heading') + '</h2>' +
       (names.length
         ? '<p>' + names.map(function (one) {
           return '<code>' + esc(one) + '</code>';
         }).join(' ') + '</p>'
-        : '<p class="sub">None.</p>') +
-      '<p class="note">A TLS server certificate names only these. An ' +
-      'administrator registers them; this service never proves control of ' +
-      'a name by contacting it.</p></div>';
+        : '<p class="sub">' + t.html('portalCertificates.hostNames.none') +
+          '</p>') +
+      '<p class="note">' + t.html('portalCertificates.hostNames.note') +
+      '</p></div>';
   }
 
   // A refusal drawn on the page, with its code on the response.
@@ -572,8 +610,11 @@ class PortalCertificatesPage {
                             (gone.errors || ['Not deleted.'])[0]);
       }
       log.debug('Leaving POST ' + PATH + '. Deleted.');
+      // The success message in the person's language (#539), made here
+      // because the redirect carries it.
+      const t = ctx.translatorFor(session);
       res.status(303).set('Location', PATH + '?done=' +
-        encodeURIComponent('Deleted.')).end();
+        encodeURIComponent(t.text('portalCertificates.done.deleted'))).end();
       return undefined;
     }
 
@@ -599,8 +640,10 @@ class PortalCertificatesPage {
                                        principal: entry.id,
                                        serialHex: revoked.serialHex });
       log.debug('Leaving POST ' + PATH + '. Revoked.');
+      // As Deleted's, above (#539).
+      const t = ctx.translatorFor(session);
       res.status(303).set('Location', PATH + '?done=' +
-        encodeURIComponent('That certificate is revoked.')).end();
+        encodeURIComponent(t.text('portalCertificates.done.revoked'))).end();
       return undefined;
     }
 

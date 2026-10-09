@@ -59,103 +59,134 @@ class MailPage {
   // THE HTML
   // -------------------------------------------------------------------------
   static settingsHtml(ctx: Json, json: Json): string {
+    const t = ctx.t;
     const esc = kit.esc.bind(kit);
     const canWrite = ctx.write;
     const problem = json.buildProblem;
     const relay = json.relay;
     const status = '<table class="grid"><tbody>' +
-      '<tr><th>Transport</th><td><strong>' + esc(json.transport) +
-      '</strong> (<code>mail.transport</code> is <code>' +
-      esc(json.setting) + '</code>; this realm is in ' + esc(json.mode) +
-      ' mode)' + (json.transport === 'capture'
-        ? '<br><small>Development: every message is KEPT and shown on ' +
-          '<a href="' + OUTBOX + '">Monitoring &rarr; Mail</a>, not sent.' +
+      '<tr><th>' + t.html('consoleMail.status.transport') +
+      '</th><td><strong>' + esc(json.transport) +
+      '</strong> ' + t.html('consoleMail.status.transportSetting',
+        { setting: json.setting, mode: json.mode }) +
+      (json.transport === 'capture'
+        ? '<br><small>' + t.html('consoleMail.status.captureBefore') +
+          '<a href="' + OUTBOX + '">' +
+          t.html('consoleMail.status.captureLink') + '</a>' +
+          t.html('consoleMail.status.captureAfter') +
           '</small>' : '') + (json.transport === 'off'
-        ? '<br><small>Nothing is sent: a message is refused as it is ' +
-          'queued (STS-MAIL-0001).</small>' : '') + '</td></tr>' +
-      (relay ? '<tr><th>Relay</th><td><code>' + esc(relay.host) + ':' +
+        ? '<br><small>' + t.html('consoleMail.status.off') +
+          '</small>' : '') + '</td></tr>' +
+      (relay ? '<tr><th>' + t.html('consoleMail.status.relay') +
+        '</th><td><code>' + esc(relay.host) + ':' +
         esc(relay.port) + '</code>, ' + esc(relay.tls) + ', AUTH ' +
         esc(relay.auth) + ', DKIM ' + esc(relay.dkim) + '</td></tr>' : '') +
-      '<tr><th>Built</th><td>' + (problem
-        ? '<strong>NO</strong> — ' + esc(problem.code) + ': ' +
-          esc(problem.why) + ' <small>(' + esc(problem.at) + ')</small>'
-        : 'no failure recorded in this process') + '</td></tr>' +
-      '<tr><th>From</th><td><code>' + esc(json.from) + '</code></td></tr>' +
-      '<tr><th>Links point at</th><td>' + (json.linkBase
+      '<tr><th>' + t.html('consoleMail.status.built') + '</th><td>' +
+      (problem
+        ? t.html('consoleMail.status.builtNo') + ' — ' + esc(problem.code) +
+          ': ' + esc(problem.why) + ' <small>(' + esc(problem.at) +
+          ')</small>'
+        : t.html('consoleMail.status.builtOk')) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleMail.status.from') + '</th><td><code>' +
+      esc(json.from) + '</code></td></tr>' +
+      '<tr><th>' + t.html('consoleMail.status.links') + '</th><td>' +
+      (json.linkBase
         ? '<code>' + esc(json.linkBase) + '</code>' +
-          (json.linkBasePinned ? '' : ' <small>(the listener\'s configured ' +
-            'address: <code>global.publicBaseUrl</code> is empty, which ' +
-            'product mode refuses)</small>')
-        : '<strong>nowhere</strong> — set <code>global.publicBaseUrl</code>; ' +
-          'a message with a link is refused until then (STS-MAIL-0015)') +
-      '</td></tr><tr><th>Self-service reset</th><td>' +
-      (json.selfServiceReset ? 'offered where a transport is available' :
-        'off') + '</td></tr><tr><th>Security notices</th><td>' +
-      (json.securityNotices ? 'on' : 'off') + '</td></tr></tbody></table>';
+          (json.linkBasePinned ? '' : ' <small>' +
+            t.html('consoleMail.status.linksUnpinned') + '</small>')
+        : t.html('consoleMail.status.linksNowhere')) +
+      '</td></tr><tr><th>' + t.html('consoleMail.status.reset') +
+      '</th><td>' +
+      (json.selfServiceReset ? t.html('consoleMail.status.resetOffered') :
+        t.html('consoleMail.status.offWord')) + '</td></tr><tr><th>' +
+      t.html('consoleMail.status.notices') + '</th><td>' +
+      (json.securityNotices ? t.html('consoleMail.status.onWord')
+        : t.html('consoleMail.status.offWord')) +
+      '</td></tr></tbody></table>';
     // WITH NO WORKING TRANSPORT THE TWO FORMS ARE DRAWN DISABLED, WITH THE
     // REASON (#64: "these features should be greyed out in the admin
     // console"), rather than left out as they were until then — a control
     // that vanished reads as one this service does not have. `configRow()`'s
     // pattern on /admin/config.
+    //
+    // The sentence is split around its link (#539): a catalog message
+    // cannot carry an anchor. The build problem's own text is the view's
+    // and stays as it comes.
     const off = json.available ? '' : ' disabled';
     const why = json.available ? ''
-      : kit.warn('<strong>This realm cannot send mail</strong>' +
+      : kit.warn(t.html('consoleMail.cannot.head') +
           (json.buildProblem ? ' — ' + esc(json.buildProblem.why ||
                                            json.buildProblem) : '') +
-          '. Configure a transport below; until then these forms, the ' +
-          'emailed sign-in mechanisms on <a href="/admin/policies#authn">' +
-          'Policies</a> and self-service reset are off.');
+          t.html('consoleMail.cannot.before') +
+          '<a href="/admin/policies#authn">' +
+          t.html('consoleMail.cannot.link') + '</a>' +
+          t.html('consoleMail.cannot.after'));
     const test = canWrite
-      ? '<h2>Send a test message</h2>' + why +
-        kit.note('To your own entry\'s address, or to another person in ' +
-                   'this realm by username. Never to an address.') +
+      ? '<h2>' + t.html('consoleMail.test.heading') + '</h2>' + why +
+        kit.note(t.html('consoleMail.test.note')) +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="test">' +
-        '<div class="formrow"><label for="mail-test-user">Person</label>' +
+        '<div class="formrow"><label for="mail-test-user">' +
+        t.html('consoleMail.test.person') + '</label>' +
         '<input type="text" id="mail-test-user" name="user" size="24" ' +
-        'maxlength="256" placeholder="yourself"' + off + '><button ' +
-        'type="submit"' + off + '>Send a test message</button></div>' +
+        'maxlength="256" placeholder="' +
+        esc(t.text('consoleMail.test.yourself')) + '"' + off + '><button ' +
+        'type="submit"' + off + '>' + t.html('consoleMail.test.heading') +
+        '</button></div>' +
         '</form>' +
-        '<h2>Verify a person\'s address</h2>' +
-        kit.note('Sends a single-use verification link to the address on ' +
-                   'their entry; they follow it. You never see it. A person ' +
-                   'can send themselves one from <code>/portal/email</code>.') +
+        '<h2>' + t.html('consoleMail.verify.heading') + '</h2>' +
+        kit.note(t.html('consoleMail.verify.note')) +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="verify">' +
-        '<div class="formrow"><label for="mail-verify-user">Person</label>' +
+        '<div class="formrow"><label for="mail-verify-user">' +
+        t.html('consoleMail.test.person') + '</label>' +
         '<input type="text" id="mail-verify-user" name="user" size="24" ' +
         'maxlength="256" required' + off + '><button type="submit"' + off +
-        '>Send a verification link</button></div></form>'
+        '>' + t.html('consoleMail.verify.button') + '</button></div></form>'
       : '';
-    const templates = '<h2>Messages</h2>' +
-      kit.note('Every message this service sends, in English, and the ' +
-                 'languages this realm has written its own wording in. A ' +
-                 'person\'s <code>preferredLanguage</code> chooses. A link ' +
-                 'is a placeholder whose value is this service\'s own; a ' +
-                 'template that writes an address, loads an image or runs ' +
-                 'anything is refused when it is saved.') +
-      '<table class="grid"><thead><tr><th>Message</th><th>Category</th>' +
-      '<th>Placeholders</th><th>This realm\'s wording</th></tr></thead>' +
-      '<tbody>' + json.templates.map(function (t: Json): string {
+    // THE LANGUAGES EACH MESSAGE HAS A BUILT-IN TRANSLATION IN (#539),
+    // beside the ones this realm wrote its own wording in: the view's
+    // `builtInLanguages`, a short list in the same cell. A view without the
+    // member (an older server) draws the cell as it always did.
+    const templates = '<h2>' + t.html('consoleMail.templates.heading') +
+      '</h2>' +
+      kit.note(t.html('consoleMail.templates.note')) +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleMail.templates.message') + '</th><th>' +
+      t.html('consoleMail.templates.category') + '</th>' +
+      '<th>' + t.html('consoleMail.templates.placeholders') + '</th><th>' +
+      t.html('consoleMail.templates.wording') + '</th></tr></thead>' +
+      '<tbody>' + json.templates.map(function (tpl: Json): string {
+        const builtIn = Array.isArray(tpl.builtInLanguages) &&
+          tpl.builtInLanguages.length
+          ? '<br><small>' + t.html('consoleMail.templates.builtIn',
+              { languages: tpl.builtInLanguages.join(' ') }) + '</small>'
+          : '';
         return '<tr><td><a href="' + PAGE + '?template=' +
-          encodeURIComponent(t.id) + '&amp;lang=en"><code>' + esc(t.id) +
-          '</code></a><br><small>' + esc(t.title) + '</small></td><td>' +
-          esc(t.category) + '</td><td><small>' +
-          t.values.concat(t.links).map(function (n: string): string {
+          encodeURIComponent(tpl.id) + '&amp;lang=en"><code>' +
+          esc(tpl.id) + '</code></a><br><small>' + esc(tpl.title) +
+          '</small></td><td>' +
+          esc(tpl.category) + '</td><td><small>' +
+          tpl.values.concat(tpl.links).map(function (n: string): string {
             return '{{' + esc(n) + '}}';
-          }).join(' ') + '</small></td><td>' + (t.languages.length
-            ? t.languages.map(function (l: string): string {
+          }).join(' ') + '</small></td><td>' + (tpl.languages.length
+            ? tpl.languages.map(function (l: string): string {
                 return '<a href="' + PAGE + '?template=' +
-                  encodeURIComponent(t.id) + '&amp;lang=' +
+                  encodeURIComponent(tpl.id) + '&amp;lang=' +
                   encodeURIComponent(l) + '">' + esc(l) + '</a>';
-              }).join(' ') : 'built-in only') + '</td></tr>';
+              }).join(' ') : t.html('consoleMail.templates.builtInOnly')) +
+          builtIn + '</td></tr>';
       }).join('') + '</tbody></table>';
     return status + test + templates +
-      (json.confinedToRealm ? '' : '<h2>Settings</h2>' +
-       SettingsForms.forms(json.settings, PAGE));
+      (json.confinedToRealm ? '' : '<h2>' +
+       t.html('consoleMail.settings') + '</h2>' +
+       SettingsForms.forms(json.settings, PAGE, undefined, t));
   }
 
-  static templateHtml(ctx: Json, t: Json): string {
+  // `tpl` is the one template the view answered; `t` is the translator
+  // (#539), so the template is no longer called `t` here.
+  static templateHtml(ctx: Json, tpl: Json): string {
+    const t = ctx.t;
     const esc = kit.esc.bind(kit);
     const canWrite = ctx.write;
     const field = function (name: string, label: string, value: string,
@@ -170,33 +201,37 @@ class MailPage {
     };
     const form = '<form method="post" action="' + PAGE + '">' +
       '<input type="hidden" name="action" value="save-template">' +
-      '<input type="hidden" name="template" value="' + esc(t.id) + '">' +
-      '<div class="formrow"><label for="mail-t-lang">Language</label>' +
+      '<input type="hidden" name="template" value="' + esc(tpl.id) + '">' +
+      '<div class="formrow"><label for="mail-t-lang">' +
+      t.html('consoleMail.template.language') + '</label>' +
       '<input type="text" id="mail-t-lang" name="lang" size="10" ' +
-      'maxlength="35" value="' + esc(t.lang) + '"></div>' +
-      field('subject', 'Subject', t.subject, 1) +
-      field('text', 'Text part', t.text, 10) +
-      field('html', 'HTML part', t.html, 10) +
-      (canWrite ? '<div class="formrow"><button type="submit">Save this ' +
-                  'realm\'s wording</button></div>' : '') + '</form>' +
-      (canWrite && t.own
+      'maxlength="35" value="' + esc(tpl.lang) + '"></div>' +
+      field('subject', t.html('consoleMail.template.subject'),
+            tpl.subject, 1) +
+      field('text', t.html('consoleMail.template.text'), tpl.text, 10) +
+      field('html', t.html('consoleMail.template.html'), tpl.html, 10) +
+      (canWrite ? '<div class="formrow"><button type="submit">' +
+                  t.html('consoleMail.template.save') +
+                  '</button></div>' : '') + '</form>' +
+      (canWrite && tpl.own
         ? '<form method="post" action="' + PAGE + '">' +
           '<input type="hidden" name="action" value="reset-template">' +
-          '<input type="hidden" name="template" value="' + esc(t.id) + '">' +
-          '<input type="hidden" name="lang" value="' + esc(t.lang) + '">' +
-          '<button type="submit" class="danger">Put back the built-in ' +
-          'wording</button></form>' : '');
-    return kit.note('<strong>' + esc(t.title) + '</strong>, a ' +
-      esc(t.category) + ' message. ' + (t.own ? 'This realm has its own ' +
-      'wording in <code>' + esc(t.lang) + '</code>.' : 'This is the ' +
-      'built-in wording; saving it makes it this realm\'s own in the ' +
-      'language you name.') + ' Placeholders: ' +
-      t.values.concat(t.links).map(function (n: string): string {
+          '<input type="hidden" name="template" value="' + esc(tpl.id) +
+          '">' +
+          '<input type="hidden" name="lang" value="' + esc(tpl.lang) + '">' +
+          '<button type="submit" class="danger">' +
+          t.html('consoleMail.template.reset') + '</button></form>' : '');
+    return kit.note(t.html('consoleMail.template.intro',
+      { title: tpl.title, category: tpl.category }) + ' ' +
+      (tpl.own ? t.html('consoleMail.template.own', { lang: tpl.lang })
+        : t.html('consoleMail.template.builtIn')) + ' ' +
+      t.html('consoleMail.template.placeholders') + ' ' +
+      tpl.values.concat(tpl.links).map(function (n: string): string {
         return '<code>{{' + esc(n) + '}}</code>';
-      }).join(' ') + (t.links.length ? '; ' + t.links.map(function (n:
+      }).join(' ') + (tpl.links.length ? '; ' + tpl.links.map(function (n:
                                                                    string) {
         return '<code>{{' + esc(n) + '}}</code>';
-      }).join(', ') + ' is a link, and the text part must carry it.' : '.')) +
+      }).join(', ') + ' ' + t.html('consoleMail.template.isLink') : '.')) +
       form;
   }
 

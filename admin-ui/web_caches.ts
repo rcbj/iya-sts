@@ -25,6 +25,15 @@ type Json = any;
 
 const PAGE = '/admin/caches';
 
+// A VALUE THE VIEW CARRIES, INSIDE A TRANSLATED SENTENCE (#539 phase 6). A
+// message's parameters are escaped by the translator, which writes an
+// apostrophe as `&#39;` where `kit.esc()` writes `&apos;`; so a sentence
+// that carries the view's own words — `hitMeaning`, which says "a token's
+// status" — is formatted with this mark in the value's place and the value,
+// escaped by `kit.esc()` as before, put in after. English stays the bytes it
+// was.
+const MARK = '\u0001';
+
 /**
  * Draws Caches from the answer of `GET /admin-api/caches`: every cache and
  * replay store this process holds, what the other cluster nodes report, and
@@ -42,12 +51,19 @@ class CachesPage {
    * @returns the body as HTML
    */
   static render(view: Json, ctx: Json): string {
-    return CachesPage.body(ctx, view);
+    return CachesPage.body(ctx || kit.context(), view);
   }
 
-  static ratioText(c: Json): string {
+  // A formatted message with `MARK` replaced by markup already escaped.
+  static put(message: string, html: string): string {
+    return message.split(MARK).join(html);
+  }
+
+  // The helpers below have no context, so each is handed the page's
+  // translator `t` by its caller (#539).
+  static ratioText(c: Json, t: Json): string {
     if (!c.counted) {
-      return 'not counted';
+      return t.text('consoleCaches.notCounted');
     }
     return c.hitRatio === null
       ? '—' : (Math.round(c.hitRatio * 1000) / 10) + '%';
@@ -55,28 +71,33 @@ class CachesPage {
 
   // The bound as a number and, for a per-realm store, "per realm". A store
   // reporting none is a regression (`STS-CORE-0096`) and says so.
-  static boundText(c: Json): string {
+  static boundText(c: Json, t: Json): string {
     if (c.maxEntries === null) {
-      return 'none reported';
+      return t.text('consoleCaches.noneReported');
     }
-    return String(c.maxEntries) + (c.scope === 'realm' ? ' per realm' : '');
+    return c.scope === 'realm'
+      ? t.text('consoleCaches.boundPerRealm', { n: String(c.maxEntries) })
+      : String(c.maxEntries);
   }
 
   // Under the bound: the fullest realm for a per-realm store, and what was
   // dropped or refused at it.
-  static boundDetail(c: Json): string {
+  static boundDetail(c: Json, t: Json): string {
     const parts: string[] = [];
     if (c.scope === 'realm') {
-      parts.push('fullest realm: ' + c.largestRealm);
+      parts.push(t.text('consoleCaches.fullestRealmIs',
+                        { n: String(c.largestRealm) }));
     }
     if (c.evictions) {
-      parts.push(c.evictions + ' dropped at the bound');
+      parts.push(t.text('consoleCaches.droppedAtBound',
+                        { n: String(c.evictions) }));
     }
     if (c.refusals) {
-      parts.push(c.refusals + ' refused at the bound');
+      parts.push(t.text('consoleCaches.refusedAtBound',
+                        { n: String(c.refusals) }));
     }
     if (c.atBound) {
-      parts.push('AT THE BOUND');
+      parts.push(t.text('consoleCaches.atTheBound'));
     }
     return parts.length
       ? '<br><small>' + kit.esc(parts.join('; ')) + '</small>' : '';
@@ -90,7 +111,7 @@ class CachesPage {
       : '—';
   }
 
-  static tableOf(caches: Json[]): string {
+  static tableOf(caches: Json[], t: Json): string {
     const self = this;
     const rows = caches.map(function (c: Json): string {
       return '<tr>' +
@@ -103,82 +124,80 @@ class CachesPage {
         (c.bound ? '<br><small>' + kit.esc(c.bound) + '</small>' : '') +
         (c.problem ? kit.warn('Its entries could not be listed: ' +
                                 kit.esc(c.problem)) : '') + '</td>' +
-        '<td>' + kit.esc((c.scope === 'realm' ? 'per realm' : 'process') +
-                           (c.persisted ? ', persisted' : '')) + '</td>' +
+        '<td>' + kit.esc((c.scope === 'realm'
+                            ? t.text('consoleCaches.scopePerRealm')
+                            : t.text('consoleCaches.scopeProcess')) +
+                           (c.persisted
+                             ? t.text('consoleCaches.persisted') : '')) +
+        '</td>' +
         '<td class="num">' + c.size + '</td>' +
         '<td class="num">' + c.valid + '</td>' +
         '<td class="num">' + c.expired + '</td>' +
-        '<td class="num">' + kit.esc(self.boundText(c)) +
-        self.boundDetail(c) + '</td>' +
-        '<td class="num">' + kit.esc(self.ratioText(c)) +
-        (c.counted ? '<br><small>' + c.hits + ' hit(s), ' + c.misses +
-                     ' miss(es)</small>' : '') + '</td>' +
+        '<td class="num">' + kit.esc(self.boundText(c, t)) +
+        self.boundDetail(c, t) + '</td>' +
+        '<td class="num">' + kit.esc(self.ratioText(c, t)) +
+        (c.counted ? '<br><small>' +
+                     t.html('consoleCaches.hitsMisses',
+                            { hits: String(c.hits),
+                              misses: String(c.misses) }) +
+                     '</small>' : '') + '</td>' +
         '<td><code>' + kit.esc(c.owner) + '</code><br>' +
         self.settingsText(c) + '</td>' +
         '</tr>';
     }).join('');
     return '<table class="grid"><thead><tr>' +
-      '<th>Name</th><th>Description</th><th>Scope</th>' +
-      '<th>Current size</th><th>Valid</th><th>Expired</th>' +
-      '<th>Max size</th><th>Hit ratio</th><th>Owner and settings</th>' +
+      '<th>' + t.html('consoleCaches.thName') + '</th><th>' +
+      t.html('consoleCaches.thDescription') + '</th><th>' +
+      t.html('consoleCaches.thScope') + '</th>' +
+      '<th>' + t.html('consoleCaches.thCurrentSize') + '</th><th>' +
+      t.html('consoleCaches.thValid') + '</th><th>' +
+      t.html('consoleCaches.thExpired') + '</th>' +
+      '<th>' + t.html('consoleCaches.thMaxSize') + '</th><th>' +
+      t.html('consoleCaches.thHitRatio') + '</th><th>' +
+      t.html('consoleCaches.thOwnerSettings') + '</th>' +
       '</tr></thead><tbody>' +
-      (rows || '<tr><td colspan="9">None is registered.</td></tr>') +
+      (rows || '<tr><td colspan="9">' +
+       t.html('consoleCaches.noneRegistered') + '</td></tr>') +
       '</tbody></table>';
   }
 
-  static listHtml(json: Json): string {
+  static listHtml(json: Json, t: Json): string {
     const self = this;
     const tiles = '<div class="tiles">' +
-      kit.tile(String(json.totals.caches), 'caches') +
-      kit.tile(String(json.totals.entries), 'entries held') +
-      kit.tile(String(json.totals.expired), 'expired, not yet evicted') +
-      kit.tile(String(json.pid), 'process') +
+      kit.tile(String(json.totals.caches),
+               t.text('consoleCaches.tileCaches')) +
+      kit.tile(String(json.totals.entries),
+               t.text('consoleCaches.tileEntriesHeld')) +
+      kit.tile(String(json.totals.expired),
+               t.text('consoleCaches.tileExpiredHeld')) +
+      kit.tile(String(json.pid), t.text('consoleCaches.tileProcess')) +
       '</div>';
     const what = kit.note(
-      '<p>This page answers <strong>what this service is holding in memory ' +
-      'that it could rebuild, and whether holding it is paying off</strong>. ' +
-      'A cache is listed here by the module that owns it; a store whose ' +
-      'entries cannot be rebuilt &mdash; a replay history, a session, an ' +
-      'issued code &mdash; is a register and is not a cache, whatever its ' +
-      'variable is called.</p>' +
-      '<p><strong>Valid</strong> entries are still good. ' +
-      '<strong>Expired</strong> ones are past their deadline, or were built ' +
-      'from something that has since changed, and are still held because ' +
-      'nothing has looked them up or pushed them out yet. The <strong>hit ' +
-      'ratio</strong> is lookups answered from the cache over all lookups, ' +
-      'since this process started. Every figure in the two tables is ' +
-      'this process\'s own (pid ' + kit.esc(json.pid) + '): a request ' +
-      'worker or another cluster node holds caches of its own, and what ' +
-      'the other nodes report is in its own section below. Keys are shown ' +
-      'and values never are.</p>' +
-      '<p><strong>Every store has a bound.</strong> For a store kept per ' +
-      'trust realm it is per realm: Current size counts every realm, and ' +
-      'the fullest realm is the figure to compare with it. A bound is ' +
-      'either <em>enforced</em> &mdash; the store drops its oldest entry, ' +
-      'or, for a replay history, refuses the new one rather than forget a ' +
-      'live one &mdash; or <em>structural</em>, where the store cannot ' +
-      'outgrow something else that is bounded, such as one key set per ' +
-      'realm. Each row says which.</p>', 'What this page is');
+      '<p>' + t.html('consoleCaches.aboutWhat') + '</p>' +
+      '<p>' + self.put(t.html('consoleCaches.aboutFigures',
+                              { pid: MARK }), kit.esc(json.pid)) + '</p>' +
+      '<p>' + t.html('consoleCaches.aboutBound') + '</p>',
+      t.text('consoleCaches.whatThisPageIs'));
     const caches = json.caches.filter(function (c: Json): boolean {
       return c.kind !== 'replay';
     });
     const replays = json.caches.filter(function (c: Json): boolean {
       return c.kind === 'replay';
     });
-    const table = '<h3>Caches</h3>' + self.tableOf(caches) +
-      '<h3>Replay caches and nonces</h3>' +
-      kit.note('These make a one-time value work once, so their entries ' +
-                 'cannot be rebuilt and none of them has a control. A ' +
-                 '<strong>hit</strong> here is a value found already held ' +
-                 '&mdash; for a replay history, a second use refused; for a ' +
-                 'nonce store, a nonce honoured &mdash; and each row says ' +
-                 'which. A store that refuses when full says so in its ' +
-                 'lifetime.', 'What a hit means here') +
-      self.tableOf(replays);
-    const others = self.otherProcessesHtml(json.otherProcesses);
-    const skipped = '<h3>Not held by this process, and not listed</h3>' +
-      '<table class="grid"><thead><tr><th>What</th><th>Where</th>' +
-      '<th>Why it is not a row above</th></tr></thead><tbody>' +
+    const table = '<h3>' + t.html('consoleCaches.headCaches') + '</h3>' +
+      self.tableOf(caches, t) +
+      '<h3>' + t.html('consoleCaches.headReplay') + '</h3>' +
+      kit.note(t.html('consoleCaches.replayNote'),
+               t.text('consoleCaches.replayNoteLabel')) +
+      self.tableOf(replays, t);
+    const others = self.otherProcessesHtml(json.otherProcesses, t);
+    const skipped = '<h3>' + t.html('consoleCaches.headNotListed') +
+      '</h3>' +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleCaches.thWhat') + '</th><th>' +
+      t.html('consoleCaches.thWhere') + '</th>' +
+      '<th>' + t.html('consoleCaches.thWhyNot') +
+      '</th></tr></thead><tbody>' +
       json.notListed.map(function (n: Json): string {
         return '<tr><td>' + kit.esc(n.what) + '</td><td><code>' +
           kit.esc(n.where) + '</code></td><td>' + kit.esc(n.why) +
@@ -191,19 +210,20 @@ class CachesPage {
   // counters only, titled from THIS process's registry (every node of one
   // build registers the same stores; a name this build does not know is
   // shown as the name).
-  static otherProcessesHtml(list: Json[]): string {
+  // `t` is optional because `tests/cache_registry.js` draws this section
+  // alone, in English.
+  static otherProcessesHtml(list: Json[], t?: Json): string {
+    t = t || kit.context().t;
     const self = this;
     if (!list || !list.length) {
-      return '<h3>Other cluster nodes</h3>' +
-        kit.note('No other process\'s figures are visible: this service ' +
-                   'is not clustered, or no other node has published a ' +
-                   'report yet (a node publishes its first about five ' +
-                   'seconds after it joins).', 'Nothing to show');
+      return '<h3>' + t.html('consoleCaches.headOtherNodes') + '</h3>' +
+        kit.note(t.html('consoleCaches.noOtherNodes'),
+                 t.text('consoleCaches.nothingToShow'));
     }
     const sections = list.map(function (p: Json): string {
       const rows = p.caches.map(function (c: Json): string {
         const lookups = (c.hits || 0) + (c.misses || 0);
-        const ratio = c.hits === null ? 'not counted'
+        const ratio = c.hits === null ? t.text('consoleCaches.notCounted')
           : (lookups ? (Math.round(c.hits / lookups * 1000) / 10) + '%' :
              '—');
         const shown = Object.assign({
@@ -213,29 +233,34 @@ class CachesPage {
           '<br><code>' + kit.esc(c.name) + '</code></td>' +
           '<td class="num">' + c.size + '</td>' +
           '<td class="num">' + c.valid + '</td>' +
-          '<td class="num">' + kit.esc(self.boundText(shown)) +
-          self.boundDetail(shown) + '</td>' +
+          '<td class="num">' + kit.esc(self.boundText(shown, t)) +
+          self.boundDetail(shown, t) + '</td>' +
           '<td class="num">' + kit.esc(ratio) + '</td></tr>';
       }).join('');
-      const label = (p.thisNode ? 'This node\'s front process' : 'Node ' +
-                     (p.name || p.nodeId)) + ' — ' + (p.host || '?') +
-        ', pid ' + p.pid + ', ' + p.totals.entries + ' entries, as of ' +
-        p.ageSeconds + ' s ago';
+      const label = (p.thisNode
+        ? t.text('consoleCaches.thisNodeFront')
+        : t.text('consoleCaches.nodeNamed',
+                 { name: String(p.name || p.nodeId) })) + ' — ' +
+        t.text('consoleCaches.nodeFigures',
+               { host: String(p.host || '?'), pid: String(p.pid),
+                 entries: String(p.totals.entries),
+                 age: String(p.ageSeconds) });
       return '<details><summary>' + kit.esc(label) + '</summary>' +
-        '<table class="grid"><thead><tr><th>Name</th><th>Current size</th>' +
-        '<th>Valid</th><th>Max size</th><th>Hit ratio</th></tr></thead>' +
+        '<table class="grid"><thead><tr><th>' +
+        t.html('consoleCaches.thName') + '</th><th>' +
+        t.html('consoleCaches.thCurrentSize') + '</th>' +
+        '<th>' + t.html('consoleCaches.thValid') + '</th><th>' +
+        t.html('consoleCaches.thMaxSize') + '</th><th>' +
+        t.html('consoleCaches.thHitRatio') + '</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table></details>';
     }).join('');
-    return '<h3>Other cluster nodes</h3>' +
-      kit.note('Each node\'s front process publishes the sizes and ' +
-                 'counters of its caches on its cluster membership row ' +
-                 'every thirty seconds; this is the last each one ' +
-                 'published. Rows are not published, so a drill-down is ' +
-                 'always this process\'s own.', 'Where these come from') +
+    return '<h3>' + t.html('consoleCaches.headOtherNodes') + '</h3>' +
+      kit.note(t.html('consoleCaches.otherNodesNote'),
+               t.text('consoleCaches.otherNodesNoteLabel')) +
       sections;
   }
 
-  static detailHtml(json: Json, query: Json): string {
+  static detailHtml(json: Json, query: Json, t: Json): string {
     if (!json.found) {
       return kit.warn('There is no cache called <code>' +
         kit.esc(json.cache) + '</code> in this process. <a href="' +
@@ -243,40 +268,57 @@ class CachesPage {
     }
     const c = json.summary;
     const tiles = '<div class="tiles">' +
-      kit.tile(String(c.size), 'current size') +
-      kit.tile(String(c.valid), 'valid') +
-      kit.tile(String(c.expired), 'expired') +
-      kit.tile(this.boundText(c), 'max size') +
+      kit.tile(String(c.size), t.text('consoleCaches.tileCurrentSize')) +
+      kit.tile(String(c.valid), t.text('consoleCaches.tileValid')) +
+      kit.tile(String(c.expired), t.text('consoleCaches.tileExpired')) +
+      kit.tile(this.boundText(c, t), t.text('consoleCaches.tileMaxSize')) +
       (c.scope === 'realm'
-        ? kit.tile(String(c.largestRealm), 'fullest realm') : '') +
-      kit.tile(this.ratioText(c), 'hit ratio') +
+        ? kit.tile(String(c.largestRealm),
+                   t.text('consoleCaches.tileFullestRealm')) : '') +
+      kit.tile(this.ratioText(c, t), t.text('consoleCaches.tileHitRatio')) +
       '</div>';
     const about = '<table class="grid"><tbody>' +
-      '<tr><th>Name</th><td><code>' + kit.esc(c.name) + '</code></td></tr>' +
-      '<tr><th>Description</th><td>' + kit.esc(c.description) +
+      '<tr><th>' + t.html('consoleCaches.thName') + '</th><td><code>' +
+      kit.esc(c.name) + '</code></td></tr>' +
+      '<tr><th>' + t.html('consoleCaches.thDescription') + '</th><td>' +
+      kit.esc(c.description) +
       '</td></tr>' +
-      '<tr><th>How an entry ends</th><td>' + kit.esc(c.lifetime) +
+      '<tr><th>' + t.html('consoleCaches.thHowEnds') + '</th><td>' +
+      kit.esc(c.lifetime) +
       '</td></tr>' +
-      '<tr><th>Bound</th><td>' + kit.esc(c.bound || '') +
+      '<tr><th>' + t.html('consoleCaches.thBound') + '</th><td>' +
+      kit.esc(c.bound || '') +
       (c.evictions || c.refusals
-        ? ' ' + kit.esc(c.evictions + ' dropped and ' + c.refusals +
-                          ' refused at it since this process started.')
+        ? ' ' + kit.esc(t.text('consoleCaches.droppedRefusedSince',
+                               { evictions: String(c.evictions),
+                                 refusals: String(c.refusals) }))
         : '') + '</td></tr>' +
-      '<tr><th>Scope</th><td>' +
-      kit.esc(c.scope === 'realm' ? 'One per trust realm' :
-                'One for the process') + '</td></tr>' +
-      '<tr><th>Kind</th><td>' +
-      kit.esc(c.kind === 'replay' ? 'Replay cache or nonce store' :
-                'Cache') + (c.persisted ? ', persisted' : '') +
+      '<tr><th>' + t.html('consoleCaches.thScope') + '</th><td>' +
+      kit.esc(c.scope === 'realm'
+        ? t.text('consoleCaches.scopeOnePerRealm')
+        : t.text('consoleCaches.scopeOneProcess')) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleCaches.thKind') + '</th><td>' +
+      kit.esc(c.kind === 'replay'
+        ? t.text('consoleCaches.kindReplay')
+        : t.text('consoleCaches.kindCache')) +
+      (c.persisted ? t.html('consoleCaches.persisted') : '') +
       '</td></tr>' +
-      '<tr><th>Lookups</th><td>' + (c.counted
-        ? c.hits + ' hit(s), ' + c.misses + ' miss(es) since pid ' +
-          kit.esc(json.pid) + ' started. A hit is ' +
-          kit.esc(c.hitMeaning) + '.'
-        : 'Not counted: ' + kit.esc(c.notCountedWhy) + '.') +
+      '<tr><th>' + t.html('consoleCaches.thLookups') + '</th><td>' +
+      // Two view values in one sentence: the pid in `MARK`'s place, the
+      // hit's meaning in a second mark's.
+      (c.counted
+        ? this.put(t.html('consoleCaches.lookupsCounted',
+                          { hits: String(c.hits), misses: String(c.misses),
+                            pid: MARK, meaning: '\u0002' }),
+                   kit.esc(json.pid)).split('\u0002')
+            .join(kit.esc(c.hitMeaning))
+        : this.put(t.html('consoleCaches.lookupsNotCounted',
+                          { why: MARK }), kit.esc(c.notCountedWhy))) +
       '</td></tr>' +
-      '<tr><th>Owner</th><td><code>' + kit.esc(c.owner) + '</code></td></tr>' +
-      '<tr><th>Settings</th><td>' + this.settingsText(c) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleCaches.thOwner') + '</th><td><code>' +
+      kit.esc(c.owner) + '</code></td></tr>' +
+      '<tr><th>' + t.html('consoleCaches.thSettings') + '</th><td>' +
+      this.settingsText(c) + '</td></tr>' +
       '</tbody></table>' +
       (c.problem ? kit.warn('Its entries could not be listed: ' +
                               kit.esc(c.problem)) : '');
@@ -287,22 +329,27 @@ class CachesPage {
         '<td>' + (e.realm === null ? '—' : '<code>' + kit.esc(e.realm) +
                   '</code>') + '</td>' +
         '<td>' + kit.clipped(e.key, 120) + '</td>' +
-        '<td>' + kit.esc(e.valid ? 'valid' : 'expired') + '</td>' +
+        '<td>' + kit.esc(e.valid ? t.text('consoleCaches.stateValid')
+                                 : t.text('consoleCaches.stateExpired')) +
+        '</td>' +
         '<td>' + kit.esc(e.remaining) + '</td>' +
         '<td>' + (e.validUntil ? '<code>' + kit.esc(e.validUntil) +
                   '</code>' : '—') + '</td>' +
         '</tr>';
     }).join('');
-    const table = '<h3>Entries</h3>' +
+    const table = '<h3>' + t.html('consoleCaches.headEntries') + '</h3>' +
       kit.perPageForm(PAGE, 'cache', c.name, json.entriesPaging.perPage,
-                        'The entries are ordered by deadline, soonest ' +
-                        'first; those with none come last.') +
+                        t.html('consoleCaches.entriesOrder')) +
       nav.head +
-      '<table class="grid"><thead><tr><th>Realm</th><th>Key</th>' +
-      '<th>State</th><th>Still valid for</th><th>Valid until</th>' +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleCaches.thRealm') + '</th><th>' +
+      t.html('consoleCaches.thKey') + '</th>' +
+      '<th>' + t.html('consoleCaches.thState') + '</th><th>' +
+      t.html('consoleCaches.thStillValidFor') + '</th><th>' +
+      t.html('consoleCaches.thValidUntil') + '</th>' +
       '</tr></thead><tbody>' +
-      (rows || '<tr><td colspan="5">This cache holds nothing right ' +
-       'now.</td></tr>') +
+      (rows || '<tr><td colspan="5">' +
+       t.html('consoleCaches.holdsNothing') + '</td></tr>') +
       '</tbody></table>' + nav.foot;
     return tiles + about + table;
   }
@@ -318,8 +365,9 @@ class CachesPage {
    * @returns the body as HTML
    */
   static body(ctx: Json, json: Json): string {
-    return json.cache === undefined ? this.listHtml(json)
-      : this.detailHtml(json, ctx.query);
+    const t = ctx.t;
+    return json.cache === undefined ? this.listHtml(json, t)
+      : this.detailHtml(json, ctx.query, t);
   }
 }
 

@@ -81,11 +81,11 @@ curl -sk "$BASE/saml2/metadata/$(jq -rn --arg s https://sp.example.com/saml '$s|
 
 If you declare `saml2` with no `samlEntityId`, the identifier is used as the
 entityID, which is why `"fields": {}` is enough. The interoperability jobs
-first create a realm for the SP, and set its IdP entityID there:
+first create a realm for the SP; the IdP's entityID there is that realm's
+OAuth 2.0 issuer, which is not a setting (#523):
 
 ```bash
-api realms/create '{"id":"sp1","domain":"sp1.example.net","name":"sp1",
-  "overrides":{"saml2.entityId":"'"$BASE"'/realm/sp1/saml2/idp"}}'
+api realms/create '{"id":"sp1","domain":"sp1.example.net","name":"sp1"}'
 ```
 
 **To have the metadata fetched from a URL instead of uploaded:** set
@@ -436,8 +436,6 @@ form. The attributes are `saml11AssertionLifetimeMin`, `saml11SignAssertion`,
 
 | Setting | Default | What it does |
 |---|---|---|
-| `saml11.providerId` | `urn:sts:idp:saml11` | The IdP's providerID. It must not be empty in product mode. |
-| `saml11.perApplicationProviderId` | `true` | Issues as `<providerId>:<slug>` for each relying party. |
 | `saml11.defaultProfile` | `post` | The profile used when the request names none: `post` or `artifact`. |
 | `saml11.signAssertion` / `saml11.signResponse` | `true` | Signs the assertion / the Response. Turning either off is refused in product mode. |
 | `saml11.nameIdFormat` | `…:1.1:nameid-format:unspecified` | The NameIdentifier format. |

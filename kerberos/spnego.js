@@ -117,11 +117,20 @@ const SUPPORTED_MECHS = exchange.SUPPORTED_MECHS;
 // (the root CLAUDE.md, rule 1), so a shared page helper would belong in
 // helpers.js and moving it there means touching five protocols for one new
 // page.
+//
+// `framing` (#539, 2026-10-09; a change made HERE with rcbj's leave, who
+// reconciles it with the parent project): the `<html>` attributes, a block
+// drawn first in the card and extra CSS, from a caller that draws the page in
+// another language — `kerberos/spnego_authn.ts`'s sign-in. Absent, the page is
+// byte-for-byte what it was. Strings rather than a translator, so this file
+// requires nothing new and the parent's COPY closure does not grow.
 // ---------------------------------------------------------------------------
-function page(title, inner) {
+function page(title, inner, framing) {
   log.debug('Entering page().');
+  const frame = framing || {};
   log.debug('Leaving page().');
-  return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+  return '<!DOCTYPE html>\n<html' + (frame.htmlAttributes || ' lang="en"') +
+    '><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>' + xmlEscape(title) +
     '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
@@ -146,8 +155,8 @@ function page(title, inner) {
     'SFMono-Regular,Menlo,monospace;font-size:.85em;background:#f4f4f8;' +
     'padding:.1rem .25rem;border-radius:3px;word-break:break-all}' +
     'a{color:#12107c}ul{margin:.3em 0;padding-left:1.2em}li{margin:.2em ' +
-    '0}</style></head><body><div ' +
-    'class="card">' + inner + '</div></body></html>\n';
+    '0}' + (frame.style || '') + '</style></head><body><div ' +
+    'class="card">' + (frame.top || '') + inner + '</div></body></html>\n';
 }
 
 function checksTable(checks) {

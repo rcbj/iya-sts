@@ -164,17 +164,12 @@ function theDefaultAndTheOwn(t) {
             'its directory is a TREE OF ITS OWN, not a branch of the default ' +
             'realm\'s');
     const seeded = own.overrides;
-    t.equal(seeded['saml2.entityId'], 'urn:' + OWN_DOMAIN + ':idp',
-            'the SAML 2.0 entityID is a URN built from the domain');
-    t.equal(seeded['saml11.providerId'], 'urn:' + OWN_DOMAIN + ':idp:saml11',
-            'and so is the SAML 1.1 providerID');
-    t.check(['wsfed.entityId', 'wstrust.issuer', 'saml.issuer']
-              .every(function (key) {
-                return seeded[key] === 'urn:' + OWN_DOMAIN + ':sts';
-              }),
-            'the three that share a name by default share urn:<domain>:sts',
-            JSON.stringify([seeded['wsfed.entityId'],
-                            seeded['wstrust.issuer'], seeded['saml.issuer']]));
+    t.check(['saml2.entityId', 'saml11.providerId', 'wsfed.entityId',
+             'wstrust.issuer', 'saml.issuer'].every(function (key) {
+      return !(key in seeded);
+    }), 'no SAML, WS-Trust or WS-Federation name is seeded: each is the ' +
+        'realm\'s OAuth issuer, which is not a setting (#523)',
+            JSON.stringify(Object.keys(seeded)));
     t.equal(seeded['spiffe.trustDomain'], OWN_DOMAIN,
             'the SPIFFE trust domain IS the domain');
     t.equal(seeded['krb5.realm'], OWN_DOMAIN.toUpperCase(),
@@ -195,10 +190,11 @@ function theDefaultAndTheOwn(t) {
 
   const chosen = create(t, { id: 'rd-chosen-' + STAMP,
                              domain: 'chosen-' + STAMP + '.test',
-                             overrides: { 'saml2.entityId': 'urn:x:mine' } },
-                        'a realm is created with an entityID of the caller\'s');
+                             overrides: { 'spiffe.trustDomain': 'mine.test' } },
+                        'a realm is created with a trust domain of the ' +
+                        'caller\'s');
   if (chosen) {
-    t.equal(chosen.overrides['saml2.entityId'], 'urn:x:mine',
+    t.equal(chosen.overrides['spiffe.trustDomain'], 'mine.test',
             'and the caller\'s wins over the one seeded from the domain');
     realms.remove(chosen.id);
   }

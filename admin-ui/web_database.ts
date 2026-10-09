@@ -55,6 +55,25 @@ const SECTIONS = [
            'named handful that matter whether or not anybody touched them.' }
 ];
 
+// THE SECTIONS' WORDS IN THE READER'S LANGUAGE (#539). `SECTIONS` stays the
+// English table `database_admin.ts` reads; the page draws each heading and
+// blurb from here, by group, and falls back to the table for a group this
+// does not name.
+const SECTION_WORDS = function (t: Json): Record<string, Json> {
+  return {
+    Server: { heading: t.html('consoleDatabase.serverHeading'),
+              blurb: t.html('consoleDatabase.serverBlurb') },
+    Activity: { heading: t.html('consoleDatabase.activityHeading'),
+                blurb: t.html('consoleDatabase.activityBlurb') },
+    Background: { heading: t.html('consoleDatabase.backgroundHeading'),
+                  blurb: t.html('consoleDatabase.backgroundBlurb') },
+    Schema: { heading: t.html('consoleDatabase.schemaHeading'),
+              blurb: t.html('consoleDatabase.schemaBlurb') },
+    Configuration: { heading: t.html('consoleDatabase.configHeading'),
+                     blurb: t.html('consoleDatabase.configBlurb') }
+  };
+};
+
 /**
  * Draws Monitoring → Database from the answer of `GET /admin-api/database`:
  * everything PostgreSQL reports about itself, the four figures computed from
@@ -67,10 +86,12 @@ class DatabasePage {
    * Draws the page's body from its view.
    *
    * @param view - the answer of the page's management API operation
+   * @param ctx - the render context (`WebKit.context()`), whose translator
+   *   the page is drawn with (#539); the default when absent
    * @returns the body as HTML
    */
-  static render(view: Json): string {
-    return DatabasePage.body(view);
+  static render(view: Json, ctx?: Json): string {
+    return DatabasePage.body(view, (ctx && ctx.t) || kit.context().t);
   }
 
   /**
@@ -99,12 +120,14 @@ class DatabasePage {
   //     as a value, because it is the one string on this page that would
   //     otherwise be mistaken for somebody's query.
   // -------------------------------------------------------------------------
-  static cell(value: Json): string {
+  // Every helper below takes the page's translator `t` (#539) from body().
+  static cell(value: Json, t: Json): string {
     if (value === null || value === undefined) {
       return '<span class="muted">—</span>';
     }
     if (value === '<insufficient privilege>') {
-      return '<span class="muted">withheld</span>';
+      return '<span class="muted">' + t.html('consoleDatabase.withheld') +
+             '</span>';
     }
     if (value instanceof Date) {
       return kit.esc(value.toISOString()
@@ -112,8 +135,10 @@ class DatabasePage {
                             .replace(/\..*$/, 'Z'));
     }
     if (typeof value === 'boolean') {
-      return value ? '<span class="ok">yes</span>'
-                   : '<span class="muted">no</span>';
+      return value ? '<span class="ok">' + t.html('consoleDatabase.yes') +
+                     '</span>'
+                   : '<span class="muted">' + t.html('consoleDatabase.no') +
+                     '</span>';
     }
     if (typeof value === 'object') {
       return '<code>' + kit.esc(JSON.stringify(value)) + '</code>';
@@ -124,7 +149,7 @@ class DatabasePage {
     // console's own control for that and opens out on a click, so nothing is
     // lost.
     if (text.length > 90) {
-      return kit.clipped(text, 90);
+      return kit.clipped(text, 90, t);
     }
     return kit.esc(text);
   }
@@ -139,17 +164,17 @@ class DatabasePage {
            kit.esc(String(name).replace(/_/g, ' ')) + '</span>';
   }
 
-  static probeFailure(id: string, probe: Json): string {
+  // The explanation is this page's prose and is translated (#539); the
+  // probe's error beside it stays as PostgreSQL wrote it.
+  static probeFailure(id: string, probe: Json, t: Json): string {
     const why = probe.code === '42P01'
-      ? 'This server version does not have that view.' +
+      ? t.html('consoleDatabase.noView') +
         (probe.expected
-          ? ' It arrived in PostgreSQL ' + probe.expected + ', so this is ' +
-            'the ordinary answer on anything older and not a fault.'
+          ? t.html('consoleDatabase.viewArrived',
+                   { version: probe.expected })
           : '')
       : (probe.code === '42501'
-          ? 'This service\'s database role may not read it. Granting ' +
-            '<code>pg_monitor</code> to that role is what fills it in; this ' +
-            'service does not ask for it.'
+          ? t.html('consoleDatabase.mayNotRead')
           : '');
     return '<tr><td><code>' + kit.esc(id) + '</code></td>' +
            '<td>' + kit.esc(probe.what) + '</td>' +
@@ -163,18 +188,16 @@ class DatabasePage {
   // columns for `pg_stat_database` — is unreadable as a table with thirty
   // headings and one line under them, which is what the first version of this
   // did.
-  static rowTable(probe: Json): string {
+  static rowTable(probe: Json, t: Json): string {
     const self = this;
     if (!probe.row) {
-      return kit.note('That view answered no row at all, which for a ' +
-                        'probe scoped to this database means the server ' +
-                        'keeps no statistics for it yet.');
+      return kit.note(t.html('consoleDatabase.noRow'));
     }
     const keys = Object.keys(probe.row);
     return '<table class="grid"><tbody>' +
       keys.map(function (key) {
         return '<tr><th>' + self.columnLabel(key) + '</th><td>' +
-               self.cell(probe.row[key]) + '</td></tr>';
+               self.cell(probe.row[key], t) + '</td></tr>';
       }).join('') +
       '</tbody></table>';
   }
@@ -184,10 +207,10 @@ class DatabasePage {
   // change, and it is why an empty result has to be handled here rather than
   // falling out of the loop: with no row there are no keys, and a table with
   // no headings is not an empty table, it is a rendering bug.
-  static rowsTable(probe: Json): string {
+  static rowsTable(probe: Json, t: Json): string {
     const self = this;
     if (!probe.rows || !probe.rows.length) {
-      return '<p class="muted">No rows.</p>';
+      return '<p class="muted">' + t.html('consoleDatabase.noRows') + '</p>';
     }
     const keys = Object.keys(probe.rows[0]);
     // `.wide` is the console's OWN overflow wrapper (`overflow-x:auto`),
@@ -202,139 +225,88 @@ class DatabasePage {
       '</tr></thead><tbody>' +
       probe.rows.map(function (row) {
         return '<tr>' + keys.map(function (key) {
-          return '<td>' + self.cell(row[key]) + '</td>';
+          return '<td>' + self.cell(row[key], t) + '</td>';
+
         }).join('') + '</tr>';
       }).join('') +
       '</tbody></table></div>';
   }
 
-  static body(json: Json): string {
+  static body(json: Json, t: Json): string {
     const self = this;
 
     // NO DATABASE AT ALL. The commonest state by a wide margin — `memory` is
     // the default — so it is a paragraph that says which of the three "no"
     // answers this is, rather than an empty page with tables on it.
     if (!json.available) {
+      // `why` is the view's sentence, drawn as it comes; the link is markup
+      // a message cannot carry, so the paragraph is cut at it.
       return kit.note(
         '<p>' + kit.esc(json.why) + '</p>' +
-        '<p>What this page would show: everything PostgreSQL keeps about ' +
-        'itself — commits and rollbacks, the cache hit ratio, every backend ' +
-        'and lock, the checkpointer and the write-ahead log — beside ' +
-        'per-table ' +
-        'and per-index statistics for the schema this service owns, its ' +
-        'sizes, ' +
-        'its columns and its constraints. <a href="/admin/persistence">The ' +
-        'persistence page</a> is where the mode is configured and is what ' +
-        'this ' +
-        'page reports the consequences of.</p>',
-        'There is no database to report on');
+        '<p>' + t.html('consoleDatabase.wouldShow') +
+        ' <a href="/admin/persistence">' +
+        t.html('consoleDatabase.persistencePage') + '</a> ' +
+        t.html('consoleDatabase.wouldShowAfter') + '</p>',
+        t.html('consoleDatabase.noDatabaseTitle'));
     }
 
     const target = json.target || {};
     const tiles = '<div class="tiles">' +
-      kit.tile(json.ok ? 'up' : 'down', 'database') +
+      kit.tile(json.ok ? t.text('consoleDatabase.up')
+                       : t.text('consoleDatabase.down'),
+               t.text('consoleDatabase.tileDatabase')) +
       kit.tile(String((json.probes && json.probes.size &&
                          json.probes.size.row &&
-                         json.probes.size.row.pretty) || '—'), 'on disk') +
+                         json.probes.size.row.pretty) || '—'),
+               t.text('consoleDatabase.tileOnDisk')) +
       kit.tile(json.derived && json.derived.cacheHitPercent !== null
-        ? json.derived.cacheHitPercent + '%' : '—', 'cache hit') +
+        ? json.derived.cacheHitPercent + '%' : '—',
+               t.text('consoleDatabase.tileCacheHit')) +
       kit.tile(String((json.pool && json.pool.total) || 0) + '/' +
-                 String((json.pool && json.pool.max) || 0), 'pool') +
-      kit.tile(String(json.tookMs) + 'ms', 'collected in') +
-      kit.tile(String((json.failed || []).length), 'probes unavailable') +
+                 String((json.pool && json.pool.max) || 0),
+               t.text('consoleDatabase.tilePool')) +
+      kit.tile(String(json.tookMs) + 'ms',
+               t.text('consoleDatabase.tileCollectedIn')) +
+      kit.tile(String((json.failed || []).length),
+               t.text('consoleDatabase.tileUnavailable')) +
       '</div>';
 
     const what = kit.note(
-      '<p>This page is <strong>what the database has been DOING</strong>. ' +
-      '<a ' +
-      'href="/admin/persistence">Persistence</a>, under Settings, is what ' +
-      'this ' +
-      'service is CONFIGURED to write down and where &mdash; that page reads ' +
-      'the same on a service that started a second ago, and the numbers ' +
-      'here ' +
-      'move while you watch.</p><p><strong>The shape of this page is ' +
-      'decided ' +
-      'by the database it is pointed at.</strong> Every statement behind it ' +
-      'is ' +
-      'a <code>SELECT *</code>, and the columns drawn are the ones this ' +
-      'server ' +
-      'returned, in its order. That is not laziness: PostgreSQL moves these ' +
-      'views between major versions &mdash; <code>pg_stat_bgwriter</code> ' +
-      'has ' +
-      'eleven columns on 16 and four on 18, because the checkpoint counters ' +
-      'moved to a view that does not exist before 17 &mdash; so a page ' +
-      'naming ' +
-      'its columns would be wrong on every server but one, and wrong in the ' +
-      'way that reads as a blank cell.</p><p><strong>There is no query box ' +
-      'here and there must never be one.</strong> The role this service ' +
-      'dials ' +
-      'with can INSERT, UPDATE and DELETE on six tables, so a console that ' +
-      'could hand it a statement would be a console that could empty the ' +
-      'directory. Every statement is a literal in ' +
-      '<code>persistence/persistence_postgres.js</code> and none is built ' +
-      'from ' +
-      'anything a request carries. They are all catalog reads, bounded by ' +
-      'PostgreSQL\'s own <code>statement_timeout</code> at ' +
-      kit.esc(String(json.statementTimeoutMs)) + 'ms' +
+      '<p>' + t.html('consoleDatabase.whatDoing') +
+      ' <a href="/admin/persistence">' +
+      t.html('consoleDatabase.persistence') + '</a>' +
+      t.html('consoleDatabase.whatConfigured') + '</p><p>' +
+      t.html('consoleDatabase.whatShape') + '</p><p>' +
+      t.html('consoleDatabase.whatNoQuery',
+             { ms: String(json.statementTimeoutMs) }) +
       (json.statementTimeoutSet ? '' :
-        ' &mdash; <strong>which this server would not accept, so that bound ' +
-        'is ' +
-        'NOT in force</strong>') +
-      ', on the single connection this page borrows.</p>',
-      'What this page is, and the three things it will not do');
+        t.html('consoleDatabase.timeoutNotInForce')) +
+      t.html('consoleDatabase.singleConnection') + '</p>',
+      t.html('consoleDatabase.whatTitle'));
 
+    // The connection's coordinates and its TLS sentence are the view's.
     const connection = kit.note(
-      '<p>Connected to <code>' + kit.esc(String(target.host || '?')) + ':' +
-      kit.esc(String(target.port || '?')) + '/' +
-      kit.esc(String(target.database || '?')) + '</code> as <code>' +
-      kit.esc(String(target.user || '?')) + '</code>, schema <code>' +
-      kit.esc(String(json.schema || '?')) + '</code>. ' +
+      '<p>' + t.html('consoleDatabase.connectedTo',
+                     { where: String(target.host || '?') + ':' +
+                         String(target.port || '?') + '/' +
+                         String(target.database || '?'),
+                       user: String(target.user || '?'),
+                       schema: String(json.schema || '?') }) + ' ' +
       kit.esc(String(target.tls || '')) + '</p>' +
-      '<p><strong>The pool figures are this PROCESS\'s and the backend ' +
-      'counts ' +
-      'are the SERVER\'s</strong>, and they answer different questions: ' +
-      'PostgreSQL can say how many connections exist, and only the client ' +
-      'can ' +
-      'say how many of them this service is holding and how many callers are ' +
-      'queued for one. The pool is sampled BEFORE this page borrows a ' +
-      'connection, so the numbers are what it was doing when you asked ' +
-      'rather ' +
-      'than what it is doing because you asked &mdash; on a pool whose ' +
-      'maximum ' +
-      'is four, counting our own would invent a quarter of it.</p>',
-      'Which end each number comes from');
+      '<p>' + t.html('consoleDatabase.poolFigures') + '</p>',
+      t.html('consoleDatabase.connectionTitle'));
 
     // THE NARROWED ANSWER, said once and prominently rather than as a
     // footnote under a table somebody has already misread.
     const narrowed = kit.warn(
-      '<p>This service connects as an ordinary application role &mdash; ' +
-      'SELECT, INSERT, UPDATE and DELETE on six tables, USAGE on one schema, ' +
-      'and <strong>not <code>pg_monitor</code></strong>. Most of what is ' +
-      'below ' +
-      'is readable by anybody; two things are not, and they fail ' +
-      'differently:</p><ul><li>a view this role may not read ' +
-      '<strong>fails</strong>, and is drawn as a row in <em>What could not ' +
-      'be ' +
-      'collected</em> with PostgreSQL\'s SQLSTATE beside it;</li><li>a ' +
-      '<strong>backend belonging to another role does not fail</strong> ' +
-      '&mdash; it appears as a row with its state empty and its query given ' +
-      'as ' +
-      'the literal string <code>&lt;insufficient privilege&gt;</code>, which ' +
-      'is a value and not an error. This page draws that as ' +
-      '<em>withheld</em>. ' +
-      'The same is true of <code>pg_stat_replication</code>: an empty table ' +
-      'there means either that there are no standbys or that this role may ' +
-      'not ' +
-      'see them, and nothing in this service can tell those ' +
-      'apart.</li></ul><p>Granting <code>pg_monitor</code> to the ' +
-      'application ' +
-      'role fills all of it in. This service does not ask for it, because ' +
-      'the ' +
-      'whole point of <code>postgres/schema.sql</code> is that the role it ' +
-      'dials with holds the least it can.</p>',
-      'What this role is NOT allowed to see, and how each kind of refusal ' +
-      'looks');
+      '<p>' + t.html('consoleDatabase.narrowedRole') + '</p><ul><li>' +
+      t.html('consoleDatabase.narrowedView') + '</li><li>' +
+      t.html('consoleDatabase.narrowedBackend') + '</li></ul><p>' +
+      t.html('consoleDatabase.narrowedGrant') + '</p>',
+      t.html('consoleDatabase.narrowedTitle'));
 
+    // A database that could not be reached is a failure, and its box stays
+    // English (#539).
     if (!json.ok) {
       return tiles + what + kit.warn(
         '<p>No statistics could be collected at all: <code>' +
@@ -352,126 +324,89 @@ class DatabasePage {
     }
 
     return tiles + what + connection + narrowed +
-           self.derivedBlock(json) +
-           self.driftBlock(json) +
+           self.derivedBlock(json, t) +
+           self.driftBlock(json, t) +
            SECTIONS.map(function (section) {
-             return self.sectionBlock(section, json);
+             return self.sectionBlock(section, json, t);
            }).join('') +
-           self.failureBlock(json);
+           self.failureBlock(json, t);
   }
 
-  static derivedBlock(json: Json): string {
+  static derivedBlock(json: Json, t: Json): string {
     const d = json.derived;
+    // The index names are code, put in by the page; the sentences around
+    // them are messages.
     const unused = d.unusedIndexes.length
-      ? '<p><strong>' + d.unusedIndexes.length + ' index(es) have never ' +
-        'been ' +
-        'scanned:</strong> ' + d.unusedIndexes.map(function (one) {
+      ? '<p>' + t.html('consoleDatabase.unusedHead',
+                       { n: d.unusedIndexes.length }) + ' ' +
+        d.unusedIndexes.map(function (one) {
           return '<code>' + kit.esc(one) + '</code>';
-        }).join(', ') + '. On a database that has been serving traffic that ' +
-        'is ' +
-        'the most actionable number on this page &mdash; an index nothing ' +
-        'reads is write cost and disk for nothing. On one that has just ' +
-        'started it means only that nothing has queried yet, and the ' +
-        'counters ' +
-        'below say which situation this is.</p>'
-      : '<p>Every index here has been scanned at least once.</p>';
-    return '<h3>The four ratios</h3>' + kit.note(
+        }).join(', ') + t.html('consoleDatabase.unusedWhy') + '</p>'
+      : '<p>' + t.html('consoleDatabase.allScanned') + '</p>';
+    return '<h3>' + t.html('consoleDatabase.ratios') + '</h3>' + kit.note(
       '<table class="grid"><tbody>' +
-      '<tr><th>Cache hit</th><td>' +
-        (d.cacheHitPercent === null ? '<span class="muted">nothing read ' +
-                                      'yet</span>'
+      '<tr><th>' + t.html('consoleDatabase.cacheHit') + '</th><td>' +
+        (d.cacheHitPercent === null ? '<span class="muted">' +
+          t.html('consoleDatabase.nothingRead') + '</span>'
           : kit.esc(String(d.cacheHitPercent)) + '%') +
-        '</td><td class="why">Blocks found in the buffer cache against ' +
-        'blocks ' +
-        'read from disk. PostgreSQL keeps the two counters and not the ' +
-        'ratio, ' +
-        'because a counter can be subtracted between two readings and a ' +
-        'ratio ' +
-        'cannot.</td></tr>' +
-      '<tr><th>Rollbacks</th><td>' +
-        (d.rollbackPercent === null ? '<span class="muted">no transactions ' +
-                                      'yet</span>'
+        '</td><td class="why">' + t.html('consoleDatabase.cacheHitWhy') +
+        '</td></tr>' +
+      '<tr><th>' + t.html('consoleDatabase.rollbacks') + '</th><td>' +
+        (d.rollbackPercent === null ? '<span class="muted">' +
+          t.html('consoleDatabase.noTransactions') + '</span>'
           : kit.esc(String(d.rollbackPercent)) + '%') +
-        '</td><td class="why">A share and not a count: rollbacks are ' +
-        'ordinary ' +
-        'here &mdash; a conflicting upsert produces one &mdash; and only the ' +
-        'proportion means anything.</td></tr>' +
-      '<tr><th>Dead tuples</th><td>' +
+        '</td><td class="why">' + t.html('consoleDatabase.rollbacksWhy') +
+        '</td></tr>' +
+      '<tr><th>' + t.html('consoleDatabase.deadTuples') + '</th><td>' +
         (d.deadTuplePercent === null
-          ? '<span class="muted">no rows yet</span>'
+          ? '<span class="muted">' + t.html('consoleDatabase.noRowsYet') +
+            '</span>'
           : kit.esc(String(d.deadTuplePercent)) + '%') +
-        '</td><td class="why">Dead rows as a share of all rows, summed ' +
-        'across ' +
-        'the schema. This is the bloat signal; autovacuum is what brings it ' +
-        'down, and the per-table vacuum times are in the schema ' +
-        'section.</td></tr><tr><th>Scans</th><td>' +
-      kit.esc(String(d.seqScans)) + ' ' +
-            'sequential, ' +
-        kit.esc(String(d.idxScans)) + ' index</td>' +
-        '<td class="why">On six small tables a sequential scan is ' +
-        'frequently ' +
-        'the right plan and this is <em>not</em> a fault to chase &mdash; ' +
-        'read ' +
-        'it beside the row counts below.</td></tr>' +
+        '</td><td class="why">' + t.html('consoleDatabase.deadTuplesWhy') +
+        '</td></tr><tr><th>' + t.html('consoleDatabase.scans') +
+        '</th><td>' +
+        t.html('consoleDatabase.scansValue',
+               { seq: String(d.seqScans), idx: String(d.idxScans) }) +
+        '</td>' +
+        '<td class="why">' + t.html('consoleDatabase.scansWhy') +
+        '</td></tr>' +
       '</tbody></table>' + unused +
-      '<p class="muted"><strong>Every figure on this page is cumulative ' +
-      'since ' +
+      '<p class="muted">' +
       (d.statsReset
-        ? kit.esc(String(new Date(d.statsReset).toISOString()
-            .replace('T', ' ').replace(/\..*$/, 'Z')))
-        : 'the statistics were last reset') +
-      '</strong>, which is what PostgreSQL counts from. A cache hit ratio ' +
-      'over ' +
-      'the life of a server says nothing about the last hour, and reading it ' +
-      'as a current figure is the one misunderstanding this page can ' +
-      'actually ' +
-      'cause.</p>',
-      'Four numbers this page computes, and what each is not');
+        ? t.html('consoleDatabase.cumulativeSince',
+                 { since: String(new Date(d.statsReset).toISOString()
+                   .replace('T', ' ').replace(/\..*$/, 'Z')) })
+        : t.html('consoleDatabase.cumulativeSinceReset')) +
+      t.html('consoleDatabase.cumulativeWhy') + '</p>',
+      t.html('consoleDatabase.ratiosTitle'));
   }
 
-  static driftBlock(json: Json): string {
+  static driftBlock(json: Json, t: Json): string {
     const drift = json.schemaDrift;
     if (!drift.declared.length) {
       return '';
     }
     const body = drift.missing.length
       ? kit.warn(
-          '<p><strong>' + drift.missing.length + ' object(s) this ' +
-          'service\'s ' +
-          'driver declares are NOT in the database:</strong> ' +
+          '<p>' + t.html('consoleDatabase.missingHead',
+                         { n: drift.missing.length }) + ' ' +
           drift.missing.map(function (one) {
             return '<code>' + kit.esc(one) + '</code>';
-          }).join(', ') + '.</p><p>The driver creates what is missing when ' +
-          'it ' +
-          'opens &mdash; and on a least-privilege deployment it ' +
-          '<strong>cannot</strong>, because the role it dials with holds no ' +
-          'CREATE. There the failure arrives as a permission error naming a ' +
-          'statement nobody typed. Re-run <code>postgres/schema.sql</code> ' +
-          'as ' +
-          'the owner.</p>',
-          'The schema is missing something the driver expects')
+          }).join(', ') + '.</p><p>' +
+          t.html('consoleDatabase.missingWhy') + '</p>',
+          t.html('consoleDatabase.missingTitle'))
       : kit.note(
-          '<p>All ' + drift.declared.length + ' objects the driver declares ' +
-          'are present, at schema version ' +
-          kit.esc(String(json.schemaExpected.version)) + '.</p>' +
-          '<p>Nothing else in this service makes this check. ' +
-          '<code>tests/postgres_schema.js</code> compares the driver against ' +
-          '<code>postgres/schema.sql</code> character for character, and ' +
-          'neither of those is ever compared against a <em>running ' +
-          'server</em> ' +
-          '&mdash; so a database built by an older copy of that file, or by ' +
-          'hand, or half-migrated, satisfies both and is missing a ' +
-          'table.</p>' +
-          '<p>The reverse is deliberately <em>not</em> reported: a table in ' +
-          'this schema the driver never heard of is an operator\'s ' +
-          'business, ' +
-          'and a page calling it an error would be this service claiming a ' +
-          'namespace it does not own.</p>',
-          'The schema is what the driver expects');
-    return '<h3>Schema drift</h3>' + body;
+          '<p>' + t.html('consoleDatabase.allPresent',
+                         { n: drift.declared.length,
+                           version: String(json.schemaExpected.version) }) +
+          '</p>' +
+          '<p>' + t.html('consoleDatabase.onlyCheck') + '</p>' +
+          '<p>' + t.html('consoleDatabase.reverseNot') + '</p>',
+          t.html('consoleDatabase.presentTitle'));
+    return '<h3>' + t.html('consoleDatabase.drift') + '</h3>' + body;
   }
 
-  static sectionBlock(section: Json, json: Json): string {
+  static sectionBlock(section: Json, json: Json, t: Json): string {
     const self = this;
     const ids = Object.keys(json.probes).filter(function (id) {
       return json.probes[id].group === section.group && json.probes[id].ok;
@@ -479,44 +414,48 @@ class DatabasePage {
     if (!ids.length) {
       return '';
     }
-    return '<h3>' + kit.esc(section.heading) + '</h3>' +
-      kit.note(section.blurb) +
+    const words = SECTION_WORDS(t)[section.group] ||
+      { heading: kit.esc(section.heading), blurb: section.blurb };
+    return '<h3>' + words.heading + '</h3>' +
+      kit.note(words.blurb) +
       ids.map(function (id) {
         const probe = json.probes[id];
         return '<h4>' + kit.esc(id) +
           ' <span class="muted">' +
-          (probe.shape === 'rows' ? probe.count + ' row(s)' : '1 row') +
-          ', ' + probe.tookMs + 'ms</span></h4>' +
+          (probe.shape === 'rows'
+            ? t.html('consoleDatabase.rowsTook',
+                     { n: probe.count, ms: probe.tookMs })
+            : t.html('consoleDatabase.oneRowTook', { ms: probe.tookMs })) +
+          '</span></h4>' +
           '<p class="muted">' + kit.esc(probe.what) + '</p>' +
-          (probe.shape === 'rows' ? self.rowsTable(probe)
-                                  : self.rowTable(probe));
+          (probe.shape === 'rows' ? self.rowsTable(probe, t)
+                                  : self.rowTable(probe, t));
       }).join('');
   }
 
-  static failureBlock(json: Json): string {
+  static failureBlock(json: Json, t: Json): string {
     const self = this;
     if (!json.failed.length) {
-      return '<h3>What could not be collected</h3>' +
-        kit.note('Nothing. Every one of the ' +
-                   Object.keys(json.probes).length + ' probes answered.');
+      return '<h3>' + t.html('consoleDatabase.notCollected') + '</h3>' +
+        kit.note(t.html('consoleDatabase.allAnswered',
+                        { n: Object.keys(json.probes).length }));
     }
-    return '<h3>What could not be collected</h3>' + kit.note(
-      '<p>' + json.failed.length + ' of ' + Object.keys(json.probes).length +
-      ' probes did not answer. <strong>Each one costs a row here rather ' +
-      'than ' +
-      'the page</strong>, which is why they are run and caught separately: ' +
-      'which views a role may read depends on the server version and on the ' +
-      'operator\'s grants, and one rejection must not take the other ' +
-      'nineteen ' +
-      'with it.</p>' +
-      '<table class="grid"><thead><tr><th>Probe</th><th>What it would ' +
-      'show</th>' +
-      '<th>SQLSTATE</th><th>Why not</th></tr></thead><tbody>' +
+    return '<h3>' + t.html('consoleDatabase.notCollected') + '</h3>' +
+      kit.note(
+      '<p>' + t.html('consoleDatabase.someFailed',
+                     { failed: json.failed.length,
+                       total: Object.keys(json.probes).length }) + '</p>' +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleDatabase.thProbe') + '</th><th>' +
+      t.html('consoleDatabase.thWouldShow') + '</th>' +
+      '<th>SQLSTATE</th><th>' + t.html('consoleDatabase.thWhyNot') +
+      '</th></tr></thead><tbody>' +
       json.failed.map(function (id) {
-        return self.probeFailure(id, json.probes[id]);
+        return self.probeFailure(id, json.probes[id], t);
       }).join('') +
       '</tbody></table>',
-      json.failed.length + ' probe(s) unavailable');
+      t.html('consoleDatabase.unavailableTitle',
+             { n: json.failed.length }));
   }
 }
 

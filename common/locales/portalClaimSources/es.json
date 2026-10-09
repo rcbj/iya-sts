@@ -1,0 +1,15 @@
+{
+  "heading": "Fuentes de claims conectadas",
+  "sub": "Otro proveedor de identidad puede responder por datos sobre ti que este servicio no tiene. Cuando vinculas uno, una aplicación que pide esos datos los recibe tal como ese proveedor los firmó (claims agregados y distribuidos de OpenID Connect). Al vincular, vas al proveedor para iniciar sesión y dar tu consentimiento.",
+  "none": "Este servicio no tiene fuentes de claims que ofrecer.",
+  "supplies": "Proporciona",
+  "distributed": ", entregando a una aplicación tu token en este proveedor para que los obtenga ella misma.",
+  "aggregated": ", obtenidos por este servicio y transmitidos tal como el proveedor los firmó.",
+  "linked": "Vinculado el {when}.",
+  "linkedStale": "Vinculado el {when}: <strong>ya no se puede usar</strong>; vuelve a vincularlo.",
+  "link": "Vincular",
+  "linkAgain": "Volver a vincular",
+  "unlink": "Desvincular",
+  "doneUnlinked": "Desvinculado.",
+  "doneLinked": "Se vinculó «{provider}»."
+}

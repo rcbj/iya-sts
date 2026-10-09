@@ -109,7 +109,7 @@ async function test() {
     held = await kit.derive(G, cast, tier, held.value);
     acted.push(tier);
     const seen = await kit.assertToken(G, cast, held, {
-      holder: tier, target: tier.next, act: kit.actChain(acted),
+      holder: tier, target: tier.next, act: kit.actChain(G, cast, acted),
       subject: subject });
     tokens.push(seen);
     kit.captureLayer(G, { hop: tier.stem + "→" + tier.next.stem,

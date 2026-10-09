@@ -43,37 +43,44 @@ class ServiceAccountsPage {
    */
   static render(view: Json, ctx: Json): string {
     const c = ctx || kit.context();
+    // The page's words are its translator's (#539 phase 6); what the view
+    // carries — names, times, a push's error — is drawn as it comes.
+    const t = c.t;
     const policy = view.policy || {};
     const totals = view.totals || {};
     const params = { failing: view.filter && view.filter.failing
                        ? 'true' : '' };
-    const nav = kit.pageNavPair(PAGE, params, view.paging);
+    const nav = kit.pageNavPair(PAGE, params, view.paging, t);
     const tiles = '<div class="tiles">' +
-      kit.tile(String(totals.accounts), 'service accounts') +
-      kit.tile(String(totals.rotating), 'rotating') +
-      kit.tile(String(totals.failing), 'last rotation failed') +
-      kit.tile(String(totals.alarms), 'alarms') +
+      kit.tile(String(totals.accounts),
+               t.text('consoleServiceAccounts.tileAccounts')) +
+      kit.tile(String(totals.rotating),
+               t.text('consoleServiceAccounts.tileRotating')) +
+      kit.tile(String(totals.failing),
+               t.text('consoleServiceAccounts.tileFailing')) +
+      kit.tile(String(totals.alarms),
+               t.text('consoleServiceAccounts.tileAlarms')) +
       '</div>';
-    const lead = kit.note('A <strong>service account</strong> is a person ' +
-      'entry used by a program (#221). Where this realm\'s <a ' +
-      'href="/admin/policies#serviceAccount">service-account policy</a> ' +
-      'turns rotation on, the <code>service-accounts.rotate</code> job gives ' +
-      'every account that names a push destination a new password each ' +
-      'interval: pushed to the destination FIRST, committed here only once ' +
-      'the push succeeded, the previous password still accepted for the ' +
-      'overlap. A failed push changes nothing and is tried again at the next ' +
-      'run. Rotation is <strong>' + (policy.rotationEnabled ? 'on' : 'off') +
-      '</strong> in this realm' + (policy.rotationEnabled
-        ? ': every ' + kit.esc(String(policy.intervalDays)) + ' days, the ' +
-          'previous password working for ' +
-          kit.esc(String(policy.overlapMinutes)) + ' minutes, an alarm ' +
-          'after ' + kit.esc(String(policy.alarmFailures)) + ' failures in ' +
-          'a row'
+    // The policy link carries an href, which a message may not, so the
+    // sentence around it is three messages with the anchor in the code.
+    const lead = kit.note(t.html('consoleServiceAccounts.leadBefore') +
+      '<a href="/admin/policies#serviceAccount">' +
+      t.html('consoleServiceAccounts.leadLink') + '</a>' +
+      t.html('consoleServiceAccounts.leadAfter') +
+      t.html('consoleServiceAccounts.rotationState',
+             { state: policy.rotationEnabled ? 'on' : 'off' }) +
+      (policy.rotationEnabled
+        ? t.html('consoleServiceAccounts.rotationDetail',
+                 { days: String(policy.intervalDays),
+                   minutes: String(policy.overlapMinutes),
+                   failures: String(policy.alarmFailures) })
         : '') + '.');
     const filter = '<form method="get" action="' + PAGE + '"><div ' +
       'class="formrow"><label><input type="checkbox" name="failing" ' +
-      'value="true"' + (params.failing ? ' checked' : '') + '> only accounts ' +
-      'whose last rotation failed</label><button class="secondary">Filter' +
+      'value="true"' + (params.failing ? ' checked' : '') + '> ' +
+      t.html('consoleServiceAccounts.onlyFailing') +
+      '</label><button class="secondary">' +
+      t.html('consoleServiceAccounts.filter') +
       '</button></div></form>';
     const rows = (view.accounts || []).map(function (row: Json): string {
       const r = row.rotation || {};
@@ -82,25 +89,31 @@ class ServiceAccountsPage {
         kit.esc(row.username) + '</a></td><td>' +
         (row.destination ? '<code>' + kit.esc(row.destination) +
           '</code><br><code>' + kit.esc(row.secretName || '') + '</code>'
-          : '<span class="state-none">none</span>') + '</td><td>' +
-        kit.esc(row.rotatedAt || 'never') + '</td><td>' +
-        kit.esc(r.nextDueAt || (r.rotates ? 'now' : '—')) + '</td><td>' +
+          : '<span class="state-none">' +
+            t.html('consoleServiceAccounts.none') + '</span>') + '</td><td>' +
+        (row.rotatedAt ? kit.esc(row.rotatedAt)
+                       : t.html('consoleServiceAccounts.never')) +
+        '</td><td>' +
+        (r.nextDueAt ? kit.esc(r.nextDueAt)
+                     : (r.rotates ? t.html('consoleServiceAccounts.now')
+                                  : '—')) + '</td><td>' +
         kit.esc(row.previousPasswordUntil || '—') + '</td><td' +
         (r.alarm ? ' class="state-expired"' : '') + '>' +
         kit.esc(String(r.failures || 0)) + (r.lastError
           ? ' <code>' + kit.esc(r.lastError) + '</code>' : '') + '</td></tr>';
     }).join('');
-    const table = '<table><tr><th>Account</th><th>Push destination</th>' +
-      '<th>Last rotated</th><th>Next due</th><th>Previous password until' +
-      '</th><th>Failures in a row</th></tr>' + (rows ||
-        '<tr><td colspan="6"><span class="state-none">No service accounts ' +
-        'in this realm.</span></td></tr>') + '</table>';
-    void c;
+    const table = '<table><tr><th>' +
+      t.html('consoleServiceAccounts.thAccount') + '</th><th>' +
+      t.html('consoleServiceAccounts.thDestination') + '</th><th>' +
+      t.html('consoleServiceAccounts.thRotated') + '</th><th>' +
+      t.html('consoleServiceAccounts.thNextDue') + '</th><th>' +
+      t.html('consoleServiceAccounts.thPreviousUntil') + '</th><th>' +
+      t.html('consoleServiceAccounts.thFailures') + '</th></tr>' + (rows ||
+        '<tr><td colspan="6"><span class="state-none">' +
+        t.html('consoleServiceAccounts.noAccounts') +
+        '</span></td></tr>') + '</table>';
     return tiles + lead + filter + nav.head + table + nav.foot +
-      kit.note('The same over JSON is <code>GET /admin-api/' +
-               'service-accounts</code>; Rotate now is on each account\'s ' +
-               'page and at <code>POST /admin-api/users/rotate-password' +
-               '</code>.');
+      kit.note(t.html('consoleServiceAccounts.footer'));
   }
 }
 

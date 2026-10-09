@@ -82,6 +82,7 @@
 //   flag(f)*                        label(l)?
 //   cnf_jkt(tp) | cnf_x5t(tp) | cnf_kid(ref) | bearer(true)
 //   actor(i, sub)*                  the actor chain, i = 0 the most recent
+//   actor_iss(i, iss)*              that actor's issuer, where named (#526)
 //   grant(id)?                      the grant limits are counted against
 //   access_limit_amount(i, v, cur)  a right's limits (#432 phase 5), each
 //   access_limit_count(i, n)        member with a meaning decomposed:
@@ -105,6 +106,12 @@
 // block anybody holding the token may append is a block anybody may write
 // an actor into, and an authorizer query sees only the authority block and
 // its own facts (see readModel()).
+//
+// `actor_iss(i, iss)` (#526) is the same entry's `iss` — the authorization
+// server that wrote it, as RFC 8693 section 4.1 entries carry since #471 —
+// a fact of its own rather than a third term of `actor`, so a resource
+// server's check written against `actor(i, sub)` keeps working. At most one
+// per index; an index with none is an entry with no `iss`.
 //
 // and its checks — so that the token carries its own rules and ANY biscuit
 // verifier enforces them, not only this one:
@@ -231,6 +238,7 @@ const MODEL_QUERIES = [
   'data($v) <- flag($v)',
   'data($i, $j) <- access($i, $j)',
   'data($i, $s) <- actor($i, $s)',
+  'data($i, $s) <- actor_iss($i, $s)',
   'data($v) <- cnf_jkt($v)',
   'data($v) <- cnf_x5t($v)',
   'data($v) <- cnf_kid($v)',
@@ -449,8 +457,11 @@ class TokenBiscuit {
     if (model.label !== null) {
       p.add('label(?);', [model.label]);
     }
-    (access.actorChain(model.act) || []).forEach(function (sub, i) {
-      p.add('actor(?, ?);', [i, sub]);
+    (access.actorChain(model.act) || []).forEach(function (entry, i) {
+      p.add('actor(?, ?);', [i, entry.sub]);
+      if (entry.iss !== undefined) {
+        p.add('actor_iss(?, ?);', [i, entry.iss]);
+      }
     });
     if (model.grant) {
       p.add('grant(?);', [model.grant]);
@@ -756,7 +767,9 @@ class TokenBiscuit {
       .sort(function (a, b) {
         return a[0] - b[0];
       });
-    const actors: string[] = [];
+    const issRows = this.query(answers,
+                               'data($i, $s) <- actor_iss($i, $s)');
+    const actors: any[] = [];
     for (let i = 0; i < actorRows.length; i++) {
       if (actorRows[i][0] !== i || typeof actorRows[i][1] !== 'string') {
         log.debug("Leaving TokenBiscuit.readModel(). actor indices are not " +
@@ -764,7 +777,21 @@ class TokenBiscuit {
         return this.refusal('STS-GNAP-0323', 'the biscuit\'s actor facts ' +
                             'are not numbered 0..n-1 with one actor each.');
       }
-      actors.push(actorRows[i][1]);
+      actors.push({ sub: actorRows[i][1] });
+    }
+    // #526: at most one issuer per actor, and none for an index with no
+    // actor — either is a chain no authorization server wrote.
+    for (let k = 0; k < issRows.length; k++) {
+      const at = issRows[k][0];
+      if (typeof at !== 'number' || !actors[at] ||
+          typeof issRows[k][1] !== 'string' ||
+          actors[at].iss !== undefined) {
+        log.debug("Leaving TokenBiscuit.readModel(). An actor_iss fact " +
+                  "names no actor, or repeats one.");
+        return this.refusal('STS-GNAP-0323', 'the biscuit\'s actor_iss ' +
+                            'facts must name an actor, one issuer each.');
+      }
+      actors[at].iss = issRows[k][1];
     }
     const jkt = one('data($v) <- cnf_jkt($v)');
     const x5t = one('data($v) <- cnf_x5t($v)');

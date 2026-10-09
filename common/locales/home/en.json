@@ -1,0 +1,22 @@
+{
+  "logoAlt": "IYA STS — Security Token Service",
+  "sub": "A permissive mock identity service that speaks sixteen protocol families. It exists to exercise CLIENTS.",
+  "version": "version {version}",
+  "warn": "It checks no password, validates no access token and attests no workload. Do not put this port on a public address.",
+  "repoLabel": "The project on GitHub",
+  "repoNote": "The source, the README, and the sixteen families in full.",
+  "issuesLabel": "Issues",
+  "issuesNote": "What is known to be wrong, and where to say what is not.",
+  "docsLabel": "Documentation",
+  "docsNote": "The GitHub Pages site: getting started, configuration, and what is deliberately not checked.",
+  "consoleLabel": "The admin console on this instance",
+  "consoleNote": "Everything this process has done, and the settings that change what its protocol endpoints do.",
+  "consoleRoles": "It also asks for one of two roles.",
+  "consoleOpen": "It is open on this instance.",
+  "consoleMetadata": "Every endpoint this service registered is listed inside it, at /admin/sts-metadata.",
+  "portalLabel": "The user portal on this instance",
+  "portalNote": "The account pages of whoever is looking at them: how they sign in to this service, what it holds about them, and where it will sign them in.",
+  "portalNoRole": "It asks for no role, which is the whole difference from the console above: every page of it is about the person looking at it, so saying who you are is the entire question.",
+  "signInProduct": "It asks you to sign in, and this instance is in product mode, so the password is checked against the account.",
+  "signInDevelopment": "It asks you to sign in — any username, and no password is checked."
+}

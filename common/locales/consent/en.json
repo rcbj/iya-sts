@@ -1,0 +1,21 @@
+{
+  "title": "Allow access? — mock authorization server",
+  "heading": "Allow access?",
+  "signedInAs": "Signed in as <code>{username}</code> at <code>{base}</code>",
+  "asking": "<strong>{client}</strong> is asking for access on your behalf.",
+  "scope.permission": "{description} — exposed by <code>{identifier}</code>, and the access token will be addressed to <code>{baseUri}</code>",
+  "scope.permissionNamed": "the permission \"{name}\"",
+  "scope.ordinary": "an ordinary scope: this service attaches no meaning to it and will put it on the token's scope claim as it stands",
+  "detail.understood": "understood by <code>{resource}</code>, and the access token will be addressed to <code>{audience}</code>",
+  "detail.described": "{description} — understood by <code>{resource}</code>, and the access token will be addressed to <code>{audience}</code>",
+  "detailsNote": "This request carries <strong>{count, plural, one {# authorization detail} other {# authorization details}}</strong> (RFC 9396). You are asked about them every time: Allow agrees to exactly what is listed, for this one request.",
+  "already.summary": "{count} scope(s) you have already agreed to for this application",
+  "already.global": "consented for everybody on this application's entry (<code>oauthGlobalConsent</code>) — you were never asked",
+  "already.byYou": "agreed by you",
+  "already.byYouAt": "agreed by you at {at}",
+  "allow": "Allow",
+  "deny": "Deny",
+  "meta.allow": "Allow writes one <code>{attribute}</code> value per scope onto your entry under <code>ou=users</code>, so you are not asked again for these. Deny returns <code>access_denied</code> to the application and records nothing.",
+  "meta.nothingIssued": "Nothing has been issued yet. This screen is <code>oauth2.consentRequired</code>, which is on by default; /admin/consent is where every answer given here can be read and taken back.",
+  "meta.consentingFor": "Consenting for: <code>{protocol}</code>"
+}

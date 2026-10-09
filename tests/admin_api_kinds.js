@@ -26,6 +26,8 @@
 //   2. A console POST writes nothing. That is rule 7's guard: every console
 //      CONTROL keeps a management operation, and a control cannot hide on the
 //      console side when the console side has only reads and form helpers.
+//      A write is allowed only where ARGUED_CONSOLE_WRITES names it and the
+//      management operation doing the same write, which must be registered.
 //   3. The two documents and the two lists do not overlap, and the explorer
 //      (Server configuration → Management API) is built from the management
 //      document alone.
@@ -53,8 +55,19 @@ const CONSOLE_OPERATIONS = [
   'getDelegationChain', 'getFederationMap', 'getConsoleNewApplicationForm',
   'getConsoleDelegationUser', 'getConsoleDelegationApplication',
   'applyPkiProfile', 'generatePkiKeyPair', 'generatePkiAltKeyPair',
-  'usePkiStoredKey', 'generateClientSecret'
+  'usePkiStoredKey', 'generateClientSecret', 'setConsoleLanguage'
 ];
+
+// THE CONSOLE WRITES THAT ARE ARGUED, by operationId, each with the
+// management operation that does the same write — so rule 7 still holds:
+// the control is not hidden on the console side. One, and it is the reader's
+// own preference rather than an administrative control.
+//   setConsoleLanguage (#539): the signed-in person's own preferredLanguage,
+//     the console's language chooser; the same attribute of any person is
+//     setUserAttribute (POST /admin-api/users/set-attribute).
+const ARGUED_CONSOLE_WRITES = {
+  setConsoleLanguage: 'setUserAttribute'
+};
 
 const CONSOLE_PREFIX = /^\/admin-api\/console(\/|$)/;
 
@@ -94,9 +107,26 @@ function run(t) {
   // --- 2. a console POST writes nothing --------------------------------------
   t.log.info('=== 2. the console side has reads and form helpers only ===');
   const writing = [];
+  const managementIds = [];
+  routes.filter(function (entry) {
+    return entry.kind === 'management';
+  }).forEach(function (entry) {
+    managementIds.push(entry.operationId);
+    (entry.actions || []).forEach(function (action) {
+      managementIds.push(action.operationId);
+    });
+  });
   routes.filter(function (entry) {
     return entry.kind === 'console' && entry.method !== 'GET';
   }).forEach(function (entry) {
+    const twin = ARGUED_CONSOLE_WRITES[entry.operationId];
+    if (twin) {
+      if (managementIds.indexOf(twin) < 0) {
+        writing.push(pathOf(entry) + ' (its management twin ' + twin +
+                     ' is not registered)');
+      }
+      return;
+    }
     if (!Array.isArray(entry.actions) || !entry.actions.length) {
       writing.push(pathOf(entry) + ' (no declared actions)');
       return;

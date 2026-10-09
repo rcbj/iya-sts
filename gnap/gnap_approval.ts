@@ -349,7 +349,9 @@ class GnapApproval {
           }
         });
       });
-    const out = names.join('; ').slice(0, 300) || 'access';
+    // Empty when the grant names no right: the mail channel then says
+    // "access" in the person's own language (#539), not in English here.
+    const out = names.join('; ').slice(0, 300);
     log.debug("Leaving GnapApproval.rightsSentence().");
     return out;
   }

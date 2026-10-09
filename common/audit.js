@@ -788,6 +788,12 @@ const ACTIONS = [
   { action: 'admin.authn-policy.change', category: 'admin',
     label: 'An authentication policy profile was changed' },
 
+  // A LOCALE POLICY PROFILE WAS SAVED OR PUT BACK (#539): a realm's default
+  // language, whether a new person is given it, and a named profile's
+  // applications.
+  { action: 'admin.locale-policy.change', category: 'admin',
+    label: 'A locale policy profile was changed' },
+
   // A PERSON'S EMAILED SECOND FACTOR WAS TURNED ON OR OFF (#64): by them on
   // /portal/mfa, by an administrator, or by this service at the failure
   // limit. The kind, never a code.

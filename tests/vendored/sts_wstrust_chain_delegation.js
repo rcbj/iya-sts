@@ -160,8 +160,9 @@ async function test() {
         "wstrustAppliesTo and samlEntityId, and the three requesters " +
         "delegate to the next tier only", function () {});
 
-  // THE ISSUER EACH ASSERTION MUST CARRY (#480, #494): in either mode the
-  // entityID each AppliesTo's own SAML metadata names.
+  // THE ISSUER EACH ASSERTION MUST CARRY (#523): in either mode the realm's
+  // one issuer, its OAuth issuer, which each AppliesTo's own SAML and
+  // WS-Federation metadata must name too (`kit.samlIssuerFor()`).
   const issuers = [];
   for (let i = 0; i < cast.tiers.length; i++) {
     issuers.push(await kit.samlIssuerFor(base, cast.tiers[i], product));

@@ -1,0 +1,15 @@
+{
+  "nav.email.label": "Courriel",
+  "nav.email.heading": "Votre adresse courriel et vos messages",
+  "directory.email": "Courriel",
+  "emailFactor.heading": "Le courriel comme deuxième facteur",
+  "emailFactor.noMail": "Ce service ne peut pas envoyer de courriel pour le moment.",
+  "emailFactor.unverified": "Votre adresse n’est pas vérifiée. Vérifiez-la d’abord sur la page Courriel.",
+  "emailFactor.unusedCode": "Vous avez choisi un code par courriel, mais il n’est pas utilisé : {why}.",
+  "emailFactor.unusedLink": "Vous avez choisi un lien par courriel, mais il n’est pas utilisé : {why}.",
+  "emailFactor.code": "M’envoyer un code par courriel",
+  "emailFactor.link": "M’envoyer un lien de connexion par courriel",
+  "emailFactor.weakest": "<strong>Le courriel est le deuxième facteur le plus faible que propose ce service.</strong> Quiconque peut lire votre boîte de réception — souvent avec votre seul mot de passe de messagerie — peut terminer une connexion à votre place, et c’est pourquoi la NIST SP 800-63B-4 ne compte pas le courriel comme un authentificateur. Une application d’authentification ou une clé d’accès est préférable si vous en avez une ; elles vous sont demandées en premier.",
+  "done.emailOn": "Le courriel est désormais votre deuxième facteur, après votre mot de passe.",
+  "done.emailOff": "Le courriel n’est plus un deuxième facteur pour vous."
+}

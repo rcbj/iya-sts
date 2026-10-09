@@ -1,0 +1,17 @@
+{
+  "scopeFor": " för {resource}",
+  "details": "{n} auktoriseringsdetalj(er)",
+  "claims": "anspråk {claims}",
+  "revoke": "Återkalla",
+  "none": "Ingen klient har en behörighet i den här sfären. En behörighet skapas av en auktoriseringsbegäran med <code>grant_management_action=create</code>.",
+  "note": "<strong>Grant Management for OAuth 2.0.</strong> En konfidentiell klient anger vad en person lät den göra — genom att skapa en behörighet, slå ihop mer i den eller ersätta den via vanliga auktoriseringsbegäranden — och läser eller återkallar den på <code>{path}</code> med omfången <code>grant_management_query</code> och <code>grant_management_revoke</code>. En behörighet finns när dess token har hämtats, och upphör med den sista av dem. Att återkalla den här gör samma sak som en klients DELETE: varje uppdateringstoken under den nekas på varje nod, och varje token som sfären registrerat under den återkallas. Vad personen GODKÄNDE finns under ",
+  "consentLink": "Samtycke",
+  "noteEnd": ".",
+  "colClient": "Klient",
+  "colSubject": "Subjekt",
+  "colScopes": "Omfång",
+  "colGeneration": "Generation",
+  "colCreated": "Skapad / uppdaterad",
+  "colExpires": "Upphör",
+  "colTokens": "Innehavda token"
+}

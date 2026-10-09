@@ -642,6 +642,26 @@ async function signInToTheConsole(base, user, log2, options) {
       const qs = new URLSearchParams(q).toString();
       return api("GET", operation + (qs ? "?" + qs : ""));
     },
+    // THE READER'S LANGUAGE FOR A BUNDLE A JOB LOADED ITSELF (#539): the
+    // shell's `locale` member, asked once, built into that bundle's
+    // translator and made its default, as the runtime's applyLocale() does.
+    // A job that draws with its own bundle calls this once before drawing.
+    localize: async function (table) {
+      if (this.localeData === undefined) {
+        const shell = await api("GET", "/admin-api/console");
+        this.localeData = shell.json && shell.json.locale
+          ? shell.json.locale : null;
+      }
+      if (!this.localeData || !table || !table.messages) {
+        return null;
+      }
+      const translator =
+        table.messages.WebTranslator.fromData(this.localeData);
+      table.messages.WebTranslator.setDefault(function () {
+        return translator;
+      });
+      return translator;
+    },
     // The page drawn, as the console draws it for this token's reader:
     // `{ status, json, html }`, `html` empty when the operation refused.
     draw: async function (path, query) {
@@ -653,11 +673,30 @@ async function signInToTheConsole(base, user, log2, options) {
         const me = await api("GET", "/admin-api/me");
         this.mayWrite = !!(me.json && me.json.write);
       }
+      // AND IN THE READER'S LANGUAGE, as the console's runtime draws it
+      // (#539): a translator built by the bundle from the shell's `locale`
+      // member, asked once. Without it every message renders as its key.
+      if (this.translator === undefined) {
+        const shell = await api("GET", "/admin-api/console");
+        this.translator = table.messages && shell.json && shell.json.locale
+          ? table.messages.WebTranslator.fromData(shell.json.locale) : null;
+      }
+      // AND IT IS THE DEFAULT, as the runtime's applyLocale() makes it: a
+      // helper the renderers call with no translator (the pager, a pane)
+      // falls back to it, and without this drew keys here and English in a
+      // browser. Set on every draw, because two clients share one bundle.
+      if (this.translator && table.messages) {
+        const translator = this.translator;
+        table.messages.WebTranslator.setDefault(function () {
+          return translator;
+        });
+      }
       const asked = Object.assign({}, query || {});
       delete asked.format;
       const html = answer.status === 200 && answer.json
         ? table.render(path, answer.json,
-                       table.kit.context(asked, this.mayWrite)) ||
+                       table.kit.context(asked, this.mayWrite,
+                                         this.translator || undefined)) ||
           "" : "";
       return { status: answer.status, json: answer.json, html: html };
     },

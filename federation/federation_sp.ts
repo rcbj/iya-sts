@@ -189,6 +189,10 @@ import realms = require('./../common/realms');
 import documentSettings = require('./../saml/document_settings');
 import helpers = require('./../common/helpers');
 import InstanceSlot = require('./../common/instance_slot');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
+// no route and closes no cycle. Only the pages a PERSON passes through use it
+// — the outbound hand-off and the signed-in page; refusals stay English.
+import PageLocale = require('./../common/page_locale');
 // WHICH PEOPLE A PARTNER MAY ASSERT (#109). `mode.js` answers whether a name
 // match is allowed at all; `federation_links.ts` is the link's format, a
 // static utility class; the console roster (`admin_rbac.ts`, built by the
@@ -670,11 +674,15 @@ class FederationSp {
     return !!config.value('federation.enabled');
   }
 
-  private page(title, body) {
+  // `t` is the page's translator (#539), for a page a person passes through;
+  // without one the page is English, exactly as it always was.
+  private page(title, body, t?) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.page().");
     log.debug("Leaving FederationSp.page().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>' + xmlEscape(title) + '</title><style>' + STYLE +
       '</style></head><body>' +
@@ -722,10 +730,10 @@ class FederationSp {
   // WS-Federation `wtrealm` and the OAuth `client_id` fallback — and four
   // spellings of it would be four things a partner had to be configured with.
   //
-  // It is PER RELATIONSHIP rather than one constant, which is the same decision
-  // `saml2.perApplicationEntityId` makes in the other direction and for the
-  // same reason: a partner keying its trust store off an entityID must be able
-  // to be given one that is only ours-with-them.
+  // It is PER RELATIONSHIP rather than one constant: a partner keying its
+  // trust store off an entityID must be able to be given one that is only
+  // ours-with-them. (The other direction made the same decision until #523,
+  // when this service as an IDENTITY PROVIDER became one name per realm.)
   // ---------------------------------------------------------------------------
   //
   // **AND IT IS DERIVED FROM THE BASE URL, WHICH IS THE ONE THING TO KNOW ABOUT
@@ -2344,12 +2352,16 @@ class FederationSp {
         res.redirect(303, returnTo);
         return;
       }
+      // In the person's language (#539): the application they were signing
+      // in to, where the login endpoint was told it, and the person.
+      const t = PageLocale.forPage({ application: result.application || '',
+                                     username: username });
       res.type('html').set('Cache-Control', 'no-store').send(
-        self.page('Signed in',
+        self.page(t.text('handoff.federation.signedIn.title'),
                   self.signedInPage(record,
                                     Object.assign({}, mapped,
                                                   { username: username }),
-                                    result, session)));
+                                    result, session, t), t));
     }, function (why: string): void {
       // error-code: none — afterSignIn() marked STS-ATTR-0012 on `res`
       self.refuse(res, record, 403, 'An attribute source refused the sign-in',
@@ -2478,7 +2490,13 @@ class FederationSp {
       }).join('') + '</table>';
   }
 
-  private signedInPage(record, mapped, result, session) {
+  //
+  // IN THE PERSON'S LANGUAGE (#539): `t` is the page's translator. What the
+  // partner sent, the mapping's own words and the setting names are data
+  // and stay as they are. No language chooser: the page is drawn by the
+  // assertion consumer service, at the end of a POST or a redirect carrying
+  // a one-time answer, and no GET draws it again.
+  private signedInPage(record, mapped, result, session, t) {
     const { federation, log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.signedInPage().");
     const rows = mapped.mapped.map((one) => {
@@ -2492,72 +2510,76 @@ class FederationSp {
       return '<tr><td><code>' + xmlEscape(one.incoming) + '</code></td><td ' +
                                                           'colspan="2">' +
         one.values.map((v) => { return xmlEscape(v); }).join('<br>') +
-        '</td><td class="note">nothing maps this name, so it was NOT ' +
-        'written</td></tr>';
+        '</td><td class="note">' +
+        t.html('handoff.federation.signedIn.notWritten') + '</td></tr>';
     }).join('');
     log.debug("Leaving FederationSp.signedInPage().");
-    return '<h1>Signed in through ' +
-      xmlEscape(record.fedName || record.fedId) +
-      '</h1><p>This ' +
-      'service is now signing you in as <code>' + xmlEscape(mapped.username) +
-      '</code>. The session is <code>' + xmlEscape(session.id) + '</code>, ' +
-      'and it is the SAME session every other protocol here reads — so an ' +
-      'OAuth 2.0 authorization request, a WS-Federation sign-in or the admin ' +
-      'console will now find you signed ' +
-      'in.</p><table><tr><th>What</th><th>Value</th></tr><tr><td>Partner' +
-      '</td><td><code>' + xmlEscape(record.fedPeer || '(unnamed)') +
-      '</code></td></tr><tr><td>Protocol</td><td>' +
+    return '<h1>' + t.html('handoff.federation.signedIn.heading',
+                           { partner: record.fedName || record.fedId }) +
+      '</h1><p>' +
+      t.html('handoff.federation.signedIn.lead',
+             { username: mapped.username, session: session.id }) +
+      '</p><table><tr><th>' + t.html('handoff.federation.signedIn.what') +
+      '</th><th>' + t.html('handoff.federation.signedIn.value') +
+      '</th></tr><tr><td>' + t.html('handoff.federation.signedIn.partner') +
+      '</td><td><code>' + (record.fedPeer ? xmlEscape(record.fedPeer)
+        : t.html('handoff.federation.signedIn.unnamed')) +
+      '</code></td></tr><tr><td>' +
+      t.html('handoff.federation.signedIn.protocol') + '</td><td>' +
         xmlEscape((federation.protocolRow(record.fedProtocol) ||
                    {}).label || record.fedProtocol) +
         '</td></tr>' +
-      '<tr><td>Subject the partner sent</td><td><code>' + xmlEscape(
-          result.subject || '(none)') +
+      '<tr><td>' + t.html('handoff.federation.signedIn.subject') +
+        '</td><td><code>' + (result.subject ? xmlEscape(result.subject)
+          : t.html('handoff.federation.signedIn.none')) +
         '</code></td></tr>' +
-      '<tr><td>Username here</td><td><code>' + xmlEscape(
+      '<tr><td>' + t.html('handoff.federation.signedIn.usernameHere') +
+        '</td><td><code>' + xmlEscape(
           mapped.username) + '</code>' +
         (mapped.usernamePrefixed
-          ? ' <span class="note">(federation.usernamePrefix was ' +
-            'applied)</span>' :
+          ? ' <span class="note">' +
+            t.html('handoff.federation.signedIn.prefixed') + '</span>' :
          '') +
-        ' <span class="note">from ' + xmlEscape(mapped.usernameFrom) +
-      '</span></td></tr><tr><td>Directory ' +
-      'entry</td><td>' +
+        ' <span class="note">' +
+        t.html('handoff.federation.signedIn.from',
+               { source: mapped.usernameFrom }) +
+      '</span></td></tr><tr><td>' +
+      t.html('handoff.federation.signedIn.entry') + '</td><td>' +
         (federation.boolOf(record.fedAutocreateUsers, true)
-          ? 'created if absent, under <code>ou=users</code> — see ' +
+          ? t.html('handoff.federation.signedIn.created') + ' ' +
             '<a href="/admin/users">/admin/users</a>'
-          : '<span class="note">NEVER created here: fedAutocreateUsers is ' +
-            'off on this relationship, so the person must already have an ' +
-            'entry</span>') +
+          : '<span class="note">' +
+            t.html('handoff.federation.signedIn.neverCreated') + '</span>') +
         (federation.boolOf(record.fedUpdateUserAttributes, true)
-          ? '; its attributes are updated from this assertion'
-          : '<span class="note">; its attributes are written only when this ' +
-            'sign-in creates it (fedUpdateUserAttributes is off)</span>') +
+          ? t.html('handoff.federation.signedIn.updated')
+          : '<span class="note">' +
+            t.html('handoff.federation.signedIn.writtenOnce') + '</span>') +
         '</td></tr></table>' +
-      (rows ? '<h2>Attributes mapped onto the directory ' +
-        'entry</h2><table><tr><th>The partner ' +
-        'sent</th><th>Became</th><th>Value(s)</th><th>Decided by</th></tr>' +
+      (rows ? '<h2>' + t.html('handoff.federation.signedIn.mappedHeading') +
+        '</h2><table><tr><th>' +
+        t.html('handoff.federation.signedIn.partnerSent') + '</th><th>' +
+        t.html('handoff.federation.signedIn.became') + '</th><th>' +
+        t.html('handoff.federation.signedIn.values') + '</th><th>' +
+        t.html('handoff.federation.signedIn.decidedBy') + '</th></tr>' +
         rows + unmapped + '</table>'
-        : '<h2>Attributes</h2><p class="note">The partner sent no attributes ' +
-          'at all, so the entry carries only the ' +
-          'username.</p>' +
+        : '<h2>' + t.html('handoff.federation.signedIn.attributes') +
+          '</h2><p class="note">' +
+          t.html('handoff.federation.signedIn.noAttributes') + '</p>' +
           (unmapped ? '<table>' + unmapped + '</table>' : '')) +
       (mapped.unmapped.length
-        ? '<p class="note"><strong>' + mapped.unmapped.length + ' ' +
-            'attribute(s) ' +
-          'were thrown away</strong> because nothing maps their names. That ' +
-          'is ' +
-          'deliberate — this directory has no schema, so an attribute ' +
-          'written ' +
-          'under an unrecognised name would be accepted silently and nothing ' +
-          'would ever report that the name was wrong. Add a mapping on <a ' +
+        ? '<p class="note">' +
+          t.html('handoff.federation.signedIn.thrownAway',
+                 { n: mapped.unmapped.length }) + ' <a ' +
           'href="/admin/federation?relationship=' +
           encodeURIComponent(record.fedId) +
-          '">the relationship</a> to keep one.</p>'
+          '">' + t.html('handoff.federation.signedIn.theRelationship') +
+          '</a> ' + t.html('handoff.federation.signedIn.toKeepOne') + '</p>'
         : '') +
-      '<p><a href="' + BASE_PATH + '">Back to the federation index</a> · ' +
+      '<p><a href="' + BASE_PATH + '">' +
+      t.html('handoff.federation.signedIn.backToIndex') + '</a> · ' +
       '<a href="/admin/federation?relationship=' + encodeURIComponent(
           record.fedId) +
-      '">This relationship in the console</a></p>';
+      '">' + t.html('handoff.federation.signedIn.inConsole') + '</a></p>';
   }
 
   // Where to come back to, validated. See decision 4 — the check catches a
@@ -2645,30 +2667,47 @@ class FederationSp {
   // person is leaving this service for somebody else's and a deliberate click
   // is worth having there. It also means this feature adds no CSP relaxation at
   // all.
-  private postBindingPage(action, fields, record) {
+  //
+  // IN THE PERSON'S LANGUAGE (#539): the application they were signing in
+  // to, where the login endpoint was told it. With a language chooser, since
+  // this page waits for a click: the GET that drew it draws it again, with a
+  // fresh request and context — the one on the page it replaces is simply
+  // never used, and expires.
+  private postBindingPage(action, fields, record, application) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.postBindingPage().");
+    const t = PageLocale.forPage({ application: application || '' });
     const inputs = Object.keys(fields).map((name) => {
       return '<input type="hidden" name="' + xmlEscape(name) + '" value="' +
         xmlEscape(String(fields[name])) + '">';
     }).join('');
+    const names = Object.keys(fields);
+    // Two fields — SAMLRequest and RelayState — is the one case there is;
+    // any other count is named as a list, rather than a sentence assumed.
+    const posts = names.length === 2
+      ? t.html('handoff.federation.continueTo.postsTwo',
+               { first: names[0], second: names[1] })
+      : t.html('handoff.federation.continueTo.postsList',
+               { fields: names.join(', ') });
+    const partner = record.fedName || record.fedId;
     log.debug("Leaving FederationSp.postBindingPage().");
-    return this.page('Continue to ' + (record.fedName || record.fedId),
-      '<h1>Continue to ' + xmlEscape(record.fedName || record.fedId) + '</h1>' +
-      '<p>This service is about to send you to <code>' +
-      xmlEscape(record.fedSsoUrl) +
-      '</code> to sign in. It will post ' +
-      Object.keys(fields)
-            .map((n) => { return '<code>' + xmlEscape(n) + '</code>'; })
-        .join(' and ') + ' there.</p><p class="note">There is no script on ' +
-      'this page and it does not submit itself. Five pages in this service ' +
-      'DO auto-post, and each one argues for itself; this one does not, ' +
-      'because you are leaving this service for a foreign identity provider ' +
-      'and that is exactly the moment a deliberate click is worth ' +
-      'having.</p><form method="post" ' +
+    return this.page(t.text('handoff.federation.continueTo.title',
+                            { partner: partner }),
+      PageLocale.chooser(t, realms.currentPrefix(),
+        // The start's own parameters, and no others (`herePath()`).
+        PageLocale.herePath(realms.currentPrefix() + LOGIN_PATH + '/' +
+                            encodeURIComponent(record.fedId),
+                            ['returnTo', 'return_to', 'authn',
+                             'application'])) +
+      '<h1>' + t.html('handoff.federation.continueTo.title',
+                      { partner: partner }) + '</h1>' +
+      '<p>' + t.html('handoff.federation.continueTo.lead',
+                     { url: record.fedSsoUrl }) + ' ' + posts +
+      '</p><p class="note">' + t.html('handoff.federation.continueTo.note') +
+      '</p><form method="post" ' +
       'action="' + xmlEscape(action) + '">' + inputs +
-      '<button type="submit">Continue to the identity ' +
-      'provider</button></form>');
+      '<button type="submit">' + t.html('handoff.federation.continueToIdp') +
+      '</button></form>', t);
   }
 
   // ---------------------------------------------------------------------------
@@ -2847,7 +2886,7 @@ class FederationSp {
                           { SAMLRequest: Buffer.from(built.xml, 'utf8')
                                                .toString('base64'),
                             RelayState: handle },
-                          record));
+                          record, contextRecord.application));
         log.debug("Leaving the federation login endpoint. SAML 2.0 over HTTP " +
                   'POST.');
         return;

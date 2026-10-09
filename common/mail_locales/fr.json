@@ -1,0 +1,89 @@
+{
+  "templates": {
+    "password-reset": {
+      "subject": "Réinitialisez votre mot de passe {{service}}",
+      "text": "Quelqu’un — {{requestedBy}} — a demandé la réinitialisation du mot de passe du compte {{username}}.\n\nPour choisir un nouveau mot de passe, ouvrez ce lien dans les {{expiresMinutes}} minutes :\n\n{{link}}\n\nIl ne fonctionne qu’une fois. Si vous n’êtes pas à l’origine de cette demande, vous pouvez ignorer ce message : rien ne change tant que le lien n’est pas utilisé.\n",
+      "html": "<p>Quelqu’un &mdash; {{requestedBy}} &mdash; a demandé la réinitialisation du mot de passe du compte <strong>{{username}}</strong>.</p><p><a href=\"{{link}}\">Choisissez un nouveau mot de passe</a> dans les {{expiresMinutes}} minutes. Le lien ne fonctionne qu’une fois.</p><p>Si vous n’êtes pas à l’origine de cette demande, vous pouvez ignorer ce message : rien ne change tant que le lien n’est pas utilisé.</p>"
+    },
+    "account-activation": {
+      "subject": "Activez votre compte {{service}}",
+      "text": "Un compte, {{username}}, a été créé pour vous.\n\nPour choisir son mot de passe, ouvrez ce lien dans les {{expiresMinutes}} minutes :\n\n{{link}}\n\nIl ne fonctionne qu’une fois.\n",
+      "html": "<p>Un compte, <strong>{{username}}</strong>, a été créé pour vous.</p><p><a href=\"{{link}}\">Choisissez son mot de passe</a> dans les {{expiresMinutes}} minutes. Le lien ne fonctionne qu’une fois.</p>"
+    },
+    "address-verification": {
+      "subject": "Confirmez votre adresse pour {{service}}",
+      "text": "Le compte {{username}} indique {{address}} comme adresse e-mail.\n\nPour confirmer qu’il s’agit bien de votre adresse, ouvrez ce lien dans les {{expiresMinutes}} minutes :\n\n{{link}}\n\nS’il ne s’agit pas de votre compte, ignorez ce message.\n",
+      "html": "<p>Le compte <strong>{{username}}</strong> indique {{address}} comme adresse e-mail.</p><p><a href=\"{{link}}\">Confirmez qu’il s’agit bien de votre adresse</a> dans les {{expiresMinutes}} minutes.</p><p>S’il ne s’agit pas de votre compte, ignorez ce message.</p>"
+    },
+    "password-changed": {
+      "subject": "Votre mot de passe {{service}} a été modifié",
+      "text": "Le mot de passe du compte {{username}} a été modifié le {{when}} ({{how}}).\n\nSi ce n’était pas vous, contactez dès maintenant la personne qui gère votre compte.\n",
+      "html": "<p>Le mot de passe du compte <strong>{{username}}</strong> a été modifié le {{when}} ({{how}}).</p><p>Si ce n’était pas vous, contactez dès maintenant la personne qui gère votre compte.</p>"
+    },
+    "account-disabled": {
+      "subject": "Votre compte {{service}} a été désactivé",
+      "text": "Le compte {{username}} a été désactivé le {{when}}. {{why}}\n\nPersonne ne peut s’y connecter tant qu’il n’est pas réactivé, et toutes ses sessions ont été fermées.\n",
+      "html": "<p>Le compte <strong>{{username}}</strong> a été désactivé le {{when}}. {{why}}</p><p>Personne ne peut s’y connecter tant qu’il n’est pas réactivé, et toutes ses sessions ont été fermées.</p>"
+    },
+    "sessions-ended": {
+      "subject": "Vous avez été déconnecté de {{service}}",
+      "text": "{{count}} session(s) du compte {{username}} ont été fermées le {{when}} par {{by}}.\n\nReconnectez-vous pour continuer. Si vous ne vous y attendiez pas, contactez la personne qui gère votre compte.\n",
+      "html": "<p>{{count}} session(s) du compte <strong>{{username}}</strong> ont été fermées le {{when}} par {{by}}.</p><p>Reconnectez-vous pour continuer. Si vous ne vous y attendiez pas, contactez la personne qui gère votre compte.</p>"
+    },
+    "credential-compromised": {
+      "subject": "Un de vos identifiants {{service}} a été déclaré compromis",
+      "text": "L’élément « {{what}} » du compte {{username}} a été déclaré compromis le {{when}}. {{why}}\n\nIl ne fonctionne plus. Choisissez-en un nouveau lors de votre prochaine connexion, ou adressez-vous à la personne qui gère votre compte.\n",
+      "html": "<p>L’élément « {{what}} » du compte <strong>{{username}}</strong> a été déclaré compromis le {{when}}. {{why}}</p><p>Il ne fonctionne plus. Choisissez-en un nouveau lors de votre prochaine connexion, ou adressez-vous à la personne qui gère votre compte.</p>"
+    },
+    "recovery-started": {
+      "subject": "La récupération de votre compte {{service}} a été lancée",
+      "text": "La récupération du compte {{username}} a été lancée le {{when}} par {{by}}.\n\nSi ce n’était ni vous ni une personne à qui vous l’avez demandé, contactez dès maintenant la personne qui gère votre compte.\n",
+      "html": "<p>La récupération du compte <strong>{{username}}</strong> a été lancée le {{when}} par {{by}}.</p><p>Si ce n’était ni vous ni une personne à qui vous l’avez demandé, contactez dès maintenant la personne qui gère votre compte.</p>"
+    },
+    "address-changed": {
+      "subject": "L’adresse e-mail de votre compte {{service}} a été modifiée",
+      "text": "L’adresse e-mail du compte {{username}} a été modifiée le {{when}} : c’est désormais {{address}}. Ce message a été envoyé à l’adresse précédente.\n\nSi vous ne vous y attendiez pas, contactez dès maintenant la personne qui gère votre compte.\n",
+      "html": "<p>L’adresse e-mail du compte <strong>{{username}}</strong> a été modifiée le {{when}} : c’est désormais {{address}}. Ce message a été envoyé à l’adresse précédente.</p><p>Si vous ne vous y attendiez pas, contactez dès maintenant la personne qui gère votre compte.</p>"
+    },
+    "access-request": {
+      "subject": "{{service}} : une application demande un accès",
+      "text": "L’application {{client}} demande un accès au nom du compte {{username}} : {{rights}}.\n\nRien n’est autorisé tant que vous ne l’avez pas approuvé. Pour approuver ou refuser la demande, connectez-vous et ouvrez cette page dans les {{expiresMinutes}} minutes :\n\n{{link}}\n\nSi vous ne reconnaissez pas cette demande, refusez-la sur cette page ou ignorez ce message : elle expire d’elle-même.\n",
+      "html": "<p>L’application <strong>{{client}}</strong> demande un accès au nom du compte <strong>{{username}}</strong> : {{rights}}.</p><p>Rien n’est autorisé tant que vous ne l’avez pas approuvé. <a href=\"{{link}}\">Approuvez ou refusez la demande</a> dans les {{expiresMinutes}} minutes.</p><p>Si vous ne reconnaissez pas cette demande, refusez-la sur cette page ou ignorez ce message : elle expire d’elle-même.</p>"
+    },
+    "administrator-alert": {
+      "subject": "{{service}} : {{act}} pour {{username}}",
+      "text": "Ce service, et non une personne, a effectué une action sur le compte {{username}} le {{when}} : {{act}}.\n\n{{why}}\n\nVous recevez ce message parce que vous détenez Admin Write dans ce domaine.\n",
+      "html": "<p>Ce service, et non une personne, a effectué une action sur le compte <strong>{{username}}</strong> le {{when}} : {{act}}.</p><p>{{why}}</p><p>Vous recevez ce message parce que vous détenez Admin Write dans ce domaine.</p>"
+    },
+    "sign-in-code": {
+      "subject": "Votre code de connexion {{service}} : {{code}}",
+      "text": "Votre code pour vous connecter à {{service}} en tant que {{username}} est :\n\n    {{code}}\n\nIl ne fonctionne qu’une fois, pendant {{minutes}} minutes. Personne de {{service}} ne vous le demandera jamais.\n\nSi vous n’êtes pas en train de vous connecter, quelqu’un qui connaît le nom de votre compte essaie de le faire : ignorez ce code et envisagez de changer votre mot de passe.\n",
+      "html": "<p>Votre code pour vous connecter à {{service}} en tant que <strong>{{username}}</strong> est :</p><p><strong>{{code}}</strong></p><p>Il ne fonctionne qu’une fois, pendant {{minutes}} minutes. Personne de {{service}} ne vous le demandera jamais.</p><p>Si vous n’êtes pas en train de vous connecter, quelqu’un qui connaît le nom de votre compte essaie de le faire : ignorez ce code et envisagez de changer votre mot de passe.</p>"
+    },
+    "sign-in-link": {
+      "subject": "Votre lien de connexion {{service}}",
+      "text": "Pour terminer votre connexion à {{service}} en tant que {{username}}, ouvrez ce lien DANS LE NAVIGATEUR OÙ VOUS AVEZ COMMENCÉ À VOUS CONNECTER, dans les {{minutes}} minutes :\n\n{{signin}}\n\nIl ne fonctionne qu’une fois, et seulement dans ce navigateur.\n\nSi vous n’êtes pas en train de vous connecter, ignorez ce message : le lien ne peut connecter personne d’autre.\n",
+      "html": "<p>Pour terminer votre connexion à {{service}} en tant que <strong>{{username}}</strong>, <a href=\"{{signin}}\">ouvrez ce lien</a> dans le navigateur où vous avez commencé à vous connecter, dans les {{minutes}} minutes.</p><p>Il ne fonctionne qu’une fois, et seulement dans ce navigateur.</p><p>Si vous n’êtes pas en train de vous connecter, ignorez ce message : le lien ne peut connecter personne d’autre.</p>"
+    },
+    "reset-refused-attempt": {
+      "subject": "Quelqu’un a tenté de réinitialiser votre mot de passe {{service}}",
+      "text": "Le {{when}}, quelqu’un a demandé la réinitialisation du mot de passe du compte {{username}}, a indiqué cette adresse et a fourni un code de récupération qui n’est pas l’un des vôtres. Rien n’a été modifié et aucun lien de réinitialisation n’a été envoyé.\n\nSi c’était vous, réessayez avec un code de récupération inutilisé. Sinon, quelqu’un connaît le nom de votre compte et votre adresse ; contactez la personne qui gère votre compte.\n",
+      "html": "<p>Le {{when}}, quelqu’un a demandé la réinitialisation du mot de passe du compte <strong>{{username}}</strong>, a indiqué cette adresse et a fourni un code de récupération qui n’est pas l’un des vôtres. Rien n’a été modifié et aucun lien de réinitialisation n’a été envoyé.</p><p>Si c’était vous, réessayez avec un code de récupération inutilisé. Sinon, quelqu’un connaît le nom de votre compte et votre adresse ; contactez la personne qui gère votre compte.</p>"
+    },
+    "test-message": {
+      "subject": "Message de test de {{service}}",
+      "text": "Ceci est un message de test, envoyé le {{when}} par le transport {{transport}} à la demande de {{username}}.\n",
+      "html": "<p>Ceci est un message de test, envoyé le {{when}} par le transport {{transport}} à la demande de <strong>{{username}}</strong>.</p>"
+    }
+  },
+  "layout": {
+    "subject": "{{subject}}",
+    "text": "{{content}}\n-- \n{{service}} ({{realm}})\nVous recevez ce message car il s’agit {{reason}}.\n",
+    "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Vous recevez ce message car il s’agit {{reason}}.</small></p>"
+  },
+  "categories": {
+    "security": { "reason": "d’un avis de sécurité concernant votre compte, qui ne peut pas être désactivé" },
+    "account": { "reason": "d’une demande faite par vous ou par un administrateur" },
+    "notification": { "reason": "d’une notification, que vous pouvez désactiver sur votre portail" }
+  }
+}

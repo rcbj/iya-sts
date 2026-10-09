@@ -1,0 +1,17 @@
+{
+  "scopeFor": " for {resource}",
+  "details": "{n} authorization detail(s)",
+  "claims": "claims {claims}",
+  "revoke": "Revoke",
+  "none": "No client holds a grant in this realm. A grant is made by an authorization request carrying <code>grant_management_action=create</code>.",
+  "note": "<strong>Grant Management for OAuth 2.0.</strong> A confidential client names what a person let it do — creating a grant, merging more into one or replacing it through ordinary authorization requests — and reads or revokes it at <code>{path}</code> with the <code>grant_management_query</code> and <code>grant_management_revoke</code> scopes. A grant exists once its tokens are claimed, and expires with the last of them. Revoking one here is what a client's DELETE does: every refresh token under it is refused on every node, and every token this realm recorded under it is revoked. What the person AGREED to is ",
+  "consentLink": "Consent",
+  "noteEnd": ".",
+  "colClient": "Client",
+  "colSubject": "Subject",
+  "colScopes": "Scopes",
+  "colGeneration": "Generation",
+  "colCreated": "Created / updated",
+  "colExpires": "Expires",
+  "colTokens": "Tokens held"
+}

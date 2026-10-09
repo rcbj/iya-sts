@@ -184,12 +184,10 @@ var config = {
     seedInternal: true
   },
 
-  // --- SAML, WS-Trust, WS-Federation: NAMES NOT SET HERE (#494) ---------
-  // `saml.issuer`, `wstrust.issuer` and `wsfed.entityId` held the
-  // development placeholder `urn:wstrust:mock:sts` here until #494, so the
-  // suite never ran the rule a deployment signs under. Unset, in either mode,
-  // they are the realm's SAML 2.0 entityID — per application for a
-  // registered one (`common/issuer_names.ts`).
+  // --- SAML, WS-Trust, WS-Federation: ONE NAME, NOT A SETTING (#523) ----
+  // Every SAML Issuer, identity provider entityID and the WS-Trust STS's name
+  // are the realm's OAuth issuer, which follows global.publicBaseUrl
+  // (`common/issuer_names.ts`). The settings that named them are retired.
 
   // --- TLS ---------------------------------------------------------------
   tls: {

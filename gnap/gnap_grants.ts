@@ -2429,9 +2429,11 @@ class GnapGrants {
   //     nobody approved. `gnap_delegation.ts`'s `derivableBeyond()` is the
   //     one place the access-type catalogue (phase 4) will widen it.
   //   * IT CARRIES THE ACTOR CHAIN: RFC 8693 section 4.1's `act`, the deriving
-  //     resource server outermost over the original token's chain, in every
-  //     format (`grant.actorChain`, read by `issueTokens()` and kept by
-  //     rotation and modification).
+  //     resource server outermost over the original token's chain — or over
+  //     the original client where it has none (#526) — each entry
+  //     `{ sub: urn:sts:client:<id>, iss }`, in every format
+  //     (`grant.actorChain`, read by `issueTokens()` and kept by rotation and
+  //     modification).
   //   * THE CHAIN IS CAPPED at `gnap.maxDerivationDepth` (STS-GNAP-0782).
   // ---------------------------------------------------------------------------
   private async deriveToken(req, grant, app, asked) {
@@ -2498,7 +2500,12 @@ class GnapGrants {
                           'more than the token it is derived from: ' + raised +
                           ' (RFC 9767 section 4).', 'request_denied', 403);
     }
-    const chain = delegation.actorChainFor(app.identifier, existing.act);
+    // #526: the chain begins with the existing token's client where it
+    // carries none yet, and every entry is written by this authorization
+    // server — its issuer, the derived token's own `iss`.
+    const chain = delegation.actorChainFor(app.identifier, existing.act,
+                                           existing.instanceId,
+                                           grant.grantEndpoint);
     if (!chain.ok) {
       log.debug("Leaving GnapGrants.deriveToken(). The chain is too deep.");
       return chain;

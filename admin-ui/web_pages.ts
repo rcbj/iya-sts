@@ -86,6 +86,7 @@ import SecretDestinationsPage = require('./web_secret_destinations');
 import SecretsPage = require('./web_secrets');
 import SessionsPage = require('../logout/web_sessions');
 import SettingsForms = require('./web_settings');
+import WebMessages = require('./web_messages');
 import SignalsPage = require('../ssf/web_signals');
 import SpiffePage = require('../spiffe/web_spiffe');
 import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
@@ -323,15 +324,15 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/device-registration', title: 'Device registration',
     operation: '/admin-api/device-registration',
-    render: function (view: Json): string {
-      return DevicesPage.registrationHtml(view);
+    render: function (view: Json, ctx?: Json): string {
+      return DevicesPage.registrationHtml(view, ctx);
     } },
   { path: '/admin/devices', title: 'Devices',
     operation: '/admin-api/devices', render: DevicesPage.render },
   { path: '/admin/devices/monitor', title: 'Devices (monitoring)',
     operation: '/admin-api/devices/monitor',
-    render: function (view: Json): string {
-      return DevicesPage.monitorHtml(view);
+    render: function (view: Json, ctx?: Json): string {
+      return DevicesPage.monitorHtml(view, ctx);
     } },
   // #221: the rotation's state per service account.
   { path: '/admin/service-accounts', title: 'Service accounts',
@@ -541,8 +542,10 @@ const PAGES: WebPage[] = [
     render: RiskPage.render },
   { path: '/admin/risk-scoring', title: 'Risk scoring',
     operation: '/admin-api/risk/metrics',
-    render: function (view: Json): string {
-      return RiskPage.metricsHtml(view);
+    // The page's translator with it (#539): drawn without one, the browser
+    // would draw the metrics' keys.
+    render: function (view: Json, ctx?: Json): string {
+      return RiskPage.metricsHtml(view, ctx);
     } },
   { path: '/admin/roles', title: 'Roles',
     operation: '/admin-api/roles',
@@ -834,6 +837,10 @@ class WebPages {
    * `settings` member of that page's operation.
    */
   static readonly settings = SettingsForms;
+  // The message formatter and translator (#539), so a caller that loads the
+  // bundle without the runtime — `tests/console_web_bundle.js` — can give
+  // it the default translator the runtime gives it in a browser.
+  static readonly messages = WebMessages;
 
   /**
    * What a form's answer draws where a notice is not enough
@@ -899,7 +906,29 @@ class WebPages {
     if (page.drill && context.query && context.query[page.drill.param]) {
       return page.drill.render(view, context);
     }
-    return WebPages.withEndpoints(page.render(view, context), view);
+    return WebPages.withEndpoints(page.render(view, context), view,
+                                  context.t);
+  }
+
+  // A PAGE'S TITLE IN THE READER'S LANGUAGE (#539 phase 5), drawn in the
+  // browser's tab and the heading. The key is derived from the path —
+  // `/admin/xacml/policies` is `consolePages.title.xacml-policies` — and
+  // built in a variable, since a literal beside `t.text(` is what the
+  // catalog test reads as a key. A row with no message is drawn with the
+  // table's English, so a page added here is never drawn as a key.
+  /**
+   * A page's title in the reader's language.
+   *
+   * @param page - the page's row
+   * @param t - optional; the translator, the default when left out
+   * @returns the title, as text
+   */
+  static titleOf(page: WebPage, t?: Json): string {
+    const translator = t || WebKit.context().t;
+    const slug = String(page.path || '').replace(/^\/admin(\/|$)/, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const key = 'consolePages.title.' + (slug || 'home');
+    return translator.has(key) ? translator.text(key) : page.title;
   }
 
   // THE ENDPOINTS OF THIS REALM ON A PROTOCOLS PAGE (2026-10-01), drawn by
@@ -915,14 +944,16 @@ class WebPages {
    *
    * @param html - the page as drawn
    * @param view - the page's answer
+   * @param t - optional; the translator, the default when left out
    * @returns the page with the section, or as it was
    */
-  static withEndpoints(html: string, view: Json): string {
+  static withEndpoints(html: string, view: Json, t?: Json): string {
     const rows = view && Array.isArray(view.protocolEndpoints)
       ? view.protocolEndpoints : null;
     if (!rows) {
       return html;
     }
+    t = t || WebKit.context().t;
     const esc = WebKit.esc;
     const body = rows.length ? rows.map(function (row: Json): string {
       const methods = Array.isArray(row.methods) ? row.methods : [];
@@ -932,15 +963,17 @@ class WebPages {
         '</code>' + WebKit.copyButton(row.url) +
         (how ? ' <span class="sub">' + esc(how) + '</span>' : '') +
         (row.registered === false
-          ? ' <span class="sub">— not registered in this process</span>'
+          ? ' <span class="sub">' +
+            t.html('consolePages.endpoints.notRegistered') + '</span>'
           : '') +
-        (row.listening === false ? ' <span class="sub">— not listening</span>'
-                                 : '') + '</td></tr>';
-    }).join('') : '<tr><td class="sub">None in this realm right now — ' +
-                  'nothing of this kind is configured or listening ' +
-                  'here.</td></tr>';
-    const section = '<h2>Endpoints</h2><table class="kv">' + body +
-                    '</table>';
+        (row.listening === false
+          ? ' <span class="sub">' +
+            t.html('consolePages.endpoints.notListening') + '</span>'
+          : '') + '</td></tr>';
+    }).join('') : '<tr><td class="sub">' +
+                  t.html('consolePages.endpoints.none') + '</td></tr>';
+    const section = '<h2>' + t.html('consolePages.endpoints') +
+                    '</h2><table class="kv">' + body + '</table>';
     const text = String(html || '');
     const at = text.indexOf('<h2');
     return at < 0 ? text + section

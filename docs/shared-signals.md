@@ -154,19 +154,22 @@ subscribes only to the keys it pins, and every type it receives means one
 action: fetch that document again. The refresh-token encryption keys are
 never announced, because they are published nowhere.
 
-**The listener's key is made at every start**, so a restart presents a new
-certificate. The service keeps the fingerprint it last announced in its store
-and compares it with the new certificate once the port is bound. If they
-differ, it sends `tls-certificate-changed` with `reason: restarted`, where
-`<previous>` is the certificate it last announced.
+**A start can present a certificate nobody was told about.** Each node keeps
+its listener key, and the certificate over it, across restarts where minted
+state survives ([TLS](tls.md)), but a new key or a re-issued certificate at
+start is still possible. The service keeps the fingerprint it last announced
+in its store and compares it with the certificate it presents once the port
+is bound. If they differ, it sends `tls-certificate-changed` with
+`reason: restarted`, where `<previous>` is the certificate it last announced.
+A restart that presents the same certificate sends nothing.
 - **Where it works:** only where minted state survives a restart, which is
   product mode on postgres or a cluster. In `memory` mode, on an `ldif` store
   and in a single-process development service a restart is not announced.
   Development builds a new Root at every start anyway.
-- **In a cluster:** the record is the SERVICE's, not a node's. Every node's
-  start is announced, and `<previous>` may be a certificate another node
-  still presents. A receiver behind the balancer should pin the Root, not a
-  leaf.
+- **In a cluster:** the record is the SERVICE's, not a node's. A node's
+  start is announced whenever another node announced after it, and
+  `<previous>` may be a certificate another node still presents. A
+  receiver behind the balancer should pin the Root, not a leaf.
 - **Never announced:** a self-signed bootstrap certificate or one supplied
   through `tls.certificateFile`.
 

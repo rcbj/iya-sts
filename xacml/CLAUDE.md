@@ -1405,6 +1405,34 @@ built-in document decides, so the strict default never switches off. A
 verdict that is not one of the two for its question reads as the strict one.
 The three are not members of `ISSUANCE` (`common/CLAUDE.md`, 3bu).
 
+**AND SINCE #536 WHICH PASSKEYS MAY BE REGISTERED AND SIGN SOMEBODY IN.** The
+passkey policy (#527-#535, Directory → Policies) CONFIGURES. Two questions go
+to this policy from `common/passkey_policy.ts` through
+`issuance_gate.checkPasskey()`: `register-passkey` (from
+`credentials.addKey()`) and `use-passkey` (at a session's start, and at the
+two assertion doors for the attestation rules).
+* **The facts are the `urn:sts:xacml:passkey:*` attributes** of
+  `xacml_request.js`'s `passkey()`: BE, the reported minimum PIN length, the
+  device serial and whether the person holds it, the recorded attestation,
+  and what the FIDO Metadata Service says now (listed, compromised, a
+  certification RANK, FIPS, or `metadata-unchecked`).
+* **The selected profile's rows are `urn:sts:xacml:passkey-policy:<row>`**,
+  and the `webauthn.attestation*` settings are setting facts.
+* **The answer carries `urn:sts:xacml:obligation:passkey`**: verdict
+  `allow`/`refuse`, a code and a reason.
+* **The built-in `role-issuance` has thirteen rules** (parameter
+  `decidePasskeys`), in the order the code asked. Each fires only on a
+  question that names its fact group in `urn:sts:xacml:passkey:facts`, so the
+  sign-in line's question never trips an attestation rule, nor the reverse.
+* **The codes are the ones the code recorded**: 0312-0317, 0320, 0321, and
+  0322 for a realm's refusal with no code of its own.
+* **Arranged as the transfer questions are**: `xacml_passkey_verdicts.js`
+  serves both the PEP and the gate. A realm's own document decides where it
+  carries the obligation; otherwise the built-in document decides. Where
+  neither answers, `common/passkey_rules.js` reads the same rules from the
+  facts.
+* **Not members of `ISSUANCE`.**
+
 **The subject is the party being authenticated and not always a person.** In a
 browser flow it is whoever signed in; in a `client_credentials` grant there is
 nobody there and it is the CLIENT. That is the case `common/roles.js` exists to

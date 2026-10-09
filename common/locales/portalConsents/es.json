@@ -1,0 +1,19 @@
+{
+  "sub": "Lo que has aceptado que cada aplicación pueda pedir a este proveedor de identidad en tu nombre. <strong>Retirarlo surte efecto al instante</strong>: todos los tokens que la aplicación tiene para ti bajo lo que retiras dejan de funcionar —incluido el que le permite actuar mientras no estás (<code>offline_access</code>)— y no puede renovarlos aunque vuelvas a aceptar más adelante; tiene que preguntarte de nuevo. Retirar una cosa termina todo lo que se le dio a la aplicación junto con ella.",
+  "adminNote": "Algunas aplicaciones las acepta para todos quien administra este servicio, y nunca se te preguntó por ellas; aparecen abajo en <strong>Consentimientos administrativos</strong>, y no te corresponde retirarlas.",
+  "agreed": "Aceptaste que puede pedir",
+  "when": "Cuándo",
+  "withdraw": "Retirar",
+  "withdrawAll": "Retirar todo para esta aplicación",
+  "none": "No has aceptado nada que esté registrado. Una aplicación te pregunta la primera vez que quiere algo en tu nombre, y tu respuesta aparece aquí.",
+  "previous": "Anterior",
+  "next": "Siguiente",
+  "pageOf": "Página {page} de {pages}",
+  "adminHeading": "Consentimientos administrativos",
+  "adminSub": "Quien administra este servicio los aceptó en nombre de todas las personas que usan la aplicación, así que no se te preguntó por ellos. Se aplicaron cuando iniciaste sesión en la aplicación. Solo un administrador puede retirarlos; pídeselo al tuyo si quieres que se quite alguno.",
+  "forEverybody": "Aceptado para todos",
+  "firstApplied": "Aplicado a ti por primera vez",
+  "adminNone": "Ninguna aplicación ha usado un consentimiento aceptado para todos cuando iniciaste sesión en ella.",
+  "doneScope": "Retirado: {name} ya no puede pedir {scope}. Te volverá a preguntar la próxima vez.",
+  "doneApplication": "Retirado: {name} ya no puede pedir nada. Te volverá a preguntar la próxima vez."
+}

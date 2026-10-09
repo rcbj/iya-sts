@@ -1213,10 +1213,34 @@ const SCHEMA = {
             'AND `sub` in every Logout Token it sends, so the flag is always ' +
             'honoured; it is recorded because "false" and "not stated" are ' +
             'different facts about a client, as for the front-channel flag.' },
+    // DECLARED, AND ENFORCED (#289, 2026-10-07). Until then both lists were
+    // also where a sighting wrote what a client USED, so they grew with use
+    // and could restrict nothing, and only a registration document held a
+    // client to its flows. The sightings moved to the two *Observed rows
+    // below, as appRedirectUriObserved sits beside oauthRedirectUri.
     { name: 'oauthGrantType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'Grant types registered or observed at the token endpoint.' },
+      what: 'The grant types this client may use — RFC 7591 section 2\'s ' +
+            'grant_types, from a registration or written by an ' +
+            'administrator. The token endpoint refuses any other grant ' +
+            '(unauthorized_client), in every mode; an empty list restricts ' +
+            'nothing. What the client has actually used is ' +
+            'oauthGrantTypeObserved.' },
     { name: 'oauthResponseType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
-      what: 'response_type values seen at the authorization endpoint.' },
+      what: 'The response_type values this client may ask for — RFC 7591 ' +
+            'section 2\'s response_types, from a registration or written by ' +
+            'an administrator, each value one response type ("code", ' +
+            '"code id_token"). The authorization endpoint refuses any other ' +
+            '(unauthorized_client), in every mode; an empty list restricts ' +
+            'nothing. What the client has actually asked for is ' +
+            'oauthResponseTypeObserved.' },
+    { name: 'oauthGrantTypeObserved', kind: 'multi', from: 'OAuth 2.0 / OIDC',
+      what: 'A grant type this client was seen using at the token endpoint. ' +
+            'A record, not a permission: oauthGrantType is what it may use.' },
+    { name: 'oauthResponseTypeObserved', kind: 'multi',
+      from: 'OAuth 2.0 / OIDC',
+      what: 'A response_type this client was seen asking for at the ' +
+            'authorization endpoint. A record, not a permission: ' +
+            'oauthResponseType is what it may ask for.' },
     { name: 'oauthScope', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'Scopes this application has ASKED FOR, accumulated as it asks. ' +
             'SIGHTED, never declared: nothing is allowed or refused by it. ' +
@@ -1855,6 +1879,135 @@ const SCHEMA = {
             'A token whose auth_time is older, or absent, is challenged 401 ' +
             'insufficient_user_authentication with max_age. 0 means an ' +
             'authentication this second. EMPTY requires nothing.' },
+    // -------------------------------------------------------------------
+    // HOW THIS SERVICE SIGNS AND ENCRYPTS WHAT IT SENDS THIS CLIENT, AND THE
+    // CLIENT'S REQUEST DEFAULTS (#290, 2026-10-08). ELEVEN members of OpenID
+    // Connect Registration section 2 and JARM section 3 that lived only in
+    // `appRegistrationJson`, so a client created on the console could not hold
+    // them and had to register again through RFC 7591 for an ES256 ID Token
+    // or a signed UserInfo response. Each is now an attribute, written by a
+    // registration (REPLACED, as RFC 7592 replaces it), the console and the
+    // management API alike, checked at every door by the registration's own
+    // grammar (`clientResponseAttributeProblem()`), and READ through
+    // `clientConfigOf()` by the ID Token, the UserInfo response, JARM, the
+    // Logout and Command Tokens and step-up.
+    //
+    // `single`, for the introspection attributes' reason. The acr values are
+    // ONE space-separated value in preference order, for
+    // `oauthStepUpAcrValues`' reason: a multi-valued attribute has no order.
+    { name: 'oauthIdTokenSignedResponseAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oidc'],
+      familyWhy: 'It decides how this client\'s ID Tokens are signed, and ' +
+        'only an OpenID Connect client is given one.',
+      what: 'OpenID Connect Registration `id_token_signed_response_alg`: ' +
+            'the JWS algorithm this client\'s ID Tokens are signed with — ' +
+            'and its back-channel Logout Tokens and Command Tokens. EMPTY ' +
+            'MEANS RS256 (PS256 under FAPI 1.0 Advanced). Any algorithm in ' +
+            'id_token_signing_alg_values_supported; an HMAC one is keyed ' +
+            'with the client secret. `none` is refused.' },
+    { name: 'oauthIdTokenEncryptedResponseAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oidc'],
+      familyWhy: 'It decides whether this client\'s ID Tokens are ' +
+        'encrypted, and only an OpenID Connect client is given one.',
+      what: 'OpenID Connect Registration `id_token_encrypted_response_alg`: ' +
+            'the JWE key management algorithm its ID Tokens (and Logout ' +
+            'Tokens) are encrypted to it with, after signing. EMPTY MEANS ' +
+            'NOT ENCRYPTED. An asymmetric algorithm, and the key is taken ' +
+            'from `oauthJwks` or `oauthJwksUri`.' },
+    { name: 'oauthIdTokenEncryptedResponseEnc', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oidc'],
+      familyWhy: 'The same as oauthIdTokenEncryptedResponseAlg.',
+      what: 'OpenID Connect Registration `id_token_encrypted_response_enc`: ' +
+            'the JWE content encryption. EMPTY MEANS A128CBC-HS256 once ' +
+            '`oauthIdTokenEncryptedResponseAlg` is set; it may not be set ' +
+            'without that attribute.' },
+    { name: 'oauthUserinfoSignedResponseAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oidc'],
+      familyWhy: 'It decides what the UserInfo endpoint answers this ' +
+        'client, which only an OpenID Connect client calls.',
+      what: 'OpenID Connect Registration `userinfo_signed_response_alg`: ' +
+            'the JWS algorithm the UserInfo response to this client is ' +
+            'signed with, making it `application/jwt` carrying `iss` and ' +
+            '`aud`. EMPTY (or `none`) MEANS plain JSON, unless it is ' +
+            'encrypted.' },
+    { name: 'oauthUserinfoEncryptedResponseAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oidc'],
+      familyWhy: 'The same as oauthUserinfoSignedResponseAlg.',
+      what: 'OpenID Connect Registration ' +
+            '`userinfo_encrypted_response_alg`: the JWE key management ' +
+            'algorithm the UserInfo response is encrypted to this client ' +
+            'with (after signing, where it is signed). EMPTY MEANS NOT ' +
+            'ENCRYPTED. An asymmetric algorithm, to `oauthJwks` or ' +
+            '`oauthJwksUri`.' },
+    { name: 'oauthUserinfoEncryptedResponseEnc', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oidc'],
+      familyWhy: 'The same as oauthUserinfoSignedResponseAlg.',
+      what: 'OpenID Connect Registration ' +
+            '`userinfo_encrypted_response_enc`: the JWE content encryption. ' +
+            'EMPTY MEANS A128CBC-HS256 once ' +
+            '`oauthUserinfoEncryptedResponseAlg` is set; it may not be set ' +
+            'without that attribute.' },
+    { name: 'oauthAuthorizationSignedResponseAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides how /oauth2/authorize signs a JWT-secured ' +
+        'response to this client, so on an entry declared for neither OAuth ' +
+        'family it would read like a registration in force.',
+      what: 'JARM section 3 `authorization_signed_response_alg`: the JWS ' +
+            'algorithm of this client\'s JWT-secured authorization ' +
+            'responses (`response_mode` `jwt`, `query.jwt` and the rest). ' +
+            'EMPTY MEANS RS256 (PS256 under FAPI 1.0 Advanced). `none` is ' +
+            'refused (JARM section 3).' },
+    { name: 'oauthAuthorizationEncryptedResponseAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'The same as oauthAuthorizationSignedResponseAlg.',
+      what: 'JARM section 3 `authorization_encrypted_response_alg`: the JWE ' +
+            'key management algorithm a JWT-secured authorization response ' +
+            'is encrypted to this client with. EMPTY MEANS NOT ENCRYPTED. An ' +
+            'asymmetric algorithm, to `oauthJwks` or `oauthJwksUri`.' },
+    { name: 'oauthAuthorizationEncryptedResponseEnc', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'The same as oauthAuthorizationSignedResponseAlg.',
+      what: 'JARM section 3 `authorization_encrypted_response_enc`: the JWE ' +
+            'content encryption. EMPTY MEANS A128CBC-HS256 once ' +
+            '`oauthAuthorizationEncryptedResponseAlg` is set; it may not be ' +
+            'set without that attribute.' },
+    { name: 'oauthDefaultAcrValues', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oidc'],
+      familyWhy: 'It is what /oauth2/authorize requires of a sign-in for ' +
+        'this client\'s OpenID Connect requests.',
+      what: 'OpenID Connect Registration `default_acr_values`: the acr ' +
+            'values requested for this client when a request names neither ' +
+            '`acr_values` nor an essential acr claim — space-separated, most ' +
+            'preferred first. EMPTY requests nothing.' },
+    { name: 'oauthDefaultMaxAge', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oidc'],
+      familyWhy: 'The same as oauthDefaultAcrValues.',
+      what: 'OpenID Connect Registration `default_max_age`: the oldest ' +
+            'sign-in, in whole seconds, this client accepts when a request ' +
+            'names no `max_age` — an older one signs the person in again. ' +
+            '0 means a sign-in this second. EMPTY requires nothing.' },
     // -------------------------------------------------------------------
     // RFC 7521 / RFC 7523 (2026-09-10). SEVEN ATTRIBUTES (eight since the key
     // source joined them on 2026-09-13), and the split between them is the
@@ -2595,6 +2748,81 @@ const SCHEMA = {
             'the UserInfo response answered to it, a JSON array of ' +
             'catalogue attribute names, replacing the realm\'s selection ' +
             'when present.' },
+    // HOW THE REALM'S SET AND THE APPLICATION'S OWN ARE COMBINED, PER TOKEN
+    // TYPE (#395; `common/scope_claims.ts`). On the field grid, under the
+    // OAuth sub-tab's Claims in tokens section.
+    { name: 'oauthClaimsCombineAccessToken', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE REALM\'S ACCESS-TOKEN CLAIMS AND THIS ' +
+            'APPLICATION\'S OWN ARE COMBINED (#395), the typed rows ' +
+            'and the ticked directory attributes alike: application ' +
+            '(only this application\'s ' +
+            'own), union (the realm\'s and its own), intersection (only ' +
+            'what both hold) or realm (only the realm\'s). Unset, its ' +
+            'rows are added to the realm\'s and win by name, and its ' +
+            'selection replaces the realm\'s. An application holding ' +
+            'nothing of its own gets the realm\'s whatever this says.' },
+    { name: 'oauthClaimsCombineIdToken', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE REALM\'S ID TOKEN CLAIMS AND THIS ' +
+            'APPLICATION\'S OWN ARE COMBINED (#395), the typed rows ' +
+            'and the ticked directory attributes alike: application ' +
+            '(only this application\'s ' +
+            'own), union (the realm\'s and its own), intersection (only ' +
+            'what both hold) or realm (only the realm\'s). Unset, its ' +
+            'rows are added to the realm\'s and win by name, and its ' +
+            'selection replaces the realm\'s. An application holding ' +
+            'nothing of its own gets the realm\'s whatever this says.' },
+    { name: 'oauthClaimsCombineUserinfo', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE REALM\'S USERINFO CLAIMS AND THIS ' +
+            'APPLICATION\'S OWN ARE COMBINED (#395), the typed rows ' +
+            'and the ticked directory attributes alike: application ' +
+            '(only this application\'s ' +
+            'own), union (the realm\'s and its own), intersection (only ' +
+            'what both hold) or realm (only the realm\'s). Unset, its ' +
+            'rows are added to the realm\'s and win by name, and its ' +
+            'selection replaces the realm\'s. An application holding ' +
+            'nothing of its own gets the realm\'s whatever this says.' },
+    // WHAT A RESOURCE SERVER WANTS ON THE ACCESS TOKENS ADDRESSED TO IT
+    // (#395; RFC 9068 section 2.2.2). Read by `oauth2.ts`'s accessToken()
+    // for each audience the token names.
+    { name: 'oauthAccessTokenClaim', kind: 'multi',
+      from: 'the console, the management API, or by hand',
+      what: 'THE IDENTITY CLAIMS THIS RESOURCE SERVER WANTS on the ' +
+            'access tokens addressed to it (one of its oauthAudience ' +
+            'values, or its client_id named as a scope), from OpenID ' +
+            'Connect Core section 5.4\'s profile, email, address and ' +
+            'phone claims. Each is released only when the scope that ' +
+            'covers it was GRANTED, and on a token for several resource ' +
+            'servers only a claim every one of them declared goes in. ' +
+            'Absent, the token carries none of these claims from this ' +
+            'layer — preferred_username included.' },
+    // CLAIMS MAPPED TO THIS RESOURCE SERVER'S OWN SCOPES (2026-10-09): drawn
+    // and written by the application's Scope claims tab, so kept off the
+    // field grid for the reason the selections above are.
+    { name: 'oauthPermissionClaims', kind: 'single',
+      from: 'the console\'s Scope claims tab',
+      what: 'THE CLAIMS EACH OF THIS RESOURCE SERVER\'S PERMISSIONS ' +
+            'CARRIES, as a JSON object from a permission name (one of its ' +
+            'oauthPermission values) to a list of attribute names from the ' +
+            'realm\'s claim catalogue. An access token addressed to this ' +
+            'application on which a permission was GRANTED carries the ' +
+            'person\'s values of that permission\'s attributes, under the ' +
+            'catalogue\'s claim names; granting the permission is the ' +
+            'grant of those claims, a standard OpenID Connect one included. ' +
+            'Combined with the client\'s claims as ' +
+            'oauthAccessTokenClaimsCombine says.' },
+    { name: 'oauthAccessTokenClaimsCombine', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE CLIENT\'S ACCESS-TOKEN CLAIMS AND THIS RESOURCE ' +
+            'SERVER\'S DECLARED CLAIMS (oauthAccessTokenClaim) ARE ' +
+            'COMBINED on a token addressed to it: \'union\' (the ' +
+            'default), \'intersection\' (only claims both carry), ' +
+            '\'client\' (only the client\'s) or \'resource\' (only ' +
+            'the declared ones). Several resource servers that disagree ' +
+            'are combined by intersection. Nothing a grant did not ' +
+            'cover is released, whichever is chosen.' },
     { name: 'oauthRevokeRefreshOnLogout', kind: 'single', from: 'by hand',
       overrides: 'oauth2.revokeRefreshOnLogout',
       what: 'TRUE or FALSE: does signing out revoke this client\'s refresh ' +
@@ -2872,6 +3100,29 @@ const SCHEMA = {
             'for its SAML 1.1 assertions (SAML 1.1, WS-Federation, ' +
             'WS-Trust), a JSON array of catalogue attribute names, ' +
             'replacing the realm\'s selection when present.' },
+    // The SAML halves of #395's combine modes, as the OAuth ones.
+    { name: 'saml2ClaimsCombine', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE REALM\'S SAML 2.0 ATTRIBUTES AND THIS ' +
+            'APPLICATION\'S OWN ARE COMBINED (#395), the typed rows ' +
+            'and the ticked directory attributes alike: application ' +
+            '(only this application\'s ' +
+            'own), union (the realm\'s and its own), intersection (only ' +
+            'what both hold) or realm (only the realm\'s). Unset, its ' +
+            'rows are added to the realm\'s and win by name, and its ' +
+            'selection replaces the realm\'s. An application holding ' +
+            'nothing of its own gets the realm\'s whatever this says.' },
+    { name: 'saml11ClaimsCombine', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE REALM\'S SAML 1.1 ATTRIBUTES AND THIS ' +
+            'APPLICATION\'S OWN ARE COMBINED (#395), the typed rows ' +
+            'and the ticked directory attributes alike: application ' +
+            '(only this application\'s ' +
+            'own), union (the realm\'s and its own), intersection (only ' +
+            'what both hold) or realm (only the realm\'s). Unset, its ' +
+            'rows are added to the realm\'s and win by name, and its ' +
+            'selection replaces the realm\'s. An application holding ' +
+            'nothing of its own gets the realm\'s whatever this says.' },
     // AN OPENID4VCI CLIENT'S OWN CREDENTIAL CLAIMS (#495): the realm's
     // Verifiable Credentials → Credential claims selection, for credentials
     // issued on an access token issued to this client (vc_claims.ts).
@@ -4047,6 +4298,20 @@ const EDITABLE = {
   // order and the order is the preference.
   oauthStepUpAcrValues: 'set',
   oauthStepUpMaxAge: 'set',
+  // OpenID Connect Registration's and JARM's response members and request
+  // defaults (#290). Each holds one answer; the acr values are one ordered
+  // list in one value, for the step-up attribute's reason above.
+  oauthIdTokenSignedResponseAlg: 'set',
+  oauthIdTokenEncryptedResponseAlg: 'set',
+  oauthIdTokenEncryptedResponseEnc: 'set',
+  oauthUserinfoSignedResponseAlg: 'set',
+  oauthUserinfoEncryptedResponseAlg: 'set',
+  oauthUserinfoEncryptedResponseEnc: 'set',
+  oauthAuthorizationSignedResponseAlg: 'set',
+  oauthAuthorizationEncryptedResponseAlg: 'set',
+  oauthAuthorizationEncryptedResponseEnc: 'set',
+  oauthDefaultAcrValues: 'set',
+  oauthDefaultMaxAge: 'set',
   // RFC 7521 / RFC 7523. The declaration is `multi` like every other
   // identifier attribute here — one application legitimately asserts under a
   // per-environment issuer name, and a `set` would replace the list with one
@@ -4229,6 +4494,17 @@ const EDITABLE = {
   saml2ClaimAttributes: 'set',
   saml11ClaimAttributes: 'set',
   vcCredentialClaimAttributes: 'set',
+  // How the realm's set and the application's own combine, per token type,
+  // and a resource server's access-token claims (#395).
+  oauthClaimsCombineAccessToken: 'set',
+  oauthClaimsCombineIdToken: 'set',
+  oauthClaimsCombineUserinfo: 'set',
+  saml2ClaimsCombine: 'set',
+  saml11ClaimsCombine: 'set',
+  oauthAccessTokenClaim: 'multi',
+  oauthAccessTokenClaimsCombine: 'set',
+  // The claims mapped to its own scopes, one JSON object (2026-10-09).
+  oauthPermissionClaims: 'set',
   didAlsoKnownAs: 'multi',
   // A secret push destination (#221 P3): each one value, an empty write
   // clearing it. The credential is write-only: sealed on the way in,
@@ -4635,6 +4911,27 @@ function claimSelectionProblem(attribute, value) {
   log.debug("Leaving claimSelectionProblem(). " +
             (checked.ok ? 'ok' : 'refused'));
   return checked.ok ? '' : checked.errors.join(' ');
+}
+
+// A RESOURCE SERVER'S CLAIMS PER PERMISSION (2026-10-09), held at the write:
+// keys are permissions the entry exposes, values catalogue names. Asked of
+// `claim_attributes.ts` lazily, for claimSelectionProblem()'s reason.
+/**
+ * Says whether an `oauthPermissionClaims` value is acceptable for an entry.
+ *
+ * @param value - the JSON text
+ * @param record - the entry it would be written to (record or view)
+ * @returns '' when it is, the refusal sentence otherwise
+ */
+function permissionClaimsProblem(value, record) {
+  log.debug("Entering permissionClaimsProblem().");
+  const exposed = permissionsOf(record).map(function (one) {
+    return one.name;
+  });
+  const out = require('./claim_attributes').permissionClaimsProblem(value,
+                                                                    exposed);
+  log.debug("Leaving permissionClaimsProblem(). " + (out ? 'refused' : 'ok'));
+  return out;
 }
 
 /**
@@ -5073,9 +5370,12 @@ const BOOLEAN_ATTRIBUTES = [
 // ML-KEM and HPKE algorithms follow keys.*) and two live in modules that
 // require this one (read when asked, never at load).
 //
-// `oauthGrantType` and `oauthResponseType` are not here: they are what a
-// client was SEEN using, an open record. The setting overrides take their
-// lists from their setting (`config.js`'s enumValues), in the console.
+// `oauthGrantType` and `oauthResponseType` are not here, although they are
+// declared and enforced since #289: an extension grant is a URI nobody lists
+// in advance (RFC 6749 section 4.5), so the field stays open text, and the
+// token endpoint refuses what the client did not declare. The setting
+// overrides take their lists from their setting (`config.js`'s
+// enumValues), in the console.
 // ---------------------------------------------------------------------------
 // THE TWO DELEGATION SEMANTICS (#108, #186), one list for the two places that
 // need it: the field grid's choices below — so the Configuration tab offers a
@@ -5125,6 +5425,35 @@ const ATTRIBUTE_CHOICES = {
   oauthRequestObjectEncryptionEnc: function () {
     return REQUEST_OBJECT_ENCRYPTION_ENCS.slice(0);
   },
+  // #290's nine algorithms, from the lists clientResponseMetadataProblem()
+  // checks.
+  oauthIdTokenSignedResponseAlg: function () {
+    return stsCrypto.JWS_SIGNING_ALGS.slice(0);
+  },
+  oauthIdTokenEncryptedResponseAlg: function () {
+    return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
+  },
+  oauthIdTokenEncryptedResponseEnc: function () {
+    return ID_TOKEN_ENCRYPTION_ENCS.slice(0);
+  },
+  oauthUserinfoSignedResponseAlg: function () {
+    return USERINFO_SIGNING_ALGS.slice(0);
+  },
+  oauthUserinfoEncryptedResponseAlg: function () {
+    return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
+  },
+  oauthUserinfoEncryptedResponseEnc: function () {
+    return ID_TOKEN_ENCRYPTION_ENCS.slice(0);
+  },
+  oauthAuthorizationSignedResponseAlg: function () {
+    return stsCrypto.JWS_SIGNING_ALGS.slice(0);
+  },
+  oauthAuthorizationEncryptedResponseAlg: function () {
+    return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
+  },
+  oauthAuthorizationEncryptedResponseEnc: function () {
+    return ID_TOKEN_ENCRYPTION_ENCS.slice(0);
+  },
   gnapMtlsTrust: function () {
     return GNAP_MTLS_TRUSTS.slice(0);
   },
@@ -5172,6 +5501,19 @@ const ATTRIBUTE_CHOICES = {
   },
   secretDestPayload: function () {
     return require('./secrets').DESTINATION_PAYLOADS.slice(0);
+  },
+  // #395, from `scope_claims.ts`: how two sets of claims are combined, and
+  // the OpenID Connect section 5.4 claims a resource server may declare.
+  oauthClaimsCombineAccessToken: realmCombineModes,
+  oauthClaimsCombineIdToken: realmCombineModes,
+  oauthClaimsCombineUserinfo: realmCombineModes,
+  saml2ClaimsCombine: realmCombineModes,
+  saml11ClaimsCombine: realmCombineModes,
+  oauthAccessTokenClaim: function () {
+    return require('./scope_claims').DECLARABLE_CLAIMS.slice(0);
+  },
+  oauthAccessTokenClaimsCombine: function () {
+    return require('./scope_claims').RESOURCE_MODES.slice(0);
   }
 };
 
@@ -5180,6 +5522,14 @@ const ATTRIBUTE_CHOICES = {
 // outside one is refused (STS-REG-0203). `appAuthnMechanism` joined them
 // with #457, and `appMfaMechanism` with #475: enforced, a misspelt mechanism
 // would allow nothing.
+// The realm-vs-application combine modes (#395), lazily for the reason the
+// rest of this table reads its modules lazily.
+function realmCombineModes() {
+  log.debug("Entering realmCombineModes().");
+  log.debug("Leaving realmCombineModes().");
+  return require('./scope_claims').REALM_MODES.slice(0);
+}
+
 // The certificate profiles an enrollment family issues, from the module that
 // defines them (lazily: it is loaded after this one); `device` over EST and
 // SCEP only, as `cert_enrollment.ts` has it.
@@ -5197,7 +5547,12 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
   'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
   'secretDestProvider', 'secretDestPayload', 'appAuthnMechanism',
-  'appMfaMechanism'];
+  'appMfaMechanism',
+  // #395: a misspelt mode would silently be the default, and a misspelt
+  // claim would be one no token ever carries.
+  'oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
+  'oauthClaimsCombineUserinfo', 'saml2ClaimsCombine', 'saml11ClaimsCombine',
+  'oauthAccessTokenClaim', 'oauthAccessTokenClaimsCombine'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),
@@ -5368,8 +5723,9 @@ function gridExcludedAttributes() {
                // And the Kerberos PAC claims section (#493).
                'krb5ClaimsPac'].concat(
                  // And their attribute selections (#495), drawn as the
-                 // catalogue's checkboxes.
-                 CLAIM_SELECTION_ATTRIBUTES);
+                 // catalogue's checkboxes — and a resource server's claims
+                 // per permission, drawn on the Scope claims tab.
+                 CLAIM_SELECTION_ATTRIBUTES, ['oauthPermissionClaims']);
   Object.keys(KEY_PAIR_ATTRIBUTES).forEach(function (profile) {
     const row = KEY_PAIR_ATTRIBUTES[profile];
     ['certificate', 'chain', 'privateKey', 'handle', 'expires', 'source',
@@ -5498,6 +5854,8 @@ const FIELD_EXAMPLES = {
   oauthAuthorizationDetailsTypes: 'payment_initiation',
   oauthStepUpAcrValues: 'mfa',
   oauthStepUpMaxAge: '600',
+  oauthDefaultAcrValues: 'mfa 1',
+  oauthDefaultMaxAge: '3600',
   oauthAssertionIssuer: 'https://issuer.example.com',
   oauthSamlAssertionIssuer: 'https://idp.example.com/saml',
   oauthSamlAssertionSigningCertificate:
@@ -5707,7 +6065,16 @@ const FIELD_SECTIONS = [
     attributes: ['appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
                  'appNotDelegated', 'appDelegationSemantics',
                  'appDefaultDelegationSemantics', 'appDelegationSubjectGroup',
-                 'appMayAct'] }
+                 'appMayAct'] },
+  // #395: which claims a token carries — the realm's set against this
+  // application's own, per token type, and what it wants as a resource
+  // server — on the OAuth and SAML sub-tabs.
+  { id: 'token-claims', label: 'Claims in tokens',
+    attributes: ['oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
+                 'oauthClaimsCombineUserinfo', 'oauthAccessTokenClaim',
+                 'oauthAccessTokenClaimsCombine'] },
+  { id: 'assertion-claims', label: 'Attributes in assertions',
+    attributes: ['saml2ClaimsCombine', 'saml11ClaimsCombine'] }
 ];
 
 // ---------------------------------------------------------------------------
@@ -7531,11 +7898,12 @@ function introspectionAttributeProblem(attribute, value, fields) {
 // applies to a Logout Token too. The grammar is here for the introspection
 // members' reason — this module owns what a registration may say, and every
 // write door (`register()`, `updateRegistration()`, the registration endpoint's
-// own 400) asks it. Unlike those three members these two have NO ATTRIBUTE:
-// they live in `appRegistrationJson` beside `id_token_signed_response_alg`,
-// the member they qualify, which has none either. Whether the client's `jwks`
-// holds a key to encrypt to is asked by `oauth-oidc/id_token_encryption.ts`,
-// which owns the key selection and cannot be required from here.
+// own 400) asks it. Since #290 they are ATTRIBUTES, as the introspection
+// members are (`oauthIdTokenEncryptedResponseAlg` / `Enc`, beside
+// `oauthIdTokenSignedResponseAlg`) — see CLIENT_RESPONSE_ATTRIBUTES below.
+// Whether the client's `jwks` holds a key to encrypt to is asked by
+// `oauth-oidc/id_token_encryption.ts`, which owns the key selection and
+// cannot be required from here.
 //
 // The lists are the introspection response's: the ASYMMETRIC families only,
 // every content encryption `common/crypto.js` has, A128CBC-HS256 by default,
@@ -7621,8 +7989,8 @@ function idTokenEncryptionMetadataProblem(values) {
 // `authorization_signed_response_alg` (RS256 by default — JARM's own default;
 // PS256 under FAPI 1.0 Advanced, which `oauth-oidc/jarm.ts` decides), and
 // `authorization_encrypted_response_alg` / `_enc` (no encryption by default,
-// A128CBC-HS256 when only the alg is named). Like the ID Token's, they have no
-// attribute: they live in `appRegistrationJson`. The grammar is here for the
+// A128CBC-HS256 when only the alg is named). Like the ID Token's, they are
+// attributes since #290 (`oauthAuthorization*`). The grammar is here for the
 // ID Token members' reason; whether the client's `jwks` holds a key to encrypt
 // to is `jarm.ts`'s.
 //
@@ -7690,6 +8058,74 @@ function jarmMetadataProblem(values) {
       ID_TOKEN_ENCRYPTION_ENCS.join(', ') + '.');
   }
   log.debug("Leaving jarmMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// OPENID CONNECT REGISTRATION SECTION 2: WHAT A CLIENT MAY REGISTER ABOUT THE
+// ENCRYPTION OF ITS USERINFO RESPONSES (#290, 2026-10-08).
+//
+// `userinfo_encrypted_response_alg` and `_enc` were checked only when the
+// UserInfo endpoint answered — a registration naming `A128KW` was accepted
+// and every UserInfo request after it failed. They are refused at the write
+// now, with the ID Token's lists for the ID Token's reason: the ASYMMETRIC
+// families only (a response is encrypted to the key the client registered),
+// every content encryption `common/crypto.js` has, and an `enc` with no `alg`
+// refused (Registration section 2). `oauth2.ts`'s `protectUserinfo()` still
+// checks what it reads, for a value an `ldapmodify` left. STS-REG-0339.
+// ---------------------------------------------------------------------------
+/**
+ * Checks a client's UserInfo encryption members (OIDC Registration section 2).
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
+function userinfoEncryptionMetadataProblem(values) {
+  log.debug("Entering userinfoEncryptionMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0339', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const names = ['userinfo_encrypted_response_alg',
+                 'userinfo_encrypted_response_enc'];
+  for (let i = 0; i < names.length; i++) {
+    const value = asked[names[i]];
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      log.debug("Leaving userinfoEncryptionMetadataProblem(). Not a string.");
+      return refusal(names[i], 'must be a string naming one algorithm.');
+    }
+  }
+  const alg = String(asked.userinfo_encrypted_response_alg || '').trim();
+  const enc = String(asked.userinfo_encrypted_response_enc || '').trim();
+  const offered = helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
+  if (alg && offered.indexOf(alg) < 0) {
+    log.debug("Leaving userinfoEncryptionMetadataProblem(). Encryption " +
+              "alg.");
+    return refusal(names[0], '"' + alg + '" is not an algorithm this ' +
+      'service encrypts a UserInfo response with. It encrypts with ' +
+      offered.join(', ') + ' (see userinfo_encryption_alg_values_supported). ' +
+      'The symmetric families are for a document encrypted TO this ' +
+      'service; a response is encrypted to the key you registered.');
+  }
+  if (enc && !alg) {
+    log.debug("Leaving userinfoEncryptionMetadataProblem(). enc without " +
+              "alg.");
+    return refusal(names[1], 'OpenID Connect Dynamic Client Registration ' +
+      'section 2 says userinfo_encrypted_response_alg MUST also be ' +
+      'provided, and none is.');
+  }
+  if (enc && ID_TOKEN_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+    log.debug("Leaving userinfoEncryptionMetadataProblem(). Content " +
+              "encryption.");
+    return refusal(names[1], '"' + enc + '" is not a content encryption ' +
+      'algorithm this service has. It has ' +
+      ID_TOKEN_ENCRYPTION_ENCS.join(', ') + ' (see ' +
+      'userinfo_encryption_enc_values_supported).');
+  }
+  log.debug("Leaving userinfoEncryptionMetadataProblem(). Nothing refused.");
   return null;
 }
 
@@ -8119,20 +8555,10 @@ function oidcRegistrationProblem(values) {
       'authorization_code or implicit grant must register at least one ' +
       '(RFC 7591 section 2).', 'invalid_redirect_uri');
   }
-  /** @type {Array<{ member: string, algs: string[] }>} */
-  const algs = [{ member: 'id_token_signed_response_alg',
-                  algs: stsCrypto.JWS_SIGNING_ALGS },
-                { member: 'userinfo_signed_response_alg',
-                  algs: stsCrypto.JWS_SIGNING_ALGS.concat(['none']) }];
-  for (let i = 0; i < algs.length; i++) {
-    const value = asked[algs[i].member];
-    if (value !== undefined && value !== null &&
-        algs[i].algs.indexOf(String(value)) < 0) {
-      log.debug("Leaving oidcRegistrationProblem(). " + algs[i].member + ".");
-      return refusal('STS-REG-0185', algs[i].member, JSON.stringify(value) +
-        ' is not an algorithm this service signs with; it signs with ' +
-        algs[i].algs.join(', ') + '.');
-    }
+  const algProblem = signedResponseAlgProblem(asked);
+  if (algProblem) {
+    log.debug("Leaving oidcRegistrationProblem(). A signing alg.");
+    return algProblem;
   }
   if (asked.jwks !== undefined && asked.jwks_uri !== undefined) {
     log.debug("Leaving oidcRegistrationProblem(). jwks and jwks_uri.");
@@ -8144,26 +8570,10 @@ function oidcRegistrationProblem(values) {
     log.debug("Leaving oidcRegistrationProblem(). jwks_uri is not https.");
     return refusal('STS-REG-0186', 'jwks_uri', 'must be an https URL.');
   }
-  if (asked.default_max_age !== undefined &&
-      !(Number.isInteger(asked.default_max_age) &&
-        asked.default_max_age >= 0)) {
-    log.debug("Leaving oidcRegistrationProblem(). default_max_age.");
-    return refusal('STS-REG-0187', 'default_max_age', 'must be a ' +
-      'non-negative whole number of seconds.');
-  }
-  if (asked.require_auth_time !== undefined &&
-      typeof asked.require_auth_time !== 'boolean') {
-    log.debug("Leaving oidcRegistrationProblem(). require_auth_time.");
-    return refusal('STS-REG-0187', 'require_auth_time', 'must be a boolean.');
-  }
-  if (asked.default_acr_values !== undefined &&
-      !(Array.isArray(asked.default_acr_values) &&
-        asked.default_acr_values.every(function (one) {
-          return typeof one === 'string' && ACR_VALUE_SHAPE.test(one);
-        }))) {
-    log.debug("Leaving oidcRegistrationProblem(). default_acr_values.");
-    return refusal('STS-REG-0187', 'default_acr_values', 'must be an array ' +
-      'of acr values.');
+  const defaultsProblem = requestDefaultsProblem(asked);
+  if (defaultsProblem) {
+    log.debug("Leaving oidcRegistrationProblem(). A request default.");
+    return defaultsProblem;
   }
   if (asked.initiate_login_uri !== undefined && !/^https:\/\/[^\s]+$/i.test(
       String(asked.initiate_login_uri))) {
@@ -8173,6 +8583,263 @@ function oidcRegistrationProblem(values) {
   }
   log.debug("Leaving oidcRegistrationProblem(). Nothing refused.");
   return null;
+}
+
+// The two signing algorithms of Registration section 2, the one piece of
+// oidcRegistrationProblem() a lone member can be held to without the rest of
+// a registration (#290: the console and the API ask it about one attribute).
+/**
+ * Checks `id_token_signed_response_alg` and `userinfo_signed_response_alg`.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
+function signedResponseAlgProblem(values) {
+  log.debug("Entering signedResponseAlgProblem().");
+  const asked = values || {};
+  /** @type {Array<{ member: string, algs: string[] }>} */
+  const algs = [{ member: 'id_token_signed_response_alg',
+                  algs: stsCrypto.JWS_SIGNING_ALGS },
+                { member: 'userinfo_signed_response_alg',
+                  algs: USERINFO_SIGNING_ALGS }];
+  for (let i = 0; i < algs.length; i++) {
+    const value = asked[algs[i].member];
+    if (value !== undefined && value !== null &&
+        algs[i].algs.indexOf(String(value)) < 0) {
+      log.debug("Leaving signedResponseAlgProblem(). " + algs[i].member +
+                ".");
+      return { errorCode: 'STS-REG-0185', error: 'invalid_client_metadata',
+               member: algs[i].member,
+               description: algs[i].member + ': ' + JSON.stringify(value) +
+                 ' is not an algorithm this service signs with; it signs ' +
+                 'with ' + algs[i].algs.join(', ') + '.' };
+    }
+  }
+  log.debug("Leaving signedResponseAlgProblem(). Nothing refused.");
+  return null;
+}
+
+// Registration section 2's three request defaults, the same way.
+/**
+ * Checks `default_max_age`, `require_auth_time` and `default_acr_values`.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
+function requestDefaultsProblem(values) {
+  log.debug("Entering requestDefaultsProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0187', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  if (asked.default_max_age !== undefined &&
+      !(Number.isInteger(asked.default_max_age) &&
+        asked.default_max_age >= 0)) {
+    log.debug("Leaving requestDefaultsProblem(). default_max_age.");
+    return refusal('default_max_age', 'must be a non-negative whole number ' +
+      'of seconds.');
+  }
+  if (asked.require_auth_time !== undefined &&
+      typeof asked.require_auth_time !== 'boolean') {
+    log.debug("Leaving requestDefaultsProblem(). require_auth_time.");
+    return refusal('require_auth_time', 'must be a boolean.');
+  }
+  if (asked.default_acr_values !== undefined &&
+      !(Array.isArray(asked.default_acr_values) &&
+        asked.default_acr_values.every(function (one) {
+          return typeof one === 'string' && ACR_VALUE_SHAPE.test(one);
+        }))) {
+    log.debug("Leaving requestDefaultsProblem(). default_acr_values.");
+    return refusal('default_acr_values', 'must be an array of acr values.');
+  }
+  log.debug("Leaving requestDefaultsProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// #290: THE ELEVEN RESPONSE AND REQUEST-DEFAULT MEMBERS AS ATTRIBUTES.
+//
+// OpenID Connect Registration section 2's ID Token and UserInfo signing and
+// encryption members and its two request defaults, and JARM section 3's
+// three. Until #290 they lived only in `appRegistrationJson`, so neither the
+// console nor `/admin-api` could set them and a client created there could
+// not have an ES256 ID Token without registering again through RFC 7591 —
+// a hole in rule 7.
+//
+// ONE GRAMMAR AT EVERY DOOR. `clientResponseMetadataProblem()` is the
+// registration's own five checks, so a registration, a console write and an
+// `/admin-api` write refuse the same value; the attribute check reads the
+// entry's (or the create's) other members beside the one written, because
+// an `enc` without its `alg` is a rule about the pair. A CLEAR is never
+// refused, the rule every check here keeps.
+//
+// ONE PLACE THEY ARE READ. `clientConfigOf()` carries them under their
+// registration names, and every reader — the ID Token, the UserInfo
+// response, JARM, the back-channel Logout Token, the Command Token, step-up's
+// defaults and the `jwks_uri` prefetch — reads that, so an application with
+// no registration document behind it is honoured like one with. A
+// registration REPLACES them (`applyRegistrationFields()`), and
+// `registrationOf()` hands them back from the attributes.
+// ---------------------------------------------------------------------------
+/**
+ * The algorithms a UserInfo response may be signed with, `none` (plain JSON)
+ * included — Registration section 2's list as `oauth2.ts` signs it.
+ */
+const USERINFO_SIGNING_ALGS = stsCrypto.JWS_SIGNING_ALGS.concat(['none']);
+
+/**
+ * The attribute each #290 registration member is stored in.
+ */
+const CLIENT_RESPONSE_ATTRIBUTES = {
+  id_token_signed_response_alg: 'oauthIdTokenSignedResponseAlg',
+  id_token_encrypted_response_alg: 'oauthIdTokenEncryptedResponseAlg',
+  id_token_encrypted_response_enc: 'oauthIdTokenEncryptedResponseEnc',
+  userinfo_signed_response_alg: 'oauthUserinfoSignedResponseAlg',
+  userinfo_encrypted_response_alg: 'oauthUserinfoEncryptedResponseAlg',
+  userinfo_encrypted_response_enc: 'oauthUserinfoEncryptedResponseEnc',
+  authorization_signed_response_alg: 'oauthAuthorizationSignedResponseAlg',
+  authorization_encrypted_response_alg:
+    'oauthAuthorizationEncryptedResponseAlg',
+  authorization_encrypted_response_enc:
+    'oauthAuthorizationEncryptedResponseEnc',
+  default_acr_values: 'oauthDefaultAcrValues',
+  default_max_age: 'oauthDefaultMaxAge'
+};
+
+/**
+ * Checks a client's #290 members as a registration states them: the ID
+ * Token's and UserInfo's signing and encryption, JARM's, and the request
+ * defaults.
+ *
+ * @param values - the members, by registration name
+ * @returns null, or the error code, error, member and description
+ */
+function clientResponseMetadataProblem(values) {
+  log.debug("Entering clientResponseMetadataProblem().");
+  const problem = idTokenEncryptionMetadataProblem(values) ||
+                  userinfoEncryptionMetadataProblem(values) ||
+                  jarmMetadataProblem(values) ||
+                  signedResponseAlgProblem(values) ||
+                  requestDefaultsProblem(values);
+  log.debug("Leaving clientResponseMetadataProblem(). " +
+            (problem ? problem.errorCode : 'Nothing refused.'));
+  return problem;
+}
+
+// One stored value as the registration member it stands for: the acr values
+// split into the list the member is, the max age a number where it is a
+// whole one (and left as text otherwise, for the grammar to refuse).
+/**
+ * Turns one #290 attribute value into the registration member's shape.
+ *
+ * @param member - the registration member
+ * @param text - the attribute's value, trimmed
+ * @returns the member's value
+ */
+function clientResponseMemberValue(member, text) {
+  log.debug("Entering clientResponseMemberValue(). " + member);
+  if (member === 'default_acr_values') {
+    log.debug("Leaving clientResponseMemberValue(). A list.");
+    return text.split(/\s+/).filter(Boolean);
+  }
+  if (member === 'default_max_age') {
+    log.debug("Leaving clientResponseMemberValue(). A number, or not.");
+    return /^\d{1,15}$/.test(text) ? Number(text) : text;
+  }
+  log.debug("Leaving clientResponseMemberValue(). A string.");
+  return text;
+}
+
+// The same question about ONE attribute written through the console or
+// `/admin-api`, with the entry's (or the create's) others read beside it.
+/**
+ * Checks one #290 attribute written through the console or the API, against
+ * the registration grammar, with the entry's other members beside it.
+ *
+ * @param attribute - the attribute
+ * @param value - the value written
+ * @param fields - the entry's (or the create's) other attributes
+ * @returns the refusal sentence, naming the attribute, or ''
+ */
+function clientResponseAttributeProblem(attribute, value, fields) {
+  log.debug("Entering clientResponseAttributeProblem(). attribute=" +
+            attribute);
+  const members = Object.keys(CLIENT_RESPONSE_ATTRIBUTES);
+  const member = members.filter(function (name) {
+    return CLIENT_RESPONSE_ATTRIBUTES[name] === attribute;
+  })[0];
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!member || !text) {
+    log.debug("Leaving clientResponseAttributeProblem(). Not asked.");
+    return '';
+  }
+  // The member written, and for an `enc` the `alg` it qualifies as the entry
+  // holds it — nothing else, so a malformed neighbour an `ldapmodify` left
+  // does not block an unrelated write.
+  const asked = {};
+  asked[member] = clientResponseMemberValue(member, text);
+  const pairs = { id_token_encrypted_response_enc:
+                    'id_token_encrypted_response_alg',
+                  userinfo_encrypted_response_enc:
+                    'userinfo_encrypted_response_alg',
+                  authorization_encrypted_response_enc:
+                    'authorization_encrypted_response_alg' };
+  if (pairs[member]) {
+    const alg = String(valuesOf((fields || {})[
+      CLIENT_RESPONSE_ATTRIBUTES[pairs[member]]])[0] || '').trim();
+    if (alg) {
+      asked[pairs[member]] = alg;
+    }
+  }
+  const problem = clientResponseMetadataProblem(asked);
+  log.debug("Leaving clientResponseAttributeProblem().");
+  return problem
+    ? problem.description.replace(problem.member,
+                                  CLIENT_RESPONSE_ATTRIBUTES[problem.member])
+    : '';
+}
+
+// The members as `clientConfigOf()` and `registrationOf()` hand them on: a
+// string for each algorithm that is set, the acr values as a list of the
+// well-formed ones, the max age as a number. A value the grammar refuses —
+// only an `ldapmodify` can leave one — is left out with a warning rather
+// than handed to a reader: an acr nobody can meet would refuse every sign-in
+// with nothing on the page to say why. The algorithms are handed on as they
+// are, because each reader refuses a bad one BY NAME at issuance.
+/**
+ * Reads a client's #290 attributes as registration members.
+ *
+ * @param fields - the entry's attributes
+ * @param identifier - the entry, for the warning
+ * @returns the members that are set, by registration name
+ */
+function clientResponseMembersOf(fields, identifier) {
+  log.debug("Entering clientResponseMembersOf().");
+  const out = {};
+  Object.keys(CLIENT_RESPONSE_ATTRIBUTES).forEach(function (member) {
+    const attribute = CLIENT_RESPONSE_ATTRIBUTES[member];
+    const text = String(valuesOf((fields || {})[attribute])[0] || '').trim();
+    if (!text) {
+      return;
+    }
+    const value = clientResponseMemberValue(member, text);
+    if ((member === 'default_acr_values' || member === 'default_max_age') &&
+        requestDefaultsProblem({ [member]: value })) {
+      log.warn(errorCodes.tag('STS-REG-0341') + 'applications: "' +
+               identifier + '" holds ' + JSON.stringify(text.slice(0, 60)) +
+               ' in ' + attribute + ', which is not a usable ' + member +
+               '; it is ignored.');
+      return;
+    }
+    out[member] = value;
+  });
+  log.debug("Leaving clientResponseMembersOf(). " +
+            Object.keys(out).length + " member(s).");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -10019,6 +10686,14 @@ function normaliseFields(value) {
       code = code || mtlsProblem.code;
       return;
     }
+    // #290's eleven, read against the create's other members.
+    const responseProblem = clientResponseAttributeProblem(name, values[0],
+                                                           asked);
+    if (responseProblem) {
+      errors.push(responseProblem);
+      code = code || 'STS-REG-0340';
+      return;
+    }
     // RFC 9470's two.
     const stepUpProblem = stepUpAttributeProblem(name, values[0]);
     if (stepUpProblem) {
@@ -11578,6 +12253,21 @@ function applyRegistrationFields(record, registration, statement) {
   } else {
     delete record.fields.oauthBackchannelUserCodeParameter;
   }
+  // #290's eleven, the same way: an update that omits one clears it. The acr
+  // values go in as one space-separated value, in the registration's order.
+  Object.keys(CLIENT_RESPONSE_ATTRIBUTES).forEach(function (member) {
+    const attribute = CLIENT_RESPONSE_ATTRIBUTES[member];
+    const given = meta[member];
+    const value = Array.isArray(given)
+      ? given.map(function (one) { return String(one).trim(); })
+        .filter(Boolean).join(' ')
+      : String(given === undefined || given === null ? '' : given).trim();
+    if (value) {
+      setField(record, attribute, value);
+    } else {
+      delete record.fields[attribute];
+    }
+  });
   // RFC 9396 section 10, the same way: an update that omits it clears it.
   delete record.fields.oauthAuthorizationDetailsTypes;
   if (Array.isArray(meta.authorization_details_types) &&
@@ -11620,6 +12310,12 @@ function applyRegistrationFields(record, registration, statement) {
   // what a registration SAID, and homePageOf() refuses to draw a link to
   // anything that is not http or https when it reads.
   setField(record, 'appHomePageUrl', meta.client_uri);
+  // REPLACED, NOT ADDED TO (#289): the endpoints hold the client to these two
+  // lists, and RFC 7592 section 2.2 replaces the whole registration, so an
+  // update that narrows grant_types must narrow what the client may use. A
+  // `multi` setField() only adds.
+  delete record.fields.oauthGrantType;
+  delete record.fields.oauthResponseType;
   setField(record, 'oauthGrantType', meta.grant_types);
   setField(record, 'oauthResponseType', meta.response_types);
   // RFC 7591 section 2's `scope` is a DECLARATION — "the list that the
@@ -11670,7 +12366,7 @@ function register(clientId, registration, options) {
   // algorithm nothing would then check.
   const uriProblem = registrationUriProblem(registration) ||
                      introspectionResponseProblem(registration) ||
-                     idTokenEncryptionMetadataProblem(registration) ||
+                     clientResponseMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
                      oidcSubjectMetadataProblem(registration) ||
@@ -11752,7 +12448,7 @@ function updateRegistration(clientId, registration, options) {
   // The same backstop as register().
   const uriProblem = registrationUriProblem(registration) ||
                      introspectionResponseProblem(registration) ||
-                     idTokenEncryptionMetadataProblem(registration) ||
+                     clientResponseMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
                      commandMetadataProblem(registration) ||
@@ -12066,6 +12762,15 @@ function registrationOf(clientId) {
       delete document[member];
     }
   });
+  // #290's eleven, the same way, in their registration shapes.
+  const responseMembers = clientResponseMembersOf(fields, clientId);
+  Object.keys(CLIENT_RESPONSE_ATTRIBUTES).forEach(function (member) {
+    if (responseMembers[member] !== undefined) {
+      document[member] = responseMembers[member];
+    } else {
+      delete document[member];
+    }
+  });
   // And RFC 9101's five, the same way.
   const requestUris = valuesOf(fields.oauthRequestUri).map(String);
   if (requestUris.length) {
@@ -12160,7 +12865,9 @@ function declaredClient(record, fields, redirectCount) {
      'oauthJwksUri', 'oauthAssertionJwks', 'oauthAssertionIssuer',
      'oauthSamlAssertionIssuer', 'oauthSamlAssertionSigningCertificate',
      'oauthSamlAssertionCertificate',
-     'oauthTlsClientCertificateThumbprint', TLS_BOUND_TOKENS_ATTRIBUTE]
+     'oauthTlsClientCertificateThumbprint', TLS_BOUND_TOKENS_ATTRIBUTE,
+     // Declarations since #289, when the sightings moved to *Observed.
+     'oauthGrantType', 'oauthResponseType']
       .concat(TLS_SUBJECT_ATTRIBUTES).some(has) ||
     allowed.indexOf('oauth2') >= 0 || allowed.indexOf('oidc') >= 0 ||
     allowed.indexOf('oid4vci') >= 0;
@@ -12231,11 +12938,11 @@ function clientConfigOf(identifier) {
     // declares nothing, and "has an entry" cannot be the test: every client_id
     // that ever reached an endpoint here has one, written by `seen()`. What a
     // sighting writes for OAuth is `oauthClientId`, `appAuthorizationServer`,
-    // `oauthScope`, `oauthResponseType`, `oauthGrantType` and
+    // `oauthScope`, `oauthResponseTypeObserved`, `oauthGrantTypeObserved` and
     // `appRedirectUriObserved` — so declared is anything else that says what
     // this client IS: a registration, a redirect URI of its own, an
-    // authentication method, a credential, an assertion issuer, or a declared
-    // OAuth protocol family.
+    // authentication method, a credential, an assertion issuer, the grant or
+    // response types it may use (#289), or a declared OAuth protocol family.
     declared: declaredClient(loaded.record, fields,
                              redirects.registered.length +
                              redirects.unconfirmed.length),
@@ -12380,6 +13087,13 @@ function clientConfigOf(identifier) {
     authorization_details_types:
       valuesOf(fields.oauthAuthorizationDetailsTypes).map(String)
   };
+  // #290's eleven, spelled as the registration members because every reader
+  // — the ID Token, UserInfo, JARM, the Logout and Command Tokens, step-up's
+  // defaults — reads them by those names. A member that is not set is
+  // ABSENT, which each reader takes as "not registered" and applies its
+  // specification's default to.
+  Object.assign(config, clientResponseMembersOf(fields,
+                                                loaded.record.identifier));
   log.debug("Leaving clientConfigOf(). " + config.redirect_uris.length +
             " redirect URI(s), method=" + (method || '(unstated)') + ".");
   return config;
@@ -12591,6 +13305,8 @@ function createApplication(detail) {
       const problem = didValueProblem(name, one) ||
         claimRowsProblem(name, one) ||
         claimSelectionProblem(name, one) ||
+        (name === 'oauthPermissionClaims'
+          ? permissionClaimsProblem(one, { fields: given.fields }) : '') ||
         didDuplicateProblem(name, one, seen);
       if (problem) {
         didProblems.push(problem);
@@ -13047,6 +13763,14 @@ function updateApplication(identifier, change) {
       return errorCodes.mark({ ok: false, errors: [selectionProblem] },
                              'STS-REG-0215');
     }
+    if (attribute === 'oauthPermissionClaims') {
+      const mappingProblem = permissionClaimsProblem(value, loaded.record);
+      if (mappingProblem) {
+        log.debug("Leaving updateApplication(). Permission claims refused.");
+        return errorCodes.mark({ ok: false, errors: [mappingProblem] },
+                               'STS-REG-0344');
+      }
+    }
     const notAChoice = choiceProblem(attribute, value);
     if (notAChoice) {
       log.debug("Leaving updateApplication(). Not one of the values.");
@@ -13219,6 +13943,17 @@ function updateApplication(identifier, change) {
                 "details value.");
       return errorCodes.mark({ ok: false, errors: [problem.message] },
                              problem.code);
+    }
+  }
+  // #290's eleven, on a SET that carries a value: the registration's own
+  // grammar, and no `enc` onto an entry with no `alg`.
+  if (mode === 'set' && value) {
+    const problem = clientResponseAttributeProblem(attribute, value,
+                                                   loaded.record.fields);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable response or " +
+                "request-default setting.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0340');
     }
   }
   // RFC 9470's two, on a SET that carries a value.
@@ -15452,53 +16187,53 @@ function fieldsWithDescription(fields, record) {
 }
 
 // ---------------------------------------------------------------------------
-// WHAT A CLIENT REGISTERED IT WOULD USE (#120): the `grant_types` and
-// `response_types` of its REGISTRATION DOCUMENT, which the token and
-// authorization endpoints hold it to in every mode (rcbj's decision). Read
-// from `appRegistrationJson` and NOT from `oauthGrantType` /
-// `oauthResponseType`, because those two also record what was OBSERVED — a
-// list that grows with use is no restriction. A client with no registration
-// document, or one that names neither list (registered before #120 applied
-// RFC 7591's defaults), answers null and is held to nothing, as a client_id
-// nobody registered is.
+// WHAT A CLIENT DECLARED IT WOULD USE: its `oauthGrantType` and
+// `oauthResponseType`, which the token and authorization endpoints hold it to
+// in every mode. #120 held a client that REGISTERED (rcbj's decision) to the
+// `grant_types` and `response_types` of its registration document; #289
+// (rcbj, 2026-10-07) holds every client to the same two lists however they
+// were written — a registration writes them (applyRegistrationFields()), and
+// so does an administrator on the console or `/admin-api`. That became
+// possible only when a sighting stopped writing them: it writes
+// `oauthGrantTypeObserved` and `oauthResponseTypeObserved` now, because a list
+// that grows with use is no restriction. An EMPTY list restricts nothing
+// (rcbj's answer), as for a client_id nobody declared anything about.
 // ---------------------------------------------------------------------------
 /**
- * Returns the grant and response types a client's registration document
- * declares, which the endpoints hold it to in every mode.
+ * Returns the grant and response types a client declares, which the endpoints
+ * hold it to in every mode.
  *
  * @param clientId - the client id
- * @returns the two lists, or null when the client has no document or it names
- *   neither
+ * @returns the two lists, each null when the client declares none; null when
+ *   it declares neither
  */
-function registeredFlowsOf(clientId) {
-  log.debug("Entering registeredFlowsOf().");
+function declaredFlowsOf(clientId) {
+  log.debug("Entering declaredFlowsOf().");
   const loaded = load(String(clientId || ''));
-  if (!loaded.known || !loaded.record.registered) {
-    log.debug("Leaving registeredFlowsOf(). Not registered.");
+  if (!loaded.known) {
+    log.debug("Leaving declaredFlowsOf(). Not known.");
     return null;
   }
-  let document = null;
-  try {
-    document = JSON.parse(loaded.record.fields.appRegistrationJson || 'null');
-  } catch (e) {
-    log.debug("Caught in registeredFlowsOf(): " + ((e && e.message) || e));
-    // Unreadable: registrationOf() reports it; nothing to hold the client to.
-    document = null;
-  }
-  if (!document || (!Array.isArray(document.grant_types) &&
-                    !Array.isArray(document.response_types))) {
-    log.debug("Leaving registeredFlowsOf(). Nothing registered.");
-    return null;
-  }
-  log.debug("Leaving registeredFlowsOf().");
-  return {
-    grant_types: Array.isArray(document.grant_types)
-      ? document.grant_types.map(String) : null,
-    response_types: Array.isArray(document.response_types)
-      ? document.response_types.map(function (one) {
+  const listOf = function (name) {
+    log.debug("Entering listOf(). " + name);
+    const values = valuesOf(loaded.record.fields[name])
+      .map(function (one) {
         return String(one).split(/\s+/).filter(Boolean).sort().join(' ');
-      }) : null
+      })
+      .filter(function (one) {
+        return one !== '';
+      });
+    log.debug("Leaving listOf().");
+    return values.length ? values : null;
   };
+  const grants = listOf('oauthGrantType');
+  const responses = listOf('oauthResponseType');
+  if (!grants && !responses) {
+    log.debug("Leaving declaredFlowsOf(). Nothing declared.");
+    return null;
+  }
+  log.debug("Leaving declaredFlowsOf().");
+  return { grant_types: grants, response_types: responses };
 }
 
 // RFC 7592 SECTION 2 (#120): a registration access token presented for a
@@ -17073,10 +17808,21 @@ function internalBaseUrl() {
 }
 
 // ---------------------------------------------------------------------------
-// THE EMBEDDED PROTOCOL DEBUGGER'S TWO ENTRIES (2026-09-13), seeded only in a
-// process that embeds it (`mode.embedsProtocolDebugger()`), in the default
+// THE EMBEDDED PROTOCOL DEBUGGER'S TWO ENTRIES (2026-09-13), in the default
 // realm only — its listener has no realm prefix, and the console roster that
 // decides who may use it is the default realm's.
+//
+// **SEEDED IN EVERY INSTALL SINCE #541 (2026-10-09)**, whether or not this
+// process embeds the debugger — rcbj: "Add a debugger application object by
+// default to new installs. Model it after the admin console application
+// object." Until then they were seeded only where
+// `mode.embedsProtocolDebugger()` answered yes, so a product install (where
+// `debugger.enabled` `auto` is off) that turned the debugger on later had no
+// client to sign in through until the next start re-seeded. The console's
+// entry has never depended on anything; neither do these now. They grant
+// nothing by existing: the permission is still narrowed to a console
+// administrator at issuance (`debugger/debugger_access.ts`), and with the
+// debugger off nothing listens at their redirect URI.
 //
 // **TWO ENTRIES AND NOT ONE, BECAUSE THEY ARE TWO PARTIES.** `sts-debugger-api`
 // is a RESOURCE SERVER: it exposes one delegated permission and signs nobody
@@ -17112,10 +17858,6 @@ function debuggerBaseUrl() {
 
 function debuggerApplications() {
   log.debug("Entering debuggerApplications().");
-  if (!mode.embedsProtocolDebugger()) {
-    log.debug("Leaving debuggerApplications(). The debugger is not embedded.");
-    return [];
-  }
   const base = debuggerBaseUrl();
   const issued = nowSec();
   const permission = 'urn:sts:debugger-api:debugger';
@@ -17249,7 +17991,13 @@ function internalApplications() {
       // the person holds.
       // `admin:console` (#454) beside them: ADMIN_CONSOLE, which this client
       // confers on everybody signing in through it, authorizes it.
-      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email',
+      // DECLARED FOR WHAT IT IS (2026-10-08): an OAuth 2.0 client and an
+      // OpenID Connect relying party. `protocols` above is the DERIVED
+      // `appProtocol`; the console's protocol checkboxes and the issuance
+      // policy read `appAllowedProtocol`, which nothing seeded, so the
+      // service's own client read as declared for nothing.
+      attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'admin:read',
                                          'admin:write', 'admin:console'] },
       registration: {
@@ -17307,7 +18055,9 @@ function internalApplications() {
       // `consent.js`: the entry is the register, so an operator who wants the
       // screen removes the values and gets it, which is what makes this a
       // default rather than a special case.
-      attributes: { oauthGlobalConsent: ['openid', 'profile', 'email',
+      // Declared OAuth 2.0 and OpenID Connect, the console's reason.
+      attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access'] },
       registration: {
         client_id: 'sts-user-portal',
@@ -17341,6 +18091,9 @@ function internalApplications() {
       realmScope: 'every',
       description: 'seeded at startup: this service\'s own management API at ' +
                    '/admin-api (applications.seedInternal)',
+      // Declared OAuth 2.0 alone, the console's reason: a client_credentials
+      // client with no ID Token, so not OpenID Connect.
+      attributes: { appAllowedProtocol: ['oauth2'] },
       registration: {
         client_id: 'sts-management-api',
         client_name: 'Management API',
@@ -17593,6 +18346,11 @@ module.exports = {
   introspectionResponseProblem: introspectionResponseProblem,
   idTokenEncryptionMetadataProblem: idTokenEncryptionMetadataProblem,
   jarmMetadataProblem: jarmMetadataProblem,
+  // #290: the eleven response and request-default members as attributes.
+  userinfoEncryptionMetadataProblem: userinfoEncryptionMetadataProblem,
+  clientResponseMetadataProblem: clientResponseMetadataProblem,
+  clientResponseAttributeProblem: clientResponseAttributeProblem,
+  CLIENT_RESPONSE_ATTRIBUTES: CLIENT_RESPONSE_ATTRIBUTES,
   ID_TOKEN_DEFAULT_ENC: ID_TOKEN_DEFAULT_ENC,
   ID_TOKEN_ENCRYPTION_ALGS: ID_TOKEN_ENCRYPTION_ALGS,
   ID_TOKEN_ENCRYPTION_ENCS: ID_TOKEN_ENCRYPTION_ENCS,
@@ -17613,7 +18371,7 @@ module.exports = {
   cibaOf: cibaOf,
   oidcRegistrationProblem: oidcRegistrationProblem,
   revokeRegistrationAccessToken: revokeRegistrationAccessToken,
-  registeredFlowsOf: registeredFlowsOf,
+  declaredFlowsOf: declaredFlowsOf,
   grantsAndResponseTypesOf: grantsAndResponseTypesOf,
   OIDC_SUBJECT_ATTRIBUTES: OIDC_SUBJECT_ATTRIBUTES,
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,

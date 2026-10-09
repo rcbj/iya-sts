@@ -1,0 +1,7 @@
+{
+  "sub": "Una cartera puede iniciar tu sesión con un ID Token que firma con su propia clave (Self-Issued OpenID Provider v2). Nadie responde por esa clave, así que solo inicia la sesión de la persona que la registró aquí.",
+  "enrol": "Registrar una cartera",
+  "enrolNote": "Se le pide a tu cartera un ID Token autoemitido, y la clave que lo firmó se registra para ti: demuestras que la posees; no se escribe nada.",
+  "off": "El inicio de sesión con un identificador autoemitido está desactivado aquí, así que no se puede registrar ninguna cartera desde esta página. Las claves de arriba siguen registradas.",
+  "doneEnrolled": "La clave de tu cartera está registrada. A partir de ahora inicia tu sesión."
+}

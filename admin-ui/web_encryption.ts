@@ -43,6 +43,27 @@ class EncryptionPage {
     return EncryptionPage.body(ctx, view);
   }
 
+  // VIEW TEXT INSIDE A MESSAGE (#539). A message's parameters are escaped
+  // with `&#39;` for an apostrophe, where this console has always written
+  // `&apos;` (kit.esc()), so a sentence of the view's — a reason, a note —
+  // goes into a message as a marker, and the marker is replaced by the text
+  // escaped the console's way: the English stays the same to the byte.
+  static marks(values: Json): Json {
+    const out = {};
+    Object.keys(values).forEach(function (name) {
+      out[name] = '\u0001' + name + '\u0001';
+    });
+    return out;
+  }
+
+  static fill(html: string, values: Json): string {
+    Object.keys(values).forEach(function (name) {
+      html = html.split('\u0001' + name + '\u0001')
+        .join(kit.esc(values[name]));
+    });
+    return html;
+  }
+
   // ---------------------------------------------------------------------------
   // THE PAGE.
   // ---------------------------------------------------------------------------
@@ -57,12 +78,14 @@ class EncryptionPage {
     return (num / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
-  static when(iso: Json): string {
+  // `t` is the page's translator (#539), handed down by body().
+  static when(iso: Json, t: Json): string {
     return iso ? kit.esc(String(iso).replace('T', ' ').replace(/\..*$/, 'Z'))
-               : '<span class="muted">never</span>';
+               : '<span class="muted">' + t.html('consoleEncryption.never') +
+                 '</span>';
   }
 
-  static classesTable(json: Json): string {
+  static classesTable(json: Json, t: Json): string {
     const self = this;
     const rows = json.classes.map(function (one) {
       // The two halves of the table are told apart by a WORD in a cell rather
@@ -70,14 +93,18 @@ class EncryptionPage {
       // comparison — *is this encrypted and is that* — and two tables make that
       // a scroll.
       const mark = one.sealed
-        ? '<span class="ok">sealed</span>'
-        : '<span class="muted">not sealed</span>';
+        ? '<span class="ok">' + t.html('consoleEncryption.sealed') + '</span>'
+        : '<span class="muted">' + t.html('consoleEncryption.notSealed') +
+          '</span>';
       const counts = one.sealed
-        ? kit.esc(String(one.encryptions)) + ' out, ' +
-          kit.esc(String(one.decryptions)) + ' in' +
+        ? t.html('consoleEncryption.outIn',
+                 { out: String(one.encryptions),
+                   in: String(one.decryptions) }) +
           (one.failures
-            ? ' <span class="bad">' + kit.esc(String(one.failures)) +
-              ' failed</span>' : '')
+            ? ' <span class="bad">' +
+              t.html('consoleEncryption.failed',
+                     { n: String(one.failures) }) +
+              '</span>' : '')
         : '<span class="muted">&mdash;</span>';
       return '<tr><td>' + one.what + '</td>' +
              '<td><code>' + kit.esc(one.where) + '</code></td>' +
@@ -86,80 +113,95 @@ class EncryptionPage {
                         : '') +
              '</td>' +
              '<td>' + counts + '</td>' +
-             '<td>' + self.when(one.lastAt) + '</td>' +
+             '<td>' + self.when(one.lastAt, t) + '</td>' +
              '<td class="why">' + one.why + '</td></tr>';
     }).join('');
     return '<table class="grid"><thead><tr>' +
-           '<th>What</th><th>Where it lives</th><th>At rest</th>' +
-           '<th>Operations</th><th>Last</th><th>Why</th>' +
+           '<th>' + t.html('consoleEncryption.thWhat') + '</th><th>' +
+           t.html('consoleEncryption.thWhere') + '</th><th>' +
+           t.html('consoleEncryption.thAtRest') + '</th>' +
+           '<th>' + t.html('consoleEncryption.thOperations') + '</th><th>' +
+           t.html('consoleEncryption.thLast') + '</th><th>' +
+           t.html('consoleEncryption.thWhy') + '</th>' +
            '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
-  static unclassifiedBlock(json: Json): string {
+  static unclassifiedBlock(json: Json, t: Json): string {
     if (!json.unclassified.length) {
       return '';
     }
     return kit.warn(
-      '<p><strong>' + json.unclassified.length + ' label(s) were counted ' +
-      'that ' +
-      'this page has no row for:</strong> ' +
+      '<p>' + t.html('consoleEncryption.unclassifiedHead',
+                     { n: json.unclassified.length }) + ' ' +
       json.unclassified.map(function (row) {
         return '<code>' + kit.esc(row.label) + '</code> (' +
-               row.encryptions + ' out, ' + row.decryptions + ' in)';
+               t.html('consoleEncryption.outIn',
+                      { out: row.encryptions, in: row.decryptions }) + ')';
       }).join(', ') + '.</p>' +
-      '<p>That is a call site somebody added without adding a row to ' +
-      '<code>DATA_CLASSES</code> in ' +
-      '<code>admin-ui/encryption_admin.ts</code>. It is drawn rather than ' +
-      'dropped on purpose: the alternative is a table that goes on looking ' +
-      'complete while the totals above it do not add up to the rows ' +
-      'below.</p>');
+      '<p>' + t.html('consoleEncryption.unclassifiedWhy') + '</p>');
   }
 
   // The section drawn under the algorithm: the lifecycle, the keys, and —
   // for Admin Write, where keys are stored — the two forms. No script.
   static renderDataKeys(ctx: Json, json: Json): string {
+    const t = ctx.t;
     const dk = json.dataKeys;
     const life = dk.lifecycle;
-    const status = !life ? '<p class="warn">The data-key rotation module ' +
-        'is not loaded in this process, so nothing here can be rotated.</p>'
+    // The reasons (`scheduleOffReason` and the like) are the view's, drawn
+    // in English as they come; the sentences around them are this file's.
+    const status = !life ? '<p class="warn">' +
+        t.html('consoleEncryption.noRotationModule') + '</p>'
       : '<p>' + (life.on
         ? (life.scheduled
-          ? 'Every data encryption key is rotated after <strong>' +
-            kit.esc(String(life.rotationDays)) + ' day(s)</strong> ' +
-            '(<code>keys.dataKeyRotationDays</code>); a new key is used ' +
-            kit.esc(String(life.activationLeadSeconds)) + ' second(s) ' +
-            'after it is published, and a replaced key is destroyed no ' +
-            'sooner than ' + kit.esc(String(life.retireAfterDays)) +
-            ' day(s) after, once nothing is sealed under it.'
-          : 'Scheduled rotation is <strong>off</strong>: ' +
-            kit.esc(life.scheduleOffReason) + '. A rotation by hand ' +
-            'still works.')
-        : 'Nothing is rotated here: ' + kit.esc(life.offReason) + '.') +
-      ' Data stored in the directory is sealed with <code>' +
-      kit.esc(life.directoryCipher) + '</code> ' +
-      '(<code>keys.directoryCipher</code>); everything else with ' +
-      '<code>aes-256-gcm</code>.</p>' +
+          ? t.html('consoleEncryption.rotationScheduled',
+                   { days: String(life.rotationDays),
+                     lead: String(life.activationLeadSeconds),
+                     retire: String(life.retireAfterDays) })
+          : EncryptionPage.fill(
+            t.html('consoleEncryption.rotationOff',
+                   EncryptionPage.marks({ reason: 1 })),
+            { reason: life.scheduleOffReason }))
+        : EncryptionPage.fill(
+          t.html('consoleEncryption.nothingRotated',
+                 EncryptionPage.marks({ reason: 1 })),
+          { reason: life.offReason })) +
+      t.html('consoleEncryption.directoryCipher',
+             { cipher: life.directoryCipher }) + '</p>' +
       (life.on ? '<p>' + (life.counting
-        ? 'What is sealed under each key is counted once a day ' +
-          '(<code>keys.data-key-count</code>)' + (dk.lastCounted
-            ? ', last at ' + kit.esc(dk.lastCounted) : ', and has not ' +
-              'been counted yet') + '.'
-        : 'Values are not counted: ' + kit.esc(life.countOffReason) +
-          '.') + '</p>' : '');
+        ? (dk.lastCounted
+            ? t.html('consoleEncryption.countedLast',
+                     { when: dk.lastCounted })
+            : t.html('consoleEncryption.countedNotYet'))
+        : EncryptionPage.fill(
+          t.html('consoleEncryption.notCounted',
+                 EncryptionPage.marks({ reason: 1 })),
+          { reason: life.countOffReason })) + '</p>' : '');
     const tiles = '<div class="tiles">' +
-      kit.tile(String(dk.counts.current), 'current') +
-      kit.tile(String(dk.counts.pending), 'waiting to be used') +
-      kit.tile(String(dk.counts.superseded), 'superseded') +
-      kit.tile(String(dk.counts.destroyed), 'destroyed') +
-      kit.tile(String(dk.counts.derived), 'derived per run') +
+      kit.tile(String(dk.counts.current),
+               t.text('consoleEncryption.tileCurrent')) +
+      kit.tile(String(dk.counts.pending),
+               t.text('consoleEncryption.tilePending')) +
+      kit.tile(String(dk.counts.superseded),
+               t.text('consoleEncryption.tileSuperseded')) +
+      kit.tile(String(dk.counts.destroyed),
+               t.text('consoleEncryption.tileDestroyed')) +
+      kit.tile(String(dk.counts.derived),
+               t.text('consoleEncryption.tileDerived')) +
       '</div>';
     const params = kit.pageParamsOf(ctx.query || {});
-    const nav = kit.pageNavPair('/admin/encryption', params, dk.paging);
+    const nav = kit.pageNavPair('/admin/encryption', params, dk.paging, t);
     const table = dk.keys.length
-      ? nav.head + '<table class="grid"><thead><tr><th>Realm</th>' +
-        '<th>Class</th><th>Cipher</th><th>State</th><th>Created</th>' +
-        '<th>Used from</th><th>Age (days)</th><th>Values</th>' +
-        '<th>Key id</th></tr></thead><tbody>' +
+      ? nav.head + '<table class="grid"><thead><tr><th>' +
+        t.html('consoleEncryption.thRealm') + '</th>' +
+        '<th>' + t.html('consoleEncryption.thClass') + '</th><th>' +
+        t.html('consoleEncryption.thCipher') + '</th><th>' +
+        t.html('consoleEncryption.thState') + '</th><th>' +
+        t.html('consoleEncryption.thCreated') + '</th>' +
+        '<th>' + t.html('consoleEncryption.thUsedFrom') + '</th><th>' +
+        t.html('consoleEncryption.thAge') + '</th><th>' +
+        t.html('consoleEncryption.thValues') + '</th>' +
+        '<th>' + t.html('consoleEncryption.thKeyId') +
+        '</th></tr></thead><tbody>' +
         dk.keys.map(function (k: Json): string {
           return '<tr><td><code>' + kit.esc(k.realm) + '</code></td>' +
             '<td><code>' + kit.esc(k.cls) + '</code></td>' +
@@ -170,54 +212,56 @@ class EncryptionPage {
             '<td>' + kit.esc(k.ageDays === null ? '—'
                                                   : String(k.ageDays)) +
             '</td>' +
-            '<td' + (k.countedAt ? ' title="counted ' +
-                     kit.esc(k.countedAt) + '"' : '') + '>' +
+            '<td' + (k.countedAt ? ' title="' +
+                     kit.esc(t.text('consoleEncryption.countedAt',
+                                    { when: k.countedAt })) + '"' : '') +
+            '>' +
             kit.esc(k.values === null ? '—' : String(k.values)) + '</td>' +
-            '<td>' + kit.clipped(k.id, 40) + '</td></tr>';
+            '<td>' + kit.clipped(k.id, 40, t) + '</td></tr>';
+
         }).join('') + '</tbody></table>' + nav.foot
-      : '<p class="muted">No data encryption key is held yet: one is made ' +
-        'the first time a value of its realm and class is sealed.</p>';
+      : '<p class="muted">' + t.html('consoleEncryption.noDataKey') + '</p>';
     let forms = '';
     if (life && life.on && ctx.write) {
-      forms = '<h4>Rotate by hand</h4>' +
+      forms = '<h4>' + t.html('consoleEncryption.rotateByHand') + '</h4>' +
         '<form method="post" action="/admin/encryption/data-keys">' +
         '<input type="hidden" name="action" value="rotate-data-keys">' +
-        '<label>Realm (empty for every realm): <input type="text" ' +
+        '<label>' + t.html('consoleEncryption.realmLabel') +
+        ' <input type="text" ' +
         'name="realm" id="data-keys-realm" autocomplete="off"></label> ' +
-        '<label>Class (empty for every class): <input type="text" ' +
+        '<label>' + t.html('consoleEncryption.classLabel') +
+        ' <input type="text" ' +
         'name="cls" id="data-keys-cls" autocomplete="off"></label> ' +
-        '<button type="submit" id="data-keys-rotate">Rotate data keys' +
+        '<button type="submit" id="data-keys-rotate">' +
+        t.html('consoleEncryption.rotateDataKeys') +
         '</button></form>' +
-        '<p class="muted">Each key gets a successor, used once it has been ' +
-        'published; what the old key sealed is re-sealed by the ' +
-        're-encryption job.</p>' +
+        '<p class="muted">' + t.html('consoleEncryption.rotateNote') +
+        '</p>' +
         '<form method="post" action="/admin/encryption/data-keys">' +
         '<input type="hidden" name="action" value="reencrypt-data-keys">' +
-        '<button type="submit" id="data-keys-reencrypt">Re-encrypt now' +
-        '</button> — re-seals what is still under a superseded key, and ' +
-        'destroys a superseded key nothing is sealed under that has been ' +
-        'superseded long enough.</form>' +
+        '<button type="submit" id="data-keys-reencrypt">' +
+        t.html('consoleEncryption.reencryptNow') +
+        '</button>' + t.html('consoleEncryption.reencryptNote') + '</form>' +
         (life.counting
           ? '<form method="post" action="/admin/encryption/data-keys">' +
             '<input type="hidden" name="action" value="count-data-keys">' +
-            '<button type="submit" id="data-keys-count">Count now</button> ' +
-            '&mdash; counts what is sealed under every key, in one pass of ' +
-            'the store.</form>'
+            '<button type="submit" id="data-keys-count">' +
+            t.html('consoleEncryption.countNow') + '</button> ' +
+            t.html('consoleEncryption.countNote') + '</form>'
           : '') +
-        '<h4>Rotate the key-encryption key</h4>' +
+        '<h4>' + t.html('consoleEncryption.rotateKek') + '</h4>' +
         (life.kekRotation
           ? '<form method="post" action="/admin/encryption/data-keys">' +
             '<input type="hidden" name="action" value="rotate-kek">' +
-            '<button type="submit" id="kek-rotate">Rotate the ' +
-            'key-encryption key</button> &mdash; the key management ' +
-            'service makes a new version, and every data key is re-wrapped ' +
-            'under it. The earlier version stays: data keys other nodes ' +
-            'wrapped under it still unwrap. The identity this service runs ' +
-            'as must be allowed to rotate the key, which the deployments ' +
-            'here do not grant: they rotate it on the KMS\'s own ' +
-            'schedule.</form>'
-          : '<p class="muted">Not from here: ' +
-            kit.esc(life.kekRotationOffReason) + '.</p>');
+            '<button type="submit" id="kek-rotate">' +
+            t.html('consoleEncryption.rotateKekButton') + '</button>' +
+            t.html('consoleEncryption.rotateKekNote') + '</form>'
+          : '<p class="muted">' +
+            EncryptionPage.fill(
+              t.html('consoleEncryption.notFromHere',
+                     EncryptionPage.marks({ reason: 1 })),
+              { reason: life.kekRotationOffReason }) + '</p>');
+
     }
     return status + tiles + '<p class="muted">' + kit.esc(dk.note) +
            '</p>' + table + forms;
@@ -233,126 +277,128 @@ class EncryptionPage {
    */
   static body(ctx: Json, json: Json): string {
     const self = this;
+    const t = ctx.t;
 
     const tiles = '<div class="tiles">' +
-      kit.tile(String(json.accounting.operations), 'operations') +
-      kit.tile(String(json.accounting.encryptions), 'encryptions') +
-      kit.tile(String(json.accounting.decryptions), 'decryptions') +
-      kit.tile(String(json.accounting.failures), 'failed to open') +
+      kit.tile(String(json.accounting.operations),
+               t.text('consoleEncryption.tileOperations')) +
+      kit.tile(String(json.accounting.encryptions),
+               t.text('consoleEncryption.tileEncryptions')) +
+      kit.tile(String(json.accounting.decryptions),
+               t.text('consoleEncryption.tileDecryptions')) +
+      kit.tile(String(json.accounting.failures),
+               t.text('consoleEncryption.tileFailures')) +
       kit.tile(json.key.present
-        ? (json.key.persists ? 'durable' : 'ephemeral') : 'none',
-        'key-encryption key') +
-      kit.tile(json.mode, 'mode') +
+        ? (json.key.persists ? t.text('consoleEncryption.kekDurable')
+                             : t.text('consoleEncryption.kekEphemeral'))
+        : t.text('consoleEncryption.kekNone'),
+        t.text('consoleEncryption.tileKek')) +
+      kit.tile(json.mode, t.text('consoleEncryption.tileMode')) +
       '</div>';
 
+    // The two links are markup a message cannot carry, so the first
+    // paragraph is cut at each of them.
     const what = kit.note(
-      '<p>This page answers <strong>what this service encrypts at rest, with ' +
-      'which key, under which algorithm, and how much of it has ' +
-      'happened</strong>. It is under Monitoring rather than beside the ' +
-      'other two cryptography pages because of what it is: <a ' +
-      'href="/admin/crypto-metadata">the crypto report</a> says what this ' +
-      'service <em>does</em> when it signs or encrypts and reads the same on ' +
-      'a service that started a second ago, and <a href="/admin/keys">the ' +
-      'keys page</a> says what one realm <em>holds</em>. The numbers here go ' +
-      'up while you watch.</p><p><strong>Neither a sealed value nor an ' +
-      'opened one appears on this page.</strong> A sealed value is a private ' +
-      'key, an authenticator&rsquo;s shared secret or somebody&rsquo;s ' +
-      'recovery codes, and printing either half of one would hand over ' +
-      'exactly what the sealing exists to protect. Its only controls rotate ' +
-      'the data encryption keys, re-seal and count what they sealed, and ' +
-      'rotate a key-encryption key that is in a key management service ' +
-      '(which makes the new version itself), and they show nothing. A ' +
-      'key-encryption key READ into this process is rotated by deploying ' +
-      'its successor &mdash; this service reads one and never writes one ' +
-      '&mdash; and a <em>decrypt this</em> button would be the one door ' +
-      'onto material no door is supposed to have.</p>',
-      'What this page is, and the two things it deliberately has not got');
+      '<p>' + t.html('consoleEncryption.whatAnswers') +
+      ' <a href="/admin/crypto-metadata">' +
+      t.html('consoleEncryption.cryptoReport') + '</a>' +
+      t.html('consoleEncryption.whatDoes') +
+      ' <a href="/admin/keys">' + t.html('consoleEncryption.keysPage') +
+      '</a>' + t.html('consoleEncryption.whatHolds') + '</p><p>' +
+      t.html('consoleEncryption.whatNeither') + '</p>',
+      t.html('consoleEncryption.whatTitle'));
 
+    // The provider's label and note are the view's, drawn as they come.
     const keyBlock = kit.note(
-      '<p>The key-encryption key is read by <code>common/secrets.js</code> ' +
-      'from <strong>' + kit.esc(json.key.providerLabel) + '</strong> ' +
+      '<p>' + t.html('consoleEncryption.keyReadBy') + '<strong>' +
+      kit.esc(json.key.providerLabel) + '</strong> ' +
       '(<code>' + kit.esc(json.key.provider) + '</code>)' +
       (json.key.kmsKey ? ' &mdash; <strong>' + kit.esc(json.key.kmsKey) +
-        '</strong>, which never leaves it: the service holds a handle, ' +
-        'not the key, and asks it to wrap and unwrap each data key' : '') +
-      ', once, at startup ' +
-      'and before the listener binds. <code>file</code> is the default ' +
-      'because it needs nothing: Kubernetes mounts a Secret as a file, ' +
-      'Docker mounts a secret as a file, and every other provider here is ' +
-      'that same idea with somebody else&rsquo;s access control in front of ' +
-      'it.</p><p>' + json.key.note + '</p>' +
-      '<p><strong>A key shorter than 32 bytes is REFUSED rather than ' +
-      'stretched.</strong> Stretching would let a four-character password ' +
-      'protect every signing key this service holds while the log said ' +
-      'AES-256. Hex is tried before base64, because a 64-character hex ' +
-      'string is also valid base64 and reading it that way produces 48 ' +
-      'different bytes.</p><p class="muted">Available providers: ' +
+        '</strong>' + t.html('consoleEncryption.keyKms') : '') +
+      t.html('consoleEncryption.keyOnce') + '</p><p>' + json.key.note +
+      '</p>' +
+      '<p>' + t.html('consoleEncryption.keyShort') +
+      '</p><p class="muted">' + t.html('consoleEncryption.providers') + ' ' +
       json.key.providers.map(function (one) {
         return '<code>' + kit.esc(one.id) + '</code> ' + kit.esc(one.label);
-      }).join(', ') + '. <code>keys.kekProvider</code> selects one.</p>',
-      'Where the key comes from');
+      }).join(', ') + '. ' + t.html('consoleEncryption.providersSelect') +
+      '</p>',
+      t.html('consoleEncryption.keyTitle'));
 
     // **THE LIMITS, DRAWN AS A WARNING RATHER THAN A NOTE.** Everything else on
     // this page says what IS encrypted, and a reader who stops there comes away
     // believing more than is true — which is the shape of mistake this console
     // draws in amber everywhere else.
+    // The boundaries are the view's sentences, drawn as they come.
     const boundsBlock = kit.warn(
       '<p>' + kit.esc(json.boundaries.realms) + '</p>' +
       '<p>' + kit.esc(json.boundaries.storage) + '</p>' +
       '<p>' + kit.esc(json.boundaries.keyResidency) + '</p>',
-      'What this key does not separate, and what this page does not cover');
+      t.html('consoleEncryption.boundsTitle'));
 
+    // The values in <code> are the module's own figures; the row names and
+    // the "-bit" words around them stay as written, inside the code.
     const algBlock = kit.note(
       '<p>' + json.algorithmNote + '</p>' +
       '<table class="grid"><tbody>' +
-      [['Cipher', json.algorithm.cipher],
-       ['Key', json.algorithm.keyBits + '-bit'],
-       ['Nonce', json.algorithm.ivBits + '-bit, random per record'],
-       ['Authentication tag', json.algorithm.tagBits + '-bit'],
-       ['Data keys', json.algorithm.dataKeys],
-       ['Data key wrapping', json.algorithm.dekWrap],
-       ['Authenticated data', json.algorithm.aad],
-       ['Envelope', json.algorithm.envelope]].map(function (pair) {
-        return '<tr><th>' + kit.esc(pair[0]) + '</th><td><code>' +
-               kit.esc(String(pair[1])) + '</code></td></tr>';
-      }).join('') +
+      [[t.text('consoleEncryption.algCipher'), json.algorithm.cipher],
+       [t.text('consoleEncryption.algKey'), json.algorithm.keyBits + '-bit'],
+       [t.text('consoleEncryption.algNonce'),
+        json.algorithm.ivBits + '-bit, random per record'],
+       [t.text('consoleEncryption.algTag'), json.algorithm.tagBits + '-bit'],
+       [t.text('consoleEncryption.algDataKeys'), json.algorithm.dataKeys],
+       [t.text('consoleEncryption.algWrapping'), json.algorithm.dekWrap],
+       [t.text('consoleEncryption.algAad'), json.algorithm.aad],
+       [t.text('consoleEncryption.algEnvelope'), json.algorithm.envelope]]
+        .map(function (pair) {
+          return '<tr><th>' + kit.esc(pair[0]) + '</th><td><code>' +
+                 kit.esc(String(pair[1])) + '</code></td></tr>';
+        }).join('') +
       '</tbody></table>' +
-      '<p class="muted">Every figure in that table is read out of ' +
-      '<code>common/crypto.js</code>&rsquo;s own <code>KEK_PARAMETERS</code> ' +
-      'rather than written down here &mdash; the same rule ' +
-      '<a href="/admin/crypto-metadata">the crypto report</a> follows about ' +
-      'reading an algorithm table from the module that performs the ' +
-      'algorithm, so this page cannot go on looking complete while being ' +
-      'wrong.</p>',
-      'The algorithm, and why it is authenticated');
+      '<p class="muted">' + t.html('consoleEncryption.algFigures') +
+      ' <a href="/admin/crypto-metadata">' +
+      t.html('consoleEncryption.cryptoReport') + '</a>' +
+      t.html('consoleEncryption.algFiguresAfter') + '</p>',
+      t.html('consoleEncryption.algTitle'));
 
     const countsBlock = kit.note(
       '<p>' + json.accountingNote + '</p><p>' + json.failuresNote + '</p>' +
-      '<p class="muted">Since ' + self.when(json.accounting.since) +
-      '. First operation ' + self.when(json.accounting.firstAt) +
-      ', most recent ' + self.when(json.accounting.lastAt) + '. ' +
-      kit.esc(self.bytes(json.accounting.plaintextBytes)) +
-      ' of plaintext has ' +
-      'passed through, producing ' +
-      kit.esc(self.bytes(json.accounting.ciphertextBytes)) +
-      ' of ciphertext.</p>',
-      'How the counting works, and what a failure means');
+      '<p class="muted">' +
+      t.html('consoleEncryption.countsSince',
+             { since: '\u0001since\u0001', first: '\u0001first\u0001',
+               last: '\u0001last\u0001',
+               plain: self.bytes(json.accounting.plaintextBytes),
+               cipher: self.bytes(json.accounting.ciphertextBytes) })
+        // The three times are markup (a "never" is a span), so they are
+        // put in after the message, at markers.
+        .split('\u0001since\u0001')
+        .join(self.when(json.accounting.since, t))
+        .split('\u0001first\u0001')
+        .join(self.when(json.accounting.firstAt, t))
+        .split('\u0001last\u0001')
+        .join(self.when(json.accounting.lastAt, t)) +
+      '</p>',
+      t.html('consoleEncryption.countsTitle'));
 
     const storeBlock = kit.note(
-      '<p>' + json.store.note + ' This service is on the <strong>' +
-      kit.esc(json.store.mode) + '</strong> store, and what it MINTS ' +
-      (json.store.persistsMinted ? 'IS' : 'is NOT') + ' persisted.</p>',
-      'The store underneath all of it');
+      '<p>' + json.store.note + ' ' +
+      t.html(json.store.persistsMinted ? 'consoleEncryption.storeIs'
+                                       : 'consoleEncryption.storeIsNot',
+             { mode: json.store.mode }) + '</p>',
+      t.html('consoleEncryption.storeTitle'));
 
     return tiles + what +
-                  '<h3>What is encrypted, and what is not</h3>' +
-                  self.classesTable(json) +
-                  self.unclassifiedBlock(json) +
-                  '<h3>The key</h3>' + keyBlock + boundsBlock +
-                  '<h3>The algorithm</h3>' + algBlock +
-                  '<h3>The data encryption keys</h3>' +
+                  '<h3>' + t.html('consoleEncryption.hEncrypted') + '</h3>' +
+                  self.classesTable(json, t) +
+                  self.unclassifiedBlock(json, t) +
+                  '<h3>' + t.html('consoleEncryption.hKey') + '</h3>' +
+                  keyBlock + boundsBlock +
+                  '<h3>' + t.html('consoleEncryption.hAlgorithm') + '</h3>' +
+                  algBlock +
+                  '<h3>' + t.html('consoleEncryption.hDataKeys') + '</h3>' +
                   self.renderDataKeys(ctx, json) +
-                  '<h3>The counting</h3>' + countsBlock +
+                  '<h3>' + t.html('consoleEncryption.hCounting') + '</h3>' +
+                  countsBlock +
                   storeBlock;
   }
 }

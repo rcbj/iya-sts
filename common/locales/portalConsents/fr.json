@@ -1,0 +1,19 @@
+{
+  "sub": "Ce que vous avez accepté que chaque application puisse demander à ce fournisseur d’identité en votre nom. <strong>Un retrait prend effet immédiatement</strong> : chaque jeton que l’application détient pour vous au titre de ce que vous retirez cesse de fonctionner — y compris celui qui lui permet d’agir en votre absence (<code>offline_access</code>) — et elle ne peut pas les renouveler, même si vous acceptez de nouveau plus tard ; elle doit vous redemander. Retirer un élément met fin à tout ce qui a été accordé à l’application en même temps que lui.",
+  "adminNote": "Certaines applications sont acceptées pour tout le monde par l’exploitant de ce service, et on ne vous a jamais demandé votre avis à leur sujet ; elles figurent ci-dessous sous <strong>Consentements administratifs</strong>, et il ne vous appartient pas de les retirer.",
+  "agreed": "Vous avez accepté qu’elle demande",
+  "when": "Quand",
+  "withdraw": "Retirer",
+  "withdrawAll": "Tout retirer pour cette application",
+  "none": "Vous n’avez rien accepté qui soit enregistré. Une application vous pose la question la première fois qu’elle souhaite quelque chose en votre nom, et votre réponse apparaît ici.",
+  "previous": "Précédent",
+  "next": "Suivant",
+  "pageOf": "Page {page} sur {pages}",
+  "adminHeading": "Consentements administratifs",
+  "adminSub": "L’exploitant de ce service les a acceptés au nom de toutes les personnes qui utilisent l’application ; on ne vous a donc pas demandé votre avis. Ils ont été appliqués lorsque vous vous êtes connecté à l’application. Seul un administrateur peut les retirer ; adressez-vous au vôtre si vous souhaitez en supprimer un.",
+  "forEverybody": "Accepté pour tout le monde",
+  "firstApplied": "Appliqué pour la première fois à vous",
+  "adminNone": "Aucune application n’a utilisé de consentement accepté pour tout le monde lorsque vous vous y êtes connecté.",
+  "doneScope": "Retiré : {name} ne peut plus demander {scope}. Elle vous redemandera la prochaine fois.",
+  "doneApplication": "Retiré : {name} ne peut plus rien demander. Elle vous redemandera la prochaine fois."
+}

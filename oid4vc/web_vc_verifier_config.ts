@@ -40,76 +40,49 @@ class VcVerifierConfigPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // THE WORDS ARE THE CATALOG'S (#539): `consoleVcVerifierConfig`, whose
+    // English is exactly what this page drew before. Prose that names a path
+    // as a link is split at the link, because a message carries no element
+    // with an attribute.
+    const t = ctx.t;
     const format = json.format;
     const requested = json.requested;
     const query = json.dcqlQuery;
 
-    const inner = kit.note('What the mock Verifier at <a ' +
-      'href="/oid4vp/verifier">/oid4vp/verifier</a> — the pages call it ' +
-      '<em>The Bar Door</em> — asks a wallet for, and in which credential ' +
-      'format. It reaches the wire as the <code>dcql_query</code> of the ' +
-      'next OID4VP Authorization Request, and it is what the Verifier then ' +
-      'checks the presentation against: a claim asked for and not ' +
-      'presented fails the <em>Requested claims</em> check by name.') +
+    const inner = kit.note(t.html('consoleVcVerifierConfig.intro1') + '<a ' +
+      'href="/oid4vp/verifier">/oid4vp/verifier</a>' +
+      t.html('consoleVcVerifierConfig.intro2')) +
 
-      kit.note('The claims are the same catalogue <a ' +
-      'href="/admin/vc">/admin/vc</a> fills a credential from, grouped ' +
-      'into <strong>claims</strong> rather than listed as attribute types. ' +
-      'A credential carries one Disclosure per top-level claim, so ' +
-      '<code>address</code> is one unit of disclosure however many LDAP ' +
-      'attributes feed it — asking for it gets the street, the locality, ' +
-      'the region, the postal code and the country together, and a page ' +
-      'offering six address checkboxes would be offering a choice that ' +
-      'does not exist on the wire.') +
+      kit.note(t.html('consoleVcVerifierConfig.catalogue1') + '<a ' +
+      'href="/admin/vc">/admin/vc</a>' +
+      t.html('consoleVcVerifierConfig.catalogue2')) +
 
-      kit.warn('<strong>This asks; it does not admit anybody.</strong> A ' +
-      'presentation made to this door starts no session, issues no token ' +
-      'and grants no access — the door says yes and that is the whole of ' +
-      'it. Signing in with a wallet is a different door, <code>' +
-      '/authn/wallet</code>, which asks for a credential this realm ' +
-      'issued with a request of its own and is not configured here ' +
-      '(<a href="/admin/oid4vp">OpenID4VP</a> has its switch). The two ' +
-      'settings are also deliberately separate: this page decides what is ' +
-      'ASKED FOR and <a href="/admin/vc">/admin/vc</a> decides what is ' +
-      'ISSUED, so that asking for a claim the issuer does not mint stays ' +
-      'reachable. That is the negative worth testing, and one page setting ' +
-      'both would make it impossible to reach.') +
+      kit.warn(t.html('consoleVcVerifierConfig.asks1') +
+      '<a href="/admin/oid4vp">OpenID4VP</a>' +
+      t.html('consoleVcVerifierConfig.asks2') +
+      '<a href="/admin/vc">/admin/vc</a>' +
+      t.html('consoleVcVerifierConfig.asks3')) +
 
-      '<h2>The claims</h2>' +
+      '<h2>' + t.html('consoleVcVerifierConfig.hClaims') + '</h2>' +
       (requested.length
-        ? kit.note('Asking for ' + requested.length + ': ' +
+        ? kit.note(t.html('consoleVcVerifierConfig.askingFor',
+                          { n: requested.length }) +
                     kit.codeList(requested) +
                     '.')
-        : kit.warn('<strong>No claim is selected, and that is a real ' +
-          'request rather than an empty form.</strong> DCQL reads an ' +
-          'absent <code>claims</code> member as the WHOLE credential, so ' +
-          'the query below carries none and the wallet is being asked for ' +
-          'everything — the opposite of what selective disclosure is for, ' +
-          'which is exactly why it is worth being able to ask for it.')) +
-      VcVerifierConfigPage.vpClaimsSection(json) +
+        : kit.warn(t.html('consoleVcVerifierConfig.noClaim'))) +
+      VcVerifierConfigPage.vpClaimsSection(json, t) +
 
-      '<h2>The credential types that can be submitted</h2>' +
-      VcVerifierConfigPage.vpFormatsSection(json) +
+      '<h2>' + t.html('consoleVcVerifierConfig.hFormats') + '</h2>' +
+      VcVerifierConfigPage.vpFormatsSection(json, t) +
 
-      '<h2>The query this builds</h2>' +
-      kit.note('Built by the function that builds the real one, not by a ' +
-      'second walk of the table above — a preview that agreed with this ' +
-      'page and disagreed with the request would be worse than no preview. ' +
-      'It is the <code>dcql_query</code> parameter of the next ' +
-      'Authorization Request, by value or inside the signed Request ' +
-      'Object.') +
+      '<h2>' + t.html('consoleVcVerifierConfig.hQuery') + '</h2>' +
+      kit.note(t.html('consoleVcVerifierConfig.queryNote')) +
       '<textarea readonly spellcheck="false">' +
-      kit.esc(JSON.stringify(query, null, 2)) + '</textarea><h2>What ' +
-      'this page does not change</h2>' +
-      kit.note('Not what the issuer mints — that is <a ' +
-      'href="/admin/vc">/admin/vc</a>, and the <em>Issued now</em> column ' +
-      'above is this page reporting on that one. Not a request already in ' +
-      'flight, which keeps the claims it was built with. Not the ' +
-      '<code>vct</code> or the type array a credential is identified by. ' +
-      'And not what a verified presentation is worth: nothing here turns ' +
-      'one into a credential of any kind, and nothing here decides whether ' +
-      'one signs anybody in — that is <code>/authn/wallet</code>\'s ' +
-      'question, asked only of a credential this realm issued.');
+      kit.esc(JSON.stringify(query, null, 2)) + '</textarea><h2>' +
+      t.html('consoleVcVerifierConfig.hNotChange') + '</h2>' +
+      kit.note(t.html('consoleVcVerifierConfig.notChange1') + '<a ' +
+      'href="/admin/vc">/admin/vc</a>' +
+      t.html('consoleVcVerifierConfig.notChange2'));
 
     return inner;
   }
@@ -122,46 +95,51 @@ class VcVerifierConfigPage {
    * already in flight.
    *
    * @param json - the page's view (`vpConfigJson()`)
+   * @param t - the page's translator (#539)
    * @returns the forms and notes as HTML
    */
-  static vpClaimsSection(json) {
+  static vpClaimsSection(json, t) {
     const format = json.format;
     const rows = json.catalogue.map(function (
-        row) { return VcVerifierConfigPage.vpClaimRow(row, format); }).join('');
+        row) {
+      return VcVerifierConfigPage.vpClaimRow(row, format, t);
+    }).join('');
     const omitted = format === 'ldp_vc' ? json.ldpOmitted : [];
     return '<form method="post" action="/admin/vc-verifier-config"><input ' +
-      'type="hidden" name="action" value="select"><table><tr><th>Ask</th><th>' +
-      'Claim</th><th>Label</th><th>LDAP attribute (defined by)</th><th>DCQL ' +
-      'path (' + kit.esc(format) + ')</th><th>ldp_vc term</th>' +
-      '<th>Issued now</th></tr>' + rows + '</table>' +
-      VcVerifierConfigPage.vpExtraRows(format, json.extras) +
-      '<div class="formrow"><button>Save this request</button>' +
-      kit.note('It applies to the next Authorization Request. One already ' +
-      'in flight keeps the claims it was built with — a Verifier that judged ' +
-      'a presentation against a list changed after it asked would refuse a ' +
-      'wallet for answering the question it was really ' +
-      'asked.') + '</div></form>' +
+      'type="hidden" name="action" value="select"><table><tr><th>' +
+      t.html('consoleVcVerifierConfig.thAsk') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thClaim') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thLabel') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thLdap') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thPath', { format: format }) +
+      '</th><th>' + t.html('consoleVcVerifierConfig.thLdpTerm') + '</th>' +
+      '<th>' + t.html('consoleVcVerifierConfig.thIssuedNow') + '</th></tr>' +
+      rows + '</table>' +
+      VcVerifierConfigPage.vpExtraRows(format, json.extras, t) +
+      '<div class="formrow"><button>' +
+      t.html('consoleVcVerifierConfig.save') + '</button>' +
+      kit.note(t.html('consoleVcVerifierConfig.nextRequest')) +
+      '</div></form>' +
+      // The list of names is markup, so it stays in code; the verb agrees
+      // with how many there are through the message's plural.
       (omitted.length
         ? kit.note('<strong>' + kit.codeList(omitted) + '</strong> ' +
-          (omitted.length === 1 ? 'is asked for and is' :
-           'are asked for and are') +
-          ' dropped from an <code>ldp_vc</code> query. That format is signed ' +
-          'over canonicalized JSON-LD, so only terms the vendored context ' +
-          'defines can be named at all, and asking under a name it does not ' +
-          'define would fail canonicalization rather than return less. The ' +
-          'two JOSE-secured formats ask for all of them.')
+          t.html('consoleVcVerifierConfig.ldpOmitted',
+                 { n: omitted.length }))
         : '') +
       '<div class="formrow"><form method="post" ' +
       'action="/admin/vc-verifier-config" class="inline"><input ' +
-      'type="hidden" name="action" value="add"><label for="claim">Also ask ' +
-      'for a claim that is not in the catalogue</label><input type="text" ' +
+      'type="hidden" name="action" value="add"><label for="claim">' +
+      t.html('consoleVcVerifierConfig.alsoAsk') + '</label><input ' +
+      'type="text" ' +
       'id="claim" name="claim" size="24" ' +
       'placeholder="drivers_licence_number"><button ' +
-      'class="secondary">Add</button></form> <form method="post" ' +
+      'class="secondary">' + t.html('consoleVcVerifierConfig.add') +
+      '</button></form> <form method="post" ' +
       'action="/admin/vc-verifier-config" class="inline"><input ' +
       'type="hidden" name="action" value="defaults"><button ' +
-      'class="secondary">Back to what this process started ' +
-      'with</button></form></div>';
+      'class="secondary">' + t.html('consoleVcVerifierConfig.backToStart') +
+      '</button></form></div>';
   }
 
   // The credential types a wallet may submit, and which one an unqualified
@@ -174,9 +152,10 @@ class VcVerifierConfigPage {
    * presentation request asks for, with what each format is.
    *
    * @param json - the page's view (`vpConfigJson()`)
+   * @param t - the page's translator (#539)
    * @returns the form and notes as HTML
    */
-  static vpFormatsSection(json) {
+  static vpFormatsSection(json, t) {
     const format = json.format;
     const rows = json.formats.map(function (item) {
       const configs = item.configurations.map(function (id) {
@@ -195,32 +174,28 @@ class VcVerifierConfigPage {
         '<td>' + configs + '</td>' +
         '<td><a href="' + kit.esc('/oid4vp/verifier?format=' +
                                    encodeURIComponent(item.id)) +
-        '">Present one</a></td></tr>';
+        '">' + t.html('consoleVcVerifierConfig.presentOne') + '</a></td></tr>';
     }).join('');
     return '<form method="post" action="/admin/vc-verifier-config"><input ' +
       'type="hidden" name="action" ' +
-      'value="format"><table><tr><th>Default</th><th>Format</th><th>' +
-      'Identified ' +
-      'in DCQL by</th><th>Selective disclosure</th><th>Holder ' +
-      'binding</th><th>Issued here as</th><th></th></tr>' +
+      'value="format"><table><tr><th>' +
+      t.html('consoleVcVerifierConfig.thDefault') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thFormat') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thIdentifiedBy') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thSelective') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thHolderBinding') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thIssuedAs') + '</th><th></th></tr>' +
       rows + '</table>' +
-      '<div class="formrow"><button>Ask for this one by default</button>' +
-      kit.note('The default is what <code>/oid4vp/start</code> asks for ' +
-      'when the link that reached it names no format. The bar door\'s three ' +
-      'format buttons name one explicitly, so they are unaffected — a button ' +
-      'saying "present an SD-JWT VC" that asked for something else would be ' +
-      'lying in the one place a reader is most likely to trust it.') +
+      '<div class="formrow"><button>' +
+      t.html('consoleVcVerifierConfig.askDefault') + '</button>' +
+      kit.note(t.html('consoleVcVerifierConfig.defaultNote')) +
       '</div></form>' +
+      // Each format's `what` is the view's prose, drawn as it comes.
       kit.note(json.formats.map(function (item) {
         return '<strong>' + kit.esc(item.id) + '</strong> — ' +
                kit.esc(item.what);
       }).join('<br><br>')) +
-      kit.note('The identifying values are not settable here. They are what ' +
-      'this service\'s own issuer mints (<code>vc_configs.js</code>), and a ' +
-      'Verifier asking for a <code>vct</code> nobody here issues would be a ' +
-      'request no wallet in this stack could ever satisfy — a negative worth ' +
-      'having, but one that belongs to the issuer\'s configuration rather ' +
-      'than to a text box on this page.');
+      kit.note(t.html('consoleVcVerifierConfig.notSettable'));
   }
 
   // One catalogue row. The DCQL path column is shown for the format the next
@@ -235,9 +210,10 @@ class VcVerifierConfigPage {
    *
    * @param row - the requestable claim row
    * @param format - the credential format the DCQL paths are shown for
+   * @param t - the page's translator (#539)
    * @returns the table row as HTML
    */
-  static vpClaimRow(row, format) {
+  static vpClaimRow(row, format, t) {
     // The catalogue row as the view carries it (#446).
     const on = row.requested;
     const paths = row.paths;
@@ -251,20 +227,23 @@ class VcVerifierConfigPage {
       (on ? ' checked' : '') + '></td>' +
       '<td><code>' + kit.esc(row.claim) + '</code>' +
       (row.nested ?
-       '<br><span class="state-none">one object, ' + row.attributes.length +
-                    ' attributes</span>' : '') + '</td>' +
+       '<br><span class="state-none">' +
+       t.html('consoleVcVerifierConfig.oneObject',
+              { n: row.attributes.length }) +
+       '</span>' : '') + '</td>' +
       '<td>' + kit.esc(row.label) + '</td>' +
       '<td>' + attributes + '</td>' +
       '<td>' + (paths.length
         ? paths.map(function (path) {
           return '<code>' + kit.esc(JSON.stringify(path)) + '</code>';
         }).join('<br>')
-        : '<span class="state-expired">cannot be asked for in this ' +
-          'format</span>') + '</td><td>' +
+        : '<span class="state-expired">' +
+          t.html('consoleVcVerifierConfig.cannotAsk') + '</span>') +
+          '</td><td>' +
           (row.ldpTerms.length ? kit.codeList(row.ldpTerms)
                                     : '<span class="state-none">—</span>') +
       '</td>' +
-      VcVerifierConfigPage.vpIssuedCell(row.issued) + '</tr>';
+      VcVerifierConfigPage.vpIssuedCell(row.issued, t) + '</tr>';
   }
 
   // The claims being asked for that are NOT in the catalogue. Rendered as
@@ -277,20 +256,19 @@ class VcVerifierConfigPage {
    *
    * @param format - the credential format the DCQL paths are shown for
    * @param extras - the view's `extras`
+   * @param t - the page's translator (#539)
    * @returns the heading, note and table as HTML, or an empty string
    */
-  static vpExtraRows(format, extras) {
+  static vpExtraRows(format, extras, t) {
     if (!extras.length) {
       return '';
     }
-    return '<h3>Asked for, and not in the catalogue</h3>' +
-      kit.note('Nothing this service issues carries these, which is what ' +
-      'makes them worth asking for: it is the only way to see what a wallet ' +
-      'does with a request it cannot satisfy, and what this Verifier says ' +
-      'when it checks. They are ticked below so that saving the table above ' +
-      'keeps them — untick one to stop asking for it.') +
-      '<table><tr><th>In</th><th>Claim</th><th>DCQL path (' + kit.esc(format) +
-      ')</th></tr>' +
+    return '<h3>' + t.html('consoleVcVerifierConfig.hExtras') + '</h3>' +
+      kit.note(t.html('consoleVcVerifierConfig.extrasNote')) +
+      '<table><tr><th>' + t.html('consoleVcVerifierConfig.thIn') +
+      '</th><th>' + t.html('consoleVcVerifierConfig.thClaim') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thPath', { format: format }) +
+      '</th></tr>' +
       extras.map(function (row) {
         const paths = row.paths;
         return '<tr><td><input type="checkbox" name="claim" value="' +
@@ -312,23 +290,28 @@ class VcVerifierConfigPage {
    * mints the claim the Verifier asks for, wholly, partly or not at all.
    *
    * @param carried - the catalogue row's `issued` (`carriedNow()`)
+   * @param t - the page's translator (#539)
    * @returns the table cell as HTML
    */
-  static vpIssuedCell(carried) {
+  static vpIssuedCell(carried, t) {
     if (!carried.known) {
-      return '<td><span class="state-none">not a claim this service ' +
-             'issues</span></td>';
+      return '<td><span class="state-none">' +
+             t.html('consoleVcVerifierConfig.notIssued') + '</span></td>';
     }
     if (!carried.carried.length) {
-      return '<td><span class="state-expired">no — not selected on ' +
+      return '<td><span class="state-expired">' +
+             t.html('consoleVcVerifierConfig.noNotSelected') +
              '<a href="/admin/vc">/admin/vc</a></span></td>';
     }
     if (carried.missing.length) {
-      return '<td><span class="state-expired">partly — ' +
+      return '<td><span class="state-expired">' +
+             t.html('consoleVcVerifierConfig.partly') +
              kit.codeList(carried.missing) +
-             ' not selected</span></td>';
+             t.html('consoleVcVerifierConfig.partlyNotSelected') +
+             '</span></td>';
     }
-    return '<td><span class="state-valid">yes</span></td>';
+    return '<td><span class="state-valid">' +
+           t.html('consoleVcVerifierConfig.yes') + '</span></td>';
   }
 }
 

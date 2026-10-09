@@ -38,12 +38,8 @@ type Json = any;
 
 // `user_graph.ts`'s FLOW_NOT_STATED sentence, copied: the browser cannot
 // require that module, and a token that states no grant is drawn with it.
-const FLOW_NOT_STATED_WHAT =
-  'Whatever minted this said nothing about how. That is true of every ' +
-  'JWT signed outside the token endpoint — WS-Trust\'s JWT token type ' +
-  'and the credential issuer both sign directly — and of the signed ' +
-  'UserInfo response, which is a reply rather than a credential a ' +
-  'grant produced.';
+// Since #539 it is the message `consoleDelegation.flowNotStated`, which
+// userFlowCell() draws through the page's translator.
 
 /**
  * Draws the delegation pages and the pieces they share from their answers.
@@ -69,14 +65,15 @@ class DelegationPage {
    * @param params - the page's query, carried into the two links
    * @returns the drawing and its note as HTML
    */
-  static drawing(json: Json, path: string, params: Json): string {
+  static drawing(t, json: Json, path: string, params: Json): string {
     const drawn = json.drawing || {};
     return '<div class="diagram">' + json.svg + '</div>' +
       kit.note(drawn.width + '&times;' + drawn.height + ' — ' +
       '<a href="' + kit.esc(path + kit.queryWith(params, { format: 'svg' })) +
-      '">the document on its own</a> (SVG, no links in it), or ' +
+      '">' + t.html('consoleDelegation.drawingSvg') + '</a>' +
+      t.html('consoleDelegation.drawingSvgNote') +
       '<a href="' + kit.esc(path + kit.queryWith(params, { format: 'json' })) +
-      '">the graph as JSON</a>.' +
+      '">' + t.html('consoleDelegation.drawingJson') + '</a>.' +
       (drawn.failed ? ' <span class="state-revoked">The layout failed: ' +
         kit.esc(drawn.failed) + '</span>' : ''));
   }
@@ -106,10 +103,10 @@ class DelegationPage {
    *   `apps` (the registered applications named on the page)
    * @returns the cell's content as HTML, or a dash
    */
-  static delegationPartyCell(party, facts) {
+  static delegationPartyCell(t, party, facts) {
     const parts = [];
     if (party.key) {
-      parts.push(GroupsPage.usersPageCell(party.key, facts.users));
+      parts.push(GroupsPage.usersPageCell(party.key, facts.users, t));
       if (party.presented && party.presented !== party.key) {
         parts.push('<code>' + kit.esc(party.presented) + '</code>');
       }
@@ -121,22 +118,17 @@ class DelegationPage {
       parts.push(registered
         ? '<a href="' + kit.esc('/admin/applications' +
             kit.queryWith({ application: party.application }, {})) + '" ' +
-          'title="This application is in the registry (ou=applications).">' +
+          'title="' + t.html('consoleDelegation.partyRegisteredTitle') +
+          '">' +
           kit.esc(party.application) + '</a>'
-        : '<span class="state-none" title="No entry under ou=applications ' +
-          'names this. The registry holds what this service has been ASKED ' +
-          'ABOUT — a client_id presented, an AppliesTo a token was issued ' +
-          'for, an SPN a ticket was cut for — and this delegation named ' +
-          'something nobody has otherwise mentioned. That is ordinary for an ' +
-          'RFC 8693 audience and is worth seeing rather than ' +
-          'hiding.">' + kit.esc(party.application) +
-          ' <em>(not in the registry)</em></span>');
+        : '<span class="state-none" title="' +
+          t.html('consoleDelegation.partyUnregisteredTitle') + '">' +
+          kit.esc(party.application) + ' ' +
+          t.html('consoleDelegation.partyUnregistered') + '</span>');
     }
     if (!parts.length) {
-      return '<span class="state-none" title="Nothing here names this party, ' +
-        'and on some mechanisms nothing can: a forwarded ticket-granting ' +
-        'ticket is handed to whichever service the client chooses, and this ' +
-        'KDC is never told which.">&mdash;</span>';
+      return '<span class="state-none" title="' +
+        t.html('consoleDelegation.partyNoneTitle') + '">&mdash;</span>';
     }
     return parts.join('<br>');
   }
@@ -154,18 +146,16 @@ class DelegationPage {
    * @param mode - `impersonation`, `delegation` or anything else
    * @returns a <span> as HTML, a dash for any other mode
    */
-  static modeCell(mode) {
+  static modeCell(t, mode) {
     if (mode === 'impersonation') {
-      return '<span class="state-expired" title="What came out names the ' +
-        'initial identity and nothing else. The far end cannot tell an ' +
-        'intermediary was involved, and neither can anybody reading the ' +
-        'credential afterwards — which is why the issuer is the only place ' +
-        'this is ever visible.">impersonation</span>';
+      return '<span class="state-expired" title="' +
+        t.html('consoleDelegation.modeImpersonationTitle') + '">' +
+        t.html('consoleDelegation.modeImpersonation') + '</span>';
     }
     if (mode === 'delegation') {
-      return '<span class="state-valid" title="What came out CARRIES the ' +
-        'chain: an `act` claim, a composite ActAs, or S4U_DELEGATION_INFO in ' +
-        'the PAC. The far end can see who is really asking.">delegation</span>';
+      return '<span class="state-valid" title="' +
+        t.html('consoleDelegation.modeDelegationTitle') + '">' +
+        t.html('consoleDelegation.modeDelegation') + '</span>';
     }
     return '<span class="state-none">&mdash;</span>';
   }
@@ -184,15 +174,14 @@ class DelegationPage {
    * @param type - the act's mechanism
    * @returns HTML
    */
-  static kerberosModeNote(type) {
+  static kerberosModeNote(t, type) {
     if (type === 'krb5-s4u2self') {
-      return '<br><span class="state-none">[MS-SFU] protocol transition: ' +
-        'impersonation, whatever follows it</span>';
+      return '<br><span class="state-none">' +
+        t.html('consoleDelegation.s4u2selfNote') + '</span>';
     }
     if (type === 'krb5-s4u2proxy-classic' || type === 'krb5-s4u2proxy-rbcd') {
-      return '<br><span class="state-none">[MS-SFU] constrained ' +
-        'delegation: always delegation, even after S4U2Self — the ticket ' +
-        'carries the chain in S4U_DELEGATION_INFO</span>';
+      return '<br><span class="state-none">' +
+        t.html('consoleDelegation.s4u2proxyNote') + '</span>';
     }
     return '';
   }
@@ -249,14 +238,14 @@ class DelegationPage {
    * @param row - a delegation row
    * @returns a <span> as HTML
    */
-  static delegationOutcomeCell(row) {
+  static delegationOutcomeCell(t, row) {
     if (row.outcome === 'issued') {
-      return '<span class="state-valid">issued</span>';
+      return '<span class="state-valid">' +
+        t.html('consoleDelegation.outcomeIssued') + '</span>';
     }
-    return '<span class="state-revoked" title="This service refused the ' +
-      'delegation. The reason is the KDC\'s own words — the same text the ' +
-      'client was sent — rather than a second wording written for this ' +
-      'page.">refused</span>';
+    return '<span class="state-revoked" title="' +
+      t.html('consoleDelegation.outcomeRefusedTitle') + '">' +
+      t.html('consoleDelegation.outcomeRefused') + '</span>';
   }
 
   // TEN COLUMNS RATHER THAN TWELVE, and the two that were merged were merged
@@ -286,7 +275,7 @@ class DelegationPage {
    *   (default true), false on the chain page itself
    * @returns a <tr> as HTML
    */
-  static delegationRow(row, facts, options) {
+  static delegationRow(t, row, facts, options) {
     const opts = options || {};
     const chainLink = opts.chainLink === undefined ? true : !!opts.chainLink;
     return '<tr>' +
@@ -304,24 +293,23 @@ class DelegationPage {
         (chainLink
           ? '<br><a href="' + kit.esc('/admin/delegation/chain' +
               kit.queryWith(opts.listView || {}, { chain: row.chainKey })) +
-            '" title="Draw THIS relationship on its own — the whole chain ' +
-            'this act belongs to, with everything else in the service left ' +
-            'out.">chain</a>'
+            '" title="' + t.html('consoleDelegation.rowChainTitle') + '">' +
+            t.html('consoleDelegation.rowChain') + '</a>'
           : '') + '</td>' +
       '<td>' + kit.esc(kit.whenText(row.at)) + '</td>' +
       '<td><code>' + kit.esc(row.type) + '</code><br>' +
         '<span class="state-none">' + kit.esc(row.typeLabel) + '</span><br>' +
         '<span class="state-none">' + kit.esc(row.protocol) +
         (row.spec ? ' &middot; ' + kit.esc(row.spec) : '') + '</span></td>' +
-      '<td>' + DelegationPage.modeCell(row.mode) +
-        DelegationPage.kerberosModeNote(row.type) + '</td>' +
-      '<td>' + DelegationPage.delegationOutcomeCell(row) + '</td>' +
+      '<td>' + DelegationPage.modeCell(t, row.mode) +
+        DelegationPage.kerberosModeNote(t, row.type) + '</td>' +
+      '<td>' + DelegationPage.delegationOutcomeCell(t, row) + '</td>' +
       '<td class="who">' +
-        DelegationPage.delegationPartyCell(row.initial, facts) + '</td>' +
+        DelegationPage.delegationPartyCell(t, row.initial, facts) + '</td>' +
       '<td class="who">' +
-        DelegationPage.delegationPartyCell(row.intermediary, facts) +
+        DelegationPage.delegationPartyCell(t, row.intermediary, facts) +
       '</td><td class="who">' +
-        DelegationPage.delegationPartyCell(row.target, facts) + '</td>' +
+        DelegationPage.delegationPartyCell(t, row.target, facts) + '</td>' +
       '<td>' + (row.outcome === 'refused'
                 ? kit.esc(row.reason)
                 : (row.authorizedBy ? kit.esc(row.authorizedBy)
@@ -331,8 +319,10 @@ class DelegationPage {
          '</span>' :
          '') +
       '</td><td class="who">' +
-        DelegationPage.delegationCredentialCell(row.consumed, '&rarr; in') +
-        DelegationPage.delegationCredentialCell(row.produced, '&larr; out') +
+        DelegationPage.delegationCredentialCell(row.consumed,
+          '&rarr; ' + t.html('consoleDelegation.credentialIn')) +
+        DelegationPage.delegationCredentialCell(row.produced,
+          '&larr; ' + t.html('consoleDelegation.credentialOut')) +
         '</td>' +
       '</tr>';
   }
@@ -350,56 +340,60 @@ class DelegationPage {
    * @param look - the node's look (label, identifier, shape, dashed)
    * @returns the row as HTML, or '' for the service's own node
    */
-  static delegationNodeRow(node, facts, look) {
+  static delegationNodeRow(t, node, facts, look) {
     if (node.kind === 'sts') {
       return '';
     }
     const party = { key: node.key, presented: node.presented,
                     application: node.application, what: node.what };
     const roles = [];
-    if (node.roles.initial) roles.push(node.roles.initial +
-                                       ' × initial identity');
-    if (node.roles.intermediary) roles.push(node.roles.intermediary + ' × ' +
-        'intermediary');
-    if (node.roles.target) roles.push(node.roles.target + ' × target');
+    if (node.roles.initial) roles.push(t.html('consoleDelegation.nodeInitial',
+                                              { n: node.roles.initial }));
+    if (node.roles.intermediary) roles.push(
+      t.html('consoleDelegation.nodeIntermediary',
+             { n: node.roles.intermediary }));
+    if (node.roles.target) roles.push(t.html('consoleDelegation.nodeTarget',
+                                             { n: node.roles.target }));
     return '<tr>' +
       '<td>' + kit.esc(look.label) +
         (look.identifier
-          ? '<br><span class="state-none" title="What a protocol would have ' +
-            'to present to reach this party, and that protocol\'s own word ' +
-            'for it. It is the second line inside the box in the picture ' +
-            'above; where the label IS the identifier, only the word is ' +
-            'drawn.">' +
+          ? '<br><span class="state-none" title="' +
+            t.html('consoleDelegation.nodeIdentifierTitle') + '">' +
             kit.esc(look.identifier) + '</span>'
           : '') + '</td>' +
       '<td>' + (look.shape === 'both'
-                  ? 'person <strong>and</strong> application'
-                  : look.shape === 'person' ? 'person'
-                  : look.shape === 'application' ? 'application' : look.shape) +
+                  ? t.html('consoleDelegation.shapeBoth')
+                  : look.shape === 'person'
+                    ? t.html('consoleDelegation.shapePerson')
+                  : look.shape === 'application'
+                    ? t.html('consoleDelegation.shapeApplication')
+                    : look.shape) +
         (look.dashed
-          ? '<br><span class="state-none" title="Neither ou=users nor ' +
-            'ou=applications holds an entry for this. The shape is the one ' +
-            'its role implies.">drawn from its role &mdash; neither store ' +
-            'knows it</span>'
+          ? '<br><span class="state-none" title="' +
+            t.html('consoleDelegation.shapeDashedTitle') + '">' +
+            t.html('consoleDelegation.shapeDashed') + '</span>'
           : '') + '</td>' +
-      '<td class="who">' + DelegationPage.delegationPartyCell(party, facts) +
+      '<td class="who">' + DelegationPage.delegationPartyCell(t, party,
+                                                               facts) +
       '</td>' +
       '<td>' +
       (roles.join('<br>') || '<span class="state-none">&mdash;</span>') +
         (node.selfTarget
-          ? '<br><span class="state-expired" title="S4U2Self is a request ' +
-            'for a ticket to yourself, so the intermediary and the target ' +
-            'are one party. There is no line for it in the picture because ' +
-            'an arrow leaving a box and coming back is a drawing of ' +
-            'nothing.">also its own target</span>'
+          ? '<br><span class="state-expired" title="' +
+            t.html('consoleDelegation.selfTargetTitle') + '">' +
+            t.html('consoleDelegation.selfTarget') + '</span>'
           : '') + '</td>' +
       '<td class="num">' + kit.esc(node.acts) + ' — ' +
-        '<span class="state-valid">' + kit.esc(node.issued) + ' ' +
-          'issued</span>, ' +
+        '<span class="state-valid">' +
+        t.html('consoleDelegation.nIssued', { n: node.issued }) +
+        '</span>, ' +
         (node.refused
-          ? '<span class="state-revoked">' + kit.esc(node.refused) +
-            ' refused</span>'
-          : '<span class="state-none">0 refused</span>') + '</td>' +
+          ? '<span class="state-revoked">' +
+            t.html('consoleDelegation.nRefused', { n: node.refused }) +
+            '</span>'
+          : '<span class="state-none">' +
+            t.html('consoleDelegation.nRefused', { n: 0 }) + '</span>') +
+        '</td>' +
       '<td>' + (node.protocols.map(kit.esc.bind(kit)).join('<br>') ||
                 '<span class="state-none">&mdash;</span>') + '</td>' +
       '</tr>';
@@ -420,26 +414,26 @@ class DelegationPage {
    * @param lookOf - function giving a node id's label
    * @returns the row as HTML
    */
-  static delegationEdgeRow(edge, lookOf) {
+  static delegationEdgeRow(t, edge, lookOf) {
     const relation = edge.relation === 'issued'
-      ? '<span class="state-none" title="This service handed that party a ' +
-        'credential. It goes to whoever ASKED.">issued to</span>'
+      ? '<span class="state-none" title="' +
+        t.html('consoleDelegation.issuedToAskedTitle') + '">' +
+        t.html('consoleDelegation.issuedTo') + '</span>'
       : edge.relation === 'acts-for'
-        ? '<strong>acts for</strong>'
-        : '<strong>reaches</strong>' +
-          (edge.subject ? '<br><span class="state-none">as ' +
-           kit.esc(edge.subject) +
+        ? '<strong>' + t.html('consoleDelegation.actsFor') + '</strong>'
+        : '<strong>' + t.html('consoleDelegation.reaches') + '</strong>' +
+          (edge.subject ? '<br><span class="state-none">' +
+           t.html('consoleDelegation.asSubject', { subject: edge.subject }) +
                           '</span>' : '');
     return '<tr>' +
       '<td class="who">' + kit.esc(lookOf(edge.from)) + '</td>' +
       '<td class="who">' + kit.esc(lookOf(edge.to)) + '</td>' +
       '<td>' + relation +
         ((edge.skipped || []).length
-          ? '<br><span class="state-expired" title="Nobody named this party ' +
-            'on these acts, so the line jumps it. A forwarded ' +
-            'ticket-granting ticket has no intermediary and cannot have ' +
-            'one.">jumps the ' +
-            kit.esc(edge.skipped.join(' and ')) + '</span>'
+          ? '<br><span class="state-expired" title="' +
+            t.html('consoleDelegation.jumpsTitleForwarded') + '">' +
+            t.html('consoleDelegation.jumps',
+                   { skipped: edge.skipped.join(' and ') }) + '</span>'
           : '') + '</td>' +
       '<td>' + (edge.typeLabel
                   ? '<code>' + kit.esc(edge.type) + '</code><br>' +
@@ -452,14 +446,18 @@ class DelegationPage {
                     kit.esc((edge.protocols || []).join(', ') || '&mdash;') +
                     '</span>') +
       '</td>' +
-      '<td>' + DelegationPage.modeCell(edge.mode) + '</td>' +
+      '<td>' + DelegationPage.modeCell(t, edge.mode) + '</td>' +
       '<td class="num">' + kit.esc(edge.acts) + ' — ' +
-        '<span class="state-valid">' + kit.esc(edge.issued) + ' ' +
-          'issued</span>, ' +
+        '<span class="state-valid">' +
+        t.html('consoleDelegation.nIssued', { n: edge.issued }) +
+        '</span>, ' +
         (edge.refused
-          ? '<span class="state-revoked">' + kit.esc(edge.refused) +
-            ' refused</span>'
-          : '<span class="state-none">0 refused</span>') + '</td>' +
+          ? '<span class="state-revoked">' +
+            t.html('consoleDelegation.nRefused', { n: edge.refused }) +
+            '</span>'
+          : '<span class="state-none">' +
+            t.html('consoleDelegation.nRefused', { n: 0 }) + '</span>') +
+        '</td>' +
       '<td class="who">' + (edge.produced.length
         ? edge.produced.map(function (one) {
             return '<code>' + kit.esc(one.kind) + '</code> × ' +
@@ -470,8 +468,9 @@ class DelegationPage {
                     // note in credentialCell().
                     return kit.shortened(id, 10);
                   }).join(' ') +
-                  (one.moreIdentifiers ? ' <span class="state-none">+' +
-                    kit.esc(one.moreIdentifiers) + ' more</span>' : '')
+                  (one.moreIdentifiers ? ' <span class="state-none">' +
+                    t.html('consoleDelegation.nMore',
+                           { n: one.moreIdentifiers }) + '</span>' : '')
                 : '');
           }).join('<br>')
         : '<span class="state-none">&mdash;</span>') + '</td>' +
@@ -498,9 +497,10 @@ class DelegationPage {
                                          : '<span ' +
                                            'class="state-none">&mdash;</span>')
                     : '<span class="state-expired" title="' +
-                      kit.esc(edge.authorizedBy || 'Nothing in this service ' +
-                               'decides who may perform this act.') +
-                      '">nothing checks this</span>') +
+                      kit.esc(edge.authorizedBy ||
+                        t.text('consoleDelegation.nothingDecides')) +
+                      '">' + t.html('consoleDelegation.nothingChecks') +
+                      '</span>') +
       '</td>' +
       '</tr>';
   }
@@ -519,7 +519,7 @@ class DelegationPage {
    *   application played
    * @returns the row as HTML
    */
-  static delegationTokenRow(token, labelOf, extra?) {
+  static delegationTokenRow(t, token, labelOf, extra?) {
     return '<tr>' +
       '<td class="num">' + kit.esc(token.seq) + '</td>' +
       '<td>' + kit.esc(kit.whenText(token.at)) + '</td>' +
@@ -527,17 +527,16 @@ class DelegationPage {
       '<td class="who"><code>' + kit.esc(token.kind) + '</code>' +
         (token.identifier
           ? '<br>' + kit.shortened(token.identifier, 14)
-          : '<br><span class="state-none" title="A Kerberos ticket has no ' +
-            'identifier this service could quote — there is no jti and no ' +
-            'AssertionID in one.">no identifier</span>') +
+          : '<br><span class="state-none" title="' +
+            t.html('consoleDelegation.noIdentifierTitle') + '">' +
+            t.html('consoleDelegation.noIdentifier') + '</span>') +
         (token.note ? '<br><span class="state-none">' + kit.esc(token.note) +
                       '</span>' : '') + '</td>' +
       '<td class="who">' + kit.esc(labelOf(token.subject) ||
         '<span class="state-none">&mdash;</span>') + '</td>' +
       '<td class="who">' + (token.actor ? kit.esc(labelOf(token.actor))
-        : '<span class="state-none" title="A forwarded ticket-granting ' +
-          'ticket has no intermediary this KDC was told ' +
-          'about.">&mdash;</span>') +
+        : '<span class="state-none" title="' +
+          t.html('consoleDelegation.noActorTitle') + '">&mdash;</span>') +
       '</td><td ' +
       'class="who">' + (token.target ? kit.esc(labelOf(token.target))
         : '<span class="state-none">&mdash;</span>') + '</td>' +
@@ -588,26 +587,17 @@ class DelegationPage {
    * @param here - the page this is drawn on, as path and query
    * @returns the chooser as HTML, or a note when there is none to choose
    */
-  static delegationApplicationChooser(chooser, selectedKey, here) {
+  static delegationApplicationChooser(t, chooser, selectedKey, here) {
     if (!chooser.total) {
-      return kit.note('<strong>No delegation held here names an application ' +
-        'yet</strong>, so there is nothing to choose between. An application ' +
-        'arrives in this list the moment something delegates through it or ' +
-        'to it: an RFC 8693 <code>audience</code> or the ' +
-        '<code>client_id</code> that performed the exchange, a WS-Trust ' +
-        '<code>AppliesTo</code>, or the service principal a Kerberos S4U ' +
-        'request asked for a ticket to.');
+      return kit.note(t.html('consoleDelegation.appChooserEmpty'));
     }
     return kit.chooserPane({
       here: here, param: 'appq', fromParam: 'appfrom',
-      label: 'Find an application',
-      placeholder: 'part of a client_id, an SPN or an audience',
+      label: t.text('consoleDelegation.appChooserLabel'),
+      placeholder: t.text('consoleDelegation.appChooserPlaceholder'),
       entries: chooser.entries, selectedKey: selectedKey,
       slice: chooser.slice,
-      nothing: 'No application any act named matches that. This list holds ' +
-        'what some delegation actually presented, spellings and all, so a ' +
-        'name that is in the acts table above and not in here is one this ' +
-        'register filed as a person rather than as an application.'
+      nothing: t.text('consoleDelegation.appChooserNothing')
     });
   }
 
@@ -652,25 +642,17 @@ class DelegationPage {
    * @param here - the page this is drawn on, as path and query
    * @returns the chooser as HTML, or a note when there is nobody to choose
    */
-  static delegationUserChooser(chooser, selectedKey, here) {
+  static delegationUserChooser(t, chooser, selectedKey, here) {
     if (!chooser.total) {
-      return kit.note('<strong>Nothing has authenticated here and no ' +
-        'delegation names anybody</strong>, so there is nobody to choose. An ' +
-        'identity arrives in this list the moment a credential is accepted ' +
-        'in any of the sixteen families, the moment a token or an assertion ' +
-        'is issued naming somebody, or the moment a delegation names them — ' +
-        'including one they were never present for.');
+      return kit.note(t.html('consoleDelegation.userChooserEmpty'));
     }
     return kit.chooserPane({
       here: here, param: 'userq', fromParam: 'userfrom',
-      label: 'Find a person',
-      placeholder: 'part of a username, a principal or a subject',
+      label: t.text('consoleDelegation.userChooserLabel'),
+      placeholder: t.text('consoleDelegation.userChooserPlaceholder'),
       entries: chooser.entries, selectedKey: selectedKey,
       slice: chooser.slice,
-      nothing: 'Nobody here matches that. This list is the identity register ' +
-        'UNIONED with everybody a delegation named, so a name that is on the ' +
-        'page above and not in here reached this service as an application ' +
-        'rather than as a person.'
+      nothing: t.text('consoleDelegation.userChooserNothing')
     });
   }
 
@@ -721,23 +703,27 @@ class DelegationPage {
    * @param lookOf - function giving a node id's label
    * @returns the row as HTML
    */
-  static userEdgeRow(edge, lookOf) {
+  static userEdgeRow(t, edge, lookOf) {
     const relation =
       edge.relation === 'issued'
-        ? '<span class="state-none" title="This service handed that party a ' +
-          'credential.">issued to</span>'
+        ? '<span class="state-none" title="' +
+          t.html('consoleDelegation.issuedToTitle') + '">' +
+          t.html('consoleDelegation.issuedTo') + '</span>'
       : edge.relation === 'signed-in'
-        ? '<strong>signed in</strong><br><span class="state-none">to this ' +
-          'service</span>'
+        ? '<strong>' + t.html('consoleDelegation.signedIn') +
+          '</strong><br><span class="state-none">' +
+          t.html('consoleDelegation.toThisService') + '</span>'
       : edge.relation === 'issued-for'
-        ? '<strong>issued for</strong><br><span class="state-none">by an ' +
-          'ordinary grant</span>'
+        ? '<strong>' + t.html('consoleDelegation.issuedFor') +
+          '</strong><br><span class="state-none">' +
+          t.html('consoleDelegation.byOrdinaryGrant') + '</span>'
       : edge.relation === 'acts-for'
-        ? '<strong>acts for</strong><br><span class="state-none">a ' +
-          'delegation</span>'
-        : '<strong>reaches</strong>' +
-          (edge.subject ? '<br><span class="state-none">as ' +
-           kit.esc(edge.subject) +
+        ? '<strong>' + t.html('consoleDelegation.actsFor') +
+          '</strong><br><span class="state-none">' +
+          t.html('consoleDelegation.aDelegation') + '</span>'
+        : '<strong>' + t.html('consoleDelegation.reaches') + '</strong>' +
+          (edge.subject ? '<br><span class="state-none">' +
+           t.html('consoleDelegation.asSubject', { subject: edge.subject }) +
                           '</span>' : '') +
           // WHAT THE TOKEN MAY DO AT THE FAR END, said here as well as on the
           // picture because the two are drawn from ONE graph and a reader
@@ -756,13 +742,10 @@ class DelegationPage {
                 ? edge.permissions.map(function (one) {
                     return '<code>' + kit.esc(one) + '</code>';
                   }).join(' ')
-                : '<span class="state-none" title="The token names this ' +
-                  'resource and none of its delegated permissions \u2014 ' +
-                  'which is what a scope naming the resource\'s client_id ' +
-                  'produces, because that value becomes the audience and ' +
-                  'comes off the scope claim. It is also what a resource ' +
-                  'that defines no permissions can ever produce.">default ' +
-                  'permissions</span>')
+                : '<span class="state-none" title="' +
+                  t.html('consoleDelegation.defaultPermissionsTitle') +
+                  '">' + t.html('consoleDelegation.defaultPermissions') +
+                  '</span>')
             : '');
     const mechanism = edge.typeLabel
       ? (edge.type ? '<code>' + kit.esc(edge.type) + '</code><br>' : '') +
@@ -778,23 +761,25 @@ class DelegationPage {
       '<td class="who">' + kit.esc(lookOf(edge.to)) + '</td>' +
       '<td>' + relation +
         ((edge.skipped || []).length
-          ? '<br><span class="state-expired" title="Nobody named this party ' +
-            'on these acts, so the line jumps it.">jumps the ' +
-            kit.esc(edge.skipped.join(' and ')) + '</span>'
+          ? '<br><span class="state-expired" title="' +
+            t.html('consoleDelegation.jumpsTitle') + '">' +
+            t.html('consoleDelegation.jumps',
+                   { skipped: edge.skipped.join(' and ') }) + '</span>'
           : '') + '</td>' +
       '<td>' + mechanism + '</td>' +
-      '<td>' + (edge.mode ? DelegationPage.modeCell(edge.mode)
-        : '<span class="state-none" title="Impersonation and delegation are ' +
-          'properties of a DELEGATION mechanism. An ordinary grant makes ' +
-          'neither claim, and calling it one would be this console inventing ' +
-          'a judgement.">&mdash;</span>') + '</td>' +
+      '<td>' + (edge.mode ? DelegationPage.modeCell(t, edge.mode)
+        : '<span class="state-none" title="' +
+          t.html('consoleDelegation.noModeTitle') + '">&mdash;</span>') +
+      '</td>' +
       '<td class="num">' + (edge.acts
         ? kit.esc(edge.acts) + (edge.relation === 'signed-in' ? ''
-            : ' — <span class="state-valid">' + kit.esc(edge.issued) + ' ' +
-                'issued</span>' +
+            : ' — <span class="state-valid">' +
+              t.html('consoleDelegation.nIssued', { n: edge.issued }) +
+              '</span>' +
               (edge.refused
-                ? ', <span class="state-revoked">' + kit.esc(edge.refused) +
-                  ' refused</span>' : ''))
+                ? ', <span class="state-revoked">' +
+                  t.html('consoleDelegation.nRefused', { n: edge.refused }) +
+                  '</span>' : ''))
         : '<span class="state-none">&mdash;</span>') + '</td>' +
       '<td class="num">' + (edge.credentials
         ? '<strong>' + kit.esc(edge.credentials) + '</strong>'
@@ -807,8 +792,9 @@ class DelegationPage {
                 ? '<br>' + one.identifiers.map(function (id) {
                     return kit.shortened(id, 10);
                   }).join(' ') +
-                  (one.moreIdentifiers ? ' <span class="state-none">+' +
-                    kit.esc(one.moreIdentifiers) + ' more</span>' : '')
+                  (one.moreIdentifiers ? ' <span class="state-none">' +
+                    t.html('consoleDelegation.nMore',
+                           { n: one.moreIdentifiers }) + '</span>' : '')
                 : '');
           }).join('<br>')
         : '<span class="state-none">&mdash;</span>') + '</td>' +
@@ -830,60 +816,62 @@ class DelegationPage {
    * @param look - the node's look (label, identifier, shape, dashed)
    * @returns the row as HTML, or '' for the service's own node
    */
-  static userNodeRow(node, facts, look) {
+  static userNodeRow(t, node, facts, look) {
     if (node.kind === 'sts') {
       return '';
     }
     const party = { key: node.key, presented: node.presented,
                     application: node.application, what: node.what };
     const roles = [];
-    if (node.roles.initial) roles.push(node.roles.initial +
-                                       ' × initial identity');
-    if (node.roles.intermediary) roles.push(node.roles.intermediary + ' × ' +
-        'intermediary');
-    if (node.roles.target) roles.push(node.roles.target + ' × target');
+    if (node.roles.initial) roles.push(t.html('consoleDelegation.nodeInitial',
+                                              { n: node.roles.initial }));
+    if (node.roles.intermediary) roles.push(
+      t.html('consoleDelegation.nodeIntermediary',
+             { n: node.roles.intermediary }));
+    if (node.roles.target) roles.push(t.html('consoleDelegation.nodeTarget',
+                                             { n: node.roles.target }));
     return '<tr>' +
       '<td>' + kit.esc(look.label) +
         (node.isSubject
-          ? '<br><span class="state-valid" title="This is the person this ' +
-            'page is about. Every line on the picture starts or ends ' +
-            'here.">this page</span>'
+          ? '<br><span class="state-valid" title="' +
+            t.html('consoleDelegation.thisPageTitle') + '">' +
+            t.html('consoleDelegation.thisPage') + '</span>'
           : '') +
         (look.identifier
-          ? '<br><span class="state-none" title="What a protocol would have ' +
-            'to present to reach this party, and that protocol\'s own word ' +
-            'for it. It is the second line inside the box in the picture ' +
-            'above; where the label IS the identifier, only the word is ' +
-            'drawn.">' +
+          ? '<br><span class="state-none" title="' +
+            t.html('consoleDelegation.nodeIdentifierTitle') + '">' +
             kit.esc(look.identifier) + '</span>'
           : '') + '</td>' +
       '<td>' + (look.shape === 'both'
-                  ? 'person <strong>and</strong> application'
-                  : look.shape === 'person' ? 'person'
-                  : look.shape === 'application' ? 'application' : look.shape) +
+                  ? t.html('consoleDelegation.shapeBoth')
+                  : look.shape === 'person'
+                    ? t.html('consoleDelegation.shapePerson')
+                  : look.shape === 'application'
+                    ? t.html('consoleDelegation.shapeApplication')
+                    : look.shape) +
         (look.dashed
-          ? '<br><span class="state-none" title="Neither ou=users nor ' +
-            'ou=applications holds an entry for this. The shape is the one ' +
-            'its role implies.">drawn from its role &mdash; neither store ' +
-            'knows it</span>'
+          ? '<br><span class="state-none" title="' +
+            t.html('consoleDelegation.shapeDashedTitle') + '">' +
+            t.html('consoleDelegation.shapeDashed') + '</span>'
           : '') + '</td>' +
-      '<td class="who">' + DelegationPage.delegationPartyCell(party, facts) +
+      '<td class="who">' + DelegationPage.delegationPartyCell(t, party,
+                                                               facts) +
       '</td>' +
       '<td class="num">' + (node.credentials
         ? '<strong>' + kit.esc(node.credentials) + '</strong>'
         : '<span class="state-none">0</span>') + '</td>' +
       '<td>' + (node.flows.map(kit.esc.bind(kit)).join('<br>') ||
                 '<span class="state-none">&mdash;</span>') + '</td>' +
-      '<td>' + (roles.join('<br>') || '<span class="state-none" title="This ' +
-        'box is in no delegation at all — it holds credentials from an ' +
-        'ordinary grant. The delegation roles are a fact about the OTHER ' +
-        'register.">not in a delegation</span>') + '</td>' +
+      '<td>' + (roles.join('<br>') || '<span class="state-none" title="' +
+        t.html('consoleDelegation.notInDelegationTitle') + '">' +
+        t.html('consoleDelegation.notInDelegation') + '</span>') + '</td>' +
       '<td class="num">' + (node.acts
         ? kit.esc(node.acts) + ' — <span class="state-valid">' +
-          kit.esc(node.issued) +
-          ' issued</span>' + (node.refused
-            ? ', <span class="state-revoked">' + kit.esc(node.refused) + ' ' +
-                'refused</span>'
+          t.html('consoleDelegation.nIssued', { n: node.issued }) +
+          '</span>' + (node.refused
+            ? ', <span class="state-revoked">' +
+              t.html('consoleDelegation.nRefused', { n: node.refused }) +
+              '</span>'
             : '')
         : '<span class="state-none">0</span>') + '</td>' +
       '<td>' + (node.protocols.map(kit.esc.bind(kit)).join('<br>') ||
@@ -903,39 +891,35 @@ class DelegationPage {
    *   `apps` (the registered applications named on the page)
    * @returns the row as HTML
    */
-  static userCredentialRow(credential, facts) {
+  static userCredentialRow(t, credential, facts) {
     const holder = credential.holder
-      ? DelegationPage.delegationPartyCell({ key: '', presented: '',
+      ? DelegationPage.delegationPartyCell(t, { key: '', presented: '',
                                    application: credential.holder, what: '' },
                                    facts)
-      : '<span class="state-none" title="Nothing holds this one. An ' +
-        'X509-SVID has no audience, and a token can be minted with no ' +
-        'client_id — this service issued it and there is no second party to ' +
-        'draw.">&mdash;</span>';
+      : '<span class="state-none" title="' +
+        t.html('consoleDelegation.noHolderTitle') + '">&mdash;</span>';
     return '<tr>' +
       '<td>' + kit.esc(kit.whenText(credential.at)) + '</td>' +
       '<td class="who"><code>' + kit.esc(credential.kind) + '</code>' +
         (credential.identifier
           ? '<br>' + kit.shortened(credential.identifier, 14)
-          : '<br><span class="state-none" title="A Kerberos ticket has no ' +
-            'identifier this service could quote — there is no jti and no ' +
-            'AssertionID in one.">no identifier</span>') +
+          : '<br><span class="state-none" title="' +
+            t.html('consoleDelegation.noIdentifierTitle') + '">' +
+            t.html('consoleDelegation.noIdentifier') + '</span>') +
         (credential.detail
           ? '<br><span class="state-none">' + kit.esc(credential.detail) +
             '</span>'
           : '') + '</td>' +
-      '<td>' + DelegationPage.userFlowCell(credential) + '</td>' +
+      '<td>' + DelegationPage.userFlowCell(t, credential) + '</td>' +
       '<td class="who">' + holder + '</td>' +
       '<td class="' + TokensPage.stateClass(credential.state) + '">' +
       kit.esc(credential.state) +
         '</td>' +
       '<td>' + (credential.sessionId
         ? kit.shortened(credential.sessionId, 10)
-        : '<span class="state-none" title="No browser sign-on session was ' +
-          'stated. That is true of every direct grant — client_credentials, ' +
-          'password, the pre-authorized code, a token exchange — and of ' +
-          'everything issued outside the token ' +
-          'endpoint.">none</span>') + '</td>' +
+        : '<span class="state-none" title="' +
+          t.html('consoleDelegation.noSessionTitle') + '">' +
+          t.html('consoleDelegation.none') + '</span>') + '</td>' +
       '</tr>';
   }
 
@@ -963,13 +947,13 @@ class DelegationPage {
    * @param credential - a row of the issued-credential register
    * @returns the cell's HTML
    */
-  static userFlowCell(credential) {
+  static userFlowCell(t, credential) {
     if (credential.flowStated) {
       return '<code>' + kit.esc(credential.flow) + '</code><br>' +
         '<strong>' + kit.esc(credential.flowLabel) + '</strong>' +
         (credential.flowOidc && credential.flowOidc !== credential.flowLabel
-          ? '<br><span class="state-none" title="OpenID Connect\'s name for ' +
-            'the same exchange. One thing, two vocabularies.">OIDC: ' +
+          ? '<br><span class="state-none" title="' +
+            t.html('consoleDelegation.oidcNameTitle') + '">OIDC: ' +
             kit.esc(credential.flowOidc) + '</span>'
           : '') +
         (credential.flowSpec
@@ -986,13 +970,13 @@ class DelegationPage {
              kit.esc(credential.flowSpec) : '') +
             '</span>'
           : '') +
-        '<br><span class="state-none" title="A SAML assertion, a Kerberos ' +
-        'ticket and an SVID are issued by protocols that have never heard of ' +
-        'an OAuth grant. The mechanism named here is their own ' +
-        'specification\'s.">not an OAuth grant</span>';
+        '<br><span class="state-none" title="' +
+        t.html('consoleDelegation.notOauthGrantTitle') + '">' +
+        t.html('consoleDelegation.notOauthGrant') + '</span>';
     }
     return '<span class="state-none" title="' +
-      kit.esc(FLOW_NOT_STATED_WHAT) + '">no grant stated</span>';
+      kit.esc(t.text('consoleDelegation.flowNotStated')) + '">' +
+      t.html('consoleDelegation.noGrantStated') + '</span>';
   }
 
   // The roles an application played in one act, as cells. Two is possible and
@@ -1034,17 +1018,20 @@ class DelegationPage {
    * @param carry - the delegation table's filter, kept in each link
    * @returns the table as HTML
    */
-  static delegationApplicationTable(catalogue, facts, carry) {
+  static delegationApplicationTable(t, catalogue, facts, carry) {
     const rows = catalogue.map(function (entry) {
       const roles = [];
       if (entry.roles.intermediary) {
-        roles.push(kit.esc(entry.roles.intermediary) + ' × intermediary');
+        roles.push(t.html('consoleDelegation.nodeIntermediary',
+                          { n: entry.roles.intermediary }));
       }
       if (entry.roles.target) {
-        roles.push(kit.esc(entry.roles.target) + ' × target');
+        roles.push(t.html('consoleDelegation.nodeTarget',
+                          { n: entry.roles.target }));
       }
       if (entry.roles.initial) {
-        roles.push(kit.esc(entry.roles.initial) + ' × initial identity');
+        roles.push(t.html('consoleDelegation.nodeInitial',
+                          { n: entry.roles.initial }));
       }
       const registered = entry.spellings.filter(function (spelling) {
         return !!facts.apps[spelling];
@@ -1057,37 +1044,44 @@ class DelegationPage {
           (entry.spellings.length > 1
             ? '<br><span class="state-none" title="' +
               kit.esc(entry.spellings.join(', ')) + '">' +
-              kit.esc(entry.spellings.length) +
-              ' spellings, collapsed</span>'
+              t.html('consoleDelegation.spellingsCollapsed',
+                     { n: entry.spellings.length }) + '</span>'
             : '') +
           (registered ? ''
-            : '<br><span class="state-none" title="No entry under ' +
-              'ou=applications names this. The registry holds what this ' +
-              'service has been ASKED ABOUT; a delegation can name something ' +
-              'nobody has otherwise mentioned.">not in the registry</span>') +
+            : '<br><span class="state-none" title="' +
+              t.html('consoleDelegation.appNotRegisteredTitle') + '">' +
+              t.html('consoleDelegation.notInRegistry') + '</span>') +
           (entry.identityKey
-            ? '<br>' + GroupsPage.usersPageCell(entry.identityKey, facts.users)
+            ? '<br>' + GroupsPage.usersPageCell(entry.identityKey,
+                                                facts.users, t)
             : '') + '</td>' +
         '<td>' +
         (roles.join('<br>') || '<span class="state-none">&mdash;</span>') +
           '</td>' +
         '<td class="num">' + kit.esc(entry.acts) + ' — ' +
-          '<span class="state-valid">' + kit.esc(entry.issued) + ' ' +
-            'issued</span>, ' +
+          '<span class="state-valid">' +
+          t.html('consoleDelegation.nIssued', { n: entry.issued }) +
+          '</span>, ' +
           (entry.refused
-            ? '<span class="state-revoked">' + kit.esc(entry.refused) + ' ' +
-                'refused</span>'
-            : '<span class="state-none">0 refused</span>') + '</td>' +
+            ? '<span class="state-revoked">' +
+              t.html('consoleDelegation.nRefused', { n: entry.refused }) +
+              '</span>'
+            : '<span class="state-none">' +
+              t.html('consoleDelegation.nRefused', { n: 0 }) + '</span>') +
+          '</td>' +
         '<td class="num">' + kit.esc(entry.credentials) + '</td>' +
         '<td class="num">' + kit.esc(entry.chains) + '</td>' +
         '<td>' + kit.esc(kit.whenText(entry.lastAt)) + '</td>' +
         '</tr>';
     }).join('');
-    return '<table><tr><th>Application</th><th>Roles it has played</th><th>' +
-      'Acts</th><th>Credentials</th><th>Relationships</th><th>Last ' +
-      'seen</th></tr>' +
-      (rows || '<tr><td colspan="6">No delegation held here names an ' +
-       'application.</td></tr>') + '</table>';
+    return '<table><tr><th>' + t.html('consoleDelegation.thApplication') +
+      '</th><th>' + t.html('consoleDelegation.thRolesPlayed') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thCredentials') + '</th><th>' +
+      t.html('consoleDelegation.thRelationships') + '</th><th>' +
+      t.html('consoleDelegation.thLastSeen') + '</th></tr>' +
+      (rows || '<tr><td colspan="6">' +
+       t.html('consoleDelegation.noAppNamed') + '</td></tr>') + '</table>';
   }
 
   // The same list as CONTENT. It is not /admin/users and the page says so: that
@@ -1105,64 +1099,71 @@ class DelegationPage {
    * @param carry - the delegation table's filter, kept in each link
    * @returns the table as HTML
    */
-  static delegationUserTable(catalogue, facts, carry) {
+  static delegationUserTable(t, catalogue, facts, carry) {
     const rows = catalogue.map(function (entry) {
       const where = [];
       if (entry.authenticated) {
-        where.push('<span class="state-valid" title="A credential was ' +
-          'accepted for this name here, so the identity register has a row ' +
-          'for them.">authenticated here</span>');
+        where.push('<span class="state-valid" title="' +
+          t.html('consoleDelegation.authenticatedHereTitle') + '">' +
+          t.html('consoleDelegation.authenticatedHere') + '</span>');
       }
       if (entry.delegated) {
-        where.push('<span class="state-expired" title="Some delegation act ' +
-          'names them, in one of the three roles. That does NOT mean they ' +
-          'were present — S4U2Self and OnBehalfOf name somebody who proved ' +
-          'nothing.">named in a delegation</span>');
+        where.push('<span class="state-expired" title="' +
+          t.html('consoleDelegation.namedInDelegationTitle') + '">' +
+          t.html('consoleDelegation.namedInDelegation') + '</span>');
       }
       if (!entry.authenticated) {
-        where.push('<span class="state-none" title="Nothing has ever ' +
-          'presented a credential under this name in this process. Something ' +
-          'was issued in it, or somebody delegated using it, which is ' +
-          'exactly the state worth noticing.">never authenticated here</span>');
+        where.push('<span class="state-none" title="' +
+          t.html('consoleDelegation.neverAuthenticatedTitle') + '">' +
+          t.html('consoleDelegation.neverAuthenticated') + '</span>');
       }
       return '<tr>' +
         '<td class="who"><a href="' + kit.esc('/admin/delegation/user' +
           kit.queryWith(carry || {}, { user: entry.key })) + '"><code>' +
           kit.esc(entry.key) + '</code></a>' +
           (entry.isClient
-            ? '<br><span class="state-none" title="Something authenticated ' +
-              'as this name and said it was a client rather than a person — ' +
-              'the client_credentials grant is the usual way.">a client, not ' +
-              'a person</span>'
+            ? '<br><span class="state-none" title="' +
+              t.html('consoleDelegation.clientNotPersonTitle') + '">' +
+              t.html('consoleDelegation.clientNotPerson') + '</span>'
             : '') +
-          '<br>' + GroupsPage.usersPageCell(entry.key, facts.users) + '</td>' +
+          '<br>' + GroupsPage.usersPageCell(entry.key, facts.users, t) +
+          '</td>' +
         '<td>' + where.join('<br>') + '</td>' +
         '<td class="num">' + kit.esc(entry.authentications) + '</td>' +
         '<td class="num">' + kit.esc(entry.tokens.issued) + ' — ' +
-          '<span class="state-valid">' + kit.esc(entry.tokens.valid) +
-        ' valid</span>' +
+          '<span class="state-valid">' +
+          t.html('consoleDelegation.nValid', { n: entry.tokens.valid }) +
+          '</span>' +
           (entry.tokens.revoked
             ? ', <span class="state-revoked">' +
-              kit.esc(entry.tokens.revoked) +
-              ' revoked</span>' : '') + '</td>' +
+              t.html('consoleDelegation.nRevoked',
+                     { n: entry.tokens.revoked }) +
+              '</span>' : '') + '</td>' +
         '<td class="num">' + kit.esc(entry.artifacts) + '</td>' +
         '<td class="num">' + (entry.acts
           ? kit.esc(entry.acts) + ' — <span class="state-valid">' +
-            kit.esc(entry.issued) +
-            ' issued</span>' + (entry.refused
-              ? ', <span class="state-revoked">' + kit.esc(entry.refused) +
-                ' refused</span>' : '')
+            t.html('consoleDelegation.nIssued', { n: entry.issued }) +
+            '</span>' + (entry.refused
+              ? ', <span class="state-revoked">' +
+                t.html('consoleDelegation.nRefused', { n: entry.refused }) +
+                '</span>' : '')
           : '<span class="state-none">0</span>') + '</td>' +
         '<td>' + (entry.protocols.map(kit.esc.bind(kit)).join('<br>') ||
                   '<span class="state-none">&mdash;</span>') + '</td>' +
         '<td>' + kit.esc(kit.whenText(entry.lastAt)) + '</td>' +
         '</tr>';
     }).join('');
-    return '<table><tr><th>Identity</th><th>Where from</th><th>Sign-ins</th>' +
-      '<th>Tokens</th><th>Artifacts</th><th>Delegation acts</th>' +
-      '<th>Protocols</th><th>Last seen</th></tr>' +
-      (rows || '<tr><td colspan="8">Nobody has authenticated here and no ' +
-       'delegation names anybody.</td></tr>') + '</table>';
+    return '<table><tr><th>' + t.html('consoleDelegation.thIdentity') +
+      '</th><th>' + t.html('consoleDelegation.thWhereFrom') + '</th><th>' +
+      t.html('consoleDelegation.thSignIns') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thTokens') + '</th><th>' +
+      t.html('consoleDelegation.thArtifacts') + '</th><th>' +
+      t.html('consoleDelegation.thDelegationActs') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thProtocols') + '</th><th>' +
+      t.html('consoleDelegation.thLastSeen') + '</th></tr>' +
+      (rows || '<tr><td colspan="8">' +
+       t.html('consoleDelegation.nobodyAuthenticated') + '</td></tr>') +
+      '</table>';
   }
 
   // ---------------------------------------------------------------------------
@@ -1207,16 +1208,13 @@ class DelegationPage {
    * @param here - the page the search submits to
    * @returns the chooser, or a note when there is nothing, as HTML
    */
-  static allowedApplicationChooser(view, selectedKey, carry, here) {
+  static allowedApplicationChooser(t, view, selectedKey, carry, here) {
     const groups = view.clusters;
     if (!groups.counts.applications) {
-      return kit.note('<strong>No application in this registry exposes an ' +
-        'API or holds a permission yet</strong>, so there is nothing to ' +
-        'search. An application arrives in this list the moment it is given ' +
-        'a base URI or a permission of its own — which makes it a RESOURCE — ' +
-        'or is granted one somebody else exposes, which makes it a CLIENT. ' +
-        'Both are done on <a href="/admin/delegation#allowed">the ' +
-        'register</a> or through <code>POST /admin-api/permissions/…</code>.');
+      return kit.note(t.html('consoleDelegation.allowedEmptyBefore') +
+        '<a href="/admin/delegation#allowed">' +
+        t.html('consoleDelegation.theRegister') + '</a>' +
+        t.html('consoleDelegation.allowedEmptyAfter'));
     }
 
     // Everything one row of the pane has to say, worked out from the register
@@ -1244,16 +1242,19 @@ class DelegationPage {
           ? (registered.name || registered.dnLabel || identifier) : '';
         const parts = [];
         if (holds[identifier]) {
-          parts.push(holds[identifier] + ' grant(s) held');
+          parts.push(t.text('consoleDelegation.grantsHeld',
+                            { n: holds[identifier] }));
         }
         if (exposes[identifier]) {
-          parts.push(exposes[identifier] + ' permission(s) exposed');
+          parts.push(t.text('consoleDelegation.permissionsExposed',
+                            { n: exposes[identifier] }));
         }
         if (reached[identifier]) {
-          parts.push(reached[identifier] + ' grant(s) on it');
+          parts.push(t.text('consoleDelegation.grantsOnIt',
+                            { n: reached[identifier] }));
         }
         if (!parts.length) {
-          parts.push('a base URI and nothing on it yet');
+          parts.push(t.text('consoleDelegation.baseUriOnly'));
         }
         entries.push({
           key: identifier,
@@ -1265,9 +1266,9 @@ class DelegationPage {
           label: identifier,
           detail: parts.join(', ') + ' — ' +
                   (group.counts.applications === 1
-                    ? 'in no group but its own'
-                    : 'one of ' + group.counts.applications +
-                      ' applications joined to each other'),
+                    ? t.text('consoleDelegation.groupOwn')
+                    : t.text('consoleDelegation.groupOneOf',
+                             { n: group.counts.applications })),
           // THE GROUP AND NOT THE APPLICATION IS WHAT OPENS, which is the one
           // way this control differs from every other chooser in the console: a
           // result here is not a page about the thing clicked, it is the page
@@ -1288,14 +1289,16 @@ class DelegationPage {
 
     return kit.chooserPane({
       here: here, param: 'permappq', fromParam: 'permappfrom',
-      label: 'Find an application',
-      placeholder: 'part of a client_id, a base URI or an application name',
+      label: t.text('consoleDelegation.appChooserLabel'),
+      placeholder: t.text('consoleDelegation.allowedPlaceholder'),
       entries: entries, selectedKey: selectedKey,
-      nothing: 'No application in the configured register matches that. This ' +
-        'list holds what the PERMISSION register touches — an entry with a ' +
-        'base URI or a permission of its own, or one holding a grant — so a ' +
-        'name that is on <a href="/admin/applications">the registry</a> and ' +
-        'not in here is an application nothing has been configured about yet.'
+      // The pane escapes this, link and all, as it always has: the anchor is
+      // kept in the code (a message may not carry one) so the text drawn is
+      // the same.
+      nothing: t.text('consoleDelegation.allowedNothingBefore') +
+        '<a href="/admin/applications">' +
+        t.text('consoleDelegation.theRegistry') + '</a>' +
+        t.text('consoleDelegation.allowedNothingAfter')
     });
   }
 
@@ -1343,7 +1346,7 @@ class DelegationPage {
    * @param apps - the answer's registered applications, by identifier
    * @returns the table as HTML
    */
-  static allowedClusterTable(groups, shown, carry, apps) {
+  static allowedClusterTable(t, groups, shown, carry, apps) {
     const rows = shown.map(function (group) {
       const members = group.members.map(function (identifier) {
         const registered = apps[identifier];
@@ -1356,62 +1359,64 @@ class DelegationPage {
           (name !== identifier
             ? ' <span class="state-none">' + kit.esc(name) + '</span>' : '') +
           (registered ? ''
-            : ' <span class="state-none" title="No entry under ' +
-              'ou=applications answers to this identifier. It can only have ' +
-              'got here through an ldapmodify, since both console doors read ' +
-              'the registry.">not in the registry</span>');
+            : ' <span class="state-none" title="' +
+              t.html('consoleDelegation.ldapmodifyOnlyTitle') + '">' +
+              t.html('consoleDelegation.notInRegistry') + '</span>');
       }).join('<br>');
       return '<tr>' +
         '<td class="who"><a href="' + kit.esc('/admin/delegation/cluster' +
           kit.queryWith(carry || {}, { application: group.key })) + '">' +
           (group.counts.applications === 1
-            ? 'this one alone'
-            : kit.esc(group.counts.applications) + ' applications') + '</a>' +
-          '<br><span class="state-none" title="A group is named after the ' +
-          'application whose identifier sorts first, so that adding a grant ' +
-          'inside it does not rename it.">named for <code>' +
-          kit.esc(group.key) +
-          '</code></span></td>' +
+            ? t.html('consoleDelegation.thisOneAlone')
+            : t.html('consoleDelegation.nApplications',
+                     { n: group.counts.applications })) + '</a>' +
+          '<br><span class="state-none" title="' +
+          t.html('consoleDelegation.namedForTitle') + '">' +
+          t.html('consoleDelegation.namedFor', { key: group.key }) +
+          '</span></td>' +
         '<td>' + members + '</td>' +
         '<td class="num">' + (group.counts.lines
           ? kit.esc(group.counts.lines)
-          : '<span class="state-none" title="Nothing in this group may reach ' +
-            'anything else in it. A group of one with a base URI is an API ' +
-            'somebody described and nothing was granted on.">0</span>') +
+          : '<span class="state-none" title="' +
+            t.html('consoleDelegation.noLinesTitle') + '">0</span>') +
         '</td><td ' +
         'class="num">' + (group.counts.asked
           ? '<span class="state-valid">' + kit.esc(group.counts.asked) +
             '</span>'
-          : '<span class="state-none">0</span>') + ' asked for<br>' +
+          : '<span class="state-none">0</span>') + ' ' +
+          t.html('consoleDelegation.askedFor') + '<br>' +
           (group.counts.unused
-            ? '<span class="state-expired" title="Granted and never ' +
-              'requested. Read off the client\'s own oauthScope — evidence ' +
-              'rather than proof.">' + kit.esc(group.counts.unused) + '</span>'
-            : '<span class="state-none">0</span>') + ' never used</td>' +
+            ? '<span class="state-expired" title="' +
+              t.html('consoleDelegation.unusedTitle') + '">' +
+              kit.esc(group.counts.unused) + '</span>'
+            : '<span class="state-none">0</span>') + ' ' +
+          t.html('consoleDelegation.neverUsed') + '</td>' +
         '<td class="num">' + kit.esc(group.counts.permissions) + '</td>' +
         '<td class="num">' + (group.counts.dangling
-          ? '<span class="state-revoked" title="Naming a permission no ' +
-            'application in this registry defines. Not drawn on any picture, ' +
-            'because a line to nowhere would be a drawing of a resource that ' +
-            'is there.">' + kit.esc(group.counts.dangling) + ' dangling</span>'
+          ? '<span class="state-revoked" title="' +
+            t.html('consoleDelegation.danglingCountTitle') + '">' +
+            t.html('consoleDelegation.nDangling',
+                   { n: group.counts.dangling }) + '</span>'
           : '<span class="state-none">&mdash;</span>') +
           (group.counts.selfGrants
-            ? '<br><span class="state-expired" title="An application granted ' +
-              'its own permission. Neither console door will create one; an ' +
-              'ldapmodify can. No arrow is drawn, because an arrow from a ' +
-              'box back to itself is a drawing of nothing.">' +
-              kit.esc(group.counts.selfGrants) + ' to itself</span>'
+            ? '<br><span class="state-expired" title="' +
+              t.html('consoleDelegation.selfGrantsTitle') + '">' +
+              t.html('consoleDelegation.nToItself',
+                     { n: group.counts.selfGrants }) + '</span>'
             : '') + '</td>' +
         '</tr>';
     }).join('');
-    return '<table><tr><th>The group</th><th>The applications in it</th>' +
-      '<th>Lines drawn</th><th>Grants</th><th>Permissions exposed</th>' +
-      '<th>Not drawn</th></tr>' +
+    return '<table><tr><th>' + t.html('consoleDelegation.thGroup') +
+      '</th><th>' + t.html('consoleDelegation.thGroupApps') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thLinesDrawn') + '</th><th>' +
+      t.html('consoleDelegation.thGrants') + '</th><th>' +
+      t.html('consoleDelegation.thPermissionsExposed') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thNotDrawn') + '</th></tr>' +
       (rows || '<tr><td colspan="6">' +
         (groups.counts.clusters
-          ? 'No group on this page.'
-          : 'Nothing in this registry exposes an API or holds a permission, ' +
-            'so there are no groups to draw.') + '</td></tr>') + '</table>';
+          ? t.html('consoleDelegation.noGroupOnPage')
+          : t.html('consoleDelegation.noGroups')) + '</td></tr>') +
+      '</table>';
   }
 
   // One row of the permissions table: what a resource EXPOSES.
@@ -1428,7 +1433,7 @@ class DelegationPage {
    * @param options - optional; `readOnly` swaps the Remove form for a link
    * @returns a <tr> as HTML
    */
-  static permissionDefinitionRow(one, listView, options?) {
+  static permissionDefinitionRow(t, one, listView, options?) {
     const href = '/admin/applications' +
                  kit.queryWith(listView || {}, { application: one.resource });
     return '<tr>' +
@@ -1447,22 +1452,20 @@ class DelegationPage {
       // — it is the one state on this table that means the row cannot work.
       '<td>' + (one.id
         ? '<code>' + kit.esc(one.id) + '</code>'
-        : '<span class="state-revoked" title="This permission has no ' +
-          'identifier because its application has no oauthPermissionBaseUri. ' +
-          'A permission is named by its base URI followed by its name, so no ' +
-          'client can ever ask for this one. Set the base on the application ' +
-          'and it resolves.">no identifier &mdash; the application has no ' +
-          'base URI</span>') + '</td>' +
+        : '<span class="state-revoked" title="' +
+          t.html('consoleDelegation.noPermissionIdTitle') + '">' +
+          t.html('consoleDelegation.noPermissionId') + '</span>') + '</td>' +
       '<td class="num">' + (one.grantedTo.length
         ? '<span class="state-valid">' + one.grantedTo.length + '</span>'
-        : '<span class="state-none" title="Nothing holds this permission. ' +
-          'That is the ordinary state of a permission that has just been ' +
-          'defined — defining one grants it to nobody.">0</span>') + '</td>' +
+        : '<span class="state-none" title="' +
+          t.html('consoleDelegation.nobodyHoldsTitle') + '">0</span>') +
+      '</td>' +
       '<td class="who">' + (one.grantedTo.length
         ? one.grantedTo.map(function (who) {
             return kit.esc(who.name) + (who.asked ? '' :
-              ' <span class="state-none" title="Granted and never asked ' +
-              'for.">(unused)</span>');
+              ' <span class="state-none" title="' +
+              t.html('consoleDelegation.grantedNeverAskedTitle') + '">' +
+              t.html('consoleDelegation.unused') + '</span>');
           }).join('<br>')
         : '<span class="state-none">&mdash;</span>') + '</td>' +
       // THE TWO BRANCHES DREW THE SAME FORM, and they did before this row
@@ -1470,9 +1473,9 @@ class DelegationPage {
       // IDENTIFIER cell, not this one, and a permission with no identifier is
       // removed by exactly the same call. One form, once.
       '<td>' + (options && options.readOnly
-        ? '<a href="/admin/delegation-settings#allowed" title="This page ' +
-          'draws the register and does not change it. The Remove button for ' +
-          'this permission is on Protocols › Delegation.">change it</a>'
+        ? '<a href="/admin/delegation-settings#allowed" title="' +
+          t.html('consoleDelegation.changeRemoveTitle') + '">' +
+          t.html('consoleDelegation.changeIt') + '</a>'
         : '<form method="post" action="/admin/delegation-settings">' +
           DelegationPage.permissionsBack(listView) + '<div class="formrow">' +
           '<input type="hidden" name="action" value="remove-permission">' +
@@ -1480,7 +1483,8 @@ class DelegationPage {
           kit.esc(one.resource) +
           '"><input ' +
           'type="hidden" name="name" value="' + kit.esc(one.name) + '">' +
-          '<button type="submit" class="danger">Remove</button>' +
+          '<button type="submit" class="danger">' +
+          t.html('consoleDelegation.remove') + '</button>' +
           '</div></form>') + '</td>' +
       '</tr>';
   }
@@ -1509,7 +1513,7 @@ class DelegationPage {
    * @param options - optional; `readOnly` swaps the Revoke form for a link
    * @returns a <tr> as HTML
    */
-  static permissionGrantRow(one, listView, options?) {
+  static permissionGrantRow(t, one, listView, options?) {
     const clientHref = '/admin/applications' +
       kit.queryWith(listView || {}, { application: one.client });
     const resourceHref = one.resource
@@ -1528,12 +1532,9 @@ class DelegationPage {
         // being empty. Both ways it can happen are named, because they are
         // different problems: one is a deleted application and the other is a
         // permission removed from under a grant that was made correctly.
-        : '<span class="state-revoked" title="No application in this ' +
-          'registry defines this permission. Either the resource\'s entry ' +
-          'was deleted, or the permission was removed from it while this ' +
-          'grant still named it, or an ldapmodify wrote a grant that never ' +
-          'resolved — both console doors refuse to create ' +
-          'one.">dangling</span>') + '</td>' +
+        : '<span class="state-revoked" title="' +
+          t.html('consoleDelegation.danglingTitle') + '">' +
+          t.html('consoleDelegation.dangling') + '</span>') + '</td>' +
       '<td>' + (one.permissionName
         ? '<code>' + kit.esc(one.permissionName) + '</code>' +
           (one.description ?
@@ -1548,27 +1549,27 @@ class DelegationPage {
       '<td>' + (one.baseUri
         ? '<code>aud: ' + kit.esc(one.baseUri) + '</code><br>' +
           '<code>scope: ' + kit.esc(one.permissionName) + '</code>'
-        : '<span class="state-none">nothing &mdash; the permission does not ' +
-          'resolve, so this scope is treated as an ordinary one</span>') +
+        : '<span class="state-none">' +
+          t.html('consoleDelegation.doesNotResolve') + '</span>') +
       '</td><td>' + (one.asked
-        ? '<span class="state-valid" title="This client\'s entry records ' +
-          'having asked for this scope. It is evidence rather than proof: ' +
-          'oauthScope records what was requested, not what was ' +
-          'issued.">asked for</span>'
-        : '<span class="state-none" title="This client has never asked for ' +
-          'it. A configured grant nobody has needed is exactly what this ' +
-          'register is here to show.">never asked for</span>') + '</td>' +
+        ? '<span class="state-valid" title="' +
+          t.html('consoleDelegation.askedTitle') + '">' +
+          t.html('consoleDelegation.askedFor') + '</span>'
+        : '<span class="state-none" title="' +
+          t.html('consoleDelegation.neverAskedTitle') + '">' +
+          t.html('consoleDelegation.neverAskedFor') + '</span>') + '</td>' +
       '<td>' + (options && options.readOnly
-        ? '<a href="/admin/delegation-settings#allowed" title="This page ' +
-          'draws the register and does not change it. The Revoke button for ' +
-          'this grant is on Protocols › Delegation.">change it</a>'
+        ? '<a href="/admin/delegation-settings#allowed" title="' +
+          t.html('consoleDelegation.changeRevokeTitle') + '">' +
+          t.html('consoleDelegation.changeIt') + '</a>'
         : '<form method="post" action="/admin/delegation-settings">' +
           DelegationPage.permissionsBack(listView) + '<div class="formrow">' +
           '<input type="hidden" name="action" value="revoke-permission">' +
           '<input type="hidden" name="client" value="' + kit.esc(one.client) +
           '"><input type="hidden" name="permission" value="' +
           kit.esc(one.permissionId) + '"><button ' +
-          'type="submit" class="danger">Revoke</button></div></form>') +
+          'type="submit" class="danger">' +
+          t.html('consoleDelegation.revoke') + '</button></div></form>') +
           '</td>' +
       '</tr>';
   }
@@ -1625,6 +1626,9 @@ class DelegationPage {
    * @returns the section as HTML
    */
   static delegationPolicySection(ctx, view) {
+    // The section's words are the page's translator's (#539 phase 6); a
+    // pair's own warning comes from the view and is drawn as it comes.
+    const t = ctx.t;
     const navParams = kit.pageParamsOf(ctx.query);
     const pairsNav = kit.pageNavPair('/admin/delegation', navParams,
                                       view.pairs.paging);
@@ -1643,24 +1647,29 @@ class DelegationPage {
     const pairRows = view.pairs.shown.map(function (pair) {
       return '<tr><td><code>' + kit.esc(pair.mechanism) + '</code></td>' +
         '<td class="who">' + appLink(pair.intermediary) +
-        (pair.impersonates ? '<br><span class="state-expired">may ' +
-          'impersonate</span>' : '') + '</td>' +
+        (pair.impersonates ? '<br><span class="state-expired">' +
+          t.html('consoleDelegation.mayImpersonate') + '</span>' : '') +
+        '</td>' +
         '<td class="who"><code>' + kit.esc(pair.target) + '</code>' +
         (pair.targetApplication && pair.targetApplication !== pair.target
-          ? '<br><span class="state-none">the application ' +
-            kit.esc(pair.targetApplication) + '</span>' : '') + '</td>' +
+          ? '<br><span class="state-none">' +
+            t.html('consoleDelegation.theApplication',
+                   { name: pair.targetApplication }) + '</span>' : '') +
+        '</td>' +
         '<td class="who"><code>' + kit.esc(pair.attribute) + '</code><br>' +
-        '<span class="state-none">on the ' + kit.esc(pair.setOnRole) +
+        '<span class="state-none">' +
+        t.html('consoleDelegation.onThe', { role: pair.setOnRole }) +
         ', ' + appLink(pair.setOn) + '</span></td>' +
         '<td>' + (pair.subjectGroups.length
           ? pair.subjectGroups.map(function (dn) {
             return '<code>' + kit.esc(dn) + '</code>';
           }).join('<br>')
-          : 'anybody not protected') + '</td>' +
+          : t.html('consoleDelegation.anybodyNotProtected')) + '</td>' +
         '<td>' + (pair.warning
           ? '<span class="state-expired">' + kit.esc(pair.warning) +
             '</span>'
-          : '<span class="state-valid">nothing else is missing</span>') +
+          : '<span class="state-valid">' +
+            t.html('consoleDelegation.nothingMissing') + '</span>') +
         '</td></tr>';
     }).join('');
     const intermediaryRows = view.intermediaries.shown.map(function (row) {
@@ -1668,92 +1677,77 @@ class DelegationPage {
         '<td>' + (row.semantics && row.semantics.length
           ? row.semantics.map(function (one: string) {
             return kit.esc(one);
-          }).join(', ') : 'delegation only (empty)') +
-        (row.defaultSemantics ? '<br><span class="state-none">default ' +
-          kit.esc(row.defaultSemantics) + '</span>' : '') +
-        (row.notDelegated ? '<br><code>appNotDelegated</code> — never ' +
-          'acted for' : '') +
+          }).join(', ') : t.html('consoleDelegation.delegationOnly')) +
+        (row.defaultSemantics ? '<br><span class="state-none">' +
+          t.html('consoleDelegation.defaultSemantics',
+                 { value: row.defaultSemantics }) + '</span>' : '') +
+        (row.notDelegated ? '<br>' +
+          t.html('consoleDelegation.appNeverActedFor') : '') +
         '</td><td>' + (row.subjectGroups.length
           ? row.subjectGroups.map(function (dn) {
             return '<code>' + kit.esc(dn) + '</code>';
-          }).join('<br>') : 'anybody not protected') + '</td></tr>';
+          }).join('<br>') : t.html('consoleDelegation.anybodyNotProtected')) +
+        '</td></tr>';
     }).join('');
     const peopleRows = view.people.shown.map(function (row) {
       return '<tr><td class="who"><a href="' + kit.esc('/admin/users?user=' +
         encodeURIComponent(String(row.username))) + '">' +
         kit.esc(row.username) + '</a></td><td>' +
-        (row.notDelegated ? '<code>stsNotDelegated</code> — nobody may act ' +
-          'for them' : '&mdash;') + '</td><td>' +
+        (row.notDelegated ? t.html('consoleDelegation.personNeverActedFor')
+                          : '&mdash;') + '</td><td>' +
         (row.mayAct ? '<code>' + kit.esc(row.mayAct) + '</code>'
                     : '&mdash;') + '</td><td>' +
         ((row.semantics && row.semantics.length) || row.defaultSemantics
-          ? kit.esc((row.semantics || []).join(', ') || 'both') +
-            (row.defaultSemantics ? '; default ' +
-              kit.esc(row.defaultSemantics) : '')
+          ? kit.esc((row.semantics || []).join(', ') ||
+                    t.text('consoleDelegation.both')) +
+            (row.defaultSemantics ? '; ' +
+              t.html('consoleDelegation.defaultSemantics',
+                     { value: row.defaultSemantics }) : '')
           : '&mdash;') + '</td></tr>';
     }).join('');
     const register = view.register;
-    return '<h2 id="delegation-policy">Who may act for whom &mdash; ' +
-      'WS-Trust, token exchange and Kerberos</h2>' +
-      kit.note('<strong>Decided by the issuance policy</strong> (#186), ' +
-      'from facts on the entries — one set of settings for the three ' +
-      'protocols. <code>appAllowedToDelegateTo</code> on an application ' +
-      'names the applications it delegates to (the analogue of ' +
-      '<code>msDS-AllowedToDelegateTo</code>); ' +
-      '<code>appAllowedToActOnBehalfOf</code> on the TARGET names the actors ' +
-      'it accepts (the resource-based one); ' +
-      '<code>appDelegationSubjectGroup</code> narrows who an actor may act ' +
-      'for; and <code>appDelegationSemantics</code> says whether it may ' +
-      'IMPERSONATE as well as delegate (empty is delegation only), with ' +
-      '<code>appDefaultDelegationSemantics</code> the default. A person ' +
-      'acting needs the role <code>delegation.actorRole</code> names. A ' +
-      'person carrying <code>stsNotDelegated</code>, an application carrying ' +
-      '<code>appNotDelegated</code>, or a member of ' +
+    return '<h2 id="delegation-policy">' +
+      t.html('consoleDelegation.hPolicy') + '</h2>' +
+      kit.note(t.html('consoleDelegation.policyLead') +
       (register.protectedGroups.length
         ? register.protectedGroups.map(function (one) {
           return '<code>' + kit.esc(one) + '</code>';
-        }).join(' or ')
-        : 'a console roster') +
-      ', is never delegated. The rules are the issuance policy\'s ' +
-      '(action-ids <code>choose-exchange-semantics</code> and ' +
-      '<code>exchange-token</code>); a realm changes them in its own ' +
-      'policy. ' + (register.enforced
-        ? '<strong>This realm is in product mode, so this is ' +
-          'ENFORCED</strong>: a refusal is <code>wst:RequestFailed</code>, ' +
-          '<code>invalid_request</code> or <code>invalid_target</code>.'
-        : '<strong>This realm is in development mode, so nothing is ' +
-          'refused</strong>: the policy is asked and each act above says ' +
-          'what WOULD have been refused in product.') +
-      ' Edit an application\'s on its own page, and a person\'s on ' +
-      'theirs. <code>GET /admin-api/delegation/policy</code> is this ' +
-      'section as JSON.') +
+        }).join(' ' + t.html('consoleDelegation.orWord') + ' ')
+        : t.html('consoleDelegation.aConsoleRoster')) +
+      t.html('consoleDelegation.policyNeverDelegated') +
+      (register.enforced
+        ? t.html('consoleDelegation.policyEnforced')
+        : t.html('consoleDelegation.policyNotEnforced')) +
+      t.html('consoleDelegation.policyEdit')) +
       pairsNav.head +
-      '<table><tr><th>Mechanism</th><th>Intermediary (who acts)</th>' +
-      '<th>Target (what is reached)</th><th>Attribute, and where it ' +
-      'lives</th><th>May act for</th><th>Anything missing?</th></tr>' +
-      (pairRows || '<tr><td colspan="6">No application here names a ' +
-        'delegation target or an intermediary it accepts, so every ' +
-        'WS-Trust and token-exchange delegation is ' +
-        (register.enforced ? 'refused' : 'one product would refuse') +
-        '.</td></tr>') + '</table>' + pairsNav.foot +
-      '<h3>Intermediaries</h3>' +
+      '<table><tr><th>' + t.html('consoleDelegation.thMechanism') +
+      '</th><th>' + t.html('consoleDelegation.thIntermediary') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thTargetReached') + '</th><th>' +
+      t.html('consoleDelegation.thAttributeWhere') + '</th><th>' +
+      t.html('consoleDelegation.thMayActFor') + '</th><th>' +
+      t.html('consoleDelegation.thMissing') + '</th></tr>' +
+      (pairRows || '<tr><td colspan="6">' +
+        (register.enforced ? t.html('consoleDelegation.noPairsEnforced')
+                           : t.html('consoleDelegation.noPairsDevelopment')) +
+        '</td></tr>') + '</table>' + pairsNav.foot +
+      '<h3>' + t.html('consoleDelegation.hIntermediaries') + '</h3>' +
       intermediariesNav.head +
-      '<table><tr><th>Application</th><th>Semantics allowed</th>' +
-      '<th>May act for</th></tr>' +
-      (intermediaryRows || '<tr><td colspan="3">No application carries ' +
-        'delegation semantics, appNotDelegated or a subject group.' +
-        '</td></tr>') +
+      '<table><tr><th>' + t.html('consoleDelegation.thApplication') +
+      '</th><th>' + t.html('consoleDelegation.thSemantics') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thMayActFor') + '</th></tr>' +
+      (intermediaryRows || '<tr><td colspan="3">' +
+        t.html('consoleDelegation.noIntermediaries') + '</td></tr>') +
       '</table>' + intermediariesNav.foot +
-      '<h3>People</h3>' +
-      kit.note('<code>stsMayAct</code> is a person\'s own choice of the ' +
-      'one party who may act for them; the access tokens issued about them ' +
-      'carry it as RFC 8693\'s <code>may_act</code>, and a token exchange ' +
-      'of one by anybody else is refused in every mode.') +
+      '<h3>' + t.html('consoleDelegation.hPeople') + '</h3>' +
+      kit.note(t.html('consoleDelegation.mayActNote')) +
       peopleNav.head +
-      '<table><tr><th>Person</th><th>Cannot be delegated</th><th>May act for ' +
-      'them (stsMayAct)</th><th>Semantics allowed</th></tr>' +
-      (peopleRows || '<tr><td colspan="4">Nobody carries any of them.' +
-        '</td></tr>') + '</table>' + peopleNav.foot;
+      '<table><tr><th>' + t.html('consoleDelegation.thPerson') +
+      '</th><th>' + t.html('consoleDelegation.thCannotBeDelegated') +
+      '</th><th>' + t.html('consoleDelegation.thMayActForThem') +
+      '</th><th>' + t.html('consoleDelegation.thSemantics') + '</th></tr>' +
+      (peopleRows || '<tr><td colspan="4">' +
+        t.html('consoleDelegation.nobodyCarries') + '</td></tr>') +
+      '</table>' + peopleNav.foot;
   }
 
   // The whole configured section. Extracted into a function of its own because
@@ -1787,6 +1781,10 @@ class DelegationPage {
    * @returns the section as HTML
    */
   static permissionsSection(ctx, view, listView, editable) {
+    // The section's words are the page's translator's (#539 phase 6). A
+    // link carries an href, which a message may not, so a sentence around
+    // one is split into messages with the anchor in the code.
+    const t = ctx.t;
     // The page this section is on: its searches and pagings stay there.
     const here = editable ? '/admin/delegation-settings' : '/admin/delegation';
     const rowOptions = editable ? undefined : { readOnly: true };
@@ -1847,283 +1845,164 @@ class DelegationPage {
     const permNav = kit.pageNavPair(here, navParams, permPage.paging);
     const grantNav = kit.pageNavPair(here, navParams, grantPage.paging);
 
-    return '<h2 id="allowed">What is ALLOWED, decided in advance</h2>' +
+    return '<h2 id="allowed">' + t.html('consoleDelegation.hAllowed') +
+      '</h2>' +
 
-      kit.note('<strong>Everything above this heading is EVIDENCE and ' +
-      'everything below it is INTENT, and the difference is the most useful ' +
-      'thing on this page.</strong> The acts, the chains and the picture ' +
-      'they are drawn from are things that happened — a credential was ' +
-      'issued or refused, at a moment, to somebody. What follows is ' +
-      'CONFIGURATION: which client applications may reach which resource ' +
-      'applications, typed in before anybody asked for anything. Read one ' +
-      'against the other and two questions answer themselves: <em>which ' +
-      'grants has nobody ever used</em>, and <em>what has been delegated ' +
-      'that nobody granted</em>.') +
+      kit.note(t.html('consoleDelegation.allowedEvidence')) +
 
-      kit.note('<strong>A RESOURCE application exposes an API and a CLIENT ' +
-      'application is granted permissions on it.</strong> The resource is ' +
-      'given a base URI &mdash; anything absolute works here &mdash; and a ' +
-      'list of permissions. A permission is identified by the two joined ' +
-      'together &mdash; base <code>https://example.com/</code> and name ' +
-      '<code>write</code> make <code>https://example.com/write</code> ' +
-      '&mdash; and a client application is granted some of them. <strong>A ' +
-      'permission must be DEFINED before it can be GRANTED</strong>, which ' +
-      'is the one ordering rule this feature has; it is checked in ' +
-      '<code>applications.js</code> so that this form, the management API ' +
-      'and the attribute editor on <a ' +
-      'href="/admin/applications">Applications</a> cannot disagree about it.') +
+      kit.note(t.html('consoleDelegation.allowedResourceBefore') +
+      '<a href="/admin/applications">' +
+      t.html('consoleDelegation.applicationsLink') + '</a>' +
+      t.html('consoleDelegation.allowedResourceAfter')) +
 
-      kit.note('<strong>Then a client asks for it as an OAuth scope, and ' +
-      'the access token says both halves.</strong> <code>scope=openid ' +
-      'https://example.com/write</code> produces a token audienced to ' +
-      '<code>https://example.com/</code> carrying <code>scope: openid ' +
-      'write</code> &mdash; the base becomes the <code>aud</code> and the ' +
-      'name becomes the scope, which is what a resource server wants: check ' +
-      'the audience once, then read bare permission names. That is the same ' +
-      'rule a scope naming another application\'s <code>client_id</code> ' +
-      'already follows, one step more precise.') +
+      kit.note(t.html('consoleDelegation.allowedScope')) +
 
-      kit.note('<strong>In product mode an ungranted permission is refused ' +
-      '<code>invalid_scope</code>, always. In development a grant refuses ' +
-      'nothing by default, and that is a setting on <a ' +
-      'href="/admin/oauth2">OAuth 2.0 / OIDC settings</a>.</strong> With ' +
-      '<code>oauth2.delegatedPermissionsEnforced</code> off &mdash; which it ' +
-      'is unless somebody turned it on &mdash; an ungranted permission is ' +
-      'honoured exactly as a granted one is, logged as ungranted, and marked ' +
-      'here. With it on the same request is refused ' +
-      '<code>invalid_scope</code> at the authorization endpoint, where the ' +
-      'client can still be told. Both answers exercise a client and neither ' +
-      'is the right one for every test, which is why the register is fully ' +
-      'readable before anybody enforces anything.') +
+      kit.note('<strong>' + t.html('consoleDelegation.allowedProductBefore') +
+      '<a href="/admin/oauth2">' +
+      t.html('consoleDelegation.oauthSettingsLink') + '</a>.</strong>' +
+      t.html('consoleDelegation.allowedProductAfter')) +
 
       '<div class="tiles">' +
-        kit.tile(counts.resources, 'applications exposing an API') +
-        kit.tile(counts.permissions, 'permissions defined') +
-        kit.tile(counts.grants, 'grants') +
-        kit.tile(counts.clients, 'applications holding one') +
-        kit.tile(counts.unused, 'granted and never asked for') +
-        kit.tile(counts.dangling, 'dangling') +
+        kit.tile(counts.resources,
+                 t.text('consoleDelegation.tileResources')) +
+        kit.tile(counts.permissions,
+                 t.text('consoleDelegation.tilePermissions')) +
+        kit.tile(counts.grants, t.text('consoleDelegation.tileGrants')) +
+        kit.tile(counts.clients, t.text('consoleDelegation.tileClients')) +
+        kit.tile(counts.unused, t.text('consoleDelegation.tileUnused')) +
+        kit.tile(counts.dangling, t.text('consoleDelegation.dangling')) +
       '</div>' +
 
-      kit.note('<a class="btn" href="/admin/delegation/allowed">See the ' +
-      'allowed mappings as a picture &rarr;</a> <strong>A SECOND diagram, ' +
-      'and it is not the one above.</strong> <a ' +
-      'href="/admin/delegation/map">The picture of the acts</a> draws what ' +
-      'happened: three layers, a stick figure for the person it happened to, ' +
-      'and a hexagon for this service, which issued it. This one draws what ' +
-      'is allowed: every box is an application, there is no person on it at ' +
-      'all &mdash; a permission says <em>webapp1 may reach the API as ' +
-      'whoever is signed in</em>, and there is no whoever yet &mdash; and ' +
-      'this service is not on it either, because not one line of it has been ' +
-      'issued. A line is DASHED until the client has actually asked for that ' +
-      'permission, which is the reading a configured register exists for and ' +
-      'the one an acts diagram can never give.') +
+      kit.note('<a class="btn" href="/admin/delegation/allowed">' +
+      t.html('consoleDelegation.seeAllowedPicture') + ' &rarr;</a> ' +
+      t.html('consoleDelegation.secondDiagramBefore') + '<a ' +
+      'href="/admin/delegation/map">' +
+      t.html('consoleDelegation.actsPictureLink') + '</a>' +
+      t.html('consoleDelegation.secondDiagramAfter')) +
 
-      '<h3 id="permissions">Permissions applications expose</h3>' +
-      kit.note('One row per permission. <strong>Defining one grants it to ' +
-      'nobody</strong>, so a row with nothing in the last two columns is the ' +
-      'ordinary first step rather than a mistake. Removing a permission does ' +
-      'NOT revoke the grants naming it &mdash; they stay on the clients\' ' +
-      'entries and become dangling, because tidying them would be this page ' +
-      'writing to entries nobody named.') +
+      '<h3 id="permissions">' + t.html('consoleDelegation.hPermissions') +
+      '</h3>' +
+      kit.note(t.html('consoleDelegation.permissionsLead')) +
       kit.sectionSearchForm({
         path: here, query: ctx.query,
         param: 'permq', pageParam: 'permissionsPage',
-        label: 'Narrow to an application',
-        placeholder: 'part of an application name or identifier',
-        what: 'It matches the application that EXPOSES the permission ' +
-          '&mdash; the first column &mdash; on its name and on its ' +
-          'identifier both, and nothing else on the row. A permission ' +
-          'belongs to exactly one application, so there is no second column ' +
-          'this box could have meant. To find every permission some ' +
-          'application HOLDS, search the grants table below instead: that is ' +
-          'the relationship, and this table is the definition.'
-      }) +
+        label: t.text('consoleDelegation.narrowLabel'),
+        placeholder: t.text('consoleDelegation.narrowPlaceholder'),
+        what: t.html('consoleDelegation.permSearchWhat')
+      }, t) +
       permNav.head +
-      '<table><tr><th>Exposed by</th><th>Permission</th><th>Identifier ' +
-      '&mdash; what a client sends</th><th>Held by</th><th>Which ' +
-      'applications</th><th></th></tr>' +
+      '<table><tr><th>' + t.html('consoleDelegation.thExposedBy') +
+      '</th><th>' + t.html('consoleDelegation.thPermission') + '</th><th>' +
+      t.html('consoleDelegation.thIdentifierSent') + '</th><th>' +
+      t.html('consoleDelegation.thHeldBy') + '</th><th>' +
+      t.html('consoleDelegation.thWhichApplications') +
+      '</th><th></th></tr>' +
       (permPage.shown.map(function (one) {
-        return DelegationPage.permissionDefinitionRow(one, listView,
+        return DelegationPage.permissionDefinitionRow(t, one, listView,
                                                       rowOptions);
       }).join('') || '<tr><td colspan="6">' +
         (permWanted
-          ? 'No application whose name or identifier contains <code>' +
-            kit.esc(permWanted) + '</code> exposes a permission. ' +
+          ? t.html('consoleDelegation.noPermMatch', { wanted: permWanted }) +
+            ' ' +
             (register.permissions.length
-              ? register.permissions.length + ' permission(s) are defined ' +
-                'here under other applications.'
-              : 'None is defined here at all yet.')
-          : 'No application here exposes an API yet. Give one a base URI ' +
-            'below and then define a permission on it.') +
+              ? t.html('consoleDelegation.permsElsewhere',
+                       { n: register.permissions.length })
+              : t.html('consoleDelegation.noPermsAtAll'))
+          : t.html('consoleDelegation.noApiYet')) +
         '</td></tr>') +
       '</table>' +
       permNav.foot +
 
       (editable ? '' :
-        kit.note('<strong>This page READS the register and changes ' +
-        'none of it (2026-10-01).</strong> Exposing an API, defining and ' +
-        'removing a permission and revoking a grant are on <a ' +
-        'href="/admin/delegation-settings#allowed">Protocols &rsaquo; ' +
-        'Delegation</a>, for every application at once, and on each ' +
-        'application\'s own <em>Permissions</em> tab under <a ' +
-        'href="/admin/applications">Directory &rsaquo; Applications</a>, ' +
-        'for that one. Each row\'s last column links there instead of ' +
-        'carrying a button.')) +
+        kit.note(t.html('consoleDelegation.readOnlyBefore') + '<a ' +
+        'href="/admin/delegation-settings#allowed">' +
+        t.html('consoleDelegation.protocolsDelegationLink') + '</a>' +
+        t.html('consoleDelegation.readOnlyMiddle') + '<a ' +
+        'href="/admin/applications">' +
+        t.html('consoleDelegation.directoryApplicationsLink') + '</a>' +
+        t.html('consoleDelegation.readOnlyAfter'))) +
 
       (!editable ? '' :
-        '<h4>Expose an API</h4>' +
-        kit.note('The base URI is one answer per application and ' +
-        'everything it exposes hangs off it. A trailing separator is added ' +
-        'where there is none, because the identifier is a plain ' +
-        'concatenation and <code>https://example.com</code> + ' +
-        '<code>write</code> would otherwise read as one word. Clearing it ' +
-        'leaves the permissions on the entry with no identifier at all, ' +
-        'which the table above reports rather than hides.') +
+        '<h4>' + t.html('consoleDelegation.hExposeApi') + '</h4>' +
+        kit.note(t.html('consoleDelegation.exposeApiNote')) +
         '<form method="post" action="/admin/delegation-settings">' +
         DelegationPage.permissionsBack(listView) +
         '<div class="formrow">' +
         '<input type="hidden" name="action" value="set-permission-base">' +
-        '<label for="base-resource">Application</label>' +
+        '<label for="base-resource">' +
+        t.html('consoleDelegation.labelApplication') + '</label>' +
         '<select id="base-resource" name="resource">' + applicationOptions +
-        '</select><label for="baseUri">Base URI</label><input type="text" ' +
+        '</select><label for="baseUri">' +
+        t.html('consoleDelegation.labelBaseUri') +
+        '</label><input type="text" ' +
         'id="baseUri" name="baseUri" size="34" ' +
-        'placeholder="https://example.com/"><button type="submit">Set the ' +
-        'base URI</button></div></form>' +
-        '<h4>Define a permission</h4>' +
-        kit.note('The name is what ends up on the token\'s ' +
-        '<code>scope</code> claim, so it must be a legal OAuth scope token: ' +
-        'any printable ASCII except space, double quote and backslash (RFC ' +
-        '6749 section 3.3), and not <code>|</code>, which separates the name ' +
-        'from the description in the attribute. The description is optional ' +
-        'and is shown wherever the permission is; changing it means removing ' +
-        'the permission and defining it again, because a permission has one ' +
-        'description and two rows with one name would leave the second ' +
-        'unreachable.') +
+        'placeholder="https://example.com/"><button type="submit">' +
+        t.html('consoleDelegation.setBaseUri') + '</button></div></form>' +
+        '<h4>' + t.html('consoleDelegation.hDefinePermission') + '</h4>' +
+        kit.note(t.html('consoleDelegation.definePermissionNote')) +
         '<form method="post" action="/admin/delegation-settings">' +
         DelegationPage.permissionsBack(listView) +
         '<div class="formrow">' +
         '<input type="hidden" name="action" value="define-permission">' +
-        '<label for="perm-resource">Exposed by</label>' +
+        '<label for="perm-resource">' +
+        t.html('consoleDelegation.thExposedBy') + '</label>' +
         '<select id="perm-resource" name="resource">' + applicationOptions +
-        '</select><label for="perm-name">Name</label><input type="text" ' +
+        '</select><label for="perm-name">' +
+        t.html('consoleDelegation.labelName') +
+        '</label><input type="text" ' +
         'id="perm-name" name="name" size="18" placeholder="write"><label ' +
-        'for="perm-description">Description</label><input type="text" ' +
+        'for="perm-description">' +
+        t.html('consoleDelegation.labelDescription') +
+        '</label><input type="text" ' +
         'id="perm-description" name="description" size="34" ' +
-        'placeholder="Change widgets on somebody\'s behalf"><button ' +
-        'type="submit">Define it</button></div></form>') +
-      '<h3 id="grants">Grants &mdash; the delegation relationships</h3>' +
-      kit.note('<strong>One row per (client, permission), and that IS the ' +
-      'relationship.</strong> A client granted three permissions on one ' +
-      'resource is three rows rather than one labelled <em>3</em>, because ' +
-      'the permission is what was granted and the pair of applications is ' +
-      'what it happens to join. That is also how one-to-many and many-to-one ' +
-      'both work here with no store of their own: three clients granted one ' +
-      'permission is one value on each of three entries.') +
+        'placeholder="' +
+        t.html('consoleDelegation.descriptionPlaceholder') + '"><button ' +
+        'type="submit">' + t.html('consoleDelegation.defineIt') +
+        '</button></div></form>') +
+      '<h3 id="grants">' + t.html('consoleDelegation.hGrants') + '</h3>' +
+      kit.note(t.html('consoleDelegation.grantsLead')) +
       kit.sectionSearchForm({
         path: here, query: ctx.query,
         param: 'grantq', pageParam: 'grantsPage',
-        label: 'Narrow to an application',
-        placeholder: 'part of an application name or identifier',
-        what: 'It matches EITHER END of the relationship &mdash; the client ' +
-          'that may ask and the resource that is reached &mdash; on the name ' +
-          'and on the identifier both. Both ends deliberately, and it is the ' +
-          'same argument the acts table\'s own text box makes: a reader ' +
-          'arrives holding one application name and the question <em>what is ' +
-          'this thing mixed up in</em>, and they do not know, and should not ' +
-          'have to guess, which of the two columns it will turn up in. ' +
-          'Searching one end would answer half that question while looking ' +
-          'as though it had answered all of it. A DANGLING grant has no ' +
-          'resource at all, so it matches only on its client &mdash; which ' +
-          'is right: there is no other application in that row to find it by.'
-      }) +
+        label: t.text('consoleDelegation.narrowLabel'),
+        placeholder: t.text('consoleDelegation.narrowPlaceholder'),
+        what: t.html('consoleDelegation.grantSearchWhat')
+      }, t) +
       grantNav.head +
-      '<table><tr><th>Client &mdash; who may ask</th><th>Resource &mdash; ' +
-      'what is reached</th><th>Permission</th><th>Identifier</th><th>What ' +
-      'the access token will say</th><th>Ever asked for?</th><th></th></tr>' +
+      '<table><tr><th>' + t.html('consoleDelegation.thClientWho') +
+      '</th><th>' + t.html('consoleDelegation.thResourceWhat') + '</th><th>' +
+      t.html('consoleDelegation.thPermission') + '</th><th>' +
+      t.html('consoleDelegation.thIdentifier') + '</th><th>' +
+      t.html('consoleDelegation.thTokenWillSay') + '</th><th>' +
+      t.html('consoleDelegation.thEverAsked') + '</th><th></th></tr>' +
       (grantPage.shown.map(function (one) {
-        return DelegationPage.permissionGrantRow(one, listView, rowOptions);
+        return DelegationPage.permissionGrantRow(t, one, listView,
+                                                 rowOptions);
       }).join('') || '<tr><td colspan="7">' +
         (grantWanted
-          ? 'No grant names an application whose name or identifier contains ' +
-            '<code>' + kit.esc(grantWanted) + '</code>, at either end. ' +
+          ? t.html('consoleDelegation.noGrantMatch', { wanted: grantWanted }) +
+            ' ' +
             (register.grants.length
-              ? register.grants.length + ' grant(s) are held here between ' +
-                'other applications.'
-              : 'Nothing is granted here at all yet.')
-          : 'Nothing is granted yet. Define a permission above, then grant ' +
-            'it on the client\'s own page &mdash; until then every scope ' +
-            'this service is sent is an ordinary scope.') +
+              ? t.html('consoleDelegation.grantsElsewhere',
+                       { n: register.grants.length })
+              : t.html('consoleDelegation.noGrantsAtAll'))
+          : t.html('consoleDelegation.nothingGrantedYet')) +
         '</td></tr>') +
       '</table>' +
       grantNav.foot +
 
-      // -----------------------------------------------------------------------
-      // THE GRANT FORM IS NOT HERE ANY MORE, AND THIS PARAGRAPH IS WHAT IS LEFT
-      // OF IT (2026-09-01).
-      //
-      // It was a `<select>` of every application beside a `<select>` of every
-      // permission, and it asked the reader to get BOTH right on a page that is
-      // about neither of them in particular. That is the one control in this
-      // register where picking the wrong option still SUCCEEDS: a grant written
-      // to the resource instead of to the client resolves in both directions
-      // and reads correctly on this very table, and the only place it shows as
-      // wrong is at the token endpoint, later, to somebody else.
-      //
-      // On an application's own page there is no first select at all: the
-      // client is the entry the reader is standing on. So the control that
-      // could be half wrong became a control that cannot be.
-      //
-      // **AND SINCE 2026-10-01 THE RESOURCE'S PAGE GRANTS TOO** (rcbj): its
-      // Permissions tab offers ITS OWN permissions to another application.
-      // That is still one select of applications, but the other half — the
-      // permission, and so the resource — is settled by the page, which is
-      // the property the move above was for. The register stays without a
-      // grant form; `revoke-permission` is a ROW BUTTON here and on both
-      // applications' pages, because the row is the pair and neither half
-      // can be got wrong.
-      //
-      // THE HANDLER MOVED WITH THE CONTROLS (2026-10-01): every form that
-      // changes the register posts to `POST /admin/delegation-settings`, the
-      // Protocols page's handler, and Monitoring → Delegation has no POST.
-      // PERMISSION_ACTIONS still lists all five, and `POST
-      // /admin-api/permissions/:action` mirrors the new path.
-      // -----------------------------------------------------------------------
-      '<h4>Grant a permission</h4>' +
+      '<h4>' + t.html('consoleDelegation.hGrantPermission') + '</h4>' +
       (grantable.length
-        ? kit.note('<strong>This one is on the two applications\' own ' +
-          'pages.</strong> A grant lands on the CLIENT\'s entry, as a value ' +
-          'of <code>oauthDelegatedPermission</code>, because the client is ' +
-          'the party that will name the permission in a <code>scope</code> — ' +
-          'so the entry that answers <em>may this request be honoured</em> ' +
-          'is the entry the request identifies. Open an application under ' +
-          '<a href="/admin/applications">Directory &rsaquo; Applications</a> ' +
-          'and its <em>Permissions</em> tab grants it somebody else\'s ' +
-          'permission, or grants one of ITS OWN to another application — ' +
-          'either way one half of the pair is settled by the page you are ' +
-          'on rather than chosen out of a list of every application here. ' +
-          'An application still cannot be granted its own permission: the ' +
-          'token would be addressed to itself, which is what an ID Token ' +
-          'already is, and neither page offers it.')
-        : kit.note('<strong>There is nothing to grant yet.</strong> A ' +
-          'permission must be defined before it can be granted, so the ' +
-          'control appears — on each application\'s own page under <a ' +
-          'href="/admin/applications">Directory &rsaquo; Applications</a> — ' +
-          'once an application exposes one with an identifier. That ordering ' +
-          'is the whole shape of the feature rather than a limitation of ' +
-          'either page.')) +
+        ? kit.note(t.html('consoleDelegation.grantOnPagesBefore') +
+          '<a href="/admin/applications">' +
+          t.html('consoleDelegation.directoryApplicationsLink') + '</a>' +
+          t.html('consoleDelegation.grantOnPagesAfter'))
+        : kit.note(t.html('consoleDelegation.nothingToGrantBefore') + '<a ' +
+          'href="/admin/applications">' +
+          t.html('consoleDelegation.directoryApplicationsLink') + '</a>' +
+          t.html('consoleDelegation.nothingToGrantAfter'))) +
 
-      kit.note('<strong>Every one of these is an ordinary attribute on an ' +
-      'ordinary directory entry</strong>, and an <code>ldapmodify</code> ' +
-      'reaches them exactly as it reaches a redirect URI: ' +
-      '<code>oauthPermissionBaseUri</code> and <code>oauthPermission</code> ' +
-      'on the resource, <code>oauthDelegatedPermission</code> on the client. ' +
-      'What LDAP does not get is the ordering check &mdash; this directory ' +
-      'enforces nothing anywhere &mdash; which is why a grant naming a ' +
-      'permission nobody defines can exist at all, and why it is shown as ' +
-      'dangling rather than treated as an error. <code>GET ' +
-      '/admin/ldap/applications</code> publishes all three, and they persist ' +
-      'wherever the directory does.');
+      kit.note(t.html('consoleDelegation.ordinaryAttributes'));
   }
 
 
@@ -2143,6 +2022,10 @@ class DelegationPage {
    * @returns the body as HTML
    */
   static map(ctx: Json, json: Json): string {
+    // The page's words are its translator's (#539 phase 6); a mechanism's
+    // label, a mode's label and the key drawn on the server come from the
+    // view and are drawn as they come.
+    const t = ctx.t;
     const filter = json.filter || {};
     const wanted = { type: filter.type || '', mode: filter.mode || '',
                      outcome: filter.outcome || '',
@@ -2173,7 +2056,7 @@ class DelegationPage {
     });
     const typeOptions = '<option value=""' +
       (wanted.type ? '' : ' selected') +
-      '>any mechanism</option>' +
+      '>' + t.html('consoleDelegation.anyMechanism') + '</option>' +
       protocolsInOrder.map(function (protocol) {
         return '<optgroup label="' + kit.esc(protocol) + '">' +
           json.types.filter(function (entry) {
@@ -2188,7 +2071,8 @@ class DelegationPage {
       }).join('');
     const modeOptions = ['<option value=""' +
                          (wanted.mode ? '' : ' selected') +
-                         '>either kind</option>']
+                         '>' + t.html('consoleDelegation.eitherKind') +
+                         '</option>']
       .concat(json.modes.map(function (entry) {
         return '<option value="' + kit.esc(entry.mode) + '"' +
                (entry.mode === wanted.mode ? ' selected' : '') + '>' +
@@ -2199,7 +2083,8 @@ class DelegationPage {
     const outcomeOptions = ['<option value=""' +
                             (wanted.outcome ? '' : ' ' +
         'selected') +
-                            '>any outcome</option>']
+                            '>' + t.html('consoleDelegation.anyOutcome') +
+                            '</option>']
       .concat(json.outcomes.map(function (name) {
         return '<option value="' + kit.esc(name) + '"' +
                (name === wanted.outcome ? ' selected' : '') + '>' +
@@ -2214,62 +2099,62 @@ class DelegationPage {
     // carries the filter, so "back" means the table they came from and not
     // the top of an unfiltered one.
     return kit.note('<a class="btn" href="' + kit.esc(upHref) +
-                '">&larr; Back to ' +
-      'the delegation table</a>') +
+                '">&larr; ' + t.html('consoleDelegation.backToTable') +
+                '</a>') +
 
       '<div class="tiles">' +
-        kit.tile(parties.length, 'parties') +
+        kit.tile(parties.length, t.text('consoleDelegation.tileParties')) +
         kit.tile(json.edges.filter(function (e) {
           return e.relation !== 'issued';
         }).length,
-                  'relationships') +
-        kit.tile(json.chains, 'distinct chains') +
-        kit.tile(json.acts, 'acts drawn') +
-        kit.tile(json.summary.byMode.impersonation || 0, 'impersonations') +
-        kit.tile(json.tokens.length, 'credentials issued') +
+                  t.text('consoleDelegation.tileRelationships')) +
+        kit.tile(json.chains, t.text('consoleDelegation.tileChains')) +
+        kit.tile(json.acts, t.text('consoleDelegation.tileActsDrawn')) +
+        kit.tile(json.summary.byMode.impersonation || 0,
+                 t.text('consoleDelegation.tileImpersonations')) +
+        kit.tile(json.tokens.length,
+                 t.text('consoleDelegation.tileCredentialsIssued')) +
       '</div>' +
 
-      kit.note('<strong>The same acts as ' +
+      // The headline holds a link, so its <strong> is in the code and the
+      // words either side of the anchor are messages of their own.
+      kit.note('<strong>' + t.html('consoleDelegation.mapSameActsBefore') +
       '<a href="' + kit.esc(upHref) +
-      '">the table</a>, with the time taken out ' +
-      'and the parties shared.</strong> A party that is the intermediary ' +
-      'of six chains is ONE box here with six lines leaving it, which is ' +
-      'the thing a table of rows cannot show and the reason to draw this ' +
-      'at all. Every box and every line carries the whole story in its ' +
-      'tooltip; the two tables under the picture say the same things in ' +
-      'words, because a diagram nobody can quote is a diagram nobody can ' +
-      'put in a bug report.') +
+      '">' + t.html('consoleDelegation.theTable') + '</a>' +
+      t.html('consoleDelegation.mapSameActsAfter') + '</strong>' +
+      t.html('consoleDelegation.mapSameActsRest')) +
 
-      kit.note('<strong>It is drawn from everything that MATCHED the ' +
-      'filter and not from one page of it.</strong> ' + json.matched +
-      ' act(s) match' + (json.all !== json.matched
-        ? ' of ' + json.all + ' held' : '') +
-      ', and all of them are in the picture — paging a diagram would draw ' +
-      'the boxes that happen to be on page 2 and the lines that happen to ' +
-      'join them, which is a picture of the pagination.') +
+      kit.note(t.html('consoleDelegation.mapMatched', { n: json.matched }) +
+      (json.all !== json.matched
+        ? t.html('consoleDelegation.mapOfHeld', { all: json.all }) : '') +
+      t.html('consoleDelegation.mapAllInPicture')) +
 
       '<form method="get" action="/admin/delegation/map"><div ' +
       'class="formrow">' +
         DelegationPage.chooserCarry(ctx.query) +
-        '<label for="type">Mechanism</label><select id="type" name="type">' +
+        '<label for="type">' + t.html('consoleDelegation.thMechanism') +
+        '</label><select id="type" name="type">' +
           typeOptions + '</select>' +
-        '<label for="mode">Kind</label><select id="mode" name="mode">' +
+        '<label for="mode">' + t.html('consoleDelegation.labelKind') +
+        '</label><select id="mode" name="mode">' +
           modeOptions + '</select>' +
-        '<label for="outcome">Outcome</label><select id="outcome" ' +
+        '<label for="outcome">' + t.html('consoleDelegation.labelOutcome') +
+        '</label><select id="outcome" ' +
         'name="outcome">' +
           outcomeOptions + '</select>' +
       '</div><div class="formrow">' +
-        '<label for="q">Text</label>' +
+        '<label for="q">' + t.html('consoleDelegation.labelText') +
+        '</label>' +
         '<input type="text" id="q" name="q" size="40" value="' +
       kit.esc(wanted.q) +
-          '" placeholder="a person, an SPN, a client_id, an attribute">' +
-        '<button class="secondary">Redraw</button>' +
-        (filtering ? ' <a href="/admin/delegation/map">clear</a>' : '') +
+          '" placeholder="' +
+          kit.esc(t.text('consoleDelegation.textPlaceholder')) + '">' +
+        '<button class="secondary">' + t.html('consoleDelegation.redraw') +
+        '</button>' +
+        (filtering ? ' <a href="/admin/delegation/map">' +
+          t.html('consoleDelegation.clear') + '</a>' : '') +
       '</div></form>' +
-      kit.note('The same filter the table has, so narrowing one narrows ' +
-      'the other. <strong>Filtering to one person is how a busy picture is ' +
-      'read</strong> — the text box searches every party of the chain and ' +
-      'both explanations at once.') +
+      kit.note(t.html('consoleDelegation.mapSameFilter')) +
 
       // THE TWO PIVOTS, HERE AS WELL AS ON THE TABLE, and this is where the
       // person one was actually asked for: somebody looking at a picture
@@ -2282,150 +2167,90 @@ class DelegationPage {
       // chooser stays inside this register, and the person chooser leaves it
       // — that page also draws the ordinary issuance, which is most of what
       // happens in somebody's name and none of what is on this diagram.
-      kit.note('<strong>Or draw one party\'s picture instead.</strong> ' +
-      'These redraw around a single party rather than narrowing these ' +
-      'acts: an application, with everything delegated through it or to it ' +
-      'in either role — or a <strong>person</strong>, which is the wider ' +
-      'picture of the two, because it adds every ordinary grant, ' +
-      'assertion, ticket and SVID issued in their name and the sign-ins ' +
-      'the lot rests on. None of that is a delegation, so none of it can ' +
-      'be on this diagram.') +
-      DelegationPage.delegationApplicationChooser(json.applicationChooser,
+      kit.note(t.html('consoleDelegation.mapOnePartyInstead')) +
+      DelegationPage.delegationApplicationChooser(t, json.applicationChooser,
         '', { path: '/admin/delegation/map', query: ctx.query }) +
-      DelegationPage.delegationUserChooser(json.userChooser, '',
+      DelegationPage.delegationUserChooser(t, json.userChooser, '',
         { path: '/admin/delegation/map', query: ctx.query }) +
 
       (json.acts
-        ? DelegationPage.drawing(json, '/admin/delegation/map', wanted)
-        : kit.note('<strong>Nothing has delegated anything yet' +
-          (filtering ? ' that matches this filter' : '') + ', so there is ' +
-          'nothing to draw.</strong> Three things put a box on this page: ' +
-          'a Kerberos S4U2Self, S4U2Proxy or forwarded-TGT request at the ' +
-          'KDC; a WS-Trust <code>RequestSecurityToken</code> carrying ' +
-          '<code>&lt;wst:OnBehalfOf&gt;</code> or ' +
-          '<code>&lt;wst14:ActAs&gt;</code>; and an RFC 8693 token ' +
-          'exchange at <code>/oauth2/token</code>. A REFUSED attempt ' +
-          'counts and is drawn in red.')) +
+        ? DelegationPage.drawing(t, json, '/admin/delegation/map', wanted)
+        : kit.note((filtering
+            ? t.html('consoleDelegation.mapNothingFiltered')
+            : t.html('consoleDelegation.mapNothing')) +
+          t.html('consoleDelegation.mapNothingThree'))) +
 
-      '<h2>The key</h2>' +
-      kit.note('The shapes are drawn by the same functions the picture ' +
-      'uses, so a legend cannot come to describe a diagram this service no ' +
-      'longer draws.') +
+      '<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
+      kit.note(t.html('consoleDelegation.keyNote')) +
       json.mapKey +
 
-      '<h2>The parties</h2>' +
-      kit.note('Every box, with both of its links where it has two. The ' +
-      'picture can only put a shape inside ONE anchor, so a party that is ' +
-      'a person AND an application links to the users page there and to ' +
-      'both here.' +
+      '<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
+      kit.note(t.html('consoleDelegation.partiesNote') +
       (json.directoryLoaded ? '' :
-        ' <strong>No LDAP directory is loaded in this process</strong>, so ' +
-        'nothing here can be resolved to a person and every box is drawn ' +
-        'from its role. That is a build without ' +
-        '<code>ldap_server.js</code> and not a failure.')) +
-      '<table><tr><th>Label</th><th>Drawn as</th><th>Identity</th>' +
-      '<th>Roles it played</th><th>Acts</th><th>Protocols</th></tr>' +
+        t.html('consoleDelegation.noDirectory'))) +
+      '<table><tr><th>' + t.html('consoleDelegation.thLabel') +
+      '</th><th>' + t.html('consoleDelegation.thDrawnAs') + '</th><th>' +
+      t.html('consoleDelegation.thIdentity') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thRolesItPlayed') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thProtocols') + '</th></tr>' +
       (parties.map(function (node) {
-        return DelegationPage.delegationNodeRow(node, json.facts,
+        return DelegationPage.delegationNodeRow(t, node, json.facts,
                                                json.looks[node.id]);
-      }).join('') || '<tr><td colspan="6">No parties yet.</td></tr>') +
-      '</table><h2>The relationships</h2>' +
-      kit.note('Every line, as a sentence. <strong>The two kinds are ' +
-      'different claims and the picture colours them differently</strong>: ' +
-      '<em>acts for</em> is the DELEGATION relationship — who is acting on ' +
-      'whose behalf — and <em>reaches</em> is the TRUST relationship, what ' +
-      'the credential is FOR, which is the question <em>what is this ' +
-      'token\'s audience</em> asked as a picture. The grey lines from the ' +
-      'hexagon are neither: they are this service handing a credential to ' +
-      'whoever asked for one.') +
-      kit.note('<strong>The last column collapses one sentence and it is ' +
-      'the same collapse the delegation table makes.</strong> Kerberos is ' +
-      'the only family here that polices delegation at all, so a Kerberos ' +
-      'row names an ATTRIBUTE and an account — short, and different on ' +
-      'every row — while every WS-Trust and RFC 8693 row carries the ' +
-      'identical paragraph saying that nothing checked it. Repeated down a ' +
-      'table that paragraph is the column, so it is <em>nothing checks ' +
-      'this</em> with the wording in the tooltip. <strong>A REFUSAL is ' +
-      'never collapsed</strong> and prints in full: it is the KDC\'s own ' +
-      'words, the same sentence the client was sent, and it is specific to ' +
-      'the act rather than to the mechanism.') +
-      '<table><tr><th>From</th><th>To</th><th>Relationship</th>' +
-      '<th>Mechanism</th><th>Kind</th><th>Acts</th><th>What came out</th>' +
-      '<th>Authorized by / why not</th></tr>' +
+      }).join('') || '<tr><td colspan="6">' +
+        t.html('consoleDelegation.noPartiesYet') + '</td></tr>') +
+      '</table><h2>' + t.html('consoleDelegation.hRelationships') +
+      '</h2>' +
+      kit.note(t.html('consoleDelegation.relationshipsNote')) +
+      kit.note(t.html('consoleDelegation.lastColumnNote')) +
+      '<table><tr><th>' + t.html('consoleDelegation.thFrom') + '</th><th>' +
+      t.html('consoleDelegation.thTo') + '</th><th>' +
+      t.html('consoleDelegation.thRelationship') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thMechanism') + '</th><th>' +
+      t.html('consoleDelegation.labelKind') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thWhatCameOut') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thAuthorizedBy') + '</th></tr>' +
       (json.edges.map(function (edge) {
-        return DelegationPage.delegationEdgeRow(edge, labelOf);
-      }).join('') || '<tr><td colspan="8">No relationships yet.</td></tr>') +
+        return DelegationPage.delegationEdgeRow(t, edge, labelOf);
+      }).join('') || '<tr><td colspan="8">' +
+        t.html('consoleDelegation.noRelationshipsYet') + '</td></tr>') +
       '</table>' +
 
-      '<h2>What was issued</h2>' +
-      kit.note('<strong>Every credential that came out of an act in this ' +
-      'picture</strong>, newest first — a Kerberos service ticket, a SAML ' +
-      'assertion, an access token — with the chain it came out of. ' +
-      '<strong>NO CREDENTIAL IS EVER HERE, only its kind and its ' +
-      'identifier</strong>, which is the rule the audit log follows and ' +
-      'which applies here for one more reason: a delegation act is ' +
-      'precisely the request that carries two credentials at once. A ' +
-      'Kerberos ticket genuinely has no identifier to quote, which this ' +
-      'says rather than leaving a blank column to be read as a bug.') +
-      kit.note('A REFUSED act produced nothing by definition, so it is ' +
-      'not in this list — which is why ' + json.tokens.length + ' ' +
-      'credential(s) sit under ' + json.acts +
-      ' act(s) and the two numbers do not have to agree.') +
-      '<table><tr><th class="num">#</th><th>When</th><th>Credential</th>' +
-      '<th>Subject</th><th>Actor</th><th>Target</th><th>Mechanism</th>' +
+      '<h2>' + t.html('consoleDelegation.hWhatIssued') + '</h2>' +
+      kit.note(t.html('consoleDelegation.whatIssuedNote')) +
+      kit.note(t.html('consoleDelegation.refusedProducedNothing',
+                      { tokens: json.tokens.length, acts: json.acts })) +
+      '<table><tr><th class="num">#</th><th>' +
+      t.html('consoleDelegation.thWhen') + '</th><th>' +
+      t.html('consoleDelegation.thCredential') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thSubject') + '</th><th>' +
+      t.html('consoleDelegation.thActor') + '</th><th>' +
+      t.html('consoleDelegation.thTarget') + '</th><th>' +
+      t.html('consoleDelegation.thMechanism') + '</th>' +
       '</tr>' +
       (json.tokens.map(function (token) {
-        return DelegationPage.delegationTokenRow(token, labelOf);
+        return DelegationPage.delegationTokenRow(t, token, labelOf);
       }).join('') ||
-        '<tr><td colspan="7">Nothing has been issued through a ' +
-        'delegation yet. A REFUSED act produces nothing, so a page of red ' +
-        'lines and an empty table here is a consistent state rather than a ' +
-        'broken one.</td></tr>') + '</table>' +
+        '<tr><td colspan="7">' +
+        t.html('consoleDelegation.nothingIssuedThrough') +
+        '</td></tr>') + '</table>' +
       (json.tokensLeftOff
-        ? kit.note('<strong>' + json.tokensLeftOff + ' more ' +
-          'credential(s) are not listed.</strong> This list holds at most ' +
-          json.maxTokenRows +
-          ' and keeps the newest; every one of them is still COUNTED on ' +
-          'its line in the picture and in the relationship table, so what ' +
-          'is lost is the individual identifiers of the oldest. Filter to ' +
-          'narrow it.')
+        ? kit.note(t.html('consoleDelegation.tokensLeftOff', {
+            n: json.tokensLeftOff, max: json.maxTokenRows }))
         : '') +
 
-      '<h2>What this picture cannot say</h2>' +
-      kit.note('<strong>An IMPERSONATION is invisible everywhere else, ' +
-      'and that is why the amber lines matter.</strong> Under a delegation ' +
-      'the credential carries the chain, so a resource server can read the ' +
-      'actor off the token afterwards. Under an impersonation nothing ' +
-      'does: no reading of the token, at the far end or in a log, can ' +
-      'recover the fact that a middle tier was involved. This diagram and ' +
-      'the table behind it are the only places that fact will ever exist.') +
-      kit.note('<strong>A line is a RELATIONSHIP and not a ' +
-      'request.</strong> Four acts a second apart between the same three ' +
-      'parties are one line with <em>4 issued</em> on it; the outcome is ' +
-      'deliberately not part of a chain\'s identity, so a chain refused ' +
-      'nine times and then fixed is one line that changes colour rather ' +
-      'than two that never meet. <a href="' + kit.esc(upHref) +
-      '">The table</a> is where the individual ' +
-      'acts are, in order, with their times.') +
-      kit.note('<strong>Who MAY delegate to whom is not on this ' +
-      'page</strong>, because it is CONFIGURATION rather than history and ' +
-      'it is Kerberos-only — Kerberos is the one family here that polices ' +
-      'delegation at all. It is the second half of <a ' +
-      'href="' + kit.esc(upHref) + '">the delegation page</a>, ' +
-      'and the asymmetry between the two is worth reading there: the same ' +
-      'picture, policed at one end and not at the other.') +
-      kit.note('<strong>This page runs no script and neither does ' +
-      'anything else in this console.</strong> The diagram is generated on ' +
-      'the server and arrives as markup, which is why it does not pan, ' +
-      'zoom or drag — and why nothing here relaxes <code>script-src ' +
-      '\'none\'</code>. Use the filter to narrow a busy picture, or take ' +
-      'the document and open it in something that does zoom.') +
-      kit.note('<code>?format=json</code> carries the whole graph — the ' +
-      'nodes, the edges, the credentials folded onto each edge, and the ' +
-      'token list — and it is also in the <code>graph</code> member of ' +
-      '<code>GET /admin-api/delegation</code>, so a test can assert what ' +
-      'this page draws without parsing an SVG. <code>?format=svg</code> is ' +
-      'the document alone.');
+      '<h2>' + t.html('consoleDelegation.hCannotSay') + '</h2>' +
+      kit.note(t.html('consoleDelegation.impersonationInvisible')) +
+      kit.note(t.html('consoleDelegation.lineIsRelationship') + '<a href="' +
+      kit.esc(upHref) + '">' + t.html('consoleDelegation.theTableCap') +
+      '</a>' + t.html('consoleDelegation.lineIsRelationshipAfter')) +
+      kit.note(t.html('consoleDelegation.whoMayBefore') + '<a ' +
+      'href="' + kit.esc(upHref) + '">' +
+      t.html('consoleDelegation.theDelegationPage') + '</a>' +
+      t.html('consoleDelegation.whoMayAfter')) +
+      kit.note(t.html('consoleDelegation.noScript')) +
+      kit.note(t.html('consoleDelegation.mapFormats'));
 
   }
 
@@ -2444,10 +2269,12 @@ class DelegationPage {
    * @returns the body as HTML
    */
   static chain(ctx: Json, json: Json): string {
+    // The page's words are its translator's (#539 phase 6).
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/delegation', ctx.query);
     const upHref = '/admin/delegation' + kit.queryWith(listView, {});
     const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
-      '">&larr; Back to the delegation table</a>');
+      '">&larr; ' + t.html('consoleDelegation.backToTable') + '</a>');
     const chain = json.chain;
     const labelOf = function (id) {
       return json.looks[id] ? json.looks[id].label : id;
@@ -2455,28 +2282,18 @@ class DelegationPage {
     if (!chain) {
       return back +
         (json.chainKey
-          ? kit.note('<strong>No act held here belongs to that ' +
-            'relationship.</strong> <code>' + kit.esc(json.chainKey) +
-            '</code> ' +
-            'names a chain this page can describe only while at least one ' +
-            'of its acts is still held, and this store is CAPPED — it ' +
-            'keeps at most ' +
-            kit.esc(json.maxRecords) + ' acts and drops ' +
-            'the oldest first. So an old link coming back empty is the ' +
-            'ordinary outcome rather than a mistake, and so is a link from ' +
-            'a service that has restarted since: nothing here is ' +
-            'persisted. Raise <code>delegation.maxRecords</code> on <a ' +
-            'href="/admin/delegation-settings">Protocols &rsaquo; ' +
-            'Delegation</a> if this keeps happening to something you need.')
-          : kit.note('<strong>Name a relationship.</strong> This page ' +
-            'draws ONE of them, and the way to it is a link on ' +
+          ? kit.note(t.html('consoleDelegation.chainGone',
+                            { key: json.chainKey, max: json.maxRecords }) +
+            '<a href="/admin/delegation-settings">' +
+            t.html('consoleDelegation.protocolsDelegationLink') + '</a>' +
+            t.html('consoleDelegation.chainGoneAfter'))
+          : kit.note(t.html('consoleDelegation.chainNameOne') +
             '<a href="' + kit.esc(upHref) +
-            '">the delegation table</a> — every row of both tables there ' +
-            'has one, because the key that identifies a chain is ' +
-            '<em>(mechanism, initial identity, intermediary, target)</em> ' +
-            'and is not something worth typing.')) +
-        kit.note('<a href="/admin/delegation/map">The whole picture</a> ' +
-        'is everything that is still held, drawn together.');
+            '">' + t.html('consoleDelegation.theDelegationTable') + '</a>' +
+            t.html('consoleDelegation.chainNameOneAfter'))) +
+        kit.note('<a href="/admin/delegation/map">' +
+        t.html('consoleDelegation.wholePicture') + '</a>' +
+        t.html('consoleDelegation.wholePictureHeld'));
     }
     const parties = json.graph.nodes.filter(function (node) {
       return node.kind !== 'sts';
@@ -2489,138 +2306,129 @@ class DelegationPage {
     const sentence =
       kit.note('<strong>' +
       kit.esc(chain.initial.presented || chain.initial.application ||
-               'somebody nobody named') +
+               t.text('consoleDelegation.somebodyNobodyNamed')) +
       '</strong> — ' +
       (chain.intermediary.presented || chain.intermediary.application
-        ? 'acted for by <strong>' +
-          kit.esc(chain.intermediary.presented ||
-                   chain.intermediary.application) +
-          '</strong>'
-        : '<span class="state-none">with no intermediary this service was ' +
-          'ever told the name of</span>') +
-      ' — reaching <strong>' +
-      kit.esc(chain.target.application || chain.target.presented ||
-               'nothing in particular') +
-      '</strong>, by <code>' + kit.esc(chain.type) + '</code> (' +
-      kit.esc(chain.typeLabel) + ', ' + kit.esc(chain.protocol) + '). ' +
-      'It is an ' + DelegationPage.modeCell(chain.mode) +
-      ' and it has happened ' +
-      kit.esc(chain.acts) + ' time(s) — first ' +
-      kit.esc(kit.whenText(chain.firstAt)) +
-      ', last ' + kit.esc(kit.whenText(chain.lastAt)) + '.');
+        ? t.html('consoleDelegation.actedForBy', {
+            name: chain.intermediary.presented ||
+                  chain.intermediary.application })
+        : '<span class="state-none">' +
+          t.html('consoleDelegation.noIntermediaryNamed') + '</span>') +
+      t.html('consoleDelegation.reaching', {
+        target: chain.target.application || chain.target.presented ||
+                t.text('consoleDelegation.nothingInParticular'),
+        type: chain.type, label: chain.typeLabel,
+        protocol: chain.protocol }) +
+      DelegationPage.modeCell(t, chain.mode) +
+      t.html('consoleDelegation.happened', {
+        acts: chain.acts, first: kit.whenText(chain.firstAt),
+        last: kit.whenText(chain.lastAt) }));
 
     return back +
       '<div class="tiles">' +
-        kit.tile(chain.acts, 'acts on it') +
-        kit.tile(chain.issued, 'issued') +
-        kit.tile(chain.refused, 'refused') +
-        kit.tile(json.graph.tokens.length, 'credentials issued') +
-        kit.tile(parties.length, 'parties') +
+        kit.tile(chain.acts, t.text('consoleDelegation.tileActsOnIt')) +
+        kit.tile(chain.issued, t.text('consoleDelegation.outcomeIssued')) +
+        kit.tile(chain.refused, t.text('consoleDelegation.outcomeRefused')) +
+        kit.tile(json.graph.tokens.length,
+                 t.text('consoleDelegation.tileCredentialsIssued')) +
+        kit.tile(parties.length, t.text('consoleDelegation.tileParties')) +
         kit.tile(json.graph.edges.filter(function (e) {
           return e.relation !== 'issued';
         }).length,
-                  'lines') +
+                  t.text('consoleDelegation.tileLines')) +
       '</div>' +
 
       sentence +
 
-      kit.note('<strong>This is one row of ' +
+      kit.note('<strong>' + t.html('consoleDelegation.oneRowOf') +
       '<a href="' + kit.esc(upHref) +
-      '">the chains table</a> drawn on its ' +
-      'own</strong> , with everything else in the service left out. A ' +
-      'chain is <em>(mechanism, initial identity, intermediary, ' +
-      'target)</em> and the OUTCOME is deliberately not part of it, so a ' +
-      'relationship refused nine times and then fixed is this one page ' +
-      'rather than two that never meet — which is why the acts below can ' +
-      'be red and green at once. <a href="/admin/delegation/map">The whole ' +
-      'picture</a> is every relationship at once, where this one\'s ' +
-      'parties are shared with the others they take part in.') +
+      '">' + t.html('consoleDelegation.theChainsTable') + '</a>' +
+      t.html('consoleDelegation.drawnOnItsOwn') + '</strong>' +
+      t.html('consoleDelegation.chainIs') +
+      '<a href="/admin/delegation/map">' +
+      t.html('consoleDelegation.theWholePicture') + '</a>' +
+      t.html('consoleDelegation.chainIsAfter')) +
 
       (json.graph.acts
-        ? DelegationPage.drawing(json, '/admin/delegation/chain',
+        ? DelegationPage.drawing(t, json, '/admin/delegation/chain',
           Object.assign({}, listView, { chain: json.chainKey }))
-        : kit.note('There is nothing to draw.')) +
+        : kit.note(t.html('consoleDelegation.nothingToDraw'))) +
 
-      '<h2>The key</h2>' +
-      kit.note('The shapes are drawn by the same functions the picture ' +
-      'uses, so a legend cannot come to describe a diagram this service no ' +
-      'longer draws.') +
+      '<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
+      kit.note(t.html('consoleDelegation.keyNote')) +
       json.mapKey +
 
-      '<h2>The parties</h2>' +
-      kit.note('Up to three boxes — the layers of the architecture — with ' +
-      'both of a party\'s links where it has two. <strong>A box here can ' +
-      'carry more acts than this relationship has</strong> only if it ' +
-      'played two roles in one of them, which is what S4U2Self is: the ' +
-      'requester asks for a ticket to itself, so it is the intermediary ' +
-      'AND the target.') +
-      '<table><tr><th>Label</th><th>Drawn as</th><th>Identity</th>' +
-      '<th>Roles it played</th><th>Acts</th><th>Protocols</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
+      kit.note(t.html('consoleDelegation.chainParties')) +
+      '<table><tr><th>' + t.html('consoleDelegation.thLabel') +
+      '</th><th>' + t.html('consoleDelegation.thDrawnAs') + '</th><th>' +
+      t.html('consoleDelegation.thIdentity') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thRolesItPlayed') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thProtocols') + '</th></tr>' +
       (parties.map(function (node) {
-        return DelegationPage.delegationNodeRow(node, json.facts,
+        return DelegationPage.delegationNodeRow(t, node, json.facts,
                                                json.looks[node.id]);
-      }).join('') || '<tr><td colspan="6">No parties.</td></tr>') +
+      }).join('') || '<tr><td colspan="6">' +
+        t.html('consoleDelegation.noParties') + '</td></tr>') +
         '</table>' +
 
-      '<h2>The relationships</h2>' +
-      kit.note('A chain has three parties and therefore up to TWO lines, ' +
-      'and they are different claims: <em>acts for</em> is the DELEGATION ' +
-      'relationship — who is acting on whose behalf — and <em>reaches</em> ' +
-      'is the TRUST relationship, what the credential is FOR. The grey ' +
-      'line from the hexagon is neither: it is this service handing a ' +
-      'credential to whoever asked for one.') +
-      '<table><tr><th>From</th><th>To</th><th>Relationship</th><th>' +
-      'Mechanism</th><th>Kind</th><th>Acts</th><th>What came ' +
-      'out</th><th>Authorized by / why not</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hRelationships') + '</h2>' +
+      kit.note(t.html('consoleDelegation.chainRelationships')) +
+      '<table><tr><th>' + t.html('consoleDelegation.thFrom') + '</th><th>' +
+      t.html('consoleDelegation.thTo') + '</th><th>' +
+      t.html('consoleDelegation.thRelationship') + '</th><th>' +
+      t.html('consoleDelegation.thMechanism') + '</th><th>' +
+      t.html('consoleDelegation.labelKind') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thWhatCameOut') + '</th><th>' +
+      t.html('consoleDelegation.thAuthorizedBy') + '</th></tr>' +
       (json.graph.edges.map(function (edge) {
-        return DelegationPage.delegationEdgeRow(edge, labelOf);
-      }).join('') || '<tr><td colspan="8">No relationships.</td></tr>') +
+        return DelegationPage.delegationEdgeRow(t, edge, labelOf);
+      }).join('') || '<tr><td colspan="8">' +
+        t.html('consoleDelegation.noRelationships') + '</td></tr>') +
       '</table>' +
 
-      '<h2>What was issued on it</h2>' +
-      kit.note('<strong>Every credential that came out of this ' +
-      'relationship</strong>, newest first. <strong>NO CREDENTIAL IS EVER ' +
-      'HERE, only its kind and its identifier</strong> — the rule the ' +
-      'audit log follows, and one that applies here for one more reason: a ' +
-      'delegation act is precisely the request that carries two ' +
-      'credentials at once. A REFUSED act produced nothing by definition, ' +
-      'which is why ' + json.graph.tokens.length +
-      ' credential(s) sit under ' + chain.acts + ' act(s).') +
-      '<table><tr><th class="num">#</th><th>When</th><th>Credential</th>' +
-      '<th>Subject</th><th>Actor</th><th>Target</th><th>Mechanism</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hIssuedOnIt') + '</h2>' +
+      kit.note(t.html('consoleDelegation.chainIssued', {
+        tokens: json.graph.tokens.length, acts: chain.acts })) +
+      '<table><tr><th class="num">#</th><th>' +
+      t.html('consoleDelegation.thWhen') + '</th><th>' +
+      t.html('consoleDelegation.thCredential') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thSubject') + '</th><th>' +
+      t.html('consoleDelegation.thActor') + '</th><th>' +
+      t.html('consoleDelegation.thTarget') + '</th><th>' +
+      t.html('consoleDelegation.thMechanism') + '</th></tr>' +
       (json.graph.tokens.map(function (token) {
-        return DelegationPage.delegationTokenRow(token, labelOf);
-      }).join('') || '<tr><td colspan="7">Nothing was issued on this ' +
-        'relationship. A page of red acts and an empty table here is a ' +
-        'consistent state rather than a broken one.</td></tr>') + '</table>' +
+        return DelegationPage.delegationTokenRow(t, token, labelOf);
+      }).join('') || '<tr><td colspan="7">' +
+        t.html('consoleDelegation.nothingIssuedOnChain') + '</td></tr>') +
+      '</table>' +
 
-      '<h2>Every act on it</h2>' +
-      kit.note('The same rows <a href="' + kit.esc(upHref) +
-                '">the delegation ' +
-      'table</a> holds, narrowed to this ' +
-      'relationship and not paged — there are ' +
-      kit.esc(json.acts.length) +
-      ' of them and the cap on the whole store is ' +
-      kit.esc(json.maxRecords) + '. This is where the ' +
-      'TIMES are: the picture has them taken out, because four acts a ' +
-      'second apart between the same three parties are one line.') +
-      '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
-      '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
-      '<th>Intermediary</th><th>Target</th><th>Authorized by / why not</th>' +
-      '<th>Credentials</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hEveryAct') + '</h2>' +
+      kit.note(t.html('consoleDelegation.sameRowsBefore') + '<a href="' +
+      kit.esc(upHref) + '">' +
+      t.html('consoleDelegation.theDelegationTable') + '</a>' +
+      t.html('consoleDelegation.sameRowsAfter', {
+        n: json.acts.length, max: json.maxRecords })) +
+      '<table><tr><th class="num">#</th><th>' +
+      t.html('consoleDelegation.thWhen') + '</th><th>' +
+      t.html('consoleDelegation.thMechanism') + '</th>' +
+      '<th>' + t.html('consoleDelegation.labelKind') + '</th><th>' +
+      t.html('consoleDelegation.labelOutcome') + '</th><th>' +
+      t.html('consoleDelegation.thInitial') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thIntermediaryShort') +
+      '</th><th>' + t.html('consoleDelegation.thTarget') + '</th><th>' +
+      t.html('consoleDelegation.thAuthorizedBy') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thCredentials') + '</th></tr>' +
       json.acts.map(function (row) {
         // No `chain` link on this table: every row on it belongs to the chain
         // being drawn, so the link would point at the page it is on.
-        return DelegationPage.delegationRow(row, json.facts,
+        return DelegationPage.delegationRow(t, row, json.facts,
                                          { chainLink: false });
       }).join('') + '</table>' +
 
-      kit.note('<code>?format=json</code> carries this chain, its acts ' +
-      'and the graph behind the picture; <code>?format=svg</code> is the ' +
-      'document alone, with no links in it. There is no form on this page ' +
-      'and therefore no operation on <code>/admin-api</code> — everything ' +
-      'here is an observation, and the acts are in <code>GET ' +
-      '/admin-api/delegation</code> where a caller can filter them.');
+      kit.note(t.html('consoleDelegation.chainFormats'));
 
   }
 
@@ -2640,14 +2448,17 @@ class DelegationPage {
    * @returns the body as HTML
    */
   static application(ctx: Json, json: Json): string {
+    // The page's words are its translator's (#539 phase 6); a role's label
+    // and description come from the view and are drawn as they come.
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/delegation', ctx.query);
     const upHref = '/admin/delegation' + kit.queryWith(listView, {});
     const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
-      '">&larr; Back to the delegation table</a>');
+      '">&larr; ' + t.html('consoleDelegation.backToTable') + '</a>');
     // The chooser itself, drawn on the bare page AND under a selected
     // application — the second is what makes comparing two of them one
     // click rather than two.
-    const chooser = DelegationPage.delegationApplicationChooser(
+    const chooser = DelegationPage.delegationApplicationChooser(t,
       json.chooser, json.key,
       { path: '/admin/delegation/application', query: ctx.query });
     const entry = json.application;
@@ -2657,35 +2468,17 @@ class DelegationPage {
     if (!entry) {
     return back +
       (json.asked
-        ? kit.note('<strong>No act held here names ' +
-          '<code>' + kit.esc(json.asked) + '</code> as an ' +
-          'application.</strong> Three things could be true and they are ' +
-          'different: nothing has ever delegated through or to it; ' +
-          'something did and the acts have been DROPPED, because this ' +
-          'store keeps at most ' +
-          kit.esc(json.maxRecords) + ' and discards the ' +
-          'oldest; or the name is spelled differently from the way a ' +
-          'protocol presented it. The list below is every application ' +
-          'some act actually named, which settles the third.')
+        ? kit.note(t.html('consoleDelegation.appNoAct',
+                          { name: json.asked, max: json.maxRecords }))
         : '') +
-      kit.note('<strong>Choose an application to see everything that ' +
-      'has been delegated through it or to it.</strong> A delegation has ' +
-      'three parties and an application can be two of them — the ' +
-      'INTERMEDIARY that acts on somebody\'s behalf, and the TARGET the ' +
-      'credential is for — so this page shows both sides of one ' +
-      'application rather than making you pick a side. That is the ' +
-      'question worth asking before turning a middle tier off: not ' +
-      '<em>what reaches it</em>, but <em>what exists because of it</em>.') +
+      kit.note(t.html('consoleDelegation.appChoose')) +
       chooser +
-      DelegationPage.delegationApplicationTable(json.applications,
+      DelegationPage.delegationApplicationTable(t, json.applications,
                                                  json.facts, listView) +
-      kit.note('The list is built from the ACTS rather than from <a ' +
-      'href="/admin/applications">the registry</a>, which is why an ' +
-      'entry here can be marked <em>not in the registry</em>: the ' +
-      'registry holds what this service has been asked about, and an RFC ' +
-      '8693 <code>audience</code> nobody has otherwise mentioned is a ' +
-      'real delegation target that nothing else in this console knows ' +
-      'the name of.');
+      kit.note(t.html('consoleDelegation.appListFromActsBefore') + '<a ' +
+      'href="/admin/applications">' +
+      t.html('consoleDelegation.theRegistry') + '</a>' +
+      t.html('consoleDelegation.appListFromActsAfter'));
     }
     const parties = json.graph.nodes.filter(function (node) {
       return node.kind !== 'sts';
@@ -2693,12 +2486,14 @@ class DelegationPage {
 
     return back +
       '<div class="tiles">' +
-        kit.tile(entry.acts, 'acts') +
-        kit.tile(entry.issued, 'issued') +
-        kit.tile(entry.refused, 'refused') +
-        kit.tile(json.graph.tokens.length, 'credentials issued') +
-        kit.tile(entry.chains, 'relationships') +
-        kit.tile(entry.roles.intermediary, 'as the intermediary') +
+        kit.tile(entry.acts, t.text('consoleDelegation.tileActs')) +
+        kit.tile(entry.issued, t.text('consoleDelegation.outcomeIssued')) +
+        kit.tile(entry.refused, t.text('consoleDelegation.outcomeRefused')) +
+        kit.tile(json.graph.tokens.length,
+                 t.text('consoleDelegation.tileCredentialsIssued')) +
+        kit.tile(entry.chains, t.text('consoleDelegation.tileRelationships')) +
+        kit.tile(entry.roles.intermediary,
+                 t.text('consoleDelegation.tileAsIntermediary')) +
       '</div>' +
 
       kit.note('<strong><code>' + kit.esc(entry.identifier) +
@@ -2706,45 +2501,35 @@ class DelegationPage {
       (json.registered
         ? '<a href="' + kit.esc('/admin/applications' +
             kit.queryWith({ application: entry.identifier }, {})) +
-            '">in the ' +
-          'registry</a> as <strong>' +
-          kit.esc(json.registeredName || entry.identifier) +
-          '</strong>'
-        : '<span class="state-none" title="No entry under ou=applications ' +
-          'names this. The registry holds what this service has been ASKED ' +
-          'ABOUT, and a delegation naming something nobody has otherwise ' +
-          'mentioned is ordinary — an RFC 8693 audience is exactly ' +
-          'that.">not in the registry</span>') +
+            '">' + t.html('consoleDelegation.inTheRegistry') + '</a>' +
+          t.html('consoleDelegation.registeredAs',
+                 { name: json.registeredName || entry.identifier })
+        : '<span class="state-none" title="' +
+          t.html('consoleDelegation.appUnregisteredTitle') + '">' +
+          t.html('consoleDelegation.notInRegistry') + '</span>') +
       (entry.identityKey
-        ? '. It has also PRESENTED a credential of its own, so it is a ' +
-          'person here as well as an application: ' +
+        ? t.html('consoleDelegation.alsoPersonBefore') +
           GroupsPage.usersPageCell(entry.identityKey, json.facts.users) +
-          ' on the users ' +
-          'page. That is the middle tier being both, which is ordinary — a ' +
-          'service account authenticates, so the identity funnel files it ' +
-          'under <code>ou=users</code>, and tickets are issued FOR it, so ' +
-          'the registry files it under <code>ou=applications</code>.'
+          t.html('consoleDelegation.alsoPersonAfter')
         : '.') +
       (entry.spellings.length > 1
-        ? ' <strong>It has been spelled ' + entry.spellings.length + ' ' +
-          'ways</strong> and they are one application ' +
-          'here: ' + kit.codeList(entry.spellings) +
-          '. Two spellings of one identity is two people, so they are ' +
-          'collapsed on the same normalisation the picture uses — the ' +
-          'spellings are kept so that the collapse is something you can ' +
-          'see rather than take on trust.'
+        ? t.html('consoleDelegation.spelledWays',
+                 { n: entry.spellings.length }) +
+          kit.codeList(entry.spellings) +
+          t.html('consoleDelegation.spelledWaysAfter')
         : '') +
-      ' Protocols: ' +
-      (entry.protocols.length ? kit.codeList(entry.protocols) : 'none') +
-      '. First seen ' + kit.esc(kit.whenText(entry.firstAt)) + ', last ' +
-      kit.esc(kit.whenText(entry.lastAt)) + '.') +
+      t.html('consoleDelegation.protocolsLabel') +
+      (entry.protocols.length ? kit.codeList(entry.protocols)
+                              : t.html('consoleDelegation.none')) +
+      t.html('consoleDelegation.firstLastSeen', {
+        first: kit.whenText(entry.firstAt),
+        last: kit.whenText(entry.lastAt) })) +
 
-      '<h2>What it does in a delegation</h2>' +
-      kit.note('<strong>Both sides of one application.</strong> The ' +
-      'counts below are of ACTS, and one act can count twice here — an ' +
-      'S4U2Self names the requester as the intermediary and as the target, ' +
-      'because the ticket is to itself.') +
-      '<table><tr><th>Role</th><th>Acts</th><th>What the role is</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hWhatItDoes') + '</h2>' +
+      kit.note(t.html('consoleDelegation.bothSides')) +
+      '<table><tr><th>' + t.html('consoleDelegation.thRole') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thWhatRoleIs') + '</th></tr>' +
       json.roles.map(function (role) {
         const n = entry.roles[role.role] || 0;
         return '<tr>' +
@@ -2757,94 +2542,83 @@ class DelegationPage {
       }).join('') + '</table>' +
 
       (json.graph.acts
-        ? '<h2>The relationships it is part of</h2>' +
-          kit.note('Every chain this application appears in, drawn ' +
-          'together — so a middle tier shows the people it acts for on one ' +
-          'side and what it reaches on the other, which is the shape a ' +
-          'list of rows cannot show. The <strong>chain</strong> link ' +
-          'beside each act at the foot of this page draws ONE of them ' +
-          'alone.') +
-          DelegationPage.drawing(json, '/admin/delegation/application',
+        ? '<h2>' + t.html('consoleDelegation.hPartOf') + '</h2>' +
+          kit.note(t.html('consoleDelegation.partOfNote')) +
+          DelegationPage.drawing(t, json, '/admin/delegation/application',
             Object.assign({}, listView,
                           { application: entry.identifier }))
         : '') +
 
-      '<h2>The key</h2>' +
-      kit.note('The shapes are drawn by the same functions the picture ' +
-      'uses, so a legend cannot come to describe a diagram this service no ' +
-      'longer draws.') +
+      '<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
+      kit.note(t.html('consoleDelegation.keyNote')) +
       json.mapKey +
 
-      '<h2>The parties it deals with</h2>' +
-      kit.note('Every box in the picture above, including this ' +
-      'application itself.') +
-      '<table><tr><th>Label</th><th>Drawn as</th><th>Identity</th>' +
-      '<th>Roles it played</th><th>Acts</th><th>Protocols</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hPartiesDeals') + '</h2>' +
+      kit.note(t.html('consoleDelegation.partiesDealsNote')) +
+      '<table><tr><th>' + t.html('consoleDelegation.thLabel') +
+      '</th><th>' + t.html('consoleDelegation.thDrawnAs') + '</th><th>' +
+      t.html('consoleDelegation.thIdentity') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thRolesItPlayed') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thProtocols') + '</th></tr>' +
       (parties.map(function (node) {
-        return DelegationPage.delegationNodeRow(node, json.facts,
+        return DelegationPage.delegationNodeRow(t, node, json.facts,
                                                json.looks[node.id]);
-      }).join('') || '<tr><td colspan="6">No parties.</td></tr>') +
+      }).join('') || '<tr><td colspan="6">' +
+        t.html('consoleDelegation.noParties') + '</td></tr>') +
         '</table>' +
 
-      '<h2>Every delegated credential related to it</h2>' +
-      kit.note('<strong>This is the list this page exists for.</strong> ' +
-      'Every credential that came out of an act this application took part ' +
-      'in, newest first, WHATEVER ROLE IT PLAYED — so a token issued ' +
-      'THROUGH it (it was the intermediary) and one issued FOR it (it was ' +
-      'the target) are both here, with the role in its own column. ' +
-      '<strong>NO CREDENTIAL IS EVER HERE, only its kind and its ' +
-      'identifier</strong>, which is the rule the audit log follows; a ' +
-      'Kerberos ticket genuinely has no identifier to quote. A REFUSED act ' +
-      'produced nothing by definition, which is why ' +
-      json.graph.tokens.length +
-      ' credential(s) sit under ' + entry.acts + ' act(s).') +
-      '<table><tr><th class="num">#</th><th>When</th><th>Its role</th>' +
-      '<th>Credential</th><th>Subject</th><th>Actor</th><th>Target</th>' +
-      '<th>Mechanism</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hEveryDelegated') + '</h2>' +
+      kit.note(t.html('consoleDelegation.everyDelegatedNote', {
+        tokens: json.graph.tokens.length, acts: entry.acts })) +
+      '<table><tr><th class="num">#</th><th>' +
+      t.html('consoleDelegation.thWhen') + '</th><th>' +
+      t.html('consoleDelegation.thItsRole') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thCredential') + '</th><th>' +
+      t.html('consoleDelegation.thSubject') + '</th><th>' +
+      t.html('consoleDelegation.thActor') + '</th><th>' +
+      t.html('consoleDelegation.thTarget') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thMechanism') + '</th></tr>' +
       (json.graph.tokens.map(function (token) {
-        return DelegationPage.delegationTokenRow(
+        return DelegationPage.delegationTokenRow(t,
           token, labelOf,
           DelegationPage.delegationRoleCell(json.rolesBySeq[token.seq],
                                             json.roles));
       }).join('') ||
-        '<tr><td colspan="8">Nothing has been issued through this ' +
-        'application or to it. A page of red acts and an empty table here ' +
-        'is a consistent state rather than a broken one.</td></tr>') +
+        '<tr><td colspan="8">' +
+        t.html('consoleDelegation.nothingThroughApp') + '</td></tr>') +
         '</table>' +
       (json.graph.tokensLeftOff
-        ? kit.note('<strong>' + json.graph.tokensLeftOff + ' more ' +
-          'credential(s) are not listed.</strong> This list holds at most ' +
-          json.graph.maxTokenRows +
-          ' and keeps the newest; every one of them is still COUNTED on ' +
-          'its line in the picture, so what is lost is the individual ' +
-          'identifiers of the oldest.')
+        ? kit.note(t.html('consoleDelegation.appTokensLeftOff', {
+            n: json.graph.tokensLeftOff, max: json.graph.maxTokenRows }))
         : '') +
 
-      '<h2>Every act it took part in</h2>' +
-      kit.note('The rows <a href="' + kit.esc(upHref) +
-                '">the delegation table</a> ' +
-      'holds, narrowed to this application and not paged. This is where ' +
-      'the TIMES and the REFUSALS are — a refusal produced no credential, ' +
-      'so it is in this table and not in the one above.') +
-      '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
-      '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
-      '<th>Intermediary</th><th>Target</th><th>Authorized by / why not</th>' +
-      '<th>Credentials</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hEveryActPart') + '</h2>' +
+      kit.note(t.html('consoleDelegation.theRows') + '<a href="' +
+      kit.esc(upHref) + '">' +
+      t.html('consoleDelegation.theDelegationTable') + '</a>' +
+      t.html('consoleDelegation.theRowsAppAfter')) +
+      '<table><tr><th class="num">#</th><th>' +
+      t.html('consoleDelegation.thWhen') + '</th><th>' +
+      t.html('consoleDelegation.thMechanism') + '</th>' +
+      '<th>' + t.html('consoleDelegation.labelKind') + '</th><th>' +
+      t.html('consoleDelegation.labelOutcome') + '</th><th>' +
+      t.html('consoleDelegation.thInitial') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thIntermediaryShort') +
+      '</th><th>' + t.html('consoleDelegation.thTarget') + '</th><th>' +
+      t.html('consoleDelegation.thAuthorizedBy') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thCredentials') + '</th></tr>' +
       json.acts.map(function (row) {
-        return DelegationPage.delegationRow(row, json.facts,
+        return DelegationPage.delegationRow(t, row, json.facts,
                                          { listView: listView });
       }).join('') + '</table>' +
 
-      '<h2>Another application</h2>' + chooser +
-      DelegationPage.delegationApplicationTable(json.applications,
+      '<h2>' + t.html('consoleDelegation.hAnotherApplication') + '</h2>' +
+      chooser +
+      DelegationPage.delegationApplicationTable(t, json.applications,
                                                  json.facts, listView) +
 
-      kit.note('<code>?format=json</code> carries this application, its ' +
-      'acts and the graph behind the picture; <code>?format=svg</code> is ' +
-      'the document alone. There is no form that changes anything on this ' +
-      'page and therefore no operation on <code>/admin-api</code> — the ' +
-      'acts are in <code>GET /admin-api/delegation</code>, where a caller ' +
-      'can filter them by the same free text.');
+      kit.note(t.html('consoleDelegation.appFormats'));
 
   }
 
@@ -2864,11 +2638,15 @@ class DelegationPage {
    * @returns the body as HTML
    */
   static user(ctx: Json, json: Json): string {
+    // The page's words are its translator's (#539 phase 6); a grant's
+    // label, specification and description come from the view and are
+    // drawn as they come.
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/delegation', ctx.query);
     const upHref = '/admin/delegation' + kit.queryWith(listView, {});
     const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
-      '">&larr; Back to the delegation table</a>');
-    const chooser = DelegationPage.delegationUserChooser(json.chooser,
+      '">&larr; ' + t.html('consoleDelegation.backToTable') + '</a>');
+    const chooser = DelegationPage.delegationUserChooser(t, json.chooser,
       json.key, { path: '/admin/delegation/user', query: ctx.query });
     const entry = json.user;
     const labelOf = function (id) {
@@ -2877,33 +2655,14 @@ class DelegationPage {
     if (!entry) {
     return back +
       (json.asked
-        ? kit.note('<strong>Neither register names ' +
-          '<code>' + kit.esc(json.asked) + '</code>.</strong> Three things ' +
-          'could be true and they are different: nothing has ever ' +
-          'authenticated, been issued anything or been delegated under ' +
-          'that name; something did and the records have been DROPPED, ' +
-          'because each of these stores keeps a bounded number and ' +
-          'discards the oldest; or the name is spelled differently from ' +
-          'the way a protocol presented it. The list below is every ' +
-          'identity either register actually holds, which settles the ' +
-          'third.')
+        ? kit.note(t.html('consoleDelegation.userNoRegister',
+                          { name: json.asked }))
         : '') +
-      kit.note('<strong>Choose a person to see everything this service ' +
-      'has done in their name.</strong> Not just the delegations — this ' +
-      'is the one picture here that also draws the ordinary issuance: ' +
-      'every OAuth 2.0 grant and OIDC flow, every SAML assertion, every ' +
-      'Kerberos ticket and every SVID, each labelled with exactly what ' +
-      'produced it, beside the applications that hold them and the ' +
-      'sign-ins the whole lot rests on.') +
+      kit.note(t.html('consoleDelegation.userChoose')) +
       chooser +
-      DelegationPage.delegationUserTable(json.users, json.facts,
+      DelegationPage.delegationUserTable(t, json.users, json.facts,
                                         listView) +
-      kit.note('The list is the identity register and the delegation ' +
-      'register UNIONED, which is why a row can say <em>never ' +
-      'authenticated here</em>: a delegation names somebody who was not ' +
-      'present and proved nothing — that is what S4U2Self and ' +
-      '<code>OnBehalfOf</code> ARE — so their name exists here and in no ' +
-      'other list this console keeps.');
+      kit.note(t.html('consoleDelegation.userListUnioned'));
     }
     const parties = json.graph.nodes.filter(function (node) {
       return node.kind !== 'sts';
@@ -2911,207 +2670,172 @@ class DelegationPage {
 
     return back +
       '<div class="tiles">' +
-        kit.tile(json.counts.credentials, 'credentials issued') +
-        kit.tile(json.counts.authentications, 'sign-ins') +
-        kit.tile(json.flows.length, 'grants used') +
-        kit.tile(json.counts.applications, 'other parties') +
-        kit.tile(json.counts.acts, 'delegation acts') +
-        kit.tile(json.counts.chains, 'delegation relationships') +
+        kit.tile(json.counts.credentials,
+                 t.text('consoleDelegation.tileCredentialsIssued')) +
+        kit.tile(json.counts.authentications,
+                 t.text('consoleDelegation.tileSignIns')) +
+        kit.tile(json.flows.length,
+                 t.text('consoleDelegation.tileGrantsUsed')) +
+        kit.tile(json.counts.applications,
+                 t.text('consoleDelegation.tileOtherParties')) +
+        kit.tile(json.counts.acts,
+                 t.text('consoleDelegation.tileDelegationActs')) +
+        kit.tile(json.counts.chains,
+                 t.text('consoleDelegation.tileDelegationRelationships')) +
       '</div>' +
 
       kit.note('<strong><code>' + kit.esc(json.key) +
                 '</code></strong> — ' +
       (entry.authenticated
-        ? 'they have <a href="' + kit.esc('/admin/users' +
-            kit.queryWith({ user: json.key }, {})) + '">authenticated ' +
-              'here</a> ' +
-          kit.esc(entry.authentications) + ' time(s)'
-        : '<span class="state-expired" title="Nothing has ever presented a ' +
-          'credential under this name in this process. Something was ' +
-          'issued in it, or somebody delegated using it — which is exactly ' +
-          'the state this page exists to make visible.">they have NEVER ' +
-          'authenticated here</span>') +
-      (entry.isClient
-        ? '. It is a <strong>client rather than a person</strong>: ' +
-          'something authenticated under this name and said so, which the ' +
-          '<code>client_credentials</code> grant is the usual way of doing'
-        : '') +
+        ? t.html('consoleDelegation.theyHave') + '<a href="' +
+            kit.esc('/admin/users' +
+            kit.queryWith({ user: json.key }, {})) + '">' +
+            t.html('consoleDelegation.authenticatedHere') + '</a> ' +
+          t.html('consoleDelegation.nTimes', { n: entry.authentications })
+        : '<span class="state-expired" title="' +
+          t.html('consoleDelegation.neverAuthenticatedUserTitle') + '">' +
+          t.html('consoleDelegation.neverAuthenticatedUser') + '</span>') +
+      (entry.isClient ? t.html('consoleDelegation.isClient') : '') +
       (entry.forms.length > 1
-        ? '. They have been spelled ' + entry.forms.length + ' ways and ' +
-          'they are one person here: ' + kit.codeList(entry.forms) +
-          '. Two spellings of one identity is two people, so the console ' +
-          'collapses them on the same normalisation the picture uses'
+        ? t.html('consoleDelegation.userSpelled',
+                 { n: entry.forms.length }) +
+          kit.codeList(entry.forms) +
+          t.html('consoleDelegation.userSpelledAfter')
         : '') +
-      '. Protocols: ' +
-      (entry.protocols.length ? kit.codeList(entry.protocols) : 'none') +
-      '. Last seen ' + kit.esc(kit.whenText(entry.lastAt)) + '.') +
+      '.' + t.html('consoleDelegation.protocolsLabel') +
+      (entry.protocols.length ? kit.codeList(entry.protocols)
+                              : t.html('consoleDelegation.none')) +
+      t.html('consoleDelegation.lastSeen',
+             { last: kit.whenText(entry.lastAt) })) +
 
-      '<h2>Everything, as one picture</h2>' +
-      kit.note('<strong>This is the page.</strong> The dotted line into ' +
-      'the hexagon is them SIGNING IN, and it is why anything else here ' +
-      'was allowed. Every solid indigo line is a credential issued NAMING ' +
-      'them, labelled with the exact grant or flow that produced it: out ' +
-      'of THEM it went to that application, out of an APPLICATION it is ' +
-      'the resource that application may reach with it, and out of the ' +
-      'HEXAGON nobody else holds it — a <code>client_credentials</code> ' +
-      'token is about the client itself and an X509-SVID has no audience. ' +
-      'The amber and green lines, where there are any, are delegations — ' +
-      'somebody acting on their behalf — and they are the only lines here ' +
-      'that carry a mode, because impersonation and delegation are ' +
-      'properties of a delegation mechanism and an ordinary grant makes ' +
-      'neither claim.') +
-      DelegationPage.drawing(json, '/admin/delegation/user',
+      '<h2>' + t.html('consoleDelegation.hOnePicture') + '</h2>' +
+      kit.note(t.html('consoleDelegation.onePictureNote')) +
+      DelegationPage.drawing(t, json, '/admin/delegation/user',
         Object.assign({}, listView, { user: json.key })) +
 
-      '<h2>The key</h2>' +
-      kit.note('The shapes are drawn by the same functions the picture ' +
-      'uses, so a legend cannot come to describe a diagram this service no ' +
-      'longer draws. The last three rows are this page\'s own — no other ' +
-      'picture in this console has a line for an ordinary grant, because ' +
-      'no other picture is drawn from anything but the delegation ' +
-      'register.') +
+      '<h2>' + t.html('consoleDelegation.hKey') + '</h2>' +
+      kit.note(t.html('consoleDelegation.keyNote') + ' ' +
+      t.html('consoleDelegation.userKeyNote')) +
       json.mapKey +
 
-      '<h2>What was used to get a credential</h2>' +
-      kit.note('<strong>Exactly which OAuth 2.0 grant or OpenID Connect ' +
-      'flow, with the section that defines it.</strong> Only the ones this ' +
-      'person\'s credentials actually used are here; the rest of the table ' +
-      'is on no page, because a list of eight grants under a person who ' +
-      'used one is a list nobody reads. A SAML assertion, a Kerberos ' +
-      'ticket and an SVID have no grant at all and are not in this table — ' +
-      'the credentials below say what their own specifications call the ' +
-      'mechanism instead.') +
+      '<h2>' + t.html('consoleDelegation.hWhatUsed') + '</h2>' +
+      kit.note(t.html('consoleDelegation.whatUsedNote')) +
       (json.flows.length
-        ? '<table><tr><th>Grant</th><th>OpenID Connect calls ' +
-          'it</th><th>Specification</th><th>Through a browser</th><th>What ' +
-          'it is</th></tr>' +
+        ? '<table><tr><th>' + t.html('consoleDelegation.thGrant') +
+          '</th><th>' + t.html('consoleDelegation.thOidcCalls') +
+          '</th><th>' + t.html('consoleDelegation.thSpecification') +
+          '</th><th>' + t.html('consoleDelegation.thThroughBrowser') +
+          '</th><th>' + t.html('consoleDelegation.thWhatItIs') +
+          '</th></tr>' +
           json.flows.map(function (flow) {
             return '<tr>' +
               '<td><code>' + kit.esc(flow.flow) + '</code><br>' +
                 '<strong>' + kit.esc(flow.label) + '</strong></td>' +
               '<td>' + (flow.oidc ? kit.esc(flow.oidc)
-                : '<span class="state-none" title="OpenID Connect defines ' +
-                  'no flow of its own for this grant — it is OAuth 2.0\'s, ' +
-                  'used as it is.">&mdash;</span>') + '</td>' +
+                : '<span class="state-none" title="' +
+                  t.html('consoleDelegation.noOidcFlowTitle') +
+                  '">&mdash;</span>') + '</td>' +
               '<td>' + kit.esc(flow.spec) + '</td>' +
               '<td>' + (flow.browser
-                ? '<span class="state-valid" title="The person was at an ' +
-                  'authorization endpoint in a browser, so this issuance ' +
-                  'can be put under a sign-on session.">yes</span>'
-                : '<span class="state-none" title="A direct grant: there ' +
-                  'is no browser anywhere in it, which is why its ' +
-                  'credentials are listed with no session.">no</span>') +
+                ? '<span class="state-valid" title="' +
+                  t.html('consoleDelegation.browserYesTitle') + '">' +
+                  t.html('consoleDelegation.yes') + '</span>'
+                : '<span class="state-none" title="' +
+                  t.html('consoleDelegation.browserNoTitle') + '">' +
+                  t.html('consoleDelegation.no') + '</span>') +
                   '</td>' +
               '<td>' + kit.esc(flow.what) +
                 (flow.delegating
-                  ? ' <strong>It is also a delegation act</strong>, so its ' +
-                    'credentials are drawn on the delegation line rather ' +
-                    'than twice.'
+                  ? t.html('consoleDelegation.alsoDelegationAct')
                   : '') + '</td>' +
               '</tr>';
           }).join('') + '</table>'
-        : kit.note('No credential of theirs states a grant. That is the ' +
-          'ordinary state for somebody who has only ever been issued ' +
-          'assertions, tickets or SVIDs — none of those protocols has a ' +
-          'grant — and for a JWT minted outside the token endpoint.')) +
+        : kit.note(t.html('consoleDelegation.noGrantStatedNote'))) +
 
-      '<h2>Every credential issued in their name</h2>' +
-      kit.note('<strong>The issued register: every JWT, assertion, ' +
-      'ticket, SVID and verifiable credential this service has minted ' +
-      'naming them, newest first.</strong> <strong>NO CREDENTIAL IS EVER ' +
-      'HERE, only its kind and its identifier</strong> — the rule the ' +
-      'audit log follows — and a Kerberos ticket genuinely has none to ' +
-      'quote. <em>Went to</em> is the application that holds it: a ' +
-      'token\'s <code>client_id</code>, an assertion\'s audience, the ' +
-      'service principal a ticket was cut for. Nothing holds an X509-SVID, ' +
-      'which is why some rows have none.' +
+      '<h2>' + t.html('consoleDelegation.hEveryCredential') + '</h2>' +
+      kit.note(t.html('consoleDelegation.everyCredentialNote') +
       (json.onDelegationLines
-        ? ' <strong>' + kit.esc(json.onDelegationLines) + ' more are ' +
-          'not in this table</strong> and are not missing: a token ' +
-          'exchange writes a row in BOTH registers for one credential, so ' +
-          'those are listed under the delegation acts below, where the row ' +
-          'says more — it names the actor and whether the far end can see ' +
-          'them.'
+        ? t.html('consoleDelegation.onDelegationLines',
+                 { n: json.onDelegationLines })
         : '')) +
-      '<table><tr><th>When</th><th>Credential</th><th>What issued it</th>' +
-      '<th>Went to</th><th>State</th><th>Session</th></tr>' +
+      '<table><tr><th>' + t.html('consoleDelegation.thWhen') + '</th><th>' +
+      t.html('consoleDelegation.thCredential') + '</th><th>' +
+      t.html('consoleDelegation.thWhatIssued') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thWentTo') + '</th><th>' +
+      t.html('consoleDelegation.thState') + '</th><th>' +
+      t.html('consoleDelegation.thSession') + '</th></tr>' +
       (json.credentials.map(function (credential) {
-        return DelegationPage.userCredentialRow(credential, json.facts);
+        return DelegationPage.userCredentialRow(t, credential, json.facts);
       }).join('') ||
-        '<tr><td colspan="6">Nothing has been issued naming them. ' +
-        'For somebody only a delegation names — an S4U2Self subject, an ' +
-        '<code>OnBehalfOf</code> — that is the expected state and not a ' +
-        'broken one.</td></tr>') + '</table>' +
-      kit.note('The same rows with their revoke buttons, grouped by the ' +
-      'sign-on session each was issued on, are on <a href="' +
+        '<tr><td colspan="6">' +
+        t.html('consoleDelegation.nothingNamingThem') + '</td></tr>') +
+      '</table>' +
+      kit.note(t.html('consoleDelegation.sameRowsRevoke') + '<a href="' +
       kit.esc('/admin/users' + kit.queryWith({ user: json.key }, {})) +
-      '">their page in the identity register</a>. This page draws the ' +
-      'RELATIONSHIPS; that one is where a token is acted on.') +
+      '">' + t.html('consoleDelegation.theirPage') + '</a>' +
+      t.html('consoleDelegation.sameRowsRevokeAfter')) +
 
-      '<h2>The parties</h2>' +
-      kit.note('Every box in the picture above, including them. A box ' +
-      'with credentials and no delegation roles is an ordinary client — it ' +
-      'has never been part of a delegation, which is a fact about the ' +
-      'other register rather than a gap here.') +
-      '<table><tr><th>Label</th><th>Drawn as</th><th>Identity</th>' +
-      '<th>Credentials</th><th>By</th><th>Delegation ' +
-      'roles</th><th>Acts</th><th>Protocols</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
+      kit.note(t.html('consoleDelegation.userPartiesNote')) +
+      '<table><tr><th>' + t.html('consoleDelegation.thLabel') +
+      '</th><th>' + t.html('consoleDelegation.thDrawnAs') + '</th><th>' +
+      t.html('consoleDelegation.thIdentity') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thCredentials') + '</th><th>' +
+      t.html('consoleDelegation.thBy') + '</th><th>' +
+      t.html('consoleDelegation.thDelegationRoles') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thProtocols') + '</th></tr>' +
       (parties.map(function (node) {
-        return DelegationPage.userNodeRow(node, json.facts,
+        return DelegationPage.userNodeRow(t, node, json.facts,
                                           json.looks[node.id]);
-      }).join('') || '<tr><td colspan="8">No parties.</td></tr>') +
+      }).join('') || '<tr><td colspan="8">' +
+        t.html('consoleDelegation.noParties') + '</td></tr>') +
         '</table>' +
 
-      '<h2>Every line, in words</h2>' +
-      kit.note('The picture read as a table, because a diagram nobody can ' +
-      'quote is a diagram nobody can put in a bug report. <strong>Acts and ' +
-      'credentials are different units</strong> and have their own ' +
-      'columns: an act is one delegation exchange, a credential is one ' +
-      'thing that came out of the issued register, and a line can carry ' +
-      'either, both or — a refused delegation — acts and nothing else.') +
-      '<table><tr><th>From</th><th>To</th><th>Relationship</th><th>' +
-      'Mechanism ' +
-      'or grant</th><th>Kind</th><th>Acts</th><th>Credentials</th><th>What ' +
-      'came out</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hEveryLine') + '</h2>' +
+      kit.note(t.html('consoleDelegation.everyLineNote')) +
+      '<table><tr><th>' + t.html('consoleDelegation.thFrom') + '</th><th>' +
+      t.html('consoleDelegation.thTo') + '</th><th>' +
+      t.html('consoleDelegation.thRelationship') + '</th><th>' +
+      t.html('consoleDelegation.thMechanismOrGrant') + '</th><th>' +
+      t.html('consoleDelegation.labelKind') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thCredentials') + '</th><th>' +
+      t.html('consoleDelegation.thWhatCameOut') + '</th></tr>' +
       (json.graph.edges.map(function (edge) {
-        return DelegationPage.userEdgeRow(edge, labelOf);
-      }).join('') || '<tr><td colspan="8">No lines.</td></tr>') + '</table>' +
+        return DelegationPage.userEdgeRow(t, edge, labelOf);
+      }).join('') || '<tr><td colspan="8">' +
+        t.html('consoleDelegation.noLines') + '</td></tr>') + '</table>' +
 
       (json.acts.length
-        ? '<h2>Every delegation act naming them</h2>' +
-          kit.note('The rows <a href="' + kit.esc(upHref) +
-                    '">the delegation ' +
-          'table</a> holds, narrowed to this person and not paged — in ANY ' +
-          'of the three roles, because the whole reason to look somebody ' +
-          'up in a delegation register is that their name appears in ' +
-          'exchanges they were never present for. This is where the ' +
-          'REFUSALS are: a refusal produced no credential, so it is in ' +
-          'this table and in none of the ones above.') +
-          '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
-          '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
-          '<th>Intermediary</th><th>Target</th><th>Authorized by / why ' +
-          'not</th><th>Credentials</th></tr>' +
+        ? '<h2>' + t.html('consoleDelegation.hEveryActNaming') + '</h2>' +
+          kit.note(t.html('consoleDelegation.theRows') + '<a href="' +
+          kit.esc(upHref) + '">' +
+          t.html('consoleDelegation.theDelegationTable') + '</a>' +
+          t.html('consoleDelegation.theRowsUserAfter')) +
+          '<table><tr><th class="num">#</th><th>' +
+          t.html('consoleDelegation.thWhen') + '</th><th>' +
+          t.html('consoleDelegation.thMechanism') + '</th>' +
+          '<th>' + t.html('consoleDelegation.labelKind') + '</th><th>' +
+          t.html('consoleDelegation.labelOutcome') + '</th><th>' +
+          t.html('consoleDelegation.thInitial') + '</th>' +
+          '<th>' + t.html('consoleDelegation.thIntermediaryShort') +
+          '</th><th>' + t.html('consoleDelegation.thTarget') + '</th><th>' +
+          t.html('consoleDelegation.thAuthorizedBy') + '</th><th>' +
+          t.html('consoleDelegation.thCredentials') + '</th></tr>' +
           json.acts.map(function (row) {
-            return DelegationPage.delegationRow(row, json.facts,
+            return DelegationPage.delegationRow(t, row, json.facts,
                                              { listView: listView });
           }).join('') + '</table>'
-        : '<h2>Delegation</h2>' +
-          kit.note('No delegation act names them, in any role. Everything ' +
-          'above was issued to them directly — which is the ordinary ' +
-          'state, since three of the sixteen families here can delegate at ' +
-          'all.')) +
+        : '<h2>' + t.html('consoleDelegation.hDelegation') + '</h2>' +
+          kit.note(t.html('consoleDelegation.noActNamesThem'))) +
 
-      '<h2>Somebody else</h2>' + chooser +
-      DelegationPage.delegationUserTable(json.users, json.facts,
+      '<h2>' + t.html('consoleDelegation.hSomebodyElse') + '</h2>' +
+      chooser +
+      DelegationPage.delegationUserTable(t, json.users, json.facts,
                                           listView) +
 
-      kit.note('<code>?format=json</code> carries this person, their ' +
-      'credentials with the grant on each, their acts and the graph behind ' +
-      'the picture; <code>?format=svg</code> is the document alone. There ' +
-      'is no form that changes anything on this page and therefore no ' +
-      'operation on <code>/admin-api</code> — the acts are in <code>GET ' +
-      '/admin-api/delegation</code> and the tokens in <code>GET ' +
-      '/admin-api/users</code>.');
+      kit.note(t.html('consoleDelegation.userFormats'));
 
   }
 
@@ -3131,25 +2855,24 @@ class DelegationPage {
    * @returns the body as HTML
    */
   static credential(ctx: Json, json: Json): string {
+    // The page's words are its translator's (#539 phase 6); a credential's
+    // kind, its state and an origin's label come from the view and are
+    // drawn as they come.
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/tokens', ctx.query);
     const upHref = '/admin/tokens' + kit.queryWith(listView, {});
     const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
-      '">&larr; Back to the tokens table</a>');
+      '">&larr; ' + t.html('consoleDelegation.backToTokens') + '</a>');
     const credential = json.credential;
     const labelOf = function (id) {
       return json.looks[id] ? json.looks[id].label : id;
     };
     if (!json.counts) {
     return back +
-      kit.note('<strong>Name a credential.</strong> This page draws ONE ' +
-      'of them and the way to it is a link on <a href="' +
+      kit.note(t.html('consoleDelegation.nameCredential') + '<a href="' +
       kit.esc(upHref) +
-      '">the tokens table</a> — every identifier there is one. It is ' +
-      'keyed on the identifier the protocol gave the credential (a ' +
-      '<code>jti</code>, an <code>AssertionID</code>), which is the only ' +
-      'thing the issued register and the delegation register both hold ' +
-      'about the same object, and is the reason a Kerberos ticket has no ' +
-      'link: that protocol has no identifier to quote.');
+      '">' + t.html('consoleDelegation.theTokensTable') + '</a>' +
+      t.html('consoleDelegation.nameCredentialAfter'));
     }
     const parties = json.graph.nodes.filter(function (node) {
       return node.kind !== 'sts';
@@ -3162,70 +2885,64 @@ class DelegationPage {
     const sentence = kit.note('<strong><code>' + kit.esc(json.identifier) +
       '</code></strong> — ' +
       (credential
-        ? kit.esc(credential.kind) + ', issued ' +
-          kit.esc(kit.whenText(credential.issuedAt)) +
+        ? t.html('consoleDelegation.kindIssued', {
+            kind: credential.kind,
+            when: kit.whenText(credential.issuedAt) }) +
           ', <span class="' + TokensPage.stateClass(credential.state) + '">' +
           kit.esc(credential.state) + '</span>'
         : '<span class="state-expired" title="' +
-          kit.esc('The issued register is capped and drops the oldest, so ' +
-                   'a credential a delegation act still names can be one ' +
-                   'this service can no longer describe. That is a bounded ' +
-                   'store working as intended rather than a gap in the ' +
-                   'recording.') +
-          '">no longer held in the issued register</span>') +
+          kit.esc(t.text('consoleDelegation.noLongerHeldTitle')) +
+          '">' + t.html('consoleDelegation.noLongerHeld') + '</span>') +
       '. ' +
       (json.counts.exchanges
-        ? '<strong>' + kit.esc(json.counts.exchanges) + ' ' +
-          'exchange(s)</strong> are behind it, so it is generation ' +
-          kit.esc(json.generations.length - 1) + ' of a line that ' +
-          'starts at an ordinary issuance.'
-        : '<strong>Nothing was exchanged to get it.</strong> It was issued ' +
-          'directly, which is the ordinary case: three of the sixteen ' +
-          'protocol families here can delegate at all.'));
+        ? t.html('consoleDelegation.exchangesBehind', {
+            n: json.counts.exchanges,
+            generation: json.generations.length - 1 })
+        : t.html('consoleDelegation.nothingExchanged')));
 
     return back +
       '<div class="tiles">' +
-        kit.tile(json.counts.generations, 'generations') +
-        kit.tile(json.counts.exchanges, 'exchanges behind it') +
-        kit.tile(json.counts.parties, 'parties involved') +
-        kit.tile(json.counts.acts, 'delegation acts') +
+        kit.tile(json.counts.generations,
+                 t.text('consoleDelegation.tileGenerations')) +
+        kit.tile(json.counts.exchanges,
+                 t.text('consoleDelegation.tileExchangesBehind')) +
+        kit.tile(json.counts.parties,
+                 t.text('consoleDelegation.tilePartiesInvolved')) +
+        kit.tile(json.counts.acts,
+                 t.text('consoleDelegation.tileDelegationActs')) +
       '</div>' +
 
       sentence +
 
       (json.truncated
-        ? '<p class="note state-expired"><strong>The line is longer than ' +
-          kit.esc(json.maxGenerations) + ' generations and ' +
-          'the rest was not walked.</strong> What is drawn below is the ' +
-          'newest ' +
-          kit.esc(json.maxGenerations) + ' of it, so the ' +
-          'oldest box on this picture is NOT the origin. Said rather than ' +
-          'left to be assumed, because a lineage that stops quietly reads ' +
-          'as an issuance that never happened.</p>'
+        ? '<p class="note state-expired">' +
+          t.html('consoleDelegation.truncated',
+                 { max: json.maxGenerations }) + '</p>'
         : '') +
 
-      '<h2>How it came to exist</h2>' +
-      kit.note('One row per generation, newest first: the credential ' +
-      'itself, then whatever was handed in to get it, and so on. ' +
-      '<strong>The last row is the origin</strong> — the row with no ' +
-      'exchange behind it, which is the issuance the whole line rests on.') +
-      '<table><tr><th class="num">Gen</th><th>Identifier</th><th>Kind</th>' +
-      '<th>Held by</th><th>In whose name</th><th>Issued</th>' +
-      '<th>How it was got</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hHowItCame') + '</h2>' +
+      kit.note(t.html('consoleDelegation.howItCameNote')) +
+      '<table><tr><th class="num">' + t.html('consoleDelegation.thGen') +
+      '</th><th>' + t.html('consoleDelegation.thIdentifier') + '</th><th>' +
+      t.html('consoleDelegation.labelKind') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thHeldBy') + '</th><th>' +
+      t.html('consoleDelegation.thInWhoseName') + '</th><th>' +
+      t.html('consoleDelegation.thIssued') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thHowGot') + '</th></tr>' +
       json.generations.map(function (row) {
         const held = row.credential;
         return '<tr>' +
           '<td class="num">' + kit.esc(row.generation) + '</td>' +
           '<td class="who">' + kit.shortened(row.identifier, 14) +
             (row.identifier === json.identifier
-              ? '<br><span class="state-none">this page</span>' : '') +
+              ? '<br><span class="state-none">' +
+                t.html('consoleDelegation.thisPage') + '</span>' : '') +
                 '</td>' +
           '<td>' + (held ? kit.esc(held.kind)
             : '<span class="state-none" title="' +
-              kit.esc('Named by a delegation act, and no longer in the ' +
-                       'issued register — the two stores are capped ' +
-                       'separately.') +
-              '">not held</span>') + '</td>' +
+              kit.esc(t.text('consoleDelegation.notHeldTitle')) +
+              '">' + t.html('consoleDelegation.notHeld') + '</span>') +
+          '</td>' +
           '<td class="who">' + (held
             ? kit.esc(row.holder || '—') : '<span ' +
               'class="state-none">&mdash;</span>') + '</td>' +
@@ -3240,82 +2957,80 @@ class DelegationPage {
               '<span class="state-none">' + kit.esc(row.act.typeLabel) +
               '</span><br><a href="' + kit.esc('/admin/delegation/chain' +
                 kit.queryWith({}, { chain: row.act.chainKey })) +
-              '">the relationship</a>'
-            : '<strong>the origin</strong><br><span class="state-none">' +
+              '">' + t.html('consoleDelegation.theRelationship') + '</a>'
+            : '<strong>' + t.html('consoleDelegation.theOrigin') +
+              '</strong><br><span class="state-none">' +
               kit.esc(row.originLabel) + '</span>') +
                           '</td>' +
           '</tr>';
       }).join('') + '</table>' +
 
       (json.walls.length
-        ? kit.note('<strong>One line stops at a credential this service ' +
-          'cannot name.</strong> ' +
+        ? kit.note(t.html('consoleDelegation.wallsBefore') + ' ' +
           json.walls.map(function (wall) {
             return kit.esc(wall.credential.kind) + ' — ' +
-              kit.esc(wall.credential.note || 'no identifier');
+              kit.esc(wall.credential.note ||
+                      t.text('consoleDelegation.noIdentifier'));
           }).join('; ') +
-          '. That is a different answer from "this is the origin": ' +
-          'something was presented and exchanged, and the protocol gave it ' +
-          'nothing this register could write down. A Kerberos ticket has ' +
-          'no identifier at all, and WS-Trust consumes the requester\'s ' +
-          'WS-Security credential, which this service never issued.')
+          t.html('consoleDelegation.wallsAfter'))
         : '') +
 
-      '<h2>The whole line, as one picture</h2>' +
-      kit.note('Every actor and every relationship behind this one ' +
-      'credential. <strong>The hexagon is this service</strong>; a dashed ' +
-      'grey line from it is a credential being handed to whoever asked. An ' +
-      '<em>issued for</em> line is an ordinary grant — this client holds a ' +
-      'credential naming that person — and it is the console\'s neutral ' +
-      'indigo, because an authorization code grant claims neither ' +
-      'impersonation nor delegation. <em>acts for</em> and ' +
-      '<em>reaches</em> are the delegation picture\'s own two claims and ' +
-      'are coloured by mode where a delegation is what produced them, ' +
-      'exactly as they are on <a href="/admin/delegation/map">the map</a>. ' +
-      'A <em>reaches</em> line out of an ordinary grant takes no mode and ' +
-      'stays indigo, for the reason the <em>issued for</em> line beside it ' +
-      'does: what a token is ADDRESSED to is a relationship this service ' +
-      'granted, and nothing was impersonated to get it. The audience the ' +
-      'token carries is in that line\'s tooltip, because the box is named ' +
-      'after whichever application registered it.') +
-      DelegationPage.drawing(json, '/admin/tokens/credential',
+      '<h2>' + t.html('consoleDelegation.hWholeLine') + '</h2>' +
+      kit.note(t.html('consoleDelegation.wholeLineBefore') +
+      '<a href="/admin/delegation/map">' +
+      t.html('consoleDelegation.theMap') + '</a>' +
+      t.html('consoleDelegation.wholeLineAfter')) +
+      DelegationPage.drawing(t, json, '/admin/tokens/credential',
         Object.assign({}, listView, { id: json.identifier })) +
 
-      '<h2>The parties</h2>' +
-      kit.note('Every box on the picture. A party can appear because it ' +
-      'held one of these credentials, because it exchanged one, or both — ' +
-      'the middle tier of a chain is the TARGET of one generation and the ' +
-      'INTERMEDIARY of the next, which is what makes the two hops one line ' +
-      'rather than two pictures.') +
-      '<table><tr><th>Label</th><th>Drawn as</th><th>Identity</th>' +
-      '<th>Roles it played</th><th>Acts</th><th>Protocols</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hParties') + '</h2>' +
+      kit.note(t.html('consoleDelegation.credentialPartiesNote')) +
+      '<table><tr><th>' + t.html('consoleDelegation.thLabel') +
+      '</th><th>' + t.html('consoleDelegation.thDrawnAs') + '</th><th>' +
+      t.html('consoleDelegation.thIdentity') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thRolesItPlayed') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thProtocols') + '</th></tr>' +
       (parties.map(function (node) {
-        return DelegationPage.delegationNodeRow(node, json.facts,
+        return DelegationPage.delegationNodeRow(t, node, json.facts,
                                                json.looks[node.id]);
-      }).join('') || '<tr><td colspan="6">No parties.</td></tr>') +
+      }).join('') || '<tr><td colspan="6">' +
+        t.html('consoleDelegation.noParties') + '</td></tr>') +
         '</table>' +
 
-      '<h2>Every line, in words</h2>' +
-      kit.note('The picture read as a table, because a diagram nobody can ' +
-      'quote is a diagram nobody can put in a bug report.') +
-      '<table><tr><th>From</th><th>To</th><th>Relationship</th><th>' +
-      'Mechanism ' +
-      'or grant</th><th>Kind</th><th>Acts</th><th>Credentials</th><th>What ' +
-      'came out</th></tr>' +
+      '<h2>' + t.html('consoleDelegation.hEveryLine') + '</h2>' +
+      kit.note(t.html('consoleDelegation.pictureAsTable')) +
+      '<table><tr><th>' + t.html('consoleDelegation.thFrom') + '</th><th>' +
+      t.html('consoleDelegation.thTo') + '</th><th>' +
+      t.html('consoleDelegation.thRelationship') + '</th><th>' +
+      t.html('consoleDelegation.thMechanismOrGrant') + '</th><th>' +
+      t.html('consoleDelegation.labelKind') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thCredentials') + '</th><th>' +
+      t.html('consoleDelegation.thWhatCameOut') + '</th></tr>' +
       (json.graph.edges.map(function (edge) {
-        return DelegationPage.userEdgeRow(edge, labelOf);
-      }).join('') || '<tr><td colspan="8">No lines.</td></tr>') + '</table>' +
+        return DelegationPage.userEdgeRow(t, edge, labelOf);
+      }).join('') || '<tr><td colspan="8">' +
+        t.html('consoleDelegation.noLines') + '</td></tr>') + '</table>' +
 
       (json.acts.length
-        ? '<h2>Every delegation act in the line</h2>' +
-          kit.note('The rows <a href="/admin/delegation">the delegation ' +
-          'table</a> holds for this lineage, in order, not paged.') +
-          '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
-          '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
-          '<th>Intermediary</th><th>Target</th><th>Authorized by / why ' +
-          'not</th><th>Credentials</th></tr>' +
+        ? '<h2>' + t.html('consoleDelegation.hEveryActLine') + '</h2>' +
+          kit.note(t.html('consoleDelegation.theRows') +
+          '<a href="/admin/delegation">' +
+          t.html('consoleDelegation.theDelegationTable') + '</a>' +
+          t.html('consoleDelegation.theRowsLineageAfter')) +
+          '<table><tr><th class="num">#</th><th>' +
+          t.html('consoleDelegation.thWhen') + '</th><th>' +
+          t.html('consoleDelegation.thMechanism') + '</th>' +
+          '<th>' + t.html('consoleDelegation.labelKind') + '</th><th>' +
+          t.html('consoleDelegation.labelOutcome') + '</th><th>' +
+          t.html('consoleDelegation.thInitial') + '</th>' +
+          '<th>' + t.html('consoleDelegation.thIntermediaryShort') +
+          '</th><th>' + t.html('consoleDelegation.thTarget') + '</th><th>' +
+          t.html('consoleDelegation.thAuthorizedBy') + '</th><th>' +
+          t.html('consoleDelegation.thCredentials') + '</th></tr>' +
           json.acts.map(function (row) {
-            return DelegationPage.delegationRow(row, json.facts,
+            return DelegationPage.delegationRow(t, row, json.facts,
                                              { listView: {} });
           }).join('') + '</table>'
         : '') +
@@ -3324,19 +3039,11 @@ class DelegationPage {
        (credential.username || credential.sub)
         ? kit.note('<a href="' + kit.esc('/admin/delegation/user' +
             kit.queryWith({}, { user: json.subjectKey })) +
-          '">Everything this service has done in that person\'s name</a> ' +
-          'is the other picture: this one is one credential and its ' +
-          'ancestors, that one is one person and everything ever issued ' +
-          'naming them.')
+          '">' + t.html('consoleDelegation.everythingInName') + '</a>' +
+          t.html('consoleDelegation.everythingInNameAfter'))
         : '') +
 
-      kit.note('<code>?format=json</code> carries the lineage — every ' +
-      'generation with the act that produced it, the acts, the origins and ' +
-      'the graph behind the picture; <code>?format=svg</code> is the ' +
-      'document alone. There is no form on this page and therefore no ' +
-      'operation on <code>/admin-api</code>: the acts are in <code>GET ' +
-      '/admin-api/delegation</code> and the credentials are in <code>GET ' +
-      '/admin-api/tokens</code>.');
+      kit.note(t.html('consoleDelegation.credentialFormats'));
 
   }
 
@@ -3353,21 +3060,20 @@ class DelegationPage {
    * @returns the body as HTML
    */
   static settings(ctx: Json, json: Json): string {
+    // The page's words are its translator's (#539 phase 6); the settings
+    // forms take it too.
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/delegation-settings', ctx.query);
-    return kit.note('<strong>Which applications may reach which, decided ' +
-      'in advance, and how much of what HAPPENED is kept.</strong> This ' +
-      'page configures; <a href="/admin/delegation">Monitoring &rsaquo; ' +
-      'Delegation</a> shows the acts &mdash; Kerberos S4U, WS-Trust ' +
-      '<code>OnBehalfOf</code> / <code>ActAs</code> and RFC 8693 token ' +
-      'exchange &mdash; with this register beside them, read-only. One ' +
-      'application\'s part of it is also on that application\'s ' +
-      '<em>Permissions</em> tab under <a href="/admin/applications">' +
-      'Directory &rsaquo; Applications</a>, which is where a grant is ' +
-      'made. Who may act for whom at Kerberos, WS-Trust and token ' +
-      'exchange is attributes of applications and people, edited on ' +
-      'their pages.') +
+    return kit.note(t.html('consoleDelegation.settingsLeadBefore') +
+      '<a href="/admin/delegation">' +
+      t.html('consoleDelegation.monitoringDelegationLink') + '</a>' +
+      t.html('consoleDelegation.settingsLeadMiddle') +
+      '<a href="/admin/applications">' +
+      t.html('consoleDelegation.directoryApplicationsLink') + '</a>' +
+      t.html('consoleDelegation.settingsLeadAfter')) +
       DelegationPage.permissionsSection(ctx, json, listView, true) +
-      SettingsForms.forms(json.settings, '/admin/delegation-settings');
+      SettingsForms.forms(json.settings, '/admin/delegation-settings',
+                          undefined, t);
   }
 
   // ---------------------------------------------------------------------------
@@ -3382,6 +3088,8 @@ class DelegationPage {
    * @returns the body as HTML
    */
   static allowed(ctx: Json, json: Json): string {
+    // The page's words are its translator's (#539 phase 6).
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/delegation', ctx.query);
     const groupNav = kit.pageNavPair('/admin/delegation/allowed',
                                      kit.pageParamsOf(ctx.query),
@@ -3391,97 +3099,44 @@ class DelegationPage {
     const onward = Object.assign({}, listView,
                                  DelegationPage.allowedChooserState(ctx.query));
     return (
-      kit.note('<strong>What is ALLOWED, not what happened.</strong> ' +
-      'Every line here is a delegated permission somebody configured: a ' +
-      'client application has been granted a permission that a resource ' +
-      'application exposes, and a request naming it in a ' +
-      '<code>scope</code> would be issued an access token audienced to ' +
-      'that resource. Not one of these lines has been issued anything. <a ' +
-      'href="/admin/delegation/map">The other picture</a> is the one that ' +
-      'draws what actually happened.') +
+      kit.note(t.html('consoleDelegation.allowedNotHappened') + '<a ' +
+      'href="/admin/delegation/map">' +
+      t.html('consoleDelegation.theOtherPicture') + '</a>' +
+      t.html('consoleDelegation.allowedNotHappenedAfter')) +
 
-      kit.note('<strong>Every box is an application and there is no ' +
-      'person on this diagram</strong>, which is the visual difference ' +
-      'between the two and the reason they are not one drawing. A ' +
-      'delegation ACT has three layers and the first of them is somebody — ' +
-      'a stick figure, the person on whose behalf it happened. A ' +
-      'permission has nobody in it: it says <em>this client may reach that ' +
-      'API as whoever is signed in</em>, and there is no whoever yet. ' +
-      '<strong>This service is not on it either</strong>, for the same ' +
-      'reason the hexagon is on the other one: every line there exists ' +
-      'because this service issued or refused something, and none of these ' +
-      'has been asked for.') +
+      kit.note(t.html('consoleDelegation.allowedNoPerson')) +
 
-      kit.note('<strong>A line leaves the box with the ROUND end and ' +
-      'arrives at the box with the ARROWHEAD.</strong> That is worth ' +
-      'saying on this page in particular, because it is the one where ' +
-      'nearly every box is at both ends of something: an application here ' +
-      'is usually a client of one and a resource of another, and the ' +
-      'question is always <em>which of the lines touching this box are its ' +
-      'own?</em> Both marks are on every line, and each one has a berth of ' +
-      'its own on the box\'s edge, so a grant this application holds and a ' +
-      'grant somebody holds on it never start from the same point. No line ' +
-      'here is two-way: where two applications may reach each other, that ' +
-      'is two grants and it is drawn as two lines.') +
+      kit.note(t.html('consoleDelegation.allowedEnds')) +
 
-      kit.note('<strong>A DASHED line is a grant nobody has ever ' +
-      'used</strong> and a solid one has been asked for at least once — ' +
-      'read off the client\'s own <code>oauthScope</code>, which records ' +
-      'the scopes it has requested. That one bit is what a configured ' +
-      'picture can say and an acts diagram cannot: a grant nobody needed ' +
-      'draws no act at all, so it is invisible on the other one. It is ' +
-      'evidence rather than proof — that attribute records what was ASKED ' +
-      'FOR, not what was issued.') +
+      kit.note(t.html('consoleDelegation.allowedDashed')) +
 
       (json.counts.dangling
-        ? kit.note('<strong>' + json.counts.dangling +
-          ' grant(s) are DANGLING ' +
-          'and are not drawn.</strong> They name a permission no ' +
-          'application in this registry defines, so there is no box at the ' +
-          'far end to reach — and a line to nowhere would be a drawing of ' +
-          'a resource that is there. They are in the table on <a ' +
-          'href="/admin/delegation#allowed">the register</a>, which is ' +
-          'where that state belongs.')
+        ? kit.note(t.html('consoleDelegation.allowedDangling',
+                          { n: json.counts.dangling }) + '<a ' +
+          'href="/admin/delegation#allowed">' +
+          t.html('consoleDelegation.theRegister') + '</a>' +
+          t.html('consoleDelegation.allowedDanglingAfter'))
         : '') +
 
-      DelegationPage.drawing(json, '/admin/delegation/allowed', {}) +
+      DelegationPage.drawing(t, json, '/admin/delegation/allowed', {}) +
 
       '<div class="tiles">' +
-        kit.tile(json.counts.grants, 'grants') +
-        kit.tile(json.counts.permissions, 'permissions defined') +
-        kit.tile(json.counts.unused, 'never asked for') +
-        kit.tile(json.counts.dangling, 'dangling, not drawn') +
+        kit.tile(json.counts.grants, t.text('consoleDelegation.tileGrants')) +
+        kit.tile(json.counts.permissions,
+                 t.text('consoleDelegation.tilePermissions')) +
+        kit.tile(json.counts.unused,
+                 t.text('consoleDelegation.neverAskedFor')) +
+        kit.tile(json.counts.dangling,
+                 t.text('consoleDelegation.tileDanglingNotDrawn')) +
       '</div>' +
 
-      '<h2 id="groups">The groupings: which applications are joined to ' +
-      'each other</h2>' +
+      '<h2 id="groups">' + t.html('consoleDelegation.hGroupings') + '</h2>' +
 
-      kit.note('<strong>A GROUP IS A SET OF APPLICATIONS THAT CAN BE ' +
-      'REACHED FROM ONE ANOTHER BY FOLLOWING GRANTS, IGNORING WHICH WAY ' +
-      'EACH ONE POINTS.</strong> That is the whole definition, and the ' +
-      'direction is dropped ON PURPOSE. A grant is directed — a client is ' +
-      'granted a permission a resource exposes, which is why every line ' +
-      'above has a round end and a pointed one — but following the arrows ' +
-      'would answer <em>what can this client eventually reach</em>, and a ' +
-      'permission register has no chains in it: holding a permission on an ' +
-      'API does not grant that API\'s permissions to anybody. Following a ' +
-      'grant EITHER WAY answers the question somebody actually arrives ' +
-      'with — <em>which applications are in the same conversation as this ' +
-      'one</em> — and it is the only reading under which an API and the ' +
-      'three front ends holding permissions on it come out as ONE group ' +
-      'rather than as four. Every picture still draws every line with its ' +
-      'direction on it, so what is dropped is direction as a test of ' +
-      'MEMBERSHIP, never direction as a fact.') +
+      kit.note(t.html('consoleDelegation.groupDefinition')) +
 
-      kit.note('<strong>This is what the whole-register picture above ' +
-      'stops being able to say.</strong> One canvas is the right drawing ' +
-      'of five applications and the wrong drawing of eighty, where the ' +
-      'interesting reading is almost never the whole of it. Search for an ' +
-      'application below and the picture you get is its group and nothing ' +
-      'else — the applications it is joined to, however many hops away, ' +
-      'and none of the ones it is not.') +
+      kit.note(t.html('consoleDelegation.groupWholeRegister')) +
 
-      DelegationPage.allowedApplicationChooser(json, '', onward,
+      DelegationPage.allowedApplicationChooser(t, json, '', onward,
         { path: '/admin/delegation/allowed', query: ctx.query }) +
 
       // This page has no filter form to hang `per` on, which is the case
@@ -3491,47 +3146,31 @@ class DelegationPage {
       kit.perPageForm('/admin/delegation/allowed', 'permappq',
                        kit.queryOne(ctx.query, 'permappq'),
                        json.groupsPaging.perPage,
-                       'There is one table below. The drawing above is ' +
-                       'never paged: paging a picture draws the pagination ' +
-                       'rather than the service.',
+                       t.html('consoleDelegation.oneTableBelow'),
                        kit.filterOnly(listView)) +
 
       groupNav.head +
-      DelegationPage.allowedClusterTable(json.clusters, json.shownGroups,
+      DelegationPage.allowedClusterTable(t, json.clusters, json.shownGroups,
                                        onward, json.apps) +
       groupNav.foot +
 
       '<div class="tiles">' +
-        kit.tile(json.clusters.counts.clusters, 'groups') +
-        kit.tile(json.clusters.counts.joined, 'with more than one in them') +
-        kit.tile(json.clusters.counts.alone, 'of one application') +
-        kit.tile(json.clusters.counts.largest, 'in the largest') +
+        kit.tile(json.clusters.counts.clusters,
+                 t.text('consoleDelegation.tileGroups')) +
+        kit.tile(json.clusters.counts.joined,
+                 t.text('consoleDelegation.tileJoined')) +
+        kit.tile(json.clusters.counts.alone,
+                 t.text('consoleDelegation.tileAlone')) +
+        kit.tile(json.clusters.counts.largest,
+                 t.text('consoleDelegation.tileLargest')) +
       '</div>' +
 
-      kit.note('<strong>A group of ONE is a real answer and not an empty ' +
-      'row.</strong> Three different things produce one and they are worth ' +
-      'telling apart: an application carrying a base URI and permissions ' +
-      'that nobody has been granted — somebody described an API and ' +
-      'nothing may reach it; a client holding only DANGLING grants, which ' +
-      'name permissions no application defines, so there is no far end to ' +
-      'be in a group with; and an application granted its OWN permission, ' +
-      'which is one application however it is drawn. The last two columns ' +
-      'say which.') +
+      kit.note(t.html('consoleDelegation.groupOfOne')) +
 
-      kit.note('The register itself, with the forms that change it, is on ' +
-      '<a href="/admin/delegation#allowed">the delegation page</a>. ' +
-      '<strong>Nothing on this page changes anything</strong> — the search ' +
-      'above is the only control, and it narrows nothing here: it opens a ' +
-      'picture of its own. There is still no FILTER over the drawing at ' +
-      'the top, because this register has no dimension to narrow on the ' +
-      'way the acts have a mechanism, a mode and an outcome — the one ' +
-      'division it does have is which applications can reach each other at ' +
-      'all, and that is the list above rather than a filter. ' +
-      '<code>?format=json</code> is the graph and the groups, ' +
-      '<code>?format=svg</code> is the document alone, and the graph is ' +
-      'also in the <code>allowed.graph</code> member of <code>GET ' +
-      '/admin-api/delegation</code> with the groups at <code>GET ' +
-      '/admin-api/permissions/groups</code>.'));
+      kit.note(t.html('consoleDelegation.registerItselfBefore') +
+      '<a href="/admin/delegation#allowed">' +
+      t.html('consoleDelegation.theDelegationPage') + '</a>' +
+      t.html('consoleDelegation.registerItselfAfter')));
   }
 
   // ---------------------------------------------------------------------------
@@ -3547,6 +3186,8 @@ class DelegationPage {
    * @returns the body as HTML
    */
   static cluster(ctx: Json, json: Json): string {
+    // The page's words are its translator's (#539 phase 6).
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/delegation', ctx.query);
     // The way back to the picture this page was opened from, carrying the
     // search that opened it — see allowedChooserState().
@@ -3554,9 +3195,9 @@ class DelegationPage {
                                  DelegationPage.allowedChooserState(ctx.query));
     const back = kit.note('<a class="btn" href="' +
       kit.esc('/admin/delegation/allowed' + kit.queryWith(onward, {})) +
-      '">&larr; Back to the allowed mappings</a>');
+      '">&larr; ' + t.html('consoleDelegation.backToAllowed') + '</a>');
     const group = json.cluster;
-    const chooser = DelegationPage.allowedApplicationChooser(json,
+    const chooser = DelegationPage.allowedApplicationChooser(t, json,
       group ? json.asked : '', onward,
       { path: '/admin/delegation/cluster', query: ctx.query });
     if (!group) {
@@ -3565,49 +3206,33 @@ class DelegationPage {
                                        json.groupPage.paging);
     return back +
       (json.asked
-        ? kit.note('<strong>The configured register has nothing about ' +
-          '<code>' + kit.esc(json.asked) + '</code>.</strong> That is not an ' +
-          'error and it is the ordinary state of most entries in this ' +
-          'registry: an application arrives in this register only when ' +
-          'it is given a base URI or a permission of its own, which ' +
-          'makes it a RESOURCE, or is granted a permission somebody else ' +
-          'exposes, which makes it a CLIENT. Until one of those has been ' +
-          'done there is nothing for it to be joined to. Two other ' +
-          'things could be true: the name is spelled differently from ' +
-          'the identifier on the entry &mdash; nothing here case-folds ' +
-          'one, so <code>WebApp1</code> and <code>webapp1</code> are two ' +
-          'applications &mdash; or the entry has been deleted since the ' +
-          'link was made. <a href="/admin/applications' +
-          kit.esc(kit.queryWith({ application: json.asked }, {})) + '">The ' +
-          'registry</a> settles both.')
+        ? kit.note(t.html('consoleDelegation.clusterNothingAbout',
+                          { name: json.asked }) +
+          '<a href="/admin/applications' +
+          kit.esc(kit.queryWith({ application: json.asked }, {})) + '">' +
+          t.html('consoleDelegation.theRegistryCap') + '</a>' +
+          t.html('consoleDelegation.settlesBoth'))
         : '') +
-      kit.note('<strong>Choose an application and get a picture of ' +
-      'everything it is joined to.</strong> A group is a set of ' +
-      'applications that can be reached from one another by following ' +
-      'delegated permissions, IGNORING which way each one points &mdash; ' +
-      'because a grant is directed but a permission register has no ' +
-      'chains in it, and the question worth answering is <em>which ' +
-      'applications are in the same conversation as this one</em>. <a ' +
-      'href="/admin/delegation/allowed">The whole register</a> is one ' +
-      'picture of all of them at once, which is the right drawing of ' +
-      'five applications and the wrong drawing of eighty.') +
+      kit.note(t.html('consoleDelegation.clusterChoose') + '<a ' +
+      'href="/admin/delegation/allowed">' +
+      t.html('consoleDelegation.theWholeRegister') + '</a>' +
+      t.html('consoleDelegation.clusterChooseAfter')) +
       chooser +
       kit.perPageForm('/admin/delegation/cluster', 'permappq',
                        kit.queryOne(ctx.query, 'permappq'),
                        json.groupPage.paging.perPage,
                        '', kit.filterOnly(listView)) +
       groupNav.head +
-      DelegationPage.allowedClusterTable(json.clusters,
+      DelegationPage.allowedClusterTable(t, json.clusters,
         json.groupPage.shown, onward, json.apps) +
       groupNav.foot +
-      kit.note('The list is built from the CONFIGURED register and not ' +
-      'from <a href="/admin/applications">the registry</a>, so an ' +
-      'application with no base URI and no grant is in neither this ' +
-      'table nor the search above. <a ' +
-      'href="/admin/delegation/application">The acts drill-down</a> is ' +
-      'the other question entirely: what has actually been delegated ' +
-      'through an application or to it, which can name something no ' +
-      'permission mentions.');
+      kit.note(t.html('consoleDelegation.configuredListBefore') +
+      '<a href="/admin/applications">' +
+      t.html('consoleDelegation.theRegistry') + '</a>' +
+      t.html('consoleDelegation.configuredListMiddle') + '<a ' +
+      'href="/admin/delegation/application">' +
+      t.html('consoleDelegation.actsDrillDown') + '</a>' +
+      t.html('consoleDelegation.configuredListAfter'));
     }
     // WHAT EACH MEMBER IS IN THIS GROUP, counted once over the group's own
     // rows rather than filtered per member — the same reason the chooser does
@@ -3647,13 +3272,12 @@ class DelegationPage {
             '</a><br><code>' +
             kit.esc(identifier) + '</code>'
           : '<code>' + kit.esc(identifier) + '</code><br><span ' +
-            'class="state-none" title="No entry under ou=applications ' +
-            'answers to this identifier. Both console doors read the ' +
-            'registry, so a grant naming something that is not in it can ' +
-            'only have been written by an ldapmodify.">not in the ' +
-            'registry</span>') +
+            'class="state-none" title="' +
+            t.html('consoleDelegation.memberUnregisteredTitle') + '">' +
+            t.html('consoleDelegation.notInRegistry') + '</span>') +
           (identifier === json.asked
-            ? '<br><span class="state-valid">the one you chose</span>' : '') +
+            ? '<br><span class="state-valid">' +
+              t.html('consoleDelegation.theOneYouChose') + '</span>' : '') +
           '</td>' +
         '<td class="num">' + (exposes[identifier]
           ? '<strong>' + kit.esc(exposes[identifier]) + '</strong>'
@@ -3665,15 +3289,15 @@ class DelegationPage {
           ? '<strong>' + kit.esc(holds[identifier]) + '</strong>'
           : '<span class="state-none">0</span>') +
           (dangles[identifier]
-            ? '<br><span class="state-revoked" title="Naming a permission ' +
-              'no application in this registry defines. It joins this ' +
-              'application to nothing, because there is no far end.">' +
-              kit.esc(dangles[identifier]) + ' dangling</span>'
+            ? '<br><span class="state-revoked" title="' +
+              t.html('consoleDelegation.memberDanglingTitle') + '">' +
+              t.html('consoleDelegation.nDangling',
+                     { n: dangles[identifier] }) + '</span>'
             : '') + '</td>' +
         '<td class="who"><a href="' +
         kit.esc('/admin/delegation/application' +
-          kit.queryWith(listView, { application: identifier })) + '">what it ' +
-          'has actually delegated</a></td>' +
+          kit.queryWith(listView, { application: identifier })) + '">' +
+          t.html('consoleDelegation.whatActuallyDelegated') + '</a></td>' +
         '</tr>';
     }).join('');
 
@@ -3687,37 +3311,27 @@ class DelegationPage {
     return back +
 
       '<div class="tiles">' +
-        kit.tile(group.counts.applications, 'applications in the group') +
-        kit.tile(group.counts.lines, 'lines drawn') +
-        kit.tile(group.counts.asked, 'asked for at least once') +
-        kit.tile(group.counts.unused, 'never asked for') +
-        kit.tile(group.counts.permissions, 'permissions exposed') +
-        kit.tile(group.counts.dangling, 'dangling, not drawn') +
+        kit.tile(group.counts.applications,
+                 t.text('consoleDelegation.tileAppsInGroup')) +
+        kit.tile(group.counts.lines,
+                 t.text('consoleDelegation.tileLinesDrawn')) +
+        kit.tile(group.counts.asked,
+                 t.text('consoleDelegation.tileAskedOnce')) +
+        kit.tile(group.counts.unused,
+                 t.text('consoleDelegation.neverAskedFor')) +
+        kit.tile(group.counts.permissions,
+                 t.text('consoleDelegation.tilePermissionsExposed')) +
+        kit.tile(group.counts.dangling,
+                 t.text('consoleDelegation.tileDanglingNotDrawn')) +
       '</div>' +
 
-      kit.note('<strong><code>' + kit.esc(json.asked) + '</code> is one of ' +
-      kit.esc(group.counts.applications) + ' application(s) that can be ' +
-      'reached from one another by following delegated ' +
-      'permissions.</strong> ' +
+      kit.note(t.html('consoleDelegation.clusterOneOf', {
+        name: json.asked, n: group.counts.applications }) + ' ' +
       (group.counts.applications === 1
-        ? 'It is joined to nothing: no grant leads from it to another ' +
-          'application, and none leads to it. That is a real answer rather ' +
-          'than an empty page &mdash; an API with permissions defined and ' +
-          'nothing granted on them is a description nobody may use, and a ' +
-          'client holding only dangling grants has been granted something ' +
-          'that does not exist.'
-        : 'The group is named after <code>' + kit.esc(group.key) +
-          '</code>, which is simply the identifier that sorts first ' +
-          '&mdash; a group has no name of its own, and using the union of ' +
-          'its members rather than one of them means adding a grant inside ' +
-          'a group does not rename it.') +
-      ' <strong>DIRECTION IS IGNORED FOR MEMBERSHIP AND DRAWN ON EVERY ' +
-      'LINE.</strong> Following the arrows would answer <em>what can this ' +
-      'client eventually reach</em>, and there is no such chain here: ' +
-      'holding a permission on an API grants nobody that API\'s own ' +
-      'permissions. Following a grant either way is what puts an API and ' +
-      'the front ends holding permissions on it in one group instead of ' +
-      'four.') +
+        ? t.html('consoleDelegation.clusterJoinedToNothing')
+        : t.html('consoleDelegation.clusterNamedAfter',
+                 { key: group.key })) +
+      t.html('consoleDelegation.clusterDirection')) +
 
       // Three paged tables on this page and no filter form to hang the size
       // on, which is exactly the drill-down case perPageForm()'s header
@@ -3726,117 +3340,89 @@ class DelegationPage {
       // reader is still reading by.
       kit.perPageForm('/admin/delegation/cluster', 'application',
                        json.asked, json.grantPage.paging.perPage,
-                       'The diagram is never paged: it is the whole group ' +
-                       'or it is a drawing of the pagination.',
+                       t.html('consoleDelegation.diagramNeverPaged'),
                        Object.assign({}, kit.filterOnly(listView),
                          DelegationPage.allowedChooserState(ctx.query))) +
 
       (group.counts.lines
-        ? '<h2>The group, drawn</h2>' +
-          kit.note('<strong>A line leaves the box with the ROUND end and ' +
-          'arrives at the box with the ARROWHEAD</strong>, and a DASHED ' +
-          'line is a grant nobody has ever asked for. Both are the same ' +
-          'marks the <a href="' +
+        ? '<h2>' + t.html('consoleDelegation.hGroupDrawn') + '</h2>' +
+          kit.note(t.html('consoleDelegation.groupDrawnBefore') + '<a href="' +
           kit.esc('/admin/delegation/allowed' + kit.queryWith(onward, {})) +
-          '">whole register</a> uses, drawn by the same code &mdash; this ' +
-          'page hands it a subset of the grants and changes nothing else. ' +
-          'ONE LINE PER PERMISSION rather than per pair, so two grants ' +
-          'between the same two applications are two lines. There is no ' +
-          'person and no hexagon on it: a configured permission says ' +
-          '<em>this client may reach that API as whoever is signed ' +
-          'in</em>, and there is no whoever yet.') +
-          DelegationPage.drawing(json, '/admin/delegation/cluster',
+          '">' + t.html('consoleDelegation.wholeRegister') + '</a>' +
+          t.html('consoleDelegation.groupDrawnAfter')) +
+          DelegationPage.drawing(t, json, '/admin/delegation/cluster',
             Object.assign({}, onward, { application: json.asked }))
         // WHY THERE IS NOTHING TO DRAW, and the three reasons are three
         // different states rather than one empty page. Saying "every grant
         // here is dangling" about an application that holds no grants at all
         // would be the page inventing rows to explain their absence.
-        : kit.note('<strong>There is nothing to draw.</strong> ' +
+        : kit.note('<strong>' + t.html('consoleDelegation.nothingToDraw') +
+          '</strong> ' +
           (!group.counts.grants
-            ? 'No grant in this group names anything: this application ' +
-              'carries a base URI and permissions of its own, and nobody ' +
-              'has been granted one of them. That is an API somebody ' +
-              'described and nothing may reach &mdash; the most ' +
-              'interesting group of one there is, and a real answer rather ' +
-              'than an empty page. Grant one of the permissions listed ' +
-              'below on a client\'s own page and this application joins ' +
-              'that client\'s group.'
-            : 'Every grant in this group is one the picture leaves out on ' +
-              'purpose &mdash; a DANGLING grant, which names a permission ' +
-              'no application defines and so has no far end to reach, or a ' +
-              'grant an application made to ITSELF, which would be an ' +
-              'arrow from a box back to the same box. Both are in the ' +
-              'table below, which is where those states belong.') +
-          ' <code>?format=svg</code> answers an empty document rather than ' +
-          'refusing, so a link that worked yesterday still resolves.')) +
+            ? t.html('consoleDelegation.noGrantNamesAnything')
+            : t.html('consoleDelegation.everyGrantLeftOut')) +
+          t.html('consoleDelegation.svgEmpty'))) +
 
-      '<h2>The applications in it</h2>' +
-      kit.note('<strong>Every member, with which side of a grant it is ' +
-      'on.</strong> An application here is usually both &mdash; a client ' +
-      'of one thing and a resource of another &mdash; which is the whole ' +
-      'reason this group exists as something bigger than a pair. The last ' +
-      'column crosses to the other register: what this application has ' +
-      'ACTUALLY delegated, which is a different question and can name ' +
-      'applications that are not in this group at all.') +
-      '<table><tr><th>Application</th><th>Permissions it exposes</th>' +
-      '<th>Grants held on it</th><th>Grants it holds</th>' +
-      '<th>On the acts side</th></tr>' +
-      (memberRows || '<tr><td colspan="5">No applications.</td></tr>') +
+      '<h2>' + t.html('consoleDelegation.hAppsInIt') + '</h2>' +
+      kit.note(t.html('consoleDelegation.appsInItNote')) +
+      '<table><tr><th>' + t.html('consoleDelegation.thApplication') +
+      '</th><th>' + t.html('consoleDelegation.thPermsItExposes') +
+      '</th>' +
+      '<th>' + t.html('consoleDelegation.thGrantsOnIt') + '</th><th>' +
+      t.html('consoleDelegation.thGrantsItHolds') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thActsSide') + '</th></tr>' +
+      (memberRows || '<tr><td colspan="5">' +
+        t.html('consoleDelegation.noApplications') + '</td></tr>') +
       '</table>' +
 
-      '<h2>What may be asked for in it</h2>' +
-      kit.note('<strong>Every permission the applications in this group ' +
-      'expose</strong>, granted or not. The UNGRANTED ones are why this ' +
-      'table is here and not left to the grants below: a permission nobody ' +
-      'holds appears on no line of the picture and in no row of that ' +
-      'table, so a group whose whole content is a described API with ' +
-      'nothing granted on it would otherwise be a page with nothing on it ' +
-      'at all.') +
+      '<h2>' + t.html('consoleDelegation.hMayBeAsked') + '</h2>' +
+      kit.note(t.html('consoleDelegation.mayBeAskedNote')) +
       permissionNav.head +
-      '<table><tr><th>Resource</th><th>Permission</th><th>Identifier</th>' +
-      '<th class="num">Held by</th><th>Who holds it</th><th></th></tr>' +
+      '<table><tr><th>' + t.html('consoleDelegation.thResource') +
+      '</th><th>' + t.html('consoleDelegation.thPermission') + '</th><th>' +
+      t.html('consoleDelegation.thIdentifier') + '</th>' +
+      '<th class="num">' + t.html('consoleDelegation.thHeldBy') +
+      '</th><th>' + t.html('consoleDelegation.thWhoHolds') +
+      '</th><th></th></tr>' +
       (json.permissionPage.shown.map(function (one) {
-        return DelegationPage.permissionDefinitionRow(one, listView,
+        return DelegationPage.permissionDefinitionRow(t, one, listView,
                                             { readOnly: true });
       }).join('') ||
-        '<tr><td colspan="6">No application in this group exposes ' +
-        'a permission, so every grant in it is dangling &mdash; each names ' +
-        'a permission this registry does not define.</td></tr>') +
+        '<tr><td colspan="6">' +
+        t.html('consoleDelegation.noPermsInGroup') + '</td></tr>') +
       '</table>' +
       permissionNav.foot +
 
-      '<h2>Every grant in the group</h2>' +
-      kit.note('The rows <a href="/admin/delegation#allowed">the ' +
-      'register</a> holds, narrowed to this group. <strong>Nothing here ' +
-      'changes anything</strong> &mdash; the Revoke button for a grant is ' +
-      'on the register itself, so that the picture pages stay documents ' +
-      'rather than becoming a fourth door onto the same five actions.') +
+      '<h2>' + t.html('consoleDelegation.hEveryGrantGroup') + '</h2>' +
+      kit.note(t.html('consoleDelegation.theRows') +
+      '<a href="/admin/delegation#allowed">' +
+      t.html('consoleDelegation.theRegister') + '</a>' +
+      t.html('consoleDelegation.grantsGroupAfter')) +
       grantNav.head +
-      '<table><tr><th>Client &mdash; who may ask</th><th>Resource &mdash; ' +
-      'what is reached</th><th>Permission</th><th>Identifier</th><th>What ' +
-      'the access token will say</th><th>Ever asked for?</th><th></th></tr>' +
+      '<table><tr><th>' + t.html('consoleDelegation.thClientWho') +
+      '</th><th>' + t.html('consoleDelegation.thResourceWhat') + '</th><th>' +
+      t.html('consoleDelegation.thPermission') + '</th><th>' +
+      t.html('consoleDelegation.thIdentifier') + '</th><th>' +
+      t.html('consoleDelegation.thTokenWillSay') + '</th><th>' +
+      t.html('consoleDelegation.thEverAsked') + '</th><th></th></tr>' +
       (json.grantPage.shown.map(function (one) {
-        return DelegationPage.permissionGrantRow(one, listView,
+        return DelegationPage.permissionGrantRow(t, one, listView,
                                                  { readOnly: true });
       }).join('') ||
-        '<tr><td colspan="7">No grant in this group, which means ' +
-        'this application exposes an API and nothing has been granted on ' +
-        'it.</td></tr>') +
+        '<tr><td colspan="7">' +
+        t.html('consoleDelegation.noGrantInGroup') + '</td></tr>') +
       '</table>' +
       grantNav.foot +
 
-      '<h2>Another application</h2>' +
-      kit.note('The same search that is on <a href="' +
+      '<h2>' + t.html('consoleDelegation.hAnotherApplication') + '</h2>' +
+      kit.note(t.html('consoleDelegation.sameSearchBefore') + '<a href="' +
       kit.esc('/admin/delegation/allowed' + kit.queryWith(onward, {})) +
-      '">the allowed picture</a>, drawn again here so that comparing two ' +
-      'groups is one click rather than two.') +
+      '">' + t.html('consoleDelegation.theAllowedPicture') + '</a>' +
+      t.html('consoleDelegation.sameSearchAfter')) +
       chooser +
 
-      kit.note('<code>?format=json</code> is this group, its grants and ' +
-      'its graph; <code>?format=svg</code> is the picture alone, with no ' +
-      'links in it. Every group at once is <code>GET ' +
-      '/admin-api/permissions/groups</code>, and this one is that ' +
-      'operation with <code>?application=' + kit.esc(json.asked) + '</code>.');
+      kit.note(t.html('consoleDelegation.clusterFormats',
+                      { name: json.asked }));
 
   }
 
@@ -3858,7 +3444,7 @@ class DelegationPage {
    * @param pair - a pair from the Kerberos delegation policy
    * @returns a <tr> as HTML
    */
-  static policyPairRow(pair) {
+  static policyPairRow(t, pair) {
     return '<tr>' +
       '<td><code>' + kit.esc(pair.mechanism) +
       '</code><br><span class="state-none">' +
@@ -3866,16 +3452,19 @@ class DelegationPage {
       '<td class="who"><code>' + kit.esc(pair.frontEnd) + '</code></td>' +
       '<td class="who"><code>' + kit.esc(pair.target) + '</code>' +
         (pair.targetKnown ? ''
-          : '<br><span class="state-revoked">no such principal here</span>') +
+          : '<br><span class="state-revoked">' +
+            t.html('consoleDelegation.noSuchPrincipal') + '</span>') +
       '</td>' +
       '<td class="who"><code>' + kit.esc(pair.attribute) + '</code><br>' +
-        '<span class="state-none">on the ' + kit.esc(pair.setOnRole) + ', ' +
+        '<span class="state-none">' +
+        t.html('consoleDelegation.onThe', { role: pair.setOnRole }) + ', ' +
           '<code>' +
         kit.esc(pair.setOn) + '</code></span></td>' +
       '<td>' + (pair.warning
                 ? '<span class="state-expired">' + kit.esc(pair.warning) +
                   '</span>'
-                : '<span class="state-valid">nothing else is missing</span>') +
+                : '<span class="state-valid">' +
+            t.html('consoleDelegation.nothingMissing') + '</span>') +
       '</td>' +
       '</tr>';
   }
@@ -3926,6 +3515,10 @@ class DelegationPage {
    * @returns the body as HTML
    */
   static acts(ctx: Json, json: Json): string {
+    // The page's words are its translator's (#539 phase 6); a role's,
+    // a mechanism's and a mode's label and description come from the view
+    // and are drawn as they come.
+    const t = ctx.t;
     const filter = json.filter || {};
     const wanted = { type: filter.type || '', mode: filter.mode || '',
                      outcome: filter.outcome || '',
@@ -3944,7 +3537,7 @@ class DelegationPage {
     const mechanismsNav = kit.pageNavPair('/admin/delegation', navParams,
                                           json.mechanismPage.paging);
     const rows = json.acts.map(function (row) {
-      return DelegationPage.delegationRow(row, json.facts,
+      return DelegationPage.delegationRow(t, row, json.facts,
                                           { listView: listView });
     }).join('');
 
@@ -3959,7 +3552,7 @@ class DelegationPage {
     });
     const typeOptions = '<option value=""' +
       (wanted.type ? '' : ' selected') +
-      '>any mechanism</option>' +
+      '>' + t.html('consoleDelegation.anyMechanism') + '</option>' +
       protocolsInOrder.map(function (protocol) {
         return '<optgroup label="' + kit.esc(protocol) + '">' +
           json.types.filter(function (entry) {
@@ -3975,7 +3568,8 @@ class DelegationPage {
 
     const modeOptions = ['<option value=""' +
                          (wanted.mode ? '' : ' selected') +
-                         '>either kind</option>']
+                         '>' + t.html('consoleDelegation.eitherKind') +
+                         '</option>']
       .concat(json.modes.map(function (entry) {
         return '<option value="' + kit.esc(entry.mode) + '"' +
                (entry.mode === wanted.mode ? ' selected' : '') + '>' +
@@ -3987,7 +3581,8 @@ class DelegationPage {
     const outcomeOptions = ['<option value=""' +
                             (wanted.outcome ? '' : ' ' +
         'selected') +
-                            '>any outcome</option>']
+                            '>' + t.html('consoleDelegation.anyOutcome') +
+                            '</option>']
       .concat(json.outcomes.map(function (name) {
         return '<option value="' + kit.esc(name) + '"' +
                (name === wanted.outcome ? ' selected' : '') + '>' +
@@ -4003,65 +3598,31 @@ class DelegationPage {
 
     return (
       '<div class="tiles">' +
-        kit.tile(json.held, 'acts held') +
-        kit.tile(json.chains.length, 'distinct chains') +
-        kit.tile(json.byMode.impersonation || 0, 'impersonations') +
-        kit.tile(json.byMode.delegation || 0, 'delegations') +
-        kit.tile(json.byOutcome.refused || 0, 'refused') +
-        kit.tile(json.policy.pairs.length, 'configured pairs') +
+        kit.tile(json.held, t.text('consoleDelegation.tileActsHeld')) +
+        kit.tile(json.chains.length, t.text('consoleDelegation.tileChains')) +
+        kit.tile(json.byMode.impersonation || 0,
+                 t.text('consoleDelegation.tileImpersonations')) +
+        kit.tile(json.byMode.delegation || 0,
+                 t.text('consoleDelegation.tileDelegations')) +
+        kit.tile(json.byOutcome.refused || 0,
+                 t.text('consoleDelegation.outcomeRefused')) +
+        kit.tile(json.policy.pairs.length,
+                 t.text('consoleDelegation.tileConfiguredPairs')) +
       '</div>' +
 
-      kit.note('<strong>Who acted on whose behalf, through what, to reach ' +
-      'what.</strong> Three of the protocol families here can delegate and ' +
-      'each calls it something different — Kerberos has S4U2Self, two ' +
-      'flavours of S4U2Proxy and a forwarded ticket-granting ticket; ' +
-      'WS-Trust has <code>OnBehalfOf</code> and <code>ActAs</code>; OAuth ' +
-      '2.0 Token Exchange has impersonation and delegation. This page ' +
-      'records all eight against one model, because the question people ' +
-      'arrive with is protocol-independent: <em>alice never touched the ' +
-      'back end, so why is there a ticket to it in her name, and who asked ' +
-      'for it?</em>') +
+      kit.note(t.html('consoleDelegation.actsLead')) +
 
-      kit.note('<strong>The three columns in the middle are the layers of ' +
-      'the architecture</strong>, and the names are this page\'s own ' +
-      'rather than any protocol\'s — a Kerberos front end, a WS-Trust ' +
-      'requester and an OAuth client doing an exchange are the same ' +
-      'position in the same picture:') +
+      kit.note(t.html('consoleDelegation.actsLayers')) +
       '<ul>' + json.roles.map(function (entry) {
         return '<li><strong>' + kit.esc(entry.label) + '</strong> — ' +
                kit.esc(entry.what) +
                '</li>';
       }).join('') + '</ul>' +
-      kit.note('A party can be a <em>person</em>, an ' +
-      '<em>application</em>, or both, and the middle one routinely is ' +
-      'both: <code>HTTP/frontend.example.com</code> has an entry under ' +
-      '<code>ou=users</code> (it authenticates, so this service files it ' +
-      'with the people) and an entry under <code>ou=applications</code> ' +
-      '(tickets are issued FOR it). Each cell links to whichever of the ' +
-      'two exist. An application marked <em>not in the registry</em> is ' +
-      'not an error — the registry holds what this service has been ASKED ' +
-      'ABOUT, and an RFC 8693 <code>audience</code> nobody has otherwise ' +
-      'mentioned is exactly that.') +
+      kit.note(t.html('consoleDelegation.actsPersonOrApp')) +
 
-      kit.note('<strong>Impersonation and delegation are the axis worth ' +
-      'filtering on</strong>, and they are not a matter of degree. Under a ' +
-      'delegation the credential CARRIES the chain — an <code>act</code> ' +
-      'claim, a composite <code>ActAs</code>, ' +
-      '<code>S4U_DELEGATION_INFO</code> in the PAC — so the far end can ' +
-      'see who is really asking and can decide differently because of it. ' +
-      'Under an impersonation nothing does, which means <strong>this page ' +
-      'is the only place it will ever be visible</strong>: no reading of ' +
-      'the token afterwards, at the resource server or in a log, can ' +
-      'recover the fact that a middle tier was involved.') +
+      kit.note(t.html('consoleDelegation.actsAxis')) +
 
-      kit.note('<strong>Refusals are recorded and are most of what this ' +
-      'page is for.</strong> A delegation that worked tells you the ' +
-      'plumbing is connected. A delegation that was refused names the two ' +
-      'accounts, the two attributes and which of them was missing, at the ' +
-      'moment the KDC decided — and the text in the <em>Authorized by / ' +
-      'why not</em> column is the KDC\'s OWN words, the same sentence the ' +
-      'client was sent, rather than a second wording that could come to ' +
-      'disagree with it.') +
+      kit.note(t.html('consoleDelegation.actsRefusals')) +
 
       // THE WAY TO THE PICTURE, ABOVE THE TABLE RATHER THAN UNDER IT. The
       // chains table lower down is what the diagram is drawn from and the
@@ -4077,14 +3638,10 @@ class DelegationPage {
         kit.esc('/admin/delegation/map' + kit.queryWith({ type: wanted.type,
           mode: wanted.mode, outcome: wanted.outcome,
           protocol: wanted.protocol, q: wanted.q }, {})) +
-        '">See this as a picture &rarr;</a> <strong>The same acts drawn as ' +
-      'a diagram</strong> — a stick figure per person, a rectangle per ' +
-      'application, a hexagon for this service in this trust realm, and a ' +
-      'line per relationship: who acts for whom, and what each credential ' +
-      'was FOR. ' + (filtering
-        ? 'It opens with the filter you have set here.'
-        : 'Filter first if this list is long — the picture is drawn from ' +
-          'everything that matches, not from one page.')) +
+        '">' + t.html('consoleDelegation.seeAsPicture') + ' &rarr;</a> ' +
+      t.html('consoleDelegation.sameActsDrawn') + (filtering
+        ? t.html('consoleDelegation.opensWithFilter')
+        : t.html('consoleDelegation.filterFirst'))) +
 
       // THE SECOND WAY IN, BESIDE THE PICTURE AND ABOVE THE TABLE. The
       // picture link answers "what does all of this look like"; this answers
@@ -4092,19 +3649,8 @@ class DelegationPage {
       // question a person arrives with and the one the tables below cannot be
       // sorted into. Both are here rather than at the foot, because a reader
       // who wants either wants it before reading four hundred rows.
-      kit.note('<strong>Or pivot on an application.</strong> A delegation ' +
-      'has three parties and an application can be two of them — the ' +
-      '<em>intermediary</em> that acts on somebody\'s behalf, and the ' +
-      '<em>target</em> the credential is for. Search for one and click it, ' +
-      'and see everything that has been delegated through it or to it, in ' +
-      'either role, with every credential that came out. <strong>The ' +
-      'search follows the filter above and the page it opens does ' +
-      'not</strong>: it shows everything that application has ever been ' +
-      'part of, because <em>what exists because of this thing</em> is not ' +
-      'a question a half-answer is useful for. Any part of a name matches, ' +
-      'EVERY spelling an act presented is searched, and twenty are shown ' +
-      'at a time with the rest a click away.') +
-      DelegationPage.delegationApplicationChooser(json.applicationChooser,
+      kit.note(t.html('consoleDelegation.pivotApplication')) +
+      DelegationPage.delegationApplicationChooser(t, json.applicationChooser,
         '', { path: '/admin/delegation', query: ctx.query }) +
 
       // AND THE THIRD WAY IN, which is the other half of the same question.
@@ -4116,20 +3662,11 @@ class DelegationPage {
       // in somebody's name is not a delegation and a page drawn from these
       // acts alone would be empty for anybody who merely signed in. See that
       // route's header.
-      kit.note('<strong>Or pivot on a person.</strong> Everything issued ' +
-      'in their name, end to end: every grant and flow with the exact one ' +
-      'labelled, every assertion, ticket and SVID, the applications ' +
-      'holding all of it, and the sign-ins it rests on — with any ' +
-      'delegation naming them drawn in the same picture. <strong>The list ' +
-      'includes people nothing was ever issued to</strong>, because an ' +
-      'S4U2Self or an <code>OnBehalfOf</code> names somebody who was never ' +
-      'present, and that is the row worth opening. Search it the same way ' +
-      '— any part of a name, every spelling they arrived under, twenty at ' +
-      'a time — and clicking a result IS the choice.') +
-      DelegationPage.delegationUserChooser(json.userChooser, '',
+      kit.note(t.html('consoleDelegation.pivotPerson')) +
+      DelegationPage.delegationUserChooser(t, json.userChooser, '',
         { path: '/admin/delegation', query: ctx.query }) +
 
-      '<h2>What happened</h2>' +
+      '<h2>' + t.html('consoleDelegation.hWhatHappened') + '</h2>' +
       // No `page` input in this form, deliberately: changing a filter or the
       // page size returns to page 1. Carrying the old page number over would
       // land somebody on page 6 of a two-page result and the clamp in
@@ -4146,61 +3683,60 @@ class DelegationPage {
       '<form method="get" id="filter-acts" class="finder" ' +
         'action="/admin/delegation#filter-acts"><div class="formrow">' +
         DelegationPage.chooserCarry(ctx.query) +
-        '<label for="type">Mechanism</label><select id="type" name="type">' +
+        '<label for="type">' + t.html('consoleDelegation.thMechanism') +
+        '</label><select id="type" name="type">' +
           typeOptions + '</select>' +
-        '<label for="mode">Kind</label><select id="mode" name="mode">' +
+        '<label for="mode">' + t.html('consoleDelegation.labelKind') +
+        '</label><select id="mode" name="mode">' +
           modeOptions + '</select>' +
-        '<label for="outcome">Outcome</label><select id="outcome" ' +
+        '<label for="outcome">' + t.html('consoleDelegation.labelOutcome') +
+        '</label><select id="outcome" ' +
         'name="outcome">' +
           outcomeOptions + '</select>' +
-        '<label for="per">Per page</label><select id="per" name="per">' +
+        '<label for="per">' + t.html('consoleDelegation.labelPerPage') +
+        '</label><select id="per" name="per">' +
       perOptions +
           '</select>' +
       '</div><div class="formrow">' +
-        '<label for="q">Text</label>' +
+        '<label for="q">' + t.html('consoleDelegation.labelText') +
+        '</label>' +
         '<input type="text" id="q" name="q" size="40" value="' +
       kit.esc(wanted.q) +
-          '" placeholder="a person, an SPN, a client_id, an attribute">' +
-        '<button class="secondary">Filter</button>' +
+          '" placeholder="' +
+          kit.esc(t.text('consoleDelegation.textPlaceholder')) + '">' +
+        '<button class="secondary">' + t.html('consoleDelegation.filter') +
+        '</button>' +
         (filtering
-          ? ' <a href="/admin/delegation#filter-acts">clear</a>'
+          ? ' <a href="/admin/delegation#filter-acts">' +
+            t.html('consoleDelegation.clear') + '</a>'
           : '') +
       '</div></form>' +
-      kit.note('The text box searches every party of the chain and both ' +
-      'explanations at once, because the fact somebody arrives with names ' +
-      'one of them and they do not know which column it will be in.') +
-      kit.note('The <strong>chain</strong> link under each row\'s number ' +
-      'draws THAT RELATIONSHIP on its own — the whole chain the act ' +
-      'belongs to, with everything else in the service left out. It goes ' +
-      'to the chain rather than to the act because an act has no picture ' +
-      'of its own: a diagram has the times taken out, and four acts a ' +
-      'second apart between the same three parties are one line.') +
+      kit.note(t.html('consoleDelegation.textSearchesEvery')) +
+      kit.note(t.html('consoleDelegation.chainLinkNote')) +
       nav.head +
-      '<table><tr><th class="num">#</th><th>When</th><th>Mechanism</th>' +
-      '<th>Kind</th><th>Outcome</th><th>Initial identity</th>' +
-      '<th>Intermediary</th><th>Target</th><th>Authorized by / why not</th>' +
-      '<th>Credentials</th></tr>' +
+      '<table><tr><th class="num">#</th><th>' +
+      t.html('consoleDelegation.thWhen') + '</th><th>' +
+      t.html('consoleDelegation.thMechanism') + '</th>' +
+      '<th>' + t.html('consoleDelegation.labelKind') + '</th><th>' +
+      t.html('consoleDelegation.labelOutcome') + '</th><th>' +
+      t.html('consoleDelegation.thInitial') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thIntermediaryShort') + '</th><th>' +
+      t.html('consoleDelegation.thTarget') + '</th><th>' +
+      t.html('consoleDelegation.thAuthorizedBy') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thCredentials') + '</th></tr>' +
       (rows || '<tr><td colspan="10">' +
         (json.all
-          ? 'Nothing matches this filter.'
-          : 'Nothing has delegated anything yet. Three things put a row ' +
-            'here: a Kerberos S4U2Self, S4U2Proxy or forwarded-TGT request ' +
-            'at the KDC; a WS-Trust <code>RequestSecurityToken</code> ' +
-            'carrying <code>&lt;wst:OnBehalfOf&gt;</code> or ' +
-            '<code>&lt;wst14:ActAs&gt;</code>; and an RFC 8693 token ' +
-            'exchange at <code>/oauth2/token</code>. A REFUSED attempt ' +
-            'counts — the delegation page in the debugger will produce one ' +
-            'on purpose.') +
+          ? t.html('consoleDelegation.nothingMatchesFilter')
+          : t.html('consoleDelegation.nothingDelegatedYet')) +
         '</td></tr>') + '</table>' +
       nav.foot +
 
-      kit.note(json.matched + ' act(s) match' +
+      kit.note(t.html('consoleDelegation.actsMatch', { n: json.matched }) +
       (json.paging.pages > 1 ?
-       ', of which rows ' + json.paging.firstRow + '&ndash;' +
-       json.paging.lastRow +
-                          ' are on this page (' + json.paging.page + ' of ' +
-                          json.paging.pages + ')' : '') +
-      '; ' + json.held + ' held' +
+       t.html('consoleDelegation.rowsOnPage', {
+         first: json.paging.firstRow, last: json.paging.lastRow,
+         page: json.paging.page, pages: json.paging.pages }) : '') +
+      t.html('consoleDelegation.nHeld', { n: json.held }) +
       // ---------------------------------------------------------------------
       // ONE PROCESS OR SEVERAL, AND THE TWO NUMBERS ARE NOT COMPARABLE WHEN
       // IT IS SEVERAL (2026-09-11). `held` is every process's acts, fanned in
@@ -4211,66 +3747,59 @@ class DelegationPage {
       // putting them in one comparison.
       // ---------------------------------------------------------------------
       (json.processes > 1
-        ? ' across ' + json.processes + ' process(es), ' +
-          json.heldHere +
-          ' of them here; ' + json.recorded + ' recorded by this one ' +
-          'since it started'
-        : ' of ' + json.recorded +
-          ' recorded since this process started') +
+        ? t.html('consoleDelegation.acrossProcesses', {
+            processes: json.processes, here: json.heldHere,
+            recorded: json.recorded })
+        : t.html('consoleDelegation.ofRecorded',
+                 { recorded: json.recorded })) +
       (json.dropped
-        ? ', and <strong>' + json.dropped + ' dropped</strong> — this ' +
-          'page holds at ' +
-          'most ' + json.maxRecords + ' acts and discards the oldest ' +
-          'first. Raise <code>delegation.maxRecords</code> on <a ' +
-          'href="/admin/delegation-settings">Protocols &rsaquo; ' +
-          'Delegation</a> if that is losing something you need.'
-        : '. The cap is ' + json.maxRecords + ' acts and nothing has ' +
-          'been dropped yet.') +
-      ' The <strong>#</strong> column is a sequence number, unique across ' +
-      'every process of this service and never reused, and rising within ' +
-      'each process; it is not one order across processes, so a caller ' +
-      'polling this resumes by time (<code>at</code>) with ' +
-      '<code>seq</code> as the tie-break. <code>?format=json</code>\'s ' +
-      '<code>oldestSeq</code> and <code>newestSeq</code> are the oldest ' +
-      'and newest acts\' numbers.') +
+        ? t.html('consoleDelegation.droppedBefore', {
+            dropped: json.dropped, max: json.maxRecords }) + '<a ' +
+          'href="/admin/delegation-settings">' +
+          t.html('consoleDelegation.protocolsDelegationLink') + '</a>' +
+          t.html('consoleDelegation.droppedAfter')
+        : t.html('consoleDelegation.capNothingDropped',
+                 { max: json.maxRecords })) +
+      t.html('consoleDelegation.seqNote')) +
 
-      '<h2>The chains</h2>' +
-      kit.note('The same acts with the time and the credentials taken ' +
-      'out: one row per distinct <em>(mechanism, initial, intermediary, ' +
-      'target)</em>. <a href="/admin/delegation/map">This is what the ' +
-      'picture is drawn from</a> — one edge per row, and up to TWO lines ' +
-      'per row, because a chain has three parties. It is already the more ' +
-      'useful answer to <em>what talks to what</em>. The outcome is ' +
-      'deliberately NOT part of a chain\'s identity, so a chain refused ' +
-      'nine times and then fixed is one row that changes rather than two ' +
-      'that do not meet. <strong>The last column draws one row ' +
-      'alone</strong>, which is the answer to <em>what is this one, ' +
-      'exactly</em> on a service that has been driven for an afternoon and ' +
-      'whose whole picture is forty boxes.') +
+      '<h2>' + t.html('consoleDelegation.hChains') + '</h2>' +
+      kit.note(t.html('consoleDelegation.chainsBefore') +
+      '<a href="/admin/delegation/map">' +
+      t.html('consoleDelegation.chainsLink') + '</a>' +
+      t.html('consoleDelegation.chainsAfter')) +
       chainsNav.head +
-      '<table><tr><th>Mechanism</th><th>Kind</th><th>Initial identity</th>' +
-      '<th>Intermediary</th><th>Target</th><th>Acts</th><th>Last seen</th>' +
-      '<th>Just this one</th></tr>' +
+      '<table><tr><th>' + t.html('consoleDelegation.thMechanism') +
+      '</th><th>' + t.html('consoleDelegation.labelKind') + '</th><th>' +
+      t.html('consoleDelegation.thInitial') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thIntermediaryShort') + '</th><th>' +
+      t.html('consoleDelegation.thTarget') + '</th><th>' +
+      t.html('consoleDelegation.thActs') + '</th><th>' +
+      t.html('consoleDelegation.thLastSeen') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thJustThisOne') + '</th></tr>' +
       (json.chainPage.shown.map(function (chain) {
         return '<tr>' +
           '<td><code>' + kit.esc(chain.type) + '</code></td>' +
-          '<td>' + DelegationPage.modeCell(chain.mode) + '</td>' +
+          '<td>' + DelegationPage.modeCell(t, chain.mode) + '</td>' +
           '<td class="who">' +
-          DelegationPage.delegationPartyCell(chain.initial, json.facts) +
+          DelegationPage.delegationPartyCell(t, chain.initial, json.facts) +
           '</td><td class="who">' +
-          DelegationPage.delegationPartyCell(chain.intermediary, json.facts) +
+          DelegationPage.delegationPartyCell(t, chain.intermediary,
+                                             json.facts) +
           '</td><td ' +
           'class="who">' +
-          DelegationPage.delegationPartyCell(chain.target, json.facts) +
+          DelegationPage.delegationPartyCell(t, chain.target, json.facts) +
           '</td><td ' +
           'class="num">' + kit.esc(chain.acts) + ' — ' +
-            '<span class="state-valid">' + kit.esc(chain.issued) +
-          ' issued</span>, ' +
+            '<span class="state-valid">' +
+            t.html('consoleDelegation.nIssued', { n: chain.issued }) +
+            '</span>, ' +
             (chain.refused
-              ? '<span class="state-revoked">' + kit.esc(chain.refused) +
-                ' ' +
-                  'refused</span>'
-              : '<span class="state-none">0 refused</span>') + '</td>' +
+              ? '<span class="state-revoked">' +
+                t.html('consoleDelegation.nRefused', { n: chain.refused }) +
+                '</span>'
+              : '<span class="state-none">' +
+                t.html('consoleDelegation.nRefused', { n: 0 }) +
+                '</span>') + '</td>' +
           '<td>' + kit.esc(kit.whenText(chain.lastAt)) + '</td>' +
           // An eighth column here where the acts table above puts the same
           // link inside its `#` cell, and the difference is width: this
@@ -4279,80 +3808,51 @@ class DelegationPage {
           // cells. A column can be afforded here and cannot be there.
           '<td><a href="' + kit.esc('/admin/delegation/chain' +
             kit.queryWith(listView, { chain: chain.chainKey })) +
-            '">picture &rarr;</a></td>' +
+            '">' + t.html('consoleDelegation.picture') + ' &rarr;</a></td>' +
           '</tr>';
-      }).join('') || '<tr><td colspan="8">No chains yet.</td></tr>') +
+      }).join('') || '<tr><td colspan="8">' +
+        t.html('consoleDelegation.noChainsYet') + '</td></tr>') +
       '</table>' +
       chainsNav.foot +
 
       DelegationPage.permissionsSection(ctx, json.permissionsView,
                                         listView, false) +
 
-      '<h2>Who may delegate to whom &mdash; Kerberos</h2>' +
-      kit.note('<strong>The KDC\'s view of the ONE delegation policy ' +
-      '(#186).</strong> Kerberos, WS-Trust and the RFC 8693 token ' +
-      'exchange are decided by the same issuance policy from the same ' +
-      'controls on the directory\'s entries — the section below lists ' +
-      'them for every protocol; this one lists the Kerberos services, ' +
-      'whose entries are named <code>SPN@REALM</code>. The KDC refuses ' +
-      'in BOTH modes, as it always has (in development the fixture ' +
-      'services\' rules are seeded onto their entries so every refusal ' +
-      'can be reached); WS-Trust and the token exchange are enforced in ' +
-      'product mode and, in development, recorded as what would have ' +
-      'been refused. Every row says what allowed it, in the same column ' +
-      'for all three families.') +
-      kit.note('The relationship rests on two attributes on two OPPOSITE ' +
-      'entries — appAllowedToDelegateTo on the front end, ' +
-      'appAllowedToActOnBehalfOf on the back end — which is why they ' +
-      'are in one table with a column saying which entry carries the ' +
-      'permission. Same messages, ' +
-      'same KDC options, opposite direction of trust — and the second one ' +
-      'turns <em>I can write to this computer object</em> into <em>I can ' +
-      'reach this service as anybody</em>.') +
-      kit.note('Each mechanism needs one thing BEYOND the attribute, and ' +
-      'it is the same thing on every row of that kind, so it is here ' +
-      'rather than in a column: <strong>classic</strong> needs a ' +
-      'FORWARDABLE evidence ticket, which S4U2Self returns only where the ' +
-      'policy allows the impersonation — <code>impersonation</code> in the ' +
-      'service\'s <code>appDelegationSemantics</code> (Active ' +
-      'Directory\'s <code>TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION</code>) ' +
-      'and a user who is not protected; ' +
-      '<strong>resource-based</strong> needs <code>PA-PAC-OPTIONS</code> ' +
-      '(padata type 167) carrying the resource-based bit, and [MS-SFU] ' +
-      'requires a KDC to answer <code>KDC_ERR_BADOPTION</code> without it ' +
-      '— an error that says nothing about padata. Resource-based needs no ' +
-      'forwardable evidence and no flag on the front end at all, which is ' +
-      'why it is the easier path.') +
+      '<h2>' + t.html('consoleDelegation.hKerberosPolicy') + '</h2>' +
+      kit.note(t.html('consoleDelegation.kdcView')) +
+      kit.note(t.html('consoleDelegation.twoAttributes')) +
+      kit.note(t.html('consoleDelegation.beyondAttribute')) +
       pairsNav.head +
-      '<table><tr><th>Mechanism</th><th>Front end (who acts)</th>' +
-      '<th>Target (what is reached)</th><th>Attribute, and where it ' +
-      'lives</th><th>Anything missing?</th></tr>' +
-      (json.pairPage.shown.map(DelegationPage.policyPairRow).join('') ||
-        '<tr><td colspan="5">No principal here is configured for ' +
-        'constrained delegation of either kind.</td></tr>') + '</table>' +
+      '<table><tr><th>' + t.html('consoleDelegation.thMechanism') +
+      '</th><th>' + t.html('consoleDelegation.thFrontEnd') + '</th>' +
+      '<th>' + t.html('consoleDelegation.thTargetReached') + '</th><th>' +
+      t.html('consoleDelegation.thAttributeWhere') + '</th><th>' +
+      t.html('consoleDelegation.thMissing') + '</th></tr>' +
+      (json.pairPage.shown.map(function (pair) {
+        return DelegationPage.policyPairRow(t, pair);
+      }).join('') ||
+        '<tr><td colspan="5">' +
+        t.html('consoleDelegation.noConstrainedPrincipal') +
+        '</td></tr>') + '</table>' +
       pairsNav.foot +
 
-      '<h3>Account flags</h3>' +
-      kit.note('Two of these three STOP delegation rather than permit it, ' +
-      'and the third is not a control at all. An account appears here ' +
-      'whether or not any pair above names it, because an account named in ' +
-      'no pair is precisely the one somebody is wondering about.') +
+      '<h3>' + t.html('consoleDelegation.hAccountFlags') + '</h3>' +
+      kit.note(t.html('consoleDelegation.accountFlagsNote')) +
       flagsNav.head +
-      '<table><tr><th>Principal</th><th>Flags</th><th>What each one ' +
-      'does</th></tr>' +
+      '<table><tr><th>' + t.html('consoleDelegation.thPrincipal') +
+      '</th><th>' + t.html('consoleDelegation.thFlags') + '</th><th>' +
+      t.html('consoleDelegation.thWhatEachDoes') + '</th></tr>' +
       (json.flagPage.shown.map(DelegationPage.policyAccountRow).join('') ||
-        '<tr><td colspan="3">No principal here carries one of these ' +
-        'flags.</td></tr>') +
+        '<tr><td colspan="3">' + t.html('consoleDelegation.noFlags') +
+        '</td></tr>') +
       '</table>' +
       flagsNav.foot +
 
       DelegationPage.delegationPolicySection(ctx,
                                              json.exchangePolicyView) +
 
-      '<h3>The mechanisms</h3>' +
-      kit.note('Read off the same table this page records against, so a ' +
-      'mechanism cannot be recordable and undocumented, nor described here ' +
-      'and never occur.') +
+      '<h3>' + t.html('consoleDelegation.hMechanisms') + '</h3>' +
+      kit.note(t.html('consoleDelegation.mechanismsNote')) +
       mechanismsNav.head +
       '<ul>' + json.mechanismPage.shown.map(function (entry) {
         // The mechanism, its id, its specification and how many have been
@@ -4363,78 +3863,37 @@ class DelegationPage {
         return '<li><strong>' + kit.esc(entry.label) + '</strong> (<code>' +
           kit.esc(entry.type) + '</code>, ' + kit.esc(entry.protocol) +
           ', ' +
-          kit.esc(entry.spec) + ' — ' + (json.byType[entry.type] || 0) +
-          ' ' +
-              'recorded) ' +
+          kit.esc(entry.spec) + ' — ' +
+          t.html('consoleDelegation.nRecorded',
+                 { n: json.byType[entry.type] || 0 }) + ') ' +
           kit.note(kit.esc(entry.what) +
             (entry.policed
-              ? ' <strong>This service decides who may do it.</strong>'
-              : ' <strong>Nothing here checks who may do it.</strong>')) +
+              ? ' ' + t.html('consoleDelegation.serviceDecides')
+              : ' ' + t.html('consoleDelegation.nothingChecksWho'))) +
           '</li>';
       }).join('') + '</ul>' +
       mechanismsNav.foot +
 
-      kit.note('<strong>It is in memory and dies with the ' +
-      'process</strong>, like the counters, the audit log, the sessions ' +
-      'and the signing key. It also has no clear button and no way to add ' +
-      'a row by hand, which is a decision rather than an omission: every ' +
-      'row here is something that actually happened, and a table mixing ' +
-      'those with typed-in ones would be worth much less than either. ' +
-      'Restarting the service is how you get an empty one.') +
+      kit.note(t.html('consoleDelegation.inMemory')) +
 
-      kit.note('<strong>A delegation that SUCCEEDED also appears on <a ' +
-      'href="/admin/audit">the audit log</a></strong> as an ordinary ' +
-      '<code>authentication</code> row, and on <a href="/admin/users">the ' +
-      'users page</a> as a credential accepted for the initial identity — ' +
-      'which is right: this service did accept one. A delegation that was ' +
-      'REFUSED appears in NEITHER, because nothing was accepted, and that ' +
-      'gap is the reason this page keeps its own list rather than a filter ' +
-      'over one of theirs.') +
+      kit.note('<strong>' + t.html('consoleDelegation.succeededBefore') +
+      '<a href="/admin/audit">' + t.html('consoleDelegation.theAuditLog') +
+      '</a></strong>' + t.html('consoleDelegation.succeededMiddle') +
+      '<a href="/admin/users">' + t.html('consoleDelegation.theUsersPage') +
+      '</a>' + t.html('consoleDelegation.succeededAfter')) +
 
       // THE ONE SETTING THIS PAGE HAD, `delegation.maxRecords`, is on
       // Protocols → Delegation since 2026-10-01 with every other control
       // that was here (rcbj): this page reads, and that one configures.
-      kit.note('<strong>Nothing on this page changes anything ' +
-      '(2026-10-01).</strong> The register\'s controls and ' +
-      '<code>delegation.maxRecords</code> are on <a ' +
-      'href="/admin/delegation-settings">Protocols &rsaquo; ' +
-      'Delegation</a>, and one application\'s permissions on its own ' +
-      'Permissions tab.') +
+      kit.note(t.html('consoleDelegation.nothingChangesBefore') + '<a ' +
+      'href="/admin/delegation-settings">' +
+      t.html('consoleDelegation.protocolsDelegationLink') + '</a>' +
+      t.html('consoleDelegation.nothingChangesAfter')) +
 
-      kit.note('<strong>Every table on this page is paged, at ' +
-      json.delegationPerPage + ' rows, and they share one size.</strong> ' +
-      'There are seven of them here with several screens of prose between, ' +
-      'so fifty rows apiece — which is what every other page in this ' +
-      'console uses — would put the last heading tens of thousands of ' +
-      'pixels down. <code>?per=</code> changes all seven together (at ' +
-      'most ' + kit.MAX_ROWS + ' rows a page) and the control above the acts ' +
-      'table is the one that sets it. Each table then has a page parameter ' +
-      'of ITS OWN, so moving one leaves the other six where you left them: ' +
-      '<code>?page=</code> for the acts, and <code>?chainsPage=</code>, ' +
-      '<code>?permissionsPage=</code>, <code>?grantsPage=</code>, ' +
-      '<code>?pairsPage=</code>, <code>?flagsPage=</code> and ' +
-      '<code>?mechanismsPage=</code> for the rest. The two searches over ' +
-      'the configured register are <code>?permq=</code> and ' +
-      '<code>?grantq=</code>, and a new search starts that table at its ' +
-      'first page.') +
+      kit.note(t.html('consoleDelegation.everyTablePaged', {
+        per: json.delegationPerPage, max: kit.MAX_ROWS })) +
 
-      kit.note('<strong><code>?format=json</code> carries the WHOLE of ' +
-      'every list and not the page you are looking at, and that is ' +
-      'deliberate rather than an oversight.</strong> The acts are the ' +
-      'exception and always were: they are capped at ' +
-      '<code>delegation.maxRecords</code> and can be thousands, so the ' +
-      'reply pages them and carries <code>page</code>, <code>pages</code> ' +
-      'and <code>matched</code> for a caller to walk them with. Everything ' +
-      'else — <code>chains</code>, the configured <code>policy</code> and ' +
-      'the whole of <code>allowed</code> — comes back entire, because each ' +
-      'is derived from something already bounded and because <code>GET ' +
-      '/admin-api/permissions</code> answers with that same register under ' +
-      'its own name. A caller that had to walk seven pagings to read a ' +
-      'register a page draws in one screen would be paying for this ' +
-      'page\'s layout. <code>allowed.filter</code> and ' +
-      '<code>allowed.paging</code> report what the BROWSER was shown, so ' +
-      'nothing here is silent about the difference. The acts are also at ' +
-      '<code>GET /admin-api/delegation</code> with the same parameters.'));
+      kit.note(t.html('consoleDelegation.jsonWhole')));
   }
 }
 

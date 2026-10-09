@@ -40,6 +40,11 @@ class SamlAssertionsPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // The page's words are its translator's (#539 phase 6); a setting's own
+    // description and label come from the view and are drawn as they come.
+    // A link carries an href, which a message may not, so a sentence around
+    // one is split into messages with the anchor in the code.
+    const t = ctx.t;
     const settings = json.settings;
     const snapshot = { assertions: { byKind: json.assertionsIssued.byKind },
                        rows: json.rows, seconds: json.seconds,
@@ -47,49 +52,26 @@ class SamlAssertionsPage {
     const anyOverridden =
         settings.some(function (setting) { return setting.overridden; });
 
-    const inner = kit.note('How long an assertion issued here is valid for, ' +
-      'and how ' +
-      'far its window is widened at each end to allow for a relying party ' +
-      'whose clock disagrees with this one. All three are <a ' +
-      'href="/admin/config">configuration settings</a>: the two lifetimes ' +
-      'are also drawn on <a href="/admin/saml2">SAML 2.0</a> and <a ' +
-      'href="/admin/saml11">SAML 1.1</a>, one on each, and the skew on ' +
-      'both. This page is a shorter way to the same rows and the only ' +
-      'place all three are visible at once — it writes through the same ' +
-      'function, so a change made here and one made there are one change.') +
+    const inner = kit.note(t.html('consoleSamlAssertions.leadBefore') +
+      '<a href="/admin/config">' +
+      t.html('consoleSamlAssertions.leadConfig') + '</a>' +
+      t.html('consoleSamlAssertions.leadMiddle') +
+      '<a href="/admin/saml2">SAML 2.0</a>' +
+      t.html('consoleSamlAssertions.leadAnd') +
+      '<a href="/admin/saml11">SAML 1.1</a>' +
+      t.html('consoleSamlAssertions.leadAfter')) +
 
-      kit.warn('<strong>A change applies to the NEXT assertion and to ' +
-      'nothing already issued.</strong> A validity window is stamped into ' +
-      'an assertion as <code>Conditions/NotBefore</code> and ' +
-      '<code>NotOnOrAfter</code> when it is signed, so an assertion ' +
-      'already in a relying party&rsquo;s hands cannot be shortened or ' +
-      'extended afterwards by anything on this page. ' +
-      SettingsForms.durability(json.context)) +
+      kit.warn(t.html('consoleSamlAssertions.nextOnly') + ' ' +
+      SettingsForms.durability(json.context, t)) +
 
-      SamlAssertionsPage.samlAssertionWarnings(json) +
+      SamlAssertionsPage.samlAssertionWarnings(t, json) +
 
-      '<h2>The sixteen settings</h2>' +
-      kit.note('<strong>Ten of these eleven are DEFAULTS, not ' +
-      'decisions.</strong> Each is what an application gets when its own ' +
-      'entry says nothing, and the <em>Per-application</em> column names ' +
-      'the attribute that overrides it — set that on an application under ' +
-      '<a href="/admin/applications">Applications</a> and this row stops ' +
-      'governing it. The eleventh, the clock skew, has no per-application ' +
-      'form: it is a fact about the clocks in the estate this service ' +
-      'issues into, decided once. <strong>They moved here from the two ' +
-      'identity provider pages on 2026-08-27</strong>, because those pages ' +
-      'configure this service as an identity provider and these describe ' +
-      'what it does for an application nobody has configured.') +
-      kit.note('The two lifetimes are in <strong>minutes</strong> and the ' +
-      'skew and the two artifact lifetimes are in ' +
-      '<strong>seconds</strong>, which is not a formatting accident: a ' +
-      'lifetime is set to a number of minutes to watch an assertion go ' +
-      'stale, and a skew is a handful of seconds covering the difference ' +
-      'between two machines. The skew is capped at <strong>300 ' +
-      'seconds</strong> for the reason <code>oauth2.clockSkewS</code> is — ' +
-      'five minutes is what Kerberos allows here ' +
-      '(<code>krb5.clockSkew</code>), and wider than that the window has ' +
-      'stopped being a tolerance and become a lifetime nobody chose.') +
+      '<h2>' + t.html('consoleSamlAssertions.hSixteen') + '</h2>' +
+      kit.note(t.html('consoleSamlAssertions.defaultsBefore') +
+      '<a href="/admin/applications">' +
+      t.html('consoleSamlAssertions.defaultsLink') + '</a>' +
+      t.html('consoleSamlAssertions.defaultsAfter')) +
+      kit.note(t.html('consoleSamlAssertions.units')) +
       '<form method="post" action="/admin/saml-assertions">' +
       '<input type="hidden" name="action" value="set">' +
       ['saml2', 'saml11', 'wsfed', ''].map(function (profile) {
@@ -107,58 +89,52 @@ class SamlAssertionsPage {
         const heading = profile === 'saml2' ? 'SAML 2.0'
                       : (profile === 'saml11' ? 'SAML 1.1'
                       : (profile === 'wsfed' ? 'WS-Federation' :
-                         'Every profile'));
+                         t.text('consoleSamlAssertions.everyProfile')));
         return '<h3>' + kit.esc(heading) + '</h3>' +
-          '<table><tr><th>Setting</th><th>Value</th><th>Which is</th>' +
-          '<th>Per-application</th><th>Source</th>' +
-          '<th>Assertions held</th></tr>' +
+          '<table><tr><th>' + t.html('consoleSamlAssertions.thSetting') +
+          '</th><th>' + t.html('consoleSamlAssertions.thValue') +
+          '</th><th>' + t.html('consoleSamlAssertions.thWhichIs') + '</th>' +
+          '<th>' + t.html('consoleSamlAssertions.thPerApplication') +
+          '</th><th>' + t.html('consoleSamlAssertions.thSource') + '</th>' +
+          '<th>' + t.html('consoleSamlAssertions.thHeld') + '</th></tr>' +
           mine.map(function (setting) {
-            return SamlAssertionsPage.samlAssertionSettingRow(setting,
+            return SamlAssertionsPage.samlAssertionSettingRow(t, setting,
               snapshot);
           }).join('') +
           '</table>';
       }).join('') +
-      '<p><button>Save assertion settings</button></p>' +
-      kit.note('All sixteen are checked before any is applied — a form ' +
-      'that took eleven and refused the twelfth would leave this service ' +
-      'issuing a combination nobody chose.') +
+      '<p><button>' + t.html('consoleSamlAssertions.save') +
+      '</button></p>' +
+      kit.note(t.html('consoleSamlAssertions.allChecked')) +
       '</form>' +
 
       (anyOverridden
         ? '<div class="ok">' +
-          kit.esc(String(settings.filter(function (s) {
-            return s.overridden;
-          }).length)) +
-          ' of the sixteen are set here, ' +
-          SettingsForms.overrideKept(json.context) + '. <form ' +
+          t.html('consoleSamlAssertions.overriddenCount', {
+            n: String(settings.filter(function (s) {
+              return s.overridden;
+            }).length),
+            kept: SettingsForms.overrideKept(json.context, undefined, t) }) +
+          ' <form ' +
           'method="post" action="/admin/saml-assertions" ' +
           'class="inline"><input type="hidden" name="action" ' +
-          'value="defaults"><button class="secondary">Put these sixteen ' +
-          'back</button></form> It clears the override on these sixteen ' +
-          'only, and leaves any other setting alone — <a ' +
-          'href="/admin/config">Configuration</a> has the reset-all.</div>'
-        : kit.note('None of the sixteen is overridden: each is coming ' +
-          'from its environment variable, from ' +
-          '<code>' + kit.esc((json.context || {}).configFile || 'the ' +
-              'appconfig file') +
-          '</code>, or from <code>' +
-            kit.esc((json.context || {}).defaultsFile) +
-          '</code> under it. The <em>Source</em> column says which.')) +
+          'value="defaults"><button class="secondary">' +
+          t.html('consoleSamlAssertions.putBack') + '</button></form> ' +
+          t.html('consoleSamlAssertions.putBackNote') + '<a ' +
+          'href="/admin/config">' +
+          t.html('consoleSamlAssertions.configuration') + '</a>' +
+          t.html('consoleSamlAssertions.resetAll') + '</div>'
+        : kit.note(t.html('consoleSamlAssertions.noneOverridden', {
+            file: (json.context || {}).configFile ||
+              t.text('consoleSamlAssertions.theAppconfigFile'),
+            defaults: (json.context || {}).defaultsFile }))) +
 
-      '<h2>What the skew actually does to an assertion</h2>' +
-      kit.note('It is added at BOTH ends of the window and to neither ' +
-      'instant that states when something happened: <code>NotBefore</code> ' +
-      'is backdated by it and <code>NotOnOrAfter</code> is extended by it, ' +
-      'while <code>IssueInstant</code> and the authentication instant are ' +
-      'left at the real time &mdash; backdating those would be a lie about ' +
-      'an event rather than an allowance about a clock. So the window an ' +
-      'assertion states is its lifetime <em>plus twice</em> the skew, ' +
-      'which is why this page reports <code>saml2WindowS</code> and ' +
-      '<code>saml11WindowS</code> beside the settings themselves. At the ' +
-      'default 0 the documents are byte-for-byte what this service issued ' +
-      'before the setting existed.') +
-      '<table><tr><th>Profile</th><th>NotBefore</th><th>NotOnOrAfter</th>' +
-      '<th class="num">Stated window</th></tr>' +
+      '<h2>' + t.html('consoleSamlAssertions.hSkew') + '</h2>' +
+      kit.note(t.html('consoleSamlAssertions.skewBothEnds')) +
+      '<table><tr><th>' + t.html('consoleSamlAssertions.thProfile') +
+      '</th><th>NotBefore</th><th>NotOnOrAfter</th>' +
+      '<th class="num">' + t.html('consoleSamlAssertions.thStatedWindow') +
+      '</th></tr>' +
       json.rows.filter(function (row) { return row.kind; })
                              .map(function (row) {
         const skew = json.seconds['saml.clockSkewS'];
@@ -174,47 +150,32 @@ class SamlAssertionsPage {
           kit.esc(kit.humanSeconds(lifetime + 2 * skew)) +
           '</td></tr>';
       }).join('') +
-      '</table><h2>It reaches four protocols, and it is not the skew this ' +
-      'service reads with</h2>' +
-      kit.note('<strong>Four.</strong> WS-Trust and WS-Federation build ' +
-      'their assertions with the same two functions the browser profiles ' +
-      'use, so both settings above reach them without either module ' +
-      'knowing these exist. A WS-Federation sign-in carries a SAML 1.1 ' +
-      'assertion, so it is <code>saml11.assertionLifetimeMin</code> that ' +
-      'governs it. What those two wrap the assertion in — WS-Trust&rsquo;s ' +
-      '<code>wsu:Lifetime</code> and the equivalent in a WS-Federation ' +
-      'response — states the LIFETIME without the skew, which is the ' +
-      'conservative reading and is deliberate: the envelope describes what ' +
-      'was asked for and the assertion states what it is actually valid ' +
-      'for.') +
-      kit.note('<strong>And it is not ' +
-      '<code>oauth2.clockSkewS</code>.</strong> That one is the allowance ' +
-      'applied wherever this service READS something back — including an ' +
-      'inbound federation partner&rsquo;s SAML assertion at ' +
-      '<code>/federation/acs/{id}</code>, which applies it to exactly the ' +
-      'two attributes this page writes. This one is what goes INTO a ' +
-      'document this service issues. One is about somebody else&rsquo;s ' +
-      'clock and one is about how much of somebody else&rsquo;s clock this ' +
-      'service pays for in advance, and a deployment wanting a strict ' +
-      'reading and a forgiving issuance has to be able to say so. The ' +
-      'reading tolerance is on <a href="/admin/token-lifetimes">Token ' +
-      'lifetimes</a>.') +
+      '</table><h2>' + t.html('consoleSamlAssertions.hFour') + '</h2>' +
+      kit.note(t.html('consoleSamlAssertions.four')) +
+      // The path's `{id}` is a parameter, because a message's braces are
+      // its placeholders.
+      kit.note(t.html('consoleSamlAssertions.notOauthBefore',
+                      { path: '/federation/acs/{id}' }) +
+      '<a href="/admin/token-lifetimes">' +
+      t.html('consoleSamlAssertions.notOauthLink') + '</a>' +
+      t.html('consoleSamlAssertions.notOauthAfter')) +
 
-      '<h2>What is already out there</h2>' +
-      kit.note('Counted against this service&rsquo;s own clock with no ' +
-      'allowance applied — the skew above is written into an assertion ' +
-      'rather than applied when one is read here, so an assertion this ' +
-      'calls expired is one whose stated <code>NotOnOrAfter</code> has ' +
-      'passed. ' + kit.esc(String(json.assertionsIssued.held)) + ' ' +
-      'artifact(s) are held, of the most ' +
-      'recent ' + kit.esc(String(json.assertionsIssued.cap)) + '; ' +
-      kit.esc(String(json.assertionsIssued.forgotten)) + ' older one(s) ' +
-      'have been forgotten. Every one of them is on <a ' +
-      'href="/admin/tokens">the tokens page</a>, which draws assertions ' +
-      'beside the JWTs and the Kerberos tickets.') +
-      '<table><tr><th>Profile</th><th class="num">Issued</th><th ' +
-      'class="num">Valid</th><th class="num">Expired</th><th ' +
-      'class="num">No expiry stated</th></tr>' +
+      '<h2>' + t.html('consoleSamlAssertions.hOutThere') + '</h2>' +
+      kit.note(t.html('consoleSamlAssertions.outThere', {
+        held: String(json.assertionsIssued.held),
+        cap: String(json.assertionsIssued.cap),
+        forgotten: String(json.assertionsIssued.forgotten) }) + '<a ' +
+      'href="/admin/tokens">' +
+      t.html('consoleSamlAssertions.tokensLink') + '</a>' +
+      t.html('consoleSamlAssertions.outThereAfter')) +
+      '<table><tr><th>' + t.html('consoleSamlAssertions.thProfile') +
+      '</th><th class="num">' + t.html('consoleSamlAssertions.thIssued') +
+      '</th><th ' +
+      'class="num">' + t.html('consoleSamlAssertions.thValid') +
+      '</th><th class="num">' + t.html('consoleSamlAssertions.thExpired') +
+      '</th><th ' +
+      'class="num">' + t.html('consoleSamlAssertions.thNoExpiry') +
+      '</th></tr>' +
       (json.assertionsIssued.byKind.map(function (row) {
         return '<tr><td><code>' + kit.esc(row.kind) + '</code></td>' +
           '<td class="num">' + row.issued + '</td>' +
@@ -224,23 +185,10 @@ class SamlAssertionsPage {
       }).join('')) +
       '</table>' +
 
-      '<h2>Two things about a window this page does not set</h2>' +
-      kit.note('A <strong>SAML artifact</strong> is good for ' +
-      '<code>saml2.artifactTtlS</code> and is a different clock entirely — ' +
-      'it governs how long an artifact can be RESOLVED for, not how long ' +
-      'the assertion it resolves to is valid. And the ' +
-      '<strong>session</strong> behind an assertion has its own lifetime: ' +
-      'an assertion that has expired does not end the sign-on session that ' +
-      'produced it, which is why a relying party refusing a stale ' +
-      'assertion can be sent straight back here and get a fresh one with ' +
-      'no sign-in screen.') +
+      '<h2>' + t.html('consoleSamlAssertions.hTwoThings') + '</h2>' +
+      kit.note(t.html('consoleSamlAssertions.twoThings')) +
 
-      kit.note('The same three over JSON are at ' +
-      '<code>/admin/saml-assertions?format=json</code> and <code>GET ' +
-      '/admin-api/saml-assertions</code>; the two actions on this page are ' +
-      '<code>POST /admin-api/saml-assertions/set</code> and ' +
-      '<code>/defaults</code>. They are also three ordinary rows of ' +
-      '<code>GET /admin-api/config</code>.');
+      kit.note(t.html('consoleSamlAssertions.footer'));
 
     return inner;
   }
@@ -256,11 +204,12 @@ class SamlAssertionsPage {
    * the value in words, the per-application attribute, its source, and how
    * many assertions of its kind are valid and expired.
    *
+   * @param t - the page's translator (#539)
    * @param setting - the described setting
    * @param snapshot - the statistics snapshot the assertion counts come from
    * @returns the table row as HTML
    */
-  static samlAssertionSettingRow(setting, snapshot) {
+  static samlAssertionSettingRow(t, setting, snapshot) {
     const id = 'sa-' + setting.key.replace(/\./g, '-');
     const row = snapshot.rows.filter(function (one) {
       return one.key === setting.key;
@@ -270,8 +219,12 @@ class SamlAssertionsPage {
           k) { return k.kind === row.kind; })[0] || null)
       : null;
     const issued = counts
-      ? '<span class="state-valid">' + counts.valid + ' valid</span>, ' +
-        '<span class="state-expired">' + counts.expired + ' expired</span>'
+      ? '<span class="state-valid">' +
+        t.html('consoleSamlAssertions.nValid', { n: counts.valid }) +
+        '</span>, ' +
+        '<span class="state-expired">' +
+        t.html('consoleSamlAssertions.nExpired', { n: counts.expired }) +
+        '</span>'
       : '<span class="state-none">&mdash;</span>';
     const hint = kit.tip(setting.description, Infinity);
     // THREE CONTROLS, BY TYPE, and they are the ones `/admin/config`'s
@@ -295,7 +248,8 @@ class SamlAssertionsPage {
           // than as a blank line.
           return '<option value="' + kit.esc(option) + '"' +
             (option === setting.text ? ' selected' : '') + '>' +
-            kit.esc(option === '' ? '(empty — the default)' : option) +
+            kit.esc(option === ''
+              ? t.text('consoleSamlAssertions.emptyDefault') : option) +
                  '</option>';
         }).join('') + '</select>'
       : (setting.type === 'bool'
@@ -329,7 +283,8 @@ class SamlAssertionsPage {
     // attribute name is what they have to type.
     const per = (row && row.field)
       ? '<code>' + kit.esc(row.field) + '</code>'
-      : '<span class="state-none">not per application</span>';
+      : '<span class="state-none">' +
+        t.html('consoleSamlAssertions.notPerApplication') + '</span>';
     return '<tr>' +
       '<td><label for="' + kit.esc(id) + '"' + hint + '>' +
       kit.esc(setting.label) +
@@ -343,9 +298,9 @@ class SamlAssertionsPage {
       '<td>' + per + '</td>' +
       '<td>' + (setting.overridden
         ? '<strong>' + kit.esc(SettingsForms.sourceNote(setting,
-          snapshot.context || {})) + '</strong>'
+          snapshot.context || {}, t)) + '</strong>'
         : kit.esc(SettingsForms.sourceNote(setting,
-          snapshot.context || {}))) + '</td>' +
+          snapshot.context || {}, t))) + '</td>' +
       '<td>' + issued + '</td></tr>';
   }
 
@@ -359,38 +314,24 @@ class SamlAssertionsPage {
    * assertion settings: a clock skew at least as long as an assertion's
    * lifetime, or a skew of zero.
    *
+   * @param t - the page's translator (#539)
    * @param json - the page's view (`rows`, `seconds`)
    * @returns the warnings as HTML, or an empty string
    */
-  static samlAssertionWarnings(json) {
+  static samlAssertionWarnings(t, json) {
     const skew = json.seconds['saml.clockSkewS'];
     const notes = [];
     json.rows.filter(function (row) { return row.kind; })
                            .forEach(function (row) {
       const lifetime = json.seconds[row.key];
       if (skew > 0 && skew >= lifetime) {
-        notes.push('<strong>The clock skew is at least as long as the ' +
-          kit.esc(row.kind) +
-          ' assertion&rsquo;s own lifetime</strong> (' + kit.esc(
-              kit.humanSeconds(skew)) + ' ' +
-              'against ' +
-          kit.esc(kit.humanSeconds(lifetime)) + '). The window written ' +
-          'into the assertion is the lifetime plus the skew at EACH end, so ' +
-          'it is valid for at least three times as long as ' +
-          '<code>' + kit.esc(row.key) + '</code> says. If the point was to ' +
-          'watch a relying party refuse a stale assertion, it will not: ' +
-          'lower the skew, or raise the lifetime.');
+        notes.push(t.html('consoleSamlAssertions.warnSkewLong', {
+          kind: row.kind, skew: kit.humanSeconds(skew),
+          lifetime: kit.humanSeconds(lifetime), key: row.key }));
       }
     });
     if (skew === 0) {
-      notes.push('<strong>The skew is 0, which is what this service has ' +
-        'always done</strong> &mdash; <code>NotBefore</code> is stamped at ' +
-        'exactly the moment of issue. That is the strict reading, and it is ' +
-        'the one that fails against a relying party whose clock is a few ' +
-        'seconds behind: the assertion is not yet valid when it arrives, and ' +
-        'the refusal reads as a signature or trust-store problem from both ' +
-        'ends. If a service provider is refusing assertions that look ' +
-        'correct, this is the first setting to raise.');
+      notes.push(t.html('consoleSamlAssertions.warnSkewZero'));
     }
     if (!notes.length) {
       return '';

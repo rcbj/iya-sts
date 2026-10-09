@@ -80,6 +80,10 @@ interface PortalContext {
     info(message: string): void;
   };
   esc(value: unknown): string;
+  // The portal's translator for a session (#539 phase 3): every word on
+  // this page is drawn through it, and the portal spells its own
+  // application id once.
+  translatorFor(session: Json): any;
   shell(path: string, session: Json, message: unknown, error: unknown,
         body: string): string;
   send(res: Res, status: number, body: string): unknown;
@@ -143,6 +147,9 @@ class PortalCibaPage {
     const waiting = ciba.pendingFor(who);
     const csrf = websecurity.field(session.id);
     const PATH = this.PATH;
+    // THE LANGUAGE (#539): the person's, through the portal. The error the
+    // shell draws stays English; the words below and `message` do not.
+    const t = this.ctx.translatorFor(session);
     const form = function (action: string, id: string, label: string,
                            danger: boolean): string {
       return '<form method="post" action="' + esc(PATH) + '" ' +
@@ -153,47 +160,56 @@ class PortalCibaPage {
         ' id="ciba-' + action + '">' + label + '</button></form> ';
     };
     const rows = waiting.map(function (one: Json) {
+      // The binding message keeps its `id`, which a catalog message may not
+      // carry, so the sentence is two messages around it.
       return '<div class="card ciba-request" id="ciba-' + esc(one.id.slice(0,
-        12)) + '"><p><strong>' + esc(one.clientName) + '</strong> asks to ' +
-        'sign you in.</p>' +
+        12)) + '"><p>' + t.html('portalCiba.request.asks',
+          { client: one.clientName }) + '</p>' +
         (one.bindingMessage
-          ? '<p>It says: <strong id="ciba-binding">' +
-            esc(one.bindingMessage) + '</strong> — check that this is what ' +
-            'the other device shows.</p>' : '') +
+          ? '<p>' + t.html('portalCiba.request.says') +
+            ' <strong id="ciba-binding">' +
+            esc(one.bindingMessage) + '</strong> ' +
+            t.html('portalCiba.request.saysCheck') + '</p>' : '') +
         (one.requestContext
-          ? '<p class="sub" id="ciba-context">Where it was asked from: ' +
+          ? '<p class="sub" id="ciba-context">' +
+            t.html('portalCiba.request.context') + ' ' +
             Object.keys(one.requestContext).slice(0, 12).map(function (k) {
               return esc(k) + ' <code>' + esc(JSON.stringify(
                 one.requestContext[k]).slice(0, 200)) + '</code>';
             }).join('; ') + '</p>' : '') +
-        '<p class="sub">Access: <code>' + esc(one.scope) + '</code>' +
-        (one.acrValues.length ? '; needs sign-in level <code>' +
-          esc(one.acrValues.join(' ')) + '</code>' : '') + '. Expires ' +
-        esc(new Date(one.expiresAt).toISOString()) + '.</p>' +
-        form('approve', one.id, 'Approve', false) +
-        form('deny', one.id, 'Deny', true) + '</div>';
+        '<p class="sub">' + (one.acrValues.length
+          ? t.html('portalCiba.request.accessLevel',
+              { scope: one.scope, level: one.acrValues.join(' '),
+                when: t.date(one.expiresAt) })
+          : t.html('portalCiba.request.access',
+              { scope: one.scope, when: t.date(one.expiresAt) })) + '</p>' +
+        form('approve', one.id, t.html('portalCiba.approve'), false) +
+        form('deny', one.id, t.html('portalCiba.deny'), true) + '</div>';
     });
     const hasCode = ciba.hasUserCode(who);
-    const body = '<div class="card"><h2>Sign-in requests</h2>' +
-      '<p class="sub">An application that cannot show you a sign-in ' +
-      'screen — a call centre, a till — can ask to sign you in here ' +
-      'instead (OpenID Connect CIBA). Approve only a request you started.' +
-      (config.value('oauth2.ciba') ? '' : ' Signing in this way is ' +
-        'turned off here.') + '</p>' +
+    const body = '<div class="card"><h2>' +
+      t.html('portalCiba.requests.heading') + '</h2>' +
+      '<p class="sub">' + t.html('portalCiba.requests.intro') +
+      (config.value('oauth2.ciba') ? '' : ' ' +
+        t.html('portalCiba.requests.off')) + '</p>' +
       (rows.length ? rows.join('') :
-        '<p id="ciba-none">Nothing is waiting for you.</p>') + '</div>' +
-      '<div class="card"><h2>Your user code</h2><p class="sub">Some ' +
-      'applications must send a code only you know with every request, ' +
-      'so an application that knows only your name cannot bother you. ' +
-      'You have ' + (hasCode ? 'set one' : 'not set one') + '.</p>' +
+        '<p id="ciba-none">' + t.html('portalCiba.requests.none') +
+        '</p>') + '</div>' +
+      '<div class="card"><h2>' + t.html('portalCiba.code.heading') +
+      '</h2><p class="sub">' + t.html('portalCiba.code.intro') + ' ' +
+      (hasCode ? t.html('portalCiba.code.isSet')
+               : t.html('portalCiba.code.notSet')) + '</p>' +
       '<form method="post" action="' + esc(PATH) + '">' + csrf +
       '<input type="hidden" name="action" value="set-code">' +
-      '<label>New user code <input type="password" name="code" ' +
+      '<label>' + t.html('portalCiba.code.new') +
+      ' <input type="password" name="code" ' +
       'minlength="4" maxlength="64" required autocomplete="off"></label> ' +
-      '<button type="submit" id="ciba-set-code">Set</button></form>' +
+      '<button type="submit" id="ciba-set-code">' +
+      t.html('portalCiba.code.set') + '</button></form>' +
       (hasCode ? '<form method="post" action="' + esc(PATH) + '">' + csrf +
         '<input type="hidden" name="action" value="clear-code">' +
-        '<button class="danger" type="submit">Clear it</button></form>' :
+        '<button class="danger" type="submit">' +
+        t.html('portalCiba.code.clear') + '</button></form>' :
         '') + '</div>' + this.gnapSection(session, csrf);
     log.debug("Leaving PortalCibaPage.page().");
     return shell(this.PATH, session, message, error, body);
@@ -285,8 +301,12 @@ class PortalCibaPage {
         return ctx.send(res, 400, this.page(session, null, set.error));
       }
       log.debug('Leaving POST ' + PATH + '. The code.');
+      // THE SUCCESS MESSAGE IN THE PERSON'S LANGUAGE (#539), worded here,
+      // where the session is known, and carried by `?done=` as before.
+      const t = ctx.translatorFor(session);
       res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-        set.set ? 'Your user code is set.' : 'Your user code is cleared.'))
+        set.set ? t.text('portalCiba.done.codeSet')
+                : t.text('portalCiba.done.codeCleared')))
         .end();
       return undefined;
     }
@@ -327,9 +347,11 @@ class PortalCibaPage {
       this.notePresented(signOn, req);
     }
     log.debug('Leaving POST ' + PATH + '. Answered.');
+    // The success message in the person's language (#539), as above.
+    const t = ctx.translatorFor(session);
     res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      approve ? 'Approved: the application is signing you in.' :
-                'Denied.')).end();
+      approve ? t.text('portalCiba.done.approved') :
+                t.text('portalCiba.done.denied'))).end();
     return undefined;
   }
 
@@ -337,7 +359,7 @@ class PortalCibaPage {
   // #432 PHASE 6: GNAP GRANTS WAITING FOR THIS PERSON (the header).
   // -------------------------------------------------------------------------
   // One right, as the approval page describes it.
-  private gnapRight(right: Json): string {
+  private gnapRight(right: Json, t: Json): string {
     const { log, esc } = this.ctx;
     log.debug("Entering PortalCibaPage.gnapRight().");
     if (typeof right === 'string') {
@@ -355,8 +377,11 @@ class PortalCibaPage {
       parts.push('identifier: ' + right.identifier);
     }
     log.debug("Leaving PortalCibaPage.gnapRight().");
+    // The member names (`actions`, `identifier`) are GNAP's own and stay as
+    // they are (#539); only the fallback is words.
     return '<code>' + esc(String(right.type || '')) + '</code> ' +
-      esc(parts.join('; ') || 'every action this API defines');
+      (parts.length ? esc(parts.join('; '))
+                    : t.html('portalCiba.gnap.everyAction'));
   }
 
   private gnapSection(session: Json, csrf: string): string {
@@ -364,6 +389,8 @@ class PortalCibaPage {
     const self = this;
     const PATH = this.PATH;
     log.debug("Entering PortalCibaPage.gnapSection().");
+    // The page's translator (#539), the person's language.
+    const t = this.ctx.translatorFor(session);
     let waiting: Json[] = [];
     try {
       waiting = gnapApproval().pendingFor(session.user.username);
@@ -379,18 +406,20 @@ class PortalCibaPage {
     }
     const cards = waiting.map(function (one: Json): string {
       let rows = '';
-      (one.tokens || []).forEach(function (token: Json, t: number): void {
+      // The token's index is `k`, not `t`, which is the translator (#539).
+      (one.tokens || []).forEach(function (token: Json, k: number): void {
         (token.access || []).forEach(function (right: Json,
                                                r: number): void {
           rows += '<li><label><input type="checkbox" name="right" ' +
-            'value="t' + t + 'r' + r + '" checked> ' +
-            self.gnapRight(right) + '</label>' +
-            LimitsForm.controls(right, t, r, esc) + '</li>';
+            'value="t' + k + 'r' + r + '" checked> ' +
+            self.gnapRight(right, t) + '</label>' +
+            LimitsForm.controls(right, k, r, esc) + '</li>';
         });
       });
       if (one.subject) {
         rows += '<li><label><input type="checkbox" name="subject" ' +
-          'value="yes" checked> <strong>Who you are</strong></label></li>';
+          'value="yes" checked> ' + t.html('portalCiba.gnap.whoYouAre') +
+          '</label></li>';
       }
       const form = function (action: string, label: string,
                              inner: string, danger: boolean): string {
@@ -401,28 +430,28 @@ class PortalCibaPage {
           ' id="' + action + '-' + esc(one.id.slice(0, 12)) + '">' + label +
           '</button></form>';
       };
+      // `declared` and `using` are yes/no selects, so the sentence is one
+      // message a translation can reorder (#539).
       return '<div class="card gnap-request" id="gnap-' +
-        esc(one.id.slice(0, 12)) + '"><p><strong>' + esc(one.display) +
-        '</strong>' + (one.declared ? ' (as it describes itself)' : '') +
-        ' — client instance <code>' + esc(one.client) + '</code> — asks ' +
-        'for access on your behalf' + (one.requestedBy
-          ? ', while <code>' + esc(one.requestedBy) + '</code> was using it'
-          : '') + '.</p>' +
-        (one.acr.length ? '<p class="sub">Needs sign-in level <code>' +
-          esc(one.acr.join(' ')) + '</code> (' + esc(PATH) + '?gnapstepup=' +
-          esc(encodeURIComponent(one.id)) + ' signs you in again with ' +
-          'it).</p>' : '') +
-        '<p class="sub">Expires ' +
-        esc(new Date(Number(one.expiresAt) * 1000).toISOString()) +
-        '. Untick anything you do not want to allow.</p>' +
-        form('gnap-approve', 'Approve',
+        esc(one.id.slice(0, 12)) + '"><p>' +
+        t.html('portalCiba.gnap.asks', {
+          display: one.display, client: one.client,
+          declared: one.declared ? 'yes' : 'no',
+          using: one.requestedBy ? 'yes' : 'no',
+          by: one.requestedBy || '' }) + '</p>' +
+        (one.acr.length ? '<p class="sub">' +
+          t.html('portalCiba.gnap.level', { level: one.acr.join(' '),
+            path: PATH + '?gnapstepup=' + encodeURIComponent(one.id) }) +
+          '</p>' : '') +
+        '<p class="sub">' + t.html('portalCiba.gnap.expires',
+          { when: t.date(Number(one.expiresAt) * 1000) }) + '</p>' +
+        form('gnap-approve', t.html('portalCiba.approve'),
              '<ul class="rights">' + rows + '</ul>', false) +
-        form('gnap-deny', 'Deny', '', true) + '</div>';
+        form('gnap-deny', t.html('portalCiba.deny'), '', true) + '</div>';
     });
     log.debug("Leaving PortalCibaPage.gnapSection(). " + waiting.length);
-    return '<div class="card"><h2>Access requests</h2><p class="sub">An ' +
-      'application asked for access to your resources while you were not ' +
-      'at it (GNAP, RFC 9635). Nothing is allowed until you approve.</p>' +
+    return '<div class="card"><h2>' + t.html('portalCiba.gnap.heading') +
+      '</h2><p class="sub">' + t.html('portalCiba.gnap.intro') + '</p>' +
       '</div>' + cards.join('');
   }
 
@@ -467,9 +496,11 @@ class PortalCibaPage {
       authn.notePresented(signOn, 'GNAP', req);
     }
     log.debug("Leaving PortalCibaPage.postGnap(). Answered.");
+    // The success message in the person's language (#539).
+    const t = ctx.translatorFor(session);
     res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      answered.approved ? 'Approved: the application can now collect its ' +
-                          'access.' : 'Denied.')).end();
+      answered.approved ? t.text('portalCiba.done.gnapApproved')
+                        : t.text('portalCiba.done.denied'))).end();
     return undefined;
   }
 

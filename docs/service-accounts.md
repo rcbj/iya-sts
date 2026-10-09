@@ -118,11 +118,47 @@ which is raised as an alarm at once.
 Destinations are application entries registered under **Directory → Secret
 destinations**. Each one holds the write credential for its secrets manager.
 
+## A service account is not a Kerberos service principal
+
+The two are easy to confuse, because Active Directory puts a service's SPN on
+a user account (or a managed service account) and calls that account the
+service account. In iya-sts they are two different kinds of entry, and a
+Kerberos service principal is never a service account.
+
+| | Service account | Kerberos service principal |
+|---|---|---|
+| **The entry** | A **person** entry under `ou=users` with `stsServiceAccount: TRUE` | An **application** entry whose identifier is `<spn>@<realm>`, e.g. `HTTP/apigw1.example.com@EXAMPLE.COM` |
+| **Its Kerberos role** | A **client**. It gets a TGT with an AS exchange, pre-authenticated with its password, where the policy's `allowKerberos` door is open | A **service**. It holds an SPN, accepts tickets (AP-REQ), and asks the KDC for S4U2Self and S4U2Proxy tickets with its own TGT |
+| **Its key** | Derived from its password, as every person's is, and derived again when the password changes or rotates; the KDC keeps the previous key version for the overlap | Random, one per enctype, made on the Kerberos **Principals** page (`/admin/kerberos/principals`) or by `POST /admin-api/kerberos/principals/create-service`; replaced by **Rotate** (`rotate-service`) |
+| **What a program is given** | Its password, read from the push destination when rotation is on, used with `kinit <name>@<REALM>` | A keytab, handed over **once** by the create or a rotate, used with `kinit -k` and by the acceptor |
+| **Delegation rules** | It delegates nothing: it is a client. Like any person it can be *protected from* delegation (`stsNotDelegated`, `delegation.protectedGroups`) | `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf` and `appDelegationSemantics` on the entry, read by the KDC and by the one delegation policy every protocol shares ([Delegation and impersonation](delegation.md)) |
+| **Governed by** | The service-account policy on **Directory → Policies** | The application's own entry, like any other application |
+
+Three consequences are worth knowing:
+
+- **An SPN cannot be put on a service account.** A service that accepts
+  Kerberos tickets is registered as a service principal, whatever program
+  runs it. Its owner and its rules sit on that application entry.
+- **A rotating service account has no keytab.** **Reset password and
+  download keytab** sets the password, and only the rotation may set a
+  rotating account's password (STS-SVCACCT-0013). Its consumers read the
+  password from the destination and authenticate with it; a rotation pushes
+  the password, never a keytab.
+- **The same program can be both.** A service that accepts tickets for its
+  SPN *and* signs in somewhere else as a client of its own holds two
+  identities: the service principal's keytab for the first, and a service
+  account's password for the second.
+
+See [Kerberos, KKDCP and SPNEGO](kerberos.md) for service principals,
+their keys and delegation.
+
 ## What it is not
 
 - **Not an application.** An OAuth client is a non-human identity of its own
   kind, with its own Shared Signals subject (see
   [CAEP events](caep-events.md)).
+- **Not a Kerberos service principal.** An SPN lives on an application entry
+  (see [above](#a-service-account-is-not-a-kerberos-service-principal)).
 - **Not exempt from the opt-out rule silently.** A service account has no
   holder to opt out of RISC (RISC section 2.8), and the portal and the
   register say so rather than applying the rule.

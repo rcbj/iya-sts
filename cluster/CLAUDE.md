@@ -171,8 +171,11 @@ TABLE (#264).** `tls-certificate-changed` at restart compares with a
 fingerprint kept in the shared minted store (`tls.listenerAnnounced`), not
 with anything on a membership row. A membership row belongs to a node id that
 a restart replaces, and a receiver sees the service rather than a node.
-Every node's start is therefore announced, because each node has its own
-listener key. `tls/CLAUDE.md` argues it.
+A node's start is therefore announced whenever another node announced after
+it, because each node has its own listener key; a node restarted with
+nothing else changed presents the key and certificate it kept
+(`tls.listenerKeys`, keyed by `cluster.nodeName` — 2026-10-08), so its own
+restart alone announces nothing. `tls/CLAUDE.md` argues it.
 
 Three things the page decides rather than reads:
 
@@ -480,7 +483,11 @@ that set (`common/helpers.js`); a did:jwk is made per request by design.
 **The process certificate authority is one for the cluster too (#162,
 2026-10-05).** `pki:*process`, the branch every node's TLS listener
 certificate comes from, is a shared, merged row. Each node makes its own
-listener key; only the certificate's record and serial are shared. Any node
+listener key once and keeps it, sealed, in its own row of the shared minted
+store `tls.listenerKeys`, keyed by `cluster.nodeName` (2026-10-08); no node
+holds another's. Only the certificate's record and serial are shared. **A
+node's name is therefore what its listener key is filed under**: two nodes
+given one name would share it, and a renamed node makes a new one. Any node
 answers OCSP and serves the CRL for any node's listener. No node's own
 address is published anywhere: rcbj refused that outright. A node waits for
 its listener record to land before it serves, and a responder that has no

@@ -39,6 +39,7 @@ class PoliciesPage {
    * @returns the body as HTML
    */
   static body(ctx, view) {
+    const t = ctx.t;
     // The view's own paging, which is the same paging this recomputed
     // (#446): the page is drawn from the answer alone.
     const listedNav = kit.pageNavPair('/admin/policies',
@@ -49,65 +50,77 @@ class PoliciesPage {
       kindLabel[kind.id] = kind.label;
     });
 
-    const inner = '<div class="tiles">' +
-        kit.tile(view.kinds.length, 'kind of policy') +
-        kit.tile(view.paging.total, 'profile') +
-        kit.tile(view.enforced ? 'yes' : 'no',
-                  'password policy enforced in this realm') +
-      '</div>' +
+    const tiles = '<div class="tiles">' +
+        kit.tile(view.kinds.length, t.text('consolePolicies.tile.kinds')) +
+        kit.tile(view.paging.total, t.text('consolePolicies.tile.profiles')) +
+        kit.tile(view.enforced ? t.text('consolePolicies.yes')
+                                : t.text('consolePolicies.no'),
+                  t.text('consolePolicies.tile.enforced')) +
+      '</div>';
 
-      kit.note('<strong>A policy here is a rule this realm holds a ' +
-      'credential to.</strong> Each kind below is a SEPARATE policy with ' +
-      'its own entry in its own container, and each has one profile — ' +
-      '<code>default</code> — which applies to every person in this ' +
-      'realm. ' +
-      view.kinds.map(function (kind) {
-        return '<a href="#' + kit.esc(kind.id) + '">' +
-          kit.esc(kind.label) + '</a> (<code>' +
-          kit.esc(kind.container) + '</code>)';
-      }).join(', ') + '. <strong>This is not the XACML policy ' +
-      'repository</strong>: <a href="/admin/xacml/policies">that one</a> ' +
-      'holds documents a PDP evaluates, in <code>ou=policies</code>.') +
-
-      view.kinds.map(function (kind) {
-        if (kind.id === 'password') {
-          return PoliciesPage.passwordPolicySection(view);
-        }
-        if (kind.id === 'authn') {
-          return PoliciesPage.authnPolicySection(view);
-        }
-        return PoliciesPage.genericPolicySection(view, kind);
-      }).join('') +
-
-      '<h2 id="profiles">Profiles</h2>' +
-      kit.note('One profile of each kind today, and the list is paged ' +
-      'like every list in this console. A second profile of a kind cannot ' +
-      'be created yet: nothing assigns a profile to a person, so a second ' +
-      'one would decide nothing while looking exactly like one that does.') +
+    // ONE TAB PER KIND OF POLICY (#540, rcbj 2026-10-09: "That page is
+    // getting long and messy"), `kit.tabbedPanels()` as the application page
+    // and Listeners have them, in `policy_kinds.ts`'s order, so a kind added
+    // there gets its tab with nothing here. Each kind's `<h2 id>` stays inside
+    // its panel: a panel is shown when anything in it is the `:target`, so
+    // `/admin/policies#passkey` and every other page's link still land on the
+    // right tab, and a Save keeps the address's fragment and comes back to
+    // its own. The profile list is reference, so it is the last tab.
+    const panels = view.kinds.map(function (kind) {
+      let html;
+      if (kind.id === 'password') {
+        html = PoliciesPage.passwordPolicySection(view, t);
+      } else if (kind.id === 'authn') {
+        html = PoliciesPage.authnPolicySection(view, t);
+      } else {
+        html = PoliciesPage.genericPolicySection(view, kind, t);
+      }
+      return { id: 'tab-' + kind.id, label: kind.label, html: html };
+    });
+    panels.push({ id: 'tab-profiles',
+      label: t.text('consolePolicies.profiles.tab'),
+      html: '<h2 id="profiles">' + t.html('consolePolicies.profiles.heading') +
+      '</h2>' +
+      kit.note(t.html('consolePolicies.profiles.note')) +
       listedNav.head +
-      '<table><tr><th>Kind</th><th>Profile</th><th>Stored at</th>' +
-      '<th>Problems</th></tr>' +
+      '<table><tr><th>' + t.html('consolePolicies.profiles.kind') +
+      '</th><th>' + t.html('consolePolicies.profiles.profile') + '</th><th>' +
+      t.html('consolePolicies.profiles.storedAt') + '</th>' +
+      '<th>' + t.html('consolePolicies.profiles.problems') + '</th></tr>' +
       view.profiles.map(function (row) {
         return '<tr><td>' + kit.esc(kindLabel[row.kind] || row.kind) +
           '</td><td><a href="#' + kit.esc(row.kind) + '">' +
           kit.esc(row.name) + '</a></td><td>' +
           (row.stored ? '<code>' + kit.esc(row.dn) + '</code>'
             : row.inherited
-              ? 'inherited from the default realm: <code>' +
-                kit.esc(row.dn) + '</code>'
-              : '<span class="state-none">not stored — built-in ' +
-                'defaults</span>') +
+              ? t.html('consolePolicies.profiles.inherited', { dn: row.dn })
+              : '<span class="state-none">' +
+                t.html('consolePolicies.profiles.notStored') + '</span>') +
           '</td><td>' + kit.esc(String(row.problems.length)) + '</td></tr>';
       }).join('') + '</table>' +
       listedNav.foot +
 
-      kit.note('The same over JSON is ' +
-      '<code>/admin/policies?format=json</code> and <code>GET ' +
-      '/admin-api/policies</code>; the actions on this page are ' +
+      kit.note(t.html('consolePolicies.profiles.json') +
       view.actions.map(function (action) {
         return '<code>POST /admin-api/policies/' + kit.esc(action) +
                '</code>';
-      }).join(', ') + '.');
+      }).join(', ') + '.') });
+
+    // The links are markup a message cannot carry (#539): the words around
+    // them are messages, spaces and punctuation included.
+    const inner = tiles +
+
+      kit.note(t.html('consolePolicies.lead') +
+      view.kinds.map(function (kind) {
+        return '<a href="#' + kit.esc(kind.id) + '">' +
+          kit.esc(kind.label) + '</a> (<code>' +
+          kit.esc(kind.container) + '</code>)';
+      }).join(', ') + t.html('consolePolicies.notXacml') +
+      '<a href="/admin/xacml/policies">' +
+      t.html('consolePolicies.notXacmlLink') + '</a>' +
+      t.html('consolePolicies.notXacmlEnd')) +
+
+      kit.tabbedPanels('policytabs', panels);
 
     return inner;
   }
@@ -118,9 +131,10 @@ class PoliciesPage {
    * mechanisms are accepted as a first and a second factor.
    *
    * @param view - the policies view from adminViews.policiesView()
+   * @param t - the page's translator (#539)
    * @returns the section as HTML
    */
-  static authnPolicySection(view) {
+  static authnPolicySection(view, t) {
     const kind = view.kinds.filter(function (k) {
       return k.id === 'authn';
     })[0];
@@ -128,69 +142,50 @@ class PoliciesPage {
     const profile = ap.profile;
     const yesNo = function (value, active) {
       return value === null ? '<span class="off">—</span>'
-        : value ? (active ? 'yes' : 'yes — <strong>inactive</strong>')
-          : 'no';
+        : value ? (active ? t.html('consolePolicies.yes')
+          : t.html('consolePolicies.authn.yesInactive'))
+          : t.html('consolePolicies.no');
     };
     const out =
-      '<h2 id="authn">Authentication policy — the default profile</h2>' +
-      kit.note('Which ways of signing in this realm accepts as a FIRST ' +
-      'factor and as a SECOND, and when a second factor is required. ' +
-      'Asked at every sign-in door, in both modes: this policy decides what ' +
-      'the sign-in screen offers, not whether a credential is checked.') +
+      '<h2 id="authn">' + t.html('consolePolicies.authn.heading') + '</h2>' +
+      kit.note(t.html('consolePolicies.authn.lead')) +
 
       (ap.mail.usable ? ''
-        : kit.warn('<strong>This realm cannot send mail</strong>, so the ' +
-          'two email mechanisms are drawn disabled below and are never ' +
-          'offered. Configure a transport on <a href="/admin/mail">Server ' +
-          'configuration → Mail</a>.')) +
+        : kit.warn(t.html('consolePolicies.authn.noMail') +
+          '<a href="/admin/mail">' +
+          t.html('consolePolicies.authn.noMailLink') + '</a>.')) +
 
-      kit.warn('<strong>Email as an authenticator.</strong> ' +
-        kit.esc(ap.nistWarning)) +
+      kit.warn('<strong>' + t.html('consolePolicies.authn.emailWarning') +
+        '</strong> ' + kit.esc(ap.nistWarning)) +
 
-      PoliciesPage.policyProblems(profile) +
+      PoliciesPage.policyProblems(profile, t) +
 
       kit.note(profile.from === 'realm'
-        ? 'This realm\'s own profile is <strong>stored</strong> at <code>' +
-          kit.esc(profile.dn) + '</code>. Removing it puts this realm back ' +
-          'to the default realm\'s profile, or to the built-in defaults ' +
-          'where the default realm has none.'
+        ? t.html('consolePolicies.authn.fromRealm', { dn: profile.dn })
         : profile.from === 'default-realm'
-          ? '<strong>This realm has no profile of its own, and follows the ' +
-            'default realm\'s</strong> (<code>' + kit.esc(profile.dn) +
-            '</code>). Saving this form writes this realm\'s own, which ' +
-            'overrides it here and nowhere else.'
-          : '<strong>Nothing is stored, so the built-in defaults are in ' +
-            'force.</strong> Saving this form writes <code>cn=default</code> ' +
-            'under <code>ou=authnPolicies</code>. Saved in the DEFAULT ' +
-            'realm, it is the policy of every realm that has none of its ' +
-            'own.') +
+          ? t.html('consolePolicies.authn.fromDefaultRealm',
+            { dn: profile.dn })
+          : t.html('consolePolicies.authn.builtIn')) +
 
       PoliciesPage.policyForms(kind, ap, 'ap-',
-        kit.note('Every field is checked ' +
-      'before anything is written. At least one mechanism must be accepted ' +
-      'as a first factor, and if a second factor is required of everybody ' +
-      'at least one must be accepted as a second. <strong>A person who ' +
-      'HOLDS a second factor is asked for it whatever this says</strong>: ' +
-      'there is no setting that skips a held factor.')) +
+        kit.note(t.html('consolePolicies.authn.checked')), t) +
 
-      '<h3 id="authn-now">What this realm accepts, right now</h3>' +
+      '<h3 id="authn-now">' + t.html('consolePolicies.authn.now') + '</h3>' +
       '<ul>' + ap.rules.map(function (rule) {
         return '<li>' + kit.esc(rule) + '</li>';
       }).join('') + '</ul>' +
-      '<table><tr><th>Mechanism</th><th>First factor</th>' +
-      '<th>Second factor</th></tr>' +
+      '<table><tr><th>' + t.html('consolePolicies.authn.mechanism') +
+      '</th><th>' + t.html('consolePolicies.authn.first') + '</th>' +
+      '<th>' + t.html('consolePolicies.authn.second') + '</th></tr>' +
       ap.mechanisms.map(function (m) {
         return '<tr><td>' + kit.esc(m.label) + '</td><td>' +
           yesNo(m.primary, m.active) + '</td><td>' +
           yesNo(m.secondFactor, m.active) + '</td></tr>';
       }).join('') + '</table>' +
-      kit.note('A dash is a role the mechanism cannot have: an ' +
-      'authenticator app or a recovery code is never a first factor, and ' +
-      'a certificate, a Kerberos ticket, a wallet or a federation partner ' +
-      'is never asked for second.') +
+      kit.note(t.html('consolePolicies.authn.dash')) +
 
-      '<h3 id="authn-schema">Schema</h3>' +
-      PoliciesPage.policySchemaTables(ap.schema);
+      '<h3 id="authn-schema">' + t.html('consolePolicies.schema') + '</h3>' +
+      PoliciesPage.policySchemaTables(ap.schema, t);
     return out;
   }
 
@@ -202,21 +197,127 @@ class PoliciesPage {
    *
    * @param view - the policies view from adminViews.policiesView()
    * @param kind - the policy kind
+   * @param t - the page's translator (#539)
    * @returns the section as HTML
    */
-  static genericPolicySection(view, kind) {
+  static genericPolicySection(view, kind, t) {
     const member = view[kind.id];
+    // The kind's label and what it governs are the view's English, drawn
+    // as they come; only the words around them are messages (#539).
     const out = '<h2 id="' + kit.esc(kind.id) + '">' +
-      kit.esc(kind.label) + ' — the default profile</h2>' +
-      kit.note('Governs ' + kit.esc(kind.governs) + '. Stored under ' +
-      '<code>' + kit.esc(kind.container) + '</code>.') +
-      PoliciesPage.policyProblems(member.profile) +
-      PoliciesPage.policyForms(kind, member, kind.id + '-', '') +
+      kit.esc(kind.label) + t.html('consolePolicies.defaultProfileSuffix') +
+      '</h2>' +
+      kit.note(t.html('consolePolicies.generic.governs') +
+      kit.esc(kind.governs) +
+      t.html('consolePolicies.generic.storedUnder',
+        { container: kind.container })) +
+      PoliciesPage.policyProblems(member.profile, t) +
+      PoliciesPage.policyForms(kind, member, kind.id + '-', '', t) +
       '<ul>' + member.rules.map(function (rule) {
         return '<li>' + kit.esc(rule) + '</li>';
       }).join('') + '</ul>' +
-      PoliciesPage.policySchemaTables(member.schema);
+      (Array.isArray(member.named)
+        ? PoliciesPage.namedProfilesSection(kind, member, t) : '') +
+      PoliciesPage.policySchemaTables(member.schema, t);
     return out;
+  }
+
+  /**
+   * Draws a kind's NAMED profiles (#535, the passkey policy): one form per
+   * profile with its selectors, and a form to add one. The one that applies
+   * to a sign-in is the matching profile with the lowest precedence.
+   *
+   * @param kind - the policy kind
+   * @param member - the kind's member of the policies view
+   * @param t - the page's translator (#539)
+   * @returns the section as HTML
+   */
+  static namedProfilesSection(kind, member, t) {
+    // The selectors this kind carries (#539): all three for the passkey
+    // policy, applications alone for the locale policy. A view from before
+    // the member was published names none, and means all three.
+    const selectors = Array.isArray(member.selectors) ? member.selectors
+      : ['selectApplications', 'selectGroups', 'precedence'];
+    const has = function (key) {
+      return selectors.indexOf(key) >= 0;
+    };
+    const selectorRows = function (named, prefix) {
+      return (!has('selectApplications') ? '' :
+        '<tr><td><label for="' + kit.esc(prefix) + 'apps">' +
+        t.html('consolePolicies.named.applications') +
+        '</label></td><td colspan="4"><input type="text" id="' +
+        kit.esc(prefix) + 'apps" name="selectApplications" size="60" ' +
+        'value="' + kit.esc((named.selectApplications || []).join(', ')) +
+        '" placeholder="' +
+        kit.esc(t.text('consolePolicies.named.applicationsPlaceholder')) +
+        '"></td>' +
+        '</tr>') + (!has('selectGroups') ? '' :
+        '<tr><td><label for="' + kit.esc(prefix) + 'groups">' +
+        t.html('consolePolicies.named.groups') +
+        '</label></td><td colspan="4"><input type="text" id="' +
+        kit.esc(prefix) + 'groups" name="selectGroups" size="60" value="' +
+        kit.esc((named.selectGroups || []).join(', ')) + '" placeholder=' +
+        '"' + kit.esc(t.text('consolePolicies.named.groupsPlaceholder')) +
+        '"></td></tr>') +
+        (!has('precedence') ? '' :
+        '<tr><td><label for="' +
+        kit.esc(prefix) + 'precedence">' +
+        t.html('consolePolicies.named.precedence') + '</label></td><td ' +
+        'colspan="4"><input type="number" id="' + kit.esc(prefix) +
+        'precedence" name="precedence" min="1" max="1000" value="' +
+        kit.esc(named.precedence || 100) + '"> <span class="sub">' +
+        t.html('consolePolicies.named.lowestApplies') + '</span></td></tr>');
+    };
+    const form = function (named, prefix, adding) {
+      return '<form method="post" action="/admin/policies">' +
+        '<input type="hidden" name="action" value="' +
+        kit.esc(kind.actions[0]) + '">' +
+        (adding
+          ? '<p><label for="' + kit.esc(prefix) + 'name">' +
+            t.html('consolePolicies.named.name') + '</label> ' +
+            '<input type="text" id="' + kit.esc(prefix) + 'name" ' +
+            'name="profile" pattern="[a-z0-9][a-z0-9-]{0,63}" required ' +
+            'placeholder="administrators"></p>'
+          : '<input type="hidden" name="profile" value="' +
+            kit.esc(named.name) + '">') +
+        PoliciesPage.fieldHeader(t) +
+        selectorRows(named, prefix) +
+        named.fields.map(function (field) {
+          return PoliciesPage.policyFieldRow(field, prefix, t);
+        }).join('') + '</table>' +
+        '<p><button>' + (adding ? t.html('consolePolicies.named.add')
+          : t.html('consolePolicies.saveProfile')) +
+        '</button></p></form>' +
+        (adding ? ''
+          : '<form method="post" action="/admin/policies" class="inline">' +
+            '<input type="hidden" name="action" value="' +
+            kit.esc(kind.actions[1]) + '"><input type="hidden" ' +
+            'name="profile" value="' + kit.esc(named.name) + '"><button ' +
+            'class="secondary">' + t.html('consolePolicies.named.remove') +
+            '</button></form>');
+    };
+    const blank = { name: '', selectApplications: [], selectGroups: [],
+                    precedence: 100, fields: member.fields.map(function (f) {
+                      return Object.assign({}, f, { value: f.default,
+                                                    source: 'built-in' });
+                    }) };
+    return '<h3 id="' + kit.esc(kind.id) + '-named">' +
+      t.html('consolePolicies.named.heading') + '</h3>' +
+      kit.note(has('precedence')
+        ? t.html('consolePolicies.named.noteRanked')
+        : t.html('consolePolicies.named.noteUnranked')) +
+      (member.named.length ? member.named.map(function (named) {
+        return '<h4>' + kit.esc(named.name) + (has('precedence')
+          ? t.html('consolePolicies.named.precedenceOf',
+            { n: String(named.precedence) }) : '') +
+          '</h4>' +
+          form(named, kind.id + '-' + named.name + '-', false) +
+          '<ul>' + named.rules.map(function (rule) {
+            return '<li>' + kit.esc(rule) + '</li>';
+          }).join('') + '</ul>';
+      }).join('') : '<p>' + t.html('consolePolicies.named.none') + '</p>') +
+      '<h4>' + t.html('consolePolicies.named.addHeading') + '</h4>' +
+      form(blank, kind.id + '-new-', true);
   }
 
   /**
@@ -225,119 +326,94 @@ class PoliciesPage {
    * history cost, the generator and the schema.
    *
    * @param view - the policies view from adminViews.policiesView()
+   * @param t - the page's translator (#539)
    * @returns the section as HTML
    */
-  static passwordPolicySection(view) {
+  static passwordPolicySection(view, t) {
     const kind = view.kinds.filter(function (k) {
       return k.id === 'password';
     })[0];
     const pw = view.password;
     const profile = pw.profile;
     const out =
-      '<h2 id="password">Password policy — the default profile</h2>' +
-      kit.note('What a password set in this realm must look like. It is ' +
-      'stored as <code>' +
-      kit.esc(profile.dn || ('cn=default,ou=passwordPolicies,…')) +
-      '</code>, in the shape of draft-behera-ldap-password-policy (the ' +
-      'schema OpenLDAP\'s ppolicy overlay reads), so an ' +
-      '<code>ldapsearch</code> finds it and an <code>ldapmodify</code> ' +
-      'changes it.') +
+      '<h2 id="password">' + t.html('consolePolicies.password.heading') +
+      '</h2>' +
+      kit.note(t.html('consolePolicies.password.lead',
+        { dn: profile.dn || ('cn=default,ou=passwordPolicies,…') })) +
 
       (view.enforced
         ? '<div class="ok">' + kit.esc(view.enforcement) + '</div>'
-        : kit.warn(kit.esc(view.enforcement) + ' Switch the realm with ' +
-          '<code>global.mode</code> on <a ' +
-          'href="/admin/config">Configuration</a>.')) +
+        : kit.warn(kit.esc(view.enforcement) +
+          t.html('consolePolicies.password.switch') +
+          '<a href="/admin/config">' +
+          t.html('consolePolicies.configuration') + '</a>.')) +
 
-      PoliciesPage.policyProblems(profile) +
+      PoliciesPage.policyProblems(profile, t) +
 
       kit.note(profile.stored
-        ? 'This profile is <strong>stored</strong> at <code>' +
-          kit.esc(profile.dn) +
-          '</code>. Saving replaces it; removing it deletes it, after which ' +
-          'the built-in defaults below are in force.'
-        : '<strong>Nothing is stored yet, so the built-in defaults are in ' +
-          'force.</strong> Saving this form writes <code>cn=default</code> ' +
-          'under <code>ou=passwordPolicies</code> in this realm\'s ' +
-          'directory. A realm created later starts with the same built-in ' +
-          'defaults rather than a copy of this one — the profile is not ' +
-          'seeded, so it cannot be missing from a realm nobody seeded.') +
+        ? t.html('consolePolicies.password.stored', { dn: profile.dn })
+        : t.html('consolePolicies.password.builtIn')) +
 
       PoliciesPage.policyForms(kind, pw, 'pp-',
-        kit.note('Every field is checked ' +
-      'before anything is written, and two rules relate fields to each ' +
-      'other: a generated password must be at least the minimum length, and ' +
-      'at least twice the symbol count plus two — a generator asked for ' +
-      'more symbols than that would be drawing for a very long time. ' +
-      '<strong>A change applies to the NEXT password set in this ' +
-      'realm</strong>; nothing already stored is re-checked, because a ' +
-      'stored password is a hash and there is nothing left to check it ' +
-      'against.')) +
+        kit.note(t.html('consolePolicies.password.checked')), t) +
 
-      '<h3 id="rules">What a password must be, right now</h3>' +
-      kit.note('The rules as the <a href="/portal/password">user ' +
-      'portal</a> and the activation page print them to the person ' +
-      'choosing a password, so the page they read and the rule this ' +
-      'service applies are one sentence.') +
+      '<h3 id="rules">' + t.html('consolePolicies.password.rulesHeading') +
+      '</h3>' +
+      kit.note(t.html('consolePolicies.password.rules1') +
+      '<a href="/portal/password">' +
+      t.html('consolePolicies.password.rulesLink') + '</a>' +
+      t.html('consolePolicies.password.rules2')) +
       '<ul>' + pw.rules.map(function (rule) {
         return '<li>' + kit.esc(rule) + '</li>';
       }).join('') + '</ul>' +
 
-      '<h3 id="doors">Where it is enforced</h3>' +
-      kit.note('Every door that sets a password ends in one function in ' +
-      '<code>common/credentials.ts</code>, which is what makes the list ' +
-      'below complete rather than a list somebody remembered. ' +
+      '<h3 id="doors">' + t.html('consolePolicies.password.doorsHeading') +
+      '</h3>' +
+      kit.note(t.html('consolePolicies.password.doors') +
       kit.esc(pw.notDoors)) +
-      '<table><tr><th>Door</th><th>Reaches</th></tr>' +
+      '<table><tr><th>' + t.html('consolePolicies.password.door') +
+      '</th><th>' + t.html('consolePolicies.password.reaches') +
+      '</th></tr>' +
       pw.doors.map(function (row) {
         return '<tr><td>' + kit.esc(row.door) + '</td><td><code>' +
                kit.esc(row.via) +
           '</code></td></tr>';
       }).join('') + '</table>' +
 
-      '<h3 id="history">The history, and what it costs</h3>' +
-      kit.note('<strong>A remembered password is the scrypt hash it was ' +
-      'already stored as</strong>, moved into <code>pwdHistory</code> on ' +
-      'the person\'s own entry when the next one replaces it — no new hash ' +
-      'is made, and the password itself is never kept. Checking a new ' +
-      'password costs one scrypt comparison per remembered one, about 70ms ' +
-      'each on this thread, so a history of ' + kit.esc(profile.history) +
-      ' is up to ' +
-      kit.esc((profile.history + 1) * 70) + 'ms at a password change. A ' +
-      'generated password skips the comparison, because nothing drawn at ' +
-      'random is a previous password. <code>pwdHistory</code> and ' +
-      '<code>pwdChangedTime</code> are maintained by this service and an ' +
-      'LDAP modify naming either is refused in product mode.') +
+      '<h3 id="history">' + t.html('consolePolicies.password.historyHeading') +
+      '</h3>' +
+      kit.note(t.html('consolePolicies.password.history',
+        { history: String(profile.history),
+          ms: String((profile.history + 1) * 70) })) +
 
-      '<h3 id="generator">The generator</h3>' +
-      kit.note('<strong>New users created from the console or ' +
-      '<code>/admin-api</code> get a generated password by ' +
-      'default</strong>, shown or returned ONCE. It is drawn by ' +
+      // The generator's module, source, pools and stopping rule are the
+      // view's English, drawn as they come between the messages (#539).
+      '<h3 id="generator">' +
+      t.html('consolePolicies.password.generatorHeading') + '</h3>' +
+      kit.note(t.html('consolePolicies.password.generator1') +
       '<code>' + kit.esc(pw.generator.module) + '</code>' +
       (pw.generator.version ? ' ' + kit.esc(pw.generator.version) : '') +
-      ' from ' +
-      kit.esc(pw.generator.source) + ', using ' +
+      t.html('consolePolicies.password.generatorFrom') +
+      kit.esc(pw.generator.source) +
+      t.html('consolePolicies.password.generatorUsing') +
       kit.esc(pw.generator.pools.join(', ')) +
-      ' (leaving out ' + pw.generator.excluded.map(function (one) {
+      t.html('consolePolicies.password.generatorLeaving') +
+      pw.generator.excluded.map(function (one) {
         return '<code>' + kit.esc(one) + '</code>';
-      }).join(' and ') + ', which silently end or change a string pasted ' +
-      'into a shell or a JSON body), and it draws until ' +
+      }).join(t.html('consolePolicies.password.generatorAnd')) +
+      t.html('consolePolicies.password.generatorUntil') +
       kit.esc(pw.generator.drawsUntil) +
       '.') +
 
-      '<h3 id="schema">Schema</h3>' +
-      kit.note('This directory is schemaless, so a container of entries ' +
-      'carrying invented attributes says what they mean here. The ' +
-      '<code>pwd*</code> names are draft-behera-ldap-password-policy\'s; ' +
-      'the <code>stsPwd*</code> ones are this service\'s own, because the ' +
-      'draft delegates composition rules to the server and defines none.') +
-      PoliciesPage.policySchemaTables(pw.schema);
+      '<h3 id="schema">' + t.html('consolePolicies.schema') + '</h3>' +
+      kit.note(t.html('consolePolicies.password.schema')) +
+      PoliciesPage.policySchemaTables(pw.schema, t);
     return out;
   }
 
   // The save form and the reset form every kind has. The reset is its own
   // form, for the reason in the header above.
-  static policyForms(kind, member, prefix, intro) {
+  static policyForms(kind, member, prefix, intro, t) {
     const profile = member.profile;
     const saveAction = kind.actions[0];
     const resetAction = kind.actions[1];
@@ -346,55 +422,75 @@ class PoliciesPage {
       '">' +
       '<input type="hidden" name="profile" value="' + kit.esc(profile.name) +
       '">' +
-      kit.wideTable('The default ' + kind.label.toLowerCase() + ' profile',
-        '<table><tr><th>Rule</th><th>Value</th><th>Attribute</th>' +
-        '<th>Built-in default</th><th>Source</th></tr>' +
+      kit.wideTable(t.text('consolePolicies.form.label',
+        { kind: kind.label.toLowerCase() }),
+        PoliciesPage.fieldHeader(t) +
         member.fields.map((field) => {
-          return PoliciesPage.policyFieldRow(field, prefix);
+          return PoliciesPage.policyFieldRow(field, prefix, t);
         }).join('') +
         '<tr><td><label for="' + kit.esc(prefix) + 'description">' +
-        'Description</label></td>' +
+        t.html('consolePolicies.form.description') + '</label></td>' +
         '<td colspan="4"><input type="text" id="' + kit.esc(prefix) +
         'description" name="description" size="60" maxlength="1024" ' +
-        'value="' + kit.esc(profile.description) + '" placeholder="what ' +
-        'this profile is for"></td></tr></table>') +
-      '<p><button>Save the profile</button></p>' + (intro || '') +
+        'value="' + kit.esc(profile.description) + '" placeholder="' +
+        kit.esc(t.text('consolePolicies.form.descriptionPlaceholder')) +
+        '"></td></tr></table>') +
+      '<p><button>' + t.html('consolePolicies.saveProfile') +
+      '</button></p>' + (intro || '') +
       '</form>' +
       (profile.stored
         ? '<form method="post" action="/admin/policies" class="inline">' +
           '<input type="hidden" name="action" value="' +
           kit.esc(resetAction) + '"><input type="hidden" ' +
           'name="profile" value="' + kit.esc(profile.name) + '"><button ' +
-          'class="secondary">Remove this realm\'s profile</button></form>'
+          'class="secondary">' + t.html('consolePolicies.form.remove') +
+          '</button></form>'
         : '');
     return out;
   }
 
-  static policyProblems(profile) {
+  // The problems themselves are the view's English (errors stay English,
+  // #539); only the sentence before them is a message.
+  static policyProblems(profile, t) {
     return profile.problems.length
-      ? kit.warn('<strong>The stored profile has ' +
-                  profile.problems.length +
-        ' problem(s), and the built-in default is in force for each ' +
-        'field named:</strong> ' +
+      ? kit.warn('<strong>' + t.html('consolePolicies.problems',
+        { n: String(profile.problems.length) }) + '</strong> ' +
         profile.problems.map(kit.esc.bind(kit)).join(' '))
       : '';
   }
 
-  static policySchemaTables(schema) {
-    const out = '<table><tr><th>Object class</th><th>What it is</th></tr>' +
+  // The header row of a profile's field table, shared by the default
+  // profile's form and a named profile's (#539: one set of messages).
+  static fieldHeader(t) {
+    return '<table><tr><th>' + t.html('consolePolicies.field.rule') +
+      '</th><th>' + t.html('consolePolicies.field.value') + '</th><th>' +
+      t.html('consolePolicies.field.attribute') + '</th>' +
+      '<th>' + t.html('consolePolicies.field.builtInDefault') + '</th><th>' +
+      t.html('consolePolicies.field.source') + '</th></tr>';
+  }
+
+  static policySchemaTables(schema, t) {
+    const out = '<table><tr><th>' +
+      t.html('consolePolicies.schemaTable.objectClass') + '</th><th>' +
+      t.html('consolePolicies.schemaTable.whatItIs') + '</th></tr>' +
       schema.objectClasses.map((row) => {
         return '<tr><td><code>' + kit.esc(row.name) + '</code></td><td>' +
           kit.esc(row.what) + '</td></tr>';
       }).join('') + '</table>' +
-      '<table><tr><th>Attribute</th><th>On</th><th>What it holds</th></tr>' +
+      '<table><tr><th>' + t.html('consolePolicies.field.attribute') +
+      '</th><th>' + t.html('consolePolicies.schemaTable.on') + '</th><th>' +
+      t.html('consolePolicies.schemaTable.whatItHolds') + '</th></tr>' +
       schema.attributes.map((row) => {
         return '<tr><td><code>' + kit.esc(row.name) +
-               '</code></td><td>the profile</td><td>' + kit.esc(row.what) +
+               '</code></td><td>' +
+               t.html('consolePolicies.schemaTable.theProfile') + '</td><td>' +
+               kit.esc(row.what) +
                '</td></tr>';
       }).join('') +
       (schema.personAttributes || []).map((row) => {
-        return '<tr><td><code>' + kit.esc(row.name) + '</code></td><td>a ' +
-          'person</td><td>' + kit.esc(row.what) + '</td></tr>';
+        return '<tr><td><code>' + kit.esc(row.name) + '</code></td><td>' +
+          t.html('consolePolicies.schemaTable.aPerson') + '</td><td>' +
+          kit.esc(row.what) + '</td></tr>';
       }).join('') + '</table>';
     return out;
   }
@@ -434,9 +530,10 @@ class PoliciesPage {
    *
    * @param field - the field from the policies view
    * @param prefix - the id prefix of the form (defaults to "pp-")
+   * @param t - the page's translator (#539)
    * @returns the table row as HTML
    */
-  static policyFieldRow(field, prefix) {
+  static policyFieldRow(field, prefix, t) {
     const id = String(prefix || 'pp-') + field.key;
     const hint = kit.tip(field.what, Infinity);
     const off = field.disabled ? ' disabled' : '';
@@ -457,6 +554,39 @@ class PoliciesPage {
             (String(field.value) === String(value) ? ' selected' : '') +
             '>' + kit.esc(value) + '</option>';
         }).join('') + '</select>';
+    } else if (field.type === 'attributes' || field.type === 'text') {
+      // A LIST OF ATTRIBUTES, OR A LABEL (#533), typed.
+      control = '<input type="text" id="' + kit.esc(id) + '" name="' +
+        kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
+        // `{provider}` and `{kind}` are literal braces a message cannot hold
+        // (#539), so they are drawn here between two messages.
+        hint + '> <span class="sub">' + (field.type === 'text'
+          ? t.html('consolePolicies.field.textBefore') + '{provider}' +
+            t.html('consolePolicies.field.textAnd') + '{kind}' +
+            t.html('consolePolicies.field.textAfter')
+          : t.html('consolePolicies.field.attributes')) + '</span>';
+    } else if (field.type === 'locale') {
+      // A BCP 47 LANGUAGE TAG (#539), typed: any tag is a locale, and the
+      // save says whether it is well-formed.
+      control = '<input type="text" id="' + kit.esc(id) + '" name="' +
+        kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
+        ' maxlength="64"' + hint + '> <span class="sub">' +
+        t.html('consolePolicies.field.locale') + '</span>';
+    } else if (field.type === 'attribute') {
+      // A DIRECTORY ATTRIBUTE NAME, or empty (#532).
+      control = '<input type="text" id="' + kit.esc(id) + '" name="' +
+        kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
+        hint + '> <span class="sub">' +
+        t.html('consolePolicies.field.attributeName') + '</span>';
+    } else if (field.type === 'list') {
+      // AN ORDERED LIST (#531): typed, comma-separated, or `none`. A list of
+      // checkboxes could not say the order, which is the point of one.
+      control = '<input type="text" id="' + kit.esc(id) + '" name="' +
+        kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
+        hint + '> <span class="sub">' +
+        t.html('consolePolicies.field.listFrom') +
+        kit.esc((field.values || []).join(', ')) +
+        t.html('consolePolicies.field.listOrNone') + '</span>';
     } else {
       control = '<input type="number" id="' + kit.esc(id) + '" name="' +
         kit.esc(field.key) + '" min="' + kit.esc(field.min) + '" max="' +
@@ -468,14 +598,18 @@ class PoliciesPage {
       kit.esc(field.label) +
       '</label></td><td>' + control + '</td>' +
       '<td><code>' + kit.esc(field.attribute) + '</code></td>' +
-      '<td>' + kit.esc(field.type === 'bool' ? (field.default ? 'yes' : 'no')
-                                              : String(field.default)) +
+      '<td>' + kit.esc(field.type === 'bool'
+        ? (field.default ? t.text('consolePolicies.yes')
+                         : t.text('consolePolicies.no'))
+        : String(field.default)) +
                                                 '</td>' +
       '<td class="' + (field.source === 'directory' ? '' : 'state-none') +
       '">' +
-      kit.esc(field.source === 'directory' ? 'this profile'
-        : field.source === 'default realm' ? 'the default realm\'s profile'
-          : 'built-in default') +
+      kit.esc(field.source === 'directory'
+        ? t.text('consolePolicies.field.thisProfile')
+        : field.source === 'default realm'
+          ? t.text('consolePolicies.field.defaultRealmProfile')
+          : t.text('consolePolicies.field.builtIn')) +
       '</td></tr>';
   }
 }

@@ -150,6 +150,10 @@ import idTokenEncryption = require('./id_token_encryption');
 import outbound = require('./outbound_delivery');
 // A leaf: a client's fetched `jwks_uri` key set (#120).
 import clientJwks = require('./client_jwks');
+// The console's folds (`admin-ui/web_kit.ts`, a leaf that requires nothing),
+// so the explanation under this page fragment collapses as the console's
+// does and as the rest of `/logout`'s does (2026-10-08).
+import kit = require('../admin-ui/web_kit');
 
 // A session, a registration document, a delivery result.
 type Json = any;
@@ -742,9 +746,12 @@ class BackchannelLogout {
     const { log, applications, signJwtAsAsync, errorCodes,
             idTokenEncryption } = this.deps;
     log.debug("Entering BackchannelLogout.signedToken(). " + row.clientId);
+    // The client's ATTRIBUTES (#290), which a registration, the console and
+    // the management API all write, so a client none of them registered is
+    // signed and encrypted to as it says.
     let registered: Json = {};
     try {
-      registered = applications.registrationOf(row.clientId) || {};
+      registered = applications.clientConfigOf(row.clientId);
     } catch (e) {
       log.debug("Caught in BackchannelLogout.signedToken(): " +
                 ((e && e.message) || e));
@@ -1102,14 +1109,15 @@ class BackchannelLogout {
     log.debug("Leaving BackchannelLogout.render(). " + list.length +
               " row(s).");
     return '<h2>' + xmlEscape(heading || 'Back-channel Logout Tokens') +
-      '</h2><p class="sub">OpenID Connect Back-Channel Logout 1.0. Each ' +
+      '</h2>' + kit.note('OpenID Connect Back-Channel Logout 1.0. Each ' +
       'relying party below registered a backchannel_logout_uri and is POSTed ' +
       'a signed Logout Token by this service, not by this browser. They go ' +
       'out AFTER this page was answered, so <code>pending</code> is the ' +
       'honest state here; a relying party that is down is tried again with ' +
       'backoff — by any node, across restarts — and one that never accepts ' +
       'becomes a dead letter an administrator can retry from ' +
-      '<code>/admin/logout</code>.</p><table><thead><tr><th>Client</th><th>' +
+      '<code>/admin/logout</code>.') +
+      '<table><thead><tr><th>Client</th><th>' +
       'backchannel_logout_uri</th><th>State</th></tr></thead><tbody>' +
       body + '</tbody></table>';
   }

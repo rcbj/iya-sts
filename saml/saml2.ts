@@ -49,10 +49,8 @@ import InstanceSlot = require('../common/instance_slot');
 // here still does.
 // ---------------------------------------------------------------------------
 import stsCrypto = require('../common/crypto');
-// saml.issuer, read per assertion rather than captured at require time so
-// that /admin/config can change what the next one says it came from.
 import config = require('../common/config');
-// #480: the names this service signs under, in one place (a library).
+// #523: the one name this service issues under, in one place (a library).
 import IssuerNames = require('../common/issuer_names');
 // The error-code registry, a leaf; the signing failure below is tagged with its
 // code.
@@ -279,16 +277,14 @@ class Saml2Assertions {
   //
   // AND TWO MORE, which are about the DOCUMENT rather than about its contents:
   //
-  //   issuer                who signed it. It defaults to `saml.issuer`, which
-  //                         is what the two older callers get and is the shared
-  //                         value WS-Trust and WS-Federation both want. The Web
-  //                         SSO profile has to override it because that profile
-  //                         publishes an entityID PER SERVICE PROVIDER, and a
-  //                         service provider checks the assertion's Issuer
-  //                         against the entityID in the metadata it was
-  //                         configured from — an assertion issued by a name
-  //                         that is not in that document is refused, and the
-  //                         refusal reads as a trust-store problem.
+  //   issuer                who signed it. It defaults to the realm's one
+  //                         issuer, its OAuth issuer (#523), at the ambient
+  //                         request's base; a caller that already read it for
+  //                         its request passes it, so the Response around the
+  //                         assertion and the metadata name the same string —
+  //                         a service provider refuses an assertion whose
+  //                         Issuer is not the entityID it was configured from,
+  //                         and the refusal reads as a trust-store problem.
   //   nameQualifier,        the NameID's qualifiers, where the answer must
   //   spNameQualifier       repeat a query's (#189): saml-core-2.0-os section
   //                         3.3.4 has the returned Subject STRONGLY match the
@@ -377,9 +373,9 @@ class Saml2Assertions {
     // Who signed it. Read once, because it appears in the Issuer element and in
     // the default `issuedBy` attribute, and two reads of a runtime-changeable
     // setting inside one document can disagree with each other.
-    // #480: `saml.issuer`, or in product the SAML entityID where nobody set
-    // it (`common/issuer_names.ts`).
-    const issuer = opts.issuer || IssuerNames.samlIssuer();
+    // #523: the realm's one name, its OAuth issuer, unless the caller passed
+    // the one it read for this request (`common/issuer_names.ts`).
+    const issuer = opts.issuer || IssuerNames.issuer();
     const attributes: AttributeRow[] =
       (opts.attributes && opts.attributes.length) ? opts.attributes : [
         { name: 'name', value: subject },

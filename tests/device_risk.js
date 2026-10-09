@@ -404,7 +404,8 @@ function childMain() {
           subjectsPaging: adminViews.pagingJson(adminViews.pagingOf({}, 0,
             { name: 'subjects', noun: 'people' }))
         };
-        html = RiskPage.assessmentsHtml({ query: {}, write: false },
+        const ctxOf = require(ROOT + '/admin-ui/web_kit').context;
+        html = RiskPage.assessmentsHtml(ctxOf({}, false),
                                         JSON.parse(JSON.stringify(drawn)));
       } catch (e) {
         html = 'threw: ' + (e && e.message);

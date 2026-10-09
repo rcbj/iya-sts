@@ -60,6 +60,7 @@ class ClaimsPage {
    * @returns the body as HTML
    */
   static claimsBody(ctx, json) {
+    const t = ctx.t;
     const pageUrl = '/admin/claims?user=' +
                     encodeURIComponent(json.preview.user);
     // ONE read of the directory and one invented persona for the whole page,
@@ -68,55 +69,42 @@ class ClaimsPage {
     // exists only because the sections were written separately.
     const values = json.preview;
 
-    const inner = kit.note('What to add to every <strong>token</strong> ' +
-      'this service ' +
-      'issues <em>from now on</em>. Nothing already issued changes — a ' +
-      'token is a signed document and this page cannot reach inside one. ' +
-      'Two sets, because an OAuth 2.0 access token and an OIDC ID Token go ' +
-      'to different readers: one to a resource server and one to a client, ' +
-      'and the interesting configuration is usually the one where they ' +
-      'DIFFER.') +
+    // A sentence that runs into a link (markup with an href, which a message
+    // may not carry) is split around it (#539).
+    const inner = kit.note(t.html('consoleClaims.jwtIntro')) +
 
-      kit.note('The other three sets are next door. <strong>The UserInfo ' +
-      'response is configured on <a href="/admin/userinfo-claims">UserInfo ' +
-      'claims</a></strong>, beside this page — separate because that ' +
-      'response is rebuilt on every call rather than issued once, so a ' +
-      'change there reaches a client that is already holding its tokens. ' +
-      '<strong>SAML 2.0 and SAML 1.1 assertions are on <a ' +
-      'href="/admin/saml-attributes">Custom SAML attributes</a></strong>, ' +
-      'under SAML, because those two spell an attribute differently enough ' +
-      'from a JWT claim — and from each other — that one page had to ' +
-      'explain three vocabularies before a reader could change one. The ' +
-      'store is the same one whichever page is used, and so is the audit ' +
-      'row.') +
+      kit.note(t.html('consoleClaims.jwtNextDoorA') +
+      '<a href="/admin/userinfo-claims">' +
+      t.html('consoleClaims.linkUserinfoClaims') + '</a>' +
+      t.html('consoleClaims.jwtNextDoorB') + '<a ' +
+      'href="/admin/saml-attributes">' +
+      t.html('consoleClaims.linkSamlAttributes') + '</a>' +
+      t.html('consoleClaims.jwtNextDoorC')) +
 
-      ClaimsPage.claimHalvesNote('jwt') +
+      ClaimsPage.claimHalvesNote('jwt', t) +
 
-      ClaimsPage.claimPreviewForm('/admin/claims', json.preview.user, values) +
+      ClaimsPage.claimPreviewForm('/admin/claims', json.preview.user, values,
+                                  t) +
 
-      kit.warn('<strong>Custom claims are additive.</strong> A configured ' +
-      'claim is added to what the protocol already puts in the token and ' +
-      'never replaces one. The names this service sets itself are refused ' +
-      'rather than silently ignored: ' +
-      kit.codeList(json.reservedJwtClaims) + '. Every one of them is ' +
-      'load-bearing somewhere here — an <code>exp</code> settable from a ' +
-      'web form would produce tokens that fail to verify with nothing ' +
-      'pointing back at this page. The list is a JWT rule and only a JWT ' +
-      'rule: an <a href="/admin/saml-attributes">assertion attribute</a> ' +
-      'called <code>exp</code> collides with nothing and is allowed.') +
+      kit.warn(t.html('consoleClaims.jwtAdditiveA') +
+      kit.codeList(json.reservedJwtClaims) +
+      t.html('consoleClaims.jwtAdditiveB') +
+      '<a href="/admin/saml-attributes">' +
+      t.html('consoleClaims.linkAssertionAttribute') + '</a>' +
+      t.html('consoleClaims.jwtAdditiveC')) +
 
-      '<h2>The two token sets</h2>' +
+      '<h2>' + t.html('consoleClaims.jwtSetsHeading') + '</h2>' +
       json.sets.map(function (set) {
-        return ClaimsPage.claimSetSection(set.id, json, pageUrl);
+        return ClaimsPage.claimSetSection(set.id, json, pageUrl, t);
       }).join('') +
 
-      ClaimsPage.groupClaimSection(json.groups, json.preview.user) +
+      ClaimsPage.groupClaimSection(json.groups, json.preview.user, t) +
 
-      ClaimsPage.attributeCatalogueNotes('jwt') +
+      ClaimsPage.attributeCatalogueNotes('jwt', t) +
 
-      ClaimsPage.claimValueNotes('jwt', json.placeholders) +
+      ClaimsPage.claimValueNotes('jwt', json.placeholders, t) +
 
-      ClaimsPage.replaceSetForm(json.sets, pageUrl, 'jwt');
+      ClaimsPage.replaceSetForm(json.sets, pageUrl, 'jwt', t);
 
     return inner;
   }
@@ -143,23 +131,17 @@ class ClaimsPage {
    * directory attributes, in the vocabulary of the family.
    *
    * @param family - "jwt", "saml" or "userinfo"
+   * @param t - the page's translator (#539)
    * @returns the note as HTML
    */
-  static claimHalvesNote(family) {
-    const noun = family === 'saml' ? 'attribute' : 'claim';
-    const carrier = family === 'saml' ? 'assertion'
-                  : (family === 'userinfo' ? 'UserInfo response' : 'token');
-    return kit.note('Each set has <strong>two halves</strong>. A <em>typed ' +
-                     noun +
-      '</em> is a name and a value somebody wrote here, the same for ' +
-      'everybody except where it carries a <code>${placeholder}</code>. A ' +
-      '<em>directory attribute</em> is ticked from the catalogue below and ' +
-      'its value is whatever that person\'s entry under ' +
-      '<code>ou=users</code> says — so an <code>ldapmodify</code> changes ' +
-      'the next ' + carrier + ', ' +
-      'and an LDAP client and a relying party pointed at this service are ' +
-      'shown the same person. That is the half worth exercising, and until ' +
-      'the catalogue existed only a Verifiable Credential could do it.');
+  static claimHalvesNote(family, t) {
+    // The noun and the carrier go in as select parameters, so a translation
+    // can inflect around them; `${placeholder}` holds braces a message may
+    // not, so it is a parameter too (#539).
+    return kit.note(t.html('consoleClaims.halves',
+                           { noun: family === 'saml' ? 'attribute' : 'claim',
+                             carrier: family,
+                             placeholder: '${placeholder}' }));
   }
 
   // The "show me somebody" form. It is a GET form posting to the page's own
@@ -172,22 +154,20 @@ class ClaimsPage {
    * @param path - the page's path
    * @param previewUser - the username being previewed
    * @param values - the preview user's attribute values
+   * @param t - the page's translator (#539)
    * @returns the form as HTML
    */
-  static claimPreviewForm(path, previewUser, values) {
+  static claimPreviewForm(path, previewUser, values, t) {
     return '<form method="get" action="' + kit.esc(path) +
            '"><div class="formrow">' +
-      '<label for="user">Show the values for</label>' +
+      '<label for="user">' + t.html('consoleClaims.showValuesFor') +
+      '</label>' +
       '<input type="text" id="user" name="user" size="20" value="' +
       kit.esc(previewUser) + '"><button ' +
-      'class="secondary">Show</button>' +
+      'class="secondary">' + t.html('consoleClaims.show') + '</button>' +
       kit.note((values.entryFound
-        ? 'This person has an entry in the directory, so the values marked ' +
-          '<em>directory</em> are what an LDAP client reads from it.'
-        : 'This person has no entry in the directory — nobody has ' +
-          'authenticated as them and nothing was added by hand — so every ' +
-          'value below is generated. It will be the same one next time: the ' +
-          'invented person is seeded from the username.')) + '</div></form>';
+        ? t.html('consoleClaims.previewFound')
+        : t.html('consoleClaims.previewInvented'))) + '</div></form>';
   }
 
   // One set, rendered: what is in it, a way to remove each, and a way to add
@@ -213,9 +193,14 @@ class ClaimsPage {
    * @param previewUser - the username being previewed
    * @param values - the preview user's attribute values
    * @param pageUrl - the URL the forms post to
+   * @param t - the page's translator (#539); none means the default,
+   *   English in node
    * @returns the section as HTML
    */
-  static claimSetSection(setId, json, pageUrl) {
+  static claimSetSection(setId, json, pageUrl, t?) {
+    // admin.ts's server-side caller passes no translator and is drawn in the
+    // default one, English in node (#539).
+    t = t || kit.context().t;
     const set = json.sets.filter(function (one) {
       return one.id === setId;
     })[0];
@@ -230,8 +215,7 @@ class ClaimsPage {
     // up in ("these tokens carry only what the protocol puts in them") has to
     // say `responses` or it will be describing a signed document that does not
     // exist.
-    const carrier = isSaml ? 'assertions' :
-                    (isUserinfo ? 'UserInfo responses' : 'tokens');
+    const carrier = isSaml ? 'saml' : (isUserinfo ? 'userinfo' : 'jwt');
     const extraHeader = isSaml2 ? '<th>NameFormat</th>' :
                         (isSaml11 ? '<th>AttributeNamespace</th>' : '');
     // ATTRIBUTE CLAIMS' THREE HELPS (#94), from the model the /admin-api
@@ -255,43 +239,49 @@ class ClaimsPage {
         // AN ATTRIBUTE CLAIM (#94) shows where its value comes from.
         '<td>' + (claim.attribute
           ? '&larr; <code>' + kit.esc(claim.attribute) + '</code>' +
-            '<span class="sub"> directory attribute' +
-            (claim.multi ? ', every value' : '') +
+            '<span class="sub">' +
+            t.html('consoleClaims.directoryAttribute') +
+            (claim.multi ? t.html('consoleClaims.everyValueSuffix') : '') +
             (claim.type && claim.type !== 'string'
-              ? ', as ' + kit.esc(claim.type) : '') + '</span>'
+              ? t.html('consoleClaims.asType', { type: claim.type }) : '') +
+            '</span>'
           : '<code>' + kit.esc(claim.value) + '</code>') +
         // WHAT IT WOULD CARRY FOR THE PREVIEWED PERSON (#94).
         (claim.attribute ? (function () {
           const seen = previewRows.filter(function (one) {
             return one.name === claim.name;
           })[0];
-          return '<br><span class="sub">for <code>' + kit.esc(who) +
-            '</code>: ' + (seen && seen.carried
+          return '<br><span class="sub">' +
+            t.html('consoleClaims.forWho', { who: who }) + (seen && seen.carried
               ? '<code>' + kit.esc(JSON.stringify(seen.value)) + '</code>'
-              : 'nothing &mdash; their entry has no ' +
-                kit.esc(claim.attribute)) + '</span>';
+              : t.html('consoleClaims.entryHasNo',
+                       { attribute: claim.attribute })) + '</span>';
         })() : '') +
         // WHO WOULD NOT GET IT (#94): a partner whose release list does not
         // name it.
-        (withheld[claim.name] ? '<br><span class="state-revoked">withheld ' +
-          'from ' + withheld[claim.name].map(function (id) {
-            return '<a href="/admin/federation?relationship=' +
-                   encodeURIComponent(id) + '">' + kit.esc(id) + '</a>';
-          }).join(', ') + '</span><span class="sub"> &mdash; not on ' +
-          'their release list</span>' : '') + '</td>' +
+        (withheld[claim.name] ? '<br><span class="state-revoked">' +
+          t.html('consoleClaims.withheldFrom') + withheld[claim.name]
+            .map(function (id) {
+              return '<a href="/admin/federation?relationship=' +
+                     encodeURIComponent(id) + '">' + kit.esc(id) + '</a>';
+            }).join(', ') + '</span><span class="sub">' +
+          t.html('consoleClaims.notOnReleaseList') + '</span>' : '') +
+        '</td>' +
         '<td><form method="post" action="' + kit.esc(pageUrl) +
         '" class="inline">' +
         '<input type="hidden" name="action" value="remove">' +
         '<input type="hidden" name="set" value="' + kit.esc(setId) + '">' +
         '<input type="hidden" name="name" value="' + kit.esc(claim.name) +
-        '"><button class="secondary">Remove</button></form></td></tr>';
+        '"><button class="secondary">' + t.html('consoleClaims.remove') +
+        '</button></form></td></tr>';
     }).join('');
 
     const extraInput = isSaml2
       ? '<label for="nf-' + setId + '">NameFormat</label>' +
         '<input type="text" id="nf-' + setId +
         '" name="nameFormat" size="28" ' +
-                                               'placeholder="(optional)">'
+                                               'placeholder="' +
+        kit.esc(t.text('consoleClaims.optionalPlaceholder')) + '">'
       : (isSaml11
         ? '<label for="ns-' + setId + '">Namespace</label>' +
           '<input type="text" id="ns-' + setId +
@@ -308,24 +298,25 @@ class ClaimsPage {
       // touch. The headings say which half is which: they are configured
       // separately, audited separately, and only one of them can be wrong in a
       // way the directory explains.
-      '<p class="sub">Typed ' + noun + 's &mdash; a name and a value, the ' +
-      'same for everybody.</p><table><tr><th>Name</th>' + extraHeader +
-      '<th>Value</th><th></th></tr>' +
+      '<p class="sub">' + t.html('consoleClaims.typedHalf', { noun: noun }) +
+      '</p><table><tr><th>' + t.html('consoleClaims.colName') + '</th>' +
+      extraHeader +
+      '<th>' + t.html('consoleClaims.colValue') + '</th><th></th></tr>' +
       (rows ||
-       '<tr><td colspan="' + (extraHeader ? 4 : 3) + '">No custom ' + noun +
-       ' ' +
-               'is configured; ' +
-               'these ' + carrier + ' carry only what the protocol puts in ' +
-                                    'them.</td></tr>') + '</table><form ' +
+       '<tr><td colspan="' + (extraHeader ? 4 : 3) + '">' +
+       t.html('consoleClaims.noCustom', { noun: noun, carrier: carrier }) +
+       '</td></tr>') + '</table><form ' +
       'method="post" action="' + kit.esc(pageUrl) + '"><div class="formrow">' +
         '<input type="hidden" name="action" value="add">' +
         '<input type="hidden" name="set" value="' + kit.esc(setId) + '">' +
-        '<label for="n-' + setId + '">Name</label>' +
+        '<label for="n-' + setId + '">' + t.html('consoleClaims.name') +
+        '</label>' +
         '<input type="text" id="n-' + setId + '" name="name" size="20">' +
         extraInput +
-        '<label for="v-' + setId + '">Value</label>' +
+        '<label for="v-' + setId + '">' + t.html('consoleClaims.value') +
+        '</label>' +
         '<input type="text" id="v-' + setId + '" name="value" size="28">' +
-        '<button>Add</button>' +
+        '<button>' + t.html('consoleClaims.add') + '</button>' +
         '</div></form>' +
       // AN ATTRIBUTE CLAIM (#94): any directory attribute, under a name of
       // the administrator's choosing — where the half below offers only the
@@ -334,11 +325,15 @@ class ClaimsPage {
         'class="formrow">' +
         '<input type="hidden" name="action" value="add-attribute-claim">' +
         '<input type="hidden" name="set" value="' + kit.esc(setId) + '">' +
-        '<label for="an-' + setId + '">Name</label>' +
+        '<label for="an-' + setId + '">' + t.html('consoleClaims.name') +
+        '</label>' +
         '<input type="text" id="an-' + setId + '" name="name" size="20">' +
-        '<label for="aa-' + setId + '">from the attribute</label>' +
+        '<label for="aa-' + setId + '">' +
+        t.html('consoleClaims.fromAttribute') + '</label>' +
         '<input type="text" id="aa-' + setId + '" name="attribute" ' +
-        'size="20" placeholder="e.g. costCenter" list="ac-' + setId + '">' +
+        'size="20" placeholder="' +
+        kit.esc(t.text('consoleClaims.egCostCenter')) + '" list="ac-' +
+        setId + '">' +
         // THE PICK-LIST (#94): what this realm's attribute sources and
         // federation mappings write, so a name is chosen rather than
         // guessed; any other name may still be typed.
@@ -347,43 +342,41 @@ class ClaimsPage {
                  kit.esc(one.attribute + ' (' + one.from.join(', ') + ')') +
                  '">';
         }).join('') + '</datalist>' +
-        '<label><input type="checkbox" name="multi" value="true"> every ' +
-        'value</label>' +
-        (isSaml ? '' : '<label for="at-' + setId + '">as</label><select ' +
+        '<label><input type="checkbox" name="multi" value="true"> ' +
+        t.html('consoleClaims.everyValue') + '</label>' +
+        (isSaml ? '' : '<label for="at-' + setId + '">' +
+          t.html('consoleClaims.as') + '</label><select ' +
           'id="at-' + setId + '" name="type">' +
           ['string', 'number', 'boolean', 'json'].map(function (type) {
             return '<option value="' + type + '">' + type + '</option>';
           }).join('') + '</select>') +
-        '<button>Add</button></div></form>' +
-      '<p class="sub">A ' + noun + ' from a directory attribute carries ' +
-      'the value on the entry of the person the ' +
-      (isSaml ? 'assertion' : (isUserinfo ? 'response' : 'token')) +
-      ' is about &mdash; any attribute, not only the catalogue below. Only ' +
-      'the directory: a person whose entry lacks it gets none. A secret, a ' +
-      'binary value or an attribute this service keeps is refused.' +
-      (choices.length ? ' The attribute field offers the ' + choices.length +
-        ' this realm\'s attribute sources and federation mappings write.'
-                      : '') + '</p>' +
+        '<button>' + t.html('consoleClaims.add') + '</button></div></form>' +
+      '<p class="sub">' +
+      t.html('consoleClaims.attributeClaimNote',
+             { noun: noun, carrier: carrier }) +
+      (choices.length
+        ? t.html('consoleClaims.attributeChoicesNote', { n: choices.length })
+        : '') + '</p>' +
       // THE RELEASE WARNING (#94), where it applies: a claim added here does
       // not reach a partner whose release list does not name it.
-      (lists.length ? kit.warn('<strong>' + lists.length + ' federation ' +
-        'partner(s) have a release list</strong> (' +
+      (lists.length ? kit.warn(t.html('consoleClaims.releaseListsA',
+                                      { n: lists.length }) +
         lists.map(function (one) {
           return '<a href="/admin/federation?relationship=' +
                  encodeURIComponent(one.id) + '">' + kit.esc(one.id) +
                  '</a>';
-        }).join(', ') + '): a ' + noun + ' added here reaches them only ' +
-        'once its name is added to their <code>fedRelease</code>.') : '') +
+        }).join(', ') + t.html('consoleClaims.releaseListsB',
+                               { noun: noun })) : '') +
       (claims.length
         ? '<form method="post" action="' + kit.esc(pageUrl) +
           '" class="inline">' +
           '<input type="hidden" name="action" value="clear">' +
           '<input type="hidden" name="set" value="' + kit.esc(setId) + '">' +
-          '<button class="secondary">Clear this set</button></form>'
+          '<button class="secondary">' + t.html('consoleClaims.clearSet') +
+          '</button></form>'
         : '') +
-      '<p class="sub">Directory attributes &mdash; a value read off each ' +
-      'person\'s own entry.</p>' +
-      ClaimsPage.claimAttributeSection(setId, json, pageUrl);
+      '<p class="sub">' + t.html('consoleClaims.directoryHalf') + '</p>' +
+      ClaimsPage.claimAttributeSection(setId, json, pageUrl, t);
   }
 
   // ---------------------------------------------------------------------------
@@ -416,9 +409,10 @@ class ClaimsPage {
    * @param previewUser - the username being previewed
    * @param values - the preview user's attribute values
    * @param pageUrl - the URL the forms post to
+   * @param t - the page's translator (#539)
    * @returns the section as HTML
    */
-  static claimAttributeSection(setId, json, pageUrl) {
+  static claimAttributeSection(setId, json, pageUrl, t) {
     const selected = json.sets.filter(function (one) {
       return one.id === setId;
     })[0].attributes;
@@ -441,8 +435,9 @@ class ClaimsPage {
         ? '<td><code>' + kit.esc(found.value) + '</code></td><td>' +
           kit.esc(found.source) + '</td>'
         : '<td><span class="state-none">—</span></td><td>' +
-          (pac ? 'none on the entry: no claim'
-               : row.generated ? 'would be generated' : 'the entry\'s own') +
+          (pac ? t.html('consoleClaims.noneOnEntry')
+               : row.generated ? t.html('consoleClaims.wouldBeGenerated')
+               : t.html('consoleClaims.entrysOwn')) +
           '</td>';
       return '<tr><td><input type="checkbox" name="attribute" value="' +
         kit.esc(row.ldap) + '"' +
@@ -455,32 +450,38 @@ class ClaimsPage {
     }).join('');
 
     return kit.note((selected.length
-        ? 'Carries ' + selected.length + ' directory attribute(s): ' +
+        ? t.html('consoleClaims.carries', { n: selected.length }) +
           kit.codeList(selected) + '.'
-        : 'Carries no directory attribute. Tick some and press Update.')) +
+        : t.html('consoleClaims.carriesNone'))) +
       '<form method="post" action="' + kit.esc(pageUrl) + '">' +
       '<input type="hidden" name="action" value="attributes">' +
       '<input type="hidden" name="set" value="' + kit.esc(setId) + '">' +
-      '<table><tr><th>In</th><th>LDAP attribute</th><th>Defined by</th>' +
+      '<table><tr><th>' + t.html('consoleClaims.colIn') + '</th><th>' +
+      t.html('consoleClaims.colLdap') + '</th><th>' +
+      t.html('consoleClaims.colDefinedBy') + '</th>' +
       '<th>' +
-      (pac ? 'PAC claim id'
-           : setId === 'saml2' || setId === 'saml11' ? 'Attribute name'
-           : 'Claim') +
-      '</th><th>For ' + kit.esc(json.preview.user) + '</th><th>Source</th></tr>' +
-      rows + '</table><div class="formrow"><button>Update</button><span ' +
-      'class="note">The ticked boxes become the whole selection for this ' +
-      'set: unticking is how an attribute is ' +
-      'removed.</span></div></form><div class="formrow"><form method="post" ' +
+      (pac ? t.html('consoleClaims.colPacClaimId')
+           : setId === 'saml2' || setId === 'saml11'
+             ? t.html('consoleClaims.colAttributeName')
+             : t.html('consoleClaims.colClaim')) +
+      '</th><th>' + t.html('consoleClaims.colFor',
+                           { user: json.preview.user }) + '</th><th>' +
+      t.html('consoleClaims.colSource') + '</th></tr>' +
+      rows + '</table><div class="formrow"><button>' +
+      t.html('consoleClaims.update') + '</button><span ' +
+      'class="note">' + t.html('consoleClaims.tickedNote') +
+      '</span></div></form><div class="formrow"><form method="post" ' +
       'action="' + kit.esc(pageUrl) + '" class="inline">' +
       '<input type="hidden" name="action" value="attributes-all">' +
       '<input type="hidden" name="set" value="' + kit.esc(setId) + '">' +
-      '<button class="secondary">Select all</button></form> ' +
+      '<button class="secondary">' + t.html('consoleClaims.selectAll') +
+      '</button></form> ' +
       '<form method="post" action="' + kit.esc(pageUrl) + '" class="inline">' +
       '<input type="hidden" name="action" value="attributes-clear">' +
       '<input type="hidden" name="set" value="' + kit.esc(setId) + '">' +
-      '<button class="secondary">Delete all</button></form>' +
-      kit.note('Both act immediately — there is no script on this page, so ' +
-      'these are form posts and not a way of ticking the boxes above.') +
+      '<button class="secondary">' + t.html('consoleClaims.deleteAll') +
+      '</button></form>' +
+      kit.note(t.html('consoleClaims.bothImmediate')) +
       '</div>';
   }
 
@@ -506,9 +507,10 @@ class ClaimsPage {
    * what it would carry for the preview user, built by groupsOf().
    *
    * @param previewUser - the username being previewed
+   * @param t - the page's translator (#539)
    * @returns the section as HTML
    */
-  static groupClaimSection(groups, previewUser) {
+  static groupClaimSection(groups, previewUser, t) {
     const state = groups;
     const answer = groups.preview;
     const rows = answer.groups.map(function (group) {
@@ -526,29 +528,32 @@ class ClaimsPage {
         '<td>' + kit.esc(group.cn) + '</td>' +
         '<td>' + (how || '&mdash;') +
         (group.viaMemberOf
-          ? (how ? ', ' : '') + 'the person\'s own <code>memberOf</code>' +
-            (state.memberOfCounts ? '' : ' <em>(not counted)</em>')
+          ? (how ? ', ' : '') + t.html('consoleClaims.ownMemberOf') +
+            (state.memberOfCounts ? ''
+                                  : ' <em>' +
+                                    t.html('consoleClaims.notCounted') +
+                                    '</em>')
           : '') + '</td>' +
-        '<td>' + (counted ? 'yes' : 'no') + '</td></tr>';
+        '<td>' + (counted ? t.html('consoleClaims.yes')
+                          : t.html('consoleClaims.no')) + '</td></tr>';
     }).join('');
 
+    // The reason a person gets no claim is the view's sentence, drawn as it
+    // comes (#539).
     const values = answer.values.length
-      ? kit.note('The claim <code>' + kit.esc(state.claim) + '</code> ' +
-        'would carry ' +
+      ? kit.note(t.html('consoleClaims.groupsWouldCarry',
+                        { claim: state.claim }) +
         kit.codeList(answer.values) + '.')
-      : kit.note('No claim at all for this person &mdash; not an empty ' +
-        'list, absent. ' +
+      : kit.note(t.html('consoleClaims.groupsNoClaim') +
         kit.esc(answer.reason));
 
-    return '<h2>The groups claim</h2>' +
-      kit.note('The one thing on this page that is <strong>not</strong> ' +
-      'chosen per set: with <code>groups.claim</code> on, all four carry it, ' +
-      'for anybody who is a member of a group in <a href="/admin/groups">the ' +
-      'embedded directory</a>. The membership is read at the moment a token ' +
-      'is minted, so an <code>ldapmodify</code> changes the next one, and ' +
-      'somebody in no group gets no claim rather than an empty list &mdash; ' +
-      'which is why this can be on by default without changing what an ' +
-      'existing client receives.') +
+    // The "not arriving" branch is a problem banner built from the view's
+    // own sentence, and stays English with it (#539).
+    return '<h2>' + t.html('consoleClaims.groupsHeading') + '</h2>' +
+      kit.note(t.html('consoleClaims.groupsNoteA') +
+      '<a href="/admin/groups">' +
+      t.html('consoleClaims.linkEmbeddedDirectory') + '</a>' +
+      t.html('consoleClaims.groupsNoteB')) +
 
       '<div class="' + (state.enabled && !state.problem ? 'note' : 'warn') +
       '">' +
@@ -556,44 +561,36 @@ class ClaimsPage {
         ? (state.problem
             ? '<strong>On, and not arriving.</strong> ' +
               kit.esc(state.problem)
-            : '<strong>On.</strong> Every access token, ID Token and both ' +
-              'SAML assertions carry ' +
-              '<code>' + kit.esc(state.claim) + '</code>, each value being ' +
-              (state.valueForm === 'dn' ? 'the group\'s whole DN' : 'the ' +
-                  'group\'s <code>cn</code>') +
-              '. A person\'s own <code>memberOf</code> ' +
-              (state.memberOfCounts ? 'counts' : 'does NOT count') + ' as ' +
-                  'membership.')
-        : '<strong>Off.</strong> No token or assertion carries a groups ' +
-          'claim. Turn it on with <code>groups.claim</code>.') +
-      ' Change any of it on <a href="/admin/groups">the groups page</a>, ' +
-      'which draws all four: ' + kit.codeList(state.settings) + '.' +
-      (state.loaded ? '' : ' <strong>The embedded directory is not loaded in ' +
-                           'this process</strong>, so there are no groups to ' +
-                           'read.') +
+            : t.html('consoleClaims.groupsOn',
+                     { claim: state.claim,
+                       form: state.valueForm === 'dn' ? 'dn' : 'cn',
+                       counts: state.memberOfCounts ? 'yes' : 'no' }))
+        : t.html('consoleClaims.groupsOff')) +
+      t.html('consoleClaims.groupsChangeA') +
+      '<a href="/admin/groups">' + t.html('consoleClaims.linkGroupsPage') +
+      '</a>' + t.html('consoleClaims.groupsChangeB') +
+      kit.codeList(state.settings) + '.' +
+      (state.loaded ? '' : t.html('consoleClaims.directoryNotLoaded')) +
       '</div>' +
 
-      kit.warn('<strong>Carrying a group is not granting one.</strong> No ' +
-      'endpoint here reads this claim and nothing decides anything on it ' +
-      '&mdash; the same sentence <a href="/admin/groups">the groups page</a> ' +
-      'has always carried, and the half of it that changed is that a token ' +
-      'now says so out loud.') +
+      kit.warn(t.html('consoleClaims.notGrantingA') +
+      '<a href="/admin/groups">' + t.html('consoleClaims.linkGroupsPage') +
+      '</a>' + t.html('consoleClaims.notGrantingB')) +
 
-      kit.note('A typed claim above, and a ticked directory attribute ' +
-      'above, both win over this one where the names collide: those were ' +
-      'named on this page about this service, and this comes from a setting ' +
-      'and a directory.') +
+      kit.note(t.html('consoleClaims.typedWins')) +
 
-      '<h3>What ' + kit.esc(previewUser) + ' would get</h3>' +
+      '<h3>' + t.html('consoleClaims.wouldGet', { user: previewUser }) +
+      '</h3>' +
       values +
       (answer.groups.length
-        ? '<table><tr><th>Group</th><th>cn</th><th>Named ' +
-          'by</th><th>Counted</th></tr>' +
+        ? '<table><tr><th>' + t.html('consoleClaims.colGroup') +
+          '</th><th>cn</th><th>' + t.html('consoleClaims.colNamedBy') +
+          '</th><th>' + t.html('consoleClaims.colCounted') + '</th></tr>' +
           rows + '</table>'
-        : kit.note(kit.esc(previewUser) + ' is named by no group here' +
-          (answer.entryFound ? '' :
-           ', and has no entry in the directory either') + '. ' +
-          'The entry would be at <code>' + kit.esc(answer.dn) + '</code>.'));
+        : kit.note(t.html('consoleClaims.noGroup',
+                          { user: previewUser,
+                            found: answer.entryFound ? 'yes' : 'no',
+                            dn: answer.dn })));
   }
 
   /**
@@ -602,9 +599,10 @@ class ClaimsPage {
    * which name wins, and that nothing here is verified.
    *
    * @param family - "jwt", "saml" or "userinfo"
+   * @param t - the page's translator (#539)
    * @returns the heading and notes as HTML
    */
-  static attributeCatalogueNotes(family) {
+  static attributeCatalogueNotes(family, t) {
     const saml = family === 'saml';
     // THE OTHER PAGES, AS A LIST, because there are three of them now and there
     // were two when this was written. It said "the other page" and named one,
@@ -613,107 +611,43 @@ class ClaimsPage {
     // while telling a reader that one of the two places their selection does
     // NOT apply is the only one. Derived from `family` in one place so that a
     // fourth page is one entry rather than three sentences to find.
+    const userinfoPage = '<a href="/admin/userinfo-claims">' +
+      t.html('consoleClaims.pageUserinfo') + '</a>';
+    const samlPage = '<a href="/admin/saml-attributes">' +
+      t.html('consoleClaims.pageSaml') + '</a>';
+    const claimsPage = '<a href="/admin/claims">' +
+      t.html('consoleClaims.pageClaims') + '</a>';
     const OTHER_PAGES = {
-      jwt: ['<a href="/admin/userinfo-claims">the UserInfo claims page</a>',
-            '<a href="/admin/saml-attributes">the SAML attributes page</a>'],
-      userinfo: ['<a href="/admin/claims">the custom claims page</a>',
-                 '<a href="/admin/saml-attributes">the SAML attributes ' +
-                 'page</a>'],
-      saml: ['<a href="/admin/claims">the custom claims page</a>',
-             '<a href="/admin/userinfo-claims">the UserInfo claims page</a>']
+      jwt: [userinfoPage, samlPage],
+      userinfo: [claimsPage, samlPage],
+      saml: [claimsPage, userinfoPage]
     };
-    const OTHER_THINGS = {
-      jwt: 'a UserInfo response or an assertion carries',
-      userinfo: 'an access token, an ID Token or an assertion carries',
-      saml: 'an access token, an ID Token or a UserInfo response carries'
-    };
-    const otherPage = (OTHER_PAGES[family] || OTHER_PAGES.jwt).join(' and ');
-    const otherThing = OTHER_THINGS[family] || OTHER_THINGS.jwt;
-    return '<h2>Where a directory attribute comes from, and what it does not ' +
-           'do</h2>' +
-      kit.note('The catalogue is of <strong>LDAP attribute types</strong> ' +
-        'and not of ' +
-      (saml ? 'attribute names' : 'claim names') + ', and it is the same ' +
-                                                        'catalogue ' +
-      otherPage + ' and <a href="/admin/vc">the credential claims page</a> ' +
-      'choose from — one list of spellings, because two would eventually ' +
-      'disagree about what <code>schacDateOfBirth</code> is called while ' +
-      'both looked right. The value is the one on that person\'s entry under ' +
-      '<code>ou=users</code>; where the entry has nothing, it is invented ' +
-      'from the username — the same invented person every time, across ' +
-      'restarts, in obviously fictional ranges. Three rows are not RFC ' +
-      '4519/4524/2798: there is no standard attribute type for a birthdate ' +
-      'or a nationality, so the SCHAC schema\'s names are borrowed rather ' +
-      'than invented.') +
-      kit.note('The <strong>five selections are independent</strong>, and ' +
-      'that is the point of having five: an access token carrying ' +
-      '<code>employee_number</code> and a SAML 2.0 assertion carrying ' +
-      '<code>email</code> is a normal arrangement and a single list could ' +
-      'not express it. What is on this page is independent of ' +
-      'what ' + otherThing + ' ' +
-          '— ticked on ' +
-      otherPage + ' — and of what a <a href="/admin/vc">credential</a> ' +
-      'carries and what the <a href="/admin/vc-verifier-config">Verifier ' +
-      'asks for</a>, deliberately: that is what keeps "issue a credential ' +
-      'carrying a claim the access token does not" reachable.') +
+    // What the other pages' carriers are, as the `family` a message selects
+    // on (#539): the words are the catalog's.
+    const otherPage = (OTHER_PAGES[family] || OTHER_PAGES.jwt)
+      .join(t.html('consoleClaims.and'));
+    return '<h2>' + t.html('consoleClaims.catalogueHeading') + '</h2>' +
+      kit.note(t.html('consoleClaims.catalogueA', { family: family }) +
+      otherPage + t.html('consoleClaims.and') + '<a href="/admin/vc">' +
+      t.html('consoleClaims.linkCredentialClaims') + '</a>' +
+      t.html('consoleClaims.catalogueB')) +
+      kit.note(t.html('consoleClaims.selectionsA', { family: family }) +
+      otherPage + t.html('consoleClaims.selectionsB') +
+      '<a href="/admin/vc">' + t.html('consoleClaims.linkCredential') +
+      '</a>' + t.html('consoleClaims.selectionsC') +
+      '<a href="/admin/vc-verifier-config">' +
+      t.html('consoleClaims.linkVerifierAsks') + '</a>' +
+      t.html('consoleClaims.selectionsD')) +
       (saml
-        ? kit.note('A <strong>nested</strong> claim cannot stay nested ' +
-          'here. A SAML Attribute\'s content model is a name and text ' +
-          'values, so <code>address.locality</code> arrives as an attribute ' +
-          'whose NAME is the dotted path, where a JWT would carry a ' +
-          '<code>locality</code> member of an <code>address</code> object ' +
-          '(OIDC Core 5.1.1). Both families then call one claim by one name, ' +
-          'which is the property somebody comparing an ID Token with an ' +
-          'assertion needs.')
-        : kit.note('A <strong>nested</strong> claim stays nested in a JWT: ' +
-          '<code>address.locality</code> is a <code>locality</code> member ' +
-          'of an <code>address</code> object, which is what OIDC Core 5.1.1 ' +
-          'defines. A SAML Attribute has no way to spell that — the content ' +
-          'model is a name and text values — so the assertion carries the ' +
-          'dotted path as the attribute\'s name. Both families then call one ' +
-          'claim by one name, which is the property somebody comparing an ID ' +
-          'Token with an assertion needs.')) +
-      kit.note('<strong>A typed ' + (saml ? 'attribute' : 'claim') + ' of ' +
-      'the same name wins.</strong> Somebody who wrote <code>email</code> by ' +
-      'hand on the set that also has <code>mail</code> ticked has said ' +
-      'something specific, and the specific thing beats the general one. In ' +
-      'an assertion that has to be a filter rather than an overwrite: two ' +
-      '<code>&lt;Attribute&gt;</code> elements with one name would leave a ' +
-      'relying party reading whichever the builder emitted first.') +
+        ? kit.note(t.html('consoleClaims.nestedSaml'))
+        : kit.note(t.html('consoleClaims.nestedJwt'))) +
+      kit.note(t.html('consoleClaims.typedSameName', { family: family })) +
       (saml
-        ? kit.note('<strong>And the protocol\'s own attribute beats ' +
-          'both</strong>, which is worth knowing before it is discovered in ' +
-          'an assertion. A SAML 2.0 assertion sets <code>name</code> from ' +
-          'the sign-in and a WS-Federation one sets the whole identity claim ' +
-          'list, so ticking <code>cn</code>, <code>givenName</code>, ' +
-          '<code>sn</code>, <code>uid</code> or <code>mail</code> may change ' +
-          'nothing a relying party sees. The rule is not this page\'s: a ' +
-          'configured attribute is ADDED to an assertion and never ' +
-          'substituted into one, because an attribute a relying party keys ' +
-          'off that a web form could displace would break a sign-in ' +
-          'somewhere that looks nothing like this page.')
-        : kit.note('<strong>And the protocol\'s own claim beats ' +
-          'both</strong>, which is worth knowing before it is discovered on ' +
-          'a token. An ID Token always carries <code>name</code>, ' +
-          '<code>given_name</code>, <code>family_name</code>, ' +
-          '<code>preferred_username</code> and <code>email</code> built from ' +
-          'the sign-in, so ticking <code>cn</code>, <code>givenName</code>, ' +
-          '<code>sn</code>, <code>uid</code> or <code>mail</code> <em>on ' +
-          'that set</em> changes nothing the client sees — the same five ' +
-          'reach an access token, where the protocol sets none of them, and ' +
-          'reach it from the directory. The rule is not new and is not this ' +
-          'page\'s: a configured claim is added to a token and never ' +
-          'substituted into one, because a claim a relying party keys off ' +
-          'that a web form could displace would break a sign-in somewhere ' +
-          'that looks nothing like this page.')) +
-      kit.note('<strong>None of it is verified and none of it grants ' +
-      'anything.</strong> This service authenticates nobody — the username ' +
-      'typed at the sign-in screen is the identity in everything it issues — ' +
-      'so a birthdate from here is a birthdate from a web form. No endpoint ' +
-      'here reads one of these back or decides anything on one. That is true ' +
-      'of the groups claim as well: it is carried, and a group on that ' +
-      'person\'s entry still grants them nothing &mdash; see <a ' +
-      'href="/admin/groups">the groups page</a>.');
+        ? kit.note(t.html('consoleClaims.protocolWinsSaml'))
+        : kit.note(t.html('consoleClaims.protocolWinsJwt'))) +
+      kit.note(t.html('consoleClaims.notVerified') +
+      '<a href="/admin/groups">' + t.html('consoleClaims.linkGroupsPage') +
+      '</a>.');
   }
 
   /**
@@ -721,53 +655,38 @@ class ClaimsPage {
    * whether a value is typed (JWT, UserInfo) or always text (SAML).
    *
    * @param family - "jwt", "saml" or "userinfo"
+   * @param t - the page's translator (#539)
    * @returns the heading and notes as HTML
    */
-  static claimValueNotes(family, placeholders) {
+  static claimValueNotes(family, placeholders, t) {
     const saml = family === 'saml';
-    return '<h2>Values</h2>' +
-      kit.note('A value may contain <code>${placeholders}</code>, because a ' +
-      'value that can only be a constant cannot exercise the thing worth ' +
-      'testing — that an ' +
-      (saml ? 'attribute' : 'claim') + ' carrying the signed-in user\'s ' +
-      'identity reaches the relying party. ' +
+    // `${...}` placeholders hold braces and `{"a":1}` holds quotes a parameter
+    // would escape, so the first go in as parameters and the second stays in
+    // the code between two messages (#539).
+    const ph = { ph: '${placeholders}', username: '${username}',
+                 email: '${email}', subject: '${subject}', dept: '${dept}' };
+    return '<h2>' + t.html('consoleClaims.valuesHeading') + '</h2>' +
+      kit.note(t.html('consoleClaims.valuesA',
+                      { ph: ph.ph, family: family }) +
       (saml
-        ? 'The ones an ASSERTION expands are ' +
+        ? t.html('consoleClaims.valuesSamlA') +
           kit.codeList(SAML_PLACEHOLDERS) +
-          ', and that is a shorter list than <a href="/admin/claims">the ' +
-          'token page\'s</a> on purpose rather than by oversight: an ' +
-          'assertion is built from a subject and an audience, so the names a ' +
-          'JWT context carries — <code>${username}</code>, ' +
-          '<code>${email}</code> and the rest — have nothing to expand ' +
-          'against here and arrive as the characters they were written as. ' +
-          '<code>${subject}</code> is the one that carries the signed-in ' +
-          'identity.'
-        : 'The ones understood are ' + kit.codeList(placeholders) +
+          t.html('consoleClaims.valuesSamlB') +
+          '<a href="/admin/claims">' + t.html('consoleClaims.linkTokenPage') +
+          '</a>' +
+          t.html('consoleClaims.valuesSamlC',
+                 { username: ph.username, email: ph.email,
+                   subject: ph.subject })
+        : t.html('consoleClaims.valuesJwt') + kit.codeList(placeholders) +
           '.') +
-      ' An unknown one is left as it was written rather than replaced with ' +
-      'nothing: <code>${dept}</code> that silently became an empty string is ' +
-      'a bug that looks like a configuration mistake, and one that still ' +
-      'says <code>${dept}</code> names itself.') +
+      t.html('consoleClaims.valuesUnknown', { dept: ph.dept })) +
       (saml
-        ? kit.note('<strong>A SAML attribute value is never typed.</strong> ' +
-          'The XML content model is text, so <code>true</code> and ' +
-          '<code>{"a":1}</code> reach the relying party as the characters ' +
-          'they were written as — which is the opposite of what the same ' +
-          'value does in a JWT, where it would arrive as a boolean and an ' +
-          'object. That difference is worth knowing rather than discovering: ' +
-          'a client library that parses an assertion attribute into a ' +
-          'boolean is doing that on its own.')
-        : kit.note('A ' + (family === 'userinfo' ? 'UserInfo' : 'JWT') + ' ' +
-          'claim value is typed: text that unambiguously looks like JSON — ' +
-          'an object, an array, a bare ' +
-          '<code>true</code>/<code>false</code>/<code>null</code>, or a ' +
-          'number — is used as that JSON, and anything else is a string. One ' +
-          'consequence, stated rather than left to be discovered: a claim ' +
-          'whose value is genuinely the four characters <code>true</code> ' +
-          'cannot be configured, because a text field cannot tell the two ' +
-          'apart. Write <code>"true"</code>, which parses as the JSON ' +
-          'string. <a href="/admin/saml-attributes">SAML attribute ' +
-          'values</a> are never typed — the XML content model is text.'));
+        ? kit.note(t.html('consoleClaims.samlUntypedA') + '{"a":1}' +
+          t.html('consoleClaims.samlUntypedB'))
+        : kit.note(t.html('consoleClaims.jwtTypedA', { family: family }) +
+          '<a href="/admin/saml-attributes">' +
+          t.html('consoleClaims.linkSamlValues') + '</a>' +
+          t.html('consoleClaims.jwtTypedB')));
   }
 
   // The "replace a whole set" form, which is the one a test wants: POST the
@@ -783,28 +702,26 @@ class ClaimsPage {
    * @param ids - the claim set ids the page may offer
    * @param pageUrl - the URL the form posts to
    * @param family - "saml" for attributes, anything else for claims
+   * @param t - the page's translator (#539)
    * @returns the heading, note and form as HTML
    */
-  static replaceSetForm(sets, pageUrl, family) {
+  static replaceSetForm(sets, pageUrl, family, t) {
     const options = sets.map(function (one) {
       return '<option value="' + kit.esc(one.id) + '">' +
              kit.esc(one.label) + '</option>';
     }).join('');
-    const noun = family === 'saml' ? 'attributes' : 'claims';
-    return '<h2>Replace a whole set</h2>' +
-      kit.note('The form a test wants. POST the same thing as JSON to get ' +
-      'JSON back. This replaces the ' +
-      '<em>typed</em> ' + noun + ' only; the directory attributes ' +
-      'ticked above are a separate action (<code>attributes</code>) and are ' +
-      'left alone by it.') +
+    return '<h2>' + t.html('consoleClaims.replaceHeading') + '</h2>' +
+      kit.note(t.html('consoleClaims.replaceNote', { family: family })) +
       '<form method="post" action="' + kit.esc(pageUrl) + '">' +
         '<input type="hidden" name="action" value="replace">' +
-        '<div class="formrow"><label for="set">Set</label>' +
+        '<div class="formrow"><label for="set">' +
+        t.html('consoleClaims.set') + '</label>' +
         '<select id="set" name="set">' + options + '</select></div><textarea ' +
         'name="claims" spellcheck="false">[{"name": "dept", "value": ' +
         '"engineering"}, {"name": "on_behalf_of", "value": ' +
         '"${username}"}]</textarea><div ' +
-        'class="formrow"><button>Replace</button></div></form>';
+        'class="formrow"><button>' + t.html('consoleClaims.replace') +
+        '</button></div></form>';
   }
 
   /**
@@ -815,80 +732,51 @@ class ClaimsPage {
    * @returns the body as HTML
    */
   static samlAttributesBody(ctx, json) {
+    const t = ctx.t;
     const pageUrl = '/admin/saml-attributes?user=' +
                     encodeURIComponent(json.preview.user);
     const values = json.preview;
 
-    const inner = kit.note('What to add to every <strong>SAML ' +
-      'assertion</strong> this ' +
-      'service issues <em>from now on</em>. Nothing already issued changes ' +
-      '— an assertion is a signed document and this page cannot reach ' +
-      'inside one. Two sets, because SAML 2.0 and SAML 1.1 spell an ' +
-      'attribute differently enough that one list could not serve both: ' +
-      '2.0 has <code>Name</code> and an optional <code>NameFormat</code>, ' +
-      'and 1.1 has <code>AttributeName</code> and a required ' +
-      '<code>AttributeNamespace</code>.') +
+    const inner = kit.note(t.html('consoleClaims.samlIntro')) +
 
-      kit.note('<strong>Where these assertions come from.</strong> The ' +
-      'SAML 2.0 set reaches every assertion <a ' +
-      'href="/admin/sts-metadata">WS-Trust</a> issues with a 2.0 token ' +
-      'type; the SAML 1.1 set reaches the 1.1 ones, which is what ' +
-      '<strong>WS-Federation\'s passive requestor profile</strong> carries ' +
-      '— so the 1.1 half is the one a browser sign-in exercises. There is ' +
-      'no SAML 2.0 Web SSO profile here, deliberately, so no assertion of ' +
-      'that kind reaches a browser: the 2.0 set is exercised by a WS-Trust ' +
-      'client.') +
+      kit.note(t.html('consoleClaims.samlWhereA') + '<a ' +
+      'href="/admin/sts-metadata">WS-Trust</a>' +
+      t.html('consoleClaims.samlWhereB')) +
 
-      kit.note('Tokens are next door. <strong>The OAuth 2.0 access token ' +
-      'and the OIDC ID Token are configured on <a ' +
-      'href="/admin/claims">Custom claims</a></strong>, and the ' +
-      '<strong>UserInfo response on <a ' +
-      'href="/admin/userinfo-claims">UserInfo claims</a></strong>, both ' +
-      'under OAuth2 / OIDC. The store behind all three pages is one store ' +
-      '— the same five sets, the same <code>ldapmodify</code>-visible ' +
-      'directory attributes, and one row in <a href="/admin/audit">the ' +
-      'audit log</a> per change whichever page made it.') +
+      kit.note(t.html('consoleClaims.samlNextA') + '<a ' +
+      'href="/admin/claims">' + t.html('consoleClaims.linkCustomClaims') +
+      '</a>' + t.html('consoleClaims.samlNextB') + '<a ' +
+      'href="/admin/userinfo-claims">' +
+      t.html('consoleClaims.linkUserinfoClaims') + '</a>' +
+      t.html('consoleClaims.samlNextC') + '<a href="/admin/audit">' +
+      t.html('consoleClaims.linkAuditLog') + '</a>' +
+      t.html('consoleClaims.perChange')) +
 
-      ClaimsPage.claimHalvesNote('saml') +
+      ClaimsPage.claimHalvesNote('saml', t) +
 
       ClaimsPage.claimPreviewForm('/admin/saml-attributes', json.preview.user,
-                            values) +
+                            values, t) +
 
-      kit.warn('<strong>Custom attributes are additive.</strong> A ' +
-      'configured attribute is added to what the protocol already puts in ' +
-      'the assertion and never replaces one — a SAML 2.0 assertion sets ' +
-      '<code>name</code> from the sign-in and a WS-Federation one sets the ' +
-      'whole identity claim list, and neither can be displaced from here. ' +
-      '<strong>The reserved list on <a href="/admin/claims">the claims ' +
-      'page</a> does not apply to these two sets</strong>: those names are ' +
-      'load-bearing in a JWT, and an assertion attribute called ' +
-      '<code>exp</code> or <code>scope</code> collides with nothing. What ' +
-      'is refused here is the same thing that is refused there — an entry ' +
-      'with no name, and two entries of one name, because the second would ' +
-      'win silently.') +
+      kit.warn(t.html('consoleClaims.samlAdditiveA') +
+      '<a href="/admin/claims">' + t.html('consoleClaims.linkClaimsPage') +
+      '</a>' + t.html('consoleClaims.samlAdditiveB')) +
 
-      '<h2>The two assertion sets</h2>' +
+      '<h2>' + t.html('consoleClaims.samlSetsHeading') + '</h2>' +
       json.sets.map(function (set) {
-        return ClaimsPage.claimSetSection(set.id, json, pageUrl);
+        return ClaimsPage.claimSetSection(set.id, json, pageUrl, t);
       }).join('') +
 
-      ClaimsPage.groupClaimSection(json.groups, json.preview.user) +
+      ClaimsPage.groupClaimSection(json.groups, json.preview.user, t) +
 
-      ClaimsPage.attributeCatalogueNotes('saml') +
+      ClaimsPage.attributeCatalogueNotes('saml', t) +
 
-      ClaimsPage.claimValueNotes('saml', json.placeholders) +
+      ClaimsPage.claimValueNotes('saml', json.placeholders, t) +
 
-      '<h2>The SAML 1.1 namespace</h2>' +
-      kit.note('A SAML 1.1 attribute is a NAME IN A NAMESPACE, and an ' +
-      'attribute configured without one gets ' +
-      '<code>' + kit.esc(json.defaultSaml11Namespace) + '</code> — the ' +
-      'claim namespace every WS-Federation relying party already reads. ' +
-      'That default is why an attribute added with a name and a value ' +
-      'alone arrives somewhere useful instead of in a namespace nothing ' +
-      'looks in. SAML 2.0 has no equivalent: <code>NameFormat</code> is ' +
-      'optional there and is left off unless it is typed.') +
+      '<h2>' + t.html('consoleClaims.samlNsHeading') + '</h2>' +
+      kit.note(t.html('consoleClaims.samlNs',
+                      { ns: json.defaultSaml11Namespace })) +
 
-      ClaimsPage.replaceSetForm(json.sets, pageUrl, 'saml');
+      ClaimsPage.replaceSetForm(json.sets, pageUrl, 'saml', t);
 
     return inner;
   }
@@ -901,6 +789,7 @@ class ClaimsPage {
    * @returns the body as HTML
    */
   static userinfoClaimsBody(ctx, json) {
+    const t = ctx.t;
     const raw = json.request;
     const pageUrl = '/admin/userinfo-claims?user=' +
                     encodeURIComponent(json.preview.user) +
@@ -911,128 +800,66 @@ class ClaimsPage {
     // them.
     const values = json.preview;
 
-    const inner = kit.note('What to put in every <strong>UserInfo ' +
-      'response</strong> ' +
-      'this service returns. <strong>This is the one claims page with no ' +
-      '&ldquo;nothing already issued changes&rdquo; warning on it, and ' +
-      'that is the point of it existing.</strong> An access token, an ID ' +
-      'Token and both assertions are signed documents: a claim added to ' +
-      'one of those sets reaches a client at its next sign-in and never ' +
-      'reaches what it already holds. This response is built on <em>every ' +
-      'call</em>, so a claim added here reaches the next <code>GET ' +
-      '/oauth2/userinfo</code> from a client that signed in an hour ago ' +
-      'and has done nothing since.') +
+    // The JSON examples hold quotes a parameter would escape, so they stay in
+    // the code between two messages (#539).
+    const inner = kit.note(t.html('consoleClaims.uiIntro')) +
 
-      kit.note('Tokens and assertions are next door. The OAuth 2.0 access ' +
-      'token and the OIDC ID Token are on <a href="/admin/claims">Custom ' +
-      'claims</a>; SAML 2.0 and SAML 1.1 are on <a ' +
-      'href="/admin/saml-attributes">Custom SAML attributes</a>. ' +
-      '<strong>The store behind all three pages is one store</strong> ' +
-      '&mdash; the same five sets, the same ' +
-      '<code>ldapmodify</code>-visible directory attributes, and one row ' +
-      'in <a href="/admin/audit">the audit log</a> per change whichever ' +
-      'page made it.') +
+      kit.note(t.html('consoleClaims.uiNextA') + '<a href="/admin/claims">' +
+      t.html('consoleClaims.linkCustomClaims') + '</a>' +
+      t.html('consoleClaims.uiNextB') + '<a ' +
+      'href="/admin/saml-attributes">' +
+      t.html('consoleClaims.linkSamlAttributes') + '</a>' +
+      t.html('consoleClaims.uiNextC') + '<a href="/admin/audit">' +
+      t.html('consoleClaims.linkAuditLog') + '</a>' +
+      t.html('consoleClaims.perChange')) +
 
-      ClaimsPage.claimHalvesNote('userinfo') +
+      ClaimsPage.claimHalvesNote('userinfo', t) +
 
       ClaimsPage.claimPreviewForm('/admin/userinfo-claims', json.preview.user,
-                            values) +
+                            values, t) +
 
-      kit.warn('<strong>Custom claims are additive here too.</strong> A ' +
-      'configured claim is added to what OpenID Connect Core section 5.4 ' +
-      'already puts in the response for the scopes the token carries, and ' +
-      'never replaces one. The names this service sets itself are refused ' +
-      'rather than silently ignored: ' +
-      kit.codeList(json.reservedJwtClaims) + '. ' +
-      'That list is the same one <a href="/admin/claims">the claims ' +
-      'page</a> enforces and it applies HERE for a reason worth stating, ' +
-      'because <a href="/admin/saml-attributes">the SAML page</a> does not ' +
-      'enforce it: <code>sub</code> is REQUIRED in this response (Core ' +
-      '5.3.2, and a client MUST check it against the ID Token\'s), and ' +
-      'when a client has registered a ' +
-      '<code>userinfo_signed_response_alg</code> the whole response is a ' +
-      'JWT carrying <code>iss</code>, <code>aud</code> and ' +
-      '<code>exp</code>. Every name on that list is load-bearing in at ' +
-      'least one of those two shapes.') +
+      kit.warn(t.html('consoleClaims.uiAdditiveA') +
+      kit.codeList(json.reservedJwtClaims) +
+      t.html('consoleClaims.uiAdditiveB') + '<a href="/admin/claims">' +
+      t.html('consoleClaims.linkClaimsPage') + '</a>' +
+      t.html('consoleClaims.uiAdditiveC') +
+      '<a href="/admin/saml-attributes">' +
+      t.html('consoleClaims.linkSamlPage') + '</a>' +
+      t.html('consoleClaims.uiAdditiveD')) +
 
-      '<h2>The UserInfo claim set</h2>' +
+      '<h2>' + t.html('consoleClaims.uiSetHeading') + '</h2>' +
       json.sets.map(function (set) {
-        return ClaimsPage.claimSetSection(set.id, json, pageUrl);
+        return ClaimsPage.claimSetSection(set.id, json, pageUrl, t);
       }).join('') +
 
-      ClaimsPage.groupClaimSection(json.groups, json.preview.user) +
+      ClaimsPage.groupClaimSection(json.groups, json.preview.user, t) +
 
-      '<h2>What a client can ask for &mdash; ' +
-      'OpenID Connect Core section 5.5</h2>' +
-      kit.note('<strong>This is the one claim set a CLIENT can add ' +
-      'to.</strong> Section 5.5 lets a client send a <code>claims</code> ' +
-      'request parameter at the authorization endpoint naming individual ' +
-      'claims it wants back from this endpoint, and since 2026-08-26 this ' +
-      'service parses it, refuses a malformed one by name, carries it on ' +
-      'the authorization code and <em>inside the access token</em>, and ' +
-      'answers it by reading the named claims off that person\'s entry ' +
-      'under <code>ou=users</code>. ' +
-      '<code>claims_parameter_supported</code> in <a ' +
-      'href="/.well-known/openid-configuration">the discovery document</a> ' +
-      'said <code>false</code> until that day.') +
+      '<h2>' + t.html('consoleClaims.uiAskHeading') + '</h2>' +
+      kit.note(t.html('consoleClaims.uiOneSetA') + '<a ' +
+      'href="/.well-known/openid-configuration">' +
+      t.html('consoleClaims.linkDiscovery') + '</a>' +
+      t.html('consoleClaims.uiOneSetB')) +
 
-      kit.note('<strong>Four layers, and the last one wins.</strong> (1) ' +
-      'the set configured on this page, which is what everybody gets; (2) ' +
-      'section 5.4\'s scope-driven claims &mdash; <code>profile</code> and ' +
-      '<code>email</code>, the one place in this service where a scope ' +
-      'genuinely changes an answer; (3) the claims a client asked for BY ' +
-      'NAME, read off the directory; (4) <code>sub</code>, which nothing ' +
-      'may displace. <strong>Layer 3 beating layer 2 is the one choice ' +
-      'here that is not obvious</strong>, so it is said out loud: a scope ' +
-      'asks for a category and a request names a claim, and answering ' +
-      '<code>{"email":null}</code> with the invented <code>' +
-      kit.esc(json.inventedEmail) + '</code> while the entry ' +
-      'holds a real <code>mail</code> would defeat the only reason the ' +
-      'feature is worth having.') +
+      kit.note(t.html('consoleClaims.uiLayersA') + '{"email":null}' +
+      t.html('consoleClaims.uiLayersB', { email: json.inventedEmail })) +
 
-      ClaimsPage.requestableClaimsSection(json.claimsRequest) +
+      ClaimsPage.requestableClaimsSection(json.claimsRequest, t) +
 
-      '<h3>Try one</h3>' +
+      '<h3>' + t.html('consoleClaims.uiTryHeading') + '</h3>' +
       ClaimsPage.claimsRequestSection(json.preview.user, raw,
-                                json.claimsRequest) +
+                                json.claimsRequest, t) +
 
-      kit.tip('<strong>NON-SPEC: this endpoint also takes a claims ' +
-      'request directly.</strong> Section 5.3.1 defines no request ' +
-      'parameters at all &mdash; an access token and nothing else &mdash; ' +
-      'and <code>/oauth2/userinfo</code> accepts one anyway, because ' +
-      'exercising section 5.5 through the specified route means running a ' +
-      'whole authorization flow per variation. Two spellings: ' +
-      '<code>?claims={"userinfo":{"birthdate":null}}</code>, the section ' +
-      '5.5 structure whole, and ' +
-      '<code>?claim=birthdate&amp;claim=address</code>, one name each. ' +
-      'Both work on GET and on a form-encoded POST. It is a ' +
-      '<strong>union</strong> with what the access token carries and can ' +
-      'never take a claim away from it &mdash; what the client was ' +
-      'authorized for is what the token says. A malformed one is refused ' +
-      '<code>invalid_request</code>, because ignoring a debugging ' +
-      'parameter that was typed wrong produces the same response as one ' +
-      'that was never sent.') +
+      kit.tip(t.html('consoleClaims.uiNonSpecA') +
+      '{"userinfo":{"birthdate":null}}' +
+      t.html('consoleClaims.uiNonSpecB')) +
 
-      kit.warn('<strong><code>essential</code>, <code>value</code> and ' +
-      '<code>values</code> are carried and not enforced</strong>, and that ' +
-      'is the honest reading of section 5.5.1 rather than a shortfall. An ' +
-      '<em>essential</em> claim is a statement about what the CLIENT will ' +
-      'do without it, and the same section says a server MUST NOT return ' +
-      'an error because a requested claim is unavailable &mdash; so an ' +
-      'essential claim this service cannot produce is absent and logged. ' +
-      '<em>value</em> and <em>values</em> ask for a claim to come back ' +
-      'with a particular value, which this service could satisfy by ' +
-      'echoing it and deliberately does not: everything it says about a ' +
-      'person comes from the directory or the invented persona, and a ' +
-      'UserInfo response that agreed with whatever a client asked it to ' +
-      'say would be the one surface here that cannot be used to test ' +
-      'anything. The mismatch is reported instead.') +
+      kit.warn(t.html('consoleClaims.uiEssential')) +
 
-      ClaimsPage.attributeCatalogueNotes('userinfo') +
+      ClaimsPage.attributeCatalogueNotes('userinfo', t) +
 
-      ClaimsPage.claimValueNotes('userinfo', json.placeholders) +
+      ClaimsPage.claimValueNotes('userinfo', json.placeholders, t) +
 
-      ClaimsPage.replaceSetForm(json.sets, pageUrl, 'userinfo');
+      ClaimsPage.replaceSetForm(json.sets, pageUrl, 'userinfo', t);
 
     return inner;
   }
@@ -1042,32 +869,26 @@ class ClaimsPage {
    * Draws the table of every claim name a client may put in a claims
    * request, with the attribute each is answered from.
    *
+   * @param t - the page's translator (#539)
    * @returns the heading, note and table as HTML
    */
-  static requestableClaimsSection(claimsRequest) {
+  static requestableClaimsSection(claimsRequest, t) {
     const rows = claimsRequest.requestable.map(function (row) {
       return '<tr><td><code>' + kit.esc(row.claim) + '</code></td><td>' +
-        (row.grouped ? '<em>the whole claim</em>' : kit.esc(row.label)) +
+        (row.grouped ? t.html('consoleClaims.wholeClaim')
+                     : kit.esc(row.label)) +
         '</td><td><code>' + kit.esc(row.ldap) + '</code></td></tr>';
     }).join('');
     const persona = claimsRequest.fromTheSignIn.map(function (name) {
-      return '<tr><td><code>' + kit.esc(name) + '</code></td><td>Invented ' +
-        'from the username at sign-in</td><td><span ' +
+      return '<tr><td><code>' + kit.esc(name) + '</code></td><td>' +
+        t.html('consoleClaims.inventedAtSignIn') + '</td><td><span ' +
         'class="state-none">&mdash;</span></td></tr>';
     }).join('');
-    return '<h3>What a client may ask for</h3>' +
-      kit.note('A request may name a claim by its <strong>flat ' +
-      'name</strong> (<code>birthdate</code>, <code>address.locality</code>) ' +
-      'or, for a nested one, by its <strong>top-level name</strong> alone ' +
-      '(<code>address</code>) &mdash; which is the spelling section 5.5.1\'s ' +
-      'own example uses and which returns the whole Address Claim of OIDC ' +
-      'Core 5.1.1 as one object. A <strong>language tag</strong> is part of ' +
-      'the name (Core 5.2): <code>family_name#ja-Kana-JP</code> is answered ' +
-      'under exactly that name, with the value this service holds &mdash; it ' +
-      'keeps one value per attribute, so the tag changes the spelling of the ' +
-      'member and not the content.') +
-      '<table><tr><th>Claim</th><th>What it is</th><th>From ' +
-      'attribute</th></tr>' +
+    return '<h3>' + t.html('consoleClaims.reqHeading') + '</h3>' +
+      kit.note(t.html('consoleClaims.reqNote')) +
+      '<table><tr><th>' + t.html('consoleClaims.colClaim') + '</th><th>' +
+      t.html('consoleClaims.colWhatItIs') + '</th><th>' +
+      t.html('consoleClaims.colFromAttribute') + '</th></tr>' +
       rows + persona + '</table>';
   }
 
@@ -1087,28 +908,29 @@ class ClaimsPage {
    * @param previewUser - the username being previewed
    * @param raw - the claims request as typed
    * @param preview - the computed preview of that request
+   * @param t - the page's translator (#539)
    * @returns the form and its answer as HTML
    */
-  static claimsRequestSection(previewUser, raw, claimsRequest) {
+  static claimsRequestSection(previewUser, raw, claimsRequest, t) {
     const preview = claimsRequest.preview;
     const form = '<form method="get" action="/admin/userinfo-claims">' +
       '<input type="hidden" name="user" value="' + kit.esc(previewUser) +
-      '"><div class="formrow"><label for="request">A claims ' +
-      'request</label><input type="text" id="request" name="request" ' +
+      '"><div class="formrow"><label for="request">' +
+      t.html('consoleClaims.aClaimsRequest') +
+      '</label><input type="text" id="request" name="request" ' +
       'size="72" spellcheck="false" value="' +
       kit.esc(raw) + '" ' +
       'placeholder=\'{"userinfo":{"birthdate":null,"address":null}}\'>' +
       '<button ' +
-      'class="secondary">Show what it returns</button></div></form>';
+      'class="secondary">' + t.html('consoleClaims.showReturns') +
+      '</button></div></form>';
 
     if (!preview.asked) {
-      return form + kit.note('Nothing asked for yet. Paste the ' +
-        '<code>claims</code> parameter a client would send &mdash; the whole ' +
-        'section 5.5 object, <code>userinfo</code> member and all &mdash; ' +
-        'and this shows what ' +
-        kit.esc(previewUser) + ' would get back, computed by the same two ' +
-        'functions the <code>/oauth2/userinfo</code> endpoint calls.');
+      return form + kit.note(t.html('consoleClaims.nothingAsked',
+                                    { user: previewUser }));
     }
+    // A refusal, shown as the client would be told it: a refusal's words
+    // stay English (#539).
     if (!preview.ok) {
       return form + kit.warn('<strong>This request would be ' +
         'refused</strong> at the authorization endpoint with ' +
@@ -1128,61 +950,45 @@ class ClaimsPage {
 
     return form +
       (preview.ignoredMembers.length
-        ? kit.warn('This request carries the top-level member(s) ' +
+        ? kit.warn(t.html('consoleClaims.ignoredA') +
           kit.codeList(preview.ignoredMembers) +
-          ', which section 5.5 does not define. They are <strong>ignored and ' +
-          'not refused</strong>: the section says other members MAY be ' +
-          'defined, so one this service has never heard of is a client that ' +
-          'knows something this one does not. The two acted on are ' +
+          t.html('consoleClaims.ignoredB') +
           kit.codeList(claimsRequest.members) + '.')
         : '') +
       (preview.idTokenNames.length
-        ? kit.note('The <code>id_token</code> member asks for ' +
+        ? kit.note(t.html('consoleClaims.idTokenA') +
           kit.codeList(preview.idTokenNames) +
-          '. Those are answered where the ID Token is built and are not part ' +
-          'of the table below, which is the <code>userinfo</code> member ' +
-          'alone.')
+          t.html('consoleClaims.idTokenB'))
         : '') +
       (rows
-        ? '<table><tr><th>Asked for</th><th>Claim returned</th><th>From ' +
-          'attribute</th><th>Value ' +
-          'for ' + kit.esc(previewUser) + '</th><th>Source</th></tr>' + rows +
+        ? '<table><tr><th>' + t.html('consoleClaims.colAskedFor') +
+          '</th><th>' + t.html('consoleClaims.colClaimReturned') +
+          '</th><th>' + t.html('consoleClaims.colFromAttribute') +
+          '</th><th>' + t.html('consoleClaims.colValueFor',
+                               { user: previewUser }) +
+          '</th><th>' + t.html('consoleClaims.colSource') + '</th></tr>' +
+          rows +
           '</table>'
-        : kit.note('Nothing in this request resolves to a claim this ' +
-                    'service can produce.')) +
+        : kit.note(t.html('consoleClaims.nothingResolves'))) +
       (preview.unresolvable.length
-        ? kit.note('<strong>Absent, and not an error.</strong> ' +
-          kit.codeList(preview.unresolvable) + ' &mdash; neither the ' +
-          'attribute catalogue nor the sign-in can ' +
-          'produce ' + (preview.unresolvable.length > 1 ? 'those' : 'that') +
-          '. Section 5.5.1 says a server MUST NOT return an error because a ' +
-          'requested claim is unavailable, so the response simply lacks it ' +
-          'and the log says so.')
+        ? kit.note(t.html('consoleClaims.absentA') +
+          kit.codeList(preview.unresolvable) +
+          t.html('consoleClaims.absentB',
+                 { n: preview.unresolvable.length }))
         : '') +
       (preview.essentialAndAbsent.length
-        ? kit.warn('<strong>Marked essential and still absent:</strong> ' +
-          kit.codeList(preview.essentialAndAbsent) + '. That is still not ' +
-          'an error &mdash; <code>essential</code> is a statement about what ' +
-          'the CLIENT will do without the claim, not an instruction to this ' +
-          'server. It is logged at warn level so it can be found.')
+        ? kit.warn(t.html('consoleClaims.essentialA') +
+          kit.codeList(preview.essentialAndAbsent) +
+          t.html('consoleClaims.essentialB'))
         : '') +
       (preview.valueMismatches.length
-        ? kit.warn('<strong>A value was asked for and a different one is ' +
-                    'held:</strong> ' +
-          kit.esc(preview.valueMismatches.join('; ')) + '. The value HELD ' +
-          'is what is returned. This service could echo back whatever a ' +
-          'request asked it to assert and deliberately does not: everything ' +
-          'it says about a person comes from the directory or the invented ' +
-          'persona, and a mock that agreed with the request could not be ' +
-          'used to test anything.')
+        ? kit.warn(t.html('consoleClaims.mismatchA') +
+          kit.esc(preview.valueMismatches.join('; ')) +
+          t.html('consoleClaims.mismatchB'))
         : '') +
       kit.note((preview.entryFound
-        ? kit.esc(previewUser) + ' has an entry under ' +
-          '<code>ou=users</code>, so a value marked <em>directory</em> is ' +
-          'what an <code>ldapsearch</code> reads.'
-        : kit.esc(previewUser) + ' has no entry in the directory, so every ' +
-          'value above is invented from the username &mdash; the same ' +
-          'invented person every time, across restarts.'));
+        ? t.html('consoleClaims.requestEntryFound', { user: previewUser })
+        : t.html('consoleClaims.requestNoEntry', { user: previewUser })));
   }
 
   // ---------------------------------------------------------------------------
@@ -1205,6 +1011,7 @@ class ClaimsPage {
    * @returns the body as HTML
    */
   static kerberosClaimsBody(ctx, json) {
+    const t = ctx.t;
     const set = json.sets[0];
     const setId = set.id;
     const pageUrl = '/admin/kerberos/claims?user=' +
@@ -1221,106 +1028,103 @@ class ClaimsPage {
         '<td>' + kit.esc(claim.type || 'string') + '</td><td>' +
         (claim.attribute
           ? '&larr; <code>' + kit.esc(claim.attribute) + '</code><span ' +
-            'class="sub"> directory attribute' +
-            (claim.multi ? ', every value' : '') + '</span>'
+            'class="sub">' + t.html('consoleClaims.directoryAttribute') +
+            (claim.multi ? t.html('consoleClaims.everyValueSuffix') : '') +
+            '</span>'
           : '<code>' + kit.esc(claim.value) + '</code>') + '</td><td>' +
         (ctx.write
           ? '<form method="post" action="' + kit.esc(pageUrl) +
             '" class="inline"><input type="hidden" name="action" ' +
             'value="remove"><input type="hidden" name="set" value="' +
             kit.esc(setId) + '"><input type="hidden" name="name" value="' +
-            kit.esc(claim.name) + '"><button class="secondary">Remove' +
-            '</button></form>'
+            kit.esc(claim.name) + '"><button class="secondary">' +
+            t.html('consoleClaims.remove') + '</button></form>'
           : '') + '</td></tr>';
     }).join('');
     const preview = json.preview.claims.length
-      ? '<table><tr><th>Claim id</th><th>Type</th><th>Values</th>' +
-        '<th>From</th></tr>' + json.preview.claims.map(function (claim) {
+      ? '<table><tr><th>' + t.html('consoleClaims.colClaimId') + '</th><th>' +
+        t.html('consoleClaims.colType') + '</th><th>' +
+        t.html('consoleClaims.colValues') + '</th>' +
+        '<th>' + t.html('consoleClaims.colFrom') + '</th></tr>' +
+        json.preview.claims.map(function (claim) {
           return '<tr><td><code>' + kit.esc(claim.id) + '</code></td><td>' +
             kit.esc(claim.type) + '</td><td><code>' +
             kit.esc(claim.values.join(', ')) + '</code></td><td>' +
             kit.esc(claim.from) + '</td></tr>';
         }).join('') + '</table>'
-      : '<p class="sub">Nothing: no row or ticked attribute has a value ' +
-        'for this person and they hold no realm-wide role.</p>';
+      : '<p class="sub">' + t.html('consoleClaims.pacNothing') + '</p>';
+    // The precedence and the claim-id format are the view's sentences, drawn
+    // as they come (#539).
     return (json.enabled
-      ? kit.note('<strong>On in this realm</strong> (<code>' +
-        kit.esc(json.setting) + '</code>): every ticket the KDC builds ' +
-        'carries these claims in its PAC, as PAC_CLIENT_CLAIMS_INFO ' +
-        '([MS-PAC] 2.11).')
-      : kit.warn('<strong>Off in this realm</strong> (<code>' +
-        kit.esc(json.setting) + '</code>): no ticket carries a claims ' +
-        'buffer, whatever is configured here. Turn it on on <a ' +
-        'href="/admin/kerberos">Kerberos settings</a>.')) +
-      kit.note('What a ticket\'s PAC tells a service doing claims-based ' +
-        'access control about the person, beside the SIDs. A TGT carries ' +
-        'this set; a service ticket carries what its TGT carried, with the ' +
-        'rows of the application that registered the service principal ' +
-        'name added and winning by name — set on that application\'s ' +
-        'Configuration tab, Kerberos v5, PAC claims. ' +
-        kit.esc(json.precedence) + ' Nothing already issued changes: a ' +
-        'ticket is sealed, and carries its claims until it expires. Never ' +
-        'compressed.') +
+      ? kit.note(t.html('consoleClaims.pacOn', { setting: json.setting }))
+      : kit.warn(t.html('consoleClaims.pacOff', { setting: json.setting }) +
+        '<a href="/admin/kerberos">' +
+        t.html('consoleClaims.linkKerberosSettings') + '</a>.')) +
+      kit.note(t.html('consoleClaims.pacNoteA') +
+        kit.esc(json.precedence) + t.html('consoleClaims.pacNoteB')) +
       '<h2>' + kit.esc(set.label) + ' <code>' + kit.esc(setId) + '</code>' +
-      '</h2><table><tr><th>Name and claim id</th><th>Type</th><th>Value' +
-      '</th><th></th></tr>' + (rows || '<tr><td colspan="4">No claim is ' +
-        'configured; tickets carry only the person\'s roles, if they hold ' +
-        'any.</td></tr>') + '</table>' +
-      kit.note('A claim id is ' + kit.esc(json.idFormat)) +
+      '</h2><table><tr><th>' + t.html('consoleClaims.colNameAndId') +
+      '</th><th>' + t.html('consoleClaims.colType') + '</th><th>' +
+      t.html('consoleClaims.colValue') +
+      '</th><th></th></tr>' + (rows || '<tr><td colspan="4">' +
+        t.html('consoleClaims.pacNoClaims') + '</td></tr>') + '</table>' +
+      kit.note(t.html('consoleClaims.claimIdIs') + kit.esc(json.idFormat)) +
       (ctx.write
         ? '<form method="post" action="' + kit.esc(pageUrl) + '"><div ' +
           'class="formrow"><input type="hidden" name="action" value="add">' +
           '<input type="hidden" name="set" value="' + kit.esc(setId) + '">' +
-          '<label for="kn">Name</label><input type="text" id="kn" ' +
+          '<label for="kn">' + t.html('consoleClaims.name') +
+          '</label><input type="text" id="kn" ' +
           'name="name" size="20" placeholder="department">' +
-          '<label for="kt">Type</label><select id="kt" name="type">' +
-          typeOptions() + '</select><label for="kv">Value</label>' +
+          '<label for="kt">' + t.html('consoleClaims.type') +
+          '</label><select id="kt" name="type">' +
+          typeOptions() + '</select><label for="kv">' +
+          t.html('consoleClaims.value') + '</label>' +
           '<input type="text" id="kv" name="value" size="28" ' +
-          'placeholder="${username}"><button>Add</button></div></form>' +
+          'placeholder="${username}"><button>' + t.html('consoleClaims.add') +
+          '</button></div></form>' +
           '<form method="post" action="' + kit.esc(pageUrl) + '"><div ' +
           'class="formrow"><input type="hidden" name="action" ' +
           'value="add-attribute-claim"><input type="hidden" name="set" ' +
-          'value="' + kit.esc(setId) + '"><label for="kan">Name</label>' +
+          'value="' + kit.esc(setId) + '"><label for="kan">' +
+          t.html('consoleClaims.name') + '</label>' +
           '<input type="text" id="kan" name="name" size="20"><label ' +
-          'for="kaa">from the attribute</label><input type="text" id="kaa" ' +
-          'name="attribute" size="20" placeholder="e.g. departmentNumber" ' +
+          'for="kaa">' + t.html('consoleClaims.fromAttribute') +
+          '</label><input type="text" id="kaa" ' +
+          'name="attribute" size="20" placeholder="' +
+          kit.esc(t.text('consoleClaims.egDepartmentNumber')) + '" ' +
           'list="kac"><datalist id="kac">' +
           json.attributeChoices.map(function (one) {
             return '<option value="' + kit.esc(one.attribute) + '">';
           }).join('') + '</datalist><label><input type="checkbox" ' +
-          'name="multi" value="true"> every value</label><label ' +
-          'for="kat">as</label><select id="kat" name="type">' +
-          typeOptions() + '</select><button>Add</button></div></form>' +
+          'name="multi" value="true"> ' + t.html('consoleClaims.everyValue') +
+          '</label><label ' +
+          'for="kat">' + t.html('consoleClaims.as') +
+          '</label><select id="kat" name="type">' +
+          typeOptions() + '</select><button>' + t.html('consoleClaims.add') +
+          '</button></div></form>' +
           (set.claims.length
             ? '<form method="post" action="' + kit.esc(pageUrl) +
               '" class="inline"><input type="hidden" name="action" ' +
               'value="clear"><input type="hidden" name="set" value="' +
-              kit.esc(setId) + '"><button class="secondary">Clear this ' +
-              'set</button></form>'
+              kit.esc(setId) + '"><button class="secondary">' +
+              t.html('consoleClaims.clearSet') + '</button></form>'
             : '')
         : '') +
-      kit.note('A value may use the placeholders ' +
-        kit.codeList(json.placeholders) + '. A fixed value is held to its ' +
-        'type when it is added; one with a placeholder, or a directory ' +
-        'value, that is not its type at issuance leaves that claim out of ' +
-        'the ticket and is logged.') +
-      '<h2>Directory attributes</h2>' +
-      kit.note('Tick an attribute to carry it in every TGT as a ' +
-        '<code>string</code> claim of <strong>every value</strong> on the ' +
-        'person\'s entry, named <code>ad://ext/&lt;attribute&gt;:&lt;hex' +
-        '&gt;</code> as a row of that name would be. An entry without the ' +
-        'attribute carries no claim: nothing is invented. A row above, or ' +
-        'the roles claim, with the same claim id wins. Nothing is ticked ' +
-        'until somebody ticks it.') +
-      ClaimsPage.claimAttributeSection(setId, json, pageUrl) +
-      '<h2>What a TGT would carry</h2>' +
+      kit.note(t.html('consoleClaims.pacPlaceholdersA') +
+        kit.codeList(json.placeholders) +
+        t.html('consoleClaims.pacPlaceholdersB')) +
+      '<h2>' + t.html('consoleClaims.dirAttrsHeading') + '</h2>' +
+      kit.note(t.html('consoleClaims.pacTick')) +
+      ClaimsPage.claimAttributeSection(setId, json, pageUrl, t) +
+      '<h2>' + t.html('consoleClaims.tgtHeading') + '</h2>' +
       '<form method="get" action="/admin/kerberos/claims"><div ' +
-      'class="formrow"><label for="kuser">For</label><input type="text" ' +
+      'class="formrow"><label for="kuser">' + t.html('consoleClaims.for') +
+      '</label><input type="text" ' +
       'id="kuser" name="user" size="20" value="' +
-      kit.esc(json.preview.user) + '"><button class="secondary">Show' +
-      '</button></div></form>' + preview +
-      kit.note('Built by the function the KDC calls for a TGT. A service ' +
-        'ticket adds its application\'s rows to these.');
+      kit.esc(json.preview.user) + '"><button class="secondary">' +
+      t.html('consoleClaims.show') + '</button></div></form>' + preview +
+      kit.note(t.html('consoleClaims.tgtNote'));
   }
 }
 

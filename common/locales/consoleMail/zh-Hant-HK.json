@@ -1,0 +1,13 @@
+{
+  "status.captureBefore": "開發模式：每封電郵都會被保留並顯示於",
+  "status.captureLink": "監控 &rarr; 電郵",
+  "status.off": "不會寄出任何內容：電郵在排入佇列時即遭拒絕（STS-MAIL-0001）。",
+  "status.linksNowhere": "<strong>無處</strong> — 請設定 <code>global.publicBaseUrl</code>；在此之前，含連結的電郵都會遭拒絕（STS-MAIL-0015）",
+  "cannot.head": "<strong>此領域無法寄送電郵</strong>",
+  "cannot.after": "中的電郵登入機制以及自助重設皆為關閉。",
+  "test.heading": "寄送測試電郵",
+  "templates.heading": "電郵",
+  "templates.note": "此服務寄出的每一封電郵（英文），以及此領域已撰寫自有措辭的語言。由個人的 <code>preferredLanguage</code> 決定。連結是一個預留位置，其值由此服務提供；寫入地址、載入圖片或執行任何內容的範本會在儲存時遭拒絕。",
+  "templates.message": "電郵",
+  "template.intro": "<strong>{title}</strong>，一封 {category} 類電郵。"
+}

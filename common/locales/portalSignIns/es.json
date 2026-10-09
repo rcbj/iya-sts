@@ -1,0 +1,23 @@
+{
+  "heading": "Tus inicios de sesión recientes",
+  "sub": "Cada inicio de sesión en tu cuenta se revisa para ver lo inusual que parece —desde dónde vino y con qué— en comparación con cómo inicias sesión normalmente. Si alguno de estos no fuiste tú, dilo: todas las sesiones de tu cuenta se cierran de inmediato, y deberías cambiar tu contraseña.",
+  "none": "No se ha evaluado ninguno de tus inicios de sesión {days, plural, one {en el último día} other {en los últimos # días}}.",
+  "when": "Cuándo",
+  "from": "Desde",
+  "with": "Con",
+  "through": "A través de",
+  "risk": "Riesgo",
+  "wasItYou": "¿Fuiste tú?",
+  "nowhere": "un lugar que los conjuntos de datos no nombran",
+  "deviceOn": "{family} en {os}",
+  "noDevice": "un dispositivo sin nombre",
+  "level": "{level, select, LOW {BAJO} MEDIUM {MEDIO} HIGH {ALTO} UNSCORED {SIN EVALUAR} other {{level}}}",
+  "thisSession": "esta sesión",
+  "saidYes": "Dijiste que fuiste tú.",
+  "saidNo": "<strong>Dijiste que no fuiste tú.</strong>",
+  "yes": "Fui yo",
+  "no": "No fui yo",
+  "doneDenied": "Gracias. Se están cerrando todas las sesiones de tu cuenta, incluida esta, y se está avisando a las aplicaciones que usas. Vuelve a iniciar sesión y cambia tu contraseña en {path}.",
+  "doneConfirmed": "Gracias: registrado como tú.",
+  "doneConfirmedLow": "Gracias: registrado como tú. El riesgo de tu cuenta ha vuelto a bajo."
+}

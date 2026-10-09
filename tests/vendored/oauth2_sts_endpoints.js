@@ -1440,6 +1440,27 @@ async function testRegistration(meta) {
   assert.strictEqual(after.client_id, reg.client_id,
                      "an update must not change the client_id.");
 
+  // #284: the update runs registration's JARM checks too. Until then a PUT
+  // could store an authorization_encrypted_response_alg a POST refuses.
+  const jarm = await fetch(reg.registration_client_uri, {
+    method: "PUT",
+    headers: Object.assign({ "Content-Type": "application/json" }, authed),
+    body: JSON.stringify({ software_statement: STATEMENT,
+                           client_id: reg.client_id,
+                           redirect_uris: [REDIRECT_URI],
+                           authorization_encrypted_response_alg:
+                             "not-an-algorithm" })
+  });
+  assert.strictEqual(jarm.status, 400,
+    "an RFC 7592 update may not store an authorization_encrypted_response_" +
+    "alg registration would refuse. Got HTTP " + jarm.status);
+  assert.strictEqual((await jarm.json()).error, "invalid_client_metadata",
+    "the refusal is RFC 7591's invalid_client_metadata.");
+  const kept = await (await fetch(reg.registration_client_uri,
+                                  { headers: authed })).json();
+  assert.ok(!kept.authorization_encrypted_response_alg,
+    "the refused update must not have been stored.");
+
   const deleted = await fetch(reg.registration_client_uri, { method: "DELETE",
       headers: authed });
   assert.strictEqual(deleted.status, 204,
@@ -1452,7 +1473,7 @@ async function testRegistration(meta) {
             "the client should be gone after a delete (401; 404 before " +
             "iya-sts #120). Got " + gone.status);
   log.info("[register] OK — register, read, update and delete, with the " +
-           "management calls protected.");
+           "management calls protected and JARM metadata checked on update.");
   log.debug("Leaving testRegistration().");
 }
 

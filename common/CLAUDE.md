@@ -811,8 +811,11 @@ JWS and JWE tables, `GNAP_MTLS_TRUSTS`, the GNAP settings' own enums and
 checkboxes. Seven of them had no check at a console or API write until this
 change (`CHOICES_CHECKED_HERE`), so `choiceProblem()` refuses a value outside
 them at update and create (`STS-REG-0203`). The rest already have a validator
-that says more. `oauthGrantType` and `oauthResponseType` are not on the list,
-because they are an open record of what a client was seen doing.
+that says more. `oauthGrantType` and `oauthResponseType` are not on the list:
+they are declared and enforced since #289, but an extension grant is a URI
+nobody lists in advance (RFC 6749 section 4.5), so they stay open text and the
+endpoints refuse what a client did not declare (`oauth-oidc/CLAUDE.md`,
+*OpenID Connect Registration*).
 
 **A GENERATED SECRET SETS ITS METHOD.** `regenerateClientSecret()` (and so
 Regenerate and Rotate) writes `client_secret_basic`, RFC 7591's default, where
@@ -2801,12 +2804,11 @@ existing container and test working: nothing in the parent project sets these
 variables in compose, but
 `tests/krb5_spnego_http.js` sets `KRB5_REALM`, `KRB5_KDC_PORT` and
 `KRB5_SERVICE_PORT` before requiring the KDC in-process, and that still wins. The
-legacy level has exactly one occupant: `STS_ISSUER`, which used to be a single value
-serving as the SAML assertion issuer, the WS-Trust token issuer AND the
-WS-Federation entityID. Those are three different things that shared a default — an
-entityID names the identity provider, an Issuer names whoever signed an assertion —
-so they are now `saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, all three still
-fed by `STS_ISSUER` when it is set.
+legacy level has NO occupant since #523 (2026-10-08): its one, `STS_ISSUER`, fed
+`saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, and all four went when every
+name became the realm's OAuth issuer (`issuer_names.ts`). A start that still names
+one is refused (`REPLACED_SETTINGS`, `STS-CORE-0105`). The level, and `legacyEnv`,
+stay for the next one.
 
 **AND THERE IS NO SIXTH LEVEL — `requireComplete()` REFUSES TO START INSTEAD.**
 A setting with no value in either appconfig file and no environment variable
@@ -3748,9 +3750,11 @@ with `Cannot find module` naming a file the operator never mentioned.
    gives every client_id that ever reached an endpoint an entry. `declared` is
    *anything on the entry a sighting never writes* — a registration, a redirect
    URI of its own, an authentication method, a credential, an assertion issuer,
-   or `appAllowedProtocol` naming an OAuth family — so the list of what an OAuth
+   the grant or response types it may use (since #289), or
+   `appAllowedProtocol` naming an OAuth family — so the list of what an OAuth
    sighting writes (`oauthClientId`, `appAuthorizationServer`, `oauthScope`,
-   `oauthResponseType`, `oauthGrantType`, `appRedirectUriObserved`) is a
+   `oauthResponseTypeObserved`, `oauthGrantTypeObserved`,
+   `appRedirectUriObserved`) is a
    constraint on `seen()` callers now: **a sighting that started writing a
    credential attribute would make every client it touched look declared.**
 
@@ -3775,8 +3779,30 @@ with `Cannot find module` naming a file the operator never mentioned.
    the RFC 9700 checks in `oauth2.js` pass `clientConfigOf()`, which is built
    from the ATTRIBUTES; `appRegistered` records how an application got here and
    not whether what it holds counts. `registrationOf()` is still what RFC 7592
-   and the UserInfo signing algorithm read, because those are genuinely
-   questions about the registration.
+   reads, because that is genuinely a question about the registration.
+
+   **HOW A RESPONSE TO A CLIENT IS SIGNED AND ENCRYPTED IS AN ATTRIBUTE, AND
+   SO ARE ITS REQUEST DEFAULTS (#290, 2026-10-08).** Eleven members lived only
+   in `appRegistrationJson` — the ID Token's and UserInfo's
+   `*_signed_response_alg` / `*_encrypted_response_alg` / `_enc`, JARM's three
+   and `default_acr_values` / `default_max_age` — so a client created on the
+   console could not have an ES256 ID Token without registering again, a hole
+   in rule 7. `CLIENT_RESPONSE_ATTRIBUTES` maps each to an attribute
+   (`oauthIdToken*`, `oauthUserinfo*`, `oauthAuthorization*`,
+   `oauthDefaultAcrValues` as ONE ordered value, `oauthDefaultMaxAge`). Three
+   rules. ONE GRAMMAR: `clientResponseMetadataProblem()` is the
+   registration's own checks (the ID Token and UserInfo encryption, JARM, the
+   two signing algorithms and the defaults split out of
+   `oidcRegistrationProblem()`), and `clientResponseAttributeProblem()` holds
+   a console or API write to it (`STS-REG-0340`). REPLACED by a registration
+   (`applyRegistrationFields()`), an absent member cleared. ONE READING:
+   `clientConfigOf()` carries them under their registration names and every
+   reader — `idToken()`, UserInfo, `jarmUrl()` and `vetAuthorizationRequest()`,
+   the Logout and Command Tokens, step-up's defaults, the `jwks_uri` prefetch
+   — reads that rather than `registrationOf()`, which returns null for a
+   client nobody registered. A registration stored before #290 holds them in
+   its document only and is read without them until it registers again; no
+   migration (rcbj's standing rule).
 
    **THE TWO APPLICATIONS THAT ARE THIS PROCESS ARE SEEDED AT STARTUP, AND
    THEY ARE REGISTRATIONS RATHER THAN LABELS.** Every other entry arrives
@@ -5039,6 +5065,25 @@ withdrawing `offline_access` from the console's, portal's or debugger's global
 consent revokes their sessions' tokens, each ends at its next renewal, and the
 person signs in again and is asked — nobody is locked out, and the reply says
 which surface it was.
+
+### A global consent that answered is recorded, and decides nothing (#537)
+
+The override is not a record, and that stays true: `outstanding()` never
+reads one about the person. But `/portal/consents` had nothing to show a
+person for an application whose scopes an administrator agreed to for
+everybody. So the authorization endpoint calls `noteApplied()` once consent
+has passed, with the scopes a global consent answered and the person had not
+agreed to themselves. That writes `oauthConsentApplied` on their entry, in
+`oauthConsent`'s grammar, the first time for each (application, scope) only:
+a sign-in costs a directory read and, the first time, one write.
+
+`appliedConsentsOf()` is what the portal draws. It lists only the records
+whose global consent still stands and that the person has not also agreed to
+themselves. Taking the global consent away hides a record rather than
+deleting it, so it shows again if the consent comes back. The directory hooks
+(`appliedConsentsOf`, `addAppliedConsent`, `removeAppliedConsent`) are
+OPTIONAL in the slot: without them nothing is recorded and nothing is listed.
+The attribute is merged by value across nodes (`directory_merge.js`).
 
 ### Two more things
 
@@ -6630,7 +6675,12 @@ other node's listener certificate. rcbj's decisions on #162:
    traded off.
 2. **Each node keeps its own listener key.** It generates the key and is
    issued its certificate from the shared CA; only the record and the serial
-   are shared.
+   are shared. **Since 2026-10-08 "keeps" is literal**: the key is generated
+   only when none is stored for the node, and kept sealed in the node's own
+   row of `tls.listenerKeys` (`unit@node`), with the certificate it was last
+   issued, which `heldCertificateCurrent()` here lets the next start present
+   again while it is current. Until then a restart made a new key under the
+   kept CA. `tls/CLAUDE.md`, *THE LISTENER KEY IS KEPT PER NODE*.
 3. **Any node may sign**, under the merge rules above: issued serials and
    revocations are unions, tiers first writer wins, the build claimed once.
 4. **One code path**: a single node is a cluster of one. Development keeps the
@@ -9823,6 +9873,9 @@ application, one JSON array of catalogue attribute names on its entry
 REPLACES the realm's selection** — a selection is a set, not a list of named
 rows, and "the application scope takes precedence" (rcbj) has to be able to
 DROP an attribute the realm ticks. Absent is the realm's; `[]` is none.
+**Since #395 (3cj) that is the UNSET choice**: an application may choose
+`application`, `union`, `intersection` or `realm` per set instead, for the
+rows and the selection alike.
 
 * **Which application:** `admin_stats.claimApplicationOf()`, lifted out of
   `effectiveClaimSet()` so the rows and the selection of one set can never
@@ -11249,3 +11302,381 @@ case." His answers on the ticket, D1–D6, are what this section holds to.
   second `oauth-oidc` listener asking for a client certificate
   (`oauth2.ts`'s `mtlsAliasOf()`), and a second `SingleSignOnService` and
   `SingleLogoutService` Location per `saml2` listener in SAML metadata.
+
+## 3ch. `passkey_policy.ts`: THE PASSKEY POLICY, THE FOURTH KIND ON DIRECTORY → POLICIES (#527, 2026-10-08)
+
+rcbj: "a new policy (which can be overridden per realm) that governs the
+behavior of passkeys including whether usernameless logins are allowed
+(usernameless logins should be disabled by default). When usernameless
+logins are disabled, the 'use a security key' button should request
+discoverables." What prompted it was a tester finding that one physical
+security key got a discoverable credential through *Create a passkey* and,
+usually, a non-discoverable one through *Use a security key*, because the
+second followed `webauthn.residentKey`, which defaulted to `discouraged`.
+
+* **A fourth kind, built as the other three are.**
+  - It is `cn=default,ou=passkeyPolicies`, a realm inheriting the default
+    realm's and then the built-in defaults (3bd's arrangement).
+  - It is registered in `admin-core/policy_kinds.ts`, so the page, its JSON
+    and `/admin-api/policies/{save,reset}-passkey-policy` come with no route
+    of their own.
+  - The directory's three store functions are `ldap_server.js`'s, filled
+    through `setDirectory()`.
+* **Two rows, and rcbj's three answers on the issue:**
+  - `allowUsernameless` is off by default.
+  - `securityKeyResidentKey` defaults to `required`.
+  - `securityKeyResidentKey()` answers `required` while `allowUsernameless`
+    is off, whatever the row says (answer 1), and the row while it is on.
+    The row's default is the same (answer 2), so both buttons make a
+    discoverable credential unless a realm lowers it.
+  - Per realm only (answer 3); named policies are #535.
+* **What it replaced.** `webauthn.usernameless` and `webauthn.residentKey`
+  are retired with no shim. `REPLACED_SETTINGS` refuses a start that names
+  either, and its message now names a policy row where a replacement is not
+  a setting. `authn/webauthn_policy.ts`'s `settings()` reads both values from
+  this module in one read, so `creationOptions()`, `usernamelessOffered()`
+  and the console's report are unchanged in shape.
+* **The other `webauthn.*` settings stay settings, each for a reason**, which
+  the module's header gives: request shape, already realm-overridable; #105's
+  verifier, which moves with #528 and #530; and process-wide rows.
+* Error codes `STS-AUTHN-0308` to `0311`, for its save, as the
+  service-account policy's are for its own.
+
+**#528 ADDED `backupEligibility` (2026-10-08)**: `allow` by default, or
+`disallow`, which accepts only device-bound passkeys. A passkey whose
+authenticator data sets BE (backup eligible, WebAuthn Level 3 section 6.1) is
+refused in two places, both funnels:
+
+* **Registration** in `credentials.addKey()`, the one writer, right after the
+  role check (`STS-AUTHN-0312`, reason `backup-eligible`). Every door that
+  enrols a key reaches it, and each already draws or audits `addKey()`'s
+  refusal: the sign-in screen, `/portal/keys` and the activation link. A key
+  written with no BE flag at all (one typed by value) is not refused.
+* **Sign-in** in `authn.ts`'s `startSessionHere()`, beside the
+  authentication policy's check (`STS-AUTHN-0313`, a `session.refuse` row,
+  and the sentence on the screen through `refusedSession()`). BE never
+  changes for a credential, so this catches a synced key enrolled before the
+  realm said no. Every passkey door names its credential's BE flag on the
+  session detail.
+
+`backupEligibleRefusal()` is the one sentence for both, and `/portal/keys`
+asks it to mark a held key that will no longer sign its owner in.
+
+**#529 ADDED A MINIMUM SECURITY-KEY PIN LENGTH (2026-10-08)**:
+`enforcePinLength` (off), `minPinLength` (4 to 63, the policy's first `int`
+row) and `pinLengthOnlyIfSupported` (off). While enforcing,
+`creationOptions()` carries `minPinLength: true`, the browser script turns it
+into CTAP 2.1's `minPinLength` extension input, `webauthn.js` returns the
+authenticator data's extension outputs (`extensions`), and
+`Credentials.reportedMinPinLength()` puts the reported value on the key row
+(`minPinLength`, null where none). The same two funnels as #528 refuse it:
+`addKey()` (`STS-AUTHN-0314`) and `startSessionHere()` (`STS-AUTHN-0315`,
+which reads the RECORDED value off the key row — decided on the ticket, so a
+raised minimum stops a key enrolled under a lower one). `pinLengthRefusal()`
+is the one sentence; `/portal/keys` shows it on such a key.
+
+**#530 ADDED `enforceAttestationAtSignIn` (2026-10-08)**, off: on, every
+passkey sign-in is held to the `webauthn.attestation*` rules in force by
+`webauthn_attestation.ts`'s `signInVerdict()`. It reads the key's RECORDED
+attestation (`trusted`, `aaguid`, and `attestationKeyId`, which registration
+now records for a statement with no AAGUID) and today's FIDO metadata, and
+reuses the registration's own `levelProblem()` and `demandedBy()`. The
+verdict is asynchronous (a metadata lookup), so it is asked in the two
+assertion doors after the assertion is spent and before the session —
+`authn.ts`'s `attestationAtSignIn()` — not at `startSessionHere()`, which is
+synchronous. A refusal writes a `session.refuse` row and, the first time per
+key and reason, marks the row (`credentials.noteKeyAttestationRefused()`) and
+sends CAEP `credential-change` by `policy`. Decided on the ticket: an
+untrusted statement fails every trust rule, an AAGUID list included, and a
+lookup that throws refuses (`STS-AUTHN-0317`).
+
+**#531 MADE THE WEBAUTHN HINTS ROWS (2026-10-08)**: `passkeyHints`,
+`securityKeyHints` and `signInHints`, the policy's first `list` rows (an
+ordered list of the row's `values`, or `none`, which is how an empty list is
+written so a stored empty list is not read as "no value"). `hintsFor(kind)`
+is what `creationOptions()`, `requestOptions()` and
+`discoverableRequestOptions()` send; the browser script passes a request's
+hints to both `get()` calls. The defaults are the old fixed hints. `validate()`
+refuses a hint that contradicts the attachment its request sends (it reads
+`webauthn.authenticatorAttachment`, so the module now requires `config`), and
+`hintsFor()` drops one a later change of that setting made contradictory
+(`STS-AUTHN-0319`). The console draws a `list` row as a text field and the
+API takes it as a string.
+
+**#532 ADDED `enterpriseSerialAttribute` (2026-10-08)**, the policy's first
+`attribute` row (an RFC 4512 descr, or empty). `pki.js`'s
+`attestationDeviceSerial()` reads the serial — the subject's serialNumber,
+then Yubico's extension `1.3.6.1.4.1.41482.13.1` (a DER INTEGER, in decimal)
+— and `webauthn_attestation.ts` records it on a VERIFIED statement as
+`deviceSerial` and `deviceSerialSource`. Set, the row makes
+`attestationSettings().demandsTrust` true, so an untrusted statement never
+reaches the binding, and `addKey()` refuses a serial that is not one of the
+person's values (`STS-AUTHN-0320`) or a key with none (`STS-AUTHN-0321`). The
+values come through a fourth directory hook on the policy's slot,
+`personAttributeValues()`, filled by `ldap_server.js` and never answering a
+secret attribute. The serial is on the console's and the portal's key rows.
+
+**#533 ADDED THE NAMES A PROMPT SHOWS (2026-10-08)**: `userDisplayName` (an
+`attributes` row: up to six comma-separated groups of up to three attribute
+names), `rpNameExtras` (an enum) and `credentialLabel` (a `text` row).
+`displayNameFor()` reads values through the #532 hook and answers the first
+group fully present. Every door that draws a ceremony asks it: the sign-in
+screen, `/portal/keys`, activation and the Signal API block.
+`webauthn_policy.ts`'s `settings().rpName` comes from `rpNameFor()`, with the
+ambient realm's name and `saml.organizationName`. `addKey()` labels a new
+key with `credentialLabelFor()` before the default. `displaySafe()` turns
+whitespace into spaces, removes Cc and bidirectional-formatting characters,
+and caps the length; a `text` row that would change under it is refused at
+save. The per-language message key the ticket mentions is not built (no
+portal translations).
+
+**#534 ADDED `aggregateDevices` (2026-10-08)**, on by default, which is what
+the passkey step did before: one ceremony with every key of the step's role
+in `allowCredentials`. Off, `authn.ts`'s `webauthnPage()` draws a list of
+links for a person holding more than one key. Each link is
+`/authn/webauthn?mfa=<step>&key=<credential id>`, and the page drawn for a
+chosen key names only that key in `data-allow`. A chosen id that is not one
+of the step's keys draws the list again. The GET now draws a passwordless
+step for a person holding a PRIMARY key, and still never the enrolment
+ceremony. `keyForAssertion()` still decides which key an assertion is
+checked against, so nothing about acceptance changed.
+
+**#535 MADE THE POLICY NAMED (2026-10-08)**: `cn=<name>` beside
+`cn=default`, each with the rows and three SELECTORS
+(`stsPasskeySelectApplication`, `stsPasskeySelectGroup`,
+`stsPasskeyPrecedence`), not inherited across realms. `selectionFor()` picks
+the lowest precedence among the profiles matching the application or one of
+the person's groups (a fifth directory hook, `personGroups()`, over
+`groupsOfUser()`), else `default`. **The selection is AMBIENT**:
+`select(username, application)` keeps it on the request object that
+`audit.js` holds for the request (`currentRequest()`), in a WeakMap, so it
+dies with the request. An AsyncLocalStorage `enterWith()` would carry it
+into the next request on a kept-alive connection. `withSelection()` runs a
+function with one, and `select()` outside any request uses a loose
+AsyncLocalStorage. `read()` with no name reads the selected profile, so every
+answer, `webauthn_policy.ts`'s options and `credentials.addKey()` (which
+selects for the person where no door did) follow it.
+
+These doors select:
+- `startSessionHere()` (the person and the application);
+- `webauthnPage()` and `POST /authn/webauthn` (the step's person and
+  application);
+- `loginPage()` (the application, where nothing selected yet);
+- `passkeySignIn()` (the application, then the owner);
+- `/portal/keys` and activation (the person).
+
+Selection is code, not the issuance policy, by the decision on the ticket.
+It chooses which rows apply, and the rows' refusals decide. The Policies page
+draws a form per named profile and an add form (`namedProfilesSection()`).
+The API's `profile` became a pattern for this kind, and it takes the
+selectors.
+
+**#536 (2026-10-09) MOVED THE REFUSALS INTO THE ISSUANCE POLICY.** rcbj first
+accepted them as code, then reversed: "move them into XACML policy, but
+continue to have all functionality available in the Passkey policy be
+available and configurable there." So the rows above still CONFIGURE, and the
+issuance policy DECIDES:
+
+* **`question(at, facts)` gathers, `refusalFor()` asks.** A door hands over
+  what it holds — `backupEligible`, `minPinLength`, `serial`, or an
+  `attestation` with its settings and sentences — and each becomes a FACT
+  GROUP (`urn:sts:xacml:passkey:facts`). The selected profile's rows go in as
+  `urn:sts:xacml:passkey-policy:<row>`. `issuance_gate.checkPasskey()` asks,
+  as action `register-passkey` (`credentials.addKey()`, one question) or
+  `use-passkey` (`authn.ts`'s `passkeySignInRefusal()` at the session's start,
+  and `webauthn_attestation.ts`'s `signInVerdict()` at the two assertion
+  doors).
+* **The built-in rules are `xacml_templates.ts`'s passkey rules** (template
+  parameter `decidePasskeys`), in the order the code asked. Each Deny carries
+  the same code as before (0312-0317, 0320, 0321) and a REASON. The door words
+  its sentence by the reason, so every page and audit row reads as it did.
+  A realm's own refusal with no code records `STS-AUTHN-0322`.
+* **Where no document answers**, `common/passkey_rules.js` reads the same
+  rules from the facts (`STS-AUTHN-0323`, `0324`). `tests/passkey_xacml.js`
+  holds it and the document to one truth table.
+* **The old functions are still exported** (`backupEligibleRefusal()`,
+  `pinLengthRefusal()`, `enterpriseSerialRefusal()`). Each asks the policy
+  about its one fact group, which is how the portal's warnings stay true to
+  the decision.
+* **The FIDO metadata is looked up only while `enforceAttestationAtSignIn` is
+  on.** That lookup per sign-in is the cost. The recorded facts (trusted,
+  AAGUID) are sent either way, so a realm's own policy can rule on them.
+* **#535's selection of which profile applies stays code.** It chooses the
+  settings and decides nothing.
+
+## 3ci. `i18n.ts`, `page_locale.ts`, `locale_policy.ts`: THE LANGUAGE A PAGE IS DRAWN IN (#539, 2026-10-09)
+
+rcbj: "multi-lingual support to the admin portal, authentication service,
+logout service, and user portal. It should be able to handle any locale +
+language." The issue body is the spec of record. Its decisions, and the
+reasons for the shape:
+
+* **Three modules, split by what each knows.**
+  - `i18n.ts` knows the catalogs and nothing about a request. It does BCP 47
+    lookup, with the script made explicit by `Intl.Locale.maximize()`, and
+    formats ICU-subset messages on `Intl`. It is a leaf.
+  - `page_locale.ts` knows a request: `ui_locales`, then the person's
+    `preferredLanguage`, then the `sts_lang` cookie, then `Accept-Language`,
+    then the locale policy. It also draws the chooser and holds its return to
+    a local path.
+  - `locale_policy.ts` is the fifth kind on Directory → Policies.
+  - `i18n.ts` requires neither of the others. `page_locale.ts` reaches
+    `audit.js`'s ambient request lazily, as `passkey_policy.ts` does.
+* **The catalogs are data:** `common/locales/<namespace>/<tag>.json`.
+  - A namespace is a surface, so parallel work never collides on a key.
+  - A regional catalog is an OVERLAY holding only what differs.
+  - English is complete, and every chain ends in it.
+  - `tests/i18n_catalogs.js` holds every catalog to English: the same keys,
+    parameters and markup, and every base catalog complete.
+  - **A page's translator is always called `t`, and keys are literals**, so
+    the test can scan the source for every key used.
+* **Errors stay English (rcbj).** A refusal is simply never looked up. That is
+  why the namespaces hold labels, prose and success text and no refusal
+  text. Do not "finish" a page by translating its error box.
+* **A page builder asks `PageLocale.forPage()`** instead of being handed the
+  request. Most builders are called from dozens of places, many inside a
+  POST, and threading a translator through every caller was the alternative.
+  The builder passes what it already holds: the application, `ui_locales` and
+  the person.
+* **The chooser is a real form with a button, on every page** (rcbj: "from
+  any user-facing page"). It posts to `POST /authn/language`, which lives in
+  `authn/` because a signed-in person's choice is also written to their
+  entry (through `ldap/person_editor.ts`). The entry outranks the cookie, so
+  a choice that did not reach the entry would change nothing for them.
+  - A page drawn by a POST returns the chooser to the GET that redraws it.
+  - `safeReturn()` turns anything that is not a local path into `/`.
+* **The locale policy is `passkey_policy.ts`'s pattern** with two rows,
+  `defaultLocale` (`en`) and `populatePreferredLanguage` (on).
+  - Named profiles are chosen by APPLICATION alone (rcbj). An application is
+    on one named profile at most, refused with `STS-I18N-0007`, so nothing is
+    ranked and there is no precedence.
+  - Selection is an argument (`forApplication()`), not #535's ambient
+    `select()`, because every caller already holds its application.
+  - It replaced `mail.defaultLanguage` (`REPLACED_SETTINGS`), so pages and
+    mail share one default.
+* **Population happens in `putEntry()`** (`fillPreferredLanguage()`), the one
+  place every door that creates a person ends.
+  - It applies only on a create, only to a person, and only where the entry
+    names no language, so an update never re-adds a removed one.
+  - **A populated value ranks BELOW the browser on a page** (rcbj, after the
+    first render showed everybody's browser ignored).
+    `stsPreferredLanguagePopulated` records what was written. While
+    `preferredLanguage` still equals it, `page_locale.ts` puts it after
+    `Accept-Language`. A different value is the person's, so no write path
+    has to clear the marker.
+    - Choosing the same value explicitly still wins on that browser, because
+      the chooser's cookie outranks `Accept-Language`.
+  - The application arrives as `opts.application`:
+    - SCIM passes its OAuth client, and its create keeps the populated value
+      through its merge.
+    - A sign-in passes its client through `admin_stats`'s user observer.
+    - The console and `/admin-api` pass none, because the administrator is
+      not the person's application.
+* **`ui_locales`** is carried on the pending sign-in record, and discovery's
+  `ui_locales_supported` lists the offered locales.
+* **The admin console (phases 5 and 6) runs the SAME formatter.**
+  - `admin-ui/web_messages.ts` holds the parser, renderer and translator as
+    a `web_` module. `common/i18n.ts` keeps the catalogs and the
+    negotiation, and builds `WebTranslator`s, so there is one parser.
+  - `GET /admin-api/console` answers a `locale` member: the negotiation for
+    the administrator and `sts-admin-console`, and every `console*`
+    namespace along the chain.
+  - The runtime builds its translator from it, marks `<html lang dir>`, and
+    hands `ctx.t` to every renderer.
+  - The chooser is a `<select>` with **no `<form>`**, so it cannot move the
+    console job's `document.forms[N]`. A change posts
+    `POST /admin-api/console/language`.
+  - A helper given no translator falls back to `WebTranslator.fallback()`:
+    English in node (`common/i18n.ts` sets it), and the page's own in a
+    browser (`applyLocale()` sets it). `tests/console_web_bundle.js` gives
+    the sandboxed bundle node's default, as the runtime would.
+  - English output was held byte-identical when the strings moved. Text the
+    server writes into a view stays English for now.
+* **`PageLocale.herePath()` never copies the request's URL** (the
+  integrator's finding on phase 3). It answers the caller's own path plus
+  the parameters named in `keep`, so nothing a request merely adds is drawn
+  back. `sts_language_chooser` holds it.
+* **Mail is translated too (phase 4).**
+  - The built-in templates are DATA in `common/mail_locales/<catalog
+    tag>.json`, not under `common/locales/`, because a template's
+    `{{placeholder}}` is not ICU. `MailTemplates.builtInFor()` walks the
+    catalog chain, and a realm's own wording in a language still wins.
+    `tests/mail_template_catalogs.js` holds every translation to
+    `problem()` and to the English placeholders.
+  - A VALUE a caller passes may be `{ i18n: 'mailValues.<key>', params }`
+    or `{ date }`. `Mail.resolveValues()` resolves it in the recipient's
+    language once the template is chosen, so a translated message carries
+    no English fragment. A plain string is data and is sent as it is.
+    CAEP's `reason_user` and an administrator's free text stay as written.
+* Error codes `STS-I18N-0001` to `0009`. Their own subsystem, because every
+  surface asks it.
+
+## 3cj. `scope_claims.ts`: WHICH CLAIMS A SCOPE COVERS, WHERE THEY GO, AND HOW TWO SETS COMBINE (#395, 2026-10-09)
+
+OIDC Core section 5.4's `profile`, `email`, `address` and `phone` request
+ACCESS to a fixed set of claims, answered at UserInfo, and in the ID Token
+only for `response_type=id_token` — which `oauth2.ts` held since #118. #395
+added what the ticket asked beyond that, with rcbj's answers to four
+questions and two follow-ups ("maximum flexibility, but still only allowing
+information that has been granted"):
+
+* **The gate (`gate()`).** A section 5.4 claim whose scope the grant did not
+  include is removed from EVERY configured layer — the realm's set, an
+  application's own, a resource server's declaration — of an access token,
+  an ID Token and a UserInfo response, in every mode. It is the GRANTED
+  scope (`opts.granted_scope`, set by `tokenSet()` and the implicit mint),
+  not the token's scope claim: RFC 9068's plan takes the OIDC scopes off a
+  token for an API while they stay granted. Two things pass: a claim the
+  client NAMED in a section 5.5 `claims` request (layered after the gate —
+  the request is its own grant), and a claim no scope covers (`groups`,
+  `roles`, a typed `tenant`). GNAP's ID Token assertion is minted on no scope,
+  so it carries none of these from configuration.
+* **A resource server's declaration.** `oauthAccessTokenClaim` (multi, the
+  section 5.4 claims only) on the application an access token's `aud`
+  resolves to (`forAudience()`, then `forClientId()`, then `get()`) —
+  `oauth2.ts`'s `resourceServerClaims()`. Only what EVERY audience declared
+  (an audience that declares nothing, this service's own resource server
+  among them, leaves nothing), only what was granted, resolved as UserInfo
+  resolves (`claimsNamed()`, lifted out of `scopeClaimsOf()`). No audience
+  declaring anything is NO layer, not an empty one. **`preferred_username`
+  went into every person's access token until #395**; it is now one of these
+  claims. `username` stays.
+* **Two pairs of sets, each combined as an application chooses.** The realm's
+  set against an application's own, per token type
+  (`COMBINE_ATTRIBUTES`: `oauthClaimsCombine{AccessToken,IdToken,Userinfo}`,
+  `saml2ClaimsCombine`, `saml11ClaimsCombine`) — `application`, `union`,
+  `intersection`, `realm`, applied to the rows in
+  `admin_stats.effectiveClaimSet()` and to the selection in
+  `claim_attributes.effectiveRows()`. **Unset keeps #495's two rules** (rows
+  added and winning by name; a selection replacing), because those were two
+  answers to two questions and one default could not keep both. The client's
+  access-token claims against a resource server's declaration
+  (`oauthAccessTokenClaimsCombine` on the resource server): `union` (unset),
+  `intersection`, `client`, `resource`, the client's value kept on a shared
+  name; resource servers that disagree are combined by `intersection`.
+  Holding nothing of its own is the realm's (or the client's) whatever the
+  mode says. Not the Kerberos PAC set: its merge is inside the vendored KDC.
+* **Where it lives.** A leaf requiring only `helpers.js`. `admin_stats.js`
+  requires it LAZILY, inside `effectiveClaimSet()`, because that module is in
+  the parent project's Kerberos COPY closure and the KDC never reaches the
+  line — so the closure did not grow. The seven attributes are ordinary
+  editable fields with closed choices (`ATTRIBUTE_CHOICES`,
+  `CHOICES_CHECKED_HERE`, `STS-REG-0203`), drawn in the field grid's *Claims
+  in tokens* and *Attributes in assertions* sections; no new action or
+  error code. `tests/scope_claims.js` holds it.
+* **A resource server's own scopes map claims too (2026-10-09, rcbj's three
+  answers: its exposed permissions only, catalogue attributes only, the
+  scope is the grant).** `oauthPermissionClaims`, one JSON object on the
+  entry, `{"<oauthPermission name>": ["<catalogue ldap name>", ...]}`,
+  written by the application's own **Scope claims** tab through
+  `set-permission-claims` / `clear-permission-claims` (`admin_actions.ts`,
+  `/admin-api`), held at the write (`claim_attributes.permissionClaimsProblem()`,
+  `STS-REG-0344`) and read leniently at issuance (`permissionClaimsOf()`,
+  `STS-REG-0343`). `resourceServerClaims()` finds the audience's
+  application by `oauthAudience`, then by **permission base**
+  (`forPermissionBase()` — a scope naming a permission makes the base the
+  `aud`), then client_id or identifier; a permission counts as granted when
+  the GRANTED scope holds its whole identifier, or its bare name on a token
+  for one audience. Its mapped claims join the declared ones in the
+  every-audience intersection, and are returned as `grantedByPermission`,
+  which `gate()` passes: granting the permission granted them.

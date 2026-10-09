@@ -377,6 +377,14 @@ const authnPolicy = require('../common/authn_policy');
 // requires move no route and close no cycle.
 const serviceAccountPolicy = require('../common/service_account_policy');
 const serviceAccounts = require('../common/service_accounts');
+// THE PASSKEY POLICY REGISTER (#527, 2026-10-08), `ou=passkeyPolicies`, for
+// the three policies' reason exactly: a LEAF whose store this directory is.
+const passkeyPolicy = require('../common/passkey_policy');
+// THE LOCALE POLICY REGISTER (#539, 2026-10-09), `ou=localePolicies`, for
+// the four policies' reason exactly: a LEAF whose store this directory is.
+// It is also asked at every person entry's creation, for the
+// preferredLanguage a new person is given (`populatePreferredLanguage`).
+const localePolicy = require('../common/locale_policy');
 const mode = require('../common/mode');
 // The attributes no outside source may write (#94), asked at the federated
 // write. A leaf.
@@ -908,6 +916,22 @@ function serviceAccountPoliciesDn() {
   log.debug("Entering serviceAccountPoliciesDn().");
   log.debug("Leaving serviceAccountPoliciesDn().");
   return 'ou=serviceAccountPolicies,' + baseDn();
+}
+
+// ou=passkeyPolicies is the PASSKEY POLICY register (#527), a fourth
+// container for the same reason. `common/passkey_policy.ts` owns the schema.
+function passkeyPoliciesDn() {
+  log.debug("Entering passkeyPoliciesDn().");
+  log.debug("Leaving passkeyPoliciesDn().");
+  return 'ou=passkeyPolicies,' + baseDn();
+}
+
+// ou=localePolicies is the LOCALE POLICY register (#539), a fifth container
+// for the same reason. `common/locale_policy.ts` owns the schema.
+function localePoliciesDn() {
+  log.debug("Entering localePoliciesDn().");
+  log.debug("Leaving localePoliciesDn().");
+  return 'ou=localePolicies,' + baseDn();
 }
 
 // The fourth and fifth, and they are `spiffe_registry.js`'s store the way
@@ -2329,6 +2353,12 @@ const OWN_NAMES = [
   // is what stops a RE-CONSENT reviving a refresh token issued before the
   // withdrawal; `common/consent.ts` argues it.
   'oauthConsentWithdrawn',
+  // A CONSENT AN APPLICATION'S GLOBAL CONSENT ANSWERED FOR THIS PERSON (#537),
+  // `<when> <scope> <client_id>`: written the first time a sign-in passes
+  // consent because `oauthGlobalConsent` covered the scope, so
+  // `/portal/consents` can show it. A record of what happened; it grants
+  // nothing and the authorization endpoint never reads it.
+  'oauthConsentApplied',
 
   // ---------------------------------------------------------------------
   // THE CREDENTIALS ON A PERSON'S OWN ENTRY THAT ARE NOT `userPassword`.
@@ -2705,6 +2735,15 @@ serviceAccountPolicy.SCHEMA.attributes.forEach(function (row) {
 serviceAccounts.SCHEMA.personAttributes.forEach(function (row) {
   learnName(row.name, 'the service-account schema');
 });
+// #527: the passkey policy's attributes.
+passkeyPolicy.SCHEMA.attributes.forEach(function (row) {
+  learnName(row.name, 'the passkey policy schema');
+});
+// #539: the locale policy's attributes.
+localePolicy.SCHEMA.attributes.concat(localePolicy.SCHEMA.personAttributes)
+  .forEach(function (row) {
+    learnName(row.name, 'the locale policy schema');
+  });
 xacmlStore.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML policy schema');
 });
@@ -3263,6 +3302,45 @@ function entryByUuid(uuid) {
   return found;
 }
 
+// A NEW PERSON IS GIVEN A LANGUAGE (#539). rcbj: "add a policy default per
+// realm that automatically populates user locale parameter". Here, because
+// every door that creates a person — the console and `/admin-api` through
+// createUser(), SCIM, HOBA, a sign-in through autoCreateUser(), an LDAP add,
+// the seed — ends in putEntry(). Only a CREATE (nothing at the DN before),
+// only a person (under ou=users), and only where the entry carries no
+// `preferredLanguage` of its own: an update never adds one, so a person or a
+// client that removes theirs keeps it removed. The language is the locale
+// policy's for `opts.application` — the application that caused the create,
+// where the door knows it — or the realm's default profile's, and none where
+// that profile's `populatePreferredLanguage` is off.
+function fillPreferredLanguage(stored, opts) {
+  log.debug("Entering fillPreferredLanguage().");
+  if (entries.get(normalizeDn(stored.dn)) || !isPersonEntry(stored) ||
+      (stored.attributes.preferredlanguage || []).length) {
+    log.debug("Leaving fillPreferredLanguage(). Not a new person without one.");
+    return;
+  }
+  let tag = '';
+  try {
+    tag = localePolicy.populationFor(String(opts.application || ''));
+  } catch (e) {
+    // A policy that cannot be read gives nobody a language rather than
+    // refusing the create: the entry is still made, and a page drawn for it
+    // falls through to the same default anyway.
+    log.debug("Caught in fillPreferredLanguage(): " + ((e && e.message) || e));
+    tag = '';
+  }
+  if (tag) {
+    stored.attributes.preferredlanguage = [tag];
+    // AND WHAT WAS WRITTEN, so a page can tell the POLICY's language from the
+    // PERSON's (rcbj on #539: a populated value ranks below the browser).
+    // While preferredLanguage still equals this, it is the policy's; once
+    // anybody writes another, it is theirs — no write path has to clear it.
+    stored.attributes.stspreferredlanguagepopulated = [tag];
+  }
+  log.debug("Leaving fillPreferredLanguage(). " + (tag || 'None.'));
+}
+
 // Put an entry in the store. `attributes` is a plain object whose values may be
 // a string or an array; the operational attributes are added here so that every
 // entry has them however it was created.
@@ -3278,6 +3356,7 @@ function putEntry(dn, attributes, options) {
   stored.attributes.createtimestamp = [now];
   stored.attributes.modifytimestamp = [now];
   if (opts.origin) stored.origin = String(opts.origin);
+  fillPreferredLanguage(stored, opts);
   // BOTH READ BEFORE THE WRITE, and they have to be: afterwards there is no way
   // to tell a create from an overwrite, and `directoryVersion` has moved on so
   // "was the index current a moment ago" is no longer a question the cache can
@@ -3650,6 +3729,30 @@ function seed() {
       'the built-in defaults apply where neither exists. ' +
       'common/service_account_policy.ts holds the schema; GET ' +
       '/admin/policies publishes it.'
+  }, { origin: 'seed' });
+  // And the passkey policy's (#527), for the same reason.
+  putEntry(passkeyPoliciesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'passkeyPolicies',
+    description: 'PASSKEY POLICY profiles: how passkeys behave in this ' +
+      'realm — whether a sign-in may name no username, and what a ' +
+      'security key is asked to store. The profile is cn=default; while it ' +
+      'is absent a realm other than the default one follows the DEFAULT ' +
+      'REALM\'s, and the built-in defaults apply where neither exists. ' +
+      'common/passkey_policy.ts holds the schema; GET /admin/policies ' +
+      'publishes it.'
+  }, { origin: 'seed' });
+  // And the locale policy's (#539), for the same reason.
+  putEntry(localePoliciesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'localePolicies',
+    description: 'LOCALE POLICY profiles: the language this realm\'s pages ' +
+      'fall back to and give a new person. cn=default applies everywhere; ' +
+      'while it is absent a realm other than the default one follows the ' +
+      'DEFAULT REALM\'s, and the built-in defaults apply where neither ' +
+      'exists. A named profile applies to the applications it lists. ' +
+      'common/locale_policy.ts holds the schema; GET /admin/policies ' +
+      'publishes it.'
   }, { origin: 'seed' });
   putEntry(pepsDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -6273,9 +6376,12 @@ function autoCreateUser(detail) {
     log.debug('Leaving autoCreateUser(). The directory is full.');
     return null;
   }
+  // `application` (#539): the client the sign-in was for, whose locale
+  // policy gives the person a language.
   const created = putEntry(dn, Object.assign({}, plan.attributes,
                                              { description: [note] }),
-                           { origin: 'authentication' });
+                           { origin: 'authentication',
+                             application: String(detail.application || '') });
   // The invented facts a credential will assert about this person, written HERE
   // rather than into the credential, so that the entry an LDAP client reads and
   // the credential a wallet is handed say the same thing about the same person.
@@ -6657,8 +6763,12 @@ function createUser(name, options) {
   if (!attributes.description) {
     attributes.description = [note];
   }
+  // `application` (#539): the application that caused the create, whose
+  // locale policy gives the person a language — SCIM's client; none from the
+  // console or `/admin-api`, whose administrator is not the person's app.
   const created = putEntry(plan.dn, attributes,
-                           { origin: opts.origin || 'console' });
+                           { origin: opts.origin || 'console',
+                             application: String(opts.application || '') });
   // The same fill autoCreateUser() does, and for the same reason: the entry an
   // LDAP client reads and the credential a wallet is handed have to say the
   // same thing about this person from the moment the entry exists.
@@ -8314,6 +8424,72 @@ if (typeof serviceAccountPolicy.setDirectory === 'function') {
            'so ou=serviceAccountPolicies is unreachable and the built-in ' +
            'service-account policy cannot be edited.');
 }
+
+// THE PASSKEY POLICY REGISTER'S CONTAINER (#527), guarded the same way.
+if (typeof passkeyPolicy.setDirectory === 'function') {
+  passkeyPolicy.setDirectory({
+    allPasskeyPolicies: allPasskeyPolicies,
+    writePasskeyPolicy: writePasskeyPolicy,
+    deletePasskeyPolicy: deletePasskeyPolicy,
+    // THE VALUES OF ONE ATTRIBUTE OF A PERSON'S ENTRY (#532): the serials of
+    // the security keys issued to them, which the passkey policy binds a
+    // registration to. Never a secret attribute, whatever is asked.
+    // THE GROUPS A PERSON IS IN (#535), which a named passkey policy may
+    // select by cn or DN.
+    personGroups: function (key) {
+      log.debug("Entering personGroups().");
+      const found = groupsOfUser(key);
+      log.debug("Leaving personGroups().");
+      return (found.groups || []).map(function (group) {
+        return { cn: String(group.cn || ''), dn: String(group.dn || '') };
+      });
+    },
+    personAttributeValues: function (key, attribute) {
+      log.debug("Entering personAttributeValues().");
+      const name = String(attribute || '').toLowerCase();
+      const secret = SECRET_ATTRIBUTES.some(function (one) {
+        return String(one).toLowerCase() === name;
+      });
+      const stored = secret || !name ? null
+        : locateEntry(String(key || '')).stored;
+      log.debug("Leaving personAttributeValues().");
+      return stored ? (stored.attributes[name] || []).map(String) : [];
+    }
+  });
+} else {
+  log.warn('ldap: common/passkey_policy.ts offers no setDirectory(), so ' +
+           'ou=passkeyPolicies is unreachable and the built-in passkey ' +
+           'policy cannot be edited.');
+}
+
+// THE LOCALE POLICY REGISTER'S CONTAINER (#539), guarded the same way.
+if (typeof localePolicy.setDirectory === 'function') {
+  localePolicy.setDirectory({
+    allLocalePolicies: allLocalePolicies,
+    writeLocalePolicy: writeLocalePolicy,
+    deleteLocalePolicy: deleteLocalePolicy,
+    // A PERSON'S OWN preferredLanguage (RFC 2798 section 2.7), which ranks
+    // above the language chooser and the browser when a page is drawn for
+    // them (#539). One attribute of one person, never anything else.
+    // With whether it is still the value the policy POPULATED (#539).
+    personLanguage: function personLanguage(key) {
+      log.debug('Entering personLanguage().');
+      const stored = locateEntry(String(key || '')).stored;
+      const value = stored && isPersonEntry(stored)
+        ? String((stored.attributes.preferredlanguage || [])[0] || '') : '';
+      const populated = !!value && value === String(
+        ((stored && stored.attributes.stspreferredlanguagepopulated) ||
+         [])[0] || '');
+      log.debug('Leaving personLanguage(). ' + (value || 'None.') +
+                (populated ? ' (populated)' : ''));
+      return { value: value, populated: populated };
+    }
+  });
+} else {
+  log.warn('ldap: common/locale_policy.ts offers no setDirectory(), so ' +
+           'ou=localePolicies is unreachable and the built-in locale ' +
+           'policy cannot be edited.');
+}
 if (typeof serviceAccounts.setDirectory === 'function') {
   serviceAccounts.setDirectory({
     readServiceAccount: readServiceAccount,
@@ -8515,14 +8691,16 @@ function reloadTrustAnchorsQuietly() {
 // opinion about who somebody is.
 // ---------------------------------------------------------------------------
 
-// THE TWO ATTRIBUTES THESE FUNCTIONS WRITE, and no third: `oauthConsent`, and
+// THE THREE ATTRIBUTES THESE FUNCTIONS WRITE, and no fourth: `oauthConsent`,
 // since #172 `oauthConsentWithdrawn` — the instant a person withdrew one,
 // which `common/consent.ts` reads so that a re-consent revives no token
-// issued before it. One set of functions for both, told which by name, and a
-// name that is neither is the consent attribute: a caller cannot use this
-// slot to write anything else onto somebody's entry.
+// issued before it — and since #537 `oauthConsentApplied`, a global consent
+// that answered for this person. One set of functions for all three, told
+// which by name, and a name that is none of them is the consent attribute: a
+// caller cannot use this slot to write anything else onto somebody's entry.
 const CONSENT_ATTRIBUTES = { oauthconsent: 'oauthConsent',
-                             oauthconsentwithdrawn: 'oauthConsentWithdrawn' };
+                             oauthconsentwithdrawn: 'oauthConsentWithdrawn',
+                             oauthconsentapplied: 'oauthConsentApplied' };
 
 function consentAttributeOf(attribute) {
   log.debug('Entering consentAttributeOf().');
@@ -11755,6 +11933,23 @@ if (typeof consent.setDirectory === 'function') {
       log.debug('Entering removeWithdrawal().');
       log.debug('Leaving removeWithdrawal().');
       return removeConsentValues(key, values, 'oauthConsentWithdrawn');
+    },
+    // THE GLOBAL CONSENTS APPLIED FOR THIS PERSON (#537), on the same entry
+    // through the same functions.
+    appliedConsentsOf: function appliedConsentsOf(key) {
+      log.debug('Entering appliedConsentsOf().');
+      log.debug('Leaving appliedConsentsOf().');
+      return consentValuesOf(key, 'oauthConsentApplied');
+    },
+    addAppliedConsent: function addAppliedConsent(key, values) {
+      log.debug('Entering addAppliedConsent().');
+      log.debug('Leaving addAppliedConsent().');
+      return addConsentValues(key, values, 'oauthConsentApplied');
+    },
+    removeAppliedConsent: function removeAppliedConsent(key, values) {
+      log.debug('Entering removeAppliedConsent().');
+      log.debug('Leaving removeAppliedConsent().');
+      return removeConsentValues(key, values, 'oauthConsentApplied');
     }
   });
 } else {
@@ -17361,6 +17556,142 @@ function deleteServiceAccountPolicy(name) {
   touchDirectory();
   auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
   log.debug('Leaving deleteServiceAccountPolicy(). ' + entries.size +
+            ' entry/entries left.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// ou=passkeyPolicies AS A STORE (#527). ou=serviceAccountPolicies' three
+// functions again, for the same reasons.
+// ---------------------------------------------------------------------------
+function passkeyPolicyDn(name) {
+  log.debug("Entering passkeyPolicyDn().");
+  log.debug("Leaving passkeyPolicyDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' + passkeyPoliciesDn();
+}
+
+function allPasskeyPolicies() {
+  log.debug('Entering allPasskeyPolicies().');
+  const rows = entriesUnder(passkeyPoliciesDn()).map(function (stored) {
+    const object = entryObject(stored);
+    object.name = (stored.attributes.cn || [])[0] ||
+                  stored.dn.split(',')[0].replace(/^cn=/i, '');
+    return object;
+  });
+  log.debug('Leaving allPasskeyPolicies(). ' + rows.length + ' profile(s).');
+  return rows;
+}
+
+function writePasskeyPolicy(name, attributes) {
+  log.debug('Entering writePasskeyPolicy(). name=' + name);
+  const dn = passkeyPolicyDn(name);
+  const existing = getEntry(dn);
+  if (!existing && cappedEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writePasskeyPolicy(). The directory is full.');
+    return false;
+  }
+  if (!getEntry(passkeyPoliciesDn())) {
+    putEntry(passkeyPoliciesDn(), {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: 'passkeyPolicies'
+    }, { origin: 'passkey policy' });
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin
+                              : 'passkey policy' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writePasskeyPolicy(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deletePasskeyPolicy(name) {
+  log.debug('Entering deletePasskeyPolicy(). name=' + name);
+  const stored = getEntry(passkeyPolicyDn(name));
+  if (!stored) {
+    log.debug('Leaving deletePasskeyPolicy(). It was not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
+  log.debug('Leaving deletePasskeyPolicy(). ' + entries.size +
+            ' entry/entries left.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// ou=localePolicies AS A STORE (#539). ou=passkeyPolicies' three functions
+// again, for the same reasons.
+// ---------------------------------------------------------------------------
+function localePolicyDn(name) {
+  log.debug("Entering localePolicyDn().");
+  log.debug("Leaving localePolicyDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' + localePoliciesDn();
+}
+
+function allLocalePolicies() {
+  log.debug('Entering allLocalePolicies().');
+  const rows = entriesUnder(localePoliciesDn()).map(function (stored) {
+    const object = entryObject(stored);
+    object.name = (stored.attributes.cn || [])[0] ||
+                  stored.dn.split(',')[0].replace(/^cn=/i, '');
+    return object;
+  });
+  log.debug('Leaving allLocalePolicies(). ' + rows.length + ' profile(s).');
+  return rows;
+}
+
+function writeLocalePolicy(name, attributes) {
+  log.debug('Entering writeLocalePolicy(). name=' + name);
+  const dn = localePolicyDn(name);
+  const existing = getEntry(dn);
+  if (!existing && cappedEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writeLocalePolicy(). The directory is full.');
+    return false;
+  }
+  if (!getEntry(localePoliciesDn())) {
+    putEntry(localePoliciesDn(), {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: 'localePolicies'
+    }, { origin: 'locale policy' });
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin
+                              : 'locale policy' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writeLocalePolicy(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deleteLocalePolicy(name) {
+  log.debug('Entering deleteLocalePolicy(). name=' + name);
+  const stored = getEntry(localePolicyDn(name));
+  if (!stored) {
+    log.debug('Leaving deleteLocalePolicy(). It was not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
+  log.debug('Leaving deleteLocalePolicy(). ' + entries.size +
             ' entry/entries left.');
   return true;
 }

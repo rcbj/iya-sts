@@ -1824,7 +1824,8 @@ still answers where the username is typed (its handle must then be the
 name's bytes), and never where it is not (`STS-AUTHN-0304`, rcbj's decision:
 no migration — the person registers it again).
 
-**The usernameless sign-in** (`webauthn.usernameless`, off by default) is
+**The usernameless sign-in** (the passkey policy's `allowUsernameless`, off
+by default — `webauthn.usernameless` until #527; `common/CLAUDE.md` 3ch) is
 `passkeySignIn()`, reached from `POST /authn/login` with `action=passkey`
 before a username is read:
 

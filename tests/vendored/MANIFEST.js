@@ -371,6 +371,14 @@ const JOBS = [
     local: true },
   { file: 'sts_wstrust_saml11_chain_delegation.js', browser: false,
     local: true },
+  // AND WITH EACH TIER ON A TOKEN IT WAS ISSUED FOR ITSELF (#519): the
+  // OnBehalfOf chain once per token type, each tier's application first
+  // asking, with its own client secret, for a token about itself and for
+  // itself, and presenting THAT in wsse:Security — no service account beside
+  // any application; then the matrix of every requester credential × every
+  // OnBehalfOf input × every issued type (36 RSTs). `local: true`: the
+  // scenario is ours. Its entries are left standing.
+  { file: 'sts_wstrust_own_token_chain.js', browser: false, local: true },
   // AND IN KERBEROS (#486): the same four tiers as service principals,
   // reached over MS-KKDCP. Impersonation is protocol transition — apigw1's
   // S4U2Self for a user who signed in to webapp1 without Kerberos, then
@@ -913,8 +921,9 @@ const JOBS = [
   { file: 'sts_portal_backup_keys.js',   browser: false, local: true },
   // PASSKEYS AS DISCOVERABLE CREDENTIALS (#474): a passkey registered
   // through an activation link under a minted user handle, then signed in
-  // with and no username — all in a throwaway realm of its own, whose
-  // `webauthn.usernameless` changes no screen another lane loads.
+  // with and no username — all in a throwaway realm of its own, whose own
+  // passkey policy (#527) allows it, so the change reaches no screen
+  // another lane loads.
   // `local: true`: this repository's own sign-in screen and API.
   { file: 'sts_passkey_usernameless.js', browser: false, local: true },
   // A SECURITY KEY'S ATTESTATION, VERIFIED (#105): keys enrolled at
@@ -1352,6 +1361,10 @@ const JOBS = [
   // the Policies resource, and both mechanisms as a first and a second
   // factor, in a product realm, delivered to the same catcher.
   { file: 'sts_email_factor.js',         browser: false, local: true },
+  // The language chooser over HTTP in a realm (#539): the action prefixed
+  // once, the 303 to a local return only, the cookie, ui_locales first, and
+  // discovery's ui_locales_supported.
+  { file: 'sts_language_chooser.js',     browser: false, local: true },
   // #64's addresses: an administrator's verified, a person's own change
   // pending until its link is followed, and the recovery-code reset.
   { file: 'sts_email_verification.js',   browser: false, local: true },

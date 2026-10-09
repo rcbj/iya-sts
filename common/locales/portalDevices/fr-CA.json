@@ -1,0 +1,3 @@
+{
+  "remember.intro": "Fonctionne dans n’importe quel navigateur : ce service place un jeton signé et chiffré dans un témoin et reconnaît le navigateur grâce à lui la fois suivante. C’est le type d’appareil le PLUS FAIBLE ici — quiconque copie le témoin devient ce navigateur jusqu’à ce que la copie soit détectée, ce qui met fin à toutes ses sessions — il évite donc seulement que les connexions depuis ce navigateur paraissent nouvelles, et ne compte jamais comme un appareil conforme. Ne l’utilisez pas sur un ordinateur partagé."
+}

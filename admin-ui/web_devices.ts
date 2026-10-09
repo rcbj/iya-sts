@@ -26,6 +26,23 @@ import SettingsForms = require('./web_settings');
 
 type Json = any;
 
+// THE PAGE'S TRANSLATOR, ESCAPING AS THIS PAGE ALWAYS ESCAPED (#539). Much
+// of what fills a message here is the view's own prose, and an apostrophe
+// in it was drawn by `kit.esc()` as `&apos;` where the translator's
+// escaping writes `&#39;`. Same character, different bytes — and the
+// console's browser jobs compare bytes. So a message WITH parameters has
+// its `&#39;` written as `&apos;`; no message of this page's catalog
+// carries a literal `&#39;` for this to change. Every other member is the
+// translator's own, through the prototype.
+const kitEscaping = function (translator: Json): Json {
+  const wrapped = Object.create(translator);
+  wrapped.html = function (key: string, params?: Json): string {
+    const out = translator.html(key, params);
+    return params ? out.replace(/&#39;/g, '&apos;') : out;
+  };
+  return wrapped;
+};
+
 /**
  * Directory → Devices: the realm's device list, and one device by `?device=`.
  */
@@ -74,109 +91,163 @@ class DevicesPage {
     }).join('');
   }
 
-  static ownerCell(r: Json): string {
+  static ownerCell(t: Json, r: Json): string {
     const esc = kit.esc.bind(kit);
     const link = r.ownerKind === 'application'
       ? '/admin/applications?application=' + encodeURIComponent(r.ownerName)
       : '/admin/users?user=' + encodeURIComponent(r.ownerName);
     return esc(r.ownerKind) + ' ' + (r.ownerFound
       ? '<a href="' + link + '">' + esc(r.ownerName) + '</a>'
-      : '<em>not in the directory</em>') + '<br><small><code>' +
+      : '<em>' + t.html('consoleDevices.ownerCell.notInDirectory') +
+        '</em>') + '<br><small><code>' +
       esc(r.owner) + '</code></small>';
   }
 
   static listHtml(ctx: Json, json: Json): string {
+    // The page's words are its translator's (#539 phase 6); the view's
+    // vocabulary (owner kinds, compliance states) is drawn as it comes,
+    // because those values are what the forms submit.
+    const t = kitEscaping(ctx.t);
     const self = this;
     const esc = kit.esc.bind(kit);
     const f = json.filter;
     const v = json.vocabulary;
     const filters = '<form method="get" action="' + LIST + '"><div ' +
-      'class="formrow"><label for="dev-q">Search</label><input type="text" ' +
-      'id="dev-q" name="q" size="24" value="' + esc(f.q || '') +
-      '" placeholder="id, label, owner, thumbprint">' +
-      '<label for="dev-ok">Owner</label><select id="dev-ok" ' +
-      'name="ownerKind">' + this.options(v.ownerKinds, f.ownerKind, 'any') +
-      '</select><label for="dev-c">Compliance</label><select id="dev-c" ' +
-      'name="compliance">' + this.options(v.compliance, f.compliance, 'any') +
-      '</select><label for="dev-a">Attestation</label><select id="dev-a" ' +
-      'name="attestation">' + this.options(v.attestation, f.attestation,
-                                           'any') +
-      '</select><label for="dev-k">Key</label><select id="dev-k" ' +
-      'name="keyKind">' + this.options(v.keyKinds, f.keyKind, 'any') +
-      '</select><label for="dev-per">Show</label><select id="dev-per" ' +
-      'name="per">' + kit.perPageOptions(json.perPage) + '</select>' +
-      '<button type="submit">Filter</button>' +
-      (Object.keys(f).length ? ' <a href="' + LIST + '">clear</a>' : '') +
+      'class="formrow"><label for="dev-q">' +
+      t.html('consoleDevices.listHtml.search') + '</label><input ' +
+      'type="text" id="dev-q" name="q" size="24" value="' + esc(f.q || '') +
+      '" placeholder="' + esc(t.text('consoleDevices.listHtml.searchHint')) +
+      '">' +
+      '<label for="dev-ok">' + t.html('consoleDevices.listHtml.owner') +
+      '</label><select id="dev-ok" ' +
+      'name="ownerKind">' +
+      this.options(v.ownerKinds, f.ownerKind,
+                   t.text('consoleDevices.listHtml.any')) +
+      '</select><label for="dev-c">' +
+      t.html('consoleDevices.listHtml.compliance') +
+      '</label><select id="dev-c" ' +
+      'name="compliance">' +
+      this.options(v.compliance, f.compliance,
+                   t.text('consoleDevices.listHtml.any')) +
+      '</select><label for="dev-a">' +
+      t.html('consoleDevices.listHtml.attestation') +
+      '</label><select id="dev-a" ' +
+      'name="attestation">' +
+      this.options(v.attestation, f.attestation,
+                   t.text('consoleDevices.listHtml.any')) +
+      '</select><label for="dev-k">' + t.html('consoleDevices.listHtml.key') +
+      '</label><select id="dev-k" ' +
+      'name="keyKind">' +
+      this.options(v.keyKinds, f.keyKind,
+                   t.text('consoleDevices.listHtml.any')) +
+      '</select><label for="dev-per">' +
+      t.html('consoleDevices.listHtml.show') + '</label><select id="dev-per" ' +
+      'name="per">' + kit.perPageOptions(json.perPage, t) + '</select>' +
+      '<button type="submit">' + t.html('consoleDevices.listHtml.filter') +
+      '</button>' +
+      (Object.keys(f).length
+        ? ' <a href="' + LIST + '">' + t.html('consoleDevices.listHtml.clear') +
+          '</a>'
+        : '') +
       '</div></form>';
     const nav = kit.pageNavPair(LIST, Object.assign({}, f,
       ctx.query && ctx.query.per ? { per: String(json.perPage) } : {}),
-      json.devicesPaging);
+      json.devicesPaging, t);
     const rows = json.devices.map(function (r: Json): string {
       return '<tr><td><a href="' + LIST + '?device=' +
         encodeURIComponent(r.id) + '">' + esc(r.label) + '</a><br><small>' +
         '<code>' + esc(r.id) + '</code></small></td><td>' +
-        self.ownerCell(r) + '</td><td>' + (r.keyKinds.length
+        self.ownerCell(t, r) + '</td><td>' + (r.keyKinds.length
           ? esc(r.keyKinds.join(', ')) : '—') + '</td><td>' +
         esc(r.attestation.level) + '</td><td>' + esc(r.compliance) +
-        (r.status === 'compromised' ? ' <strong>compromised</strong>' : '') +
-        '</td><td>' + (r.nativeSso ? (r.sessionLive ? 'live'
-                                                    : 'session ended')
-                                   : '—') + '</td><td><small>' +
+        (r.status === 'compromised'
+          ? ' <strong>' + t.html('consoleDevices.listHtml.compromised') +
+            '</strong>'
+          : '') +
+        '</td><td>' +
+        (r.nativeSso
+          ? (r.sessionLive ? t.html('consoleDevices.listHtml.live')
+                           : t.html('consoleDevices.listHtml.sessionEnded'))
+          : '—') + '</td><td><small>' +
         esc(r.lastUsed || '—') + '</small></td></tr>';
     }).join('');
     const canWrite = ctx.write;
-    const create = canWrite ? '<h2>Register a device</h2>' +
-      kit.note('Owned by ONE person (a username) or ONE application (its ' +
-                 'identifier). A key typed here is public material — a PEM ' +
-                 'certificate, a public JWK, or the credential id of a ' +
-                 'security key the owner enrolled — and is recorded as ' +
-                 'proven by nobody and <strong>self-asserted</strong>. A ' +
-                 'person at <code>devices.maxPerPerson</code> is refused ' +
-                 'rather than losing a device to make room.') +
+    const create = canWrite
+      ? '<h2>' + t.html('consoleDevices.listHtml.registerHeading') + '</h2>' +
+      kit.note(t.html('consoleDevices.listHtml.registerNote')) +
       '<form method="post" action="' + LIST + '">' +
       '<input type="hidden" name="action" value="create">' +
-      '<div class="formrow"><label for="dev-n-label">Label</label>' +
+      '<div class="formrow"><label for="dev-n-label">' +
+      t.html('consoleDevices.listHtml.label') + '</label>' +
       '<input type="text" id="dev-n-label" name="label" size="30" ' +
       'maxlength="128"></div>' +
-      '<div class="formrow"><label for="dev-n-ok">Owner kind</label>' +
+      '<div class="formrow"><label for="dev-n-ok">' +
+      t.html('consoleDevices.listHtml.ownerKind') + '</label>' +
       '<select id="dev-n-ok" name="ownerKind">' +
       this.options(v.ownerKinds, 'person', null) + '</select>' +
-      '<label for="dev-n-owner">Owner</label><input type="text" ' +
+      '<label for="dev-n-owner">' + t.html('consoleDevices.listHtml.owner') +
+      '</label><input type="text" ' +
       'id="dev-n-owner" name="owner" size="24" required></div>' +
-      '<div class="formrow"><label for="dev-n-p">Platform</label>' +
+      '<div class="formrow"><label for="dev-n-p">' +
+      t.html('consoleDevices.listHtml.platform') + '</label>' +
       '<select id="dev-n-p" name="platform">' +
-      this.options(v.platforms, '', 'unstated') + '</select>' +
-      '<label for="dev-n-m">Model</label><input type="text" id="dev-n-m" ' +
-      'name="model" size="20" maxlength="128"><label for="dev-n-os">OS' +
+      this.options(v.platforms, '',
+                   t.text('consoleDevices.listHtml.unstated')) +
+      '</select>' +
+      '<label for="dev-n-m">' + t.html('consoleDevices.listHtml.model') +
+      '</label><input type="text" id="dev-n-m" ' +
+      'name="model" size="20" maxlength="128"><label for="dev-n-os">' +
+      t.html('consoleDevices.listHtml.os') +
       '</label><input type="text" id="dev-n-os" name="os" size="16" ' +
       'maxlength="128"></div>' +
-      '<div class="formrow"><label for="dev-n-apps">Applications</label>' +
+      '<div class="formrow"><label for="dev-n-apps">' +
+      t.html('consoleDevices.listHtml.applications') + '</label>' +
       '<input type="text" id="dev-n-apps" name="applications" size="40" ' +
-      'placeholder="client ids or identifiers, comma separated"></div>' +
-      '<div class="formrow"><label for="dev-n-kk">First key</label>' +
+      'placeholder="' + esc(t.text('consoleDevices.listHtml.appsHint')) +
+      '"></div>' +
+      '<div class="formrow"><label for="dev-n-kk">' +
+      t.html('consoleDevices.listHtml.firstKey') + '</label>' +
       '<select id="dev-n-kk" name="keyKind">' +
-      this.options(['x509', 'jwk', 'webauthn'], '', 'none') + '</select>' +
+      this.options(['x509', 'jwk', 'webauthn'], '',
+                   t.text('consoleDevices.listHtml.none')) + '</select>' +
       '<textarea id="dev-n-key" name="key" rows="3" cols="60" ' +
-      'placeholder="PEM, JWK JSON or credential id"></textarea></div>' +
-      '<div class="formrow"><button type="submit">Register</button></div>' +
+      'placeholder="' + esc(t.text('consoleDevices.listHtml.keyHint')) +
+      '"></textarea></div>' +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleDevices.listHtml.register') + '</button></div>' +
       '</form>'
-      : kit.note('Registering, editing or removing a device needs ' +
-                   '<strong>Admin Write</strong>.');
-    return '<div class="tiles">' + kit.tile(String(json.total), 'devices') +
-      kit.tile(String(json.matched), 'matched') + '</div>' +
-      kit.note('Every device this realm knows, each an entry under ' +
-                 '<code>ou=devices</code> owned by one person or one ' +
-                 'application. <a href="' + MONITOR + '">Monitoring &rarr; ' +
-                 'Devices</a> counts them; <a href="/admin/ldap/devices">' +
-                 'Device entries</a> is the same register attribute by ' +
-                 'attribute; <a href="' + REGISTRATION + '">Device ' +
-                 'registration</a> is how one arrives.', 'What this page is') +
-      filters + nav.head + '<table class="grid"><thead><tr><th>Device</th>' +
-      '<th>Owner</th><th>Keys</th><th>Attestation</th><th>Compliance</th>' +
-      '<th>Native SSO</th><th>Last used</th></tr></thead><tbody>' +
+      : kit.note(t.html('consoleDevices.listHtml.readOnly'));
+    // The note's three links carry hrefs, which a message may not: the
+    // words between them are messages and the anchors are code.
+    return '<div class="tiles">' +
+      kit.tile(String(json.total),
+               t.text('consoleDevices.listHtml.tileDevices')) +
+      kit.tile(String(json.matched),
+               t.text('consoleDevices.listHtml.tileMatched')) + '</div>' +
+      kit.note(t.html('consoleDevices.listHtml.leadIntro') +
+                 '<a href="' + MONITOR + '">' +
+                 t.html('consoleDevices.listHtml.leadMonitor') + '</a>' +
+                 t.html('consoleDevices.listHtml.leadCounts') +
+                 '<a href="/admin/ldap/devices">' +
+                 t.html('consoleDevices.listHtml.leadEntries') + '</a>' +
+                 t.html('consoleDevices.listHtml.leadSame') +
+                 '<a href="' + REGISTRATION + '">' +
+                 t.html('consoleDevices.listHtml.leadRegistration') + '</a>' +
+                 t.html('consoleDevices.listHtml.leadArrives'),
+               t.text('consoleDevices.listHtml.whatThisIs')) +
+      filters + nav.head + '<table class="grid"><thead><tr><th>' +
+      t.html('consoleDevices.listHtml.thDevice') + '</th>' +
+      '<th>' + t.html('consoleDevices.listHtml.thOwner') + '</th><th>' +
+      t.html('consoleDevices.listHtml.thKeys') + '</th><th>' +
+      t.html('consoleDevices.listHtml.thAttestation') + '</th><th>' +
+      t.html('consoleDevices.listHtml.thCompliance') + '</th>' +
+      '<th>' + t.html('consoleDevices.listHtml.thNativeSso') + '</th><th>' +
+      t.html('consoleDevices.listHtml.thLastUsed') +
+      '</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="7">' + (Object.keys(f).length
-        ? 'No device matches. The filter above may be hiding some.'
-        : 'None yet.') + '</td></tr>') + '</tbody></table>' + nav.foot +
+        ? t.html('consoleDevices.listHtml.noMatch')
+        : t.html('consoleDevices.listHtml.noneYet')) + '</td></tr>') +
+      '</tbody></table>' + nav.foot +
       create;
   }
 
@@ -198,6 +269,7 @@ class DevicesPage {
   }
 
   static deviceHtml(ctx: Json, d: Json, vocabulary: Json): string {
+    const t = kitEscaping(ctx.t);
     const esc = kit.esc.bind(kit);
     const canWrite = ctx.write;
     // A HOT PATH: once per field of every form on the page, so no
@@ -206,53 +278,77 @@ class DevicesPage {
       return '<input type="hidden" name="' + name + '" value="' + esc(value) +
         '">';
     };
+    // The words of a change are messages; the punctuation that joins the
+    // optional actor and reason stays in the code, as it was.
     const change = function (c: Json): string {
-      return c ? esc(c.status) + ' (was ' + esc(c.previous) + ') at ' +
-        esc(c.at) + (c.source ? ' by ' + esc(c.source) : '') +
+      return c ? t.html('consoleDevices.deviceHtml.change',
+                        { status: c.status, previous: c.previous,
+                          at: c.at }) +
+        (c.source ? t.html('consoleDevices.deviceHtml.by',
+                           { who: c.source }) : '') +
         (c.actor ? ', ' + esc(c.actor) : '') +
-        (c.reason ? ': ' + esc(c.reason) : '') : 'never changed';
+        (c.reason ? ': ' + esc(c.reason) : '')
+        : t.html('consoleDevices.deviceHtml.neverChanged');
     };
     const facts = '<table class="grid"><tbody>' +
-      '<tr><th>Id</th><td><code>' + esc(d.id) + '</code><br><small><code>' +
+      '<tr><th>' + t.html('consoleDevices.deviceHtml.thId') +
+      '</th><td><code>' + esc(d.id) + '</code><br><small><code>' +
       esc(d.dn) + '</code></small></td></tr>' +
-      '<tr><th>Owner</th><td>' + this.ownerCell(d) + '</td></tr>' +
-      '<tr><th>Platform, model, OS</th><td>' +
+      '<tr><th>' + t.html('consoleDevices.deviceHtml.thOwner') + '</th><td>' +
+      this.ownerCell(t, d) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleDevices.deviceHtml.thPlatform') +
+      '</th><td>' +
       esc([d.platform, d.model, d.os].filter(Boolean).join(' · ') || '—') +
       '</td></tr>' +
-      '<tr><th>Enrolled</th><td>' + esc(d.enrolment.method) +
-      (d.enrolment.at ? ' at ' + esc(d.enrolment.at) : '') +
-      (d.enrolment.actor ? ' by ' + esc(d.enrolment.actor) : '') +
+      '<tr><th>' + t.html('consoleDevices.deviceHtml.thEnrolled') +
+      '</th><td>' + esc(d.enrolment.method) +
+      (d.enrolment.at ? t.html('consoleDevices.deviceHtml.at',
+                               { at: d.enrolment.at }) : '') +
+      (d.enrolment.actor ? t.html('consoleDevices.deviceHtml.by',
+                                  { who: d.enrolment.actor }) : '') +
       '</td></tr>' +
-      '<tr><th>Attestation</th><td><strong>' + esc(d.attestation.level) +
+      '<tr><th>' + t.html('consoleDevices.deviceHtml.thAttestation') +
+      '</th><td><strong>' + esc(d.attestation.level) +
       '</strong>' + (d.attestation.level === 'attested'
         ? ' — ' + esc(d.attestation.format) + ': ' +
           esc(d.attestation.summary)
-        : ' — no key\'s attestation was verified') + '</td></tr>' +
-      '<tr><th>Compliance</th><td><strong>' + esc(d.compliance) +
+        : t.html('consoleDevices.deviceHtml.notVerified')) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleDevices.deviceHtml.thCompliance') +
+      '</th><td><strong>' + esc(d.compliance) +
       '</strong><br><small>' + change(d.complianceChange) +
       '</small></td></tr>' +
-      '<tr><th>Status</th><td>' + esc(d.status) + '<br><small>' +
+      '<tr><th>' + t.html('consoleDevices.deviceHtml.thStatus') +
+      '</th><td>' + esc(d.status) + '<br><small>' +
       change(d.statusChange) + '</small></td></tr>' +
-      '<tr><th>Risk level</th><td>' + esc(d.riskLevel) + (d.riskChange
-        ? '<br><small>' + esc(d.riskChange.level || 'unassessed') +
-          ' (was ' + esc(d.riskChange.previous || 'unassessed') + ') at ' +
-          esc(d.riskChange.at) + ' by ' + esc(d.riskChange.source) +
+      '<tr><th>' + t.html('consoleDevices.deviceHtml.thRisk') + '</th><td>' +
+      esc(d.riskLevel) + (d.riskChange
+        ? '<br><small>' + t.html('consoleDevices.deviceHtml.riskChange', {
+            level: d.riskChange.level ||
+                   t.text('consoleDevices.deviceHtml.unassessed'),
+            previous: d.riskChange.previous ||
+                      t.text('consoleDevices.deviceHtml.unassessed'),
+            at: d.riskChange.at, who: d.riskChange.source }) +
           (d.riskChange.reason ? ': ' + esc(d.riskChange.reason) : '') +
           '</small>' : '') + '</td></tr>' +
-      '<tr><th>Native SSO</th><td>' + (d.nativeSso ? (d.sessionLive
-        ? 'a secret, bound to a <strong>live</strong> sign-on session'
-        : 'a secret whose sign-on session has ended') : 'no secret') +
+      '<tr><th>' + t.html('consoleDevices.deviceHtml.thNativeSso') +
+      '</th><td>' + (d.nativeSso ? (d.sessionLive
+        ? t.html('consoleDevices.deviceHtml.ssoLive')
+        : t.html('consoleDevices.deviceHtml.ssoEnded'))
+        : t.html('consoleDevices.deviceHtml.ssoNone')) +
       '</td></tr>' +
-      '<tr><th>Last used</th><td>' + esc(d.lastUsed || '—') + '</td></tr>' +
+      '<tr><th>' + t.html('consoleDevices.deviceHtml.thLastUsed') +
+      '</th><td>' + esc(d.lastUsed || '—') + '</td></tr>' +
       '</tbody></table>';
-    const apps = '<h2>Applications that used it</h2>' +
+    const apps = '<h2>' + t.html('consoleDevices.deviceHtml.appsHeading') +
+      '</h2>' +
       (d.applications.length ? '<ul>' + d.applications.map(
         function (dn: string, i: number): string {
           const name = d.applicationNames[i];
           return '<li>' + (name ? '<a href="/admin/applications?' +
             'application=' + encodeURIComponent(name) + '">' + esc(name) +
             '</a> ' : '') + '<small><code>' + esc(dn) + '</code></small></li>';
-        }).join('') + '</ul>' : kit.note('None.'));
+        }).join('') + '</ul>'
+        : kit.note(t.html('consoleDevices.deviceHtml.none')));
     const keyRows = d.keys.map(function (k: Json): string {
       return '<tr><td>' + esc(k.label) + '<br><small><code>' + esc(k.id) +
         '</code></small></td><td>' + esc(k.kind) + '</td><td><small><code>' +
@@ -262,296 +358,353 @@ class DevicesPage {
           esc(k.attestation.format) + '</small>' : '') +
         (k.attestation.summary ? '<br><small>' +
           esc(k.attestation.summary) + '</small>' : '') +
-        (k.attestation.verifiedAt ? '<br><small>verified ' +
-          esc(k.attestation.verifiedAt) + '</small>' : '') +
+        (k.attestation.verifiedAt ? '<br><small>' +
+          t.html('consoleDevices.deviceHtml.verifiedAt',
+                 { at: k.attestation.verifiedAt }) + '</small>' : '') +
         '</td><td><small>' +
-        esc(k.added) + (k.addedBy ? ' by ' + esc(k.addedBy) : '') +
+        esc(k.added) + (k.addedBy
+          ? t.html('consoleDevices.deviceHtml.by', { who: k.addedBy }) : '') +
         '</small></td><td>' + (canWrite
           ? '<form method="post" action="' + LIST + '" class="inline">' +
             hidden('action', 'remove-key') + hidden('id', d.id) +
             hidden('key', k.id) + '<button type="submit" class="danger">' +
-            'Remove</button></form>' : '') + '</td></tr>';
+            t.html('consoleDevices.deviceHtml.remove') + '</button></form>'
+          : '') + '</td></tr>';
     }).join('');
-    const keys = '<h2>Keys</h2>' + kit.note('Each is a way the device is ' +
-      'recognised. The thumbprint is SHA-256 over the certificate\'s ' +
-      'SubjectPublicKeyInfo, or RFC 7638 over the JWK — which is DPoP\'s ' +
-      '<code>jkt</code>.') +
-      (keyRows ? '<table class="grid"><thead><tr><th>Key</th><th>Kind</th>' +
-        '<th>Thumbprint</th><th>Proof</th><th>Attestation</th><th>Added' +
-        '</th><th></th></tr></thead><tbody>' + keyRows + '</tbody></table>'
-        : kit.note('None.'));
+    const keys = '<h2>' + t.html('consoleDevices.deviceHtml.keysHeading') +
+      '</h2>' + kit.note(t.html('consoleDevices.deviceHtml.keysNote')) +
+      (keyRows
+        ? '<table class="grid"><thead><tr><th>' +
+          t.html('consoleDevices.deviceHtml.thKey') + '</th><th>' +
+          t.html('consoleDevices.deviceHtml.thKind') + '</th>' +
+          '<th>' + t.html('consoleDevices.deviceHtml.thThumbprint') +
+          '</th><th>' + t.html('consoleDevices.deviceHtml.thProof') +
+          '</th><th>' + t.html('consoleDevices.deviceHtml.thAttestation') +
+          '</th><th>' + t.html('consoleDevices.deviceHtml.thAdded') +
+          '</th><th></th></tr></thead><tbody>' + keyRows + '</tbody></table>'
+        : kit.note(t.html('consoleDevices.deviceHtml.none')));
     const v = { platforms: vocabulary.platforms };
-    const compliance = '<h2>Compliance</h2>' + kit.note('An ' +
-        'administrator\'s vouch, recorded with source <code>admin</code>. ' +
-        'A change a receiver can be told — CAEP knows compliant and ' +
-        'not-compliant, and unknown is sent as not-compliant — goes out as ' +
-        'CAEP device-compliance-change.') +
+    const compliance = '<h2>' +
+      t.html('consoleDevices.deviceHtml.complianceHeading') + '</h2>' +
+      kit.note(t.html('consoleDevices.deviceHtml.complianceNote')) +
       '<form method="post" action="' + LIST + '">' +
       hidden('action', 'set-compliance') + hidden('id', d.id) +
-      '<div class="formrow"><label for="dev-c-status">Compliance</label>' +
+      '<div class="formrow"><label for="dev-c-status">' +
+      t.html('consoleDevices.deviceHtml.thCompliance') + '</label>' +
       '<select id="dev-c-status" name="status">' +
       this.options(vocabulary.compliance, d.compliance, null) +
-      '</select><label for="dev-c-reason">Reason</label><input type="text" ' +
+      '</select><label for="dev-c-reason">' +
+      t.html('consoleDevices.deviceHtml.reason') + '</label><input ' +
+      'type="text" ' +
       'id="dev-c-reason" name="reason" size="40" maxlength="500"></div>' +
-      '<div class="formrow"><button type="submit">Set compliance</button>' +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleDevices.deviceHtml.setCompliance') + '</button>' +
       '</div></form>';
-    const status = '<h2>Compromise</h2>' + (d.status === 'compromised'
-      ? kit.note('This device is marked <strong>compromised</strong>. ' +
-          'Restoring it puts back the risk level the compromise raised; ' +
-          'nothing revoked comes back — a certificate is re-issued and a ' +
-          'Native SSO secret re-minted at the next sign-in.') +
+    const status = '<h2>' +
+      t.html('consoleDevices.deviceHtml.compromiseHeading') + '</h2>' +
+      (d.status === 'compromised'
+      ? kit.note(t.html('consoleDevices.deviceHtml.compromisedNote')) +
         '<form method="post" action="' + LIST + '">' +
         hidden('action', 'set-status') + hidden('id', d.id) +
         hidden('status', 'active') + '<div class="formrow"><label ' +
-        'for="dev-s-reason">Reason</label><input type="text" ' +
+        'for="dev-s-reason">' + t.html('consoleDevices.deviceHtml.reason') +
+        '</label><input type="text" ' +
         'id="dev-s-reason" name="reason" size="40" maxlength="500">' +
-        '<button type="submit">Restore to active</button></div></form>'
-      : kit.note('Marking it compromised ends every sign-on session one ' +
-          'of its keys authenticated, revokes its Native SSO secret and ' +
-          'every certificate this service\'s EST or SCEP Issuing CA issued ' +
-          'it (keyCompromise), raises its risk level to HIGH, and — for a ' +
-          'person\'s device — sends RISC credential-compromise (and ' +
-          'sessions-revoked, where risc.autoEmitTypes names it). It stays in the register, recognised and ' +
-          'saying so.') +
+        '<button type="submit">' +
+        t.html('consoleDevices.deviceHtml.restore') + '</button></div></form>'
+      : kit.note(t.html('consoleDevices.deviceHtml.markNote')) +
         '<form method="post" action="' + LIST + '">' +
         hidden('action', 'set-status') + hidden('id', d.id) +
         hidden('status', 'compromised') + '<div class="formrow"><label ' +
-        'for="dev-s-reason">Reason</label><input type="text" ' +
+        'for="dev-s-reason">' + t.html('consoleDevices.deviceHtml.reason') +
+        '</label><input type="text" ' +
         'id="dev-s-reason" name="reason" size="40" maxlength="500">' +
-        '<button type="submit" class="danger">Mark compromised</button>' +
+        '<button type="submit" class="danger">' +
+        t.html('consoleDevices.deviceHtml.markCompromised') + '</button>' +
         '</div></form>');
     const forms = canWrite
       ? compliance + status +
-        '<h2>Add a key</h2>' + kit.note('Public material only; recorded ' +
-          'as proven by nobody and self-asserted.') +
+        '<h2>' + t.html('consoleDevices.deviceHtml.addKeyHeading') +
+        '</h2>' + kit.note(t.html('consoleDevices.deviceHtml.addKeyNote')) +
         '<form method="post" action="' + LIST + '">' +
         hidden('action', 'add-key') + hidden('id', d.id) +
-        '<div class="formrow"><label for="dev-k-kind">Kind</label>' +
+        '<div class="formrow"><label for="dev-k-kind">' +
+        t.html('consoleDevices.deviceHtml.thKind') + '</label>' +
         '<select id="dev-k-kind" name="kind">' +
         this.options(['x509', 'jwk', 'webauthn'], 'jwk', null) +
-        '</select><label for="dev-k-label">Label</label><input ' +
+        '</select><label for="dev-k-label">' +
+        t.html('consoleDevices.deviceHtml.label') + '</label><input ' +
         'type="text" id="dev-k-label" name="label" size="24" ' +
         'maxlength="128"></div><div class="formrow"><textarea ' +
         'id="dev-k-value" name="value" rows="4" cols="70" required ' +
-        'placeholder="PEM, JWK JSON or credential id"></textarea></div>' +
-        '<div class="formrow"><button type="submit">Add the key</button>' +
+        'placeholder="' + esc(t.text('consoleDevices.listHtml.keyHint')) +
+        '"></textarea></div>' +
+        '<div class="formrow"><button type="submit">' +
+        t.html('consoleDevices.deviceHtml.addKey') + '</button>' +
         '</div></form>' +
-        '<h2>Edit</h2>' + kit.note('A new owner takes the device without ' +
-          'its Native SSO secret, which was bound to the old owner\'s ' +
-          'session; its keys go with it. The applications field replaces ' +
-          'the list.') +
+        '<h2>' + t.html('consoleDevices.deviceHtml.editHeading') + '</h2>' +
+        kit.note(t.html('consoleDevices.deviceHtml.editNote')) +
         '<form method="post" action="' + LIST + '">' +
         hidden('action', 'update') + hidden('id', d.id) +
-        '<div class="formrow"><label for="dev-e-label">Label</label>' +
+        '<div class="formrow"><label for="dev-e-label">' +
+        t.html('consoleDevices.deviceHtml.label') + '</label>' +
         '<input type="text" id="dev-e-label" name="label" size="30" ' +
         'maxlength="128" value="' + esc(d.label) + '"></div>' +
-        '<div class="formrow"><label for="dev-e-ok">Owner kind</label>' +
+        '<div class="formrow"><label for="dev-e-ok">' +
+        t.html('consoleDevices.listHtml.ownerKind') + '</label>' +
         '<select id="dev-e-ok" name="ownerKind">' +
         this.options(vocabulary.ownerKinds, d.ownerKind, null) +
-        '</select><label for="dev-e-owner">Owner</label><input type="text" ' +
+        '</select><label for="dev-e-owner">' +
+        t.html('consoleDevices.listHtml.owner') + '</label><input ' +
+        'type="text" ' +
         'id="dev-e-owner" name="owner" size="24" value="' +
         esc(d.ownerName) + '"></div>' +
-        '<div class="formrow"><label for="dev-e-p">Platform</label>' +
+        '<div class="formrow"><label for="dev-e-p">' +
+        t.html('consoleDevices.listHtml.platform') + '</label>' +
         '<select id="dev-e-p" name="platform">' +
-        this.options(v.platforms, d.platform, 'unstated') + '</select>' +
-        '<label for="dev-e-m">Model</label><input type="text" ' +
+        this.options(v.platforms, d.platform,
+                     t.text('consoleDevices.listHtml.unstated')) +
+        '</select>' +
+        '<label for="dev-e-m">' + t.html('consoleDevices.listHtml.model') +
+        '</label><input type="text" ' +
         'id="dev-e-m" name="model" size="20" maxlength="128" value="' +
-        esc(d.model) + '"><label for="dev-e-os">OS</label><input ' +
+        esc(d.model) + '"><label for="dev-e-os">' +
+        t.html('consoleDevices.listHtml.os') + '</label><input ' +
         'type="text" id="dev-e-os" name="os" size="16" maxlength="128" ' +
         'value="' + esc(d.os) + '"></div>' +
-        '<div class="formrow"><label for="dev-e-apps">Applications</label>' +
+        '<div class="formrow"><label for="dev-e-apps">' +
+        t.html('consoleDevices.listHtml.applications') + '</label>' +
         '<input type="text" id="dev-e-apps" name="applications" size="40" ' +
         'value="' + esc(d.applicationNames.filter(Boolean).join(', ')) +
-        '"></div><div class="formrow"><button type="submit">Save</button>' +
+        '"></div><div class="formrow"><button type="submit">' +
+        t.html('consoleDevices.deviceHtml.save') + '</button>' +
         '</div></form>' +
-        '<h2>Remove</h2>' + kit.note('Removing it revokes the ' +
-          'certificates this service issued it (cessationOfOperation, or ' +
-          'keyCompromise when it is compromised) and ends the sign-on ' +
-          'sessions it authenticated.') +
+        '<h2>' + t.html('consoleDevices.deviceHtml.remove') + '</h2>' +
+        kit.note(t.html('consoleDevices.deviceHtml.removeNote')) +
         '<form method="post" action="' + LIST + '">' +
         hidden('action', 'remove') + hidden('id', d.id) +
-        '<button type="submit" class="danger">Remove this device</button>' +
+        '<button type="submit" class="danger">' +
+        t.html('consoleDevices.deviceHtml.removeDevice') + '</button>' +
         '</form>'
-      : kit.note('Editing needs <strong>Admin Write</strong>.');
+      : kit.note(t.html('consoleDevices.deviceHtml.readOnly'));
     return facts + apps + keys + forms;
   }
 
   /**
    * Draws the state of Google's Android attestation status list (#256).
    *
+   * @param t - the page's translator
    * @param status - the view's `androidStatus`
    * @returns the section as HTML
    */
-  static androidStatusHtml(status: Json): string {
-    const esc = kit.esc.bind(kit);
+  static androidStatusHtml(t: Json, status: Json): string {
     const s = status || {};
-    return '<h2>Android attestation status list</h2>' +
-      kit.note('Every certificate of an Android Key Attestation chain — at ' +
-        'a device\'s registration and at a WebAuthn android-key statement — ' +
-        'is looked up in Google\'s list of revoked and suspended ' +
-        'attestation certificates. A chain it names is not attested. ' +
-        'The list is the risk dataset <code>android.attestation-status' +
-        '</code> on <a href="/admin/risk">Risk</a>, downloaded by <code>' +
-        esc(s.job || 'devices.android-status-refresh') + '</code> from ' +
-        (s.url ? '<code>' + esc(s.url) + '</code>'
-               : '<strong>nowhere</strong> (devices.androidStatusUrl is ' +
-                 'empty; upload it on Risk)') + '.') +
-      '<table class="key"><tr><th>Active list</th><td>' +
-      (s.active ? '<code>' + esc(s.active) + '</code>, ' +
-                  esc(String(s.rows || 0)) + ' certificate(s), loaded ' +
-                  esc(s.loadedAt ? new Date(s.loadedAt).toISOString() : '?') +
-                  (s.stale ? ' — <strong class="state-expired">STALE' +
-                             '</strong> (older than ' +
-                             esc(String(s.staleAfterHours)) + ' hours)' : '')
-                : '<span class="state-none">none — Android chains are ' +
-                  'recorded with their revocation UNCHECKED</span>') +
-      '</td></tr><tr><th>An unchecked chain</th><td>' +
-      (s.required ? 'is <strong>not attested</strong> in product mode ' +
-                    '(devices.androidRevocationRequired)'
-                  : 'is still attested, with the reason recorded ' +
-                    '(devices.androidRevocationRequired is off)') +
+    // The Risk link carries an href, so the note is two messages around it;
+    // where the list comes from is a `select`, so it stays one sentence.
+    return '<h2>' + t.html('consoleDevices.androidStatusHtml.heading') +
+      '</h2>' +
+      kit.note(t.html('consoleDevices.androidStatusHtml.noteBefore') +
+        '<a href="/admin/risk">' +
+        t.html('consoleDevices.androidStatusHtml.risk') + '</a>' +
+        t.html('consoleDevices.androidStatusHtml.noteAfter', {
+          job: s.job || 'devices.android-status-refresh',
+          from: s.url ? 'url' : 'nowhere', url: s.url || '' })) +
+      '<table class="key"><tr><th>' +
+      t.html('consoleDevices.androidStatusHtml.activeList') + '</th><td>' +
+      (s.active
+        ? t.html('consoleDevices.androidStatusHtml.active', {
+            name: s.active, rows: String(s.rows || 0),
+            loaded: s.loadedAt ? new Date(s.loadedAt).toISOString() : '?' }) +
+          (s.stale ? ' — <strong class="state-expired">' +
+                     t.html('consoleDevices.androidStatusHtml.stale') +
+                     '</strong>' +
+                     t.html('consoleDevices.androidStatusHtml.olderThan',
+                            { hours: String(s.staleAfterHours) }) : '')
+        : '<span class="state-none">' +
+          t.html('consoleDevices.androidStatusHtml.noList') + '</span>') +
+      '</td></tr><tr><th>' +
+      t.html('consoleDevices.androidStatusHtml.unchecked') + '</th><td>' +
+      (s.required ? t.html('consoleDevices.androidStatusHtml.notAttested')
+                  : t.html('consoleDevices.androidStatusHtml.stillAttested')) +
       '</td></tr></table>';
   }
 
-  static registrationHtml(json: Json): string {
+  // Called by `web_pages.ts`, whose page table hands it the view and, once
+  // it passes one, the context (#539): without it the words are the
+  // default translator's.
+  /**
+   * Draws Protocols → Device registration.
+   *
+   * @param json - the view `GET /admin-api/device-registration` answers
+   * @param ctx - optional; the render context
+   * @returns the body as HTML
+   */
+  static registrationHtml(json: Json, ctx?: Json): string {
+    const t = kitEscaping((ctx || kit.context()).t);
     const esc = kit.esc.bind(kit);
     const state = function (built: boolean): string {
-      return built ? '<span class="state-valid">built</span>'
-                   : '<span class="state-none">not built yet</span>';
+      return built
+        ? '<span class="state-valid">' +
+          t.html('consoleDevices.registrationHtml.built') + '</span>'
+        : '<span class="state-none">' +
+          t.html('consoleDevices.registrationHtml.notBuilt') + '</span>';
     };
-    return kit.note('A device is an entry under <code>ou=devices</code>, ' +
-        'owned by ONE person or ONE application, holding the keys it is ' +
-        'recognised by. <a href="' + LIST + '">Devices</a> is the register; ' +
-        'this page is how a device gets into it and how it is known again.',
-        'What this page is') +
-      '<h2>How a device is registered</h2><table class="grid"><thead><tr>' +
-      '<th>Method</th><th>State</th><th>What happens</th></tr></thead>' +
+    return kit.note(t.html('consoleDevices.registrationHtml.leadBefore') +
+        '<a href="' + LIST + '">' +
+        t.html('consoleDevices.registrationHtml.devices') + '</a>' +
+        t.html('consoleDevices.registrationHtml.leadAfter'),
+        t.text('consoleDevices.listHtml.whatThisIs')) +
+      '<h2>' + t.html('consoleDevices.registrationHtml.registeredHeading') +
+      '</h2><table class="grid"><thead><tr>' +
+      '<th>' + t.html('consoleDevices.registrationHtml.thMethod') +
+      '</th><th>' + t.html('consoleDevices.registrationHtml.thState') +
+      '</th><th>' + t.html('consoleDevices.registrationHtml.thWhat') +
+      '</th></tr></thead>' +
       '<tbody>' + json.enrolment.map(function (r: Json): string {
         return '<tr><td><code>' + esc(r.method) + '</code></td><td>' +
           state(r.built) + '</td><td>' + esc(r.what) + '</td></tr>';
       }).join('') + '</tbody></table>' +
-      '<h2>How a device is recognised</h2><table class="grid"><thead><tr>' +
-      '<th>Key</th><th>State</th><th>How it is matched</th></tr></thead>' +
+      '<h2>' + t.html('consoleDevices.registrationHtml.recognisedHeading') +
+      '</h2><table class="grid"><thead><tr>' +
+      '<th>' + t.html('consoleDevices.deviceHtml.thKey') + '</th><th>' +
+      t.html('consoleDevices.registrationHtml.thState') + '</th><th>' +
+      t.html('consoleDevices.registrationHtml.thMatched') +
+      '</th></tr></thead>' +
       '<tbody>' + json.recognition.map(function (r: Json): string {
         return '<tr><td><code>' + esc(r.kind) + '</code></td><td>' +
           state(r.built) + '</td><td>' + esc(r.what) + '</td></tr>';
       }).join('') + '</tbody></table>' +
-      '<h2>Attestation</h2>' +
-      kit.note('A device is <strong>attested</strong> when a verifier ' +
-        'checked an attestation statement for one of its keys and it ' +
-        'chained to a trust anchor below, and <strong>self-asserted' +
-        '</strong> otherwise. The formats it records: ' +
-        esc(json.attestationFormats.join(', ')) + '. A statement that ' +
-        'does not verify is refused in both modes; one that verifies and ' +
-        'chains to nothing here is self-asserted. ' +
+      '<h2>' + t.html('consoleDevices.deviceHtml.thAttestation') + '</h2>' +
+      kit.note(t.html('consoleDevices.registrationHtml.attestationNote',
+                      { formats: json.attestationFormats.join(', ') }) +
         (json.unattestedKeys.accepted
-          ? 'This realm (development) registers a self-asserted key a ' +
-            'device or its owner presents.'
-          : 'This realm (product) REFUSES a self-asserted key a device or ' +
-            'its owner presents (STS-DEVICE-0024).') + ' ' +
-        esc(json.unattestedKeys.adminKeys) + '. ' +
+          ? t.html('consoleDevices.registrationHtml.selfAssertedAccepted')
+          : t.html('consoleDevices.registrationHtml.selfAssertedRefused')) +
+        ' ' + esc(json.unattestedKeys.adminKeys) + '. ' +
         (json.freshKeyAttestation
           ? (json.freshKeyAttestation.required
-            ? 'A TPM key attestation must also be FRESH: its extraData a ' +
-              'nonce from <code>' + esc(json.freshKeyAttestation.nonce) +
-              '</code>, sent with that response\'s cookie, or it is ' +
-              'refused (STS-DEVICE-0050). '
-            : 'A TPM key attestation that is not fresh (no nonce from <code>' +
-              esc(json.freshKeyAttestation.nonce) + '</code>) is recorded ' +
-              'with freshness unproven. ') +
+            ? t.html('consoleDevices.registrationHtml.freshRequired',
+                     { nonce: json.freshKeyAttestation.nonce })
+            : t.html('consoleDevices.registrationHtml.freshUnproven',
+                     { nonce: json.freshKeyAttestation.nonce })) +
             esc(json.freshKeyAttestation.scep) + '.'
           : '')) +
-      '<table class="grid"><thead><tr><th>Statement</th><th>Anchors</th>' +
-      '<th>Setting</th><th>Shipped</th></tr></thead><tbody>' +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleDevices.registrationHtml.thStatement') + '</th><th>' +
+      t.html('consoleDevices.registrationHtml.thAnchors') + '</th>' +
+      '<th>' + t.html('consoleDevices.registrationHtml.thSetting') +
+      '</th><th>' + t.html('consoleDevices.registrationHtml.thShipped') +
+      '</th></tr></thead><tbody>' +
       json.trustAnchors.map(function (r: Json): string {
         return '<tr><td><code>' + esc(r.kind) + '</code></td><td>' +
           esc(r.count === null ? r.source : r.count + ' (' + r.source +
                                            ')') +
           '</td><td><code>' + esc(r.setting) + '</code></td><td>' +
           (r.shipped.length ? r.shipped.map(function (a: Json): string {
-            return esc(a.subject) + ' — until ' + esc(a.notAfter) +
+            return esc(a.subject) +
+              t.html('consoleDevices.registrationHtml.until',
+                     { date: a.notAfter }) +
               '<br><small>SHA-256 <code>' + esc(a.sha256) + '</code>' +
-              (a.used ? '' : ' <strong>not used: pin mismatch</strong>') +
+              (a.used ? ''
+                      : ' <strong>' +
+                        t.html('consoleDevices.registrationHtml.pinMismatch') +
+                        '</strong>') +
               '</small>';
           }).join('<br>') : '—') + '</td></tr>';
       }).join('') + '</tbody></table>' +
       // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256).
-      DevicesPage.androidStatusHtml(json.androidStatus) +
-      '<h2>Enrolment challenges</h2>' +
-      kit.note('The challenges <code>/portal/devices</code> issues are ' +
-        'held in <code>' + esc(json.challenges.store) + '</code>, per ' +
-        'realm and persisted, one per session and purpose, answered once ' +
-        'across the cluster and for ' +
-        esc(String(json.challenges.ttlSeconds)) + ' seconds; ' +
-        esc(String(json.challenges.live)) + ' are live, of at most ' +
-        esc(String(json.challenges.max)) + '.') +
-      '<h2>Where a recognised device is recorded</h2>' +
-      kit.note('At a sign-in: ' + esc(json.recordedAt.signIn) + '. At ' +
-        'the token endpoint: ' + esc(json.recordedAt.tokenEndpoint) + '. ' +
-        'A compromised device is still recognised, and says so.') +
-      '<h2>Compliance</h2>' +
-      kit.note('A device is <code>compliant</code>, ' +
-        '<code>not-compliant</code> or <code>unknown</code> (where it ' +
-        'starts); every change records its previous value and who set it ' +
-        '— ' + esc(json.complianceSources.join(', ')) + '.') +
-      '<table class="grid"><thead><tr><th>Door</th><th>State</th>' +
-      '<th>How</th></tr></thead><tbody>' +
-      '<tr><td>An administrator</td><td>' + state(true) + '</td><td>' +
-      'Set compliance on a device\'s page under <a href="' + LIST + '">' +
-      'Devices</a>, or <code>POST /admin-api/devices/set-compliance</code> ' +
-      '(Admin Write). Source <code>admin</code>.</td></tr>' +
-      '<tr><td>An MDM or posture feed</td><td>' + state(true) + '</td><td>' +
-      '<code>' + esc(json.mdmFeed.path) + '</code> with an access token ' +
-      'carrying <code>' + esc(json.mdmFeed.scope) + '</code> — a PROTECTED ' +
-      'scope, issued only to a client that declares it, and the only ' +
-      'scope that operation takes: the feed needs no admin scope and gets ' +
-      'none. Up to ' + esc(String(json.mdmFeed.maxReports)) + ' reports, ' +
-      'each naming its device by ' + esc(json.mdmFeed.identifiedBy.join(', ')) +
-      '. Source <code>mdm</code>, the client as actor.</td></tr>' +
-      '<tr><td>The test control</td><td>' + (json.testControl.open
-        ? '<span class="state-valid">open (development)</span>'
-        : '<span class="state-none">refused (product)</span>') +
-      '</td><td><code>' + esc(json.testControl.path) + '</code>, no ' +
-      'credential, development only (<code>mode.opensTestControls()</code>). ' +
-      'Source <code>test-control</code>.</td></tr>' +
-      '<tr><td>A received CAEP device-compliance-change</td><td>' +
-      state(true) + '</td><td>From a federation partner whose Shared ' +
-      'Signals this realm receives — a device manager is an ' +
-      '<code>ssf</code> relationship on <a href="/admin/federation">' +
-      'Federation</a> — as the <code>signal-response</code> policy permits ' +
-      '(#373, #374), its device named by id or key thumbprint. Source ' +
-      '<code>caep</code>; arrivals on <a href="/admin/ssf/transmitters">' +
-      'Signals from partners</a>.</td></tr></tbody></table>' +
-      '<h2>What goes out over Shared Signals</h2>' +
-      kit.note('CAEP: ' + esc(json.signals.caep.join('; ')) + '. RISC, ' +
-        'for a person\'s device compromised or removed: ' +
-        esc(json.signals.risc.join(' and ')) + '. The subject is ' +
-        esc(json.signals.subject) + '. A compliance change goes out only ' +
-        'when what a receiver can be told moved: CAEP knows compliant and ' +
-        'not-compliant, and unknown is sent as not-compliant.') +
-      '<h2>What decides on a device</h2>' +
-      kit.note('Risk scoring: the signals ' +
-        esc(json.decisions.riskSignals.join(', ')) + ' — the last two ' +
-        'lower the score; unregistered-device fires ' +
-        (json.decisions.expectRegistered ? 'for anybody here ' +
-          '(devices.expectRegistered)' : 'only for a person who registered ' +
-          'a device') + '. The issuance policy (' +
-        esc(json.decisions.policy) + '): a compromised device is ' +
-        (json.decisions.refuseCompromised ? '<strong>refused</strong>'
-                                          : 'only a risk signal') +
-        '; a compliant registered device is ' +
-        (json.decisions.requireCompliantDevice
-          ? '<strong>required</strong>' + (json.decisions
-              .compliantDeviceAttested ? ', and attested' : '')
-          : 'not required (off by default)') + '. The acr <code>' +
-        esc(json.decisions.acr) + '</code>, and the claim ' +
-        esc(json.decisions.claim) + '.') +
-      '<h2>Settings</h2>' + SettingsForms.forms(json.settings, REGISTRATION);
+      DevicesPage.androidStatusHtml(t, json.androidStatus) +
+      '<h2>' + t.html('consoleDevices.registrationHtml.challengesHeading') +
+      '</h2>' +
+      kit.note(t.html('consoleDevices.registrationHtml.challengesNote', {
+        store: json.challenges.store,
+        ttl: String(json.challenges.ttlSeconds),
+        live: String(json.challenges.live),
+        max: String(json.challenges.max) })) +
+      '<h2>' + t.html('consoleDevices.registrationHtml.recordedHeading') +
+      '</h2>' +
+      kit.note(t.html('consoleDevices.registrationHtml.recordedNote', {
+        signIn: json.recordedAt.signIn,
+        token: json.recordedAt.tokenEndpoint })) +
+      '<h2>' + t.html('consoleDevices.deviceHtml.complianceHeading') +
+      '</h2>' +
+      kit.note(t.html('consoleDevices.registrationHtml.complianceNote',
+                      { sources: json.complianceSources.join(', ') })) +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleDevices.registrationHtml.thDoor') + '</th><th>' +
+      t.html('consoleDevices.registrationHtml.thState') + '</th>' +
+      '<th>' + t.html('consoleDevices.registrationHtml.thHow') +
+      '</th></tr></thead><tbody>' +
+      // The rows' links carry hrefs: the words around each are messages.
+      '<tr><td>' + t.html('consoleDevices.registrationHtml.doorAdmin') +
+      '</td><td>' + state(true) + '</td><td>' +
+      t.html('consoleDevices.registrationHtml.adminBefore') +
+      '<a href="' + LIST + '">' +
+      t.html('consoleDevices.registrationHtml.devices') + '</a>' +
+      t.html('consoleDevices.registrationHtml.adminAfter') + '</td></tr>' +
+      '<tr><td>' + t.html('consoleDevices.registrationHtml.doorMdm') +
+      '</td><td>' + state(true) + '</td><td>' +
+      t.html('consoleDevices.registrationHtml.mdmHow', {
+        path: json.mdmFeed.path, scope: json.mdmFeed.scope,
+        max: String(json.mdmFeed.maxReports),
+        by: json.mdmFeed.identifiedBy.join(', ') }) + '</td></tr>' +
+      '<tr><td>' + t.html('consoleDevices.registrationHtml.doorTest') +
+      '</td><td>' + (json.testControl.open
+        ? '<span class="state-valid">' +
+          t.html('consoleDevices.registrationHtml.testOpen') + '</span>'
+        : '<span class="state-none">' +
+          t.html('consoleDevices.registrationHtml.testRefused') +
+          '</span>') +
+      '</td><td>' + t.html('consoleDevices.registrationHtml.testHow',
+                           { path: json.testControl.path }) + '</td></tr>' +
+      '<tr><td>' + t.html('consoleDevices.registrationHtml.doorCaep') +
+      '</td><td>' +
+      state(true) + '</td><td>' +
+      t.html('consoleDevices.registrationHtml.caepBefore') +
+      '<a href="/admin/federation">' +
+      t.html('consoleDevices.registrationHtml.federation') + '</a>' +
+      t.html('consoleDevices.registrationHtml.caepMiddle') +
+      '<a href="/admin/ssf/transmitters">' +
+      t.html('consoleDevices.registrationHtml.partners') + '</a>' +
+      t.html('consoleDevices.registrationHtml.caepAfter') +
+      '</td></tr></tbody></table>' +
+      '<h2>' + t.html('consoleDevices.registrationHtml.signalsHeading') +
+      '</h2>' +
+      kit.note(t.html('consoleDevices.registrationHtml.signalsNote', {
+        caep: json.signals.caep.join('; '),
+        risc: json.signals.risc.join(' and '),
+        subject: json.signals.subject })) +
+      '<h2>' + t.html('consoleDevices.registrationHtml.decidesHeading') +
+      '</h2>' +
+      // Every choice in the sentence is a `select`, so a translator sees
+      // the whole of it.
+      kit.note(t.html('consoleDevices.registrationHtml.decidesNote', {
+        signals: json.decisions.riskSignals.join(', '),
+        expect: json.decisions.expectRegistered ? 'yes' : 'no',
+        policy: json.decisions.policy,
+        refuse: json.decisions.refuseCompromised ? 'yes' : 'no',
+        require: json.decisions.requireCompliantDevice
+          ? (json.decisions.compliantDeviceAttested ? 'attested' : 'yes')
+          : 'no',
+        acr: json.decisions.acr, claim: json.decisions.claim })) +
+      '<h2>' + t.html('consoleDevices.registrationHtml.settings') + '</h2>' +
+      SettingsForms.forms(json.settings, REGISTRATION, undefined, t);
   }
 
-  static monitorHtml(json: Json): string {
+  // Called by `web_pages.ts` like registrationHtml(), and for the same
+  // reason takes an optional context.
+  /**
+   * Draws Monitoring → Devices.
+   *
+   * @param json - the view `GET /admin-api/devices/monitor` answers
+   * @param ctx - optional; the render context
+   * @returns the body as HTML
+   */
+  static monitorHtml(json: Json, ctx?: Json): string {
+    const t = kitEscaping((ctx || kit.context()).t);
     const esc = kit.esc.bind(kit);
     const c = json.counts;
+    // A table's title arrives translated, as text the kit escapes.
     const table = function (title: string, counts: Json): string {
       return '<h2>' + esc(title) + '</h2><table class="grid"><tbody>' +
         Object.keys(counts).map(function (k) {
@@ -559,49 +712,65 @@ class DevicesPage {
             '</td></tr>';
         }).join('') + '</tbody></table>';
     };
-    const t = json.timeline;
+    // The timeline was `t` until #539 made `t` the translator.
+    const tl = json.timeline;
     const sources: string[] = json.complianceSources;
-    return '<div class="tiles">' + kit.tile(String(c.total), 'devices') +
-      kit.tile(String(c.keys), 'keys') +
-      kit.tile(String(c.nativeSso.live), 'live Native SSO') +
-      kit.tile(String(t.totals.created), 'registered') +
-      kit.tile(String(t.totals.removed), 'removed') +
-      kit.tile(String(t.totals.evicted), 'evicted') + '</div>' +
-      kit.note('What this realm\'s register holds, counted now, and what ' +
-        'happened to it: every registration, removal, and eviction at a ' +
-        'person\'s <code>devices.maxPerPerson</code>, kept up to ' +
-        '<code>devices.eventsKept</code>, and every compliance change by ' +
-        'who made it — admin, mdm, test-control, caep' + (t.since
-          ? ' (the oldest is ' +
-        'from ' + esc(t.since) + ')' : '') + '. A device removed by an ' +
-        '<code>ldapdelete</code> on the socket is not an event here — the ' +
-        'register never sees it.', 'What this page is') +
-      table('By owner', c.byOwnerKind) +
-      table('By compliance', c.byCompliance) +
-      table('By risk level', c.byRiskLevel || {}) +
-      table('Compliance changes kept, by source', t.totals.compliance || {}) +
-      table('By attestation', c.byAttestation) +
-      table('By key', c.byKeyKind) +
-      table('By enrolment', c.byEnrolment) +
-      table('Native SSO', c.nativeSso) +
-      table('Keys by attestation format', c.byKeyAttestationFormat || {}) +
-      kit.note('Counted in this process since it started (' +
-        esc(json.activity.scope) + '): a page served by one node of a ' +
-        'cluster shows that node\'s.', 'The counters below') +
-      table('Recognitions, by key', json.activity.recognitions) +
-      table('Enrolments by a device or its owner, by method',
+    return '<div class="tiles">' +
+      kit.tile(String(c.total), t.text('consoleDevices.monitorHtml.devices')) +
+      kit.tile(String(c.keys), t.text('consoleDevices.monitorHtml.keys')) +
+      kit.tile(String(c.nativeSso.live),
+               t.text('consoleDevices.monitorHtml.liveSso')) +
+      kit.tile(String(tl.totals.created),
+               t.text('consoleDevices.monitorHtml.registered')) +
+      kit.tile(String(tl.totals.removed),
+               t.text('consoleDevices.monitorHtml.removed')) +
+      kit.tile(String(tl.totals.evicted),
+               t.text('consoleDevices.monitorHtml.evicted')) + '</div>' +
+      kit.note(t.html('consoleDevices.monitorHtml.leadBefore') +
+        (tl.since ? t.html('consoleDevices.monitorHtml.since',
+                           { since: tl.since }) : '') +
+        t.html('consoleDevices.monitorHtml.leadAfter'),
+        t.text('consoleDevices.listHtml.whatThisIs')) +
+      table(t.text('consoleDevices.monitorHtml.byOwner'), c.byOwnerKind) +
+      table(t.text('consoleDevices.monitorHtml.byCompliance'),
+            c.byCompliance) +
+      table(t.text('consoleDevices.monitorHtml.byRisk'),
+            c.byRiskLevel || {}) +
+      table(t.text('consoleDevices.monitorHtml.changesBySource'),
+            tl.totals.compliance || {}) +
+      table(t.text('consoleDevices.monitorHtml.byAttestation'),
+            c.byAttestation) +
+      table(t.text('consoleDevices.monitorHtml.byKey'), c.byKeyKind) +
+      table(t.text('consoleDevices.monitorHtml.byEnrolment'),
+            c.byEnrolment) +
+      table(t.text('consoleDevices.monitorHtml.nativeSso'), c.nativeSso) +
+      table(t.text('consoleDevices.monitorHtml.keysByFormat'),
+            c.byKeyAttestationFormat || {}) +
+      kit.note(t.html('consoleDevices.monitorHtml.countersNote',
+                      { scope: json.activity.scope }),
+               t.text('consoleDevices.monitorHtml.countersLabel')) +
+      table(t.text('consoleDevices.monitorHtml.recognitions'),
+            json.activity.recognitions) +
+      table(t.text('consoleDevices.monitorHtml.enrolments'),
             json.activity.enrolments) +
-      table('Enrolled keys, by attestation', json.activity.attestationLevels) +
-      table('Enrolled keys, by attestation format',
+      table(t.text('consoleDevices.monitorHtml.enrolledByLevel'),
+            json.activity.attestationLevels) +
+      table(t.text('consoleDevices.monitorHtml.enrolledByFormat'),
             json.activity.attestationFormats) +
-      table('Attestations refused', json.activity.attestationRefusals) +
-      '<h2>The last ' + esc(String(t.days)) + ' days</h2>' +
-      '<table class="grid"><thead><tr><th>Day (UTC)</th><th>Registered' +
-      '</th><th>Removed</th><th>Evicted</th>' +
+      table(t.text('consoleDevices.monitorHtml.refused'),
+            json.activity.attestationRefusals) +
+      '<h2>' + t.html('consoleDevices.monitorHtml.lastDays',
+                      { days: String(tl.days) }) + '</h2>' +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleDevices.monitorHtml.thDay') + '</th><th>' +
+      t.html('consoleDevices.monitorHtml.thRegistered') +
+      '</th><th>' + t.html('consoleDevices.monitorHtml.thRemoved') +
+      '</th><th>' + t.html('consoleDevices.monitorHtml.thEvicted') + '</th>' +
       sources.map(function (src: string): string {
-        return '<th>Compliance: ' + esc(src) + '</th>';
+        return '<th>' + t.html('consoleDevices.monitorHtml.thCompliance',
+                               { source: src }) + '</th>';
       }).join('') + '</tr></thead><tbody>' +
-      t.rows.slice(0).reverse().map(function (r: Json): string {
+      tl.rows.slice(0).reverse().map(function (r: Json): string {
         return '<tr><td>' + esc(r.day) + '</td><td>' + r.created +
           '</td><td>' + r.removed + '</td><td>' + r.evicted + '</td>' +
           sources.map(function (src: string): string {

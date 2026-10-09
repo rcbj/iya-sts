@@ -1,0 +1,16 @@
+{
+  "request.heading": "Ito ba ang iyong device?",
+  "request.asks": "Hinihiling ng {client} na i-sign in ka sa isang device na nagpapakita ng code na {code}.",
+  "request.access": "Access: <code>{scope}</code>. Mag-e-expire sa {when}.",
+  "request.noScope": "(walang binanggit)",
+  "request.warning": "<strong>Aprubahan lang ang device na nasa harap mo</strong> at ikaw mismo ang nagsimulang mag-sign in. Kung may nagpadala sa iyo ng code na ito, hinihiling niyang i-sign in mo SIYA bilang ikaw.",
+  "request.approve": "Aprubahan",
+  "request.deny": "Tanggihan",
+  "find.heading": "Mag-sign in ng device",
+  "find.sub": "Isang telebisyon, console o command line na nagpapakita ng code at ng address na ito ang humihiling na dito ka na lang mag-sign in (RFC 8628).",
+  "find.off": "Naka-off dito ang ganitong paraan ng pag-sign in.",
+  "find.code": "Ang code na ipinapakita ng device",
+  "find.continue": "Magpatuloy",
+  "done.approved": "Naaprubahan: sina-sign in ka na ng device.",
+  "done.denied": "Tinanggihan."
+}

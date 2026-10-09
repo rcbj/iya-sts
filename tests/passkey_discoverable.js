@@ -17,7 +17,8 @@
 //     browser as `data-userid`, recorded on the key row;
 //   * SECTION 7.2 STEP 6: a returned `userHandle` must be the one the key
 //     was created under, at the passkey step after a typed username too;
-//   * A SIGN-IN WITH NO USERNAME (`webauthn.usernameless`, off by default):
+//   * A SIGN-IN WITH NO USERNAME (the passkey policy's `allowUsernameless`,
+//     off by default; `webauthn.usernameless` until #527):
 //     the screen's button and autofill, the handle naming the account, user
 //     verification REQUIRED, the session `amr ["hwk","user"]` `acr "mfa"`,
 //     a key from before #474 told to type its username, a credential nobody
@@ -244,6 +245,8 @@ function childMain() {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
     const config = require(ROOT + '/common/config');
+    // #527: usernameless sign-in is the passkey policy's now.
+    const passkeyPolicy = require(ROOT + '/common/passkey_policy');
     const applications = require(ROOT + '/common/applications');
     const credentials = require(ROOT + '/common/credentials');
     const webauthnPolicy = require(ROOT + '/authn/webauthn_policy');
@@ -369,7 +372,10 @@ function childMain() {
          registered.status + ' ' + JSON.stringify(aliceKey).slice(0, 200));
 
     // 3. On.
-    config.setOverride('webauthn.usernameless', true);
+    const turnedOn = passkeyPolicy.save('default', Object.assign({},
+      passkeyPolicy.DEFAULTS, { allowUsernameless: true }));
+    note(turnedOn.ok, '3. the passkey policy allows a usernameless sign-in ' +
+         '(#527)', JSON.stringify(turnedOn.errors || []));
     s = await screenFor();
     const csp = String(s.screen.headers['content-security-policy'] || '');
     note(/id="wa-passkey-go"[^>]*value="passkey"/.test(s.screen.text) &&
@@ -525,7 +531,7 @@ function childMain() {
     } finally {
       config.clearOverride('webauthn.primaryAllowed');
     }
-    config.clearOverride('webauthn.usernameless');
+    passkeyPolicy.reset('default');
     server.close();
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

@@ -1,0 +1,23 @@
+{
+  "heading": "Your recent sign-ins",
+  "sub": "Every sign-in to your account is checked for how unusual it looks — where it came from, and with what — against how you usually sign in. If one here was not you, say so: every session on your account is ended at once, and you should change your password.",
+  "none": "No sign-in of yours has been assessed in the last {days, plural, one {# day} other {# days}}.",
+  "when": "When",
+  "from": "From",
+  "with": "With",
+  "through": "Through",
+  "risk": "Risk",
+  "wasItYou": "Was it you?",
+  "nowhere": "somewhere the datasets do not name",
+  "deviceOn": "{family} on {os}",
+  "noDevice": "an unnamed device",
+  "level": "{level, select, LOW {LOW} MEDIUM {MEDIUM} HIGH {HIGH} UNSCORED {UNSCORED} other {{level}}}",
+  "thisSession": "this session",
+  "saidYes": "You said it was you.",
+  "saidNo": "<strong>You said it was not you.</strong>",
+  "yes": "This was me",
+  "no": "This wasn't me",
+  "doneDenied": "Thank you. Every session on your account is being ended, including this one, and the applications you use are being told. Sign in again and change your password at {path}.",
+  "doneConfirmed": "Thank you — recorded as you.",
+  "doneConfirmedLow": "Thank you — recorded as you. Your account's risk is back to low."
+}

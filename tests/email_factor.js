@@ -284,7 +284,10 @@ function childMain() {
       r = await request(port, 'POST', '/authn/login',
         { authn_id: authnId, username: 'ef-bo', action: 'email-code' });
       mfaId = mfaIdOf(r);
-      const realPage = r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, 'ID');
+      // The language chooser's return path (#539) carries the step's own
+      // random id (`?mfa=`), as the hidden field does: masked the same way.
+      const realPage = r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, 'ID')
+        .replace(/mfa=[A-Za-z0-9_-]{20,}/g, 'mfa=ID');
       message = await mailed('ef-bo', /sign-in code/, before);
       code = codeIn(message);
       r = await request(port, 'POST', '/authn/email-code',
@@ -303,6 +306,7 @@ function childMain() {
         r = await request(port, 'POST', '/authn/login',
           { authn_id: authnId, username: who, action: 'email-code' });
         pages.push(r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, 'ID')
+          .replace(/mfa=[A-Za-z0-9_-]{20,}/g, 'mfa=ID')
           .replace(new RegExp(who, 'g'), 'WHO'));
         await sleep(100);
         note(idsFor(who).length === beforeWho.length,

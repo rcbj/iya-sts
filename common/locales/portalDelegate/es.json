@@ -1,0 +1,14 @@
+{
+  "heading": "Quién puede actuar en tu nombre",
+  "sub": "Una aplicación o una persona que designes aquí puede pedir a este servicio un token en tu nombre intercambiando uno de los tuyos (intercambio de tokens RFC 8693). Cada token de acceso emitido sobre ti lo indica en su claim <code>may_act</code>, y se rechaza el intercambio de uno por CUALQUIER OTRO. Puedes designar a una sola parte.",
+  "currentPerson": "La parte que puede actuar en tu nombre es <code>{dn}</code> (una persona).",
+  "currentApplication": "La parte que puede actuar en tu nombre es <code>{dn}</code> (una aplicación).",
+  "currentStale": "La parte que puede actuar en tu nombre es <code>{dn}</code>, que ya no designa nada en este directorio, así que tus tokens no llevan <code>may_act</code>.",
+  "nobody": "No has designado a nadie. Tus tokens de acceso no llevan ningún claim <code>may_act</code>.",
+  "notDelegated": "Un administrador ha marcado tu cuenta como no delegable, así que nadie puede actuar en tu nombre, designes a quien designes aquí.",
+  "dnLabel": "Su nombre en el directorio (DN)",
+  "name": "Designar",
+  "clear": "No designar a nadie",
+  "doneSet": "Tu delegado está configurado.",
+  "doneCleared": "No has designado a nadie."
+}

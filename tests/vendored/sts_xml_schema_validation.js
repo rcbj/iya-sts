@@ -951,9 +951,9 @@ async function saml2(w) {
   // THE ARTIFACT, and the ArtifactResponse the service provider fetches.
   const art = await ssoRound(w, cookies, w.sp, w.acs, BINDING.artifact);
   for (const m of await capturedOne("the artifact", art, "SAMLart")) {
-    // The service provider's own resolver: with saml2.perApplicationEntityId
-    // on, the artifact's SourceID names w.sp's entity, and the unscoped
-    // /saml2/ars answers only for its own (#160).
+    // The service provider's own resolver. Since #523 the artifact's
+    // SourceID names the realm's one issuer, which every resolver of the
+    // realm answers for (#160).
     const ars = w.rb + "/saml2/ars/" + encodeURIComponent(w.sp);
     const resolveId = samlId();
     const resolve = signEnveloped(

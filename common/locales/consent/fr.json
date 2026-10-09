@@ -1,0 +1,21 @@
+{
+  "title": "Autoriser l’accès ? — serveur d’autorisation fictif",
+  "heading": "Autoriser l’accès ?",
+  "signedInAs": "Connecté en tant que <code>{username}</code> sur <code>{base}</code>",
+  "asking": "<strong>{client}</strong> demande un accès en votre nom.",
+  "scope.permission": "{description} — exposée par <code>{identifier}</code> ; le jeton d’accès sera adressé à <code>{baseUri}</code>",
+  "scope.permissionNamed": "la permission « {name} »",
+  "scope.ordinary": "une portée ordinaire : ce service ne lui attribue aucune signification et la placera telle quelle dans la revendication scope du jeton",
+  "detail.understood": "comprise par <code>{resource}</code> ; le jeton d’accès sera adressé à <code>{audience}</code>",
+  "detail.described": "{description} — comprise par <code>{resource}</code> ; le jeton d’accès sera adressé à <code>{audience}</code>",
+  "detailsNote": "Cette demande comporte <strong>{count, plural, one {# détail d’autorisation} other {# détails d’autorisation}}</strong> (RFC 9396). Ils vous sont soumis à chaque fois : Autoriser accepte exactement ce qui est listé, pour cette seule demande.",
+  "already.summary": "{count} portée(s) que vous avez déjà acceptée(s) pour cette application",
+  "already.global": "consentie pour tout le monde sur la fiche de cette application (<code>oauthGlobalConsent</code>) — la question ne vous a jamais été posée",
+  "already.byYou": "acceptée par vous",
+  "already.byYouAt": "acceptée par vous le {at}",
+  "allow": "Autoriser",
+  "deny": "Refuser",
+  "meta.allow": "Autoriser inscrit une valeur <code>{attribute}</code> par portée sur votre fiche sous <code>ou=users</code>, afin que la question ne vous soit plus posée pour celles-ci. Refuser renvoie <code>access_denied</code> à l’application et n’enregistre rien.",
+  "meta.nothingIssued": "Rien n’a encore été émis. Cet écran correspond à <code>oauth2.consentRequired</code>, activé par défaut ; /admin/consent permet de consulter et de retirer chaque réponse donnée ici.",
+  "meta.consentingFor": "Consentement pour : <code>{protocol}</code>"
+}

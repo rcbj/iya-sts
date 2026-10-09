@@ -1,0 +1,16 @@
+{
+  "requestedBy.recoveryCode": "tú, o alguien que conocía el nombre de tu cuenta, tu dirección y uno de tus códigos de recuperación",
+  "requestedBy.signInScreen": "tú, o alguien que conocía el nombre de tu cuenta, en la pantalla de inicio de sesión",
+  "requestedBy.administrator": "un administrador",
+  "requestedBy.administratorNamed": "un administrador ({actor})",
+  "how.by": "por {entity, select, user {el usuario} admin {un administrador} system {el sistema} policy {una política} someone {alguien} other {{entity}}}",
+  "credential.type": "{type, select, password {contraseña} x509 {certificado X.509} app {app de autenticación} fido2-roaming {llave de seguridad} fido2-platform {llave de acceso} other {{type}}}",
+  "by.you": "Una solicitud tuya",
+  "by.administrator": "Un administrador",
+  "by.administratorSessionsPage": "Un administrador (la página de sesiones)",
+  "by.administratorConsoleLogout": "Un administrador (la consola de administración, /admin/logout)",
+  "act.credentialCompromised": "credencial marcada como comprometida",
+  "act.accountDisabled": "cuenta desactivada",
+  "rights.access": "acceso",
+  "address.none": "(ninguna)"
+}

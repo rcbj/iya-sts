@@ -1,0 +1,17 @@
+{
+  "scopeFor": "，用于 {resource}",
+  "details": "{n} 项授权详情",
+  "claims": "声明 {claims}",
+  "revoke": "撤销",
+  "none": "此领域中没有客户端持有授权。授权由携带 <code>grant_management_action=create</code> 的授权请求创建。",
+  "note": "<strong>Grant Management for OAuth 2.0。</strong>机密客户端会指明某人允许它做什么——通过普通授权请求创建授权、向其中合并更多内容或替换它——并通过 <code>grant_management_query</code> 和 <code>grant_management_revoke</code> 范围在 <code>{path}</code> 读取或撤销它。授权在其令牌被领取后才存在，并随最后一个令牌一起过期。在此撤销授权等同于客户端的 DELETE：其下的每个刷新令牌在每个节点上都会被拒绝，此领域在其下记录的每个令牌都会被撤销。此人同意的内容见",
+  "consentLink": "同意",
+  "noteEnd": "。",
+  "colClient": "客户端",
+  "colSubject": "主体",
+  "colScopes": "范围",
+  "colGeneration": "代次",
+  "colCreated": "创建 / 更新",
+  "colExpires": "过期",
+  "colTokens": "持有的令牌"
+}

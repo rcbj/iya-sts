@@ -70,6 +70,9 @@ interface PortalContext {
   audit: Json;
   errorCodes: Json;
   config: { value(key: string): any };
+  // The portal's translator for a page drawn for this session (#539
+  // phase 3): the portal's application and the person's own language.
+  translatorFor(session: Json): any;
 }
 
 interface PortalSignInsDeps {
@@ -141,55 +144,65 @@ class PortalSignInsPage {
     const { log, shell, esc } = this.ctx;
     const self = this;
     log.debug("Entering PortalSignInsPage.page().");
+    const t = this.ctx.translatorFor(session);
     const body = rows.length
-      ? '<table><tr><th>When</th><th>From</th><th>With</th><th>Through</th>' +
-        '<th>Risk</th><th>Was it you?</th></tr>' +
+      ? '<table><tr><th>' + t.html('portalSignIns.when') + '</th><th>' +
+        t.html('portalSignIns.from') + '</th><th>' +
+        t.html('portalSignIns.with') + '</th><th>' +
+        t.html('portalSignIns.through') + '</th><th>' +
+        t.html('portalSignIns.risk') + '</th><th>' +
+        t.html('portalSignIns.wasItYou') + '</th></tr>' +
         rows.map(function (a: Json): string {
           const where = [a.city, a.country].filter(Boolean).join(', ') ||
-                        'somewhere the datasets do not name';
+                        t.text('portalSignIns.nowhere');
           const network = a.asOrg ? String(a.asOrg)
                                   : String(a.addressPrefix || '');
-          const device = [a.uaFamily, a.uaOs].filter(Boolean).join(' on ') ||
-                         'an unnamed device';
+          // "Chrome on Linux" is a sentence, so its "on" is the catalog's
+          // (#539); the two names are data.
+          const device = a.uaFamily && a.uaOs
+            ? t.text('portalSignIns.deviceOn',
+                     { family: a.uaFamily, os: a.uaOs })
+            : (a.uaFamily || a.uaOs || t.text('portalSignIns.noDevice'));
           const style = LEVEL_STYLE[String(a.level)] || LEVEL_STYLE.UNSCORED;
-          const answer = a.feedback === 'confirmed' ? 'You said it was you.'
-            : a.feedback === 'denied' ? '<strong>You said it was not ' +
-                                        'you.</strong>'
-            : self.answerForms(session, a.id);
-          return '<tr><td>' + esc(new Date(Number(a.at)).toISOString()
-                                  .replace('T', ' ').slice(0, 16)) +
-            ' UTC</td><td>' + esc(where) + '<br><small>' + esc(network) +
+          const answer = a.feedback === 'confirmed'
+            ? t.html('portalSignIns.saidYes')
+            : a.feedback === 'denied' ? t.html('portalSignIns.saidNo')
+            : self.answerForms(session, a.id, t);
+          // The level is the risk engine's word; its four known values are
+          // the catalog's, and anything else is drawn as it came.
+          return '<tr><td>' + esc(t.date(Number(a.at))) +
+            '</td><td>' + esc(where) + '<br><small>' + esc(network) +
             '</small></td><td>' + esc(device) + '</td><td>' +
             esc(a.door || '') + '</td><td><span style="' + style +
             ';padding:2px 8px;border-radius:10px;font-weight:600">' +
-            esc(a.level) + '</span>' + (a.id === (session.risk || {})
-              .assessmentId ? '<br><small>this session</small>' : '') +
+            t.html('portalSignIns.level', { level: String(a.level) }) +
+            '</span>' + (a.id === (session.risk || {})
+              .assessmentId ? '<br><small>' +
+              t.html('portalSignIns.thisSession') + '</small>' : '') +
             '</td><td>' + answer + '</td></tr>';
         }).join('') + '</table>'
-      : '<p class="sub">No sign-in of yours has been assessed in the last ' +
-        DAYS + ' days.</p>';
+      : '<p class="sub">' + t.html('portalSignIns.none', { days: DAYS }) +
+        '</p>';
     log.debug("Leaving PortalSignInsPage.page().");
     return shell(this.PATH, session, message, error,
-      '<div class="card"><h2>Your recent sign-ins</h2>' +
-      '<p class="sub">Every sign-in to your account is checked for how ' +
-      'unusual it looks — where it came from, and with what — against how ' +
-      'you usually sign in. If one here was not you, say so: every session ' +
-      'on your account is ended at once, and you should change your ' +
-      'password.</p>' + body + '</div>');
+      '<div class="card"><h2>' + t.html('portalSignIns.heading') + '</h2>' +
+      '<p class="sub">' + t.html('portalSignIns.sub') + '</p>' + body +
+      '</div>');
   }
 
-  private answerForms(session: Json, id: string): string {
+  private answerForms(session: Json, id: string, t: Json): string {
     const { log, esc, websecurity } = this.ctx;
     log.debug("Entering PortalSignInsPage.answerForms().");
     const path = this.PATH;
     log.debug("Leaving PortalSignInsPage.answerForms().");
-    return [['confirm', 'This was me'], ['deny', 'This wasn\'t me']]
+    return [['confirm', t.html('portalSignIns.yes')],
+            ['deny', t.html('portalSignIns.no')]]
       .map(function (pair: string[]): string {
         return '<form method="post" action="' + esc(path) + '" ' +
           'style="display:inline">' + websecurity.field(session.id) +
           '<input type="hidden" name="action" value="' + pair[0] + '">' +
           '<input type="hidden" name="assessment" value="' + esc(id) + '">' +
-          '<button type="submit">' + esc(pair[1]) + '</button></form>';
+          '<button type="submit">' + pair[1] + '</button></form>';
       }).join(' ');
   }
 
@@ -275,15 +288,16 @@ class PortalSignInsPage {
       // going away.
       log.debug('Leaving POST ' + PATH + '. Denied.');
       res.set('Cache-Control', 'no-store');
-      return ctx.send(res, 200, this.page(session, [], 'Thank you. Every ' +
-        'session on your account is being ended, including this one, and ' +
-        'the applications you use are being told. Sign in again and change ' +
-        'your password at ' + ctx.BASE + '/password.', null));
+      return ctx.send(res, 200, this.page(session, [],
+        ctx.translatorFor(session).text('portalSignIns.doneDenied',
+          { path: ctx.BASE + '/password' }), null));
     }
     log.debug('Leaving POST ' + PATH + '. Confirmed.');
+    // In the person's language (#539): the text rides the redirect.
+    const t = ctx.translatorFor(session);
     res.redirect(303, PATH + '?done=' + encodeURIComponent(
-      'Thank you — recorded as you.' + (answer.moved === 'LOW'
-        ? ' Your account\'s risk is back to low.' : '')));
+      answer.moved === 'LOW' ? t.text('portalSignIns.doneConfirmedLow')
+                             : t.text('portalSignIns.doneConfirmed')));
     return undefined;
   }
 

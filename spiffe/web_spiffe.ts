@@ -24,6 +24,25 @@ import SettingsForms = require('../admin-ui/web_settings');
 
 type Json = any;
 
+// THE WORDS ARE THE `consoleSpiffe` CATALOG'S (#539, 2026-10-09).
+//
+// Every heading, label, button and paragraph this file writes is a message in
+// `common/locales/consoleSpiffe/`, drawn through the page's translator
+// (`ctx.t`, handed to the static helpers as `t`), and the English catalog
+// holds exactly the text these pages drew before, entities and all. What the
+// VIEW says — the server's sentences about entities, attestors, the TCP port,
+// and every refusal and error — is drawn as it comes, in English.
+//
+// A VALUE OR A LINK GOES INTO A MESSAGE THROUGH A SLOT. A message's own
+// parameters are escaped by `web_messages.ts`, which writes an apostrophe as
+// `&#39;`, where `kit.esc()` — what these pages always used — writes
+// `&apos;`; and a link or a `<code>` list is markup a message may not carry.
+// So `compose()` hands the message a marker per part, and puts the part —
+// escaped by `kit.esc()` or built as markup here — where the marker landed.
+// The sentence stays whole for a translator, and the English stays the bytes
+// it was.
+const SLOT = '\u0001';
+
 /**
  * Draws SPIFFE's console pages — the registration entries, the attested agents
  * and the brokers, and their drill-downs — from the answers of `GET
@@ -33,6 +52,27 @@ type Json = any;
  */
 class SpiffePage {
   /**
+   * Draws one message with parts put into it: each part's slot is handed to
+   * `draw` as the message's parameter, and replaced in what it returns by
+   * the part itself, which is already HTML.
+   *
+   * @param parts - the parts, by parameter name, as HTML
+   * @param draw - formats the message, given the slots
+   * @returns the message as HTML
+   */
+  static compose(parts, draw) {
+    const slots = {};
+    Object.keys(parts).forEach(function (name) {
+      slots[name] = SLOT + name + SLOT;
+    });
+    return String(draw(slots)).replace(
+      new RegExp(SLOT + '([A-Za-z0-9]+)' + SLOT, 'g'),
+      function (whole, name) {
+        return name in parts ? String(parts[name]) : whole;
+      });
+  }
+
+  /**
    * Draws the page's body from its view.
    *
    * @param ctx - the render context (`WebKit.context()`)
@@ -40,60 +80,71 @@ class SpiffePage {
    * @returns the body as HTML
    */
   static entries(ctx, json) {
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/spiffe/entries', ctx.query);
     const rows = json.entries.map(function (entry) {
       return '<tr><td><a href="/admin/spiffe/entries' +
         kit.queryWith(listView, { entry: entry.id }) + '"><code>' +
         kit.esc(entry.spiffeId) + '</code></a>' +
-        (entry.expired ? ' <strong>(expired)</strong>' : '') +
+        (entry.expired ? ' <strong>' + t.html('consoleSpiffe.expired') +
+                         '</strong>' : '') +
         '<br><span class="note"><code>' + kit.esc(entry.id) +
         '</code></span></td>' +
         '<td>' + kit.esc(entry.selectorTexts.join(', ') ||
-                          '(none — matches every workload)') + '</td>' +
+                          t.text('consoleSpiffe.selectorsNoneEvery')) +
+        '</td>' +
         '<td>' + kit.esc(entry.origin) + '</td>' +
         '<td>' + kit.esc(entry.hint || '—') + '</td>' +
         '<td>' + entry.svidsIssued + '</td>' +
-        '<td>rev ' + entry.revisionNumber + '</td></tr>';
+        '<td>' + SpiffePage.compose({ n: entry.revisionNumber },
+          function (s) {
+            return t.html('consoleSpiffe.revisionShort', s);
+          }) + '</td></tr>';
     }).join('') ||
-      '<tr><td colspan="6">No registration entry matches.</td></tr>';
-    const originOptions = ['<option value="">every origin</option>'].concat(
+      '<tr><td colspan="6">' + t.html('consoleSpiffe.noEntryMatches') +
+      '</td></tr>';
+    const originOptions = ['<option value="">' +
+      t.html('consoleSpiffe.everyOrigin') + '</option>'].concat(
       json.origins.map(function (name) {
         return '<option value="' + kit.esc(name) + '"' +
           (json.filter.origin === name ? ' selected' : '') + '>' +
           kit.esc(name) +
           '</option>';
       })).join('');
-    const inner = SpiffePage.spiffePostureNote(json.serverApiAuthenticated) +
-      kit.note(kit.esc(json.total) + ' registration entry/entries, of at ' +
-        'most ' +
-      kit.esc(json.max) + ' (<code>spiffe.maxEntries</code>). The store is ' +
-      'the embedded directory under <code>' + kit.esc(json.container) +
-      '</code>: an <code>ldapmodify</code> there, a form here and the SPIRE ' +
-      'Server API\'s <code>BatchUpdateEntry</code> are three doors onto one ' +
-      'entry, and nothing caches it &mdash; so a change takes effect on the ' +
-      'next SVID.') +
+    const inner = SpiffePage.spiffePostureNote(t,
+                                               json.serverApiAuthenticated) +
+      kit.note(SpiffePage.compose({ total: kit.esc(json.total),
+                                    max: kit.esc(json.max),
+                                    container: kit.esc(json.container) },
+        function (s) {
+          return t.html('consoleSpiffe.entriesCount', s);
+        })) +
       '<form method="get" action="/admin/spiffe/entries"><div ' +
-      'class="formrow"><label for="q">Search</label>' +
+      'class="formrow"><label for="q">' + t.html('consoleSpiffe.search') +
+      '</label>' +
       '<input id="q" name="q" value="' + kit.esc(json.filter.q) +
       '" size="28" ' +
-      'placeholder="a SPIFFE ID, a selector, an entry id">' +
-      '<label for="origin">Origin</label>' +
+      'placeholder="' +
+      kit.esc(t.text('consoleSpiffe.entriesSearchPlaceholder')) + '">' +
+      '<label for="origin">' + t.html('consoleSpiffe.origin') + '</label>' +
       '<select id="origin" name="origin">' + originOptions + '</select>' +
-      '<label for="per">Rows</label>' +
+      '<label for="per">' + t.html('consoleSpiffe.rows') + '</label>' +
       '<select id="per" name="per">' +
       kit.perPageOptions(json.paging.perPage) +
-      '</select><button class="secondary">Filter</button>' +
-      kit.note('Origin is how the entry got here: <code>seed</code> ' +
-      'at startup, <code>console</code>, <code>api</code>, ' +
-      '<code>grpc</code>, <code>auto</code> (invented for a workload that ' +
-      'matched nothing) or <code>ldap</code>.') +
-      '</div></form><table><tr><th>SPIFFE ID / entry ' +
-      'id</th><th>Selectors</th><th>Origin</th><th>Hint</th><th>SVIDs</th>' +
+      '</select><button class="secondary">' +
+      t.html('consoleSpiffe.filter') + '</button>' +
+      kit.note(t.html('consoleSpiffe.originNote')) +
+      '</div></form><table><tr><th>' +
+      t.html('consoleSpiffe.thSpiffeIdEntryId') + '</th><th>' +
+      t.html('consoleSpiffe.selectors') + '</th><th>' +
+      t.html('consoleSpiffe.origin') + '</th><th>' +
+      t.html('consoleSpiffe.hint') + '</th><th>' +
+      t.html('consoleSpiffe.svids') + '</th>' +
       '<th>' +
-      'Revision</th></tr>' + rows + '</table>' +
+      t.html('consoleSpiffe.revision') + '</th></tr>' + rows + '</table>' +
       kit.pageNavPair('/admin/spiffe/entries', kit.filterOnly(listView),
                        json.paging).head +
-      SpiffePage.spiffeCreateEntryForm(json.trustDomain);
+      SpiffePage.spiffeCreateEntryForm(t, json.trustDomain);
     return inner;
   }
 
@@ -114,80 +165,63 @@ class SpiffePage {
    * Draws the banner every SPIFFE page carries: that a Workload API caller
    * is not attested, and whether the SPIRE Server API requires mutual TLS.
    *
+   * @param t - the page's translator
    * @param enforced - whether the SPIRE Server API authenticates its
    *   callers (`spiffeAuth.authRequired()`)
    * @returns the two notes as HTML
    */
-  static spiffePostureNote(enforced) {
-    return kit.warn('<strong>Nothing here is attested.</strong> A real ' +
-      'SPIFFE agent reads the peer credentials of its socket — pid, uid, ' +
-      'gid, and from those the executable, the container, the pod — and ' +
-      'hands a workload only the identities those selectors match. Node ' +
-      'cannot read them at all, so this service identifies a Workload API ' +
-      'caller by the transport it arrived on, the endpoint it reached and ' +
-      'its peer address, and nothing else. Those DO now decide which entries ' +
-      'answer (<code>spiffe.attestWorkloads</code>), and they prove nothing ' +
-      'about who is calling: anybody who can reach the socket can still get ' +
-      'an identity. Node attestation is not: an agent below attested with a ' +
-      'type its realm accepts and an attestor here verified, or it was ' +
-      'refused.') +
+  static spiffePostureNote(t, enforced) {
+    return kit.warn(t.html('consoleSpiffe.postureNotAttested')) +
       '<div class="' + (enforced ? 'note' : 'warn') + '">' +
       (enforced
-        ? '<strong>The SPIRE Server API is the exception.</strong> Its TCP ' +
-          'port is mutual TLS: a caller presents an X509-SVID from this ' +
-          'trust domain, and every method is authorized against SPIRE\'s own ' +
-          'table — so an entry marked <code>admin</code> or ' +
-          '<code>downstream</code> below now decides what its holder may do. ' +
-          'Its Unix socket is the <code>local</code> entity and needs no ' +
-          'credential. The Workload API is deliberately untouched: its ' +
-          'specification says a client MUST NOT be required to authenticate.'
-        : '<strong>And nobody is authenticated on the SPIRE Server API ' +
-          'either.</strong> That port is plain gRPC, any caller can create a ' +
-          'registration entry granting any identity here and then collect an ' +
-          'SVID for it, and the <code>admin</code> and ' +
-          '<code>downstream</code> flags below are recorded and read by ' +
-          'nothing. It is restart-only, because it decides how the socket is ' +
-          'bound.') +
-      ' <a href="/spiffe">GET /spiffe</a> has the whole table and the full ' +
-      'list of what is and is not checked.</div>';
+        ? t.html('consoleSpiffe.postureServerApiMtls')
+        : t.html('consoleSpiffe.postureServerApiOpen')) +
+      ' ' + SpiffePage.compose({ link: '<a href="/spiffe">GET /spiffe</a>' },
+        function (s) {
+          return t.html('consoleSpiffe.postureSeeSpiffe', s);
+        }) + '</div>';
   }
 
   /**
    * Draws the form that creates a SPIFFE registration entry.
    *
+   * @param t - the page's translator
    * @param trustDomain - the realm's trust domain, for the placeholder
    * @returns the form as HTML
    */
-  static spiffeCreateEntryForm(trustDomain) {
-    return '<h2>Create a registration entry</h2>' +
-      kit.note('The SPIFFE ID must be in this trust domain and outside the ' +
-      'reserved <code>/spire</code> path &mdash; those two refusals are the ' +
-      'whole of what is checked. The parent defaults to this server\'s own ' +
-      'identity, which is what SPIRE uses for an entry describing a workload ' +
-      'rather than a node.') +
+  static spiffeCreateEntryForm(t, trustDomain) {
+    return '<h2>' + t.html('consoleSpiffe.createEntryHeading') + '</h2>' +
+      kit.note(t.html('consoleSpiffe.createEntryNote')) +
       '<form method="post" action="/admin/spiffe/entries"><div ' +
       'class="formrow"><input type="hidden" name="action" value="create">' +
-      '<label for="e-id">SPIFFE ID</label>' +
+      '<label for="e-id">' + t.html('consoleSpiffe.spiffeId') + '</label>' +
       '<input id="e-id" name="spiffeId" size="40" placeholder="spiffe://' +
       kit.esc(trustDomain) + '/ns/default/sa/web"><label ' +
-      'for="e-parent">Parent</label><input id="e-parent" name="parentId" ' +
-      'size="34" placeholder="(this server)"></div><div ' +
-      'class="formrow"><label for="e-sel">Selectors</label><input id="e-sel" ' +
+      'for="e-parent">' + t.html('consoleSpiffe.parent') +
+      '</label><input id="e-parent" name="parentId" ' +
+      'size="34" placeholder="' +
+      kit.esc(t.text('consoleSpiffe.thisServer')) + '"></div><div ' +
+      'class="formrow"><label for="e-sel">' +
+      t.html('consoleSpiffe.selectors') + '</label><input id="e-sel" ' +
       'name="selectors" size="40" placeholder="unix:uid:1000, ' +
-      'k8s:ns:default"><label for="e-dns">DNS names</label><input id="e-dns" ' +
+      'k8s:ns:default"><label for="e-dns">' +
+      t.html('consoleSpiffe.dnsNames') + '</label><input id="e-dns" ' +
       'name="dnsNames" size="26" placeholder="web.default.svc"></div><div ' +
-      'class="formrow"><label for="e-x509ttl">X509-SVID TTL</label><input ' +
+      'class="formrow"><label for="e-x509ttl">' +
+      t.html('consoleSpiffe.x509SvidTtl') + '</label><input ' +
       'id="e-x509ttl" name="x509SvidTtl" size="6" placeholder="3600"><label ' +
-      'for="e-jwtttl">JWT-SVID TTL</label><input id="e-jwtttl" ' +
+      'for="e-jwtttl">' + t.html('consoleSpiffe.jwtSvidTtl') +
+      '</label><input id="e-jwtttl" ' +
       'name="jwtSvidTtl" size="6" placeholder="300"><label ' +
-      'for="e-hint">Hint</label><input id="e-hint" name="hint" size="12" ' +
-      'placeholder="internal"><label for="e-fed">Federates ' +
-      'with</label><input id="e-fed" name="federatesWith" size="20" ' +
-      'placeholder="other.example"><button>Create</button>' +
-      kit.note('Selectors, DNS names and trust domains are ' +
-      'comma-separated. A selector is <code>type:value</code>, split on the ' +
-      'FIRST colon only &mdash; so <code>docker:label:app:web</code> is type ' +
-      '<code>docker</code>.') + '</div></form>';
+      'for="e-hint">' + t.html('consoleSpiffe.hint') +
+      '</label><input id="e-hint" name="hint" size="12" ' +
+      'placeholder="internal"><label for="e-fed">' +
+      t.html('consoleSpiffe.federatesWith') +
+      '</label><input id="e-fed" name="federatesWith" size="20" ' +
+      'placeholder="other.example"><button>' +
+      t.html('consoleSpiffe.create') + '</button>' +
+      kit.note(t.html('consoleSpiffe.selectorsSyntaxNote')) +
+      '</div></form>';
   }
 
   /**
@@ -198,38 +232,43 @@ class SpiffePage {
    * @returns the body as HTML
    */
   static agents(ctx, json) {
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/spiffe/agents', ctx.query);
     const rows = json.agents.map(function (agent) {
       return '<tr><td><a href="/admin/spiffe/agents' +
         kit.queryWith(listView, { agent: agent.id }) + '"><code>' +
         kit.esc(agent.id) + '</code></a></td>' +
         '<td>' + kit.esc(agent.attestationType) + '</td>' +
-        '<td>' + (agent.banned ? '<strong>banned</strong>' : 'active') +
+        '<td>' + (agent.banned
+          ? '<strong>' + t.html('consoleSpiffe.banned') + '</strong>'
+          : t.html('consoleSpiffe.active')) +
         '</td><td>' + agent.attestations + '</td>' +
         '<td>' + kit.esc(agent.lastSeen || '—') + '</td></tr>';
-    }).join('') || '<tr><td colspan="5">No agent has attested here. An agent ' +
-      'appears when it calls <code>AttestAgent</code> on the SPIRE Server ' +
-      'API.</td></tr>';
-    const inner = SpiffePage.spiffePostureNote(json.serverApiAuthenticated) +
-      kit.note(kit.esc(json.total) + ' agent(s), of at most ' +
-                kit.esc(json.max) +
-      ' (<code>spiffe.maxAgents</code>). These entries are a RECORD rather ' +
-      'than configuration &mdash; everything on them was written by this ' +
-      'service when an agent attested &mdash; which is why nothing about an ' +
-      'agent is editable and only the ban is.') +
-      kit.note('<strong>Node attestation is verified or refused.</strong> ' +
-      'An agent here attested with a type its realm names in ' +
-      '<code>spiffe.nodeAttestors</code> and an attestor verified, and its ' +
-      'selectors are the ones that attestor derived.') +
+    }).join('') || '<tr><td colspan="5">' +
+      t.html('consoleSpiffe.noAgents') + '</td></tr>';
+    const inner = SpiffePage.spiffePostureNote(t,
+                                               json.serverApiAuthenticated) +
+      kit.note(SpiffePage.compose({ total: kit.esc(json.total),
+                                    max: kit.esc(json.max) },
+        function (s) {
+          return t.html('consoleSpiffe.agentsCount', s);
+        })) +
+      kit.note(t.html('consoleSpiffe.nodeAttestationNote')) +
       '<form method="get" action="/admin/spiffe/agents"><div class="formrow">' +
-      '<label for="q">Search</label>' +
+      '<label for="q">' + t.html('consoleSpiffe.search') + '</label>' +
       '<input id="q" name="q" value="' + kit.esc(json.filter.q) +
-      '" size="30" placeholder="an agent id, an attestor, a selector"><label ' +
-      'for="per">Rows</label><select id="per" name="per">' +
+      '" size="30" placeholder="' +
+      kit.esc(t.text('consoleSpiffe.agentsSearchPlaceholder')) + '"><label ' +
+      'for="per">' + t.html('consoleSpiffe.rows') +
+      '</label><select id="per" name="per">' +
       kit.perPageOptions(json.paging.perPage) +
-      '</select><button class="secondary">Filter</button></div></form>' +
-      '<table><tr><th>Agent</th><th>Attestor</th><th>State</th>' +
-      '<th>Attestations</th><th>Last seen</th></tr>' + rows + '</table>' +
+      '</select><button class="secondary">' +
+      t.html('consoleSpiffe.filter') + '</button></div></form>' +
+      '<table><tr><th>' + t.html('consoleSpiffe.agent') + '</th><th>' +
+      t.html('consoleSpiffe.attestor') + '</th><th>' +
+      t.html('consoleSpiffe.state') + '</th>' +
+      '<th>' + t.html('consoleSpiffe.attestations') + '</th><th>' +
+      t.html('consoleSpiffe.lastSeen') + '</th></tr>' + rows + '</table>' +
       kit.pageNavPair('/admin/spiffe/agents', kit.filterOnly(listView),
                        json.paging).head;
     return inner;
@@ -243,63 +282,69 @@ class SpiffePage {
    * @returns the body as HTML
    */
   static brokers(ctx, json) {
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/spiffe/brokers', ctx.query);
     const back = '<input type="hidden" name="back" value="' +
                  kit.esc(kit.queryWith(listView, {})) + '">';
     const rows = json.brokers.map(function (one) {
+      // A broker's problem is a refusal, and a refusal stays English.
       return '<tr><td><code>' + kit.esc(one.id) + '</code></td><td>' +
         (one.problem ? '<strong>refused:</strong> ' + kit.esc(one.problem)
                      : kit.esc(one.referenceTypes.join(', '))) +
         '</td><td><form method="post" action="/admin/spiffe/brokers">' +
         '<input type="hidden" name="action" value="remove"><input ' +
         'type="hidden" name="id" value="' + kit.esc(one.id) + '">' + back +
-        '<button class="danger">Remove</button></form></td></tr>';
-    }).join('') || '<tr><td colspan="3">No broker is authorized, so every ' +
-      'call to the SPIFFE Broker API is refused PERMISSION_DENIED.</td></tr>';
+        '<button class="danger">' + t.html('consoleSpiffe.remove') +
+        '</button></form></td></tr>';
+    }).join('') || '<tr><td colspan="3">' +
+      t.html('consoleSpiffe.noBrokers') + '</td></tr>';
     const listening = json.listeners.filter(function (b) {
       return b.listening;
     }).map(function (b) {
       return '<code>' + kit.esc(b.address) + '</code>';
     }).join(', ');
-    const inner = kit.note('The SPIFFE Broker API (Incubating) lets a ' +
-      'trusted ' +
-      'infrastructure component ask for the SVIDs of a workload it ' +
-      'REFERENCES — a process id, or a Kubernetes pod — which this service ' +
-      'attests itself before answering. It is served with mutual TLS on ' +
-      '<code>spiffe.grpcHost</code> and <code>spiffe.brokerPort</code> (' +
-      (listening ? 'listening on ' + listening
-                 : 'not listening in this realm: <code>spiffe.brokerPort' +
-                   '</code> is ' + kit.esc(json.port)) + '). A caller ' +
-      'presents an X509-SVID, and one whose SPIFFE ID is not listed here is ' +
-      'refused.') +
-      kit.note('<strong>A process id means something only on the node it ' +
-      'was read on.</strong> The endpoint is TCP, so allow ' +
-      '<code>pid</code> only to a broker running on this host; ' +
-      '<code>k8s</code> resolves a pod in this node\'s kubelet pod list.') +
+    const where = listening
+      ? SpiffePage.compose({ addresses: listening }, function (s) {
+          return t.html('consoleSpiffe.brokersListeningOn', s);
+        })
+      : SpiffePage.compose({ port: kit.esc(json.port) }, function (s) {
+          return t.html('consoleSpiffe.brokersNotListening', s);
+        });
+    const inner = kit.note(SpiffePage.compose({ where: where },
+        function (s) {
+          return t.html('consoleSpiffe.brokersIntro', s);
+        })) +
+      kit.note(t.html('consoleSpiffe.brokersPidNote')) +
       '<form method="get" action="/admin/spiffe/brokers"><div ' +
-      'class="formrow"><label for="q">Search</label><input id="q" name="q" ' +
-      'value="' + kit.esc(json.filter.q) + '" size="30" placeholder="a ' +
-      'SPIFFE ID or a reference type"><label for="per">Rows</label><select ' +
+      'class="formrow"><label for="q">' + t.html('consoleSpiffe.search') +
+      '</label><input id="q" name="q" ' +
+      'value="' + kit.esc(json.filter.q) + '" size="30" placeholder="' +
+      kit.esc(t.text('consoleSpiffe.brokersSearchPlaceholder')) +
+      '"><label for="per">' + t.html('consoleSpiffe.rows') +
+      '</label><select ' +
       'id="per" name="per">' + kit.perPageOptions(json.paging.perPage) +
-      '</select><button class="secondary">Filter</button></div></form>' +
-      '<table><tr><th>Broker</th><th>May reference</th><th></th></tr>' +
+      '</select><button class="secondary">' +
+      t.html('consoleSpiffe.filter') + '</button></div></form>' +
+      '<table><tr><th>' + t.html('consoleSpiffe.broker') + '</th><th>' +
+      t.html('consoleSpiffe.mayReference') + '</th><th></th></tr>' +
       rows + '</table>' +
       kit.pageNavPair('/admin/spiffe/brokers', kit.filterOnly(listView),
                        json.paging).head +
-      '<h2>Authorize a broker</h2>' +
+      '<h2>' + t.html('consoleSpiffe.authorizeBroker') + '</h2>' +
       '<form method="post" action="/admin/spiffe/brokers"><div ' +
       'class="formrow"><input type="hidden" name="action" value="set">' +
-      back + '<label for="b-id">SPIFFE ID</label><input id="b-id" name="id" ' +
+      back + '<label for="b-id">' + t.html('consoleSpiffe.spiffeId') +
+      '</label><input id="b-id" name="id" ' +
       'size="44" placeholder="spiffe://' + kit.esc(json.trustDomain) +
       '/ns/mesh/sa/node-proxy"></div><div class="formrow"><label><input ' +
       'type="checkbox" name="referenceTypes" value="pid"> pid ' +
       '(WorkloadPIDReference)</label><label><input type="checkbox" ' +
-      'name="referenceTypes" value="k8s"> k8s (a pod)</label><label><input ' +
-      'type="checkbox" name="referenceTypes" value="*"> * (both)</label>' +
-      '<button>Save</button>' +
-      kit.note('A broker already listed has its reference types replaced. ' +
-      'An ID from a federated trust domain is verified against that ' +
-      'domain\'s bundle.') + '</div></form>';
+      'name="referenceTypes" value="k8s"> ' +
+      t.html('consoleSpiffe.refK8s') + '</label><label><input ' +
+      'type="checkbox" name="referenceTypes" value="*"> ' +
+      t.html('consoleSpiffe.refBoth') + '</label>' +
+      '<button>' + t.html('consoleSpiffe.save') + '</button>' +
+      kit.note(t.html('consoleSpiffe.brokerSaveNote')) + '</div></form>';
     return inner;
   }
 
@@ -311,20 +356,18 @@ class SpiffePage {
    * @returns the body as HTML
    */
   static entry(ctx, json) {
+    const t = ctx.t;
     const entry = json.found ? json.entry : null;
     const listView = kit.listViewOf('/admin/spiffe/entries', ctx.query);
     const back = kit.queryWith(listView, {});
     let inner;
     if (!entry) {
-      inner = kit.note('No registration entry has the id <code>' +
-                           kit.esc(json.id) +
-                 '</code>. It may have been deleted &mdash; from this page, ' +
-                 'with <code>BatchDeleteEntry</code>, or with an ' +
-                 '<code>ldapdelete</code> under ' +
-                 '<code>ou=entries,ou=spiffe</code>, which are three doors ' +
-                 'onto one store.') +
+      inner = kit.note(SpiffePage.compose({ id: kit.esc(json.id) },
+                 function (s) {
+                   return t.html('consoleSpiffe.entryNotFound', s);
+                 })) +
                  '<p><a href="/admin/spiffe/entries' + kit.esc(back) +
-                 '">Back to the entries</a>.</p>';
+                 '">' + t.html('consoleSpiffe.backToEntries') + '</a>.</p>';
     } else {
       const attributeRows = Object.keys(entry.attributes || {}).sort()
         .map(function (name) {
@@ -338,60 +381,72 @@ class SpiffePage {
                       '"><input ' +
                       'type="hidden" name="entry" value="' + kit.esc(entry.id) +
                       '">';
-      inner = SpiffePage.spiffePostureNote(json.serverApiAuthenticated) +
+      // Two whole sentences rather than a clause added to one, so a
+      // translator can say "has expired" where their language puts it.
+      const lives = { id: kit.esc(entry.id),
+                      revision: kit.esc(entry.revisionNumber),
+                      origin: kit.esc(entry.origin),
+                      dn: kit.esc(entry.dn) };
+      inner = SpiffePage.spiffePostureNote(t, json.serverApiAuthenticated) +
         '<h2><code>' + kit.esc(entry.spiffeId) + '</code></h2>' +
-        kit.note('Entry <code>' + kit.esc(entry.id) + '</code>, revision ' +
-        kit.esc(entry.revisionNumber) + ', created by <code>' +
-        kit.esc(entry.origin) +
-        '</code>. It lives at <code>' + kit.esc(entry.dn) + '</code>' +
-        (entry.expired ? ' and <strong>has expired</strong> &mdash; it is ' +
-          'kept ' +
-          'and reported rather than deleted, because an entry that vanished ' +
-            'is ' +
-          'indistinguishable from one nobody created' : '') + '.') +
-        '<table><tr><th>Field</th><th>Value</th></tr>' +
-        '<tr><td>Parent</td><td><code>' + kit.esc(entry.parentId) +
-        '</code></td></tr><tr><td>Selectors</td><td>' +
+        kit.note(entry.expired
+          ? SpiffePage.compose(lives, function (s) {
+              return t.html('consoleSpiffe.entryLivesExpired', s);
+            })
+          : SpiffePage.compose(lives, function (s) {
+              return t.html('consoleSpiffe.entryLives', s);
+            })) +
+        '<table><tr><th>' + t.html('consoleSpiffe.field') + '</th><th>' +
+        t.html('consoleSpiffe.value') + '</th></tr>' +
+        '<tr><td>' + t.html('consoleSpiffe.parent') +
+        '</td><td><code>' + kit.esc(entry.parentId) +
+        '</code></td></tr><tr><td>' + t.html('consoleSpiffe.selectors') +
+        '</td><td>' +
         kit.esc(entry.selectorTexts.join(', ') ||
-                 '(none — this entry matches every workload)') + '</td></tr>' +
-        '<tr><td>DNS names</td><td>' +
+                 t.text('consoleSpiffe.selectorsNoneThisEntry')) +
+        '</td></tr>' +
+        '<tr><td>' + t.html('consoleSpiffe.dnsNames') + '</td><td>' +
         kit.esc(entry.dnsNames.join(', ') || '—') +
         '</td></tr>' +
-        '<tr><td>Federates with</td><td>' +
+        '<tr><td>' + t.html('consoleSpiffe.federatesWith') + '</td><td>' +
         kit.esc(entry.federatesWith.join(', ') || '—') + '</td></tr>' +
-        '<tr><td>X509-SVID TTL</td><td>' +
+        '<tr><td>' + t.html('consoleSpiffe.x509SvidTtl') + '</td><td>' +
         (entry.x509SvidTtl ||
-         ('default (' + kit.esc(json.defaults.x509SvidTtl) + ')')) +
+         SpiffePage.compose({ ttl: kit.esc(json.defaults.x509SvidTtl) },
+           function (s) {
+             return t.html('consoleSpiffe.ttlDefault', s);
+           })) +
         '</td></tr>' +
-        '<tr><td>JWT-SVID TTL</td><td>' +
+        '<tr><td>' + t.html('consoleSpiffe.jwtSvidTtl') + '</td><td>' +
         (entry.jwtSvidTtl ||
-         ('default (' + kit.esc(json.defaults.jwtSvidTtl) + ')')) +
+         SpiffePage.compose({ ttl: kit.esc(json.defaults.jwtSvidTtl) },
+           function (s) {
+             return t.html('consoleSpiffe.ttlDefault', s);
+           })) +
         '</td></tr>' +
-        '<tr><td>Hint</td><td>' + kit.esc(entry.hint || '—') + '</td></tr>' +
+        '<tr><td>' + t.html('consoleSpiffe.hint') + '</td><td>' +
+        kit.esc(entry.hint || '—') + '</td></tr>' +
         '<tr><td>admin / downstream / storeSvid</td><td>' +
         (entry.admin ? 'admin' : '') + (entry.downstream ? ' downstream' : '') +
         (entry.storeSvid ? ' storeSvid' : '') +
         ((entry.admin || entry.downstream || entry.storeSvid) ? '' : '—') +
-        ' <span class="note">recorded and never read &mdash; nothing here ' +
-        'decides anything on one</span></td></tr><tr><td>SVIDs ' +
-        'issued</td><td>' + entry.svidsIssued +
-        (entry.lastSvidAt ? ', most recently ' + kit.esc(entry.lastSvidAt) :
-         '') +
+        ' <span class="note">' + t.html('consoleSpiffe.flagsNeverRead') +
+        '</span></td></tr><tr><td>' + t.html('consoleSpiffe.svidsIssued') +
+        '</td><td>' + entry.svidsIssued +
+        (entry.lastSvidAt
+          ? SpiffePage.compose({ at: kit.esc(entry.lastSvidAt) },
+              function (s) {
+                return t.html('consoleSpiffe.mostRecently', s);
+              })
+          : '') +
         '</td></tr></table>' +
 
-        '<h3>Change it</h3>' +
-        kit.note('Only the DECLARED half is editable here &mdash; what the ' +
-        'entry may DO. The derived half (the revision number, the SVID ' +
-        'counter, when it was created) is what HAPPENED, and a form that ' +
-          'could ' +
-        'rewrite it would make this page lie about the service\'s own ' +
-        'behaviour. <code>ldapmodify</code> reaches everything: refusing it ' +
-        'here is the difference between offering an operation and merely not ' +
-        'preventing it.') +
+        '<h3>' + t.html('consoleSpiffe.changeIt') + '</h3>' +
+        kit.note(t.html('consoleSpiffe.changeItNote')) +
         '<form method="post" action="/admin/spiffe/entries"><div ' +
         'class="formrow"><input type="hidden" name="action" value="update">' +
         carried +
-        '<label for="u-field">Field</label>' +
+        '<label for="u-field">' + t.html('consoleSpiffe.field') + '</label>' +
         '<select id="u-field" name="field">' +
         ['spiffeId', 'parentId', 'selectors', 'dnsNames', 'federatesWith',
          'x509SvidTtl', 'jwtSvidTtl', 'hint', 'expiresAt', 'admin',
@@ -400,25 +455,23 @@ class SpiffePage {
           return '<option value="' + kit.esc(name) + '">' + kit.esc(name) +
                  '</option>';
         }).join('') + '</select>' +
-        '<label for="u-value">Value</label>' +
+        '<label for="u-value">' + t.html('consoleSpiffe.value') + '</label>' +
         '<input id="u-value" name="value" size="40">' +
-        '<button>Set</button>' +
-        '<span class="note">A list field takes comma-separated values and an ' +
-        'empty value clears it. A boolean takes true or false.</span>' +
+        '<button>' + t.html('consoleSpiffe.set') + '</button>' +
+        '<span class="note">' + t.html('consoleSpiffe.setFieldNote') +
+        '</span>' +
         '</div></form>' +
         '<form method="post" action="/admin/spiffe/entries"><div ' +
         'class="formrow"><input type="hidden" name="action" value="delete">' +
         carried +
-        '<button class="danger">Delete this entry</button>' +
-        kit.note('Whatever holds an SVID minted from it keeps that SVID ' +
-          'until ' +
-        'it expires. SPIFFE has no revocation &mdash; the answer is a short ' +
-        'lifetime, which is why the default is an hour.') + '</div></form>' +
+        '<button class="danger">' + t.html('consoleSpiffe.deleteEntry') +
+        '</button>' +
+        kit.note(t.html('consoleSpiffe.deleteEntryNote')) + '</div></form>' +
 
-        '<h3>The directory entry</h3>' +
-        '<p>Every attribute, operational ones included. This is the store ' +
-        'rather than a description of it.</p>' +
-        '<table><tr><th>Attribute</th><th>Value</th></tr>' + attributeRows +
+        '<h3>' + t.html('consoleSpiffe.directoryEntry') + '</h3>' +
+        '<p>' + t.html('consoleSpiffe.directoryEntryNote') + '</p>' +
+        '<table><tr><th>' + t.html('consoleSpiffe.attribute') + '</th><th>' +
+        t.html('consoleSpiffe.value') + '</th></tr>' + attributeRows +
         '</table>';
     }
     return inner;
@@ -432,16 +485,19 @@ class SpiffePage {
    * @returns the body as HTML
    */
   static agent(ctx, json) {
+    const t = ctx.t;
     const agent = json.found ? json.agent : null;
     const listView = kit.listViewOf('/admin/spiffe/agents', ctx.query);
     const back = kit.queryWith(listView, {});
     let inner;
     if (!agent) {
-      inner = '<p>No agent has attested here as <code>' +
-                 kit.esc(json.id) +
-                 '</code>.</p><p><a href="/admin/spiffe/agents' +
+      inner = '<p>' + SpiffePage.compose({ id: kit.esc(json.id) },
+                 function (s) {
+                   return t.html('consoleSpiffe.agentNotFound', s);
+                 }) +
+                 '</p><p><a href="/admin/spiffe/agents' +
                  kit.esc(back) +
-                 '">Back to the agents</a>.</p>';
+                 '">' + t.html('consoleSpiffe.backToAgents') + '</a>.</p>';
     } else {
       const attributeRows = Object.keys(agent.attributes || {}).sort()
         .map(function (name) {
@@ -455,64 +511,61 @@ class SpiffePage {
                       '"><input ' +
                       'type="hidden" name="agent" value="' + kit.esc(agent.id) +
                       '">';
-      inner = SpiffePage.spiffePostureNote(json.serverApiAuthenticated) +
+      inner = SpiffePage.spiffePostureNote(t, json.serverApiAuthenticated) +
         '<h2><code>' + kit.esc(agent.id) + '</code></h2>' +
-        kit.note('Attested with <code>' + kit.esc(agent.attestationType) +
-                  '</code>, ' +
-        kit.esc(agent.attestations) + ' time(s), first at ' +
-        kit.esc(agent.firstSeen) +
-        ' and most recently at ' + kit.esc(agent.lastSeen) + '. It lives at ' +
-          '<code>' +
-        kit.esc(agent.dn) + '</code> &mdash; the RDN is a digest of the ' +
-        'SPIFFE ID, because a SPIFFE ID is too long for a readable one, so ' +
-        '<strong>the cn is not the identity here</strong>: ' +
-        '<code>spiffeAgentId</code> is.') +
-        '<table><tr><th>Field</th><th>Value</th></tr>' +
-        '<tr><td>State</td><td>' + (agent.banned
-          ? '<strong>banned</strong> — AttestAgent refuses it, which is one ' +
-            'of ' +
-            'the few refusals in this service and is what keeps the button ' +
-            'below from being a lie'
-          : 'active') + '</td></tr>' +
-        '<tr><td>Its directory entry</td><td>' +
-        'Every identity this trust domain issues an X509-SVID to has one ' +
-          'under ' +
-        '<code>ou=users</code>, carrying the current certificate as the same ' +
-        'six <code>x509*</code> attributes a verified TLS client certificate ' +
-        'writes. Banning or deleting this agent marks that entry ' +
-        '<code>spiffeCredentialStatus: revoked</code> and never removes it; ' +
-        'unbanning marks it active again. <span class="note">That is not a ' +
-        'certificate status. SPIFFE has no revocation, nothing reads the ' +
-          'flag ' +
-        'back, and whatever SVID this agent holds keeps working until it ' +
-        'expires.</span></td></tr>' +
-        '<tr><td>Can reattest</td><td>' + (agent.canReattest ? 'yes' : 'no') +
+        kit.note(SpiffePage.compose({
+            type: kit.esc(agent.attestationType),
+            count: kit.esc(agent.attestations),
+            first: kit.esc(agent.firstSeen),
+            last: kit.esc(agent.lastSeen),
+            dn: kit.esc(agent.dn) },
+          function (s) {
+            return t.html('consoleSpiffe.agentHeader', s);
+          })) +
+        '<table><tr><th>' + t.html('consoleSpiffe.field') + '</th><th>' +
+        t.html('consoleSpiffe.value') + '</th></tr>' +
+        '<tr><td>' + t.html('consoleSpiffe.state') + '</td><td>' +
+        (agent.banned
+          ? t.html('consoleSpiffe.bannedExplained')
+          : t.html('consoleSpiffe.active')) + '</td></tr>' +
+        '<tr><td>' + t.html('consoleSpiffe.itsDirectoryEntry') + '</td><td>' +
+        t.html('consoleSpiffe.itsDirectoryEntryText') +
+        ' <span class="note">' + t.html('consoleSpiffe.notACertStatus') +
+        '</span></td></tr>' +
+        '<tr><td>' + t.html('consoleSpiffe.canReattest') + '</td><td>' +
+        (agent.canReattest ? t.html('consoleSpiffe.yes')
+                           : t.html('consoleSpiffe.no')) +
         '</td></tr>' +
-        '<tr><td>Selectors</td><td>' +
+        '<tr><td>' + t.html('consoleSpiffe.selectors') + '</td><td>' +
         kit.esc(agent.selectorTexts.join(', ') || '—') +
-        ' <span class="note">claimed, never verified</span></td></tr>' +
+        ' <span class="note">' + t.html('consoleSpiffe.claimedNeverVerified') +
+        '</span></td></tr>' +
         '<tr><td>SVID</td><td>' + kit.esc(agent.svidHash || '—') +
-        (agent.expiresAt ? ', expires ' +
-          kit.esc(new Date(agent.expiresAt * 1000).toISOString()) : '') +
+        (agent.expiresAt
+          ? SpiffePage.compose({
+              at: kit.esc(new Date(agent.expiresAt * 1000).toISOString()) },
+              function (s) {
+                return t.html('consoleSpiffe.expiresAt', s);
+              })
+          : '') +
         '</td></tr></table>' +
         '<form method="post" action="/admin/spiffe/agents"><div ' +
         'class="formrow"><input type="hidden" name="action" value="' +
         (agent.banned ? 'unban' : 'ban') + '">' + carried +
         '<button class="' + (agent.banned ? 'secondary' : 'danger') + '">' +
-        (agent.banned ? 'Unban' : 'Ban') + ' this agent</button>' +
-        kit.note('A banned agent is refused at <code>AttestAgent</code> with ' +
-        '<code>PermissionDenied</code>. Whatever SVID it already holds keeps ' +
-        'working until it expires &mdash; there is no revocation in SPIFFE.') +
+        (agent.banned ? t.html('consoleSpiffe.unbanAgent')
+                      : t.html('consoleSpiffe.banAgent')) + '</button>' +
+        kit.note(t.html('consoleSpiffe.banNote')) +
         '</div></form>' +
         '<form method="post" action="/admin/spiffe/agents"><div ' +
         'class="formrow"><input type="hidden" name="action" value="delete">' +
         carried +
-        '<button class="danger">Delete this agent</button>' +
-        kit.note('It reappears the next time it attests, because ' +
-        'attestation is not checked &mdash; deleting is forgetting, not ' +
-        'revoking.') + '</div></form>' +
-        '<h3>The directory entry</h3>' +
-        '<table><tr><th>Attribute</th><th>Value</th></tr>' + attributeRows +
+        '<button class="danger">' + t.html('consoleSpiffe.deleteAgent') +
+        '</button>' +
+        kit.note(t.html('consoleSpiffe.deleteAgentNote')) + '</div></form>' +
+        '<h3>' + t.html('consoleSpiffe.directoryEntry') + '</h3>' +
+        '<table><tr><th>' + t.html('consoleSpiffe.attribute') + '</th><th>' +
+        t.html('consoleSpiffe.value') + '</th></tr>' + attributeRows +
         '</table>';
     }
     return inner;
@@ -526,11 +579,13 @@ class SpiffePage {
    * @returns the body as HTML
    */
   static overview(ctx, json) {
+    const t = ctx.t;
     const state = json.authorityState;
     const x509Rows = state.x509Authorities.map(function (authority) {
       return '<tr><td><code>' + kit.esc(authority.id) + '</code></td><td>' +
-        (authority.active ? '<strong>active</strong>' :
-         'retired, still published') +
+        (authority.active
+          ? '<strong>' + t.html('consoleSpiffe.active') + '</strong>' :
+         t.html('consoleSpiffe.retiredPublished')) +
         '</td><td>' + kit.esc(authority.keyType) + '</td><td>' +
         kit.esc(authority.notAfter) + '</td><td><code>' +
         kit.esc(authority.subject) +
@@ -538,8 +593,9 @@ class SpiffePage {
     }).join('');
     const jwtRows = state.jwtAuthorities.map(function (authority) {
       return '<tr><td><code>' + kit.esc(authority.id) + '</code></td><td>' +
-        (authority.active ? '<strong>active</strong>' :
-         'retired, still published') +
+        (authority.active
+          ? '<strong>' + t.html('consoleSpiffe.active') + '</strong>' :
+         t.html('consoleSpiffe.retiredPublished')) +
         '</td><td>' + kit.esc(authority.keyType) + ' / ' +
         kit.esc(authority.alg) +
         '</td><td>' + kit.esc(new Date(authority.createdAt).toISOString()) +
@@ -548,52 +604,65 @@ class SpiffePage {
     const federatedRows = state.federated.map(function (entry) {
       return '<tr><td><code>' + kit.esc(entry.trustDomainId) +
              '</code></td><td>' +
-        entry.x509Keys + ' x509, ' + entry.jwtKeys + ' jwt</td><td>' +
+        SpiffePage.compose({ x509: entry.x509Keys, jwt: entry.jwtKeys },
+          function (s) {
+            return t.html('consoleSpiffe.keyCounts', s);
+          }) + '</td><td>' +
         kit.esc(entry.bundleEndpointProfile) + '<br><span class="note">' +
-        kit.esc(entry.bundleEndpointUrl || '(no endpoint URL recorded)') +
+        kit.esc(entry.bundleEndpointUrl ||
+                t.text('consoleSpiffe.noEndpointUrl')) +
         '</span></td><td>' + kit.esc(entry.sequence) + '</td><td>' +
         '<form method="post" action="/admin/spiffe" class="inline">' +
         '<input type="hidden" name="action" value="federation-remove">' +
         '<input type="hidden" name="trustDomain" value="' +
         kit.esc(entry.trustDomain) + '"><button ' +
-        'class="danger">Remove</button></form> <a ' +
+        'class="danger">' + t.html('consoleSpiffe.remove') +
+        '</button></form> <a ' +
         'href="/spiffe/federated/' + encodeURIComponent(entry.trustDomain) +
-        '">document</a></td></tr>';
+        '">' + t.html('consoleSpiffe.document') + '</a></td></tr>';
     }).join('') ||
-      '<tr><td colspan="5">None. This trust domain federates with ' +
-      'nobody.</td></tr>';
+      '<tr><td colspan="5">' + t.html('consoleSpiffe.noFederation') +
+      '</td></tr>';
+    const pkiLink = '<a href="/admin/pki">' +
+      t.html('consoleSpiffe.pkiManageLink') + '</a>';
+    const buildLink = '<a href="/admin/pki">' +
+      t.html('consoleSpiffe.pkiBuildLink') + '</a>';
+    const chain = json.authorities.chainSubjects.length
+      ? ' (' + json.authorities.chainSubjects.map(function (subject) {
+          return '<code>' + kit.esc(subject) + '</code>';
+        }).join(' &rarr; ') + ')'
+      : '';
+    const adminIds = json.authentication.adminIds.map(function (id) {
+      return '<code>' + kit.esc(id) + '</code>';
+    }).join(', ');
 
-    const inner = SpiffePage.spiffePostureNote(json.serverApiAuthenticated) +
-      (json.enabled ? '' : kit.warn('SPIFFE is turned OFF ' +
-        '(<code>spiffe.enabled</code>): the bundle endpoint answers 404 and ' +
-        'every gRPC call is refused with <code>Unavailable</code>. Turn it ' +
-        'back on in the settings at the foot of this page; it needs no ' +
-        'restart.')) +
+    const inner = SpiffePage.spiffePostureNote(t,
+                                               json.serverApiAuthenticated) +
+      (json.enabled ? '' : kit.warn(t.html('consoleSpiffe.spiffeOff'))) +
+      // The authority's build error is a failure, and stays English.
       (json.ready ? '' : kit.warn((json.error
         ? 'The issuing authority could not be built, so nothing here will ' +
           'issue an SVID: ' + kit.esc(json.error)
-        : 'The issuing authority is still being generated &mdash; an ' +
-          'RSA-4096 key takes a few seconds. Reload.'))) +
+        : t.html('consoleSpiffe.authorityGenerating')))) +
 
-      '<h2>The trust domain</h2>' +
-      kit.note('This service is the issuing authority for <code>' +
-      kit.esc(json.trustDomainId) + '</code>. Its own identity as a SPIFFE ' +
-      'server is <code>' + kit.esc(json.serverId || '(not yet)') +
-      '</code>, and every ' +
-      'registration entry hangs beneath that by default. The trust domain is ' +
-      'restart-only (<code>spiffe.trustDomain</code>): every authority ' +
-      'certificate names it.') +
-      kit.note('The bundle is published at <a href="' +
-                kit.esc(json.bundle.path) +
-      '"><code>' + kit.esc(json.bundle.path) +
-      '</code></a> &mdash; sequence <code>' +
-      kit.esc(json.bundle.sequence) + '</code>, refresh hint ' +
-      kit.esc(json.bundle.refreshHint) + ' seconds. The sequence changes ' +
-      'whenever the bundle does and never otherwise, which is what lets a ' +
-      'consumer tell &ldquo;I have the current bundle&rdquo; from &ldquo;I ' +
-      'have a bundle&rdquo;.') +
+      '<h2>' + t.html('consoleSpiffe.trustDomainHeading') + '</h2>' +
+      kit.note(SpiffePage.compose({
+          trustDomainId: kit.esc(json.trustDomainId),
+          serverId: kit.esc(json.serverId ||
+                            t.text('consoleSpiffe.notYet')) },
+        function (s) {
+          return t.html('consoleSpiffe.trustDomainNote', s);
+        })) +
+      kit.note(SpiffePage.compose({
+          link: '<a href="' + kit.esc(json.bundle.path) + '"><code>' +
+                kit.esc(json.bundle.path) + '</code></a>',
+          sequence: kit.esc(json.bundle.sequence),
+          hint: kit.esc(json.bundle.refreshHint) },
+        function (s) {
+          return t.html('consoleSpiffe.bundleNote', s);
+        })) +
 
-      '<h2>Authorities</h2>' +
+      '<h2>' + t.html('consoleSpiffe.authorities') + '</h2>' +
       // ---------------------------------------------------------------------
       // THE X.509 AUTHORITY CAME FROM ONE OF TWO PLACES AND THIS PAGE SAYS
       // WHICH (2026-09-11).
@@ -606,48 +675,31 @@ class SpiffePage {
       // somebody who does.
       // ---------------------------------------------------------------------
       (json.authorities.source === 'pki'
-        ? kit.note('The X.509 authority is this realm\'s <strong>SPIFFE ' +
-          'Issuing CA</strong>, under this service\'s own Root &mdash; ' +
-          '<a href="/admin/pki">manage it on the PKI page</a>, where it is ' +
-          'one of the Issuing CAs in this realm\'s branch. So the trust ' +
-          'anchor a consumer installs is the <strong>Root</strong>, which ' +
-          'every realm shares and which also covers LDAPS 636, the main port ' +
-          'and every token this service signs: one anchor, installed once. ' +
-          'An X509-SVID carries the Issuing CA and this realm\'s ' +
-          'Intermediate in its own chain' +
-          (json.authorities.chainSubjects.length
-            ? ' (' + json.authorities.chainSubjects.map(function (subject) {
-                return '<code>' + kit.esc(subject) + '</code>';
-              }).join(' &rarr; ') + ')'
-            : '') + '. <strong>Rotating it re-issues that Issuing CA and ' +
-          'leaves the anchor alone</strong>, so the bundle does not change, ' +
-          'nothing has to be re-fetched, and SVIDs minted under the old ' +
-          'authority go on verifying &mdash; which is the whole difference ' +
-          'from the self-signed arrangement this replaced. The JWT authority ' +
-          'has no certificate and no hierarchy to hang from: it is generated ' +
-          'per start and rotating it still prepends, keeping at most ' +
-          kit.esc(json.authorities.maxRetained) + '.')
-        : kit.warn('This realm has <strong>no certificate ' +
-          'authority</strong>, so its X.509 authority is ' +
-          '<strong>self-signed</strong> and IS the trust anchor &mdash; ' +
-          'generated per start and held in memory, exactly like the STS ' +
-          'signing key and the TLS certificate, so a workload holding a ' +
-          'bundle from before a restart will fail to verify every SVID ' +
-          'minted after it. Rotating PREPENDS a new authority and keeps the ' +
-          'old one published: an SVID minted a minute ago has to go on ' +
-          'verifying, which is what a bundle is for. At most ' +
-          kit.esc(json.authorities.maxRetained) + ' are retained, and past ' +
-          'that the oldest is dropped &mdash; anything it signed stops ' +
-          'verifying at that moment. <a href="/admin/pki">Build this ' +
-          'realm\'s certificate authority</a> to put the SPIFFE authority ' +
-          'under this service\'s Root instead.')) +
-      '<table><tr><th>Id</th><th>State</th><th>Key</th><th>Until</th>' +
-      '<th>Subject</th></tr>' + x509Rows + jwtRows + '</table>' +
+        ? kit.note(SpiffePage.compose({
+              pkiLink: pkiLink, chain: chain,
+              maxRetained: kit.esc(json.authorities.maxRetained) },
+            function (s) {
+              return t.html('consoleSpiffe.authorityPki', s);
+            }))
+        : kit.warn(SpiffePage.compose({
+              buildLink: buildLink,
+              maxRetained: kit.esc(json.authorities.maxRetained) },
+            function (s) {
+              return t.html('consoleSpiffe.authoritySelfSigned', s);
+            }))) +
+      '<table><tr><th>' + t.html('consoleSpiffe.id') + '</th><th>' +
+      t.html('consoleSpiffe.state') + '</th><th>' +
+      t.html('consoleSpiffe.key') + '</th><th>' +
+      t.html('consoleSpiffe.until') + '</th>' +
+      '<th>' + t.html('consoleSpiffe.subject') + '</th></tr>' + x509Rows +
+      jwtRows + '</table>' +
       // **WHAT SIGNS AND WHAT IS TRUSTED ARE TWO TABLES.** They were one, and
       // could be, while a self-signed authority was both. See `/spiffe`'s own
       // version of this note.
-      '<h3>What a consumer trusts</h3>' +
-      '<table><tr><th>Anchor</th><th>Subject</th><th>Until</th></tr>' +
+      '<h3>' + t.html('consoleSpiffe.whatConsumerTrusts') + '</h3>' +
+      '<table><tr><th>' + t.html('consoleSpiffe.anchor') + '</th><th>' +
+      t.html('consoleSpiffe.subject') + '</th><th>' +
+      t.html('consoleSpiffe.until') + '</th></tr>' +
       (json.authorities.trustAnchors || []).map(function (anchor) {
         return '<tr><td><code>' + kit.esc(anchor.id) +
                '</code></td><td><code>' +
@@ -657,156 +709,138 @@ class SpiffePage {
       }).join('') + '</table>' +
       '<form method="post" action="/admin/spiffe"><div class="formrow">' +
       '<input type="hidden" name="action" value="rotate">' +
-      '<label for="which">Rotate</label>' +
+      '<label for="which">' + t.html('consoleSpiffe.rotate') + '</label>' +
       '<select id="which" name="which">' +
-      '<option value="x509">the X.509 authority</option>' +
-      '<option value="jwt">the JWT authority</option>' +
-      '<option value="both">both</option></select>' +
-      '<button>Rotate</button>' +
-      '<span class="note">New SVIDs are signed with the new authority ' +
-      'immediately; existing ones keep verifying until they expire.</span>' +
+      '<option value="x509">' + t.html('consoleSpiffe.rotateX509') +
+      '</option>' +
+      '<option value="jwt">' + t.html('consoleSpiffe.rotateJwt') +
+      '</option>' +
+      '<option value="both">' + t.html('consoleSpiffe.rotateBoth') +
+      '</option></select>' +
+      '<button>' + t.html('consoleSpiffe.rotate') + '</button>' +
+      '<span class="note">' + t.html('consoleSpiffe.rotateNote') +
+      '</span>' +
       '</div></form>' +
 
-      '<h2>The gRPC listeners</h2>' +
-      kit.note('Neither <code>/admin/sts-metadata</code> nor this page can ' +
-      'see a socket, so this table is the only place that reports whether ' +
-      'each one actually bound. The DEFAULT realm\'s four are bound when the ' +
-      'process starts and stay bound with <code>spiffe.enabled</code> off — ' +
-      'they answer <code>Unavailable</code>, because a socket that vanished ' +
-      'would read as a service that had stopped. EVERY OTHER REALM\'S are ' +
-      'bound when <code>spiffe.enabled</code> is turned on for it, on the ' +
-      'address <code>spiffe.grpcHost</code> names for that realm — the ' +
-      'endpoint address is the only thing a SPIFFE client has to name a ' +
-      'tenant with, because the gRPC method name is fixed by the ' +
-      'specification.') +
-      '<table><tr><th>Surface</th><th>Realm</th><th>Address</th><th>State' +
+      '<h2>' + t.html('consoleSpiffe.grpcListeners') + '</h2>' +
+      kit.note(t.html('consoleSpiffe.grpcListenersNote')) +
+      '<table><tr><th>' + t.html('consoleSpiffe.surface') + '</th><th>' +
+      t.html('consoleSpiffe.realm') + '</th><th>' +
+      t.html('consoleSpiffe.address') + '</th><th>' +
+      t.html('consoleSpiffe.state') +
       '</th>' +
-      '<th>What a caller presents</th></tr>' +
-      SpiffePage.spiffeListenerRows(json.listeners.workloadApi,
+      '<th>' + t.html('consoleSpiffe.callerPresents') + '</th></tr>' +
+      SpiffePage.spiffeListenerRows(t, json.listeners.workloadApi,
         'Workload API') +
-      SpiffePage.spiffeListenerRows(json.listeners.serverApi,
+      SpiffePage.spiffeListenerRows(t, json.listeners.serverApi,
         'SPIRE Server API') +
-      SpiffePage.spiffeListenerRows(json.listeners.brokerApi || [],
+      SpiffePage.spiffeListenerRows(t, json.listeners.brokerApi || [],
                               'SPIFFE Broker API') +
       '</table>' +
 
-      SpiffePage.spiffeWorkloadAttestation(json.workloadAttestation) +
+      SpiffePage.spiffeWorkloadAttestation(t, json.workloadAttestation) +
 
-      '<h2>Who may call the SPIRE Server API</h2>' +
+      '<h2>' + t.html('consoleSpiffe.whoMayCall') + '</h2>' +
       '<p>' + kit.esc(json.authentication.what || '') + '</p>' +
-      kit.note('A caller may be several of these at once and the check asks ' +
-      'whether it is <em>any</em> of the ones a method allows, which is what ' +
-      'SPIRE\'s own policy does: the <code>spire-server</code> CLI on this ' +
-      'host is <code>local</code>, and an agent that also holds an entry ' +
-      'marked <code>admin</code> is both.') +
-      '<table><tr><th>Entity</th><th>What it means</th></tr>' +
+      kit.note(t.html('consoleSpiffe.anyOfNote')) +
+      '<table><tr><th>' + t.html('consoleSpiffe.entity') + '</th><th>' +
+      t.html('consoleSpiffe.whatItMeans') + '</th></tr>' +
       json.authentication.entities.map(function (entity) {
         return '<tr><td><code>' + kit.esc(entity.id) + '</code></td><td>' +
           kit.esc(entity.what) + '</td></tr>';
       }).join('') + '</table>' +
-      kit.note('Administrators by configuration ' +
-      '(<code>spiffe.adminIds</code>, in the ' +
-      'settings at the foot of this page): ' +
-      (json.authentication.adminIds.length
-        ? json.authentication.adminIds.map(function (id) {
-            return '<code>' + kit.esc(id) + '</code>';
-          }).join(', ') + '. '
-        : 'none. ') +
-      'The other way to make one is to mark a registration entry ' +
-      '<code>admin</code> on <a href="/admin/spiffe/entries">the entries ' +
-      'page</a>; SPIRE has both, and neither is cached, so either takes ' +
-      'effect on the next call.') +
-      kit.note('Workload API selectors: a caller there is identified as ' +
-      '<code>transport:</code>, <code>endpoint:</code>, ' +
-      '<code>peer:</code> over TCP, and on the Unix socket by what the ' +
-      'workload attestors established (above), and ' +
-      (json.authentication.attestWorkloads
-        ? 'those decide which entries answer it ' +
-          '(<code>spiffe.attestWorkloads</code>).'
-        : 'that decides nothing at the moment &mdash; ' +
-          '<code>spiffe.attestWorkloads</code> is off, so every caller is ' +
-          'answered with every entry.') +
-      ' Asserted selectors (<code>' +
-      kit.esc(json.authentication.assertedSelectorHeader) + '</code>) are ' +
-      (json.authentication.acceptAssertedSelectors
-        ? '<strong>believed</strong>, and nothing verifies them.'
-        : 'ignored (<code>spiffe.acceptAssertedSelectors</code> is off, ' +
-          'or this realm is in product mode, where it is never in force).') +
-      ' Both switches are what is IN FORCE: in product mode ' +
-      '<code>spiffe.attestWorkloads</code> is always on and asserted ' +
-      'selectors are never believed, whatever is stored, and neither can ' +
-      'be changed to the looser value there.') +
-      '<h3>The per-method table</h3>' +
-      kit.note('Copied from SPIRE\'s own <code>policy_data.json</code> ' +
-      'rather than reasoned out: a table derived from what each method ' +
-      '&ldquo;obviously&rdquo; needs disagrees with SPIRE in two or three ' +
-      'places, and the client author who meets the disagreement cannot tell ' +
-      'which end is wrong. <code>any</code> means the method is open here ' +
-      'and in a real server too &mdash; <code>AttestAgent</code> because an ' +
-      'agent has no SVID until that call gives it one, ' +
-      '<code>GetBundle</code> because a trust bundle is public.') +
-      '<table><tr><th>Method</th><th>Allowed to</th></tr>' +
+      kit.note((json.authentication.adminIds.length
+        ? SpiffePage.compose({ ids: adminIds }, function (s) {
+            return t.html('consoleSpiffe.adminIdsList', s);
+          })
+        : t.html('consoleSpiffe.adminIdsNone')) + ' ' +
+        SpiffePage.compose({
+            entriesLink: '<a href="/admin/spiffe/entries">' +
+                         t.html('consoleSpiffe.entriesPageLink') + '</a>' },
+          function (s) {
+            return t.html('consoleSpiffe.adminIdsOtherWay', s);
+          })) +
+      kit.note((json.authentication.attestWorkloads
+        ? t.html('consoleSpiffe.workloadSelectorsDecide')
+        : t.html('consoleSpiffe.workloadSelectorsDecideNothing')) + ' ' +
+        SpiffePage.compose({
+            header: kit.esc(json.authentication.assertedSelectorHeader) },
+          function (s) {
+            return json.authentication.acceptAssertedSelectors
+              ? t.html('consoleSpiffe.assertedBelieved', s)
+              : t.html('consoleSpiffe.assertedIgnored', s);
+          }) + ' ' + t.html('consoleSpiffe.bothSwitchesInForce')) +
+      '<h3>' + t.html('consoleSpiffe.perMethodTable') + '</h3>' +
+      kit.note(t.html('consoleSpiffe.perMethodNote')) +
+      '<table><tr><th>' + t.html('consoleSpiffe.method') + '</th><th>' +
+      t.html('consoleSpiffe.allowedTo') + '</th></tr>' +
       json.authentication.policy.map(function (row) {
         return '<tr><td><code>' + kit.esc(row.method) + '</code></td><td>' +
           kit.esc(row.allow.join(', ')) + '</td></tr>';
       }).join('') + '</table>' +
 
-      '<h2>Federated trust domains</h2>' +
-      kit.note('<strong>A foreign bundle is given to this service and never ' +
-      'fetched by it.</strong> The federation specification has a bundle ' +
-      'endpoint URL in the relationship and a real implementation polls it; ' +
-      'this one records the URL and refuses to follow it, because fetching a ' +
-      'URL somebody registered in order to obtain a credential-verification ' +
-      'key is a server-side request forgery with a citation attached &mdash; ' +
-      'the same refusal this service gives WS-Federation\'s ' +
-      '<code>wreqptr</code> and a client\'s <code>jwks_uri</code>. Paste the ' +
-      'bundle in below, or push it with <code>BatchSetFederatedBundle</code>' +
-      '.') +
-      '<table><tr><th>Trust domain</th><th>Keys</th><th>Profile / ' +
-      'endpoint</th><th>Sequence</th><th></th></tr>' + federatedRows +
+      '<h2>' + t.html('consoleSpiffe.federatedHeading') + '</h2>' +
+      kit.note(t.html('consoleSpiffe.federatedNote')) +
+      '<table><tr><th>' + t.html('consoleSpiffe.trustDomain') + '</th><th>' +
+      t.html('consoleSpiffe.keys') + '</th><th>' +
+      t.html('consoleSpiffe.profileEndpoint') + '</th><th>' +
+      t.html('consoleSpiffe.sequence') + '</th><th></th></tr>' +
+      federatedRows +
       '</table><form ' +
       'method="post" action="/admin/spiffe"><div class="formrow"><input ' +
       'type="hidden" name="action" value="federation-set"><label ' +
-      'for="fed-td">Trust domain</label><input id="fed-td" ' +
+      'for="fed-td">' + t.html('consoleSpiffe.trustDomain') +
+      '</label><input id="fed-td" ' +
       'name="trustDomain" placeholder="other.example" size="24"><label ' +
-      'for="fed-url">Bundle endpoint URL</label><input id="fed-url" ' +
+      'for="fed-url">' + t.html('consoleSpiffe.bundleEndpointUrl') +
+      '</label><input id="fed-url" ' +
       'name="bundleEndpointUrl" placeholder="https://other.example/bundle" ' +
-      'size="34"><label for="fed-profile">Profile</label><select ' +
+      'size="34"><label for="fed-profile">' +
+      t.html('consoleSpiffe.profile') + '</label><select ' +
       'id="fed-profile" name="bundleEndpointProfile"><option ' +
       'value="https_web">https_web</option><option ' +
       'value="https_spiffe">https_spiffe</option></select></div><div ' +
-      'class="formrow"><label for="fed-doc">Bundle document</label><textarea ' +
+      'class="formrow"><label for="fed-doc">' +
+      t.html('consoleSpiffe.bundleDocument') + '</label><textarea ' +
       'id="fed-doc" name="document" rows="6" cols="80" ' +
       'placeholder=\'{"keys":[{"kty":"EC","use":"x509-svid","x5c":["..."]}],' +
       '"spiffe_sequence":1,"spiffe_refresh_hint":300}\'></textarea><button>' +
-      'Set</button>' +
-      kit.note('A JWK Set. Every key needs <code>use</code> of ' +
-      '<code>x509-svid</code>, <code>jwt-svid</code> or ' +
-      '<code>wit-svid</code>: a consumer MUST IGNORE one without it, so a ' +
-      'bundle of keys missing that member verifies nothing and reports no ' +
-      'error, which is why it is refused here rather than stored.') +
+      t.html('consoleSpiffe.set') + '</button>' +
+      kit.note(t.html('consoleSpiffe.jwkSetNote')) +
       '</div></form>' +
 
-      '<h2>Elsewhere</h2><ul>' +
-      '<li><a href="/admin/spiffe/entries">Registration entries</a> &mdash; ' +
-      kit.esc(json.counts.entries) + ' of at most ' +
-      kit.esc(json.counts.maxEntries) +
+      '<h2>' + t.html('consoleSpiffe.elsewhere') + '</h2><ul>' +
+      '<li><a href="/admin/spiffe/entries">' +
+      t.html('consoleSpiffe.registrationEntries') + '</a> &mdash; ' +
+      SpiffePage.compose({ n: kit.esc(json.counts.entries),
+                           max: kit.esc(json.counts.maxEntries) },
+        function (s) {
+          return t.html('consoleSpiffe.ofAtMost', s);
+        }) +
       '</li>' +
-      '<li><a href="/admin/spiffe/agents">Attested agents</a> &mdash; ' +
-      kit.esc(json.counts.agents) + ' of at most ' +
-      kit.esc(json.counts.maxAgents) +
-      '</li><li><a href="/admin/spiffe/brokers">SPIFFE Broker API ' +
-      'brokers</a> &mdash; who may ask for a referenced workload\'s SVIDs' +
-      '</li><li><a href="/spiffe">What this is, and what it does not ' +
-      'check</a></li><li><a href="/admin/ldap/spiffe">The containers and ' +
-      'their schema</a></li><li><a href="/admin-api/spiffe">The same, over ' +
-      'JSON</a></li></ul>' +
+      '<li><a href="/admin/spiffe/agents">' +
+      t.html('consoleSpiffe.attestedAgents') + '</a> &mdash; ' +
+      SpiffePage.compose({ n: kit.esc(json.counts.agents),
+                           max: kit.esc(json.counts.maxAgents) },
+        function (s) {
+          return t.html('consoleSpiffe.ofAtMost', s);
+        }) +
+      '</li><li><a href="/admin/spiffe/brokers">' +
+      t.html('consoleSpiffe.brokerApiBrokers') + '</a> &mdash; ' +
+      t.html('consoleSpiffe.brokerApiBrokersWhat') +
+      '</li><li><a href="/spiffe">' +
+      t.html('consoleSpiffe.whatThisIs') +
+      '</a></li><li><a href="/admin/ldap/spiffe">' +
+      t.html('consoleSpiffe.containersSchema') +
+      '</a></li><li><a href="/admin-api/spiffe">' +
+      t.html('consoleSpiffe.sameOverJson') + '</a></li></ul>' +
       // The spiffe.* rows (thirty-four as of 2026-09-16), on the page about
       // the trust domain rather than on /admin/config. The two lists below
       // them — the registration entries and the agents — are a STORE and are
       // edited on their own pages; these are the settings that decide what an
       // SVID minted against any entry looks like.
-      SettingsForms.forms(json.settingsForms, '/admin/spiffe');
+      SettingsForms.forms(json.settingsForms, '/admin/spiffe',
+                         undefined, t);
     return inner;
   }
 
@@ -825,23 +859,29 @@ class SpiffePage {
    * Draws one SPIFFE surface's listeners as table rows: realm, address,
    * whether it bound, and what a caller must present.
    *
+   * @param t - the page's translator
    * @param bindings - the surface's listener bindings
-   * @param what - the surface's name, for the first column
+   * @param what - the surface's name, for the first column (a product name,
+   *   drawn as it is)
    * @returns the rows as HTML, or one row saying nothing is bound
    */
-  static spiffeListenerRows(bindings, what) {
+  static spiffeListenerRows(t, bindings, what) {
     if (!bindings.length) {
-      return '<tr><td colspan="5">Nothing bound for ' + kit.esc(what) + '. ' +
-        'Either both transports are off in configuration, or the process has ' +
-        'not finished starting.</td></tr>';
+      return '<tr><td colspan="5">' +
+        SpiffePage.compose({ what: kit.esc(what) }, function (s) {
+          return t.html('consoleSpiffe.nothingBound', s);
+        }) + '</td></tr>';
     }
+    // `default` is the default realm's name rather than a word, and a
+    // bind failure is an error: both are drawn as they are.
     return bindings.map(function (binding) {
       return '<tr><td>' + kit.esc(what) + '</td><td>' +
         kit.esc(binding.realm || 'default') + '</td><td><code>' +
         kit.esc(binding.address) +
         '</code>' +
-        (binding.tls ? ' <span class="note">(mutual TLS)</span>' : '') +
-        '</td><td>' + (binding.listening ? 'listening'
+        (binding.tls ? ' <span class="note">' +
+                       t.html('consoleSpiffe.mutualTls') + '</span>' : '') +
+        '</td><td>' + (binding.listening ? t.html('consoleSpiffe.listening')
           : '<strong>did not bind</strong> &mdash; ' +
             kit.esc(binding.error)) +
         '</td><td>' + kit.esc(binding.authentication || '') + '</td></tr>';
@@ -855,61 +895,86 @@ class SpiffePage {
    * Draws the Workload API's attestation state: whether the native module
    * is loaded, the TCP port's posture, the attestors and open connections.
    *
+   * @param t - the page's translator
    * @param state - the attestation state; optional in effect
    * @returns the section as HTML, or an empty string when there is no state
    */
-  static spiffeWorkloadAttestation(state) {
+  static spiffeWorkloadAttestation(t, state) {
     if (!state) {
       return '';
     }
+    // `state.problem`, `tcp.state` and `tcp.why` are the view's words.
     const kernel = state.nativeModule
-      ? 'The native module is loaded: each connection to the Workload ' +
-        'API\'s Unix socket is attested when it is accepted, and every call ' +
-        'on it checks that the process is still the one attested.'
+      ? t.html('consoleSpiffe.nativeLoaded')
       : (state.unattestedSocketServed
-        ? '<strong>The native module is not loaded, so the Unix socket is ' +
-          'served UNATTESTED</strong> (development): ' +
-          kit.esc(state.problem)
-        : '<strong>The native module is not loaded, so the Unix socket is ' +
-          'NOT SERVED</strong> (product): ' + kit.esc(state.problem));
+        ? SpiffePage.compose({ problem: kit.esc(state.problem) },
+            function (s) {
+              return t.html('consoleSpiffe.nativeMissingUnattested', s);
+            })
+        : SpiffePage.compose({ problem: kit.esc(state.problem) },
+            function (s) {
+              return t.html('consoleSpiffe.nativeMissingNotServed', s);
+            }));
     // THE TCP PORT (#166): what the realm's posture is and whether its port
     // is listening. A product realm serves it only where the network is
     // declared to authenticate source addresses, on a named address.
     const tcp = state.tcp || null;
     const tcpLine = tcp
-      ? ' The Workload API TCP port is <strong>' + kit.esc(tcp.state) +
-        '</strong>' + (tcp.port
-          ? ' (' + kit.esc(tcp.host + ':' + tcp.port) + ', ' +
-            (tcp.listening ? 'listening' : 'not listening') + ')'
-          : '') + ': ' + kit.esc(tcp.why) + '.'
+      ? ' ' + SpiffePage.compose({
+          state: kit.esc(tcp.state),
+          where: tcp.port
+            ? ' (' + kit.esc(tcp.host + ':' + tcp.port) + ', ' +
+              (tcp.listening ? t.html('consoleSpiffe.listening')
+                             : t.html('consoleSpiffe.notListening')) + ')'
+            : '',
+          why: kit.esc(tcp.why) },
+        function (s) {
+          return t.html('consoleSpiffe.tcpPort', s);
+        })
       : '';
-    const out = '<h2>Workload attestation</h2>' + kit.note(kernel +
-      tcpLine +
-      ' A TCP caller is never attested. Which attestors run is ' +
-      '<code>spiffe.workloadAttestors</code>' +
-      (state.unknownConfigured.length
-        ? '; it names ' + state.unknownConfigured.map(function (t) {
-            return '<code>' + kit.esc(t) + '</code>';
-          }).join(', ') + ', which nothing here implements'
-        : '') + '.') +
-      '<table><tr><th>Attestor</th><th>Runs</th><th>What it verifies</th>' +
+    const out = '<h2>' + t.html('consoleSpiffe.workloadAttestation') +
+      '</h2>' + kit.note(kernel +
+      tcpLine + ' ' +
+      SpiffePage.compose({
+          unknown: state.unknownConfigured.length
+            ? SpiffePage.compose({
+                names: state.unknownConfigured.map(function (name) {
+                  return '<code>' + kit.esc(name) + '</code>';
+                }).join(', ') },
+                function (s) {
+                  return t.html('consoleSpiffe.attestorsUnknown', s);
+                })
+            : '' },
+        function (s) {
+          return t.html('consoleSpiffe.attestorsWhich', s);
+        })) +
+      '<table><tr><th>' + t.html('consoleSpiffe.attestor') + '</th><th>' +
+      t.html('consoleSpiffe.runs') + '</th><th>' +
+      t.html('consoleSpiffe.whatItVerifies') + '</th>' +
       '</tr>' + state.attestors.map(function (a) {
         return '<tr><td><code>' + kit.esc(a.type) + '</code></td><td>' +
-          (a.enabled ? 'yes' : 'no') + '</td><td>' + kit.esc(a.verifies) +
+          (a.enabled ? t.html('consoleSpiffe.yes')
+                     : t.html('consoleSpiffe.no')) + '</td><td>' +
+          kit.esc(a.verifies) +
           '</td></tr>';
       }).join('') + '</table>' +
       (state.connections.length
-        ? '<table><tr><th>Connection</th><th>pid</th><th>uid</th>' +
-          '<th>gid</th><th>Selectors</th><th>State</th></tr>' +
+        ? '<table><tr><th>' + t.html('consoleSpiffe.connection') +
+          '</th><th>pid</th><th>uid</th>' +
+          '<th>gid</th><th>' + t.html('consoleSpiffe.selectors') +
+          '</th><th>' + t.html('consoleSpiffe.state') + '</th></tr>' +
           state.connections.map(function (c) {
+            // A refusal stays English; a note is the view's.
             return '<tr><td><code>' + kit.esc(c.tag) + '</code></td><td>' +
               kit.esc(String(c.pid)) + '</td><td>' + kit.esc(String(c.uid)) +
               '</td><td>' + kit.esc(String(c.gid)) + '</td><td>' +
               kit.esc(String(c.selectors)) + '</td><td>' +
               kit.esc(c.error ? 'refused: ' + c.error
-                               : (c.note || 'attested')) + '</td></tr>';
+                               : (c.note ||
+                                  t.text('consoleSpiffe.attested'))) +
+              '</td></tr>';
           }).join('') + '</table>'
-        : kit.note('No connection is open on the socket now.'));
+        : kit.note(t.html('consoleSpiffe.noConnection')));
     return out;
   }
 }

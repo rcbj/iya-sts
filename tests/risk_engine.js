@@ -53,6 +53,10 @@ const riskDatasets = require('../risk/risk_datasets');
 const riskFailures = require('../risk/risk_failures');
 const riskEngine = require('../risk/risk_engine');
 
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({ name: 'risk_engine',
   level: process.env.LOG_LEVEL || 'info' });
 
@@ -157,7 +161,8 @@ async function run(t) {
   let drawn = '';
   try {
     const RiskPage = require('../admin-ui/web_risk');
-    drawn = RiskPage.assessmentsHtml({ query: {}, write: false },
+    const ctxOf = require('../admin-ui/web_kit').context;
+    drawn = RiskPage.assessmentsHtml(ctxOf({}, false),
       JSON.parse(JSON.stringify({
         assessments: { rows: [recorded], total: 1 }, subjects: [],
         assessmentsPaging: { page: 1, pages: 1, perPage: 50, firstRow: 1,
@@ -456,9 +461,10 @@ async function unmappedNetwork(t) {
   let drawn = '';
   try {
     const RiskPage = require('../admin-ui/web_risk');
-    drawn = RiskPage.modelCell(freshModel) + ' | ' +
+    const tr = require('../admin-ui/web_kit').context({}, false).t;
+    drawn = RiskPage.modelCell(freshModel, tr) + ' | ' +
       RiskPage.modelCell({ signal: 'model', score: null,
-                           unknown: ['asn', 'country'] });
+                           unknown: ['asn', 'country'] }, tr);
   } catch (e) {
     drawn = 'threw: ' + (e && e.message);
   }

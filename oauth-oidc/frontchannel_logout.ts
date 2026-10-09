@@ -99,6 +99,10 @@ import applications = require('../common/applications');
 // requires config.js, error_codes.js and npm packages and nothing here.
 import validation = require('../common/validation');
 import errorCodes = require('../common/error_codes');
+// The console's folds (`admin-ui/web_kit.ts`, a leaf that requires nothing),
+// so the explanation under this page fragment collapses as the console's
+// does and as the rest of `/logout`'s does (2026-10-08).
+import kit = require('../admin-ui/web_kit');
 
 // A session, a notification row.
 type Json = any;
@@ -522,18 +526,19 @@ class FrontchannelLogout {
     const inner =
       '<h2>' + notifiable.length + ' of ' + notifications.length +
       ' relying part' +
-        (notifications.length === 1 ? 'y' : 'ies') + ' notified</h2><p ' +
-      'class="sub">OpenID Connect Front-Channel Logout 1.0. Each URL below ' +
+        (notifications.length === 1 ? 'y' : 'ies') + ' notified</h2>' +
+      kit.note('OpenID Connect Front-Channel Logout 1.0. Each URL below ' +
       'was loaded in a hidden iframe as this page rendered, so each relying ' +
-      'party\'s own logout ran in this browser.</p><table><thead><tr><th>' +
+      'party\'s own logout ran in this browser.') +
+      '<table><thead><tr><th>' +
       'Client</th><th>frontchannel_logout_uri</th></tr></thead>' +
-      '<tbody>' + rows + '</tbody></table><p ' +
-      'class="sub">The URLs are shown as links deliberately. A front-channel ' +
+      '<tbody>' + rows + '</tbody></table>' +
+      kit.note('The URLs are shown as links deliberately. A front-channel ' +
       'notification has no answer this service can read — section 5 says ' +
       'the provider cannot know whether the logout succeeded — so a dead ' +
       'relying party, a certificate this browser will not accept and a URI ' +
       'somebody mistyped all look exactly like success. Clicking one is the ' +
-      'only way to see which happened.</p>' +
+      'only way to see which happened.') +
       frames;
     log.debug("Leaving FrontchannelLogout.render(). " + notifiable.length +
               " iframe(s).");

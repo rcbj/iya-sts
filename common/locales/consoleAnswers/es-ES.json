@@ -1,0 +1,3 @@
+{
+  "keytab.changed": "<strong>Se cambió la contraseña de {username}</strong> por {how, select, generated {una generada que no se mostró a nadie, así que este keytab es lo único con lo que puede iniciar sesión hasta que se vuelva a establecer una contraseña} other {la que has escrito}}, y se cerraron todas sus sesiones."
+}

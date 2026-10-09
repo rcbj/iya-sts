@@ -1062,6 +1062,19 @@ async function test() {
                                         { access_token: { access: [both] } });
   const chainedValue = chained.released.access_token.value;
   const rsJkt = jwkThumbprint(rsKey.key.publicJwk);
+  // THE CHAIN EVERY FORMAT MUST CARRY (#526): the deriving resource server
+  // over the original client — the instance the chained token was issued
+  // to, read from its introspection — each `urn:sts:client:<id>` with the
+  // GNAP issuer, the grant endpoint.
+  const before = await introspect(rsKey, chainedValue);
+  const originalInstance = before.json && before.json.instance_id;
+  check("the chained token names the client instance it was issued to",
+        function () {
+    assert.ok(originalInstance, before.text);
+  });
+  const expectedAct = { sub: "urn:sts:client:" + RS_ID, iss: h.GRANT,
+                        act: { sub: "urn:sts:client:" + originalInstance,
+                               iss: h.GRANT } };
   for (const format of FORMATS) {
     await h.setting("gnap.accessTokenFormat", format);
     r = await rsKey.send("POST", h.GRANT, { json: {
@@ -1080,7 +1093,7 @@ async function test() {
         const jws = format === "jwt-signed" ? value
           : openJwe(value, rs2Jwe.privateKey).plaintext;
         const v = verifyJws(jws, jwks);
-        assert.deepStrictEqual(v.claims.act, { sub: RS_ID });
+        assert.deepStrictEqual(v.claims.act, expectedAct);
         assert.strictEqual(v.claims.aud, RS2_ID);
         assert.deepStrictEqual(v.claims.cnf, { jkt: rsJkt });
       });
@@ -1102,7 +1115,7 @@ async function test() {
         assert.deepStrictEqual(JSON.parse(Buffer.from(
           caveats[at].slice("gnap:act=".length), "base64url")
                                                 .toString("utf8")),
-                               { sub: RS_ID });
+                               expectedAct);
         assert.ok(macaroonSignature(rs2MacaroonRoot, decoded).equals(
           decoded.signature), "the recomputed MAC matches");
       });
@@ -1114,7 +1127,11 @@ async function test() {
         assert.ok(v.signatureVerifies, "the authority signature");
         const text = v.block.toString("latin1");
         assert.ok(text.indexOf("actor") >= 0, "an actor fact");
-        assert.ok(text.indexOf(RS_ID) >= 0, "naming " + RS_ID);
+        assert.ok(text.indexOf("urn:sts:client:" + RS_ID) >= 0,
+                  "naming urn:sts:client:" + RS_ID);
+        assert.ok(text.indexOf("actor_iss") >= 0 &&
+                  text.indexOf(h.GRANT) >= 0,
+                  "and its issuer, in an actor_iss fact (#526)");
       });
     } else if (format === "zcap") {
       check("zcap: gnapActor names the deriving resource server, under the " +
@@ -1122,7 +1139,7 @@ async function test() {
             "not verify", function () {
         const cap = JSON.parse(Buffer.from(value, "base64url")
                                      .toString("utf8"));
-        assert.deepStrictEqual(cap.gnapActor, { sub: RS_ID });
+        assert.deepStrictEqual(cap.gnapActor, expectedAct);
         const raw = Buffer.from(material.biscuit.jwk.x, "base64url");
         assert.ok(verifyEddsaJcs(cap, raw), "the proof verifies");
         const touched = JSON.parse(JSON.stringify(cap));
@@ -1134,7 +1151,7 @@ async function test() {
     check(format + ": introspection by the downstream resource server " +
           "returns the chain", function () {
       assert.strictEqual(r.json.active, true, r.text);
-      assert.deepStrictEqual(r.json.act, { sub: RS_ID });
+      assert.deepStrictEqual(r.json.act, expectedAct);
     });
   }
   await h.setting("gnap.accessTokenFormat", "jwt-signed");

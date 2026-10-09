@@ -161,15 +161,15 @@ ceremony available at the screen, and one fewer place asking for a username.
 this profile a screen of its own.
 
 **2. THE METADATA IS PER SERVICE PROVIDER AND, IN DEVELOPMENT, IS MINTED FOR
-ANYTHING ASKED FOR.** `/saml2/metadata/{sp}` names an identity provider of its
-own — `urn:sts:idp:{slug}` — with endpoints under that same segment, which is
-what Okta and Ping do. In development it **404s for nothing**: an entityID
+ANYTHING ASKED FOR.** `/saml2/metadata/{sp}` publishes this identity provider
+with endpoints under that same segment. Its entityID is the realm's ONE name,
+its OAuth issuer, for every service provider (*ONE ENTITY, ONE NAME, ONE
+DOCUMENT*, below); it was `urn:sts:idp:{slug}` per service provider until #523.
+In development it **404s for nothing**: an entityID
 nobody registered is registered by the ask. **In product (#112) every `{sp}`
 path of both profiles is a 404 for a name that is not a registered provider of
 that profile** — see *AN UNREGISTERED SERVICE PROVIDER IN PRODUCT* at the end
-of this file. `saml2.perApplicationEntityId` turns the separate entityID
-off for a service provider library that keys its trust store off the entityID;
-the ENDPOINTS stay per-application either way, because that is what makes the
+of this file. The ENDPOINTS are per application, which is what makes the
 documents worth having separately.
 
 The slug is the entityID where it is safe in a URL path segment and
@@ -257,12 +257,12 @@ assertion issued by this profile with no wiring at all** — the same
 WS-Federation assertion puts them in this one. A second builder would have
 silently lost that, and nothing would have said so.
 
-**`issuer` is the option most easily thought unnecessary.** It defaults to
-`saml.issuer` and the two older callers want that. The Web SSO profile MUST
-override it, because it publishes an entityID per service provider and a service
-provider checks the assertion's `Issuer` against the entityID in the metadata it
-was configured from. An assertion issued by a name that is not in that document
-is refused, and the refusal reads as a trust-store problem.
+**`issuer` is the option most easily thought unnecessary.** It defaults to the
+realm's one issuer at the ambient request's base (#523). A caller that read the
+name for its request passes it, so the Response around the assertion, the
+metadata and the assertion cannot be read at different bases: a service
+provider checks the assertion's `Issuer` against the entityID in the metadata
+it was configured from, and the refusal reads as a trust-store problem.
 
 ---
 
@@ -467,31 +467,72 @@ lines away. The message is now chosen from the error.
 
 ---
 
-## FOUR SETTINGS GROUPS, AND `saml.issuer` IS NOT ONE OF THE PROFILES'
+## FOUR SETTINGS GROUPS
 
-The *SAML* group held TWO rows from 2026-08-27 — `saml.issuer` and
-`saml.clockSkewS` — and five more since 2026-09-12: `saml.signatureAlgorithm`,
+The *SAML* group held TWO rows from 2026-08-27 — `saml.issuer` (retired by
+#523) and `saml.clockSkewS` — and five more since 2026-09-12: `saml.signatureAlgorithm`,
 `saml.canonicalizationAlgorithm` and the three `saml.organization*` rows
 (`document_settings.ts`). What they have in common is the entry test for that
 group: each is read by what BOTH profiles sign and therefore reaches WS-Trust
 or WS-Federation as well. See *The validity window* below for
 `saml.clockSkewS`.
 
-`saml.issuer` (group *SAML*) governs who SIGNED an assertion and is shared by
-WS-Trust and WS-Federation. The `saml2.*` rows (group *SAML 2.0*) and the
+The *SAML* group governs what every assertion shares with WS-Trust and
+WS-Federation. The `saml2.*` rows (group *SAML 2.0*) and the
 `saml11.*` rows (group *SAML 1.1*) govern how this service behaves as an
 identity provider in each browser profile. Folding any of them together would
 make a change to one look like a change to the assertions WS-Trust hands out,
-which it is not. `wsfed.entityId` is separate from all of them for the same
-reason and always was.
+which it is not.
 
 **The two profile groups are separate from EACH OTHER for a reason of their
-own**, and it is not symmetry: a relying party that trusts this service for SAML
-1.1 and not for SAML 2.0 is the ordinary case rather than an exotic one, and one
-`entityId` shared between them would make that unexpressible. It also has a
-consequence worth knowing: `saml11.providerId` is what every type 0x0001
-artifact's SourceID is a SHA-1 of, so changing it changes every artifact this
-service mints.
+own**, and it is not symmetry: SAML 1.1 and SAML 2.0 are different
+specifications, and a shared `signResponse` would mean two things. Their NAME
+is not one of their settings any more: both are the realm's issuer (#523).
+
+---
+
+## ONE ENTITY, ONE NAME, ONE DOCUMENT (#523, 2026-10-08)
+
+rcbj, on #523: one issuer per realm, the OAuth issuer URL, in every protocol
+and with no override — so `saml2.entityId`, `saml2.perApplicationEntityId`,
+`saml11.providerId`, `saml11.perApplicationProviderId` and `saml.issuer` are
+retired, and `common/issuer_names.ts`'s `issuer()` is every name:
+`saml2_sso.idpEntityId()` and `saml11_sso.providerId()` ask it, at the
+ambient request's base. It is never empty, so `STS-SAML-0004` and
+`STS-SAML-0027` (product with no name) are retired.
+
+**The consequence rcbj chose ("merge the documents"):** SAML 2.0 and SAML 1.1
+now name ONE entity, and saml-metadata-2.0-os gives one entity one
+`<EntityDescriptor>`. Two documents under one entityID are a duplicate a
+relying party reading both must resolve — the Shibboleth SP's chaining
+provider keeps one and the other profile stops working. So
+`saml2_sso.metadataFor()` builds the one document from both profiles —
+`saml11_sso.metadataParts()` gives SAML 1.1's protocols, its
+ArtifactResolutionService (index 1, the SAML 1.0 SOAP binding; SAML 2.0's is
+index 0, the EndpointIndex every 2.0 artifact carries), its three
+SingleSignOnService profile URIs, its AttributeService and NameID formats —
+and `/saml11/metadata[/{rp}]` serves the same document (`STS-SAML-0034`,
+the 1.1 document's signing failure, retired into `STS-SAML-0014`). The
+Shibboleth peer is handed one file, `idp.xml`.
+
+**The SourceID is the realm's issuer for both artifact types**, so every
+resolver of a realm answers for every artifact of that realm; `STS-SAML-0098`
+now refuses another ENTITY's artifact (another realm's, or one minted at
+another base), still answered empty and left unspent.
+
+**Pin `global.publicBaseUrl`.** The name is read at the request's base, as
+the OAuth issuer is; unpinned, a back channel arriving under another host
+name computes another name and another SourceID.
+
+**AND WS-FEDERATION'S VIEW ADDS ITS ROLE (#524).** The same entity is
+WS-Federation's security token service, so `metadataFor(base, sp, true)` also
+asks `../ws-federation/wsfed.ts`'s `roleDescriptor(base)` (lazily) and puts
+that `fed:SecurityTokenServiceType` RoleDescriptor first among the roles; the
+WS-Federation paths serve that view. The SAML paths do NOT carry it: its
+`xsi:type` resolves only with the WS-Federation schema, and SimpleSAMLphp's
+metadata validator refused the whole document over it (the Shibboleth SP
+accepted it). rcbj chose "two views, one entity" — one entityID, one signer,
+the WS-Federation view a superset — over one document everywhere.
 
 ---
 
@@ -524,9 +565,9 @@ is an application's setting read as though it were the service's.
 **WHICH STRING IDENTIFIES THE APPLICATION IS THE THING TO GET RIGHT, AND IT IS
 NOT THE OBVIOUS ONE.** It is the SERVICE PROVIDER's entityID (`spEntityId`, or
 `rpId` in 1.1) and never `idpEntityId` / `providerId`. Those two are THIS
-service's own name for that application and differ per application when
-`saml2.perApplicationEntityId` is on — so passing one would have compiled, found
-no entry, and silently used the service-wide default every time. Both
+service's own name (the realm's issuer, #523), no application's — so passing
+one would compile, find no entry, and silently use the service-wide default
+every time. Both
 `buildResponse()` implementations take the service provider as its own member
 (`opts.sp` / `opts.rp`) for exactly this reason, rather than reusing the issuer
 that was already there.
@@ -821,7 +862,6 @@ record of the decisions.
 | What | Predicate | Development |
 |---|---|---|
 | ACS URL / `shire` must be a registered `samlAssertionConsumerService`, exact match, no mock fallback — and an address a development sighting wrote is still marked OBSERVED and does not count until confirmed (`applications.returnAddressesOf()`, `STS-REG-0049`) | `acceptsUnregisteredAddresses()` | unchanged, and the sighting is marked |
-| An empty `saml2.entityId` / `saml11.providerId` is not replaced with `urn:sts:idp[:saml11]`; SSO and metadata refuse, naming the setting | `inventsClaimValues()` | unchanged |
 | Given name, surname, mail, display name come off the directory entry or are omitted | `inventsClaimValues()` (via `userFor()` and `person_attributes.ts`) | unchanged |
 | SAML 1.1 AttributeQuery / AuthenticationQuery refused | `opensTestControls()` | answered |
 | SAML 2.0: an assertion configured to be encrypted that cannot be is a Responder status, not plaintext | `sendsWeakerThanAsked()` — it used `opensTestControls()` for an hour, for want of a predicate that named the question | plaintext + WARN |
@@ -1138,12 +1178,9 @@ leaves it resolvable by the right one):
   in every mode (`STS-SAML-0078`);
 * its metadata must not have expired (`STS-SAML-0074`, SAML 2.0);
 * the artifact's SourceID must be the SHA-1 of THIS resolver's entityID
-  (SAML 2.0) or providerID (SAML 1.1) (#160) — with
-  `saml2.perApplicationEntityId` / `saml11.perApplicationProviderId` on, an
-  artifact minted for a party belongs to `/saml2/ars/{sp}` or
-  `/saml11/responder/{rp}`, and the unscoped resolver or another party's
-  answers it with the empty response and leaves it unspent
-  (`STS-SAML-0098`). Checked after the cell relay, so the minting cell
+  (SAML 2.0) or providerID (SAML 1.1) (#160) — the realm's one issuer since
+  #523, so an artifact another entity minted is answered with the empty
+  response and left unspent (`STS-SAML-0098`). Checked after the cell relay, so the minting cell
   decides; a value that is not a 44-byte type 0x0004 (42-byte 0x0001)
   artifact names no SourceID and is the unknown artifact it looks like;
 * it must be AUTHENTICATED where signed requests are required

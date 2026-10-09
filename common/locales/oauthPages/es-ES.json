@@ -1,0 +1,10 @@
+{
+  "logout.askAppWho": "La aplicación <code>{app}</code> ha pedido cerrar la sesión de <strong>{who}</strong>. Esto termina tu sesión aquí, y se avisa a cada aplicación en la que has iniciado sesión a través de ella.",
+  "logout.askApp": "La aplicación <code>{app}</code> ha pedido cerrar tu sesión. Esto termina tu sesión aquí, y se avisa a cada aplicación en la que has iniciado sesión a través de ella.",
+  "logout.askWho": "Una aplicación ha pedido cerrar la sesión de <strong>{who}</strong>. Esto termina tu sesión aquí, y se avisa a cada aplicación en la que has iniciado sesión a través de ella.",
+  "logout.ask": "Una aplicación ha pedido cerrar tu sesión. Esto termina tu sesión aquí, y se avisa a cada aplicación en la que has iniciado sesión a través de ella.",
+  "logout.nothingEnded": "No se ha terminado nada.",
+  "signedOut.ended": "La sesión de {username} ha terminado, y se avisa a cada aplicación en la que se ha iniciado sesión a través de ella.",
+  "signedOut.frontEnded": "La sesión de {username} ha terminado. Es la sesión que comparten WS-Federation y SAML 2.0, así que también se ha cerrado en ellos.",
+  "signedOut.frontNone": "No había ninguna sesión que terminar. De todos modos, se ha borrado la cookie."
+}

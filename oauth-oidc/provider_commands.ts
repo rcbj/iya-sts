@@ -734,7 +734,8 @@ class ProviderCommands {
   async signedToken(row: Json): Promise<Json> {
     const { log, applications, signJwtAsAsync, errorCodes } = this.deps;
     log.debug("Entering ProviderCommands.signedToken(). " + row.clientId);
-    const registered: Json = applications.registrationOf(row.clientId) || {};
+    // From the client's attributes (#290), whoever set them.
+    const registered: Json = applications.clientConfigOf(row.clientId);
     const alg = String(registered.id_token_signed_response_alg || 'RS256');
     if (alg === 'none') {
       log.debug("Leaving ProviderCommands.signedToken(). alg none.");
@@ -1099,7 +1100,7 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.executeRun(). No issuer.");
       return fail('STS-OAUTH-0767', 'no issuer is known for this realm');
     }
-    const registered: Json = applications.registrationOf(run.clientId) || {};
+    const registered: Json = applications.clientConfigOf(run.clientId);
     const alg = String(registered.id_token_signed_response_alg || 'RS256');
     const maxResumes = this.setting('oauth2.commandStreamResumes');
     let token = '';

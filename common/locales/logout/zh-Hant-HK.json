@@ -1,0 +1,6 @@
+{
+  "inventory.selectedButton": "結束已剔選的項目",
+  "inventory.selectedNote": "請在下方的表格中剔選。未剔選任何項目則不會結束任何內容。",
+  "result.headingSelected": "已登出所剔選的項目",
+  "result.nothingEnded": "沒有結束任何內容。要麼沒有有效內容，要麼所剔選的一切都已不存在。"
+}

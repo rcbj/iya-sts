@@ -95,7 +95,8 @@ const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
  * minus what mine removed, plus what mine added.
  */
 const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
-               'description', 'oauthconsent', 'stswebauthncredential',
+               'description', 'oauthconsent', 'oauthconsentapplied',
+               'stswebauthncredential',
                'x509subject', 'didsubject', 'spiffesubject', 'authnmethod',
                'federationattribute', 'federationissuer',
                'federationrelationship', 'federationlink',

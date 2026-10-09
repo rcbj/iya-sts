@@ -1,0 +1,3 @@
+{
+  "signalsOnly": "此合作夥伴不讓任何人登入：它只傳送 CAEP 和 RISC 事件。預設只記錄這些事件，除裝置合規狀態會被設定外不做其他處理。其人員是下方與其連結的人（<code>&lt;iss&gt; &lt;sub&gt;</code>，或 <code>opaque &lt;id&gt;</code>），或在開啟 <code>fedSignalEmailMatch</code> 時依電郵比對的人。"
+}

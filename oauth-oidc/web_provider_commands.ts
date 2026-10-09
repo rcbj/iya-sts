@@ -48,10 +48,13 @@ class ProviderCommandsPage {
    * Draws the page's body from its view.
    *
    * @param view - the answer of the page's management API operation
+   * @param ctx - the render context; the server-side caller passes none and
+   *   is drawn in the default (English) translator (#539)
    * @returns the body as HTML
    */
-  static render(view: Json): string {
-    return ProviderCommandsPage.commandsBody(view);
+  static render(view: Json, ctx?: Json): string {
+    const t = (ctx || kit.context()).t;
+    return ProviderCommandsPage.commandsBody(view, t);
   }
 
   // One small form: hidden fields and a button.
@@ -84,20 +87,24 @@ class ProviderCommandsPage {
    * @param page - the page a Retry posts to
    * @param kind - the delivery kind
    * @param row - the delivery row
+   * @param t - the page's translator (#539)
    * @returns the HTML table row
    */
-  static deliveryRow(page: string, kind: string, row: Json): string {
+  static deliveryRow(page: string, kind: string, row: Json, t: Json): string {
     const what = row.command ? '<code>' + esc(row.command) + '</code>' +
       (row.username ? ' ' + esc(row.username) : '') :
       (row.mode ? esc(row.mode) + ' ' + esc(row.authReqId || '') :
-       'session <code>' + esc(row.sessionId || '') + '</code>');
+       t.html('consoleProviderCommands.session') + ' <code>' +
+       esc(row.sessionId || '') + '</code>');
     return '<tr class="delivery-' + esc(row.state) + '" id="delivery-' +
       esc(row.id) + '"><td><code>' + esc(row.clientId) + '</code></td><td>' +
       what + '</td><td>' + esc(row.state) +
       (row.accountState ? ' → <code>' + esc(row.accountState) + '</code>'
                         : '') +
-      (row.awaitingCallback ? ' (a callback to follow)' : '') +
-      '<br><span class="sub">' + esc(row.attempts) + ' attempt(s)' +
+      (row.awaitingCallback
+        ? t.html('consoleProviderCommands.awaitingCallback') : '') +
+      '<br><span class="sub">' +
+      t.html('consoleProviderCommands.attempts', { n: row.attempts }) +
       (row.status ? ', HTTP ' + esc(row.status) : '') +
       (row.errorCode ? ', <code>' + esc(row.errorCode) + '</code>' : '') +
       '</span>' + (row.why ? '<br><span class="sub">' + esc(row.why) +
@@ -105,7 +112,7 @@ class ProviderCommandsPage {
       '</td><td class="sub">' + esc(row.queuedAt) + '</td><td>' +
       (row.state === 'dead'
         ? ProviderCommandsPage.form(page, 'retry', { kind: kind,
-            delivery: row.id }, 'Retry')
+            delivery: row.id }, t.text('consoleProviderCommands.retry'))
         : '') + '</td></tr>';
   }
 
@@ -114,9 +121,10 @@ class ProviderCommandsPage {
    * Draws `/admin/commands`' body.
    *
    * @param json - `provider_commands.report()`'s answer
+   * @param t - the page's translator (#539)
    * @returns the HTML
    */
-  static commandsBody(json: Json): string {
+  static commandsBody(json: Json, t: Json): string {
     const form = ProviderCommandsPage.form;
     const clients = json.clients.length ? json.clients.map(function (c: Json) {
       return '<tr id="command-client-' + esc(c.clientId) + '"><td><code>' +
@@ -125,18 +133,22 @@ class ProviderCommandsPage {
           ? c.learned.commandsSupported.map(function (one: string) {
               return '<code>' + esc(one) + '</code>';
             }).join(' ') + (c.learned.audSubRequired
-              ? '<br><strong>aud_sub required</strong>' : '') +
-            '<br><span class="sub">learned ' + esc(c.learned.learnedAt) +
+              ? '<br><strong>' +
+                t.html('consoleProviderCommands.audSubRequired') +
+                '</strong>' : '') +
+            '<br><span class="sub">' +
+            t.html('consoleProviderCommands.learned',
+                   { when: c.learned.learnedAt }) +
             '</span>'
-          : '<span class="sub">not asked yet — send <code>metadata</code>' +
-            '</span>') + '</td><td>' +
+          : '<span class="sub">' +
+            t.html('consoleProviderCommands.notAsked') + '</span>') +
+        '</td><td>' +
         form(PAGE, 'send-tenant', { clientId: c.clientId,
-                                    command: 'metadata' }, 'Send metadata') +
+                                    command: 'metadata' },
+             t.text('consoleProviderCommands.sendMetadata')) +
         '</td></tr>';
-    }).join('') : '<tr><td colspan="4" class="sub">No client registered a ' +
-      '<code>command_endpoint</code>. It is a registration member ' +
-      '(RFC 7591, <code>POST /oauth2/register</code>) and a field on ' +
-      '<code>/admin/applications</code>.</td></tr>';
+    }).join('') : '<tr><td colspan="4" class="sub">' +
+      t.html('consoleProviderCommands.noClients') + '</td></tr>';
     const clientOptions = json.clients.map(function (c: Json) {
       return '<option>' + esc(c.clientId) + '</option>';
     }).join('');
@@ -148,19 +160,29 @@ class ProviderCommandsPage {
     const tenantOptions = json.tenantCommands.map(function (one: string) {
       return '<option>' + esc(one) + '</option>';
     }).join('');
-    const send = '<h3>Send a command</h3>' +
+    const send = '<h3>' + t.html('consoleProviderCommands.sendHeading') +
+      '</h3>' +
       '<form method="post" action="' + PAGE + '" id="command-send-account">' +
       '<input type="hidden" name="action" value="send-account">' +
-      '<label>Client <select name="clientId">' + clientOptions +
-      '</select></label> <label>Person <input name="username" ' +
-      'autocomplete="off"></label> <label>Command <select name="command">' +
-      accountOptions + '</select></label> <button type="submit">Send' +
+      '<label>' + t.html('consoleProviderCommands.client') +
+      ' <select name="clientId">' + clientOptions +
+      '</select></label> <label>' + t.html('consoleProviderCommands.person') +
+      ' <input name="username" ' +
+      'autocomplete="off"></label> <label>' +
+      t.html('consoleProviderCommands.command') +
+      ' <select name="command">' +
+      accountOptions + '</select></label> <button type="submit">' +
+      t.html('consoleProviderCommands.send') +
       '</button></form>' +
       '<form method="post" action="' + PAGE + '" id="command-send-tenant">' +
       '<input type="hidden" name="action" value="send-tenant">' +
-      '<label>Client <select name="clientId">' + clientOptions +
-      '</select></label> <label>Tenant command <select name="command">' +
-      tenantOptions + '</select></label> <button type="submit">Start' +
+      '<label>' + t.html('consoleProviderCommands.client') +
+      ' <select name="clientId">' + clientOptions +
+      '</select></label> <label>' +
+      t.html('consoleProviderCommands.tenantCommand') +
+      ' <select name="command">' +
+      tenantOptions + '</select></label> <button type="submit">' +
+      t.html('consoleProviderCommands.start') +
       '</button></form>';
     const accounts = json.accounts.length ? json.accounts.map(function (a:
                                                                      Json) {
@@ -169,52 +191,73 @@ class ProviderCommandsPage {
         esc(a.sub) + '</code></span></td><td><strong>' + esc(a.state) +
         '</strong></td><td><code>' + esc(a.lastCommand) + '</code></td>' +
         '<td class="sub">' + esc(a.updatedAt) + '</td></tr>';
-    }).join('') : '<tr><td colspan="5" class="sub">No relying party has ' +
-      'reported an account yet.</td></tr>';
+    }).join('') : '<tr><td colspan="5" class="sub">' +
+      t.html('consoleProviderCommands.noAccounts') + '</td></tr>';
     const runs = json.runs.length ? json.runs.map(function (r: Json) {
       return '<tr id="command-run-' + esc(r.id) + '"><td><code>' +
         esc(r.clientId) + '</code></td><td><code>' + esc(r.command) +
         '</code></td><td>' + esc(r.state) + (r.why ? '<br><span ' +
         'class="sub">' + esc(r.why) + '</span>' : '') + '</td><td>' +
-        esc(r.accounts) + ' account(s), ' + esc(r.events) + ' event(s)' +
-        (r.totalAccounts !== null ? ', total ' + esc(r.totalAccounts) : '') +
-        (r.resumes ? ', resumed ' + esc(r.resumes) + '×' : '') +
+        t.html('consoleProviderCommands.progress',
+               { accounts: r.accounts, events: r.events }) +
+        (r.totalAccounts !== null
+          ? t.html('consoleProviderCommands.total', { n: r.totalAccounts })
+          : '') +
+        (r.resumes
+          ? t.html('consoleProviderCommands.resumed', { n: r.resumes })
+          : '') +
         '</td><td class="sub">' + esc(r.startedAt) + '</td></tr>';
-    }).join('') : '<tr><td colspan="5" class="sub">No tenant command has ' +
-      'run.</td></tr>';
+    }).join('') : '<tr><td colspan="5" class="sub">' +
+      t.html('consoleProviderCommands.noRuns') + '</td></tr>';
     const deliveries = json.deliveries.length
       ? json.deliveries.map(function (row: Json) {
         return ProviderCommandsPage.deliveryRow(PAGE, 'provider-commands',
-                                                 row);
+                                                 row, t);
       }).join('')
-      : '<tr><td colspan="5" class="sub">No command has been sent.</td></tr>';
-    return kit.note('<strong>OpenID Provider Commands 1.0.</strong> ' +
-        'This service tells a relying party what to do with an account — ' +
-        'a signed Command Token POSTed to the <code>command_endpoint</code> ' +
-        'it registered. Provider commands are <strong>' +
-        (json.enabled ? 'on' : 'off') + '</strong> here ' +
-        '(<code>oauth2.providerCommands</code>); automatic commands on a ' +
-        'disable, an enable, a delete, a change and a global sign-out are ' +
-        '<strong>' + (json.automatic ? 'on' : 'off') + '</strong> ' +
-        '(<code>oauth2.commandAutomatic</code>) and go only to a relying ' +
-        'party whose metadata answer listed the command. The issuer ' +
-        'Command Tokens name is <code id="command-issuer">' +
-        esc(json.issuer || '(none known yet)') + '</code>.') +
-      '<table><thead><tr><th>Client</th><th>command_endpoint</th>' +
-      '<th>Commands it supports</th><th></th></tr></thead><tbody>' +
+      : '<tr><td colspan="5" class="sub">' +
+        t.html('consoleProviderCommands.noDeliveries') + '</td></tr>';
+    const th = function (key: string): string {
+      return '<th>' + t.html(key) + '</th>';
+    };
+    // The issuer is a <code> with an id, which a message may not carry, so
+    // the note ends in code; `on`/`off` are words of the page, selected by
+    // the view's two booleans (#539).
+    return kit.note(t.html('consoleProviderCommands.note',
+                           { enabled: json.enabled ? 'on' : 'off',
+                             automatic: json.automatic ? 'on' : 'off' }) +
+        '<code id="command-issuer">' +
+        (json.issuer ? esc(json.issuer)
+                     : t.html('consoleProviderCommands.noIssuer')) +
+        '</code>.') +
+      '<table><thead><tr>' + th('consoleProviderCommands.colClient') +
+      '<th>command_endpoint</th>' +
+      th('consoleProviderCommands.colSupports') +
+      '<th></th></tr></thead><tbody>' +
       clients + '</tbody></table>' + send +
-      '<h3>Accounts, as each relying party reported them</h3>' +
-      '<table><thead><tr><th>Client</th><th>Person</th><th>State</th>' +
-      '<th>Last command</th><th>When</th></tr></thead><tbody>' + accounts +
-      '</tbody></table><h3>Tenant runs</h3><table><thead><tr><th>Client' +
-      '</th><th>Command</th><th>State</th><th>Progress</th><th>Started' +
-      '</th></tr></thead><tbody>' + runs + '</tbody></table>' +
-      '<h3>Deliveries</h3><table><thead><tr><th>Client</th><th>Command' +
-      '</th><th>State</th><th>Queued</th><th></th></tr></thead><tbody>' +
+      '<h3>' + t.html('consoleProviderCommands.accountsHeading') + '</h3>' +
+      '<table><thead><tr>' + th('consoleProviderCommands.colClient') +
+      th('consoleProviderCommands.colPerson') +
+      th('consoleProviderCommands.colState') +
+      th('consoleProviderCommands.colLastCommand') +
+      th('consoleProviderCommands.colWhen') + '</tr></thead><tbody>' +
+      accounts + '</tbody></table><h3>' +
+      t.html('consoleProviderCommands.runsHeading') + '</h3><table><thead>' +
+      '<tr>' + th('consoleProviderCommands.colClient') +
+      th('consoleProviderCommands.colCommand') +
+      th('consoleProviderCommands.colState') +
+      th('consoleProviderCommands.colProgress') +
+      th('consoleProviderCommands.colStarted') +
+      '</tr></thead><tbody>' + runs + '</tbody></table>' +
+      '<h3>' + t.html('consoleProviderCommands.deliveriesHeading') +
+      '</h3><table><thead><tr>' + th('consoleProviderCommands.colClient') +
+      th('consoleProviderCommands.colCommand') +
+      th('consoleProviderCommands.colState') +
+      th('consoleProviderCommands.colQueued') +
+      '<th></th></tr></thead><tbody>' +
       deliveries + '</tbody></table>' +
       '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/commands</code> · <a href="' + DELIVERIES +
-      '">every outbound delivery</a></p>';
+      '">' + t.html('consoleProviderCommands.everyDelivery') + '</a></p>';
   }
 
   // /admin/deliveries' body, from `outbound.kindReport()`.
@@ -227,34 +270,40 @@ class ProviderCommandsPage {
    * @returns the HTML
    */
   static deliveriesBody(ctx: Json, json: Json): string {
+    const t = ctx.t;
     const state = String(ctx.query.state || '');
     const filter = '<form method="get" action="' + DELIVERIES + '" ' +
-      'class="inline"><label>State <select name="state"><option value="">' +
-      'every state</option>' + json.states.map(function (s: string) {
+      'class="inline"><label>' + t.html('consoleProviderCommands.state') +
+      ' <select name="state"><option value="">' +
+      t.html('consoleProviderCommands.everyState') + '</option>' +
+      json.states.map(function (s: string) {
         return '<option' + (s === state ? ' selected' : '') + '>' + esc(s) +
           '</option>';
-      }).join('') + '</select></label> <button type="submit">Show</button>' +
+      }).join('') + '</select></label> <button type="submit">' +
+      t.html('consoleProviderCommands.show') + '</button>' +
       '</form>';
     const kinds = json.kinds.map(function (k: Json) {
       const rows = k.rows.length ? k.rows.map(function (row: Json) {
-        return ProviderCommandsPage.deliveryRow(DELIVERIES, k.id, row);
-      }).join('') : '<tr><td colspan="5" class="sub">Nothing' +
-        (state ? ' ' + esc(state) : '') + '.</td></tr>';
+        return ProviderCommandsPage.deliveryRow(DELIVERIES, k.id, row, t);
+      }).join('') : '<tr><td colspan="5" class="sub">' +
+        (state ? t.html('consoleProviderCommands.nothingIn',
+                        { state: state })
+               : t.html('consoleProviderCommands.nothing')) + '</td></tr>';
       return '<h3 id="kind-' + esc(k.id) + '">' + esc(k.title) + '</h3>' +
-        '<p class="sub">' + esc(k.counts.pending) + ' pending, ' +
-        esc(k.counts.sent) + ' sent, <strong>' + esc(k.counts.dead) +
-        ' dead</strong> · <a href="' + esc(k.page) + '">' + esc(k.page) +
-        '</a></p><table><thead><tr><th>Client</th><th>What</th><th>State' +
-        '</th><th>Queued</th><th></th></tr></thead><tbody>' + rows +
+        '<p class="sub">' +
+        t.html('consoleProviderCommands.counts',
+               { pending: k.counts.pending, sent: k.counts.sent,
+                 dead: k.counts.dead }) +
+        ' · <a href="' + esc(k.page) + '">' + esc(k.page) +
+        '</a></p><table><thead><tr><th>' +
+        t.html('consoleProviderCommands.colClient') + '</th><th>' +
+        t.html('consoleProviderCommands.colWhat') + '</th><th>' +
+        t.html('consoleProviderCommands.colState') + '</th><th>' +
+        t.html('consoleProviderCommands.colQueued') +
+        '</th><th></th></tr></thead><tbody>' + rows +
         '</tbody></table>';
     }).join('');
-    return kit.note('<strong>Every outbound delivery</strong> this ' +
-        'service POSTs to an address a client registered, on the one ' +
-        'durable queue: each is a persisted row, attempted once for the ' +
-        'cluster under a claimed lease, retried with backoff when a timeout, ' +
-        'a connection failure, 5xx, 408 or 429 makes that worth it, and a ' +
-        '<strong>dead letter</strong> otherwise — sent again only when an ' +
-        'operator presses Retry, which starts a new generation.') +
+    return kit.note(t.html('consoleProviderCommands.deliveriesNote')) +
       filter + kinds + '<p class="links"><a href="' + DELIVERIES +
       '?format=json">JSON</a> · <code>GET /admin-api/deliveries</code></p>';
   }

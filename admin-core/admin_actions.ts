@@ -557,7 +557,8 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'sign-domain-linkage', 'set-custom-claim',
                              'remove-custom-claim', 'set-claim-attributes',
                              'inherit-claim-attributes', 'set-access-type',
-                             'remove-access-type', 'forget'];
+                             'remove-access-type', 'set-permission-claims',
+                             'clear-permission-claims', 'forget'];
 
 // ---------------------------------------------------------------------------
 // GET /admin/saml2, POST /admin/saml2 — THE SAML 2.0 IDENTITY PROVIDER.
@@ -1663,7 +1664,10 @@ class AdminActions {
     // refusal rather than as a success that did nothing.
     const done = (result.terminated || []).length;
     const unknown = (result.unknown || []).length;
-    this.mailSessionsEnded(key, done, 'an administrator (the sessions page)');
+    // #539: who ended them, as a message the mail channel words in the
+    // person's own language (`mailValues`), not an English phrase.
+    this.mailSessionsEnded(key, done, { i18n:
+      'mailValues.by.administratorSessionsPage' });
     const said = []
       .concat((result.terminated || []).map(function (
           one) { return one.message; }))
@@ -1766,7 +1770,7 @@ class AdminActions {
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
-                             'an administrator (the admin console at /admin/logout)');
+        { i18n: 'mailValues.by.administratorConsoleLogout' });
       log.debug("Leaving AdminActions.logoutAction(). A global logout ended " +
                 result.terminated.length + ".");
       return { ok: true, result: result, message: result.message +
@@ -1802,7 +1806,7 @@ class AdminActions {
         by: 'the admin console at /admin/logout'
       });
       this.mailSessionsEnded(user, result.terminated.length,
-                             'an administrator (the admin console at /admin/logout)');
+        { i18n: 'mailValues.by.administratorConsoleLogout' });
       log.debug("Leaving AdminActions.logoutAction(). Ended " +
                 result.terminated.length +
                 ".");
@@ -4643,7 +4647,8 @@ class AdminActions {
                       'sign-domain-linkage', 'set-custom-claim',
                       'remove-custom-claim', 'set-claim-attributes',
                       'inherit-claim-attributes', 'set-access-type',
-                      'remove-access-type', 'forget'];
+                      'remove-access-type', 'set-permission-claims',
+                      'clear-permission-claims', 'forget'];
     if (needsOne.indexOf(action) >= 0 && !identifier) {
       log.debug("Leaving AdminActions.applicationsAction(). No application " +
                 "named.");
@@ -5036,6 +5041,113 @@ class AdminActions {
                    (names.length ? names.join(', ') : 'no attribute') +
                    ' for its ' + setId + ' set, in place of the realm\'s ' +
                    'selection.' };
+    }
+
+    // ---------------------------------------------------------------------
+    // CLAIMS MAPPED TO A RESOURCE SERVER'S OWN SCOPES (2026-10-09), from its
+    // Scope claims tab. `permission` names one of the permissions it exposes
+    // (`oauthPermission`); `set-permission-claims` writes the catalogue
+    // attributes (`attributes`, or a form's repeated `attribute`) an access
+    // token addressed to it carries when that permission was granted — an
+    // empty list maps none — and `clear-permission-claims` takes the
+    // permission's mapping off. The whole map is one JSON object on the
+    // entry, held at the write by `updateApplication()` (`STS-REG-0344`).
+    // ---------------------------------------------------------------------
+    if (action === 'set-permission-claims' ||
+        action === 'clear-permission-claims') {
+      const permission = String(body.permission || '').trim();
+      const entry = applications.get(identifier);
+      if (!entry) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such application.");
+        return this.refused('STS-REG-0344', { ok: false,
+          errors: ['There is no application called "' + identifier +
+                   '".'] });
+      }
+      const declaredFamilies = applications.declaredFamiliesOf(entry);
+      if (action === 'set-permission-claims' &&
+          !['oauth2', 'oidc'].some(function (one) {
+            return declaredFamilies.indexOf(one) >= 0;
+          })) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": not an OAuth application.");
+        return this.refused('STS-REG-0344', { ok: false,
+          errors: ['The application "' + identifier + '" is not declared ' +
+            'for oauth2 or oidc, so no access token is addressed to it. ' +
+            'Tick the family first.'] });
+      }
+      const exposed = applications.permissionsOf(entry).map(function (one) {
+        return one.name;
+      });
+      if (!permission || (action === 'set-permission-claims' &&
+                          exposed.indexOf(permission) < 0)) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": not one of its permissions.");
+        return this.refused('STS-REG-0344', { ok: false,
+          errors: ['permission must name one of the permissions "' +
+            identifier + '" exposes (' + (exposed.length
+              ? exposed.join(', ') : 'it exposes none') + '), not "' +
+            permission.slice(0, 60) + '".'] });
+      }
+      // The whole map, as held, so a save touches one permission only.
+      let current: Record<string, unknown> = {};
+      try {
+        const raw = [].concat(entry.fields[
+          claimAttributes.PERMISSION_CLAIMS_ATTRIBUTE] || [])[0];
+        const parsed = raw ? JSON.parse(String(raw)) : {};
+        current = parsed && typeof parsed === 'object' &&
+          !Array.isArray(parsed) ? parsed : {};
+      } catch (e) {
+        log.debug("Caught in AdminActions.applicationsAction(): " +
+                  ((e && e.message) || e));
+        // A value only an ldapmodify could leave: replaced by this save,
+        // which is the repair.
+        current = {};
+      }
+      // Mappings of permissions it no longer exposes are dropped by any
+      // save: the write is held to what it exposes, and they map nothing.
+      Object.keys(current).forEach(function (name) {
+        if (exposed.indexOf(name) < 0) {
+          delete current[name];
+        }
+      });
+      let names = null;
+      if (action === 'set-permission-claims') {
+        const offered = body.attributes !== undefined ? body.attributes
+                                                      : body.attribute;
+        const list = Array.isArray(offered) ? offered
+          : (offered === undefined || offered === null || offered === ''
+            ? [] : String(offered).split(/[\s,]+/));
+        const checked = claimAttributes.checkNames(list);
+        if (!checked.ok) {
+          log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                    ": an attribute the catalogue does not hold.");
+          return this.refused('STS-REG-0344', { ok: false,
+            errors: checked.errors });
+        }
+        names = checked.names;
+        current[permission] = names;
+      } else {
+        delete current[permission];
+      }
+      const write = applications.updateApplication(identifier, {
+        mode: 'set', attribute: claimAttributes.PERMISSION_CLAIMS_ATTRIBUTE,
+        value: Object.keys(current).length ? JSON.stringify(current) : '' });
+      if (!write.ok) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": the write was refused.");
+        return this.refusedBy('STS-REG-0344', write);
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                " ok.");
+      return { ok: true, application: identifier, permission: permission,
+               attributes: names, mappings: current,
+               message: names === null
+                 ? 'The permission "' + permission + '" of "' + identifier +
+                   '" maps no claim now.'
+                 : 'An access token for "' + identifier + '" granted "' +
+                   permission + '" now carries ' + (names.length
+                     ? names.join(', ') : 'no attribute') + '.' };
     }
 
     // ---------------------------------------------------------------------
@@ -6590,7 +6702,8 @@ class AdminActions {
     const module = kind.module;
     const noun = kind.label.toLowerCase() + ' profile';
     const profileName = String(body.profile || module.DEFAULT_PROFILE).trim();
-    const before = module.read(module.DEFAULT_PROFILE);
+    // The profile the act is about (#535: a named passkey profile too).
+    const before = module.read(profileName || module.DEFAULT_PROFILE);
     const valuesOf = function (profile) {
       log.debug("Entering valuesOf().");
       const out: Record<string, any> = {};
@@ -7221,7 +7334,7 @@ class AdminActions {
     if (action === 'create') {
       // `overrides` IS PASSED THROUGH, and until 2026-08-25 it was not. The
       // management API documents the field, gives it an example
-      // (`{"saml2.entityId": "urn:acme:idp"}`) and says it wins over the six
+      // (`{"saml.organizationName": "Acme"}`) and says it wins over the
       // seeded names — and this function built its argument out of three
       // properties and dropped the fourth, so a create carrying overrides
       // answered 200 and made a realm configured differently from the one that
