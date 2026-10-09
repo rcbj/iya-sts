@@ -40,6 +40,10 @@ class RealmsPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // The page's words are its catalog's (#539); what the view answered —
+    // realm names, the support table's prose, a removal's reasons — is
+    // drawn as it came.
+    const t = ctx.t;
     const listView = kit.listViewOf('/admin/realms', ctx.query);
     const pg = json.paging;
     const rows = json.realms.slice((pg.page - 1) * pg.perPage,
@@ -48,10 +52,12 @@ class RealmsPage {
       return '<tr><td><a href="' + kit.esc(href) + '"><code>' +
              kit.esc(row.id) +
         '</code></a>' +
-        (row.builtin ? ' <span class="why">built in</span>' : '') +
+        (row.builtin ? ' <span class="why">' +
+          t.html('consoleRealms.builtIn') + '</span>' : '') +
         (row.retiring
           ? ' <span class="none">' + (row.retiring.interrupted
-              ? 'removal interrupted' : 'being removed') + '</span>'
+              ? t.html('consoleRealms.removalInterrupted')
+              : t.html('consoleRealms.beingRemoved')) + '</span>'
           : '') +
         '</td><td>' + kit.esc(row.name) + '</td>' +
         '<td><code>' + kit.esc(row.domain) + '</code></td>' +
@@ -70,15 +76,15 @@ class RealmsPage {
       return !!row.retiring;
     });
     const retiringBlock = retiringRows.map(function (row) {
-      return RealmsPage.retiringNotice(row, carryBack, json.current);
+      return RealmsPage.retiringNotice(row, carryBack, json.current, t);
     }).join('');
 
     const inner =
-      '<p class="sub">' + json.count + ' realm(s). Everything under a ' +
-      'realm\'s prefix is that realm; everything under no prefix is the ' +
-      'default one.</p>' +
+      '<p class="sub">' +
+      t.html('consoleRealms.count', { count: String(json.count) }) +
+      '</p>' +
       retiringBlock +
-      RealmsPage.realmsCaveat(json.persistence) +
+      RealmsPage.realmsCaveat(json.persistence, t) +
 
       // `realms.active()` IS FALSE FOR TWO DIFFERENT REASONS AND THIS USED TO
       // NAME ONLY ONE OF THEM. It is `realms.size > 0 &&
@@ -98,84 +104,58 @@ class RealmsPage {
       (json.active
         ? ''
         : !json.enabled
-          ? kit.warn('<strong>Trust realms are switched off.</strong> ' +
-            '<code>realms.enabled</code> is false, so every prefix below ' +
-            'answers 404 and this whole service is the default realm. The ' +
-            'definitions are untouched — that is what this setting is for: ' +
-            'it lets a realm be ruled out as the cause of something without ' +
-            'anything being deleted. Turn it back on in the settings at the ' +
-            'foot of this page.')
-          : kit.note('<strong>Trust realms are switched ON and none has ' +
-            'been defined, which is this service\'s ordinary state rather ' +
-            'than something to fix.</strong> <code>realms.enabled</code> is ' +
-            '<code>true</code>; the feature does nothing until a realm ' +
-            'exists, because the built-in <code>default</code> realm has an ' +
-            'empty prefix and IS this service. That is a property rather ' +
-            'than a coincidence — a service with no realm defined behaves ' +
-            'exactly as it did before realms existed, which is what keeps ' +
-            'every client, container and test that predates them working ' +
-            'unchanged. <strong>Define one below</strong> and its prefix ' +
-            'starts answering immediately: a switcher appears on every page ' +
-            'of this console, and <code>GET /realms</code> starts reporting ' +
-            '<code>active: true</code>.')) +
+          ? kit.warn(t.html('consoleRealms.switchedOff'))
+          : kit.note(t.html('consoleRealms.switchedOnNone'))) +
 
-      '<h2>The realms</h2><table><tr><th>Id</th><th>Name</th>' +
-      '<th>Domain</th><th>Path prefix</th><th>Signing key</th><th ' +
-      'class="num">Settings</th></tr>' + rows + '</table>' +
+      '<h2>' + t.html('consoleRealms.theRealms') + '</h2><table><tr><th>' +
+      t.html('consoleRealms.id') + '</th><th>' +
+      t.html('consoleRealms.name') + '</th>' +
+      '<th>' + t.html('consoleRealms.domain') + '</th><th>' +
+      t.html('consoleRealms.pathPrefix') + '</th><th>' +
+      t.html('consoleRealms.signingKey') + '</th><th ' +
+      'class="num">' + t.html('consoleRealms.settings') + '</th></tr>' +
+      rows + '</table>' +
       kit.pageNavPair('/admin/realms', kit.pageParamsOf(ctx.query), pg).head +
       kit.perPageForm('/admin/realms', 'per', ctx.query.per, pg.perPage, '',
                        listView) +
 
-      '<h2>Define a realm</h2>' +
-      kit.note('The id becomes a path segment, so it is lower-case letters, ' +
-      'digits and hyphens. It may not be <code>default</code> and it may not ' +
-      'be the first segment of a path this service already serves — ' +
+      '<h2>' + t.html('consoleRealms.defineHeading') + '</h2>' +
+      // The reserved segments are code, and sit between two messages: the
+      // catalog carries no markup a list of <code> elements would need.
+      kit.note(t.html('consoleRealms.idRuleHead') + ' ' +
       (json.reserved.length ? kit.codeList(json.reserved.slice(0, 12)) +
-        (json.reserved.length > 12 ? ' and ' + (json.reserved.length - 12) +
-         ' ' +
-            'more' : '')
-        : 'nothing is registered yet') +
-      ' — whatever <code>realms.pathSegment</code> is set to, precisely so ' +
-      'that clearing that setting cannot turn an existing realm into a ' +
-      'shadow over the console or the authorization server.') +
-      kit.note('<strong>The domain</strong> — <code>iyasec.io</code>, ' +
-      '<code>dev.iyasec.io</code> — is the root of every NAME the realm ' +
-      'invents: its directory is a tree of its own at the RFC 2247 mapping ' +
-      'of it (<code>iyasec.io</code> is <code>dc=iyasec,dc=io</code>), its ' +
-      'Kerberos realm is the domain in capitals, its SPIFFE trust domain is ' +
-      'the domain, and its identity providers call themselves ' +
-      '<code>urn:&lt;domain&gt;:idp</code>. It is not where the realm is ' +
-      'REACHED — the issuer and every URL still come from the host a request ' +
-      'arrived on. No two realms may share one; one inside another\'s is ' +
-      'allowed and is a separate tree. <strong>It is fixed once the realm is ' +
-      'created.</strong> Left empty it is <code>&lt;id&gt;.' +
-      kit.esc(json.defaultDomain) + '</code>.') +
+        (json.reserved.length > 12
+          ? t.html('consoleRealms.andMore',
+                   { n: String(json.reserved.length - 12) })
+          : '')
+        : t.html('consoleRealms.nothingRegistered')) +
+      ' ' + t.html('consoleRealms.idRuleTail')) +
+      kit.note(t.html('consoleRealms.domainNote',
+                      { defaultDomain: json.defaultDomain })) +
       '<form method="post" action="/admin/realms">' + carryBack +
       '<input type="hidden" name="action" value="create"><div ' +
-      'class="formrow"><label for="rid">Id</label><input type="text" ' +
+      'class="formrow"><label for="rid">' + t.html('consoleRealms.id') +
+      '</label><input type="text" ' +
       'id="rid" name="id" size="16" placeholder="acme" required><label ' +
-      'for="rname">Name</label><input type="text" id="rname" name="name" ' +
+      'for="rname">' + t.html('consoleRealms.name') +
+      '</label><input type="text" id="rname" name="name" ' +
       'size="22" placeholder="Acme Corporation"><label ' +
-      'for="rdomain">Domain</label><input type="text" id="rdomain" ' +
+      'for="rdomain">' + t.html('consoleRealms.domain') +
+      '</label><input type="text" id="rdomain" ' +
       'name="domain" size="22" placeholder="iyasec.io" ' +
       'autocapitalize="off" spellcheck="false"><label ' +
-      'for="rdesc">Description</label><input type="text" id="rdesc" ' +
-      'name="description" size="40"><button type="submit">Define ' +
-      'it</button></div></form><h2>What is separated, and what is ' +
-      'shared</h2><p class="lead">A realm separates what this service ISSUES ' +
-      'and everything it is holding while it issues it — keys, sessions, ' +
-      'codes, tokens, offers, artifacts, statistics and the audit log — and ' +
-      'since each realm has a directory of its own, the people, groups, ' +
-      'applications and policies in it. The families on sockets with no ' +
-      'path in them are told apart some other way, and a few things belong ' +
-      'to the process and are shared. This table is the whole list, ' +
-      'and <code>GET /realms</code> answers the same thing to a client that ' +
-      'cannot read a console.</p>' +
-      RealmsPage.realmSupportTable(json.support) +
+      'for="rdesc">' + t.html('consoleRealms.description') +
+      '</label><input type="text" id="rdesc" ' +
+      'name="description" size="40"><button type="submit">' +
+      t.html('consoleRealms.defineIt') + '</button></div></form><h2>' +
+      t.html('consoleRealms.separatedHeading') + '</h2><p class="lead">' +
+      t.html('consoleRealms.separatedLead') + '</p>' +
+      RealmsPage.realmSupportTable(json.support, t) +
       // The realms.* rows. `realms.enabled` is the one that makes every
       // prefixed path in this service answer or not, which is worth being able
       // to see beside the list of realms it governs.
-      SettingsForms.forms(json.settings, '/admin/realms');
+      SettingsForms.forms(json.settings, '/admin/realms',
+                          undefined, t);
 
     return inner;
   }
@@ -196,28 +176,31 @@ class RealmsPage {
    * @param row - the realm, in realmJson()'s shape
    * @param carryBack - the hidden back field the form carries, as HTML
    * @param current - the realm this console is being read in
+   * @param t - the page's translator
    * @returns the notice as HTML
    */
-  static retiringNotice(row, carryBack, current) {
+  static retiringNotice(row, carryBack, current, t) {
     const state = row.retiring;
     const fromHere = current !== row.id;
     const button = state.interrupted && fromHere
       ? '<form method="post" action="/admin/realms">' + carryBack +
         '<input type="hidden" name="action" value="remove">' +
         '<input type="hidden" name="id" value="' + kit.esc(row.id) + '">' +
-        '<button type="submit" class="danger">Finish removing ' +
-        kit.esc(row.id) + '</button></form>'
+        '<button type="submit" class="danger">' +
+        t.html('consoleRealms.finishRemoving', { id: row.id }) +
+        '</button></form>'
       : '';
     const html = (state.interrupted ? kit.warn.bind(kit)
                                     : kit.note.bind(kit))(
-      '<strong>The realm <code>' + kit.esc(row.id) + '</code> ' +
-      (state.interrupted ? 'was being removed, and the removal was ' +
-                           'interrupted' : 'is being removed') +
-      '.</strong> ' + kit.esc(state.why) + ' Refused: ' +
-      kit.esc(state.refusing) + '. ' + kit.esc(state.finish) +
+      // Why, what is refused and how to finish are the view's sentences,
+      // drawn as they came; the words around them are the catalog's.
+      t.html('consoleRealms.retiringHead',
+             { id: row.id,
+               state: state.interrupted ? 'interrupted' : 'running' }) +
+      ' ' + kit.esc(state.why) + ' ' + t.html('consoleRealms.refused') +
+      ' ' + kit.esc(state.refusing) + '. ' + kit.esc(state.finish) +
       (state.interrupted && !fromHere
-        ? ' You are reading this console inside it, so do it from another ' +
-          'realm: the switcher at the top of the sidebar.'
+        ? ' ' + t.html('consoleRealms.finishElsewhere')
         : '')) + button;
     return html;
   }
@@ -227,17 +210,22 @@ class RealmsPage {
    * row per family, from realms.realmSupport().
    *
    * @param support - `realms.realmSupport()`, from the page's answer
+   * @param t - the page's translator; the default (English in node) when
+   *   omitted, which is how `admin.ts`'s `realmSupportTable()` calls it
    * @returns the table as HTML
    */
-  static realmSupportTable(support) {
+  static realmSupportTable(support, t?) {
+    t = t || kit.context().t;
     const rows = support.map(function (row) {
       const state = row.state === 'full'
-        ? '<span class="m">' + kit.esc(RealmsPage.separatedBy(row.by)) +
+        ? '<span class="m">' + kit.esc(RealmsPage.separatedBy(row.by, t)) +
           '</span>'
         : (row.state === 'partial'
-            ? '<span class="eff" title="Realm-aware, but not wholly">' +
+            ? '<span class="eff" title="' +
+              kit.esc(t.text('consoleRealms.realmAwareNotWholly')) + '">' +
               kit.esc(row.by) + '</span>'
-            : '<span class="none">shared</span>');
+            : '<span class="none">' + t.html('consoleRealms.shared') +
+              '</span>');
       // The note is realms.js's own prose and runs to a paragraph on the rows
       // that matter most — the directory's is 1,700 characters — so it folds.
       // What stays on the row is the family and whether it is separated, which
@@ -246,8 +234,9 @@ class RealmsPage {
              '</td><td>' +
              kit.note(kit.esc(row.note)) + '</td></tr>';
     }).join('');
-    return '<table><tr><th>Family</th><th>Separated</th><th>What that ' +
-           'means</th></tr>' +
+    return '<table><tr><th>' + t.html('consoleRealms.family') +
+           '</th><th>' + t.html('consoleRealms.separated') + '</th><th>' +
+           t.html('consoleRealms.whatThatMeans') + '</th></tr>' +
            rows + '</table>';
   }
 
@@ -261,56 +250,37 @@ class RealmsPage {
    * Words how a protocol family is separated between realms.
    *
    * @param by - the separation from the realm support row; defaults to path
+   * @param t - the page's translator
    * @returns "by DN" for "dn", otherwise "by " and the value
    */
-  static separatedBy(by) {
+  static separatedBy(by, t) {
     const how = String(by || 'path');
-    return 'by ' + (how === 'dn' ? 'DN' : how);
+    // A select over the values `realms.js` uses, so a translation can word
+    // each; anything else is drawn as `by <value>`, as it always was.
+    return t.text('consoleRealms.separatedBy', { how: how });
   }
 
   /**
    * Draws the caveat on Trust realms.
    *
    * @param store - the persistence store's `persistsRealms` and `mode`
+   * @param t - the page's translator
    * @returns the caveat as HTML
    */
-  static realmsCaveat(store) {
+  static realmsCaveat(store, t) {
     return (
-      kit.note('<strong>A realm separates what this service ISSUES, ' +
-      'not who it knows.</strong> Each realm has its own signing key, so a ' +
-      'token minted in one does not verify against another\'s JWKS — that is ' +
-      'the point of a realm rather than a side effect. Each realm also has a ' +
-      'directory of its own — its own <code>ou=users</code>, ' +
-      '<code>ou=groups</code> and <code>ou=applications</code> under ' +
-      '<code>dc=&lt;id&gt;</code> — and so <strong>administrators of its ' +
-      'own</strong>: the two role groups in that directory administer that ' +
-      'realm and nothing outside it, while the default realm\'s two groups ' +
-      'administer every realm. A new realm is seeded with an ' +
-      '<code>admin</code> account that holds both. The table at ' +
-      'the foot of this page is the whole list of what is separated how.') +
+      kit.note(t.html('consoleRealms.caveatIssues')) +
+      // The store's mode is a setting value, which carries no apostrophe;
+      // the link is markup, so it sits between two messages.
       (store.persistsRealms
-        ? '<div class="ok"><strong>A realm defined here WILL come ' +
-          'back.</strong> ' +
-          'This process is running with ' +
-          '<code>persistence.mode=' +
-          kit.esc(store.mode) + '</code>, ' +
-          'so the realm rows — their names, descriptions and per-realm ' +
-          'settings — and each realm\'s own directory are written down and ' +
-          'restored at the next start. WHAT DOES NOT COME BACK IS THE KEYS: ' +
-          'every realm\'s signing key is regenerated on every start, exactly ' +
-          'like the default realm\'s, so a token minted in this realm today ' +
-          'verifies against nothing tomorrow. See <a ' +
-          'href="/admin/persistence">Persistence</a>.</div>'
-        : kit.note('<strong>Nothing here is persisted on this ' +
-          'process.</strong> Realms are held in memory and die with it, ' +
-            'along ' +
-          'with the keys they signed with. Define them from <code>POST ' +
-          '/admin-api/realms</code> in whatever starts your stack if you ' +
-            'want ' +
-          'them back — or turn on <a ' +
-          'href="/admin/persistence">Persistence</a>, which writes the realm ' +
-          'registry and each realm\'s directory down. The ' +
-          'KEYS are regenerated on every start either way.')));
+        ? '<div class="ok">' +
+          t.html('consoleRealms.persistsBack', { mode: store.mode }) +
+          ' <a ' +
+          'href="/admin/persistence">' + t.html('consoleRealms.persistence') +
+          '</a>.</div>'
+        : kit.note(t.html('consoleRealms.notPersistedHead') + ' <a ' +
+          'href="/admin/persistence">' + t.html('consoleRealms.persistence') +
+          '</a>' + t.html('consoleRealms.notPersistedTail'))));
   }
 
   /**
@@ -321,6 +291,9 @@ class RealmsPage {
    * @returns the body as HTML
    */
   static detail(ctx, json) {
+    // The page's words are its catalog's (#539); the realm's name and
+    // description, and the refusal for an unknown realm, are not.
+    const t = ctx.t;
     const wantedId = kit.queryOne(ctx.query, 'realm').trim();
     const realm = json.realms.filter(function (row) {
       return row.id === wantedId;
@@ -351,12 +324,11 @@ class RealmsPage {
                    '<input type="hidden" name="key" value="' +
                      kit.esc(row.key) +
                    '"><button type="submit" ' +
-                   'class="secondary">Unset</button></form></td></tr>';
+                   'class="secondary">' + t.html('consoleRealms.unset') +
+                   '</button></form></td></tr>';
           }).join('')
-        : '<tr><td colspan="4" class="none">Nothing. This realm is ' +
-          'configured ' +
-          'exactly as the process is — which is a realm that differs only in ' +
-          'its key, its sessions and what it has issued.</td></tr>';
+        : '<tr><td colspan="4" class="none">' +
+          t.html('consoleRealms.nothingSet') + '</td></tr>';
 
       const endpointRows = Object.keys(row.endpoints).map(function (name) {
         return '<tr><td>' + kit.esc(name) + '</td><td class="who"><a href="' +
@@ -367,107 +339,86 @@ class RealmsPage {
 
       inner =
         '<p class="sub">' + kit.esc(realm.name) +
-        (realm.builtin ? ' — the built-in realm' : '') + '</p>' +
+        (realm.builtin ? ' ' + t.html('consoleRealms.theBuiltinRealm')
+                       : '') + '</p>' +
         (realm.description ? '<p class="lead">' + kit.esc(realm.description) +
          '</p>' :
          '') +
 
-        (row.retiring ? RealmsPage.retiringNotice(row, carryBack, json.current)
-                       : '') +
+        (row.retiring
+          ? RealmsPage.retiringNotice(row, carryBack, json.current, t)
+          : '') +
+        // The current realm's name is free text, so it is escaped here
+        // rather than handed to the catalog as a parameter: the catalog
+        // escapes an apostrophe differently from kit.esc(), and English
+        // must not change by a byte. The two messages carry their own
+        // spaces, so a language may end the sentence right after the name.
         (inRealm
-          ? '<div class="ok">You are reading this console ' +
-            '<strong>inside</strong> this realm. Every settings form in this ' +
-            'console writes here.</div>'
-          : kit.warn('You are reading this console in the <strong>' +
-            kit.esc(json.currentName) + '</strong> realm. The switcher ' +
-            'on the left moves to this one; until then a settings form ' +
-              'writes ' +
-            'to the realm you are in, not to this one.')) +
+          ? '<div class="ok">' + t.html('consoleRealms.readingInside') +
+            '</div>'
+          : kit.warn(t.html('consoleRealms.readingInHead') + '<strong>' +
+            kit.esc(json.currentName) + '</strong>' +
+            t.html('consoleRealms.readingInTail'))) +
 
-        '<h2>Its domain</h2>' +
-        kit.note('<code>' + kit.esc(row.domain) + '</code>' +
-        (realm.builtin ? ', from <code>global.domain</code>' : '') +
-        ', fixed ' + (realm.builtin ? 'until a restart with another value'
-                                    : 'since the realm was created') +
-        '. Its directory is the tree at <code>' + kit.esc(row.baseDn) +
-        '</code>, a naming context of its own on the shared LDAP socket, and ' +
-        'the names it invents — Kerberos realm, SPIFFE trust domain, entity ' +
-        'IDs, the address a development-mode person is given — are built ' +
-          'from ' +
-        'it; the ones seeded when it was created are among its settings ' +
-        'below.') +
-        '<h2>Where it answers</h2>' +
-        kit.note('Path prefix <code>' +
-                  kit.esc(row.pathPrefix || '(none — this is ' +
-        'the default realm)') +
-          '</code>. Every HTTP endpoint this service has ' +
-        'is under it, unchanged: what is <code>/oauth2/token</code> in the ' +
-        'default realm is ' +
-        '<code>' + kit.esc(row.pathPrefix) + '/oauth2/token</code> here.') +
-        '<table><tr><th>Document</th><th>URL</th></tr>' + endpointRows +
+        '<h2>' + t.html('consoleRealms.itsDomain') + '</h2>' +
+        kit.note(t.html('consoleRealms.domainDetail',
+                        { domain: row.domain, baseDn: row.baseDn,
+                          builtin: realm.builtin ? 'yes' : 'no' })) +
+        '<h2>' + t.html('consoleRealms.whereItAnswers') + '</h2>' +
+        kit.note(t.html('consoleRealms.prefixNote',
+                        { prefix: row.pathPrefix ||
+                            t.text('consoleRealms.noPrefix'),
+                          pathPrefix: row.pathPrefix })) +
+        '<table><tr><th>' + t.html('consoleRealms.document') + '</th><th>' +
+        t.html('consoleRealms.url') + '</th></tr>' + endpointRows +
         '</table>' +
-        kit.note('The signing key is <code>' + kit.esc(row.kid) + '</code>, ' +
-        'generated for this realm and held only in memory. A token minted ' +
-          'here ' +
-        'does not verify against any other realm\'s JWKS, which is what ' +
-          'makes ' +
-        'two realms two authorization servers rather than one served twice.') +
+        kit.note(t.html('consoleRealms.kidNote', { kid: row.kid })) +
 
-        '<h2>What this realm sets</h2>' +
-        kit.note('Every setting in <a href="/admin/config">this service\'s ' +
-        'table</a> can be set per realm, above whatever the process as a ' +
-          'whole ' +
-        'is configured with and below nothing. The two exceptions are ' +
-        '<code>realms.enabled</code> and <code>realms.pathSegment</code>: a ' +
-        'realm that could switch realms off, or move the prefix it was found ' +
-        'under, would be doing it half way through the request that ' +
-        'found it.') +
-        '<table><tr><th>Key</th><th>Setting</th><th>Value</th><th></th></tr>' +
+        '<h2>' + t.html('consoleRealms.whatItSets') + '</h2>' +
+        kit.note(t.html('consoleRealms.setsHead') +
+        ' <a href="/admin/config">' + t.html('consoleRealms.setsLink') +
+        '</a> ' + t.html('consoleRealms.setsTail')) +
+        '<table><tr><th>' + t.html('consoleRealms.key') + '</th><th>' +
+        t.html('consoleRealms.setting') + '</th><th>' +
+        t.html('consoleRealms.value') + '</th><th></th></tr>' +
         settingRows + '</table>' +
         '<form method="post" action="/admin/realms">' + carryBack +
         '<input type="hidden" name="action" value="set">' +
         '<input type="hidden" name="id" value="' + kit.esc(realm.id) +
-        '"><div class="formrow"><label for="skey">Key</label><input ' +
+        '"><div class="formrow"><label for="skey">' +
+        t.html('consoleRealms.key') + '</label><input ' +
         'type="text" id="skey" name="key" size="30" ' +
         'placeholder="saml.organizationName" required><label ' +
-        'for="sval">Value</label><input type="text" id="sval" name="value" ' +
-        'size="30"><button type="submit">Set it ' +
-        'here</button></div></form><h2>Name and description</h2><form ' +
+        'for="sval">' + t.html('consoleRealms.value') +
+        '</label><input type="text" id="sval" name="value" ' +
+        'size="30"><button type="submit">' +
+        t.html('consoleRealms.setItHere') + '</button></div></form><h2>' +
+        t.html('consoleRealms.nameAndDescription') + '</h2><form ' +
         'method="post" action="/admin/realms">' + carryBack +
         '<input type="hidden" name="action" value="update">' +
         '<input type="hidden" name="id" value="' + kit.esc(realm.id) + '">' +
-        '<div class="formrow"><label for="uname">Name</label>' +
+        '<div class="formrow"><label for="uname">' +
+        t.html('consoleRealms.name') + '</label>' +
         '<input type="text" id="uname" name="name" size="22" value="' +
         kit.esc(realm.name) + '"><label ' +
-        'for="udesc">Description</label><input type="text" id="udesc" ' +
+        'for="udesc">' + t.html('consoleRealms.description') +
+        '</label><input type="text" id="udesc" ' +
         'name="description" size="46" value="' +
         kit.esc(realm.description) + '">' +
-        '<button type="submit">Save</button></div></form>' +
+        '<button type="submit">' + t.html('consoleRealms.save') +
+        '</button></div></form>' +
 
         (realm.builtin
-          ? '<h2>It cannot be removed</h2>' +
-            kit.note('Every URL this service published before trust realms ' +
-            'existed is a URL in this realm, so removing it would remove the ' +
-            'service. There is deliberately no button.')
-          : '<h2>Remove it</h2>' +
-            kit.note('<strong>Everything it holds goes with it</strong> — ' +
-              'its ' +
-            'sessions, its authorization codes, its tokens, its offers, its ' +
-            'service providers, its statistics, its audit log and its ' +
-              'signing ' +
-            'key. That is deliberate rather than thorough: a realm ' +
-              're-created ' +
-            'with the same id inheriting the last one\'s sessions would be ' +
-              'the ' +
-            'single most surprising thing a re-created realm could do. ' +
-              'Nothing ' +
-            'is removed from the shared directory, because nothing there ' +
-            'belongs to a realm.') +
+          ? '<h2>' + t.html('consoleRealms.cannotRemoveHeading') + '</h2>' +
+            kit.note(t.html('consoleRealms.cannotRemove'))
+          : '<h2>' + t.html('consoleRealms.removeHeading') + '</h2>' +
+            kit.note(t.html('consoleRealms.removeNote')) +
             '<form method="post" action="/admin/realms">' + carryBack +
             '<input type="hidden" name="action" value="remove">' +
             '<input type="hidden" name="id" value="' + kit.esc(realm.id) +
               '">' +
-            '<button type="submit" class="danger">Remove ' + kit.esc(realm.id) +
+            '<button type="submit" class="danger">' +
+            t.html('consoleRealms.removeButton', { id: realm.id }) +
             '</button></form>');
 
     }

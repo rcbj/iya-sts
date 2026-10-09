@@ -55,8 +55,12 @@ class WebShell {
    * @returns the frame and the body, as the document's `<body>` content
    */
   static frame(shell: Json, page: Json): string {
+    // THE FRAME'S TRANSLATOR (#539 phase 5) is the page's: the runtime
+    // hands its own in `page.t`, and a caller that hands none (a test, the
+    // node half of the bundle check) gets the default, English in node.
+    const t = (page && page.t) || kit.context().t;
     return '<div class="shell">' +
-    WebShell.sideColumn(shell, page) +
+    WebShell.sideColumn(shell, page, t) +
     '<div class="main"><div class="card">' +
     // THE HEAD ROW: the page's title, and the controls that are on every page
     // of this console. See refreshLink() for why it is a link, and userMenu()
@@ -65,15 +69,15 @@ class WebShell {
     // row and a bare second child would push the first away from the heading
     // rather than sitting beside it.
     '<div class="pagehead"><h1>' + kit.esc(page.title) + '</h1>' +
-      '<div class="pagetools">' + WebShell.refreshLink(shell, page) +
-      WebShell.userMenu(shell) +
+      '<div class="pagetools">' + WebShell.refreshLink(shell, page, t) +
+      WebShell.userMenu(shell, t) +
       // THE LANGUAGE CHOOSER (#539 phase 5), last of the page's tools.
       (page.t ? kit.languageChooser(page.t, shell.locale) : '') +
       '</div></div>' +
     WebShell.trailBar(page.active, page.up, page.title,
-                      shell.navLabels) +
-    WebShell.gateBanner(shell) +
-    WebShell.retiringBanner(shell) +
+                      shell.navLabels, t) +
+    WebShell.gateBanner(shell, t) +
+    WebShell.retiringBanner(shell, t) +
     WebShell.withDerivedTips(page.inner) +
     '<div class="meta">' +
     // The one sentence drawn at the foot of EVERY page in this console, which
@@ -84,25 +88,20 @@ class WebShell {
     // service MINTS persists too, and product mode keeps its signing keys
     // (persistence/CLAUDE.md, common/CLAUDE.md) — which the sentence below
     // does not yet say.
+    //
+    // Each sentence is split around its link (#539): a message carries no
+    // `<a href>`, so the words either side are messages and the link is
+    // drawn here.
     '<div>' + (shell.persistence.enabled
-      ? 'The embedded directory, the trust realms and the settings changed ' +
-        'here are written down (<a ' +
+      ? t.html('console.shell.persisted.before') + '<a ' +
         'href="/admin/persistence">persistence.mode=' +
-        kit.esc(shell.persistence.mode) + '</a>) and come back on the ' +
-        'next start. Everything this service MINTS is still held in memory ' +
-        'and dies with the process — the sessions, the tokens, the ' +
-        'artifacts and the tickets — like the signing key it regenerates ' +
-        'on every start, because a token that outlived the key it was ' +
-        'signed under would verify against nothing.'
-      : 'Everything on these pages is held in memory and dies with the ' +
-        'process, like the signing key this service regenerates on every ' +
-        'start. A statistics file that outlived the key that signed the ' +
-        'tokens it described would be worse than none — though the ' +
-        'directory, the trust realms and the settings changed here CAN be ' +
-        'kept, which is <a href="/admin/persistence">Persistence</a> and ' +
-        'is off by default.') + '</div><div>Every page here also answers ' +
-    '<code>?format=json</code>, and every form also accepts a JSON body, ' +
-    'so a test can drive this console without a browser.</div>' +
+        kit.esc(shell.persistence.mode) + '</a>' +
+        t.html('console.shell.persisted.after')
+      : t.html('console.shell.memory.before') +
+        '<a href="/admin/persistence">' +
+        t.html('console.shell.memory.link') + '</a>' +
+        t.html('console.shell.memory.after')) + '</div><div>' +
+    t.html('console.shell.json') + '</div>' +
     // WHICH BUILD OF THIS SERVICE YOU ARE LOOKING AT, on every page of the
     // console for the reason the sentence above it is here: this is the
     // surface that CHANGES what every protocol endpoint does, so "was that
@@ -115,14 +114,13 @@ class WebShell {
     // stamped artifact or a checkout being run. That last distinction is the
     // one worth a tooltip rather than a footnote: two instances reporting
     // different build numbers mean nothing if neither was ever built.
-    '<div title="' + kit.esc(shell.version.buildInfo) +
-    '">iya-sts version <code>' +
-    kit.esc(shell.version.version) + '</code>' +
-    (shell.version.stamped ? '' : ' (not a stamped build — this process is a ' +
-     'checkout, and the build number is when it started)') + '</div>' +
+    '<div title="' + kit.esc(shell.version.buildInfo) + '">' +
+    t.html('console.shell.version', { version: shell.version.version }) +
+    (shell.version.stamped ? '' : t.html('console.shell.notStamped')) +
+    '</div>' +
     // AND WHAT THIS PROCESS IS RUNNING AS — dispatch or single process, the
     // mode, the store and the secret stores. See runtimeFooter().
-    WebShell.runtimeFooter(shell) +
+    WebShell.runtimeFooter(shell, t) +
     // FOUR closing divs now, not two: the .meta block, the .card it is
     // inside, the .main column that holds the card and the .shell that holds
     // the two columns. Getting this wrong leaves a document that renders and
@@ -133,23 +131,66 @@ class WebShell {
     '</div></div></div></div>';
   }
 
+  // A NAV LABEL, A SECTION'S OR A GROUP'S TITLE IN THE READER'S LANGUAGE
+  // (#539 phase 5). The server sends them in English (`shellJson()`), so the
+  // console looks each up by a key derived from the path or the title, and
+  // draws the server's English where no catalog has the key — a page added
+  // to the server's table is drawn, in English, before anybody translates
+  // it. The key is built in a variable, never written as a literal beside
+  // `t.text(`, which the catalog test would read as a key of its own.
+  /**
+   * The key part a console path or a title is looked up by: `/admin/xacml/
+   * policies` is `xacml-policies`, `/admin` is `home`, `Cert issuance` is
+   * `cert-issuance`.
+   *
+   * @param text - a console path or a title
+   * @returns the slug
+   */
+  static slugOf(text: string): string {
+    const slug = String(text || '').replace(/^\/admin(\/|$)/, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return slug || 'home';
+  }
+
+  /**
+   * A console page's nav label in the reader's language.
+   *
+   * @param t - the translator
+   * @param path - the page's console path
+   * @param english - the server's label
+   * @returns the label, as text
+   */
+  static navLabel(t: Json, path: string, english: string): string {
+    const key = 'console.nav.' + WebShell.slugOf(path);
+    return t.has(key) ? t.text(key) : String(english == null ? '' : english);
+  }
+
+  /**
+   * A section's or a group's title in the reader's language.
+   *
+   * @param t - the translator
+   * @param kind - `section` or `group`
+   * @param english - the server's title
+   * @returns the title, as text
+   */
+  static sectionTitle(t: Json, kind: string, english: string): string {
+    const key = 'console.' + kind + '.' + WebShell.slugOf(english);
+    return t.has(key) ? t.text(key) : String(english == null ? '' : english);
+  }
+
   // The banner on every page while the gate is off: a warning, since then
   // nothing here checks a credential.
   /**
    * Draws the banner shown while the console's gate is off.
    *
+   * @param t - optional; the translator, the default when left out
    * @returns the banner as HTML
    */
-  static openBanner(): string {
-    return kit.warn('<strong>This console is not protected.</strong> The ' +
-    'gate is OFF, so nothing here checks a credential — and nothing else in ' +
-    'this service does either: the username typed at the sign-in screen is ' +
-    'the identity in every token it issues. Anyone who can reach this port ' +
-    'can revoke every token and change what the next one contains. That is ' +
-    'fine on a laptop or a compose network and is not fine on a public ' +
-    'address. Say who may get in on <a href="/admin/rbac">Admin roles</a>, ' +
-    'which draws ' +
-    'every setting behind this page.');
+  static openBanner(t?: Json): string {
+    t = t || kit.context().t;
+    return kit.warn(t.html('console.shell.open.text') +
+      '<a href="/admin/rbac">' + t.html('console.shell.adminRoles') + '</a>' +
+      t.html('console.shell.open.after'));
   }
 
   // ---------------------------------------------------------------------------
@@ -193,7 +234,7 @@ class WebShell {
    * @returns the `<aside>` as HTML; empty when the gate is on and nobody is
    *   signed in
    */
-  static sideColumn(shell, page) {
+  static sideColumn(shell, page, t) {
     const gate = shell.gate;
     if (gate && gate.enforced && !gate.session) {
       return '';
@@ -237,15 +278,16 @@ class WebShell {
         // learnt to read it off the shell should find it where they look rather
         // than have to hunt.
         '<p class="brandsub" title="' +
-          kit.esc('This console is showing the trust realm "' +
-                   shell.realm.name +
-                   '" (id: ' + shell.realm.id + '). Its issuer ' +
-                   'identifier, in every protocol (#523), ' +
-                   'is ' + shell.wsTrustIssuer + ': every SAML <Issuer>, ' +
-                   'every identity provider entityID and every JWT\'s ' +
-                   'iss.') +
+          // SPLIT AROUND `<Issuer>` (#539): a message carries no element
+          // but the four inline ones, and `t.text()` strips anything shaped
+          // like a tag — a parameter included — so the element name is
+          // drawn here, between the two halves, and the whole escaped once.
+          kit.esc(t.text('console.shell.brandTip', {
+            name: shell.realm.name, id: shell.realm.id,
+            issuer: shell.wsTrustIssuer }) + '<Issuer>' +
+            t.text('console.shell.brandTip.after')) +
           '">IYA STS &middot; ' + kit.esc(shell.realm.name) + '</p>' +
-        WebShell.navBar(shell, page) +
+        WebShell.navBar(shell, page, t) +
         '</aside>';
     return html;
   }
@@ -286,7 +328,7 @@ class WebShell {
    * @param req - the request, or nothing
    * @returns the `<nav>` as HTML
    */
-  static navBar(shell, page) {
+  static navBar(shell, page, t) {
     const active = page.active;
     const up = page.up;
     // A REALM ADMINISTRATOR'S SIDEBAR (2026-09-14, #32) leaves out the pages
@@ -294,22 +336,26 @@ class WebShell {
     // the realm switcher, since their console is one realm. The service
     // administrator's is unchanged.
     const realmOnly = shell.navAuthority === 'realm';
-    const html = '<nav aria-label="Admin console sections">' +
+    const html = '<nav aria-label="' +
+      kit.esc(t.text('console.shell.navAria')) + '">' +
       // FIRST, inside this card rather than above it. It does not select a page
       // — it selects which service the pages are about — but it is the first
       // question a reader has about the column, so it is the first thing in it.
-      (realmOnly ? '' : WebShell.realmChooser(shell, page)) +
+      (realmOnly ? '' : WebShell.realmChooser(shell, page, t)) +
       shell.sections.map(function (section) {
         const inThisSection = WebShell.sectionPages(section)
           .filter(function (item) {
           return item.path === active;
         }).length > 0;
         const links = section.items.map(function (item) {
-          return WebShell.navItem(item, active, up);
+          return WebShell.navItem(item, active, up, t);
         }).join('');
+        // The title in the reader's language; `what` is the server's prose
+        // and is drawn as it came.
         return '<div class="navsec' + (inThisSection ? ' open' : '') + '">' +
           '<p class="navhead" title="' + kit.esc(section.what) + '">' +
-          kit.esc(section.title) + '</p><ul>' + links + '</ul></div>';
+          kit.esc(WebShell.sectionTitle(t, 'section', section.title)) +
+          '</p><ul>' + links + '</ul></div>';
       }).join('') + '</nav>';
     return html;
   }
@@ -321,11 +367,13 @@ class WebShell {
    * @param item - the row
    * @param active - the path of the page being drawn
    * @param up - upTo()'s answer on a drill-down, or nothing
+   * @param t - optional; the translator, the default when left out
    * @returns the `<li>` as HTML
    */
-  static navItem(item, active, up) {
+  static navItem(item, active, up, t?) {
+    t = t || kit.context().t;
     if (!DashboardPage.isNavGroup(item)) {
-      return WebShell.navLink(item, active, up);
+      return WebShell.navLink(item, active, up, t);
     }
     const open = WebShell.groupPages(item.items).filter(function (page) {
       return page.path === active;
@@ -334,9 +382,9 @@ class WebShell {
     // each row is drawn by this method again rather than by navLink().
     const html = '<li class="navgrp' + (open ? ' open' : '') + '">' +
       '<p class="navsub" title="' + kit.esc(item.what) + '">' +
-      kit.esc(item.title) +
+      kit.esc(WebShell.sectionTitle(t, 'group', item.title)) +
       '</p><ul>' + item.items.map(function (row) {
-        return WebShell.navItem(row, active, up);
+        return WebShell.navItem(row, active, up, t);
       }).join('') + '</ul></li>';
     return html;
   }
@@ -349,21 +397,25 @@ class WebShell {
    * @param item - the page's NAV row
    * @param active - the path of the page being drawn
    * @param up - upTo()'s answer on a drill-down, or nothing
+   * @param t - optional; the translator, the default when left out
    * @returns the `<li>` as HTML
    */
-  static navLink(item, active, up) {
+  static navLink(item, active, up, t?) {
+    t = t || kit.context().t;
+    const label = WebShell.navLabel(t, item.path, item.label);
     if (item.path === active) {
       if (up) {
         return '<li><a class="here" href="' + kit.esc(up.href) + '"' +
-               ' title="Back to ' + kit.esc(up.label) + '"' +
+               ' title="' + kit.esc(t.text('console.shell.backTo', {
+                 label: WebShell.navLabel(t, active, up.label) })) + '"' +
                // A drill-down's active item IS a link, so it is already in the
                // tab order and must stay there — only the autofocus is added.
-               ' autofocus>' + kit.esc(item.label) + '</a></li>';
+               ' autofocus>' + kit.esc(label) + '</a></li>';
       }
       return '<li><span class="here"' + WebShell.ACTIVE_NAV_FOCUS +
-             ' aria-current="page">' + kit.esc(item.label) + '</span></li>';
+             ' aria-current="page">' + kit.esc(label) + '</span></li>';
     }
-    return '<li><a href="' + kit.esc(item.path) + '">' + kit.esc(item.label) +
+    return '<li><a href="' + kit.esc(item.path) + '">' + kit.esc(label) +
            '</a></li>';
   }
 
@@ -410,7 +462,7 @@ class WebShell {
    * @param req - the request
    * @returns the form as HTML; empty when no realm is defined
    */
-  static realmChooser(shell, page) {
+  static realmChooser(shell, page, t) {
     if (!shell.realms) {
       return '';
     }
@@ -422,12 +474,14 @@ class WebShell {
     }).join('');
     return '<form class="realmpick" method="get" action="' +
       kit.esc(shell.realmRoot + WebShell.REALM_SWITCH_PATH) + '">' +
-      '<label for="realmpick">Trust realm</label>' +
+      '<label for="realmpick">' + t.html('console.shell.trustRealm') +
+      '</label>' +
       '<input type="hidden" name="to" value="' +
         kit.esc(page.path) + '">' +
       '<div class="realmpickrow">' +
         '<select id="realmpick" name="realm">' + options + '</select>' +
-        '<button class="secondary">Go</button>' +
+        '<button class="secondary">' + t.html('console.shell.go') +
+        '</button>' +
       '</div></form>';
   }
 
@@ -467,15 +521,17 @@ class WebShell {
    * @param title - the page's title, used where the page has no NAV row
    * @param labels - every console page's nav label by path (the shell
    *   answer's `navLabels`)
+   * @param t - optional; the translator, the default when left out
    * @returns the trail as HTML
    */
-  static trailBar(active, up, title, labels) {
-    const crumbs: any[] = [{ label: 'Admin console',
+  static trailBar(active, up, title, labels, t?) {
+    t = t || kit.context().t;
+    const crumbs: any[] = [{ label: t.text('console.shell.adminConsole'),
                       href: active === '/admin' ? null : '/admin' }];
     if (active !== '/admin') {
       const known = labels || {};
       const item = Object.prototype.hasOwnProperty.call(known, active)
-        ? { label: known[active] } : null;
+        ? { label: WebShell.navLabel(t, active, known[active]) } : null;
       // THE TITLE WHEN THE PAGE IS NOT IN THE NAV, which is every page this
       // shell draws that is not a console page: the sign-out confirmation, the
       // callback's refusal, the gate's own. Those pass `active` as '' or null,
@@ -491,9 +547,9 @@ class WebShell {
                       // whose text changes with the filter is a crumb that
                       // moves under the pointer.
                       title: up.filtered
-                        ? 'Back to ' + label + ' — the filter and page you ' +
-                                               'came from'
-                        : 'Back to ' + label });
+                        ? t.text('console.shell.backToFiltered',
+                                 { label: label })
+                        : t.text('console.shell.backTo', { label: label }) });
         crumbs.push({ label: WebShell.shortCrumb(up.leaf || title),
                       title: String(up.leaf || title) });
       } else {
@@ -534,13 +590,15 @@ class WebShell {
    * an unclaimed product console, a closed console and the roles held.
    *
    * @param gate - the gate state
+   * @param t - optional; the translator, the default when left out
    * @returns the banner as HTML
    */
-  static gateBanner(shell) {
+  static gateBanner(shell, t?) {
+    t = t || kit.context().t;
     const gate = shell.gate;
     const info = gate || {};
     if (!info.enforced) {
-      return WebShell.openBanner();
+      return WebShell.openBanner(t);
     }
     // ---------------------------------------------------------------------
     // NOBODY IS SIGNED IN, WHICH IS A FOURTH STATE THIS BANNER DID NOT HAVE
@@ -564,56 +622,37 @@ class WebShell {
     // work and a fact about why.
     // ---------------------------------------------------------------------
     if (!info.session) {
-      return '<div class="warn"><strong>Nobody is signed in on this ' +
-        'browser.</strong> This console needs a session of its own — it is ' +
-        'an ordinary OpenID Connect client of this service, ' +
-        '<code>sts-admin-console</code> in the registry — so every page of ' +
-        'it will run the sign-in flow again. <a href="/admin">Open the ' +
-        'console</a> to start one.</div>';
+      return '<div class="warn">' + t.html('console.shell.noSession.text') +
+        '<a href="/admin">' + t.html('console.shell.openConsole') + '</a>' +
+        t.html('console.shell.noSession.after') + '</div>';
     }
-    const who = '<code>' + kit.esc(info.username || '(nobody)') + '</code>';
-    const elsewhere = WebShell.foreignSessionNote(info);
+    // `(nobody)` is drawn inside the <code> and stays as it is.
+    const who = info.username || '(nobody)';
+    const elsewhere = WebShell.foreignSessionNote(info, t);
+    const rbac = '<a href="/admin/rbac">' + t.html('console.shell.adminRoles') +
+      '</a>';
     if (info.open && info.bootstrap && info.bootstrap.seeded) {
-      return kit.warn('<strong>Signed in as ' + who + ', and holding both ' +
-        'roles because <code>' + kit.esc(info.bootstrap.username) +
-        '</code> has not ' +
-        'signed in to this console yet.</strong> Until this service\'s ' +
-        'bootstrap administrator first signs in here, anyone who signs in ' +
-        'has the whole console (<code>admin.openWhenEmpty</code>). From that ' +
-        'moment only members of <code>' + kit.esc(info.readGroup) +
-        '</code> and ' +
-        '<code>' + kit.esc(info.writeGroup) + '</code> may use it — so ' +
-        'grant yourself a role on <a href="/admin/rbac">Admin roles</a> ' +
-        'first if you will need one.' + elsewhere);
+      return kit.warn(t.html('console.shell.bootstrap.text', {
+        who: who, boot: info.bootstrap.username, read: info.readGroup,
+        write: info.writeGroup }) + rbac +
+        t.html('console.shell.bootstrap.after') + elsewhere);
     }
     if (info.open) {
-      return kit.warn('<strong>Signed in as ' + who + ', and holding both ' +
-        'roles because NOBODY HOLDS EITHER.</strong> This console always ' +
-        'asks you to sign in — but neither <code>' + kit.esc(info.readGroup) +
-        '</code> nor ' +
-        '<code>' + kit.esc(info.writeGroup) + '</code> has a single member, ' +
-        'and while that is true anyone who signs in has the whole console. ' +
-        'This service has no password to bootstrap an administrator with, ' +
-        'which is why the empty roster opens rather than closes ' +
-        '(<code>admin.openWhenEmpty</code>). <strong>Grant somebody a role ' +
-        'on <a href="/admin/rbac">Admin roles</a></strong> and the roster is ' +
-        'enforced from that moment — including against you, so grant ' +
-        'yourself one first.' + elsewhere);
+      return kit.warn(t.html('console.shell.openRoster.text', {
+        who: who, read: info.readGroup, write: info.writeGroup }) +
+        '<strong>' + t.html('console.shell.openRoster.grant') + rbac +
+        '</strong>' + t.html('console.shell.openRoster.after') + elsewhere);
     }
     // PRODUCT MODE, BEFORE THE CLAIM (2026-09-22, #103): the window does not
     // open, so a reader drawn a page here is being refused, and the sentence
-    // says what would let them in.
+    // says what would let them in. The bootstrap administrator is named in
+    // <code> where the gate knows the name, and described where it does not
+    // — a `select` in the message, so a translation says both.
     if (info.bootstrapPasswordRequired || info.windowWithheld) {
-      const boot = info.bootstrap && info.bootstrap.username
-        ? '<code>' + kit.esc(info.bootstrap.username) + '</code>'
-        : 'the bootstrap administrator';
-      return kit.warn('<strong>Signed in as ' + who + ', holding no ' +
-        'console role: this console has not been claimed yet.</strong> In ' +
-        'product mode only the bootstrap administrator, ' + boot + ', ' +
-        'signing in with its password, can use this console until it does. ' +
-        'Nobody else holds a role until one is granted, and a sign-in as ' +
-        boot + ' by a federation partner, a certificate, a wallet or a ' +
-        'Kerberos ticket does not count.' + elsewhere);
+      const named = !!(info.bootstrap && info.bootstrap.username);
+      return kit.warn(t.html('console.shell.unclaimed', {
+        who: who, named: named ? 'yes' : 'no',
+        boot: named ? info.bootstrap.username : '' }) + elsewhere);
     }
     if (info.closed) {
       // Rendered for completeness rather than because a reader will meet it: a
@@ -636,21 +675,20 @@ class WebShell {
     const held = (info.roles || []).map(function (id) {
       const label = (shell.roleLabels || {})[id];
       return '<strong>' + kit.esc(label || id) + '</strong>';
-    }).join(' and ');
-    return '<div class="ok">Signed in as ' + who + ', holding ' +
-      (held || '<strong>no console role</strong>') + '. ' +
+    }).join(t.html('console.shell.and'));
+    return '<div class="ok">' + t.html('console.shell.ok.lead',
+                                       { who: who }) +
+      (held || t.html('console.shell.ok.noRole')) +
       (info.write
-        ? 'Every control on these pages is yours.'
-        : 'This is a READ-ONLY view: the forms are drawn so that you can see ' +
-          'what they do, and posting one is ' +
-          'refused. ' + kit.esc(info.writeGroup) + ' ' +
-          'is the role that changes that.') +
-      ' <a href="/admin/rbac">Who holds what</a>. Ending this session: <a ' +
-      'href="/logout">/logout</a> signs you out of everything this service ' +
-      'holds — every protocol at once — and <a ' +
-      'href="/oauth2/logout">/oauth2/logout</a> is OIDC\'s own RP-initiated ' +
-      'one. <a href="/admin/logout">/admin/logout</a> is the operator\'s ' +
-      'view of the same lists, for somebody else.' + elsewhere + '</div>';
+        ? t.html('console.shell.ok.write')
+        : t.html('console.shell.ok.read', { group: info.writeGroup })) +
+      ' <a href="/admin/rbac">' + t.html('console.shell.ok.whoHolds') +
+      '</a>' + t.html('console.shell.ok.ending') + '<a ' +
+      'href="/logout">/logout</a>' + t.html('console.shell.ok.logout') +
+      '<a href="/oauth2/logout">/oauth2/logout</a>' +
+      t.html('console.shell.ok.oidc') +
+      '<a href="/admin/logout">/admin/logout</a>' +
+      t.html('console.shell.ok.operator') + elsewhere + '</div>';
   }
 
   // SAID WHEN — AND ONLY WHEN — THE SESSION BELONGS TO ANOTHER REALM.
@@ -679,21 +717,18 @@ class WebShell {
    * It is empty in practice: a console session is never foreign now.
    *
    * @param info - the gate state
+   * @param t - optional; the translator, the default when left out
    * @returns the sentence as HTML, or an empty string
    */
-  static foreignSessionNote(info) {
+  static foreignSessionNote(info, t?) {
     if (!info.foreignSession || !info.sessionRealm) {
       return '';
     }
-    return ' Your session belongs to the trust realm <strong>' +
-      kit.esc(info.sessionRealm.name) + '</strong> (<code>' +
-      kit.esc(info.sessionRealm.id) +
-      '</code>) and this console follows it into every realm, because the ' +
-      'two console roles are groups in the one shared directory. <strong>The ' +
-      'protocol endpoints do not:</strong> in this realm ' +
-      '<code>/oauth2/authorize</code>, <code>/wsfed</code> and the two SAML ' +
-      'profiles see no session at all and would ask you to sign in. <a ' +
-      'href="/admin/realms">What a realm separates</a>.';
+    t = t || kit.context().t;
+    return t.html('console.shell.foreign', { name: info.sessionRealm.name,
+                                             id: info.sessionRealm.id }) +
+      ' <a href="/admin/realms">' + t.html('console.shell.foreign.link') +
+      '</a>.';
   }
 
   // The one line every console page of a realm being removed carries (#294),
@@ -705,17 +740,19 @@ class WebShell {
    * @returns the banner as HTML, or an empty string when the realm is not
    *   being removed or no realm registry answers
    */
-  static retiringBanner(shell) {
+  static retiringBanner(shell, t?) {
     const state = shell.retiring;
     if (!state) {
       return '';
     }
-    return kit.warn('<strong>This realm is ' +
-      (state.interrupted ? 'stuck half way through its removal'
-                         : 'being removed') + '.</strong> ' +
+    t = t || kit.context().t;
+    // `why` is the server's sentence, drawn as it came.
+    return kit.warn(t.html('console.shell.retiring', {
+      state: state.interrupted ? 'stuck' : 'removing' }) + ' ' +
       kit.esc(state.why) + ' <a href="/admin/realms?realm=' +
-      encodeURIComponent(shell.realm.id) + '">Its page</a> says what ' +
-      'is refused and how to finish.');
+      encodeURIComponent(shell.realm.id) + '">' +
+      t.html('console.shell.retiring.link') + '</a>' +
+      t.html('console.shell.retiring.after'));
   }
 
   // THE REFRESH CONTROL, at the top of every page in this console.
@@ -758,15 +795,16 @@ class WebShell {
    * @returns the link as HTML; empty when the gate is on and nobody is
    *   signed in
    */
-  static refreshLink(shell, page) {
+  static refreshLink(shell, page, t?) {
     const gate = shell.gate;
     if (gate && gate.enforced && !gate.session) {
       return '';
     }
+    t = t || kit.context().t;
     return '<a class="btn secondary" href="' +
       kit.esc(WebShell.refreshHref(page.path)) +
-      '" title="Load this page again. Everything in this console is live ' +
-      'state held in memory.">Refresh</a>';
+      '" title="' + kit.esc(t.text('console.shell.refresh.title')) + '">' +
+      t.html('console.shell.refresh') + '</a>';
   }
 
   // WHERE "REFRESH" POINTS: the page the reader is on, with the message
@@ -847,30 +885,23 @@ class WebShell {
    * @param gate - the gate state
    * @returns the menu as HTML; empty when there is no session
    */
-  static userMenu(shell) {
+  static userMenu(shell, t?) {
     const gate = shell.gate;
     if (!gate || !gate.session) {
       return '';
     }
+    t = t || kit.context().t;
     const html = '<details class="usermenu">' +
       '<summary title="' +
-      kit.esc('Your own account. This console is read as ' + gate.username +
-               ', and the two controls in here are the ones about YOU rather ' +
-               'than about the service.') + '">' + kit.esc(gate.username) +
-               '</summary>' +
+      kit.esc(t.text('console.shell.menu.title', { user: gate.username })) +
+      '">' + kit.esc(gate.username) + '</summary>' +
       '<div class="usermenupanel">' +
-      '<p class="usermenuwho">Signed in as <strong>' + kit.esc(gate.username) +
-      '</strong></p>' +
+      '<p class="usermenuwho">' +
+      t.html('console.shell.menu.who', { user: gate.username }) + '</p>' +
       '<a href="' + kit.esc(shell.portalHref) + '" title="' +
-      kit.esc('Your own account in the user portal — your password, your ' +
-               'authenticator app, your security keys and the applications ' +
-               'you can be signed in to. It is a different application from ' +
-               'this console and it signs you in with the session you ' +
-               'already hold, so nothing is typed again. The link is to the ' +
-               'portal of the realm you signed in through, because that is ' +
-               'where your account is, whichever realm you are reading.') +
-               '">My account</a>' +
-      WebShell.signOutControl(gate) +
+      kit.esc(t.text('console.shell.menu.account.title')) + '">' +
+      t.html('console.shell.menu.account') + '</a>' +
+      WebShell.signOutControl(gate, t) +
       '</div></details>';
     return html;
   }
@@ -898,22 +929,20 @@ class WebShell {
    * Draws the Sign out button, a POST form to the console's sign-out path.
    *
    * @param gate - the gate state
+   * @param t - optional; the translator, the default when left out
    * @returns the form as HTML; empty when there is no session
    */
-  static signOutControl(gate) {
+  static signOutControl(gate, t?) {
     if (!gate || !gate.session) {
       return '';
     }
+    t = t || kit.context().t;
     return '<form class="signout" method="post" action="' +
            kit.esc(WebShell.SIGNOUT_PATH) +
       '"><button ' +
       'class="secondary" title="' +
-      kit.esc('End this console session and the sign-on session behind it. ' +
-               'You are signed in as ' + gate.username + '. Signing out of ' +
-               'the console alone would not sign you out: the next page ' +
-               'would run the sign-in flow, meet the sign-on session that is ' +
-               'still live and let you straight back in.') +
-               '">Sign out</button></form>';
+      kit.esc(t.text('console.shell.signOut.title', { user: gate.username })) +
+      '">' + t.html('console.shell.signOut') + '</button></form>';
   }
 
   // **NOT DRAWN FOR A READER WITH NO SESSION**, on the rule `refreshLink()` and
@@ -928,32 +957,34 @@ class WebShell {
    * A realm administrator sees only the mode.
    *
    * @param gate - the gate state
+   * @param t - optional; the translator, the default when left out
    * @returns the line as HTML; empty when the gate is on and nobody is
    *   signed in
    */
-  static runtimeFooter(shell) {
+  static runtimeFooter(shell, t?) {
     const gate = shell.gate;
     if (gate && gate.enforced && !gate.session) {
       return '';
     }
+    t = t || kit.context().t;
     const facts = shell.runtime || {};
     // A REALM ADMINISTRATOR (2026-09-14, #32) may not read `/admin/persistence`
     // or `/admin/secrets`, so they are not handed the database host, the
     // secret-store paths or the process arrangement those pages draw — nor the
     // two links, which would only answer 403. The realm's mode is theirs.
     if (gate && gate.authority === 'realm') {
-      return '<div class="runtime">mode <code>' + kit.esc(facts.mode) +
-        '</code></div>';
+      return '<div class="runtime">' +
+        t.html('console.shell.runtime.mode', { mode: facts.mode }) +
+        '</div>';
     }
     const html = '<div class="runtime">' +
-      'running as <code>' + kit.esc(facts.process) + '</code>' +
-      ' &middot; mode <code>' + kit.esc(facts.mode) + '</code>' +
-      ' &middot; database <code>' + kit.esc(facts.database) + '</code>' +
-      ' &middot; secret store: key-encryption key <code>' +
-      kit.esc(facts.keyEncryptionKey) + '</code>, database password <code>' +
-      kit.esc(facts.databasePassword) + '</code>' +
-      ' &middot; <a href="/admin/persistence">persistence</a>, ' +
-      '<a href="/admin/secrets">secrets</a></div>';
+      t.html('console.shell.runtime.facts', {
+        process: facts.process, mode: facts.mode, database: facts.database,
+        kek: facts.keyEncryptionKey, password: facts.databasePassword }) +
+      ' &middot; <a href="/admin/persistence">' +
+      t.html('console.shell.runtime.persistence') + '</a>, ' +
+      '<a href="/admin/secrets">' + t.html('console.shell.runtime.secrets') +
+      '</a></div>';
     return html;
   }
 

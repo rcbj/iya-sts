@@ -40,6 +40,10 @@ class RbacPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // The page's words are its translator's (#539 phase 6). What the view
+    // carries — role labels, what a role allows, the settings — is drawn
+    // as it comes.
+    const t = ctx.t;
     const info = json;
     const mayWrite = ctx.write;
     const wantedText = json.filter.q || '';
@@ -54,14 +58,14 @@ class RbacPage {
     const knownKeys = json.known;
     const picked = json.picked ? json.picked.candidate : null;
     const personAsked = json.picked ? json.picked.asked : '';
-    const nav = kit.pageNavPair('/admin/rbac', filterParams, paging);
+    const nav = kit.pageNavPair('/admin/rbac', filterParams, paging, t);
     const carryBack = '<input type="hidden" name="back" value="' +
       kit.esc(kit.queryWith(kit.listViewOf('/admin/rbac', ctx.query), {})) +
         '">';
 
     const rows = shown.map(function (row) {
-      return '<tr><td>' + RbacPage.rbacMemberCell(row, knownKeys) +
-             RbacPage.rbacClaimedMark(row) +
+      return '<tr><td>' + RbacPage.rbacMemberCell(t, row, knownKeys) +
+             RbacPage.rbacClaimedMark(t, row) +
         '</td><td>' + kit.esc(row.roleLabel) + '</td><td><a ' +
         'href="' + kit.esc('/admin/groups?group=' +
                             encodeURIComponent(row.dn)) + '"><code>' +
@@ -69,10 +73,9 @@ class RbacPage {
         '<td><code>' + kit.esc(row.attribute) + '</code>: <code>' + kit.esc(
             row.value) + '</code></td><td>' +
           (row.kind === 'claimed'
-            ? '<span class="state-expired" title="The membership is on their ' +
-              'own entry as memberOf, so there is nothing in the group to ' +
-              'remove. An ldapmodify or a SCIM PATCH of the PERSON takes it ' +
-              'away.">not from here</span>'
+            ? '<span class="state-expired" title="' +
+              t.html('consoleRbac.body.claimedTitle') + '">' +
+              t.html('consoleRbac.body.notFromHere') + '</span>'
             : mayWrite
             ? '<form class="inline" method="post" action="/admin/rbac">' +
               '<input type="hidden" name="action" value="revoke">' +
@@ -81,8 +84,10 @@ class RbacPage {
               '"><input ' +
               'type="hidden" name="role" ' +
               'value="' + kit.esc(row.role) + '">' + carryBack +
-              '<button class="danger">Revoke</button></form>'
-            : '<span class="state-none">read-only</span>') +
+              '<button class="danger">' + t.html('consoleRbac.body.revoke') +
+              '</button></form>'
+            : '<span class="state-none">' +
+              t.html('consoleRbac.body.readOnly') + '</span>') +
         '</td></tr>';
     }).join('');
 
@@ -102,16 +107,18 @@ class RbacPage {
     // click, choose the role, Grant: one step more than the select, and the one
     // that makes the list usable at any size.
     const whereFrom = function (row) {
-      return row.inDirectory && row.seen ? 'directory, and has signed in'
-        : (row.inDirectory ? 'in the directory' : 'has signed in');
+      return row.inDirectory && row.seen
+        ? t.text('consoleRbac.body.fromBoth')
+        : (row.inDirectory ? t.text('consoleRbac.body.fromDirectory')
+                           : t.text('consoleRbac.body.fromSignIn'));
     };
     const pickCarry = kit.pageParamsOf(ctx.query);
     delete pickCarry.person;
     const personPane = kit.chooserPane({
       here: { path: '/admin/rbac', query: ctx.query },
       param: 'personq', fromParam: 'personfrom',
-      label: 'Find a person',
-      placeholder: 'part of a username',
+      label: t.text('consoleRbac.body.findPerson'),
+      placeholder: t.text('consoleRbac.body.findPlaceholder'),
       slice: { matched: json.candidatePane.matched,
                from: json.candidatePane.from },
       entries: json.candidatePane.shown.map(function (row) {
@@ -127,12 +134,9 @@ class RbacPage {
       }),
       selectedKey: picked ? picked.username.toLowerCase() : '',
       nothing: json.candidateSearch.total
-        ? 'Nobody in the directory or among the people who have signed in ' +
-          'matches that. To grant a role to a name this service has never ' +
-          'seen, use the form below the results.'
-        : 'Nobody is in the directory and nobody has signed in yet, so there ' +
-          'is nobody to pick. The form below takes a typed name.'
-    });
+        ? t.text('consoleRbac.body.nobodyMatches')
+        : t.text('consoleRbac.body.nobodyAtAll')
+    }, t);
     const roleOptions = json.roleChoices.map(function (role) {
       return '<option value="' + kit.esc(role.id) + '">' +
              kit.esc(role.label) +
@@ -143,73 +147,40 @@ class RbacPage {
       info.roles.map(function (role) {
         return kit.tile(role.memberCount, role.label);
       }).join('') +
-      kit.tile(json.candidateSearch.total, 'People who could hold one') +
+      kit.tile(json.candidateSearch.total,
+               t.text('consoleRbac.body.tileCandidates')) +
       '</div>';
 
+    // The reason nobody can get in is one word of a select, so the
+    // sentence around it is one message a translator can reorder.
     const status = info.closedToEveryone
-      ? '<div class="err"><strong>Nobody can use this console.</strong> The ' +
-        'gate is on, no role has a member, and ' +
-        (info.bootstrap && info.bootstrap.seeded && info.bootstrap.claimedAt
-          ? 'the bootstrap administrator has already signed in. '
-          : (info.windowOpens === false
-              ? 'this is product mode, which never opens the console to ' +
-                'whoever signs in. '
-              : '<code>admin.openWhenEmpty</code> is off. ')) +
-        'Anything you are reading ' +
-        'here you are reading through <code>/admin-api</code> or with the ' +
-        'gate off.</div>'
+      ? '<div class="err">' + t.html('consoleRbac.body.closed', {
+          reason: info.bootstrap && info.bootstrap.seeded &&
+                  info.bootstrap.claimedAt
+            ? 'claimed'
+            : (info.windowOpens === false ? 'product' : 'setting') }) +
+        '</div>'
       : (info.bootstrapPasswordRequired
-          ? kit.warn('<strong>Only <code>' +
-            kit.esc(info.bootstrap.username) + '</code>, signing in with ' +
-            'its password, can use this console until it does.</strong> ' +
-            'This is product mode and the console has not been claimed: ' +
-            'the window in which anybody who signs in holds both roles is ' +
-            'a development convenience and never opens here. Its first ' +
-            'password sign-in through this realm claims the console; a ' +
-            'sign-in as that account by any other method holds nothing ' +
-            'until then. Anybody granted a role on this page holds it at ' +
-            'once.')
+          ? kit.warn(t.html('consoleRbac.body.bootstrapPassword',
+                            { username: info.bootstrap.username }))
       : (info.openToAnyone && info.bootstrap && info.bootstrap.seeded
-          ? kit.warn('<strong><code>' + kit.esc(info.bootstrap.username) +
-                      '</code> ' +
-            'has not signed in to this console yet, so anybody who signs in ' +
-            'has the whole console.</strong> This service\'s bootstrap ' +
-            'administrator holds both roles already; its first sign-in here ' +
-            'ends the open console — for everybody who holds no role. ' +
-            '<strong>Grant yourself a role now</strong> if you will need the ' +
-            'console after that.')
+          ? kit.warn(t.html('consoleRbac.body.bootstrapUnclaimed',
+                            { username: info.bootstrap.username }))
       : (info.openToAnyone
-          ? kit.warn('<strong>No role has a member, so anybody who signs in ' +
-            'has the whole console.</strong> The first grant made on this ' +
-            'page ends that — for everybody, including whoever makes it. ' +
-            '<strong>Grant yourself a role before you grant anybody else ' +
-            'one</strong>, or the next page you click will be a 403.')
+          ? kit.warn(t.html('consoleRbac.body.openToAnyone'))
           : (info.enforced
-              ? '<div class="ok">The roster is enforced. ' + info.grantCount +
-                ' grant(s) across two roles; everybody else is refused at ' +
-                'every page of this console.</div>'
-              : kit.warn('<strong>None of this is in force.</strong> The ' +
-                'gate is OFF, so the console is open to anybody who can ' +
-                'reach this port and these roles decide nothing. They are ' +
-                'still real directory groups and can be granted now. ' +
-                '(UNREACHABLE since 2026-09-06: the gate is ' +
-                'unconditional.)')))));
+              ? '<div class="ok">' + t.html('consoleRbac.body.enforced',
+                                            { count: info.grantCount }) +
+                '</div>'
+              : kit.warn(t.html('consoleRbac.body.notInForce'))))));
 
     const noDirectory = info.available ? '' :
-      '<div class="err">No LDAP directory is loaded in this process, so ' +
-      'there is nowhere to hold these roles and nothing on this page can be ' +
-      'granted. That is a build of this service without ' +
-      '<code>ldap_server.js</code> rather than a failure — but the console ' +
-      'gate is unconditional, so it leaves this console reachable only while ' +
-      '<code>admin.openWhenEmpty</code> is on.</div>';
+      '<div class="err">' + t.html('consoleRbac.body.noDirectory') +
+      '</div>';
 
     const forms = mayWrite && info.available
-      ? '<h2 id="grant">Grant a role</h2>' +
-        kit.note('Search for the person, then pick them from the results. ' +
-        'The list is everybody with an entry in the directory and everybody ' +
-        'this service has seen authenticate — two different sets, which is ' +
-        'why both are searched and why each result says which it came from. ' +
-        'An empty search lists everybody, twenty at a time.') +
+      ? '<h2 id="grant">' + t.html('consoleRbac.body.grantHeading') +
+        '</h2>' + kit.note(t.html('consoleRbac.body.grantNote')) +
         personPane +
         (picked
           ? '<form method="post" action="/admin/rbac" id="grant-picked">' +
@@ -217,15 +188,19 @@ class RbacPage {
             '<input type="hidden" name="action" value="grant">' + carryBack +
             '<input type="hidden" name="username" value="' +
               kit.esc(picked.username) + '">' +
-            '<span>Person: <strong>' + kit.esc(picked.username) +
-              '</strong> <span class="state-none">' +
+            '<span>' + t.html('consoleRbac.body.pickedPerson',
+                              { name: picked.username }) +
+              ' <span class="state-none">' +
               kit.esc(whereFrom(picked)) + '</span></span>' +
-            '<label for="role">Role</label>' +
+            '<label for="role">' + t.html('consoleRbac.body.role') +
+            '</label>' +
             '<select id="role" name="role">' + roleOptions + '</select>' +
-            '<button type="submit">Grant</button>' +
+            '<button type="submit">' + t.html('consoleRbac.body.grant') +
+            '</button>' +
             ' <a href="' + kit.esc('/admin/rbac' + kit.queryWith(pickCarry,
               {})) +
-              '#find-personq">pick somebody else</a>' +
+              '#find-personq">' + t.html('consoleRbac.body.pickOther') +
+              '</a>' +
             '</div></form>'
           : (personAsked
               ? '<div class="err" id="grant-picked"><strong>' +
@@ -234,26 +209,22 @@ class RbacPage {
                 'name to pick. Search again, or grant to the name as typed ' +
                 'with the form below.</div>'
               : '')) +
-        '<h3>Grant to a name that is not listed</h3>' +
+        '<h3>' + t.html('consoleRbac.body.typedHeading') + '</h3>' +
         '<form method="post" action="/admin/rbac"><div class="formrow">' +
         '<input type="hidden" name="action" value="grant">' + carryBack +
-        '<label for="typed">Name</label><input type="text" id="typed" ' +
-        'name="username" size="24" placeholder="the name they will sign in ' +
-        'as"><label for="typedrole">Role</label><select id="typedrole" ' +
+        '<label for="typed">' + t.html('consoleRbac.body.name') +
+        '</label><input type="text" id="typed" ' +
+        'name="username" size="24" placeholder="' +
+        kit.esc(t.text('consoleRbac.body.typedPlaceholder')) +
+        '"><label for="typedrole">' + t.html('consoleRbac.body.role') +
+        '</label><select id="typedrole" ' +
         'name="role">' + roleOptions + '</select>' +
-        '<button type="submit" class="secondary">Grant</button>' +
+        '<button type="submit" class="secondary">' +
+        t.html('consoleRbac.body.grant') + '</button>' +
         '</div></form>' +
-        kit.note('The membership will DANGLE until that person exists — it ' +
-        'names a DN this directory does not hold yet — and the role counts ' +
-        'from the moment they first sign in. That is the interesting case ' +
-        'for a mock and is why this form is here: nothing about a grant ' +
-        'requires the person to have been seen. A name carrying a character ' +
-        'RFC 4514 reserves in a DN is refused, the same refusal creating a ' +
-        'person gets.')
+        kit.note(t.html('consoleRbac.body.typedNote'))
       : (info.available && info.enforced && !mayWrite
-          ? kit.note('Granting and revoking need <strong>Admin ' +
-            'Write</strong>. The table above is what you can see with ' +
-            '<strong>Admin Read</strong>.')
+          ? kit.note(t.html('consoleRbac.body.readOnlyNote'))
           : '');
 
     // The grant pane's search, carried through the table's filter form: a GET
@@ -270,73 +241,69 @@ class RbacPage {
     const inner = noDirectory + status + tiles +
       '<form method="get" action="/admin/rbac"><div class="formrow">' +
       personCarry +
-      '<label for="q">Person</label>' +
+      '<label for="q">' + t.html('consoleRbac.body.person') + '</label>' +
       '<input type="text" id="q" name="q" value="' + kit.esc(wantedText) +
-      '" size="22" placeholder="part of a name"><label ' +
-      'for="rolefilter">Role</label><select id="rolefilter" ' +
-      'name="role"><option value="">both</option>' +
+      '" size="22" placeholder="' +
+      kit.esc(t.text('consoleRbac.body.filterPlaceholder')) + '"><label ' +
+      'for="rolefilter">' + t.html('consoleRbac.body.role') +
+      '</label><select id="rolefilter" ' +
+      'name="role"><option value="">' + t.html('consoleRbac.body.both') +
+      '</option>' +
       json.roleChoices.map(function (role) {
         return '<option value="' + kit.esc(role.id) + '"' +
                (wantedRole === role.id ? ' selected' : '') + '>' +
                kit.esc(role.label) + '</option>';
       }).join('') + '</select>' +
-      '<label for="per">Per page</label>' +
-      '<select id="per" name="per">' + kit.perPageOptions(paging.perPage) +
+      '<label for="per">' + t.html('consoleRbac.body.perPage') + '</label>' +
+      '<select id="per" name="per">' + kit.perPageOptions(paging.perPage, t) +
       '</select><button ' +
-      'type="submit">Filter</button>' +
-      (wantedText || wantedRole ? ' <a href="/admin/rbac">clear</a>' : '') +
+      'type="submit">' + t.html('consoleRbac.body.filter') + '</button>' +
+      (wantedText || wantedRole
+        ? ' <a href="/admin/rbac">' + t.html('consoleRbac.body.clear') +
+          '</a>'
+        : '') +
       '</div></form>' +
       nav.head +
-      '<table><tr><th>Person</th><th>Role</th><th>Group</th><th>Membership ' +
-      'value</th><th>Take it away</th></tr>' +
+      '<table><tr><th>' + t.html('consoleRbac.body.thPerson') + '</th><th>' +
+      t.html('consoleRbac.body.thRole') + '</th><th>' +
+      t.html('consoleRbac.body.thGroup') + '</th><th>' +
+      t.html('consoleRbac.body.thValue') + '</th><th>' +
+      t.html('consoleRbac.body.thTakeAway') + '</th></tr>' +
       (rows || '<tr><td colspan="5">' +
         (wantedText || wantedRole
-          ? 'No grant matches. The filter above may be hiding some.'
-          : 'Nobody holds either role.' +
-            (info.openToAnyone ? ' Which is why anybody who signs in can ' +
-                                 'read this page.' : '')) +
+          ? t.html('consoleRbac.body.noMatch')
+          : t.html('consoleRbac.body.nobodyHolds') +
+            (info.openToAnyone ? t.html('consoleRbac.body.whyOpen') : '')) +
         '</td></tr>') +
       '</table>' + nav.foot +
       (info.roles.some(function (r) { return r.claimedCount; })
-        ? kit.note('<strong>Some of those grants are on the PERSON rather ' +
-          'than in the group.</strong> An entry whose own ' +
-          '<code>memberOf</code> names a role group holds the role — the ' +
-          'directory is asked in both directions — and nothing here ' +
-          'maintains <code>memberOf</code>, so a client wrote it. They are ' +
-          'listed because a page answering &ldquo;who has access&rdquo; that ' +
-          'omitted them would be showing a console somebody could use and a ' +
-          'list they were not on. They cannot be revoked from here: the ' +
-          'value is on their entry, and this console writes only to groups. ' +
-          'One edge worth knowing — a <code>memberOf</code> naming a role ' +
-          'group that has <em>never been created</em> grants nothing, and ' +
-          'starts granting the moment the first ordinary grant creates it.')
+        ? kit.note(t.html('consoleRbac.body.claimedNote'))
         : '') + forms +
-      '<h2>What the two roles ' +
-      'are</h2><table><tr><th>Role</th><th>Group</th><th>What it ' +
-      'allows</th><th class="num">Members</th></tr>' +
+      '<h2>' + t.html('consoleRbac.body.rolesHeading') +
+      '</h2><table><tr><th>' + t.html('consoleRbac.body.thRole') +
+      '</th><th>' + t.html('consoleRbac.body.thGroup') + '</th><th>' +
+      t.html('consoleRbac.body.thAllows') + '</th><th class="num">' +
+      t.html('consoleRbac.body.thMembers') + '</th></tr>' +
       info.roles.map(function (role) {
         return '<tr><td><strong>' + kit.esc(role.label) + '</strong></td>' +
           '<td><code>' + kit.esc(role.dn || ('cn=' + role.cn)) + '</code>' +
-          (role.exists ? '' : ' <span class="state-none" title="The group is ' +
-            'created by the first grant rather than at startup, so &quot;no ' +
-            'group&quot; and &quot;no members&quot; are the same state ' +
-            'here.">not created yet</span>') + '</td><td>' +
+          (role.exists ? '' : ' <span class="state-none" title="' +
+            t.html('consoleRbac.body.notCreatedTitle') + '">' +
+            t.html('consoleRbac.body.notCreated') + '</span>') +
+            '</td><td>' +
             kit.esc(role.what) +
           '</td><td ' +
           'class="num">' + role.memberCount +
           (role.claimedCount
-            ? ' <span class="state-expired" title="Of which ' +
-              role.claimedCount +
-              ' are claimed by the person&#39;s own memberOf rather than ' +
-              'listed by the group.">(' + role.claimedCount + ')</span>'
+            ? ' <span class="state-expired" title="' +
+              t.html('consoleRbac.body.claimedCountTitle',
+                     { count: role.claimedCount }) + '">(' +
+              role.claimedCount + ')</span>'
             : '') + '</td></tr>';
       }).join('') + '</table>' +
-      kit.note('<strong>Write implies read.</strong> A member of <code>' +
-      kit.esc(info.roles[1] ? info.roles[1].cn : '') + '</code> does not ' +
-                                                        'also need <code>' +
-      kit.esc(info.roles[0] ? info.roles[0].cn : '') + '</code>: a role ' +
-      'that could post a form to a page it was not allowed to look at would ' +
-      'be a trap rather than a permission.') +
+      kit.note(t.html('consoleRbac.body.writeImpliesRead', {
+        write: info.roles[1] ? info.roles[1].cn : '',
+        read: info.roles[0] ? info.roles[0].cn : '' })) +
       // THE FOUR SETTINGS THEMSELVES, AND NOT A TABLE OF READINGS BESIDE THEM.
       // This page carried its own four-row table saying what each one was set
       // to and what it did, above a link to /admin/config; the descriptions in
@@ -346,16 +313,9 @@ class RbacPage {
       // that were ONLY in that table are the note under it — they are about
       // this console rather than about the settings, which is why they are not
       // in config.js either.
-      SettingsForms.forms(json.settings, '/admin/rbac') +
-      kit.note('<strong>Renaming a role group does not move ' +
-      'anybody.</strong> The members stay in the group they were put in, ' +
-      'which stops granting anything the moment the name changes — and the ' +
-      'new name grants nothing until somebody is put in it. ' +
-      '<code>/admin-api</code> is not gated by any of these four, on ' +
-      'purpose: it is the way back in when nobody who holds a role can sign ' +
-      'in, and it is why turning the gate on does not break a test suite ' +
-      'driving the management API.') +
-      RbacPage.rbacCaveat();
+      SettingsForms.forms(json.settings, '/admin/rbac', undefined, t) +
+      kit.note(t.html('consoleRbac.body.renaming')) +
+      RbacPage.rbacCaveat(t);
 
     return inner;
   }
@@ -369,11 +329,12 @@ class RbacPage {
    * A known person links to their Users page; one in the directory but never
    * seen is marked "never here", and a DN with no entry is marked "dangling".
    *
+   * @param t - the page's translator
    * @param row - the grant row
    * @param knownKeys - the user keys that have a page on Users
    * @returns the cell's contents as HTML
    */
-  static rbacMemberCell(row, knownKeys) {
+  static rbacMemberCell(t, row, knownKeys) {
     const name = kit.esc(row.username || row.value);
     if (row.userKey && knownKeys[row.userKey]) {
       return '<a href="' +
@@ -385,16 +346,13 @@ class RbacPage {
       // In the directory, but this service has never seen them authenticate.
       // The same distinction /admin/groups draws on its member rows, and drawn
       // the same way so the two pages cannot be read as disagreeing.
-      return name + ' <span class="state-none" title="This person has an ' +
-             'entry in the directory, but nothing here has authenticated as ' +
-             'them yet, so there is no page about them on Users.">never ' +
-             'here</span>';
+      return name + ' <span class="state-none" title="' +
+             t.html('consoleRbac.rbacMemberCell.neverHereTitle') + '">' +
+             t.html('consoleRbac.rbacMemberCell.neverHere') + '</span>';
     }
-    return name + ' <span class="state-expired" title="Nothing is at this ' +
-           'DN. The role still counts — it resolves the moment somebody ' +
-           'authenticates under this name or the entry is created — but ' +
-           'until then no directory client can see who it ' +
-           'names.">dangling</span>';
+    return name + ' <span class="state-expired" title="' +
+           t.html('consoleRbac.rbacMemberCell.danglingTitle') + '">' +
+           t.html('consoleRbac.rbacMemberCell.dangling') + '</span>';
   }
 
   // The mark on a row whose membership is on the PERSON'S entry rather than in
@@ -407,45 +365,32 @@ class RbacPage {
    * Draws the mark on a grant held through the person's own memberOf rather
    * than the group's member list.
    *
+   * @param t - the page's translator
    * @param row - the grant row
    * @returns the "via their own memberOf" mark as HTML, or an empty string
    */
-  static rbacClaimedMark(row) {
+  static rbacClaimedMark(t, row) {
     if (row.kind !== 'claimed') {
       return '';
     }
-    return ' <span class="state-expired" title="Their own entry&#39;s ' +
-           'memberOf names this group and the group does not list them back. ' +
-           'Nothing here maintains memberOf — a client wrote it — and it ' +
-           'grants the role all the same, so it is on this list. The Revoke ' +
-           'button cannot remove it: the value is on the person, and this ' +
-           'console writes only to groups.">via their own memberOf</span>';
+    return ' <span class="state-expired" title="' +
+           t.html('consoleRbac.rbacClaimedMark.title') + '">' +
+           t.html('consoleRbac.rbacClaimedMark.mark') + '</span>';
   }
 
   /**
    * Draws the caveat at the foot of Admin roles.
    *
+   * @param t - the page's translator
    * @returns the caveat as HTML
    */
-  static rbacCaveat() {
+  static rbacCaveat(t) {
+    // The link to Groups carries an href, which a message may not: the
+    // sentence is three messages with the anchor in the code.
     return (
-      kit.note('<strong>These two groups are the only groups in this ' +
-      'service that grant anything, and what they grant is this ' +
-      'console.</strong> Every other group here still grants nothing at all ' +
-        '— ' +
-      'see <a href="/admin/groups">Groups</a>, which says so — and even ' +
-        'these ' +
-      'two grant nothing outside <code>/admin</code>: no token\'s scopes ' +
-      'change, no assertion gains an attribute, no Kerberos PAC is affected, ' +
-      'and a member of <code>admin-write</code> gets exactly the same answer ' +
-      'from <code>/oauth2/token</code> as anybody else. They are also ' +
-        'ordinary ' +
-      'directory entries, so <code>ldapmodify</code>, a SCIM PATCH, this ' +
-        'page ' +
-      'and <code>POST /admin-api/rbac/grant</code> are four doors onto one ' +
-      'membership — which is the point rather than a leak: a role no test ' +
-        'can ' +
-      'grant is a role no test can exercise.'));
+      kit.note(t.html('consoleRbac.rbacCaveat.before') +
+      '<a href="/admin/groups">' + t.html('consoleRbac.rbacCaveat.link') +
+      '</a>' + t.html('consoleRbac.rbacCaveat.after')));
   }
 }
 

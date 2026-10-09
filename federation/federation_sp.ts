@@ -2694,8 +2694,11 @@ class FederationSp {
     return this.page(t.text('handoff.federation.continueTo.title',
                             { partner: partner }),
       PageLocale.chooser(t, realms.currentPrefix(),
+        // The start's own parameters, and no others (`herePath()`).
         PageLocale.herePath(realms.currentPrefix() + LOGIN_PATH + '/' +
-                            encodeURIComponent(record.fedId))) +
+                            encodeURIComponent(record.fedId),
+                            ['returnTo', 'return_to', 'authn',
+                             'application'])) +
       '<h1>' + t.html('handoff.federation.continueTo.title',
                       { partner: partner }) + '</h1>' +
       '<p>' + t.html('handoff.federation.continueTo.lead',

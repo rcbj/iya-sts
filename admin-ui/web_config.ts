@@ -41,6 +41,9 @@ class ConfigPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // The page's words are its catalog's (#539); what the view answered —
+    // the settings, the problems, the file names — is drawn as it came.
+    const t = ctx.t;
     const snapshot = json;
     // What the settings block says about this process: the appconfig file
     // and whether an override is written down.
@@ -55,6 +58,8 @@ class ConfigPage {
       return n + group.settings.length;
     }, 0);
 
+    // The problem banner stays English: it reports a fault (#539's rule
+    // that every error is English), and its items are the view's.
     const inner = (json.homeProblems.length
         ? '<div class="err"><strong>Some settings are not on any ' +
           'page.</strong><ul>' +
@@ -67,93 +72,64 @@ class ConfigPage {
           'because the service still reads it.</div>'
         : '') +
 
-      kit.note('<strong>Every setting this service has lives on the page ' +
-      'for the protocol it configures.</strong> This page is the index of ' +
-      'that — and the form for the ' + kit.esc(String(mineCount)) + ' ' +
-      'rows that belong to no protocol, which are facts about the process ' +
-      'rather than about anything it speaks. It was ' +
-      'all ' + kit.esc(String(snapshot.settingCount)) + ' of them ' +
-      'until 2026-08-27; what moved is where they are DRAWN, and nothing ' +
-      'about what they do or how they are read.') +
+      kit.note(t.html('consoleConfig.everySettingLives',
+                      { mine: String(mineCount),
+                        total: String(snapshot.settingCount) })) +
 
-      kit.note('A value can arrive from four places and the ' +
-      '<em>Source</em> column on every one of these pages says which: a ' +
-      'runtime override set on the page, an environment variable, the ' +
-      'appconfig file this process was started with ' +
-      '(<code>' + kit.esc(snapshot.configFile || '(none)') + '</code>), ' +
-      'or ' +
-      '<code>' + kit.esc(snapshot.defaultsFile) + '</code> — the default ' +
-      'appconfig file that one is unioned on top of. Higher beats lower, ' +
-      'so an environment variable set on the container still wins over the ' +
-      'file — which is what keeps every existing deployment working ' +
-      'unchanged.') +
+      // The two file names are paths, which carry no apostrophe, so the
+      // catalog's escaping draws them exactly as kit.esc() did.
+      kit.note(t.html('consoleConfig.fourPlaces',
+                      { configFile: snapshot.configFile || '(none)',
+                        defaultsFile: snapshot.defaultsFile })) +
 
-      kit.note('<strong>There is no fifth place.</strong> A setting with ' +
-      'no value in either appconfig file and no environment variable stops ' +
-      'this service from starting, by name, rather than falling back to a ' +
-      'constant buried in a module. So every value on these pages is one ' +
-      'somebody can find in a file — which is what makes the ' +
-      '<em>Source</em> column worth reading.') +
+      kit.note(t.html('consoleConfig.noFifthPlace')) +
 
       // Worded from the block's own `context` (rcbj, 2026-10-07): this
       // said "in memory and gone on restart" unconditionally, which has been
       // wrong on every persistent store since 2026-08-27.
       (SettingsForms.keeps(stored)
-        ? '<div class="ok"><strong>Changes SURVIVE A RESTART.</strong> ' +
-          SettingsForms.durability(stored) + ' The file is left alone ' +
-          'deliberately: a service that edited a file checked into a ' +
-          'repository would leave a test\'s forgotten change behind ' +
-          'permanently.</div>'
-        : kit.warn('<strong>Changes are in memory and are gone on ' +
-          'restart.</strong> Nothing writes to the appconfig file, ' +
-          'deliberately: a service that edited a file checked into a ' +
-          'repository would leave a test\'s forgotten change behind ' +
-          'permanently. ' + SettingsForms.durability(stored))) +
+        ? '<div class="ok">' + t.html('consoleConfig.survives') + ' ' +
+          SettingsForms.durability(stored, t) + ' ' +
+          t.html('consoleConfig.fileLeftAlone') + '</div>'
+        : kit.warn(t.html('consoleConfig.inMemory') + ' ' +
+          SettingsForms.durability(stored, t))) +
 
-      '<h2>' + kit.esc(String(snapshot.settingCount)) + ' settings, ' +
-      kit.esc(String(snapshot.editableCount)) + ' of them changeable ' +
-      'while this service runs</h2>' +
+      '<h2>' + t.html('consoleConfig.settingsHeading',
+                      { total: String(snapshot.settingCount),
+                        editable: String(snapshot.editableCount) }) +
+      '</h2>' +
 
       (overridden
-        ? '<div class="ok">' + kit.esc(String(overridden)) + ' runtime ' +
-          'override(s) in force, anywhere in the ' +
-          'service: ' + kit.codeList(snapshot.overridden) + '. ' +
+        ? '<div class="ok">' +
+          t.html('consoleConfig.overridesInForce',
+                 { n: String(overridden) }) + ' ' +
+          kit.codeList(snapshot.overridden) + '. ' +
           '<form method="post" action="/admin/config" ' +
           'class="inline"><input type="hidden" name="action" ' +
-          'value="reset-all"><button class="secondary">Reset ' +
-          'all</button></form></div>'
-        : kit.note('No runtime overrides are in force anywhere in this ' +
-          'service: every value is coming from the environment or from one ' +
-          'of the two appconfig files.')) +
+          'value="reset-all"><button class="secondary">' +
+          t.html('consoleConfig.resetAll') + '</button></form></div>'
+        : kit.note(t.html('consoleConfig.noOverrides'))) +
 
-      kit.note('<strong>Reset all is here and on no protocol ' +
-      'page</strong>, because it clears every override in the service and ' +
-      'not only the ones below it. A button that reached that far from the ' +
-      'Kerberos page would be the one control in this console whose blast ' +
-      'radius was invisible from where it was pressed.') +
+      kit.note(t.html('consoleConfig.resetAllHere')) +
 
-      '<h2>Where every setting is edited</h2>' +
-      kit.note('The whole table, group by group, in the order ' +
-      '<code>config.js</code> declares them. The <em>Page</em> column is ' +
-      'where that group\'s form is drawn; the counts are of the group, and ' +
-      '<em>Overridden</em> is how many of them have a runtime override in ' +
-      'force right now.') +
-      '<table><thead><tr><th>Group</th><th class="num">Settings</th>' +
-      '<th class="num">Restart-only</th><th class="num">Overridden</th>' +
-      '<th>Page</th></tr></thead><tbody>' +
+      '<h2>' + t.html('consoleConfig.whereEdited') + '</h2>' +
+      kit.note(t.html('consoleConfig.wholeTable')) +
+      '<table><thead><tr><th>' + t.html('consoleConfig.thGroup') +
+      '</th><th class="num">' + t.html('consoleConfig.thSettings') +
+      '</th>' +
+      '<th class="num">' + t.html('consoleConfig.thRestartOnly') +
+      '</th><th class="num">' + t.html('consoleConfig.thOverridden') +
+      '</th>' +
+      '<th>' + t.html('consoleConfig.thPage') + '</th></tr></thead><tbody>' +
       snapshot.groups.map(function (group) {
-        return ConfigPage.configHomeRow(group, json.homes);
+        return ConfigPage.configHomeRow(group, json.homes, t);
       }).join('') +
       '</tbody></table>' +
 
-      SettingsForms.forms(json.settings, '/admin/config') +
+      SettingsForms.forms(json.settings, '/admin/config', undefined,
+                          t) +
 
-      kit.note('The whole table over JSON — every setting, whichever page ' +
-      'edits it — is at <code>/admin/config?format=json</code> and ' +
-      '<code>GET /admin-api/config</code>; the four actions on these pages ' +
-      'are <code>POST /admin-api/config/set</code>, ' +
-      '<code>/set-many</code>, <code>/reset</code> and ' +
-      '<code>/reset-all</code>.');
+      kit.note(t.html('consoleConfig.overJson'));
 
     return inner;
   }
@@ -171,9 +147,10 @@ class ConfigPage {
    *
    * @param group - the group, as `config.groups()` describes it
    * @param homes - the view's `homes`: each group's pages and labels
+   * @param t - the page's translator
    * @returns the row as HTML
    */
-  static configHomeRow(group, homes) {
+  static configHomeRow(group, homes, t) {
     // Where the group is drawn, from the view's `homes` (#446): a page
     // drawn in a browser has no SETTING_HOMES to look in.
     const row = (homes || []).filter(function (one) {
@@ -189,7 +166,8 @@ class ConfigPage {
       ? row.pages.map(function (path, n) {
           return '<a href="' + kit.esc(path) + '">' +
                  kit.esc(row.labels[n]) + '</a>';
-        }).join(' and ')
+        }).join(t.html('consoleConfig.pagesAnd'))
+      // A group with no home is a fault, and a fault is worded in English.
       : '<span class="state-invalid">nowhere — this group has no row in ' +
         'SETTING_HOMES, so nothing draws it</span>';
     return '<tr><td>' + kit.esc(group.group) + '</td>' +

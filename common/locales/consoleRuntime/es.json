@@ -1,0 +1,17 @@
+{
+  "reauth.title": "Tu sesión ha terminado.",
+  "reauth.text": "Vuelve a iniciar sesión para continuar. Esta página y lo que escribiste se quedan como están, y lo que pulsaste se envía en cuanto vuelvas.",
+  "reauth.again": "Volver a iniciar sesión",
+  "reauth.here": "Iniciar sesión en esta página",
+  "reauth.hereInstead": "Iniciar sesión en esta página en su lugar",
+  "reauth.noPopup": "Este navegador no puede devolver un inicio de sesión desde otra ventana, así que inicia sesión en esta página.",
+  "reauth.finish": "Termina de iniciar sesión en la ventana que se abrió.",
+  "otherPerson.waiting": "Inició sesión otra persona, así que lo que esperaba en esta página no se envió.",
+  "otherPerson.typed": "Inició sesión otra persona, así que lo que se había escrito antes en esta página no se restauró.",
+  "restored": "Has vuelto a iniciar sesión. Lo que habías escrito en esta página se restauró y no se envió nada: pulsa el botón otra vez para enviarlo.",
+  "restored.unplaced": " {n, plural, one {{n} valor no se pudo restaurar, porque la página ya no tiene un lugar para él.} other {{n} valores no se pudieron restaurar, porque la página ya no tiene un lugar para ellos.}}",
+  "signedInAgain": "Sesión iniciada de nuevo",
+  "signedInAgain.text": "La consola continúa donde estabas. Puedes cerrar esta ventana.",
+  "openConsole": "Abrir la consola",
+  "copied": "Copiado"
+}

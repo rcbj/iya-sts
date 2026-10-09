@@ -1,0 +1,5 @@
+{
+  "lede": "Toutes les opérations que propose l’API de gestion de ce service, lues dans le même document OpenAPI que celui publié par l’API, chacune avec un formulaire qui l’appelle. Les appels utilisent le jeton d’accès propre à cette console, émis pour <strong>{who}</strong> et lié à la clé de ce navigateur, portant <code>{scope}</code> — les portées que vos rôles de console accordent et aucune autre : une opération que vous n’avez pas le droit d’effectuer est donc refusée ici exactement comme ailleurs.",
+  "you": "vous",
+  "reading": "Lecture de <code>{spec}</code>&hellip;"
+}

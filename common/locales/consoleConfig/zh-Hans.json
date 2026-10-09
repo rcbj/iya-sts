@@ -1,0 +1,22 @@
+{
+  "everySettingLives": "<strong>本服务的每一项设置都位于它所配置的协议的页面上。</strong>本页是这些设置的索引——也是那 {mine} 行不属于任何协议的设置的表单，它们描述的是进程本身，而不是它所使用的任何协议。在 2026-08-27 之前，全部 {total} 项都在这里；改变的只是它们在哪里“显示”，它们的作用和读取方式都没有改变。",
+  "fourPlaces": "一个值可能来自四个地方，这些页面上的 <em>Source</em> 列会说明是哪一个：在页面上设置的运行时覆盖、环境变量、本进程启动时使用的 appconfig 文件（<code>{configFile}</code>），或 <code>{defaultsFile}</code>——前者叠加于其上的默认 appconfig 文件。上层优先于下层，因此在容器上设置的环境变量仍然优先于文件——正是这一点让现有的每个部署无需改动即可继续运行。",
+  "noFifthPlace": "<strong>没有第五个地方。</strong>如果某项设置在两个 appconfig 文件中都没有值，也没有环境变量，本服务会按名称指出它并拒绝启动，而不是退回到埋在某个模块里的常量。因此这些页面上的每个值都能在某个文件中找到——这正是 <em>Source</em> 列值得一读的原因。",
+  "survives": "<strong>更改在重启后仍然保留。</strong>",
+  "fileLeftAlone": "文件被有意保持不变：如果服务会编辑已签入代码库的文件，就会把某次测试遗忘的更改永久留在那里。",
+  "inMemory": "<strong>更改保存在内存中，重启后即会丢失。</strong>没有任何东西会写入 appconfig 文件，这是有意为之：如果服务会编辑已签入代码库的文件，就会把某次测试遗忘的更改永久留在那里。",
+  "settingsHeading": "{total} 项设置，其中 {editable} 项可在本服务运行时更改",
+  "overridesInForce": "整个服务中有 {n} 项运行时覆盖生效：",
+  "resetAll": "全部重置",
+  "noOverrides": "本服务中没有任何运行时覆盖生效：每个值都来自环境或两个 appconfig 文件之一。",
+  "resetAllHere": "<strong>“全部重置”只在这里，不在任何协议页面上</strong>，因为它会清除服务中的所有覆盖，而不只是下方的那些。如果从 Kerberos 页面就能影响到这么远，那它将是本控制台中唯一一个在按下的地方看不到影响范围的控件。",
+  "whereEdited": "每项设置在哪里编辑",
+  "wholeTable": "完整的表格，按组排列，顺序与 <code>config.js</code> 中声明的顺序一致。<em>页面</em>列是该组表单显示的位置；计数针对整个组，<em>已覆盖</em>表示其中当前有多少项存在生效的运行时覆盖。",
+  "thGroup": "组",
+  "thSettings": "设置",
+  "thRestartOnly": "仅重启生效",
+  "thOverridden": "已覆盖",
+  "thPage": "页面",
+  "pagesAnd": " 和 ",
+  "overJson": "完整表格的 JSON 形式——每一项设置，无论由哪个页面编辑——位于 <code>/admin/config?format=json</code> 和 <code>GET /admin-api/config</code>；这些页面上的四个操作是 <code>POST /admin-api/config/set</code>、<code>/set-many</code>、<code>/reset</code> 和 <code>/reset-all</code>。"
+}

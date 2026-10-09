@@ -1,0 +1,14 @@
+{
+  "sentencePq": "Postkvant-nyckelpar: {label}",
+  "sentenceComposite": "Sammansatt postkvant-nyckelpar: {label} — båda halvorna måste verifieras",
+  "sentenceKem": "Postkvantnyckel för nyckelutbyte: {label} — den signerar ingenting",
+  "sentenceHybrid": "Hybrid: en klassisk nyckel vars certifikat även bär en {label}",
+  "sentenceOther": "Postkvant: {label}",
+  "legendPq": " markerar ett nyckelpar som använder en postkvantalgoritm",
+  "legendPqAfter": " — ML-DSA eller SLH-DSA. ",
+  "legendComposite": " är en SAMMANSATT nyckel: en nyckel med en postkvanthalva och en klassisk halva, där båda måste verifieras. ",
+  "legendKem": " är en postkvantnyckel för NYCKELUTBYTE, som inte signerar något. ",
+  "legendHybridLabel": "alternativ ML-DSA-65-nyckel",
+  "legendHybrid": " är en KLASSISK nyckel vars certifikat även bär en alternativ postkvantnyckel — själva nyckeln är inte postkvant. Håll pekaren över en ikon för att se algoritmen. En nyckel utan ikon är klassisk (RSA, ECDSA eller EdDSA). Det som avgör är nyckelns egen algoritm, inte signaturen på dess certifikat: en ML-DSA-nyckel certifierad av en RSA-CA markeras, och en RSA-nyckel certifierad av en ML-DSA-CA gör det inte.",
+  "legendTitle": "Postkvant-nyckelpar"
+}

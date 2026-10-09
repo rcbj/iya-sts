@@ -1,0 +1,8 @@
+{
+  "sourceRuntimeStoredTip": "Añadido en tiempo de ejecución y escrito en ou=trustAnchors, así que sobrevive a un reinicio dondequiera que el directorio sea persistente.",
+  "sourceRuntimeUnstoredTip": "Añadido en tiempo de ejecución y NO guardado — el directorio estaba lleno o no hay ningún almacén instalado — así que desaparece en el próximo inicio.",
+  "tileAtRuntime": "añadidas en ejecución",
+  "fileUnset": "<code>tls.trustAnchorsFile</code> no está definido, así que cada ancla de aquí se añadió mientras este proceso se ejecutaba.",
+  "addAnchors": "Añadir anclas",
+  "addNote": "Uno o más bloques <code>-----BEGIN CERTIFICATE-----</code> — la raíz, o toda la cadena por encima del certificado final. Cada bloque debe poder leerlo OpenSSL, o no se añade NINGUNO: un bloque que el puerto de escucha no puede analizar hace fallar el siguiente cambio del almacén de confianza en cada puerto de escucha. Un certificado que ya existe se cuenta y no se añade dos veces."
+}

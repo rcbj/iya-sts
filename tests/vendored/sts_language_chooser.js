@@ -16,7 +16,8 @@
 //   a. a sign-in screen asked for with `ui_locales=fr-CA` is drawn in it
 //      (`lang="fr-CA"`), and carries the chooser;
 //   b. the chooser's action is the realm's `/authn/language`, with the prefix
-//      ONCE, and its return path is the page's own, with the prefix once;
+//      ONCE, and its return path is the page's own, with the prefix once —
+//      and never carries a parameter the request merely added;
 //   c. posting the chooser where the browser would answers a 303 to that
 //      return path and sets `sts_lang`; the sign-in, whose `ui_locales`
 //      outranks the chooser, stays French, and the realm's front door then
@@ -171,6 +172,19 @@ async function test() {
               chooser.back.indexOf(R + R) < 0, chooser.back);
   });
 
+  // NOTHING A REQUEST MERELY ADDS IS DRAWN BACK (the reflection the
+  // integrator found on #539 phase 3): the same page asked for with a
+  // parameter of nobody's choosing returns the chooser to the page's own
+  // path, without it.
+  r = await send(login + "&reflected=zz-" + STAMP);
+  const asked = chooserOf(r.raw);
+  check("a parameter the request merely added is not drawn back",
+        function () {
+    assert.ok(asked && asked.back.indexOf("reflected") < 0 &&
+              r.raw.indexOf("zz-" + STAMP) < 0,
+              asked ? asked.back : "no chooser");
+  });
+
   log.info("=== c. choosing Swedish ===");
   r = await postChooser(chooser.action, "sv-SE", chooser.back);
   const cookie = String(r.headers.get("set-cookie") || "");
@@ -224,7 +238,7 @@ async function test() {
     });
   });
 
-  assert.ok(checks >= 12, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 13, "only " + checks + " checks ran; a section has " +
                                             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

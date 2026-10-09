@@ -1,0 +1,5 @@
+{
+  "lede": "Todas las operaciones que ofrece la API de gestión de este servicio, leídas del mismo documento OpenAPI que publica la API, con un formulario que las llama. Las llamadas se hacen con el propio token de acceso de esta consola, emitido para <strong>{who}</strong> y vinculado a la clave de este navegador, con <code>{scope}</code>: los scopes que conceden tus roles de consola y ningún otro, así que una operación que no puedes realizar se rechaza aquí exactamente igual que en cualquier otro lugar.",
+  "you": "ti",
+  "reading": "Leyendo <code>{spec}</code>&hellip;"
+}

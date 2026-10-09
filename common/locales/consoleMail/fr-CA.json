@@ -1,0 +1,5 @@
+{
+  "status.captureLink": "Supervision &rarr; Courriel",
+  "cannot.head": "<strong>Ce domaine ne peut pas envoyer de courriels</strong>",
+  "cannot.before": ". Configurez un transport ci-dessous ; d’ici là, ces formulaires, les mécanismes de connexion par courriel dans "
+}

@@ -612,9 +612,13 @@ class ConsoleRuntime {
         };
       }
       this.prepareReauth().then(function () {
+        const t = self.t;
+        // In English where no catalog has it yet (drawReauthBar()).
         self.drawReauthBar(self.reauth && self.reauth.channel ? ''
-          : 'This browser cannot hand a sign-in back from another ' +
-            'window, so sign in on this page.');
+          : t.has('consoleRuntime.reauth.noPopup')
+            ? t.text('consoleRuntime.reauth.noPopup')
+            : 'This browser cannot hand a sign-in back from another ' +
+              'window, so sign in on this page.');
       }, function () {
         // NO VERIFIER COULD BE MADE: the popup cannot be offered, and the
         // way that is left is the one every browser has.
@@ -683,15 +687,34 @@ class ConsoleRuntime {
       bar.setAttribute('aria-labelledby', 'reauth-title');
       doc.body.appendChild(bar);
     }
-    bar.innerHTML = '<strong id="reauth-title">Your session has ended.' +
-      '</strong> <span>Sign in again to carry on. This page and what you ' +
-      'typed stay as they are, and what you pressed is sent once you are ' +
-      'back.</span> ' +
+    // THE WORDS ARE THE READER'S LANGUAGE WHERE A CATALOG HAS THEM (#539
+    // phase 5), and the English they always were where none has yet: a
+    // sign-in again, or the popup's own page, can be drawn before
+    // `GET /admin-api/console` has answered with any catalog.
+    const t = this.t;
+    bar.innerHTML = '<strong id="reauth-title">' +
+      (t.has('consoleRuntime.reauth.title')
+        ? t.html('consoleRuntime.reauth.title') : 'Your session has ended.') +
+      '</strong> <span>' +
+      (t.has('consoleRuntime.reauth.text')
+        ? t.html('consoleRuntime.reauth.text')
+        : 'Sign in again to carry on. This page and what you typed stay as ' +
+          'they are, and what you pressed is sent once you are back.') +
+      '</span> ' +
       (r.channel && r.url
-        ? '<button type="button" data-reauth="popup">Sign in again</button> '
+        ? '<button type="button" data-reauth="popup">' +
+          (t.has('consoleRuntime.reauth.again')
+            ? t.html('consoleRuntime.reauth.again') : 'Sign in again') +
+          '</button> '
         : '') +
-      '<button type="button" data-reauth="page">Sign in on this page' +
-      (r.channel ? ' instead' : '') + '</button>' +
+      '<button type="button" data-reauth="page">' +
+      (r.channel
+        ? (t.has('consoleRuntime.reauth.hereInstead')
+            ? t.html('consoleRuntime.reauth.hereInstead')
+            : 'Sign in on this page instead')
+        : (t.has('consoleRuntime.reauth.here')
+            ? t.html('consoleRuntime.reauth.here')
+            : 'Sign in on this page')) + '</button>' +
       (message ? ' <span class="reauth-note">' + kit.esc(message) +
                  '</span>' : '');
   }
@@ -730,7 +753,11 @@ class ConsoleRuntime {
       return;
     }
     r.popup = popup;
-    this.drawReauthBar('Finish signing in in the window that opened.');
+    // In English where no catalog has it yet (drawReauthBar()).
+    const t = this.t;
+    this.drawReauthBar(t.has('consoleRuntime.reauth.finish')
+      ? t.text('consoleRuntime.reauth.finish')
+      : 'Finish signing in in the window that opened.');
   }
 
   /**
@@ -785,8 +812,12 @@ class ConsoleRuntime {
       this.shell = null;
       this.me = null;
       await this.route();
-      this.noteOnPage(kit.warn('A different person signed in, so what was ' +
-        'waiting on this page was not sent.'));
+      // In English where no catalog has it yet (drawReauthBar()).
+      const t = this.t;
+      this.noteOnPage(kit.warn(t.has('consoleRuntime.otherPerson.waiting')
+        ? t.html('consoleRuntime.otherPerson.waiting')
+        : 'A different person signed in, so what was waiting on this page ' +
+          'was not sent.'));
     }
   }
 
@@ -815,8 +846,16 @@ class ConsoleRuntime {
                           error_description:
                             String(query.error_description || '') });
     channel.close();
-    this.drawProblem('Signed in again',
-      'The console carries on where you were. This window can be closed.');
+    // THE POPUP'S OWN PAGE has fetched no catalog, so this is the English
+    // it always was unless one is in hand (drawReauthBar()).
+    const t = this.t;
+    this.drawProblem(t.has('consoleRuntime.signedInAgain')
+                       ? t.text('consoleRuntime.signedInAgain')
+                       : 'Signed in again',
+      t.has('consoleRuntime.signedInAgain.text')
+        ? t.text('consoleRuntime.signedInAgain.text')
+        : 'The console carries on where you were. This window can be ' +
+          'closed.');
     if (this.env.window && typeof this.env.window.close === 'function') {
       this.env.window.close();
     }
@@ -1014,8 +1053,12 @@ class ConsoleRuntime {
       return;
     }
     if (!saved.subject || saved.subject !== this.subject) {
-      this.noteOnPage(kit.warn('A different person signed in, so what was ' +
-        'typed on this page before was not put back.'));
+      // In English where no catalog has it yet (drawReauthBar()).
+      const t = this.t;
+      this.noteOnPage(kit.warn(t.has('consoleRuntime.otherPerson.typed')
+        ? t.html('consoleRuntime.otherPerson.typed')
+        : 'A different person signed in, so what was typed on this page ' +
+          'before was not put back.'));
       return;
     }
     const doc = this.env.document;
@@ -1029,13 +1072,22 @@ class ConsoleRuntime {
     if (!done.restored && !done.unplaced) {
       return;
     }
-    this.noteOnPage('<div class="ok">You are signed in again. What you had ' +
-      'typed on this page was put back, and nothing was sent: press the ' +
-      'button again to send it.' +
+    // In English where no catalog has it yet (drawReauthBar()).
+    const t = this.t;
+    const said = t.has('consoleRuntime.restored');
+    this.noteOnPage('<div class="ok">' +
+      (said ? t.html('consoleRuntime.restored')
+            : 'You are signed in again. What you had typed on this page was ' +
+              'put back, and nothing was sent: press the button again to ' +
+              'send it.') +
       (done.unplaced
-        ? ' ' + done.unplaced + ' value' + (done.unplaced === 1 ? '' : 's') +
-          ' could not be put back, because the page no longer has a place ' +
-          'for ' + (done.unplaced === 1 ? 'it' : 'them') + '.'
+        ? (said ? t.html('consoleRuntime.restored.unplaced',
+                         { n: done.unplaced })
+                : ' ' + done.unplaced + ' value' +
+                  (done.unplaced === 1 ? '' : 's') +
+                  ' could not be put back, because the page no longer has ' +
+                  'a place for ' + (done.unplaced === 1 ? 'it' : 'them') +
+                  '.')
         : '') + '</div>');
   }
 
@@ -1179,6 +1231,15 @@ class ConsoleRuntime {
    */
   applyLocale(locale: Json): void {
     this.t = WebMessages.WebTranslator.fromData(locale);
+    // AND IT IS THE DEFAULT a helper given no translator falls back to, so
+    // a call that forgot `ctx.t` still draws in the reader's language here.
+    // `tests/console_web_bundle.js` runs the bundle without this runtime,
+    // where such a call draws keys and differs from node: a forgotten `t`
+    // is found there rather than hidden here.
+    const self = this;
+    WebMessages.WebTranslator.setDefault(function () {
+      return self.t;
+    });
     const root = this.env.document && this.env.document.documentElement;
     if (root && typeof root.setAttribute === 'function') {
       root.setAttribute('lang', this.t.lang);
@@ -1386,7 +1447,11 @@ class ConsoleRuntime {
     this.env.document.body.innerHTML = '<div class="shell"><div ' +
       'class="main"><div class="card"><h1>' + kit.esc(title) + '</h1>' +
       kit.note(kit.esc(detail)) + '<p><a href="' +
-      kit.esc(this.prefix + '/admin') + '">Open the console</a></p>' +
+      kit.esc(this.prefix + '/admin') + '">' +
+      // In English where no catalog has it yet (drawReauthBar()).
+      (this.t.has('consoleRuntime.openConsole')
+        ? this.t.html('consoleRuntime.openConsole') : 'Open the console') +
+      '</a></p>' +
       '</div></div></div>';
   }
 
@@ -1429,7 +1494,8 @@ class ConsoleRuntime {
       return;
     }
     if (answer.status !== 200 || !answer.json) {
-      this.draw(page.title, page.path, kit.warn('The management API ' +
+      this.draw(WebPages.titleOf(page, this.t), page.path,
+        kit.warn('The management API ' +
         'answered ' + answer.status + ' for <code>' +
         kit.esc(page.operation) + '</code>.' +
         (answer.json && answer.json.error
@@ -1487,8 +1553,9 @@ class ConsoleRuntime {
           leaf: String(query[page.drill.param]),
           filtered: Object.keys(kit.listViewOf(page.path, query)).length > 0 }
       : null;
-    this.draw(drilled ? page.title + ' ' + query[page.drill.param]
-                      : page.title,
+    // The title in the reader's language (#539 phase 5).
+    const title = WebPages.titleOf(page, this.t);
+    this.draw(drilled ? title + ' ' + query[page.drill.param] : title,
               page.path, WebPages.render(page.path, json, ctx), up, banner);
   }
 
@@ -1886,7 +1953,8 @@ class ConsoleRuntime {
       if (!invent) {
         return;
       }
-      const drawn = WebAnswers.filled(fields, invent.json, this.view.json);
+      const drawn = WebAnswers.filled(fields, invent.json, this.view.json,
+                                      this.t);
       this.view.json = drawn.json;
       this.drawView(null, drawn.banner);
       return;
@@ -1953,7 +2021,7 @@ class ConsoleRuntime {
       back: back + String(this.env.location.hash || ''),
       base: this.env.location.origin + this.prefix,
       realmRoot: (this.shell && this.shell.realmRoot) ||
-                 this.env.location.origin });
+                 this.env.location.origin }, this.t);
     if (once) {
       this.view = null;
       this.draw(once.title, once.active, once.html, null, '');
@@ -1963,7 +2031,8 @@ class ConsoleRuntime {
     // it was, a generated secret or a loaded document in its form, the
     // workbench's next draft, a resolution under the form that asked.
     const again = this.view
-      ? WebAnswers.redraw(page, action, fields, json, this.view.json) : null;
+      ? WebAnswers.redraw(page, action, fields, json, this.view.json, this.t)
+      : null;
     if (again) {
       this.view.json = again.json;
       this.drawView(null, again.banner);
@@ -2349,6 +2418,7 @@ class ConsoleRuntime {
    * @returns nothing
    */
   wireCopyButtons(): void {
+    const t = this.t;
     const doc = this.env.document;
     const buttons = doc.querySelectorAll('button.copybtn[data-copy]');
     const nav = this.env.navigator;
@@ -2377,7 +2447,11 @@ class ConsoleRuntime {
     };
     const copied = function (button: Json, ok: boolean): void {
       const label = button.textContent;
-      button.textContent = ok ? 'Copied' : 'Copy failed';
+      // "Copy failed" is a failure, and failures stay English (#539).
+      button.textContent = ok
+        ? (t.has('consoleRuntime.copied') ? t.text('consoleRuntime.copied')
+                                          : 'Copied')
+        : 'Copy failed';
       setTimeout(function () {
         button.textContent = label;
       }, 1500);

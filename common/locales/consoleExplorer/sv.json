@@ -1,0 +1,5 @@
+{
+  "lede": "Varje operation som tjänstens hanterings-API erbjuder, inläst från samma OpenAPI-dokument som API:et publicerar, med ett formulär som anropar den. Anropen görs med konsolens egen åtkomsttoken, utfärdad till <strong>{who}</strong> och bunden till den här webbläsarens nyckel, med <code>{scope}</code> — de scope som dina konsolroller ger och inga andra, så en operation du inte får utföra nekas här precis som den skulle nekas någon annanstans.",
+  "you": "dig",
+  "reading": "Läser <code>{spec}</code>&hellip;"
+}

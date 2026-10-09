@@ -1,0 +1,22 @@
+{
+  "everySettingLives": "<strong>Every setting this service has lives on the page for the protocol it configures.</strong> This page is the index of that — and the form for the {mine} rows that belong to no protocol, which are facts about the process rather than about anything it speaks. It was all {total} of them until 2026-08-27; what moved is where they are DRAWN, and nothing about what they do or how they are read.",
+  "fourPlaces": "A value can arrive from four places and the <em>Source</em> column on every one of these pages says which: a runtime override set on the page, an environment variable, the appconfig file this process was started with (<code>{configFile}</code>), or <code>{defaultsFile}</code> — the default appconfig file that one is unioned on top of. Higher beats lower, so an environment variable set on the container still wins over the file — which is what keeps every existing deployment working unchanged.",
+  "noFifthPlace": "<strong>There is no fifth place.</strong> A setting with no value in either appconfig file and no environment variable stops this service from starting, by name, rather than falling back to a constant buried in a module. So every value on these pages is one somebody can find in a file — which is what makes the <em>Source</em> column worth reading.",
+  "survives": "<strong>Changes SURVIVE A RESTART.</strong>",
+  "fileLeftAlone": "The file is left alone deliberately: a service that edited a file checked into a repository would leave a test's forgotten change behind permanently.",
+  "inMemory": "<strong>Changes are in memory and are gone on restart.</strong> Nothing writes to the appconfig file, deliberately: a service that edited a file checked into a repository would leave a test's forgotten change behind permanently.",
+  "settingsHeading": "{total} settings, {editable} of them changeable while this service runs",
+  "overridesInForce": "{n} runtime override(s) in force, anywhere in the service:",
+  "resetAll": "Reset all",
+  "noOverrides": "No runtime overrides are in force anywhere in this service: every value is coming from the environment or from one of the two appconfig files.",
+  "resetAllHere": "<strong>Reset all is here and on no protocol page</strong>, because it clears every override in the service and not only the ones below it. A button that reached that far from the Kerberos page would be the one control in this console whose blast radius was invisible from where it was pressed.",
+  "whereEdited": "Where every setting is edited",
+  "wholeTable": "The whole table, group by group, in the order <code>config.js</code> declares them. The <em>Page</em> column is where that group's form is drawn; the counts are of the group, and <em>Overridden</em> is how many of them have a runtime override in force right now.",
+  "thGroup": "Group",
+  "thSettings": "Settings",
+  "thRestartOnly": "Restart-only",
+  "thOverridden": "Overridden",
+  "thPage": "Page",
+  "pagesAnd": " and ",
+  "overJson": "The whole table over JSON — every setting, whichever page edits it — is at <code>/admin/config?format=json</code> and <code>GET /admin-api/config</code>; the four actions on these pages are <code>POST /admin-api/config/set</code>, <code>/set-many</code>, <code>/reset</code> and <code>/reset-all</code>."
+}

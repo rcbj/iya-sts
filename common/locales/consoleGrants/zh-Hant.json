@@ -1,0 +1,17 @@
+{
+  "scopeFor": "，用於 {resource}",
+  "details": "{n} 項授權詳情",
+  "claims": "聲明 {claims}",
+  "revoke": "撤銷",
+  "none": "此領域中沒有用戶端持有授權。授權由攜帶 <code>grant_management_action=create</code> 的授權請求建立。",
+  "note": "<strong>Grant Management for OAuth 2.0。</strong>機密用戶端會指明某人允許它做什麼——透過一般授權請求建立授權、向其中合併更多內容或取代它——並透過 <code>grant_management_query</code> 與 <code>grant_management_revoke</code> 範圍在 <code>{path}</code> 讀取或撤銷它。授權在其權杖被領取後才存在，並隨最後一個權杖一起到期。在此撤銷授權等同於用戶端的 DELETE：其下的每個重新整理權杖在每個節點上都會被拒絕，此領域在其下記錄的每個權杖都會被撤銷。此人同意的內容見",
+  "consentLink": "同意",
+  "noteEnd": "。",
+  "colClient": "用戶端",
+  "colSubject": "主體",
+  "colScopes": "範圍",
+  "colGeneration": "代次",
+  "colCreated": "建立 / 更新",
+  "colExpires": "到期",
+  "colTokens": "持有的權杖"
+}

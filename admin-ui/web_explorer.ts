@@ -114,23 +114,20 @@ class ExplorerPage {
    * @returns the body as HTML
    */
   static body(ctx: Json, json: Json): string {
+    const t = ctx.t;
     const spec = String(json.realmPrefix || '') + json.api + '/openapi.json';
+    // `(no scope)` is drawn in <code> and stays as it is (#539).
     return '<style>' +
       ExplorerPage.STYLE.replace(/(^|})body\{[^}]*\}/g, '$1') + '</style>' +
-      '<p class="lede">Every operation this service\'s management API ' +
-      'offers, read from the same OpenAPI document the API publishes, with ' +
-      'a form that calls it. Calls are made with this console\'s own ' +
-      'access token, issued to <strong>' + kit.esc(json.who || 'you') +
-      '</strong> and bound to this browser\'s key, carrying <code>' +
-      kit.esc(json.scope || '(no scope)') + '</code> — the scopes your ' +
-      'console roles grant and no others, so an operation you may not ' +
-      'perform is refused here exactly as it would be anywhere else.</p>' +
+      '<p class="lede">' + t.html('consoleExplorer.lede', {
+        who: json.who || t.text('consoleExplorer.you'),
+        scope: json.scope || '(no scope)' }) + '</p>' +
       '<div id="app" data-spec="' + kit.esc(spec) + '" ' +
       'data-version="' + kit.esc(json.version || '') + '" ' +
       'data-realm-prefix="' + kit.esc(json.realmPrefix || '') + '" ' +
       'data-token="" data-console-fetch="1" ' +
       'data-script="' + kit.esc(json.script) + '">' +
-      '<p class="lede">Reading <code>' + kit.esc(spec) + '</code>&hellip;' +
+      '<p class="lede">' + t.html('consoleExplorer.reading', { spec: spec }) +
       '</p></div>';
   }
 }

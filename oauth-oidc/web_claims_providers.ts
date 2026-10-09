@@ -44,10 +44,13 @@ class ClaimsProvidersPage {
    * Draws the page's body from its view.
    *
    * @param view - the answer of the page's management API operation
+   * @param ctx - the render context; the server-side caller passes none and
+   *   is drawn in the default (English) translator (#539)
    * @returns the body as HTML
    */
-  static render(view: Json): string {
-    return ClaimsProvidersPage.body(view);
+  static render(view: Json, ctx?: Json): string {
+    const t = (ctx || kit.context()).t;
+    return ClaimsProvidersPage.body(view, t);
   }
 
   // The page body for `json`, the view `GET /admin-api/claim-providers`
@@ -56,9 +59,10 @@ class ClaimsProvidersPage {
    * Draws the page body.
    *
    * @param json - the view `GET /admin-api/claim-providers` answers
+   * @param t - the page's translator (#539)
    * @returns the HTML
    */
-  static body(json: Json): string {
+  static body(json: Json, t: Json): string {
     const form = function (action: string, fields: Json, label: string,
                            danger: boolean): string {
       return '<form method="post" action="' + PAGE + '" class="inline">' +
@@ -73,85 +77,104 @@ class ClaimsProvidersPage {
       ? json.providers.map(function (p: Json): string {
         return '<tr id="claim-provider-' + esc(p.id) + '"><td><code>' +
           esc(p.id) + '</code><br>' + esc(p.name) + '</td><td><code>' +
-          esc(p.issuer) + '</code></td><td class="sub">authorize <code>' +
-          esc(p.authorizationEndpoint) + '</code><br>token <code>' +
-          esc(p.tokenEndpoint) + '</code><br>claims <code>' +
-          esc(p.claimsEndpoint) + '</code><br>keys <code>' +
+          esc(p.issuer) + '</code></td><td class="sub">' +
+          t.html('consoleClaimsProviders.epAuthorize') + ' <code>' +
+          esc(p.authorizationEndpoint) + '</code><br>' +
+          t.html('consoleClaimsProviders.epToken') + ' <code>' +
+          esc(p.tokenEndpoint) + '</code><br>' +
+          t.html('consoleClaimsProviders.epClaims') + ' <code>' +
+          esc(p.claimsEndpoint) + '</code><br>' +
+          t.html('consoleClaimsProviders.epKeys') + ' <code>' +
           esc(p.jwksUri) + '</code></td><td><code>' + esc(p.clientId) +
-          '</code><br>' + esc(p.authMethod) + (p.hasSecret ? ', secret held'
-            : '') + '<br>scope <code>' + esc(p.scope) + '</code></td><td>' +
+          '</code><br>' + esc(p.authMethod) + (p.hasSecret
+            ? t.html('consoleClaimsProviders.secretHeld') : '') + '<br>' +
+          t.html('consoleClaimsProviders.scope') + ' <code>' +
+          esc(p.scope) + '</code></td><td>' +
           p.claims.map(function (c: string): string {
             return '<code>' + esc(c) + '</code>';
           }).join(' ') + '</td><td>' + esc(p.delivery) + '</td><td>' +
-          form('remove-provider', { id: p.id }, 'Remove', true) +
+          form('remove-provider', { id: p.id },
+               t.html('consoleClaimsProviders.remove'), true) +
           '</td></tr>';
       }).join('')
-      : '<tr><td colspan="7" class="sub">No Claims Provider is registered ' +
-        'in this realm.</td></tr>';
+      : '<tr><td colspan="7" class="sub">' +
+        t.html('consoleClaimsProviders.noProviders') + '</td></tr>';
     const links = json.links.length
       ? json.links.map(function (l: Json): string {
         return '<tr><td><code>' + esc(l.username) + '</code></td><td><code>' +
           esc(l.provider) + '</code></td><td><code>' + esc(l.sub) +
           '</code></td><td>' + esc(new Date(l.linkedAt).toISOString()) +
           '</td><td>' + (l.expiresAt ? esc(new Date(l.expiresAt)
-            .toISOString()) : '—') + (l.refreshable ? ', refreshable' : '') +
-          (l.stale ? ' <strong>stale</strong>' : '') + '</td><td>' +
+            .toISOString()) : '—') +
+          (l.refreshable ? t.html('consoleClaimsProviders.refreshable')
+                         : '') +
+          (l.stale ? ' <strong>' + t.html('consoleClaimsProviders.stale') +
+                     '</strong>' : '') + '</td><td>' +
           form('revoke-link', { username: l.username, provider: l.provider },
-               'Revoke', true) + '</td></tr>';
+               t.html('consoleClaimsProviders.revoke'), true) + '</td></tr>';
       }).join('')
-      : '<tr><td colspan="6" class="sub">Nobody has linked a Claims ' +
-        'Provider. A person links one on <code>/portal/claim-sources</code>.' +
-        '</td></tr>';
+      : '<tr><td colspan="6" class="sub">' +
+        t.html('consoleClaimsProviders.noLinks') + '</td></tr>';
     const field = function (name: string, label: string, hint: string,
                             type?: string): string {
       return '<label>' + label + ' <input type="' + (type || 'text') +
         '" name="' + name + '" autocomplete="off"></label>' +
         (hint ? ' <span class="sub">' + hint + '</span>' : '') + '<br>';
     };
-    const add = '<h3>Register a Claims Provider</h3>' +
+    const add = '<h3>' + t.html('consoleClaimsProviders.addHeading') +
+      '</h3>' +
       '<form method="post" action="' + PAGE + '" id="claim-provider-add">' +
       '<input type="hidden" name="action" value="add-provider">' +
-      field('id', 'Id', 'lower-case letters, digits and hyphens') +
-      field('name', 'Name', '') +
-      field('issuer', 'Issuer', 'its OpenID Provider issuer') +
+      field('id', t.html('consoleClaimsProviders.fId'),
+            t.html('consoleClaimsProviders.fIdHint')) +
+      field('name', t.html('consoleClaimsProviders.fName'), '') +
+      field('issuer', t.html('consoleClaimsProviders.fIssuer'),
+            t.html('consoleClaimsProviders.fIssuerHint')) +
       '<label><input type="checkbox" name="discover" value="true" ' +
-      'checked> fill the endpoints below that are left empty from its ' +
-      'discovery document</label><br>' +
-      field('authorizationEndpoint', 'Authorization endpoint', '') +
-      field('tokenEndpoint', 'Token endpoint', '') +
-      field('claimsEndpoint', 'Claims endpoint', 'its UserInfo endpoint') +
+      'checked> ' + t.html('consoleClaimsProviders.fDiscover') +
+      '</label><br>' +
+      field('authorizationEndpoint',
+            t.html('consoleClaimsProviders.fAuthorization'), '') +
+      field('tokenEndpoint', t.html('consoleClaimsProviders.fToken'), '') +
+      field('claimsEndpoint', t.html('consoleClaimsProviders.fClaims'),
+            t.html('consoleClaimsProviders.fClaimsHint')) +
       field('jwksUri', 'JWKS URI', '') +
-      field('clientId', 'client_id', 'this realm\'s client at the provider') +
-      field('clientSecret', 'Client secret', 'sealed; never shown again',
-            'password') +
-      '<label>Client authentication <select name="authMethod">' +
+      field('clientId', 'client_id',
+            t.html('consoleClaimsProviders.fClientIdHint')) +
+      field('clientSecret', t.html('consoleClaimsProviders.fSecret'),
+            t.html('consoleClaimsProviders.fSecretHint'), 'password') +
+      '<label>' + t.html('consoleClaimsProviders.fAuthMethod') +
+      ' <select name="authMethod">' +
       '<option>client_secret_basic</option><option>client_secret_post' +
       '</option><option>none</option></select></label><br>' +
-      field('scope', 'Scope', 'default openid') +
-      field('claims', 'Claims it supplies', 'space-separated names') +
-      '<label>Delivery <select name="delivery"><option>aggregated</option>' +
+      field('scope', t.html('consoleClaimsProviders.fScope'),
+            t.html('consoleClaimsProviders.fScopeHint')) +
+      field('claims', t.html('consoleClaimsProviders.fSupplies'),
+            t.html('consoleClaimsProviders.fSuppliesHint')) +
+      '<label>' + t.html('consoleClaimsProviders.fDelivery') +
+      ' <select name="delivery"><option>aggregated</option>' +
       '<option>distributed</option></select></label><br>' +
-      '<button type="submit">Register</button></form>';
-    return kit.note('<strong>OpenID Connect Claims Aggregation.</strong> ' +
-        'A Claims Provider is another OpenID Provider that vouches for ' +
-        'claims about a person this realm does not hold. A person links one ' +
-        'on the portal; after that a relying party asking for one of its ' +
-        'claims gets it as an <em>aggregated</em> claim (the provider\'s ' +
-        'signed JWT, verified here first) or a <em>distributed</em> one ' +
-        '(its endpoint and the person\'s access token there) — never in ' +
-        'place of a value the person\'s own entry holds. Register this ' +
-        'realm at the provider as a client whose redirect URI is <code ' +
+      '<button type="submit">' + t.html('consoleClaimsProviders.register') +
+      '</button></form>';
+    // The callback address is a <code> with an id, markup a message may not
+    // carry, so the note is two messages around it (#539).
+    return kit.note(t.html('consoleClaimsProviders.noteA') + '<code ' +
         'id="claim-provider-callback">' + esc(json.redirectUri) +
-        '</code> and ' +
-        'whose UserInfo responses are signed ' +
-        '(<code>userinfo_signed_response_alg</code>). A federation ' +
-        'partner\'s claim sources are honoured only from a provider ' +
-        'registered here.') +
-      '<table><thead><tr><th>Provider</th><th>Issuer</th><th>Endpoints</th>' +
-      '<th>Client</th><th>Claims</th><th>Delivery</th><th></th></tr>' +
+        '</code>' + t.html('consoleClaimsProviders.noteB')) +
+      '<table><thead><tr><th>' + t.html('consoleClaimsProviders.colProvider') +
+      '</th><th>' + t.html('consoleClaimsProviders.colIssuer') + '</th><th>' +
+      t.html('consoleClaimsProviders.colEndpoints') + '</th>' +
+      '<th>' + t.html('consoleClaimsProviders.colClient') + '</th><th>' +
+      t.html('consoleClaimsProviders.colClaims') + '</th><th>' +
+      t.html('consoleClaimsProviders.colDelivery') + '</th><th></th></tr>' +
       '</thead><tbody>' + providers + '</tbody></table>' + add +
-      '<h3>Links</h3><table><thead><tr><th>Person</th><th>Provider</th>' +
-      '<th>Their sub there</th><th>Linked</th><th>Token</th><th></th></tr>' +
+      '<h3>' + t.html('consoleClaimsProviders.linksHeading') +
+      '</h3><table><thead><tr><th>' +
+      t.html('consoleClaimsProviders.colPerson') + '</th><th>' +
+      t.html('consoleClaimsProviders.colProvider') + '</th>' +
+      '<th>' + t.html('consoleClaimsProviders.colTheirSub') + '</th><th>' +
+      t.html('consoleClaimsProviders.colLinked') + '</th><th>' +
+      t.html('consoleClaimsProviders.colToken') + '</th><th></th></tr>' +
       '</thead><tbody>' + links + '</tbody></table>' +
       '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/claim-providers</code></p>';
