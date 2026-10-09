@@ -653,11 +653,20 @@ async function signInToTheConsole(base, user, log2, options) {
         const me = await api("GET", "/admin-api/me");
         this.mayWrite = !!(me.json && me.json.write);
       }
+      // AND IN THE READER'S LANGUAGE, as the console's runtime draws it
+      // (#539): a translator built by the bundle from the shell's `locale`
+      // member, asked once. Without it every message renders as its key.
+      if (this.translator === undefined) {
+        const shell = await api("GET", "/admin-api/console");
+        this.translator = table.messages && shell.json && shell.json.locale
+          ? table.messages.WebTranslator.fromData(shell.json.locale) : null;
+      }
       const asked = Object.assign({}, query || {});
       delete asked.format;
       const html = answer.status === 200 && answer.json
         ? table.render(path, answer.json,
-                       table.kit.context(asked, this.mayWrite)) ||
+                       table.kit.context(asked, this.mayWrite,
+                                         this.translator || undefined)) ||
           "" : "";
       return { status: answer.status, json: answer.json, html: html };
     },
