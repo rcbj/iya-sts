@@ -24,9 +24,9 @@ whether each is translated yet.
 > **What is translated so far (#539, in phases).** The sign-in screens and
 > every second-factor step, the emailed and wallet sign-ins, consent, the
 > hand-off pages, sign-out, the front door, the realm chooser and the GNAP
-> pages. The user portal, the built-in mail templates and the admin console
-> follow. Until each is converted it is drawn in English and has no
-> language chooser.
+> pages, the user portal (with a language field on the person's own
+> account) and the built-in mail. The admin console follows; until it is
+> converted it is drawn in English and has no language chooser.
 
 > **Every catalog except English was machine-written and has not been
 > reviewed by a native speaker.** Each catalog's status is in
