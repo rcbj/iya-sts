@@ -157,7 +157,7 @@ async function run(t) {
   let drawn = '';
   try {
     const RiskPage = require('../admin-ui/web_risk');
-    drawn = RiskPage.assessmentsHtml({ query: {}, write: false },
+    drawn = RiskPage.assessmentsHtml(require('../admin-ui/web_kit').context({}, false),
       JSON.parse(JSON.stringify({
         assessments: { rows: [recorded], total: 1 }, subjects: [],
         assessmentsPaging: { page: 1, pages: 1, perPage: 50, firstRow: 1,

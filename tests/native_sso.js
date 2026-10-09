@@ -217,7 +217,7 @@ function body(t) {
     require('../admin-core/admin_views')
       .userDetailJson({ query: {}, headers: {} }, 'nsso-alice').json.page.mfa));
   const drawn = UsersPage.mfaSection({ name: 'nsso-alice' }, 'nsso-alice',
-    { write: true }, '', mfaData);
+    require('../admin-ui/web_kit').context({}, true), '', mfaData);
   t.check(/<h3>Devices<\/h3>/.test(drawn) &&
           /value="remove-device"/.test(drawn) &&
           drawn.indexOf(second.device.id) >= 0,
