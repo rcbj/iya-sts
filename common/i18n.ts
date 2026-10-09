@@ -703,6 +703,13 @@ const slot = new InstanceSlot<I18n>(
 
 slot.buildNowUnlessDeferred();
 
+// THE CONSOLE'S RENDERERS, DRAWN IN NODE WITH NO TRANSLATOR — a test, a
+// server-drawn page — read English (#539 phase 5): the default a `web_`
+// context falls back to. The browser sets none and is always handed one.
+webMessages.WebTranslator.setDefault(function () {
+  return slot.get().translator([SOURCE]);
+});
+
 /**
  * The catalogs (#539): the languages a page may be drawn in, the negotiation
  * of a list of tags against them, and the formatting of one message. The

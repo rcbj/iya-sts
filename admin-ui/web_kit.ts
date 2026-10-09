@@ -2289,8 +2289,8 @@ class WebKit {
    * @param query - the page's query parameters, by name
    * @param write - whether the reader may write
    * @param t - the page's translator (#539 phase 5): the runtime's, built
-   *   from `GET /admin-api/console`'s `locale`; without one, a translator
-   *   with no catalogs, which draws each message's key
+   *   from `GET /admin-api/console`'s `locale`; without one, the default
+   *   (English in node, set by `common/i18n.ts`; key-drawing in a browser)
    * @returns `{ query, write, t }`, the query copied and `write` a boolean
    */
   static context(query?, write?, t?) {
@@ -2299,7 +2299,7 @@ class WebKit {
       copy[name] = query[name];
     });
     return { query: copy, write: write === true,
-             t: t || webMessages.WebTranslator.fromData(null) };
+             t: t || webMessages.WebTranslator.fallback() };
   }
 
   // THE CONSOLE'S LANGUAGE CHOOSER (#539 phase 5). A `<select>` and NO

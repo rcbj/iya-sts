@@ -85,6 +85,12 @@ interface TranslatorSpec {
 const PARSED = new Map<string, MessageNode[]>();
 const PARSED_MAX = 20000;
 
+// THE TRANSLATOR A CONTEXT GETS WHEN IT IS GIVEN NONE. In the browser
+// nothing sets it — the runtime hands every page its own — and it draws each
+// key. In node `common/i18n.ts` sets it to English, so a page drawn
+// server-side or by a test without a translator reads as it always did.
+let defaultTranslator: (() => any) | null = null;
+
 /**
  * The message syntax: parse, shape and render. A static utility class.
  */
@@ -372,6 +378,27 @@ class WebTranslator {
         return typeof found === 'string' ? found : undefined;
       }
     });
+  }
+
+  /**
+   * Sets what `fallback()` builds.
+   *
+   * @param make - a function answering a translator, or null
+   * @returns nothing
+   */
+  static setDefault(make: (() => any) | null): void {
+    defaultTranslator = make;
+  }
+
+  /**
+   * The translator for a context given none: the default `setDefault()`
+   * installed, or one with no catalogs.
+   *
+   * @returns the translator
+   */
+  static fallback(): WebTranslator {
+    return defaultTranslator ? defaultTranslator()
+                             : WebTranslator.fromData(null);
   }
 
   /**
