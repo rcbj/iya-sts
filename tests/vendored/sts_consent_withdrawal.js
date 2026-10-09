@@ -482,9 +482,16 @@ async function portal() {
   await ok(realmApi + "/consent/revoke-global-consent",
     { client: B.client_id, scope: "profile" }, "withdrew B's profile");
   page = await portalPage(jar, "/portal/consents");
-  const after = page.text.split('id="administrative-consents"')[1] || "";
+  // B's CARD, not the whole section: the person signed in to the portal
+  // through its own seeded client, whose global consent covers profile too,
+  // so the section rightly lists a profile row for that application.
+  const after = ((page.text.split('id="administrative-consents"')[1] || "")
+    .split('<div class="card">').filter(function (card) {
+      return card.indexOf(B.client_id) >= 0;
+    })[0]) || "";
   check("an administrative consent the administrator takes away is no " +
         "longer listed, and the rest still is", function () {
+    assert.ok(after, "B has no card under Administrative consents");
     assert.ok(!/<code>profile<\/code>/.test(after),
               "B's profile still listed: " + after.slice(0, 600));
     assert.ok(/<code>openid<\/code>/.test(after),
