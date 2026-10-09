@@ -49,41 +49,37 @@ class PoliciesPage {
       kindLabel[kind.id] = kind.label;
     });
 
-    const inner = '<div class="tiles">' +
+    const tiles = '<div class="tiles">' +
         kit.tile(view.kinds.length, 'kind of policy') +
         kit.tile(view.paging.total, 'profile') +
         kit.tile(view.enforced ? 'yes' : 'no',
                   'password policy enforced in this realm') +
-      '</div>' +
+      '</div>';
 
-      kit.note('<strong>A policy here is a rule this realm holds a ' +
-      'credential to.</strong> Each kind below is a SEPARATE policy with ' +
-      'its own entry in its own container, and each has a profile — ' +
-      '<code>default</code> — which applies to every person in this ' +
-      'realm; the passkey policy may also have named profiles, each ' +
-      'applying to the applications and groups it names. ' +
-      view.kinds.map(function (kind) {
-        return '<a href="#' + kit.esc(kind.id) + '">' +
-          kit.esc(kind.label) + '</a> (<code>' +
-          kit.esc(kind.container) + '</code>)';
-      }).join(', ') + '. <strong>This is not the XACML policy ' +
-      'repository</strong>: <a href="/admin/xacml/policies">that one</a> ' +
-      'holds documents a PDP evaluates, in <code>ou=policies</code>.') +
-
-      view.kinds.map(function (kind) {
-        if (kind.id === 'password') {
-          return PoliciesPage.passwordPolicySection(view);
-        }
-        if (kind.id === 'authn') {
-          return PoliciesPage.authnPolicySection(view);
-        }
-        return PoliciesPage.genericPolicySection(view, kind);
-      }).join('') +
-
-      '<h2 id="profiles">Profiles</h2>' +
+    // ONE TAB PER KIND OF POLICY (#540, rcbj 2026-10-09: "That page is
+    // getting long and messy"), `kit.tabbedPanels()` as the application page
+    // and Listeners have them, in `policy_kinds.ts`'s order, so a kind added
+    // there gets its tab with nothing here. Each kind's `<h2 id>` stays inside
+    // its panel: a panel is shown when anything in it is the `:target`, so
+    // `/admin/policies#passkey` and every other page's link still land on the
+    // right tab, and a Save keeps the address's fragment and comes back to
+    // its own. The profile list is reference, so it is the last tab.
+    const panels = view.kinds.map(function (kind) {
+      let html;
+      if (kind.id === 'password') {
+        html = PoliciesPage.passwordPolicySection(view);
+      } else if (kind.id === 'authn') {
+        html = PoliciesPage.authnPolicySection(view);
+      } else {
+        html = PoliciesPage.genericPolicySection(view, kind);
+      }
+      return { id: 'tab-' + kind.id, label: kind.label, html: html };
+    });
+    panels.push({ id: 'tab-profiles', label: 'All profiles',
+      html: '<h2 id="profiles">Profiles</h2>' +
       kit.note('One profile of each kind, and the passkey policy\'s named ' +
       'profiles, which are chosen by application and group (see that ' +
-      'section). The list is paged like every list in this console.') +
+      'tab). The list is paged like every list in this console.') +
       listedNav.head +
       '<table><tr><th>Kind</th><th>Profile</th><th>Stored at</th>' +
       '<th>Problems</th></tr>' +
@@ -107,7 +103,25 @@ class PoliciesPage {
       view.actions.map(function (action) {
         return '<code>POST /admin-api/policies/' + kit.esc(action) +
                '</code>';
-      }).join(', ') + '.');
+      }).join(', ') + '.') });
+
+    const inner = tiles +
+
+      kit.note('<strong>A policy here is a rule this realm holds a ' +
+      'credential to.</strong> Each kind is a SEPARATE policy with ' +
+      'its own entry in its own container and its own tab, and each has a ' +
+      'profile — <code>default</code> — which applies to every person in ' +
+      'this realm; the passkey policy may also have named profiles, each ' +
+      'applying to the applications and groups it names. ' +
+      view.kinds.map(function (kind) {
+        return '<a href="#' + kit.esc(kind.id) + '">' +
+          kit.esc(kind.label) + '</a> (<code>' +
+          kit.esc(kind.container) + '</code>)';
+      }).join(', ') + '. <strong>This is not the XACML policy ' +
+      'repository</strong>: <a href="/admin/xacml/policies">that one</a> ' +
+      'holds documents a PDP evaluates, in <code>ou=policies</code>.') +
+
+      kit.tabbedPanels('policytabs', panels);
 
     return inner;
   }
