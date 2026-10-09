@@ -24,6 +24,8 @@
 //   7. ONLY THE PARAMETERS A PAGE READS are carried — paging and the step
 //      markers — so `?user=somebody` on the URL is not drawn back
 //      (sts_portal_sessions' cross-account check).
+//   8. THE LANGUAGE CHOOSER (#539) RETURNS WITH THE SAME PARAMETERS, not the
+//      request's whole URL.
 //
 // In process, through the portal's instance and `audit.withSource()`, which is
 // how the request is ambient when a page is drawn.
@@ -97,6 +99,18 @@ function run(t) {
           foreign.indexOf('somebody-else') < 0,
           '7. a parameter no portal page reads is not carried, so a name ' +
           'a link put on the URL is not drawn back', foreign);
+  const chooser = audit.withSource({ req: { method: 'GET',
+    url: PAGE + '?page=2&user=somebody-else', originalUrl:
+      PAGE + '?page=2&user=somebody-else' } }, function () {
+    const one = new portal.Portal(portal.Portal.defaultDeps());
+    return one.shell(PAGE, { id: 'portal-refresh-test',
+                             user: { username: 'refresh-tester' } },
+                     null, null, '<div class="card"></div>');
+  });
+  const back = (/name="return" value="([^"]*)"/.exec(chooser) || [])[1];
+  t.check(back === PAGE + '?page=2' && chooser.indexOf('somebody-else') < 0,
+          '8. the language chooser returns with the same parameters, and ' +
+          'never with one no page reads', String(back));
   const instance = new portal.Portal(portal.Portal.defaultDeps());
   const page = audit.withSource({ req: { method: 'GET', url: PAGE } },
     function () {
