@@ -477,7 +477,10 @@ async function aCodeAsTheFirstFactor() {
   r = await b.go("POST", realmBase() + "/authn/login",
     form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
            action: "email-code" }));
+  // Every per-request identifier, a bare value or one inside a return path
+  // (since #539 the language chooser's `return` carries the step's id).
   const page = r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, "ID")
+    .replace(/=[A-Za-z0-9_-]{20,}"/g, '=ID"')
     .replace(new RegExp(who, "g"), "WHO");
   const mfaId = hiddenValue(r.text, "mfa_id");
   const got = await arrived(address, /sign-in code/, seen);
@@ -502,6 +505,7 @@ async function aCodeAsTheFirstFactor() {
   check("2. an unknown name gets the SAME page — no enumeration", function () {
     assert.strictEqual(r.status, 200);
     assert.strictEqual(r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, "ID")
+      .replace(/=[A-Za-z0-9_-]{20,}"/g, '=ID"')
       .replace(new RegExp(nobody, "g"), "WHO"), page);
   });
   log.debug("Leaving aCodeAsTheFirstFactor().");
