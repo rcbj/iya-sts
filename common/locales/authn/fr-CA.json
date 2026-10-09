@@ -1,0 +1,6 @@
+{
+  "login.emailCode": "M’envoyer un code de connexion par courriel",
+  "login.emailLink": "M’envoyer un lien de connexion par courriel",
+  "login.remember": "Mémoriser ce navigateur",
+  "login.rememberNote": "— il sera reconnu la prochaine fois grâce à un témoin. Ne cochez pas sur un ordinateur partagé."
+}

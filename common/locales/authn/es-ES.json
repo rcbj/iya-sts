@@ -1,0 +1,6 @@
+{
+  "login.linkAccount": "<strong>Vincula tu cuenta.</strong> Un socio de federación ha iniciado tu sesión como <code>{name}</code>, y esa cuenta todavía no está vinculada a él. Inicia sesión aquí como {name} para vincularlas; Cancelar no vincula nada.",
+  "login.rememberNote": "— lo reconocerá la próxima vez mediante una cookie. No lo marques en un ordenador compartido.",
+  "login.forgot": "¿Has olvidado tu contraseña?",
+  "login.metaPasswordlessChecked": "Sin contraseña: el campo de contraseña no se lee, y una llave de acceso que hayas registrado para iniciar sesión es el único factor. Una llave de acceso se añade en /portal/keys después de iniciar sesión, nunca aquí."
+}

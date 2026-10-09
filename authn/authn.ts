@@ -890,7 +890,13 @@ const CARD_CSS =
   '8px}a.fedbtn{display:block;text-align:center;padding:9px 12px;margin:6px ' +
   '0;border-radius:5px;border:1px solid #12107c;color:#12107c;' +
   'background:#fff;text-decoration:none;font-size:.9em}a.fedbtn ' +
-  'span{display:block;font-size:.75em;color:#777}';
+  'span{display:block;font-size:.75em;color:#777}' +
+  // The language chooser (#539), small and to one side: a page's first
+  // business is its own form.
+  'form.language-chooser{float:right;font-size:.75em;margin:0 0 6px 8px}' +
+  'form.language-chooser select,form.language-chooser button{width:auto;' +
+  'display:inline;padding:2px 6px;margin:0;font-size:1em}' +
+  'form.language-chooser label{display:inline;margin:0 4px 0 0}';
 
 const PENDING_ID_QUERY = vz.object({
   authn: vt.opt(vt.base64url)
@@ -8647,19 +8653,31 @@ class Authn {
       ? { code: false, link: false }
       : { code: policy.active('emailCode', 'primary'),
           link: policy.active('emailLink', 'primary') };
-    const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-      'charset="utf-8"><title>Sign in — mock authentication ' +
-      'service</title><style>' + CARD_CSS +
+    // THE LANGUAGE (#539): the request's `ui_locales`, the person a linking
+    // sign-in is locked to, the chooser, the browser, then the locale policy
+    // for the application. The ERROR stays English (rcbj's decision on #539:
+    // refusals are not translated), and so do the protocol's own detail rows
+    // at the foot — parameter names and values, not prose.
+    const t = PageLocale.forPage({ application: record.application,
+                                   uiLocales: record.uiLocales,
+                                   username: locked });
+    const page = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+      '><head><meta ' +
+      'charset="utf-8"><title>' + xmlEscape(t.text('authn.login.title')) +
+      '</title><style>' + CARD_CSS +
       '</style></head><body><div class="card">' +
-      '<h1>Sign in</h1>' +
-      '<p class="sub">Mock authentication service at <code>' + xmlEscape(base) +
-      '</code></p>' +
+      // A page drawn in answer to a POST (a refused password) returns to the
+      // GET that draws it again; one drawn by a GET returns to itself.
+      PageLocale.chooser(t, realms.currentPrefix(),
+        PageLocale.herePath(realms.currentPrefix() + LOGIN_PATH + '?authn=' +
+                            encodeURIComponent(record.id))) +
+      '<h1>' + t.html('authn.login.heading') + '</h1>' +
+      '<p class="sub">' + t.html('authn.login.at', { base: base }) +
+      '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
       (locked
-        ? '<p class="sub"><strong>Link your account.</strong> A federation ' +
-          'partner signed you in as <code>' + xmlEscape(locked) + '</code>, ' +
-          'and that account is not linked to it yet. Sign in here as ' +
-          xmlEscape(locked) + ' to link them; Cancel links nothing.</p>'
+        ? '<p class="sub">' + t.html('authn.login.linkAccount',
+                                     { name: locked }) + '</p>'
         : '') +
       // NOTHING ON THIS SCREEN THE APPLICATION ALLOWS (#457): no username,
       // no password and no Sign In — only Cancel, and the doors it does allow
@@ -8670,7 +8688,8 @@ class Authn {
       '">' + (this.fingerprinting()
         ? '<input type="hidden" name="device_fp" id="device-fp" value="">'
         : '') + '<label ' +
-      'for="username">Username</label><input type="text" id="username" ' +
+      'for="username">' + t.html('authn.login.username') +
+      '</label><input type="text" id="username" ' +
       // `webauthn` LAST in the token list (HTML's autofill detail tokens):
       // the field offers this realm's passkeys where the browser supports
       // conditional mediation, and is an ordinary username field elsewhere.
@@ -8679,7 +8698,8 @@ class Authn {
       (locked ? 'readonly ' : 'autofocus ') +
       'value="' + xmlEscape(record.hint) + '">' +
       (passwordFirst
-        ? '<label for="password">Password</label><input type="password" ' +
+        ? '<label for="password">' + t.html('authn.login.password') +
+          '</label><input type="password" ' +
           'id="password" name="password" autocomplete="current-password">'
         : '') +
       // Two checkboxes rather than one, because a security key is two different
@@ -8716,61 +8736,51 @@ class Authn {
       (keyPolicy.enabled
         ? ''
         : '<label class="chk"><input type="checkbox" disabled> ' +
-          'Passkeys are switched off in this realm ' +
-          '(<code>webauthn.enabled</code>), so neither passkey option is ' +
-          'offered. A passkey already registered still works.</label>') +
+          t.html('authn.login.passkeysOff') + '</label>') +
       (keyPolicy.enabled && keyPolicy.mfaAllowed
         ? '<label class="chk"><input type="checkbox" id="use_webauthn" ' +
           'name="use_webauthn" value="1"' +
           (record.forceMfa || record.forceKey ? ' checked disabled' : '') +
           (record.forcePasswordless ? ' disabled' : '') +
-          '> Use a passkey as a second step (WebAuthn)' +
+          '> ' + t.html('authn.login.keySecond') +
           (record.forcePasswordless
-             ? ' — not available: this partner is configured for a ' +
-               'passkey instead of a password'
+             ? t.html('authn.login.keySecondNotAvailable')
              : '') +
           (record.forceKey
-             ? ' — required after a password: this request demands a ' +
-               'passkey' + (record.forceMfa ? ' as the second factor'
-                                            : ', alone or as the ' +
-                                              'second factor')
+             ? (record.forceMfa
+               ? t.html('authn.login.keySecondRequiredSecond')
+               : t.html('authn.login.keySecondRequired'))
              : '') + '</label>' +
           (record.forceMfa || record.forceKey ?
            '<input type="hidden" name="use_webauthn" value="1">' : '')
         : (keyPolicy.enabled
             ? '<label class="chk"><input type="checkbox" disabled> ' +
-              'A passkey as a second step is switched off here ' +
-              '(<code>webauthn.mfaAllowed</code>).</label>'
+              t.html('authn.login.keySecondOff') + '</label>'
             : '')) +
       (keyPolicy.enabled && keyPolicy.primaryAllowed && !locked
         ? '<label class="chk"><input type="checkbox" id="webauthn_only" ' +
           'name="webauthn_only" value="1"' +
           (record.forceMfa ? ' disabled' : '') +
           (record.forcePasswordless ? ' checked disabled' : '') +
-          '> Sign in with a passkey instead of a password (no password ' +
-          'step, and the tokens will say one factor)' +
+          '> ' + t.html('authn.login.keyOnly') +
           (record.forceKey && !record.forceMfa
-             ? ' — accepted: this request demands a passkey' : '') +
+             ? t.html('authn.login.keyOnlyAccepted') : '') +
           (record.forceMfa ?
-           ' — not available: this request demands two factors' : '') +
+           t.html('authn.login.keyOnlyNotAvailable') : '') +
           (record.forcePasswordless
              ? (record.mechanismVia
-               ? ' — required: the federation relationship "' +
-                 xmlEscape(record.mechanismVia) + '" configures this'
-               : ' — required: the application allows a passkey ' +
-                 'alone on this screen')
+               ? t.html('authn.login.keyOnlyRequiredRelationship',
+                        { name: record.mechanismVia })
+               : t.html('authn.login.keyOnlyRequiredApplication'))
              : '') + '</label>' +
           (record.forcePasswordless
              ? '<input type="hidden" name="webauthn_only" value="1">' : '')
         : (keyPolicy.enabled
             ? '<label class="chk"><input type="checkbox" disabled> ' +
-              'A passkey instead of a password is switched off here ' +
-              '(<code>webauthn.primaryAllowed</code>).' +
+              t.html('authn.login.keyOnlyOff') +
               (record.forcePasswordless
-                ? ' <strong>This sign-in cannot complete</strong>: the ' +
-                  'federation relationship "' +
-                  xmlEscape(record.mechanismVia || '') +
-                  '" configures a mechanism this realm has turned off.'
+                ? ' ' + t.html('authn.login.keyOnlyCannotComplete',
+                               { name: record.mechanismVia || '' })
                 : '') + '</label>'
             : '')) +
       // "REMEMBER THIS BROWSER" (#265), where the realm offers it. Opt-in, a
@@ -8778,12 +8788,12 @@ class Authn {
       // credential and the label says so in a sentence.
       (this.deps.browserDevices().enabled() && !locked
         ? '<label class="chk"><input type="checkbox" id="remember_browser" ' +
-          'name="remember_browser" value="1"> Remember this browser ' +
-          '<span class="sub">— recognises it next time with a cookie. Do ' +
-          'not tick on a shared computer.</span></label>'
+          'name="remember_browser" value="1"> ' +
+          t.html('authn.login.remember') + ' <span class="sub">' +
+          t.html('authn.login.rememberNote') + '</span></label>'
         : '') +
       '<div class="row"><button type="submit" id="kc-login" name="action" ' +
-      'value="login">Sign In</button>' +
+      'value="login">' + t.html('authn.login.signIn') + '</button>' +
       // THE THIRD BUTTON, AND IT IS NOT CANCEL (2026-09-05).
       //
       // Cancel is beside it and answers `access_denied` to the calling
@@ -8803,15 +8813,12 @@ class Authn {
        !restricted.length
          ? '<button type="submit" id="kc-anonymous" name="action" ' +
            'value="anonymous" class="secondary" title="' +
-           xmlEscape('Continue as the anonymous principal. The flow goes on ' +
-                     'and tokens may be issued, but the session records that ' +
-                     'nobody authenticated — so an application requiring ' +
-                     'ALL_AUTHENTICATED_USERS will refuse it. Anything typed ' +
-                     'above is ignored.') +
-           '">Continue without signing in</button>'
+           xmlEscape(t.text('authn.login.anonymousTitle')) +
+           '">' + t.html('authn.login.anonymous') + '</button>'
          : '') +
       '<button type="submit" id="kc-cancel" name="action" value="cancel" ' +
-      'class="secondary">Cancel</button></div>' +
+      'class="secondary">' + t.html('authn.login.cancel') +
+      '</button></div>' +
       // A PASSKEY AND NO USERNAME (#474). A REAL SUBMIT BUTTON (the root
       // CLAUDE.md's rule for a scripted page): with the script it runs the
       // ceremony and posts its result through the two hidden inputs; with
@@ -8820,8 +8827,8 @@ class Authn {
       // Enter in the username field still means Sign In.
       (passkey
         ? '<div class="row"><button type="submit" id="wa-passkey-go" ' +
-          'name="action" value="passkey" class="secondary">Sign in with a ' +
-          'passkey</button></div>' +
+          'name="action" value="passkey" class="secondary">' +
+          t.html('authn.login.passkey') + '</button></div>' +
           '<input type="hidden" name="passkey_credential" ' +
           'id="wa-passkey-credential" value="">' +
           '<input type="hidden" name="action" id="wa-passkey-action" ' +
@@ -8843,22 +8850,22 @@ class Authn {
         ? '<div class="row">' +
           (emailFirst.code
             ? '<button type="submit" id="kc-email-code" name="action" ' +
-              'value="email-code" class="secondary">Email me a sign-in ' +
-              'code</button>' : '') +
+              'value="email-code" class="secondary">' +
+              t.html('authn.login.emailCode') + '</button>' : '') +
           (emailFirst.link
             ? '<button type="submit" id="kc-email-link" name="action" ' +
-              'value="email-link" class="secondary">Email me a sign-in ' +
-              'link</button>' : '') +
+              'value="email-link" class="secondary">' +
+              t.html('authn.login.emailLink') + '</button>' : '') +
           '</div>'
         : '') +
       '</form>'
         : '<form method="post" action="' + LOGIN_PATH + '">' +
           '<input type="hidden" name="authn_id" value="' +
-          xmlEscape(record.id) + '"><p class="sub">This application is not ' +
-          'signed in to on this screen. Use one of the ways it allows, ' +
-          'below.</p><div class="row"><button type="submit" ' +
-          'id="kc-cancel" name="action" value="cancel" ' +
-          'class="secondary">Cancel</button></div></form>') +
+          xmlEscape(record.id) + '"><p class="sub">' +
+          t.html('authn.login.noScreen') + '</p><div class="row"><button ' +
+          'type="submit" id="kc-cancel" name="action" value="cancel" ' +
+          'class="secondary">' + t.html('authn.login.cancel') +
+          '</button></div></form>') +
       // FORGOT YOUR PASSWORD? (#63, 2026-09-22): the portal's self-service
       // reset, offered only where `common/mail_uses.ts` says it is — the
       // setting on, a mail transport, and a mode that checks passwords — and
@@ -8867,7 +8874,7 @@ class Authn {
       (!locked && this.offersPasswordReset()
         ? '<p class="meta"><a href="' +
           xmlEscape(realms.currentPrefix() + '/portal/forgot-password') +
-          '">Forgot your password?</a></p>' : '') +
+          '">' + t.html('authn.login.forgot') + '</a></p>' : '') +
       // ---------------------------------------------------------------------
       // AND THE FEDERATION PARTNERS, if any are configured and usable.
       //
@@ -8906,26 +8913,16 @@ class Authn {
       // both have been false — the first since 2026-09-06, the second since
       // `mode.enrolsKeysOnFirstUse()`.
       (mode.verifiesCredentials()
-        ? '<div class="meta"><div>Your password is checked against your ' +
-          'account.</div><div>Passwordless: the password field is not read, ' +
-          'and a passkey you registered for signing in is the only ' +
-          'factor. A passkey is added at /portal/keys after signing in, ' +
-          'never here.</div><div>Signing in for: '
-        : '<div class="meta"><div>No password is checked. The username you ' +
-          'enter is the identity the issued tokens describe.</div>' +
-          '<div>Passwordless: the password field is not read at all, and the ' +
-          'passkey becomes the only factor — a passkey is registered for ' +
-          'this username on first use, so the first person to claim a name ' +
-          'here ' +
-          'gets it. This service authenticates nobody; that is the same ' +
-          'statement as the line above and not a weaker one.</div>' +
-          '<div>Signing in for: ') +
-      '<code>' + xmlEscape(record.protocol) + '</code></div>' +
+        ? '<div class="meta"><div>' + t.html('authn.login.metaChecked') +
+          '</div><div>' + t.html('authn.login.metaPasswordlessChecked') +
+          '</div>'
+        : '<div class="meta"><div>' + t.html('authn.login.metaUnchecked') +
+          '</div><div>' + t.html('authn.login.metaPasswordlessUnchecked') +
+          '</div>') +
+      '<div>' + t.html('authn.login.signingInFor',
+                       { protocol: record.protocol }) + '</div>' +
       (passkey
-        ? '<div>Sign in with a passkey: no username — the passkey names ' +
-          'your account, and it must verify you with its PIN or biometric, ' +
-          'so the tokens say two factors (amr ["hwk","user"], acr ' +
-          '"mfa").</div>'
+        ? '<div>' + t.html('authn.login.metaPasskey') + '</div>'
         : '') +
       record.details.map(function (d) {
         return '<div>' + xmlEscape(d.label) + ': <code>' +
