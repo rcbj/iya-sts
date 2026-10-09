@@ -16044,6 +16044,373 @@ function deleteApplication(identifier, options) {
 }
 
 // ---------------------------------------------------------------------------
+// AN APPLICATION AS AN LDIF FILE, OUT AND BACK IN (#546, 2026-10-09).
+//
+// rcbj's four decisions, and each is a rule below:
+//
+//   1. RFC 2849 content records, one per application, through the codec
+//      `persistence/persistence_ldif.js` already holds for the ldif store —
+//      one reading of LDIF in this service, not two.
+//   2. CREDENTIAL MATERIAL IS LEFT OUT unless asked for, and when asked for
+//      it goes out UNENCRYPTED: a sealed value is opened and written in the
+//      clear, because a file sealed under this process's key-encryption key
+//      opens nowhere else. The console and the API say so beside the option.
+//   3. AN IMPORT NEVER OVERWRITES. An identifier already recorded in the
+//      realm is refused by name (STS-REG-0349).
+//   4. DECLARED ATTRIBUTES ONLY, BOTH WAYS: what an administrator configures
+//      (`EDITABLE`, the key-pair certificates among it) and what names the
+//      entry. What this service RECORDED — counters, sightings, observed
+//      scopes and return addresses, the kinds — is not exported, and an
+//      import carrying one is refused by name (STS-REG-0350), so a copy
+//      starts with no history it did not have.
+//
+// THE PORTABLE CREDENTIALS are the editable ones (below). Five credentials on
+// an application entry are not editable — a Kerberos service key, an
+// enrollment key and challenge, an EAB key, a GNAP macaroon key — because
+// each is minted by its own subsystem and written by nothing an operator
+// types; no import could write one through any door, so none is exported and
+// an import naming one is refused (STS-REG-0351) rather than half-applied.
+//
+// THE DN: the export writes the entry's own DN, so the file is ordinary LDIF
+// an `ldapadd` could load back into the same realm; the import reads only
+// that it is `cn=…,ou=applications,…` and creates the entry in the realm it is
+// imported INTO, under that realm's base. So a file moves an application from
+// one realm to another as it stands.
+// ---------------------------------------------------------------------------
+/**
+ * The credential attributes an export may carry and an import may write:
+ * the editable ones that hold a secret or a private key.
+ */
+const PORTABLE_CREDENTIALS = ['oauthClientSecret',
+                              'appRegistrationAccessToken',
+                              'oauthAssertionPrivateKey',
+                              'oauthSamlAssertionPrivateKey',
+                              'didPrivateKeys', 'secretDestCredential',
+                              'gnapSymmetricKey'];
+
+// The attributes that name the entry, written by the create itself rather than
+// through `fields`.
+const LDIF_NAMING = ['appIdentifier', 'appName', 'appAllowedProtocol',
+                     'description'];
+
+// What an import reads past without a word: the entry's structure, which the
+// create writes for itself in the realm it is imported into.
+const LDIF_STRUCTURAL = ['objectclass', 'cn', 'entrydn', 'createtimestamp',
+                         'modifytimestamp'];
+
+function ldifCodec() {
+  log.debug("Entering ldifCodec().");
+  log.debug("Leaving ldifCodec().");
+  // Required when used: the codec is the ldif store's, and the store is
+  // loaded by persistence.js at its own place in the order.
+  return require('../persistence/persistence_ldif');
+}
+
+// A credential's stored values as the file carries them: opened. Null where a
+// sealed one will not open, which refuses the whole export (STS-REG-0346)
+// rather than writing ciphertext nobody else can read beside a clear value.
+function openedCredentialValues(name, values, identifier) {
+  log.debug("Entering openedCredentialValues(). " + name);
+  const out = [];
+  for (let i = 0; i < values.length; i++) {
+    const stored = String(values[i]);
+    let opened = stored;
+    if (isSealed(stored)) {
+      if (name === 'oauthClientSecret') {
+        opened = openClientSecretText(stored);
+      } else if (name === 'appRegistrationAccessToken') {
+        opened = registrationAccessTokenOf({
+          appRegistrationAccessToken: stored }) || '';
+      } else {
+        const tried = keystore.open(stored, sealLabelOf(name));
+        opened = tried ? String(tried) : '';
+      }
+    }
+    if (!opened || isSealed(opened)) {
+      log.warn(errorCodes.tag('STS-REG-0346') +
+               'applications: "' + identifier + '"\'s ' + name + ' will not ' +
+               'open under this process\'s key-encryption key, so it cannot ' +
+               'be exported in the clear.');
+      log.debug("Leaving openedCredentialValues(). Will not open.");
+      return null;
+    }
+    out.push(opened);
+  }
+  log.debug("Leaving openedCredentialValues().");
+  return out;
+}
+
+/**
+ * Writes one application's entry as an RFC 2849 LDIF document: its declared
+ * attributes, and its portable credentials in the clear when asked.
+ *
+ * @param identifier - the application's identifier
+ * @param options - `credentials` (true to include credential material,
+ *   UNENCRYPTED), `actor`
+ * @returns `{ ok, ldif, fileName, attributes, credentials, leftOut }`, or a
+ *   marked refusal
+ */
+function exportApplicationLdif(identifier, options) {
+  log.debug("Entering exportApplicationLdif(). " + identifier);
+  const opts = options || {};
+  const id = String(identifier || '').trim();
+  const loaded = id ? load(id) : null;
+  if (!loaded || !loaded.known || !loaded.entry) {
+    log.debug("Leaving exportApplicationLdif(). Not recorded.");
+    return errorCodes.mark({ ok: false, errors: ['No application called "' +
+                                 id + '" is recorded in this realm, so ' +
+                                 'there is nothing to export.'] },
+                           'STS-REG-0345');
+  }
+  const withCredentials = opts.credentials === true;
+  const attrs = byLowerName(loaded.entry.attributes);
+  const out = {
+    objectClass: SCHEMA.objectClasses.map(function (one) { return one.name; }),
+    cn: [loaded.record.label || labelFor(id)],
+    appIdentifier: [id]
+  };
+  const leftOut = [];
+  let refused = false;
+  SCHEMA.attributes.forEach(function (row) {
+    if (refused || row.name === 'appIdentifier' || row.name === 'cn') {
+      return;
+    }
+    const values = allValues(attrs, row.name);
+    if (!values.length || !row.editable) {
+      return;
+    }
+    if (PORTABLE_CREDENTIALS.indexOf(row.name) >= 0) {
+      if (!withCredentials) {
+        leftOut.push(row.name);
+        return;
+      }
+      const opened = openedCredentialValues(row.name, values, id);
+      if (!opened) {
+        refused = true;
+        return;
+      }
+      out[row.name] = opened;
+      return;
+    }
+    out[row.name] = values;
+  });
+  if (refused) {
+    log.debug("Leaving exportApplicationLdif(). A credential will not open.");
+    return errorCodes.mark({ ok: false, errors: ['A credential on "' + id +
+                                 '" is sealed under a key-encryption key ' +
+                                 'this process does not hold, so it cannot ' +
+                                 'be written in the clear. Nothing was ' +
+                                 'exported. Export without credential ' +
+                                 'material, or issue the credential ' +
+                                 'again.'] }, 'STS-REG-0346');
+  }
+  const realmId = String(realms.currentId() || 'default');
+  const header = [
+    'One application of this identity service, exported ' +
+      new Date().toISOString() + ' from the "' + realmId + '" realm.',
+    'Its declared attributes only: nothing this service recorded about ' +
+      'its use.',
+    withCredentials
+      ? 'CREDENTIAL MATERIAL IS INCLUDED, UNENCRYPTED. Keep this file as ' +
+        'you would keep the secrets in it.'
+      : 'No credential material: ' +
+        (leftOut.length ? leftOut.join(', ') : 'it held none') + '.',
+    'Import it on Directory > Applications > Import / export, or POST ' +
+      '/admin-api/applications/import-ldif, in any realm.'
+  ];
+  const ldif = ldifCodec().toLdif([{ dn: loaded.entry.dn, attributes: out }],
+                                  header);
+  audit.audit({
+    action: 'application.export', actor: opts.actor || '',
+    protocol: 'console', channel: 'internal', target: id,
+    summary: 'Application "' + id + '" was exported to LDIF' +
+             (withCredentials ? ', WITH its credential material in the clear'
+                              : ', without credential material'),
+    detail: { identifier: id, credentials: withCredentials,
+              attributes: Object.keys(out).join(', ') }
+  });
+  log.debug("Leaving exportApplicationLdif(). " + Object.keys(out).length +
+            " attribute(s).");
+  return { ok: true, ldif: ldif,
+           fileName: labelFor(id).replace(/[^A-Za-z0-9._-]+/g, '_') + '.ldif',
+           attributes: Object.keys(out), credentials: withCredentials,
+           leftOut: leftOut };
+}
+
+/**
+ * Creates an application from an LDIF document holding one record, through
+ * the same checks a console create makes. Never overwrites.
+ *
+ * @param text - the LDIF document
+ * @param options - `actor`
+ * @returns `{ ok, application, identifier }` or a marked refusal
+ */
+function importApplicationLdif(text, options) {
+  log.debug("Entering importApplicationLdif().");
+  const opts = options || {};
+  let records = [];
+  try {
+    records = ldifCodec().fromLdif(String(text == null ? '' : text), log);
+  } catch (e) {
+    log.debug("Caught in importApplicationLdif(): " + ((e && e.message) || e));
+    records = [];
+  }
+  if (records.length !== 1) {
+    log.debug("Leaving importApplicationLdif(). " + records.length +
+              " record(s).");
+    return errorCodes.mark({ ok: false, errors: ['An import reads LDIF ' +
+                                 'holding exactly one application record, ' +
+                                 'as an export writes it; this holds ' +
+                                 records.length + '.'] }, 'STS-REG-0347');
+  }
+  const record = records[0];
+  const rdns = String(record.dn || '').split(',').map(function (part) {
+    return part.trim().toLowerCase();
+  });
+  const attrs = record.attributes || {};
+  const identifier = String((attrs.appidentifier || [])[0] || '').trim();
+  if (rdns.length < 2 || rdns[0].indexOf('cn=') !== 0 ||
+      rdns[1] !== 'ou=applications' || !identifier) {
+    log.debug("Leaving importApplicationLdif(). Not an application entry.");
+    return errorCodes.mark({ ok: false, errors: ['That record is not an ' +
+                                 'application entry: its DN must be ' +
+                                 'cn=…,ou=applications,… and it must carry ' +
+                                 'appIdentifier. It names "' +
+                                 String(record.dn || '') + '".'] },
+                           'STS-REG-0348');
+  }
+  if (load(identifier).known) {
+    log.debug("Leaving importApplicationLdif(). Already recorded.");
+    return errorCodes.mark({ ok: false, errors: ['"' + identifier + '" is ' +
+                                 'already recorded in this realm, and an ' +
+                                 'import never overwrites. Delete it, or ' +
+                                 'change the file\'s appIdentifier, and ' +
+                                 'import again.'] }, 'STS-REG-0349');
+  }
+  // Every attribute named by its schema spelling, and sorted into what the
+  // create takes, what it reads past, and what it refuses.
+  const byLower = {};
+  SCHEMA.attributes.forEach(function (row) {
+    byLower[row.name.toLowerCase()] = row;
+  });
+  const derived = [];
+  const unknown = [];
+  const fields = {};
+  let secrets = [];
+  Object.keys(attrs).forEach(function (lower) {
+    if (LDIF_STRUCTURAL.indexOf(lower) >= 0) {
+      return;
+    }
+    const row = byLower[lower];
+    if (!row) {
+      unknown.push(lower);
+      return;
+    }
+    if (!row.editable && LDIF_NAMING.indexOf(row.name) < 0) {
+      (WITHHELD_FIELDS.indexOf(row.name) >= 0 ||
+       SEALED_FIELDS.indexOf(row.name) >= 0 ? unknown : derived)
+        .push(row.name);
+      return;
+    }
+    const values = (attrs[lower] || []).map(function (one) {
+      return String(one);
+    });
+    if (row.name === 'oauthClientSecret') {
+      secrets = values;
+      return;
+    }
+    if (LDIF_NAMING.indexOf(row.name) < 0) {
+      fields[row.name] = row.kind === 'multi' ? values : values[0];
+    }
+  });
+  if (derived.length) {
+    log.debug("Leaving importApplicationLdif(). Derived attributes.");
+    return errorCodes.mark({ ok: false, errors: ['The record carries ' +
+                                 'what this service records about an ' +
+                                 'application\'s use, which an import may ' +
+                                 'not assert: ' + derived.join(', ') +
+                                 '. Remove them, or export the application ' +
+                                 'again (an export leaves them out).'] },
+                           'STS-REG-0350');
+  }
+  if (unknown.length) {
+    log.debug("Leaving importApplicationLdif(). Unknown attributes.");
+    return errorCodes.mark({ ok: false, errors: ['The record carries what ' +
+                                 'no import can write: ' + unknown.join(', ') +
+                                 '. An attribute must be one of the ' +
+                                 'application schema\'s editable ones; a ' +
+                                 'Kerberos service key, an enrollment key ' +
+                                 'or challenge and a GNAP macaroon key are ' +
+                                 'minted by their own subsystems.'] },
+                           'STS-REG-0351');
+  }
+  const created = createApplication({
+    identifier: identifier,
+    name: String((attrs.appname || [])[0] || identifier),
+    protocols: (attrs.appallowedprotocol || []).map(String),
+    fields: Object.assign(fields,
+      (attrs.description || []).length
+        ? { description: String(attrs.description[0]) } : {}),
+    actor: opts.actor || ''
+  });
+  if (!created || created.ok === false) {
+    log.debug("Leaving importApplicationLdif(). The create refused it.");
+    return created;
+  }
+  if (secrets.length) {
+    // THE CLIENT SECRETS AS THE FILE HOLDS THEM: each a record (an export
+    // writes the records, with their ids and expiries) or a bare secret,
+    // sealed as every stored secret is. Through the create they would
+    // collapse into one, because a create's secret REPLACES.
+    const after = load(identifier).record;
+    const seen = {};
+    const kept = secrets.map(parseClientSecretValue).filter(function (one) {
+      if (!one || seen[one.secret]) {
+        return false;
+      }
+      seen[one.secret] = true;
+      return true;
+    }).map(function (one) {
+      return one.createdAt > 0 ? one : newClientSecretRecord(one.secret);
+    });
+    let written = false;
+    try {
+      // Throws, marked STS-REG-0213, where a durable key will not seal one.
+      writeClientSecretRecords(after, kept);
+      written = save(after);
+    } catch (e) {
+      log.debug("Caught in importApplicationLdif(): " +
+                ((e && e.message) || e));
+      written = false;
+    }
+    if (!written) {
+      log.debug("Leaving importApplicationLdif(). Secrets not written.");
+      return errorCodes.mark({ ok: false, errors: ['"' + identifier + '" ' +
+                                   'was created, but its client secrets ' +
+                                   'could not be written (they would not ' +
+                                   'seal, or the directory refused the ' +
+                                   'write). Add one on its Credentials ' +
+                                   'tab.'] }, 'STS-REG-0352');
+    }
+  }
+  audit.audit({
+    action: 'application.import', actor: opts.actor || '',
+    protocol: 'console', channel: 'internal', target: identifier,
+    summary: 'Application "' + identifier + '" was imported from LDIF' +
+             (secrets.length || Object.keys(fields).some(function (name) {
+               return PORTABLE_CREDENTIALS.indexOf(name) >= 0;
+             }) ? ', with credential material' : ''),
+    // The NAMES only, for createApplication()'s reason.
+    detail: { identifier: identifier,
+              attributes: Object.keys(fields).concat(
+                secrets.length ? ['oauthClientSecret'] : []).join(', ') }
+  });
+  log.debug("Leaving importApplicationLdif(). Imported.");
+  return { ok: true, identifier: identifier,
+           application: viewAfterWrite(identifier, load(identifier).record) };
+}
+
+// ---------------------------------------------------------------------------
 // Reading the registry. Every one of these is a directory read; there is no
 // cache, which is what keeps an ldapmodify effective on the next request rather
 // than after a restart.
@@ -18539,5 +18906,9 @@ module.exports = {
   allowedScopesOf: allowedScopesOf,
   count: count,
   containerDn: containerDn,
-  maxApplications: maxApplications
+  maxApplications: maxApplications,
+  // #546: one application out to an LDIF file and back in.
+  exportApplicationLdif: exportApplicationLdif,
+  importApplicationLdif: importApplicationLdif,
+  PORTABLE_CREDENTIALS: PORTABLE_CREDENTIALS
 };

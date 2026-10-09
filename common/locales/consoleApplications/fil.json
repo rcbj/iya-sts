@@ -772,5 +772,18 @@
   "sc.clearTip": "Alisin ang mapping: walang idaragdag na claim ang pagkakaloob ng permission na ito.",
   "sc.clear": "I-clear",
   "sc.stale": "Naka-map pero hindi na ipinapakita:",
-  "sc.staleRest": "Wala nang mina-map ang mga ito, at aalisin ang mga ito sa susunod na pag-save sa tab na ito."
+  "sc.staleRest": "Wala nang mina-map ang mga ito, at aalisin ang mga ito sa susunod na pag-save sa tab na ito.",
+  "ldif.tab": "Import / export",
+  "ldif.heading": "Pag-import at pag-export",
+  "ldif.needsWrite": "Kailangan ng <strong>Admin Write</strong> para mag-export o mag-import ng application.",
+  "ldif.exportHeading": "I-export ang application na ito",
+  "ldif.exportIntro": "Sine-save ang application na ito bilang LDIF file (RFC 2849) na may isang record: ang mga isinasaayos dito ng administrator, at wala sa itinala ng serbisyong ito tungkol sa paggamit nito. I-import ang file sa tab na ito sa alinmang realm para gumawa ng kopya roon.",
+  "ldif.withCredentials": "Isama ang credential material (mga client secret, mga private key, ang registration access token), <strong>hindi naka-encrypt</strong>",
+  "ldif.credentialsWarning": "Kapag walang check, walang credential material ang file. Kapag may check, isinusulat nang malinaw ang bawat secret ng application, dahil ang file na naka-encrypt sa susi ng serbisyong ito ay hindi mabubuksan saanman: ingatan ito gaya ng pag-iingat mo sa mismong mga secret. Hindi kailanman ine-export ang mga Kerberos service key, mga enrollment key at mga GNAP macaroon key.",
+  "ldif.export": "I-export ang LDIF",
+  "ldif.importHeading": "Mag-import ng application",
+  "ldif.importIntro": "Gumagawa ng application sa realm na ito mula sa LDIF file na may isang application record, gaya ng isinusulat ng export. Hindi dapat umiiral na rito ang application na pinangalanan sa file: hindi kailanman nag-o-overwrite ang import, kaya hindi nito mababago ang application sa pahinang ito.",
+  "ldif.file": "LDIF file",
+  "ldif.paste": "o i-paste ang LDIF",
+  "ldif.import": "I-import ang LDIF"
 }

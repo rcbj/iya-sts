@@ -365,7 +365,8 @@ at. Attribute names come back **canonically spelled** — `oauthClientId`, not
 `oauthclientid` ([LDAP](ldap.md)).
 
 Both the page and the API **write**: `create`, `set`, `add`, `remove`,
-`revoke-registration` and `forget`, as forms on the page and as
+`revoke-registration`, `export-ldif`, `import-ldif` and `forget`, as forms
+on the page and as
 `POST /admin-api/applications/{action}`. Every action calls the same function
 in `applications.js` that a protocol endpoint and an `ldapmodify` reach, against
 the same entries, so a form post and an `ldapmodify` are one act arriving by
@@ -384,6 +385,57 @@ The page marks `oauthClientSecret` and `appRegistrationAccessToken` as
 credentials where it prints them. Two counting caveats are on the page:
 `Sessions` and `Users` count *changes* rather than distinct sets, and `?kind=`
 does not partition the list, because a record commonly carries two kinds.
+
+### Exporting and importing an application as LDIF
+
+An application's page has an **Import / Export** tab (Admin Write). It
+moves one application between realms, or between two deployments of this
+service, as an [RFC 2849](https://www.rfc-editor.org/rfc/rfc2849) LDIF file
+of one record — the entry's DN, its object classes and its attributes,
+canonically spelled.
+
+**Export** writes what an administrator can *declare* on the entry and
+nothing this service *derived*: no `appFirstSeen`, `appLastSeen`, observed
+protocols, counters, timestamps or `entryDN`. The comments at the top of the
+file name the realm it came from and, when credentials were left out, which
+ones.
+
+* **By default no credential material is exported.** The client secret, the
+  registration access token, the RFC 7523 and RFC 7522 assertion private
+  keys, the DID private keys, a secret push destination's write credential
+  and a GNAP symmetric key are all left out.
+* **Include credential material** puts them in the file **unencrypted**.
+  A value this service seals at rest is opened first, so the file holds
+  the secret itself. Treat it as you would the secrets, and delete it once
+  it has been imported. The export's audit row (`application.export`)
+  names which attributes were exported and never a value.
+* **Some credentials are never exported**, with or without the option:
+  Kerberos service keys, an enrolled certificate's private key, an ACME
+  External Account Binding key, a SCEP challenge and a GNAP macaroon key.
+  Each is minted by its own subsystem in the realm that holds it, and a
+  copy in another realm would be a credential nobody issued there. Make
+  them again where the application is imported.
+
+**Import** takes a file (or pasted LDIF) of exactly one application entry —
+a DN of the form `cn=…,ou=applications,…` carrying `appIdentifier` — and
+creates the application **in the realm the console is in**. The DN's
+suffix may be another realm's: only its shape is read.
+
+* **An existing identifier is refused** (`STS-REG-0349`). An import never
+  overwrites; delete the application first, or edit the file's
+  `appIdentifier`.
+* **A derived attribute is refused** (`STS-REG-0350`), and so is an
+  attribute this registry has no row for or a credential that is never
+  exported (`STS-REG-0351`). Nothing is created when a file is refused.
+* A credential in the file is stored as the same value typed on the
+  console would be, sealed where the realm seals credentials. Several
+  client secrets keep their ids and expiries.
+  The import writes an `application.import` audit row with no value in it.
+
+The API is `POST /admin-api/applications/export-ldif`
+(`{"application": "…", "credentials": true}`, answering the LDIF as `ldif`
+and as a file) and `POST /admin-api/applications/import-ldif`
+(`{"ldif": "…"}`).
 
 ### `/admin/applications/new`
 

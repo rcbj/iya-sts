@@ -13863,6 +13863,100 @@ class AdminApi {
                                  'authorization-server comparison ' +
                                  'and the proposed application in `plan`.' },
 
+          // AN APPLICATION AS AN LDIF FILE (#546): the Import / export tab of
+          // the application's console page.
+          { action: 'export-ldif',
+            operationId: 'exportApplicationLdif',
+            summary: 'Export one application\'s entry as an LDIF file',
+            description: 'Answers the application\'s directory entry as an ' +
+                         'RFC 2849 LDIF document with one record: `ldif` (the ' +
+                         'text) and `files` (the same, named and base64, ' +
+                         'which the console saves). Its DECLARED attributes ' +
+                         'only — what an administrator configures, the ' +
+                         'key-pair certificates among them; nothing this ' +
+                         'service recorded about its use (counters, ' +
+                         'sightings, observed scopes and addresses). The DN ' +
+                         'is the entry\'s own; `import-ldif` creates the ' +
+                         'application in whichever realm it is called ' +
+                         'in.\n\n**CREDENTIAL MATERIAL IS LEFT OUT BY ' +
+                         'DEFAULT** and named in `leftOut`. With ' +
+                         '`credentials` true the client secrets, the ' +
+                         'registration access token, the RFC 7523 and RFC ' +
+                         '7522 private keys, the DID private keys, a secret ' +
+                         'destination\'s write credential and the GNAP ' +
+                         'shared key are written **UNENCRYPTED**: each sealed ' +
+                         'value is opened, because a file sealed under this ' +
+                         'process\'s key-encryption key opens nowhere else. ' +
+                         'Keep such a file as you would the secrets in it. ' +
+                         'A Kerberos service key, an enrollment key or ' +
+                         'challenge and a GNAP macaroon key are never ' +
+                         'exported: each is minted by its own subsystem and ' +
+                         'no import could write it. An audit row says ' +
+                         'whether credentials went with the file, never a ' +
+                         'value.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                // `true` from a script, `on` from the console's checkbox.
+                credentials: { oneOf: [{ type: 'boolean' },
+                                       { type: 'string',
+                                         enum: ['true', 'false', 'on'] }],
+                               description: 'Include credential material, ' +
+                                            'UNENCRYPTED. False when ' +
+                                            'absent.' }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app' }],
+              additionalProperties: false
+            },
+            responseDescription: '`ldif`, `files` (one `.ldif`), the ' +
+                                 '`attributes` written, `credentials`, and ' +
+                                 '`leftOut`: the credential attributes not ' +
+                                 'written.' },
+
+          { action: 'import-ldif',
+            operationId: 'importApplicationLdif',
+            summary: 'Create an application from an LDIF file',
+            description: 'Reads an RFC 2849 LDIF document holding ONE ' +
+                         'application record, as `export-ldif` writes it, ' +
+                         'and creates that application in the realm this is ' +
+                         'called in, through every check a create makes. ' +
+                         '**IT NEVER OVERWRITES**: an identifier already ' +
+                         'recorded here is refused, naming it.\n\nOnly ' +
+                         'declared attributes are taken; a record carrying ' +
+                         'what this service records about use (a counter, ' +
+                         'a sighting, an observed value) is refused, naming ' +
+                         'each, and so is one carrying an attribute outside ' +
+                         'the schema or a credential no import can write. ' +
+                         'Credential material in the file is sealed on the ' +
+                         'way in exactly as a typed value is; client secrets ' +
+                         'keep their ids and expiries. Give the document as ' +
+                         '`ldif` (its text), or as `file` (its name and ' +
+                         'text), which is how the console sends an uploaded ' +
+                         'file.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                ldif: { type: 'string',
+                        description: 'The LDIF document.' },
+                file: { type: 'object',
+                        properties: { name: { type: 'string' },
+                                      text: { type: 'string' } },
+                        required: ['text'], additionalProperties: false,
+                        description: 'An uploaded LDIF file: its name and ' +
+                                     'its text.' }
+              },
+              examples: [{ ldif: 'version: 1\n\n' +
+                'dn: cn=imported-app,ou=applications,dc=example,dc=com\n' +
+                'appIdentifier: imported-app\nappName: imported-app\n' +
+                'appAllowedProtocol: oauth2\noauthClientId: imported-app\n' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The `application` created.' },
+
           { action: 'forget', operationId: 'deleteApplication',
             summary: 'Delete an application entry entirely',
             description: 'THE ONE OPERATION HERE THAT LOSES A FACT, which is ' +

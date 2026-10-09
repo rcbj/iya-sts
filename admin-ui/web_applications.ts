@@ -637,6 +637,59 @@ class ApplicationsPage {
       '<td class="why">' + kit.note(kit.esc(row.what)) + '</td></tr>';
   }
 
+  // THE IMPORT / EXPORT TAB (#546). Export writes this application's entry as
+  // an LDIF file: its declared attributes, and its credential material only
+  // when the box is ticked — and then UNENCRYPTED, which the box says. Import
+  // creates an application from such a file in this realm, and never
+  // overwrites one: the file names its own identifier, which is refused when
+  // it is already here, so importing from this page cannot touch the
+  // application the page is about. Both post to /admin/applications as every
+  // form on this page does; the export's answer is a file the runtime saves.
+  /**
+   * Draws the Import / export tab: export to LDIF, with or without credential
+   * material, and import from LDIF.
+   *
+   * @param row - the application
+   * @param carryBack - the hidden fields that return to this page
+   * @param writable - whether the reader holds Admin Write
+   * @param t - the page's translator (#539)
+   * @returns the tab's HTML
+   */
+  static applicationLdifSection(row, carryBack, writable, t) {
+    if (!writable) {
+      return '<h2>' + t.html('consoleApplications.ldif.heading') + '</h2>' +
+        kit.note(t.html('consoleApplications.ldif.needsWrite'));
+    }
+    return '<h2>' + t.html('consoleApplications.ldif.exportHeading') +
+      '</h2>' +
+      kit.note(t.html('consoleApplications.ldif.exportIntro')) +
+      '<form method="post" action="/admin/applications">' + carryBack +
+      '<input type="hidden" name="action" value="export-ldif">' +
+      '<input type="hidden" name="application" value="' +
+      kit.esc(row.identifier) + '">' +
+      '<div class="formrow"><label>' +
+      '<input type="checkbox" name="credentials" value="on"> ' +
+      t.html('consoleApplications.ldif.withCredentials') + '</label></div>' +
+      kit.note(t.html('consoleApplications.ldif.credentialsWarning')) +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleApplications.ldif.export') + '</button></div></form>' +
+      '<h2>' + t.html('consoleApplications.ldif.importHeading') + '</h2>' +
+      kit.note(t.html('consoleApplications.ldif.importIntro')) +
+      '<form method="post" action="/admin/applications" ' +
+      'enctype="multipart/form-data">' + carryBack +
+      '<input type="hidden" name="action" value="import-ldif">' +
+      '<div class="formrow"><label for="ldif-file">' +
+      t.html('consoleApplications.ldif.file') + '</label>' +
+      '<input type="file" id="ldif-file" name="file" ' +
+      'accept=".ldif,text/plain,text/x-ldif"></div>' +
+      '<div class="formrow"><label for="ldif-text">' +
+      t.html('consoleApplications.ldif.paste') + '</label>' +
+      '<textarea id="ldif-text" name="ldif" rows="8" cols="60"></textarea>' +
+      '</div>' +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleApplications.ldif.import') + '</button></div></form>';
+  }
+
   // The form that gives the document. The checkbox shows the three sources; it
   // has no name, so it is never posted, and it is ticked whenever a document is
   // on the page or was just refused, so the reader is not left hunting for the
@@ -1437,6 +1490,11 @@ class ApplicationsPage {
         '</div></form>' +
         kit.note(t.html('consoleApplications.a2.wontChange')) +
         '</details>' },
+        // #546: the entry as an LDIF file, out and back in.
+        { id: 'tab-import-export',
+          label: t.text('consoleApplications.ldif.tab'),
+          html: ApplicationsPage.applicationLdifSection(row, carryBack,
+                                                        ctx.write, t) },
         { id: 'tab-remove', label: t.text('consoleApplications.a2.tabRemove'),
           html:       '<h2>' + t.html('consoleApplications.a2.takeOutHeading') +
             '</h2>' +
