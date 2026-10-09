@@ -5066,6 +5066,25 @@ consent revokes their sessions' tokens, each ends at its next renewal, and the
 person signs in again and is asked — nobody is locked out, and the reply says
 which surface it was.
 
+### A global consent that answered is recorded, and decides nothing (#537)
+
+The override is not a record, and that stays true: `outstanding()` never
+reads one about the person. But `/portal/consents` had nothing to show a
+person for an application whose scopes an administrator agreed to for
+everybody. So the authorization endpoint calls `noteApplied()` once consent
+has passed, with the scopes a global consent answered and the person had not
+agreed to themselves. That writes `oauthConsentApplied` on their entry, in
+`oauthConsent`'s grammar, the first time for each (application, scope) only:
+a sign-in costs a directory read and, the first time, one write.
+
+`appliedConsentsOf()` is what the portal draws. It lists only the records
+whose global consent still stands and that the person has not also agreed to
+themselves. Taking the global consent away hides a record rather than
+deleting it, so it shows again if the consent comes back. The directory hooks
+(`appliedConsentsOf`, `addAppliedConsent`, `removeAppliedConsent`) are
+OPTIONAL in the slot: without them nothing is recorded and nothing is listed.
+The attribute is merged by value across nodes (`directory_merge.js`).
+
 ### Two more things
 
 **THE RULE ABOUT WHAT A SCOPE MAY BE LIVES IN `applications.js`.** RFC 6749

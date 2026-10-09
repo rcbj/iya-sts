@@ -29,10 +29,15 @@
 // `consent.revoke()` refuses one that is not on their entry
 // (`STS-PORTAL-0085`): the `/portal/keys` credential id's arrangement.
 //
-// **A SCOPE UNDER GLOBAL CONSENT IS NOT LISTED**, because it is not the
-// person's to withdraw: nothing about them was ever written, and the
-// override is an operator's configuration of the application. The page says
-// that in a sentence rather than drawing rows with no button.
+// **A SCOPE UNDER GLOBAL CONSENT IS LISTED APART, UNDER ADMINISTRATIVE
+// CONSENTS (#537)**, with no button: it is not the person's to withdraw — the
+// override is an operator's configuration of the application. Until #537
+// nothing about the person was ever written and the page said so in a
+// sentence; the authorization endpoint now records each scope a global
+// consent answered for them (`consent.noteApplied()`), and the section draws
+// those that still stand (`consent.appliedConsentsOf()`) — the application
+// still carries the global consent, and the person has not also agreed to the
+// scope themselves. A sign-in made before #537 recorded nothing.
 //
 // **NO SCRIPT**: a real form per row and per application, under the
 // service-wide `script-src 'none'`. Paged by application, `/portal/
@@ -231,8 +236,61 @@ class PortalConsentsPage {
       'ends everything the application was given together with it.</p>' +
       '<p class="note">Some applications are agreed for everybody by ' +
       'whoever runs this service, and you were never asked about those; ' +
-      'they are not yours to withdraw here and are not listed.</p></div>' +
-      body + paging);
+      'they are listed under <strong>Administrative consents</strong> ' +
+      'below, and are not yours to withdraw.</p></div>' +
+      body + paging + this.administrative(session));
+  }
+
+  // ADMINISTRATIVE CONSENTS (#537): the scopes an application's global
+  // consent answered for this person when they signed in to it, grouped by
+  // application, newest first. No button: an administrator's consent is not
+  // the person's to withdraw. Not paged: an operator configures global consent
+  // on a handful of applications, and every row here is one of theirs.
+  private administrative(session: Json): string {
+    const { log, esc } = this.ctx;
+    const self = this;
+    log.debug("Entering PortalConsentsPage.administrative().");
+    const rows = this.deps.consent()
+      .appliedConsentsOf(session.user.username) || [];
+    const byClient: Record<string, Json> = {};
+    rows.forEach(function (one: Json) {
+      const group = byClient[one.client] ||
+        (byClient[one.client] = { client: one.client, rows: [], newest: '' });
+      group.rows.push(one);
+      if (String(one.at) > group.newest) {
+        group.newest = String(one.at);
+      }
+    });
+    const groups = Object.keys(byClient).map(function (client) {
+      return byClient[client];
+    }).sort(function (a: Json, b: Json) {
+      return String(b.newest).localeCompare(String(a.newest));
+    });
+    const applications = this.deps.applications();
+    const body = groups.length
+      ? groups.map(function (group: Json): string {
+          const entry = applications.get(group.client);
+          const name = entry && entry.name && entry.name !== group.client
+            ? entry.name : group.client;
+          return '<div class="card"><h3>' + esc(name) + '</h3>' +
+            '<p class="sub"><code>' + esc(group.client) + '</code></p>' +
+            '<table><tr><th>Agreed for everybody</th>' +
+            '<th>First applied to you</th></tr>' +
+            group.rows.map(function (one: Json): string {
+              return '<tr><td><code>' + esc(one.scope) + '</code></td><td>' +
+                esc(self.readable(one.at)) + '</td></tr>';
+            }).join('') + '</table></div>';
+        }).join('')
+      : '<div class="card"><p class="sub">No application has used a ' +
+        'consent agreed for everybody when you signed in to it.</p></div>';
+    log.debug("Leaving PortalConsentsPage.administrative(). " +
+              groups.length + " application(s).");
+    return '<h2 id="administrative-consents">Administrative consents</h2>' +
+      '<div class="card"><p class="sub">Whoever runs this service has ' +
+      'agreed these on behalf of everybody who uses the application, so you ' +
+      'were not asked about them. They were applied when you signed in to ' +
+      'the application. Only an administrator can withdraw them; ask yours ' +
+      'if you want one taken away.</p></div>' + body;
   }
 
   // -------------------------------------------------------------------------
