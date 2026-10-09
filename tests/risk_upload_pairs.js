@@ -88,7 +88,8 @@ module.exports = {
             Object.keys(catalogue).length,
             'A3. a group per dataset');
 
-    const guide = RiskPage.pairGuide(view);
+    const guide = RiskPage.pairGuide(view,
+      require('../admin-ui/web_kit').context({}, true).t);
     t.check(valid.every(function (pair) {
       const parts = pair.split('|');
       return guide.indexOf('<code>' + parts[0] + '</code>') >= 0 &&

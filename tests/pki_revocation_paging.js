@@ -309,7 +309,8 @@ async function run(t) {
     { 'ca-default-jose-issuedq': 'no such thing',
       'ca-default-jose-issuedPage': '4', personsPage: '2' });
   const nothingHtml = PkiPage.revocationPane(
-    JSON.parse(JSON.stringify(nothing)), nothingView);
+    JSON.parse(JSON.stringify(nothing)), nothingView,
+    require('../admin-ui/web_kit').context({}, true).t);
   t.check(nothingHtml.indexOf('matches the search above') >= 0,
           'a search that matches nothing says so');
   const form = (nothingHtml.match(
