@@ -209,7 +209,7 @@ server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
 application registered through the console, `/admin-api`,
 `POST /oauth2/register`, an LDAP add or an OpenID Federation, named by its
 audience, permission base URI, `client_id` or identifier. The embedded
-debugger's api is such an application while the debugger is embedded.
+debugger's api is such an application, seeded in every install.
 Anything else is `invalid_target` (RFC 8707 section 2): redirected to the
 client from the authorization endpoint, a 400 from PAR and from the token
 endpoint. Development mode accepts any absolute URI, as before.

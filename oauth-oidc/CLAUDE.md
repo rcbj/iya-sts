@@ -5255,7 +5255,7 @@ one definition of that phrase, shared with GNAP's locations
   `oauthAudience`, client_id, identifier — `resolveTarget()`'s lookups — or
   permission base URI (normalised), the four names
   `applications.audienceNamesEntry()` reads. The embedded debugger's api is
-  one: `sts-debugger-api`, seeded registered while the debugger is embedded,
+  one: `sts-debugger-api`, seeded registered in every install (#541),
   under `urn:sts:debugger-api:`.
 
 Every target is compared whole, because it becomes an `aud` and every
