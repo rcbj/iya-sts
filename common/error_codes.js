@@ -6034,6 +6034,22 @@ const CODES = [
       'this service can read — no subject serialNumber and no Yubico ' +
       'serial extension, or no trusted enterprise attestation at all.',
     spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0322',
+    summary: 'A passkey was refused by a rule of the realm\'s own issuance ' +
+      'policy (#536) that named no error code of its own and gave a reason ' +
+      'the built-in passkey rules do not give.',
+    spec: 'the ceremony\'s page or the sign-in screen, with the reason' },
+  { code: 'STS-AUTHN-0323',
+    summary: 'No issuance policy, not even the built-in one, gave a verdict ' +
+      'on a passkey question (#536); the passkey rules read from the facts ' +
+      'answered instead. A defect: the built-in document should always ' +
+      'answer.',
+    spec: 'none: the passkey is decided by the same rules' },
+  { code: 'STS-AUTHN-0324',
+    summary: 'The engine could not be loaded to ask the built-in issuance ' +
+      'policy a passkey question (#536); the passkey rules read from the ' +
+      'facts decided instead.',
+    spec: 'none: the passkey is decided by the same rules' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

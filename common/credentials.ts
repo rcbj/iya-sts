@@ -3040,20 +3040,26 @@ class Credentials {
     if (!this.deps.passkeyPolicy.hasSelection()) {
       this.deps.passkeyPolicy.select(name, '');
     }
-    const synced = this.deps.passkeyPolicy.backupEligibleRefusal(
-      (credential || {}).backupEligible, 'registration') ||
-      // AND THE KEY'S MINIMUM PIN LENGTH (#529), as it reported it: here for
-      // the same reason, and with the same one sentence the sign-in reads.
-      this.deps.passkeyPolicy.pinLengthRefusal(
-        (credential || {}).minPinLength, 'registration') ||
-      // AND THE DEVICE SERIAL BOUND TO THE PERSON (#532), off the trusted
-      // attestation's record.
-      this.deps.passkeyPolicy.enterpriseSerialRefusal(name,
-        ((credential || {}).attestation || {}).deviceSerial);
+    // ONE QUESTION TO THE ISSUANCE POLICY (#536): the key's BE flag, the
+    // minimum PIN length it reported (#529), and the device serial its
+    // trusted attestation named (#532) — the policy decides, in that order,
+    // under the selected passkey policy's rows. A flag the ceremony never
+    // read is not asked about.
+    const given = credential || {};
+    const facts: Record<string, any> = {
+      username: name,
+      minPinLength: given.minPinLength,
+      serial: (given.attestation || {}).deviceSerial
+    };
+    if (typeof given.backupEligible === 'boolean') {
+      facts.backupEligible = given.backupEligible;
+    }
+    const synced = this.deps.passkeyPolicy.refusalFor('registration', facts);
     if (synced) {
-      const reason = synced.code === 'STS-AUTHN-0314' ? 'pin-length'
-        : (synced.code === 'STS-AUTHN-0312' ? 'backup-eligible'
-                                            : 'device-serial');
+      const reason = synced.reason === 'pin-length' ? 'pin-length'
+        : (synced.reason === 'backup-eligible' ? 'backup-eligible'
+          : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                            : 'passkey-policy'));
       log.info('credentials: a passkey was NOT enrolled for ' + name +
                ' (' + synced.code + ', ' + reason + '): ' + synced.why);
       log.debug("Leaving Credentials.addKey(). Refused by the passkey " +

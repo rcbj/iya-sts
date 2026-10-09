@@ -4756,25 +4756,40 @@ class Authn {
     return code;
   }
 
-  // The passkey policy's refusal of a backup-eligible passkey (#528), or
-  // null: only a WebAuthn credential whose BE flag the door read as set.
-  private syncedPasskeyRefusal(credential: any):
-      { code: string; why: string } | null {
-    const { log, passkeyPolicy } = this.deps;
-    log.debug("Entering Authn.syncedPasskeyRefusal().");
+  // THE PASSKEY QUESTION AT SIGN-IN (#536): whether the passkey that
+  // answered may sign this person in, asked of the issuance policy with the
+  // facts this line holds — the credential's BE flag as the door read it
+  // (#528), and the minimum PIN length the key REPORTED at registration,
+  // read off its row on the person's entry (#529). Null for anything but a
+  // WebAuthn credential, or where the policy allows it.
+  private passkeySignInRefusal(username: string, credential: any):
+      { code: string; why: string; reason: string } | null {
+    const { log, passkeyPolicy, credentials } = this.deps;
+    log.debug("Entering Authn.passkeySignInRefusal().");
     if (!credential || String(credential.kind || '') !== 'webauthn') {
-      log.debug("Leaving Authn.syncedPasskeyRefusal(). Not a passkey.");
+      log.debug("Leaving Authn.passkeySignInRefusal(). Not a passkey.");
       return null;
     }
-    const out = passkeyPolicy.backupEligibleRefusal(credential.backupEligible,
-                                                    'sign-in');
-    log.debug("Leaving Authn.syncedPasskeyRefusal(). " +
+    const id = String(credential.id || '');
+    const key = credentials.keysOf(username).filter(function (one) {
+      return String(one.credentialId) === id;
+    })[0] || null;
+    const facts: Record<string, any> = {
+      username: username,
+      minPinLength: key ? key.minPinLength : null
+    };
+    if (typeof credential.backupEligible === 'boolean') {
+      facts.backupEligible = credential.backupEligible;
+    }
+    const out = passkeyPolicy.refusalFor('sign-in', facts);
+    log.debug("Leaving Authn.passkeySignInRefusal(). " +
               (out ? out.code : 'allowed'));
     return out;
   }
 
   // THE ATTESTATION RULES AT SIGN-IN (#530): the key's recorded attestation
-  // held to the rules in force now, where the passkey policy says so. A
+  // held to the rules in force now, where the passkey policy says so — the
+  // issuance policy deciding since #536. A
   // refusal writes a `session.refuse` row and, the first time this key is
   // refused for this reason, a CAEP credential-change (#239's pattern: the
   // credential changed state, by policy). Asynchronous, because today's FIDO
@@ -4789,11 +4804,13 @@ class Authn {
       return null;
     }
     try {
-      if (!passkeyPolicy.enforcesAttestationAtSignIn()) {
-        log.debug("Leaving Authn.attestationAtSignIn(). Not enforced.");
-        return null;
-      }
-      const verdict = await webauthnAttestation.signInVerdict(key);
+      // ASKED WHETHER OR NOT THE PASSKEY POLICY HOLDS SIGN-INS TO THE RULES
+      // (#536): the issuance policy decides, and a realm's own may refuse on
+      // the recorded attestation alone. The FIDO metadata is only looked up
+      // while the passkey policy holds sign-ins to the rules.
+      const verdict = await webauthnAttestation.signInVerdict(key, {
+        username: username,
+        enforced: passkeyPolicy.enforcesAttestationAtSignIn() });
       if (verdict.ok) {
         log.debug("Leaving Authn.attestationAtSignIn(). Allowed.");
         return null;
@@ -4837,29 +4854,6 @@ class Authn {
                why: 'This passkey could not be checked against this ' +
                     'realm\'s rules. Try again.' };
     }
-  }
-
-  // The passkey policy's refusal of a key's PIN length at sign-in (#529), or
-  // null: the minimum the key REPORTED at registration, read off its row on
-  // the person's entry, held to the rule in force now.
-  private pinLengthSignInRefusal(username: string, credential: any):
-      { code: string; why: string } | null {
-    const { log, passkeyPolicy, credentials } = this.deps;
-    log.debug("Entering Authn.pinLengthSignInRefusal().");
-    if (!credential || String(credential.kind || '') !== 'webauthn' ||
-        !passkeyPolicy.pinLengthRule().enforce) {
-      log.debug("Leaving Authn.pinLengthSignInRefusal(). Not asked.");
-      return null;
-    }
-    const id = String(credential.id || '');
-    const key = credentials.keysOf(username).filter(function (one) {
-      return String(one.credentialId) === id;
-    })[0] || null;
-    const out = passkeyPolicy.pinLengthRefusal(key ? key.minPinLength : null,
-                                               'sign-in');
-    log.debug("Leaving Authn.pinLengthSignInRefusal(). " +
-              (out ? out.code : 'allowed'));
-    return out;
   }
 
   /**
@@ -5072,11 +5066,12 @@ class Authn {
     // the passwordless one, the usernameless sign-in — names its credential's
     // BE flag, and this is the line they all reach. BE never changes for a
     // credential, so this is what refuses a synced key enrolled before the
-    // realm said no; `credentials.addKey()` refuses a new one.
+    // realm said no; `credentials.addKey()` refuses a new one. The same
+    // question carries the key's reported minimum PIN length (#529), and
+    // since #536 the ISSUANCE POLICY decides both (`passkeySignInRefusal()`).
     // -------------------------------------------------------------------------
     const syncedRefusal = extra.authenticated === false ? null
-      : (this.syncedPasskeyRefusal(extra.credential) ||
-         this.pinLengthSignInRefusal(username, extra.credential));
+      : this.passkeySignInRefusal(username, extra.credential);
     if (syncedRefusal) {
       log.info('authn: a session for "' + username + '" was REFUSED at the ' +
                (via || 'sign-in') + ' door: the passkey policy refused the ' +
@@ -5088,11 +5083,13 @@ class Authn {
         protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
         summary: 'a session for ' + username + ' was refused at the ' +
                  (via || 'sign-in') + ' door: ' +
-                 (syncedRefusal.code === 'STS-AUTHN-0315'
+                 (syncedRefusal.reason === 'pin-length'
                    ? 'the passkey\'s minimum PIN length is not what the ' +
                      'passkey policy requires'
-                   : 'a synced (backup-eligible) passkey, where the passkey ' +
-                     'policy takes only device-bound ones'),
+                   : syncedRefusal.reason === 'backup-eligible'
+                     ? 'a synced (backup-eligible) passkey, where the ' +
+                       'passkey policy takes only device-bound ones'
+                     : 'the issuance policy refused the passkey'),
         detail: { credential: 'webauthn',
                   credentialFingerprint: String(extra.credential &&
                                                 extra.credential.id

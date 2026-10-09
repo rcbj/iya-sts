@@ -290,6 +290,14 @@ default realm's, and the built-in defaults apply where neither exists. Change
 it on the console or with `POST /admin-api/policies/save-passkey-policy`;
 `reset-passkey-policy` goes back to inheriting.
 
+These rows say how the realm's passkeys behave. Since #536 the **issuance
+policy** decides whether a given passkey may be registered or may sign
+somebody in, from the key's facts and these rows: the actions
+`register-passkey` and `use-passkey`, with the built-in rules giving the
+refusals described below. A realm's own issuance policy may decide
+differently. For example, one rule can let synced passkeys sign in where the
+row says `disallow`. See [XACML](xacml.md).
+
 | Field | Default | What it does |
 |---|---|---|
 | `allowUsernameless` | off | Offers a passkey sign-in with **no username**, described below. |
