@@ -1298,7 +1298,12 @@ async function samlFederation(world) {
     assert.ok(/<button[^>]*type="submit"/.test(outbound.page) &&
               !/<script/i.test(outbound.page),
       "the page should carry a submit button and no script");
-    const request = samlXml(formsIn(outbound.page)[0].fields.SAMLRequest);
+    // The form that CARRIES the request: since #539 a language chooser is
+    // drawn on the hand-off page too, ahead of it.
+    const carrier = formsIn(outbound.page).find(function (f) {
+      return "SAMLRequest" in f.fields;
+    }) || { fields: {} };
+    const request = samlXml(carrier.fields.SAMLRequest);
     assert.ok(request.indexOf("<saml:Issuer>" + world.ours.entityId +
                               "</saml:Issuer>") >= 0, request.slice(0, 300));
     assert.ok(request.indexOf("AssertionConsumerServiceURL=\"" + acs +
@@ -1351,7 +1356,9 @@ async function samlFederation(world) {
   // A FORGERY: right issuer, audience, recipient and InResponseTo, signed by
   // a key the relationship does not name, with that key's certificate inside.
   const begun = await beginAt(REL.saml);
-  const pending = formsIn(begun.r.body)[0] || { fields: {} };
+  const pending = formsIn(begun.r.body).find(function (f) {
+    return "SAMLRequest" in f.fields;
+  }) || { fields: {} };
   const requestId = (/ ID="([^"]+)"/.exec(samlXml(pending.fields.SAMLRequest))
                      || [])[1] || "_unknown";
   r = await postForm(begun.cookies, acs, {
