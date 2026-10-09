@@ -10,8 +10,8 @@
 // The portal runs no script, so it is a GET form, and `refreshForm()` decides
 // what it reloads:
 //
-//   1. A GET OF THE PAGE'S OWN PATH reloads that path with the same query,
-//      so a paged list comes back on the same page.
+//   1. A GET OF THE PAGE'S OWN PATH reloads that path with its paging
+//      parameters, so a paged list comes back on the same page.
 //   2. LESS `done`, the one-time message a redirect after a write carries.
 //   3. A PAGE DRAWN IN ANSWER TO A POST loads its own path afresh, carrying
 //      nothing of the request: repeating a write is what a Refresh button
@@ -21,6 +21,9 @@
 //   5. A VALUE IS ESCAPED: a query a link put on the page cannot break out of
 //      the attribute it is drawn into.
 //   6. THE SHELL DRAWS IT beside Sign out, as a GET form and not a script.
+//   7. ONLY THE PARAMETERS A PAGE READS are carried — paging and the step
+//      markers — so `?user=somebody` on the URL is not drawn back
+//      (sts_portal_sessions' cross-account check).
 //
 // In process, through the portal's instance and `audit.withSource()`, which is
 // how the request is ambient when a page is drawn.
@@ -82,10 +85,18 @@ function run(t) {
           /action="\/portal\/consents"/.test(none),
           '4. another path, or no request, loads the page\'s path with ' +
           'nothing carried', JSON.stringify([other, none]));
-  const hostile = drawn('GET', PAGE + '?q=%22%3E%3Cscript%3E');
-  t.check(hidden(hostile).q === '&quot;&gt;&lt;script&gt;' &&
+  const hostile = drawn('GET', PAGE + '?stepup=%22%3E%3Cscript%3E');
+  t.check(hidden(hostile).stepup === '&quot;&gt;&lt;script&gt;' &&
           !/<script>/.test(hostile),
           '5. a value from the query is escaped', hostile);
+  const foreign = drawn('GET', PAGE + '?page=2&user=somebody-else' +
+                        '&q=x&grantsPage=4');
+  t.check(hidden(foreign).page === '2' &&
+          hidden(foreign).grantsPage === '4' &&
+          !('user' in hidden(foreign)) && !('q' in hidden(foreign)) &&
+          foreign.indexOf('somebody-else') < 0,
+          '7. a parameter no portal page reads is not carried, so a name ' +
+          'a link put on the URL is not drawn back', foreign);
   const instance = new portal.Portal(portal.Portal.defaultDeps());
   const page = audit.withSource({ req: { method: 'GET', url: PAGE } },
     function () {
