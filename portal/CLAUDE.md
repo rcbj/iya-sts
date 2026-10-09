@@ -23,7 +23,7 @@ somebody came for is below the fold of a page about something else.
 | `/portal/mfa` | authenticated | **Authenticator app** — the QR code, the typed secret, and the code that confirms it |
 | `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
 | `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of thirty days, each with "this was me" / "this wasn't me" (#62 P6, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
-| `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`) |
+| `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`); and, under **Administrative consents**, the global consents that answered for them at sign-in, with no button (#537) |
 | `/portal/gnap` | authenticated | **GNAP grants** — the GNAP grants the person is the resource owner of, each with its rights, tokens and why it ended, and a Revoke (#432 phase 7, `portal_gnap.ts`) |
 | `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
 | `/portal/certificates` | authenticated | **Certificates** — ACME / SCEP enrollment credentials and the certificates issued (2026-09-13) |
@@ -1361,9 +1361,17 @@ withdrawal does; four things are this page's:
   on their entry is refused 400 (`STS-PORTAL-0085`), the `/portal/keys`
   credential id's arrangement. `manage-own`, CSRF on the POST, and the
   withdrawal audited as `consent.revoke` with the person as actor.
-* **A scope under GLOBAL consent is not listed**: nothing about the person was
-  written, and the override is the operator's configuration of the application.
-  The page says so in a sentence rather than drawing rows with no button.
+* **A scope under GLOBAL consent is listed apart, under Administrative
+  consents, with no button (#537).** The override is the operator's
+  configuration of the application, so it is not the person's to withdraw.
+  Until #537 nothing about the person was written, so the page could only say
+  so in a sentence. Now the authorization endpoint records each scope a global
+  consent answered for the person (`oauthConsentApplied`,
+  `consent.noteApplied()`, the first time only). The section draws the records
+  that still stand (`consent.appliedConsentsOf()`): the application still
+  carries the global consent, and the person has not also agreed to the scope
+  themselves. It is not paged, because global consent is configured on a
+  handful of applications. A sign-in made before #537 recorded nothing.
 * **No script, real forms**, paged by application (twenty per page). The
   console's and the API's counterpart of *Withdraw everything for this
   application* is `revoke-application-consent` (rule 7).

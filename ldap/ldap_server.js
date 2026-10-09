@@ -2340,6 +2340,12 @@ const OWN_NAMES = [
   // is what stops a RE-CONSENT reviving a refresh token issued before the
   // withdrawal; `common/consent.ts` argues it.
   'oauthConsentWithdrawn',
+  // A CONSENT AN APPLICATION'S GLOBAL CONSENT ANSWERED FOR THIS PERSON (#537),
+  // `<when> <scope> <client_id>`: written the first time a sign-in passes
+  // consent because `oauthGlobalConsent` covered the scope, so
+  // `/portal/consents` can show it. A record of what happened; it grants
+  // nothing and the authorization endpoint never reads it.
+  'oauthConsentApplied',
 
   // ---------------------------------------------------------------------
   // THE CREDENTIALS ON A PERSON'S OWN ENTRY THAT ARE NOT `userPassword`.
@@ -8579,14 +8585,16 @@ function reloadTrustAnchorsQuietly() {
 // opinion about who somebody is.
 // ---------------------------------------------------------------------------
 
-// THE TWO ATTRIBUTES THESE FUNCTIONS WRITE, and no third: `oauthConsent`, and
+// THE THREE ATTRIBUTES THESE FUNCTIONS WRITE, and no fourth: `oauthConsent`,
 // since #172 `oauthConsentWithdrawn` — the instant a person withdrew one,
 // which `common/consent.ts` reads so that a re-consent revives no token
-// issued before it. One set of functions for both, told which by name, and a
-// name that is neither is the consent attribute: a caller cannot use this
-// slot to write anything else onto somebody's entry.
+// issued before it — and since #537 `oauthConsentApplied`, a global consent
+// that answered for this person. One set of functions for all three, told
+// which by name, and a name that is none of them is the consent attribute: a
+// caller cannot use this slot to write anything else onto somebody's entry.
 const CONSENT_ATTRIBUTES = { oauthconsent: 'oauthConsent',
-                             oauthconsentwithdrawn: 'oauthConsentWithdrawn' };
+                             oauthconsentwithdrawn: 'oauthConsentWithdrawn',
+                             oauthconsentapplied: 'oauthConsentApplied' };
 
 function consentAttributeOf(attribute) {
   log.debug('Entering consentAttributeOf().');
@@ -11819,6 +11827,23 @@ if (typeof consent.setDirectory === 'function') {
       log.debug('Entering removeWithdrawal().');
       log.debug('Leaving removeWithdrawal().');
       return removeConsentValues(key, values, 'oauthConsentWithdrawn');
+    },
+    // THE GLOBAL CONSENTS APPLIED FOR THIS PERSON (#537), on the same entry
+    // through the same functions.
+    appliedConsentsOf: function appliedConsentsOf(key) {
+      log.debug('Entering appliedConsentsOf().');
+      log.debug('Leaving appliedConsentsOf().');
+      return consentValuesOf(key, 'oauthConsentApplied');
+    },
+    addAppliedConsent: function addAppliedConsent(key, values) {
+      log.debug('Entering addAppliedConsent().');
+      log.debug('Leaving addAppliedConsent().');
+      return addConsentValues(key, values, 'oauthConsentApplied');
+    },
+    removeAppliedConsent: function removeAppliedConsent(key, values) {
+      log.debug('Entering removeAppliedConsent().');
+      log.debug('Leaving removeAppliedConsent().');
+      return removeConsentValues(key, values, 'oauthConsentApplied');
     }
   });
 } else {

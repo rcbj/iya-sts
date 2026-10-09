@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4228** of them, in **43** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4229** of them, in **43** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 81
 * [User portal (`STS-PORTAL`)](#sts-portal) — 84
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 159
+* [Registries (`STS-REG`)](#sts-reg) — 160
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -4796,6 +4796,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0339` | A registration's UserInfo encryption members were malformed: userinfo_encrypted_response_alg not one of the asymmetric families this service encrypts a response with, an enc it does not have, or an enc without an alg (OpenID Connect Registration section 2, #290). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0340` | A console or /admin-api write put a value a registration would refuse on one of the ID Token, UserInfo or JARM signing and encryption attributes (oauthIdToken*, oauthUserinfo*, oauthAuthorization*ResponseAlg / Enc) or on oauthDefaultAcrValues / oauthDefaultMaxAge, or an enc onto an entry with no alg (#290). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0341` | An application entry holds an oauthDefaultAcrValues or oauthDefaultMaxAge value the registration grammar refuses (only an ldapmodify can leave one); it is ignored rather than required of every sign-in (#290). | none — logged; the request is answered without the default |
+| `STS-REG-0342` | A global consent answered for a person at sign-in, and the record of it (oauthConsentApplied, #537) could not be written on their entry, so /portal/consents will not list it. | none — logged; the sign-in goes on |
 
 ## STS-DBG
 

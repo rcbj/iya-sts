@@ -10786,6 +10786,16 @@ class OAuth2Server {
         stepUp.record(q.client_id, stepUpHonoured ? 'stepup.met_after_sign_in'
                                                   : 'stepup.met_by_session');
       }
+      // THE SCOPES A GLOBAL CONSENT ANSWERED FOR THIS PERSON (#537) are
+      // written down on their entry, the first time only, so
+      // `/portal/consents` can show them under Administrative consents. A
+      // scope they agreed to themselves is theirs and is not recorded here.
+      consent.noteApplied((session.user || {}).username, q.client_id,
+        (decision.scopes || []).filter(function (one: Json) {
+          return one.global && !one.consented;
+        }).map(function (one: Json) {
+          return one.scope;
+        }));
       return self.issueAuthorizationResponse(req, res, q, session.user,
                                              session.authTime, session,
                                              stepUpAssessed ? stepUpAssessed.acr

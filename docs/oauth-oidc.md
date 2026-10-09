@@ -484,6 +484,22 @@ does.
 * Consent is a question asked of somebody already signed in. It is not a
   password check.
 
+#### What a person sees on `/portal/consents`
+
+The page lists what the person agreed each application may ask for, with a
+**Withdraw** button per scope and per application. Below that, under
+**Administrative consents**, it lists the scopes an application's global
+consent (`oauthGlobalConsent`) answered for them when they signed in to it.
+These were agreed for everybody by an administrator, so the person was never
+asked and cannot withdraw them there.
+
+A global consent is recorded on the person's entry (`oauthConsentApplied`) the
+first time it answers for them, once per application and scope. The section
+shows only the records whose global consent still stands, and leaves out a
+scope the person has also agreed to themselves, because that one is listed as
+theirs. A sign-in made before this record existed is not listed until the
+person signs in to that application again.
+
 #### Withdrawing consent
 
 A consent is withdrawn at `/admin/consent` or through

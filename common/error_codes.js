@@ -20623,6 +20623,11 @@ const CODES = [
       'ldapmodify can leave one); it is ignored rather than required of ' +
       'every sign-in (#290).',
     spec: 'none — logged; the request is answered without the default' },
+  { code: 'STS-REG-0342',
+    summary: 'A global consent answered for a person at sign-in, and the ' +
+      'record of it (oauthConsentApplied, #537) could not be written on ' +
+      'their entry, so /portal/consents will not list it.',
+    spec: 'none — logged; the sign-in goes on' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +
