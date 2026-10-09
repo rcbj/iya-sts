@@ -2508,7 +2508,6 @@ a field, read through `common/secrets.js` — never a value here), the outbox th
 | `mail.transport` | `STS_MAIL_TRANSPORT` | `default` | yes | How a message this service sends leaves it. |
 | `mail.from` | `STS_MAIL_FROM` | *(empty)* | yes | The address every message is sent from. |
 | `mail.fromName` | `STS_MAIL_FROM_NAME` | *(empty)* | yes | The display name beside the From address. |
-| `mail.defaultLanguage` | `STS_MAIL_DEFAULT_LANGUAGE` | `en` | yes | The language a message is written in when the recipient's entry names no preferredLanguage this realm has a template for. |
 | `mail.smtpPreset` | `STS_MAIL_SMTP_PRESET` | `custom` | yes | A known relay, which fills in the host (and port) when mail.smtpHost is empty. |
 | `mail.smtpHost` | `STS_MAIL_SMTP_HOST` | *(empty)* | yes | The relay's host name. |
 | `mail.smtpPort` | `STS_MAIL_SMTP_PORT` | `587` | yes | The relay's port: 587 for STARTTLS (submission), 465 for implicit TLS (submissions, RFC 8314). |

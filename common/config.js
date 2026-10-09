@@ -16354,13 +16354,10 @@ const SETTINGS = [
     env: 'STS_MAIL_FROM_NAME', type: 'string', dflt: '', runtime: true,
     description: 'The display name beside the From address. Empty means ' +
                  'none.' },
-  { key: 'mail.defaultLanguage', group: 'Mail',
-    label: 'Default message language',
-    env: 'STS_MAIL_DEFAULT_LANGUAGE', type: 'string', dflt: 'en',
-    runtime: true,
-    description: 'The language a message is written in when the recipient\'s ' +
-                 'entry names no preferredLanguage this realm has a template ' +
-                 'for. A BCP 47 tag; every built-in template exists in `en`.' },
+  // `mail.defaultLanguage` WAS HERE until #539 (2026-10-09): the locale
+  // policy's `defaultLocale` (`common/locale_policy.ts`, Directory →
+  // Policies) is the one default language now, read by the pages and the
+  // mail alike. No shim; REPLACED_SETTINGS refuses a start that names it.
 
   { key: 'mail.smtpPreset', group: 'Mail', label: 'SMTP preset',
     env: 'STS_MAIL_SMTP_PRESET', type: 'enum',
@@ -16915,6 +16912,14 @@ const PASSKEY = ' decides it now — the passkey policy on Directory → ' +
   'sign-in is off by default, and while it is off a security key is asked ' +
   'for a discoverable credential.';
 
+// What #539's row says when it is still named.
+const LOCALE = ' decides it now — the locale policy on Directory → ' +
+  'Policies, per realm and inherited from the default realm, with named ' +
+  'profiles chosen by application — POST ' +
+  '/admin-api/policies/save-locale-policy, or the console. It is the one ' +
+  'default language: a page falls back to it and mail to a person who ' +
+  'names none is written in it.';
+
 // What every one of #523's rows says when it is still named.
 const ONE_ISSUER = ' It was removed on 2026-10-08 (#523): every SAML Issuer, ' +
   'identity provider entityID and providerID, and the WS-Trust STS\'s name ' +
@@ -17021,6 +17026,12 @@ const REPLACED_SETTINGS = [
   // #527 (2026-10-08): two WebAuthn settings became rows of the passkey
   // policy, a directory entry per realm rather than a setting, so `now`
   // names the policy and its row rather than a setting key.
+  // #539 (2026-10-09): the mail's default language became the locale
+  // policy's, a directory entry per realm rather than a setting.
+  { key: 'mail.defaultLanguage', env: 'STS_MAIL_DEFAULT_LANGUAGE',
+    now: ['the locale policy\'s defaultLocale'],
+    why: ' It was removed on 2026-10-09 (#539): the locale policy\'s ' +
+         'defaultLocale' + LOCALE },
   { key: 'webauthn.residentKey', env: 'STS_WEBAUTHN_RESIDENT_KEY',
     now: ['the passkey policy\'s securityKeyResidentKey'],
     why: ' It was removed on 2026-10-08 (#527): the passkey policy\'s ' +

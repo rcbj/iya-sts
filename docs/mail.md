@@ -197,7 +197,9 @@ into a mail cannon (`STS-MAIL-0010`). A notice about one act is sent once in
 Each message has a built-in English wording. A realm may reword any of them,
 in any language, on `/admin/mail`. A person's `preferredLanguage`, an
 Accept-Language value such as `de-CH, de;q=0.8`, chooses the language, then
-`mail.defaultLanguage`, then English. **A realm's wording is checked when it is
+the realm's [locale policy](languages.md#the-locale-policy) default language,
+then English. (`mail.defaultLanguage` was that default until #539; a start
+that still names it is refused and told so.) **A realm's wording is checked when it is
 saved** (`STS-MAIL-0016`):
 
 - **A link is a placeholder** such as `{{link}}`. Its value is this service's

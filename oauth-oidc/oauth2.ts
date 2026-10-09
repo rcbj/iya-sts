@@ -408,6 +408,8 @@ import clientJwks = require('./client_jwks');
 // A library: what "registered" means for an application (#494, #496). It
 // reaches the registry lazily, so this require closes no cycle.
 import IssuerNames = require('../common/issuer_names');
+// The catalogs (#539), for `ui_locales_supported`. A leaf.
+import i18n = require('../common/i18n');
 // A library: what an RFC 8707 resource may name in product (#505). It reaches
 // the registry, the access-token profile and the management API lazily, at
 // request time, so this require closes no cycle.
@@ -2111,13 +2113,16 @@ class OAuth2Server {
       token_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
       service_documentation: helpers.rebaseTo(base, 'home') + '/docs',
-      // One locale, because there is one: the login screen is the only UI this
-      // server renders and it is written in English. A request's ui_locales
-      // is accepted and answered in English, which section 3.1.2.1 permits
-      // ("An error SHOULD NOT result if some or all of the requested locales
-      // are not supported"). The list used to name four, which a client is
-      // entitled to read as "ask for fr-CA and you will get it".
-      ui_locales_supported: ['en-US'],
+      // THE LOCALES THE LANGUAGE CHOOSER OFFERS (#539), each answered by a
+      // catalog: a request's ui_locales naming one gets the sign-in and
+      // consent screens in it (`common/page_locale.ts`). A tag no catalog
+      // answers is passed over without an error, which section 3.1.2.1
+      // permits ("An error SHOULD NOT result if some or all of the requested
+      // locales are not supported"). Until #539 the list was `en-US` alone,
+      // because every page was English.
+      ui_locales_supported: i18n.offered().map(function (one) {
+        return one.tag;
+      }),
       op_policy_uri: helpers.rebaseTo(base, 'home') + '/policy',
       op_tos_uri: helpers.rebaseTo(base, 'home') + '/tos',
       revocation_endpoint: at + '/oauth2/revoke',
@@ -8177,7 +8182,8 @@ class OAuth2Server {
                   self.authorizationReturnQuery(req, query),
         hint: String(user.username || ''),
         protocol: 'OAuth 2.0 / OIDC',
-        application: String(query.client_id || '')
+        application: String(query.client_id || ''),
+        uiLocales: String(query.ui_locales || '')
       }));
     }
     // -----------------------------------------------------------------------
@@ -8206,7 +8212,8 @@ class OAuth2Server {
         forceMfa: roleAnswer.risk.factor === 'second-factor',
         forceKey: roleAnswer.risk.factor === 'security-key',
         protocol: 'OAuth 2.0 / OIDC',
-        application: String(query.client_id || '')
+        application: String(query.client_id || ''),
+        uiLocales: String(query.ui_locales || '')
       }));
     }
     if (!roleAnswer.allowed) {
@@ -10889,6 +10896,10 @@ class OAuth2Server {
       // identifier exactly as a protocol presented it, and one this service has
       // never heard of simply has no entry, which is not an error.
       application: q.client_id || '',
+      // OpenID Connect Core 1.0 section 3.1.2.1 (#539): the languages the
+      // relying party asks the sign-in screen to be drawn in. Honoured, where
+      // until #539 it was accepted and every page was English.
+      uiLocales: q.ui_locales || '',
       // Enterprise Extensions section 3.1 (#148): home-realm discovery.
       domainHint: q.domain_hint || ''
     }));

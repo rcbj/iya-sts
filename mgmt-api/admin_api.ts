@@ -1282,6 +1282,20 @@ class AdminApi {
                    userDisplayName: 'displayName, givenName sn',
                    rpNameExtras: 'none', credentialLabel: '',
                    aggregateDevices: true }
+      },
+      // #539: the fifth kind, with named profiles chosen by application.
+      locale: {
+        save: 'Writes `cn=<profile>,ou=localePolicies` in this realm\'s ' +
+              'directory, REPLACING what is there; a realm with no ' +
+              '`default` of its own follows the default realm\'s, and named ' +
+              'profiles are the realm\'s own. `defaultLocale` (`en`) is a ' +
+              'BCP 47 language tag: the language a page falls back to, and ' +
+              'mail to a person who names none is written in. ' +
+              '`populatePreferredLanguage` (on) gives a person created ' +
+              'without a `preferredLanguage` that tag. A named profile ' +
+              'applies to the applications in `selectApplications`, and an ' +
+              'application is on one named profile at most.',
+        example: { defaultLocale: 'fr-CA', populatePreferredLanguage: true }
       }
     };
     const cap = function (text) {
@@ -1313,18 +1327,31 @@ class AdminApi {
                        description: 'What the profile is for, for the next ' +
                                     'person. Optional.' }
       };
-      if (named) {
+      // Each selector the kind declares, and no other (#539: the locale
+      // policy selects by application alone).
+      const selects = function (key: string): boolean {
+        log.debug("Entering selects().");
+        log.debug("Leaving selects().");
+        return named && module.SELECTORS.some(function (one: any) {
+          return one.key === key;
+        });
+      };
+      if (selects('selectApplications')) {
         properties.selectApplications = {
           oneOf: [{ type: 'array', items: { type: 'string' } },
                   { type: 'string' }],
           description: 'A named profile only: the applications it applies ' +
                        'to (identifier or client_id), a list or comma-' +
                        'separated.' };
+      }
+      if (selects('selectGroups')) {
         properties.selectGroups = {
           oneOf: [{ type: 'array', items: { type: 'string' } },
                   { type: 'string' }],
           description: 'A named profile only: the groups (cn or DN) whose ' +
                        'members it applies to.' };
+      }
+      if (selects('precedence')) {
         properties.precedence = {
           oneOf: [{ type: 'integer', minimum: 1, maximum: 1000 },
                   { type: 'string' }],
@@ -1347,6 +1374,9 @@ class AdminApi {
             ? { type: 'string',
                 description: field.what + ' A directory attribute name, or ' +
                              'empty for none. Default empty.' }
+          : field.type === 'locale'
+            ? { type: 'string',
+                description: field.what + ' Default `' + field.dflt + '`.' }
           : field.type === 'list'
             ? { type: 'string',
                 description: field.what + ' An ordered, comma-separated ' +

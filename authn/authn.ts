@@ -261,6 +261,13 @@ const BACKUP_CODE_PATH = '/authn/backup-code';
 // THE FORCED PASSWORD CHANGE (2026-09-13): drawn after a password is accepted
 // for an entry carrying `pwdReset: TRUE`, before any session exists.
 const PASSWORD_CHANGE_PATH = '/authn/password-change';
+// THE LANGUAGE CHOOSER (#539, 2026-10-09): every user-facing page's chooser
+// posts here. Here, in the module that owns the SESSION, because a signed-in
+// person's choice is written to their own entry as well as to the cookie.
+/**
+ * The path every page's language chooser posts to.
+ */
+const LANGUAGE_PATH = '/authn/language';
 // A SECOND FACTOR ENROLLED BECAUSE ONE IS REQUIRED (2026-09-13) — see the
 // block above `MFA_SETUP_FORM` for why a sign-in may now enrol an authenticator
 // app where it never used to.
@@ -520,6 +527,9 @@ import webauthnPolicy = require('./webauthn_policy');
 import authnPolicy = require('../common/authn_policy');
 // The passkey policy (#528): whether a synced passkey may sign anybody in.
 import passkeyPolicy = require('../common/passkey_policy');
+// The language a page is drawn in, and the chooser (#539). Libraries.
+import i18n = require('../common/i18n');
+import PageLocale = require('../common/page_locale');
 // THE ATTESTATION STATEMENT, VERIFIED (#105). Rule 3 as well: a library that
 // requires the policy above, `crypto`, `pki` and `error_codes`, and reaches
 // the FIDO metadata and revocation lazily — nothing that reaches back here.
@@ -956,6 +966,14 @@ const PASSWORD_CHANGE_FORM = vz.object({
 
 const PASSWORD_CHANGE_QUERY = vz.object({
   change: vt.opt(vt.base64url)
+});
+
+// The chooser's form (#539): a language tag and the local path to return to.
+// `common/page_locale.ts` holds the return to a local path; the tag is
+// checked against the catalogs.
+const LANGUAGE_FORM = vz.object({
+  lang: vz.string().max(64).optional(),
+  return: vz.string().max(2048).optional()
 });
 
 const MFA_SETUP_STYLE = '<style>body{font-family:system-ui,-apple-system,' +
@@ -7297,6 +7315,10 @@ class Authn {
       // usable one, and so that a relationship this application names and
       // cannot use is reported instead of being replaced by a password box.
       application: String(opts.application || ''),
+      // OpenID Connect Core 1.0 section 3.1.2.1's `ui_locales` (#539): the
+      // languages the relying party asked this screen to be drawn in, ahead
+      // of the person's own and the browser's (`common/page_locale.ts`).
+      uiLocales: String(opts.uiLocales || '').slice(0, 256),
       federation: home,
       expires: Date.now() + this.pendingTtlMs()
     };
@@ -12614,6 +12636,62 @@ class Authn {
       log.debug('Leaving the password change screen.');
       return this.sendPasswordChangePage(res,
         this.passwordChangePage(changeId, step.username, ''));
+    });
+
+    // THE LANGUAGE CHOOSER (#539). A POST, from a real form on every
+    // user-facing page, so it works with script blocked. It sets the
+    // chooser's cookie, writes a signed-in person's own preferredLanguage —
+    // which outranks the cookie, so a choice that did not reach the entry
+    // would change nothing for them — and sends the browser back with a 303
+    // to a LOCAL path (`PageLocale.safeReturn()`), never to one a request
+    // named elsewhere. No CSRF token: the session cookie is SameSite=Lax, so a
+    // cross-site POST carries no session and writes no entry, and a cookie
+    // choosing a language is not worth defending. A tag no catalog answers
+    // is refused in English (rcbj's decision on #539: errors stay English).
+    app.post(LANGUAGE_PATH, (req, res) => {
+      log.debug('Entering the language chooser endpoint.');
+      const posted = validation.checkParsed(parseBody(req), 'body',
+                                            LANGUAGE_FORM);
+      if (!posted.ok) {
+        errorCodes.mark(res, 'STS-I18N-0008');
+        log.debug('Leaving the language chooser endpoint. Invalid.');
+        return this.refuseInvalid(res, posted);
+      }
+      const tag = i18n.canonical(posted.value.lang);
+      if (!tag || !i18n.answers(tag)) {
+        errorCodes.mark(res, 'STS-I18N-0008');
+        log.debug('Leaving the language chooser endpoint. Not offered.');
+        return res.status(400).type('text/plain').send('"' +
+          String(posted.value.lang || '').slice(0, 64) + '" is not a ' +
+          'language this service has a catalog for.');
+      }
+      res.append('Set-Cookie', PageLocale.cookieLine(tag));
+      const session = this.sessionOf(req);
+      if (session && session.user && session.authenticated !== false &&
+          session.user.username) {
+        const who = String(session.user.username);
+        let written: any = null;
+        try {
+          written = require('../ldap/person_editor').update(who,
+            { attribute: 'preferredLanguage', mode: 'set', value: tag },
+            { actor: who, via: 'the language chooser' });
+        } catch (e) {
+          log.debug('Caught in the language chooser endpoint: ' +
+                    ((e && e.message) || e));
+          written = null;
+        }
+        if (!written || !written.ok) {
+          // The cookie still carries the choice, and a page drawn for this
+          // person reads their entry first: said in the log, not refused.
+          log.warn(errorCodes.tag('STS-I18N-0009') + 'authn: the language ' +
+                   'chooser could not write preferredLanguage=' + tag +
+                   ' for "' + who + '": ' + ((written && (written.errors ||
+                   []).join(' ')) || 'the person editor could not be ' +
+                   'asked') + '.');
+        }
+      }
+      log.debug('Leaving the language chooser endpoint. ' + tag);
+      return res.redirect(303, PageLocale.safeReturn(posted.value.return));
     });
 
     app.post(PASSWORD_CHANGE_PATH, async (req, res) => {

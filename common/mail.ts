@@ -109,6 +109,8 @@ import audit = require('./audit');
 import cacheRegistry = require('./cache_registry');
 import clusterClaims = require('../cluster/cluster_claims');
 import MailTemplates = require('./mail_templates');
+// #539: the realm's default language. A leaf over the directory slot.
+import localePolicy = require('./locale_policy');
 import mailTransports = require('./mail_transports');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
@@ -1274,8 +1276,10 @@ class Mail {
         this.setting('mail.rateWindowS') + ' seconds, the ceiling ' +
         '(mail.ratePerRecipient, mail.ratePerCategory)') };
     }
+    // The recipient's own language, then the realm's locale policy (#539),
+    // which replaced `mail.defaultLanguage`: one default for pages and mail.
     const languages = MailTemplates.languageOrder(who.language,
-      String(this.setting('mail.defaultLanguage') || 'en'));
+      String(localePolicy.defaultLocaleFor('') || 'en'));
     const chosen = this.templateFor(spec.id, languages);
     const values: Json = Object.assign({}, req.values || {});
     values.realm = String((realms.current() && realms.current().name) ||
