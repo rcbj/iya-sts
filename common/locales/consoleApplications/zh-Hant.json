@@ -772,5 +772,18 @@
   "sc.clearTip": "取消對應：授予此權限不再加入任何宣告。",
   "sc.clear": "清除",
   "sc.stale": "已對應但不再公開：",
-  "sc.staleRest": "這些不再對應任何內容，本索引標籤下次儲存時會將其刪除。"
+  "sc.staleRest": "這些不再對應任何內容，本索引標籤下次儲存時會將其刪除。",
+  "ldif.tab": "匯入 / 匯出",
+  "ldif.heading": "匯入與匯出",
+  "ldif.needsWrite": "匯出和匯入應用程式都需要 <strong>Admin Write</strong>。",
+  "ldif.exportHeading": "匯出此應用程式",
+  "ldif.exportIntro": "將此應用程式儲存為包含一筆記錄的 LDIF 檔案（RFC 2849）：只包含管理員對它的設定，不包含本服務記錄的任何使用情形。在任一領域的此分頁匯入該檔案，即可在那裡建立一份副本。",
+  "ldif.withCredentials": "包含憑證資料（用戶端密鑰、私鑰、註冊存取權杖），<strong>不加密</strong>",
+  "ldif.credentialsWarning": "不勾選時，檔案不含任何憑證資料。勾選時，應用程式的每個密鑰都以明文寫入，因為以本服務金鑰加密的檔案在別處無法開啟：請像保管這些密鑰本身一樣保管該檔案。Kerberos 服務金鑰、註冊金鑰和 GNAP macaroon 金鑰從不匯出。",
+  "ldif.export": "匯出 LDIF",
+  "ldif.importHeading": "匯入應用程式",
+  "ldif.importIntro": "根據包含一筆應用程式記錄的 LDIF 檔案（匯出所寫的格式）在此領域建立應用程式。檔案中指名的應用程式不得已存在於此：匯入從不覆寫，因此不會變更本頁的應用程式。",
+  "ldif.file": "LDIF 檔案",
+  "ldif.paste": "或貼上 LDIF",
+  "ldif.import": "匯入 LDIF"
 }

@@ -772,5 +772,18 @@
   "sc.clearTip": "Quitar la asociación: conceder este permiso no añade ninguna reclamación.",
   "sc.clear": "Borrar",
   "sc.stale": "Asociados pero ya no expuestos:",
-  "sc.staleRest": "Ya no asocian nada, y el próximo guardado en esta pestaña los elimina."
+  "sc.staleRest": "Ya no asocian nada, y el próximo guardado en esta pestaña los elimina.",
+  "ldif.tab": "Importar / exportar",
+  "ldif.heading": "Importar y exportar",
+  "ldif.needsWrite": "Tanto exportar una aplicación como importar una requieren <strong>Admin Write</strong>.",
+  "ldif.exportHeading": "Exportar esta aplicación",
+  "ldif.exportIntro": "Guarda esta aplicación como un archivo LDIF (RFC 2849) con un registro: lo que un administrador configura en ella, y nada de lo que este servicio registró sobre su uso. Importe el archivo en esta pestaña, en cualquier dominio, para crear allí una copia.",
+  "ldif.withCredentials": "Incluir el material de credenciales (secretos de cliente, claves privadas, el token de acceso de registro), <strong>sin cifrar</strong>",
+  "ldif.credentialsWarning": "Sin marcar, el archivo no contiene material de credenciales. Marcada, cada secreto de la aplicación se escribe en claro, porque un archivo cifrado con la clave de este servicio no se abre en ningún otro lugar: guárdelo como guardaría los propios secretos. Las claves de servicio Kerberos, las claves de inscripción y las claves de macaroon de GNAP nunca se exportan.",
+  "ldif.export": "Exportar LDIF",
+  "ldif.importHeading": "Importar una aplicación",
+  "ldif.importIntro": "Crea una aplicación en este dominio a partir de un archivo LDIF con un registro de aplicación, tal como lo escribe una exportación. La aplicación que nombra el archivo no debe existir ya aquí: una importación nunca sobrescribe, así que no puede cambiar la aplicación de esta página.",
+  "ldif.file": "Archivo LDIF",
+  "ldif.paste": "o pegue el LDIF",
+  "ldif.import": "Importar LDIF"
 }

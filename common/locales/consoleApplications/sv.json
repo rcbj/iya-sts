@@ -772,5 +772,18 @@
   "sc.clearTip": "Ta bort mappningen: att bevilja den här behörigheten lägger inte till något anspråk.",
   "sc.clear": "Rensa",
   "sc.stale": "Mappade men inte längre exponerade:",
-  "sc.staleRest": "Dessa mappar ingenting, och nästa sparande på den här fliken tar bort dem."
+  "sc.staleRest": "Dessa mappar ingenting, och nästa sparande på den här fliken tar bort dem.",
+  "ldif.tab": "Importera / exportera",
+  "ldif.heading": "Import och export",
+  "ldif.needsWrite": "Både export och import av en applikation kräver <strong>Admin Write</strong>.",
+  "ldif.exportHeading": "Exportera den här applikationen",
+  "ldif.exportIntro": "Sparar applikationen som en LDIF-fil (RFC 2849) med en post: det en administratör konfigurerar på den, och inget som tjänsten har registrerat om hur den används. Importera filen på den här fliken i valfri sfär för att göra en kopia där.",
+  "ldif.withCredentials": "Ta med autentiseringsuppgifter (klienthemligheter, privata nycklar, registreringens åtkomsttoken), <strong>okrypterade</strong>",
+  "ldif.credentialsWarning": "Utan bock innehåller filen inga autentiseringsuppgifter. Med bock skrivs varje hemlighet i klartext, eftersom en fil krypterad med tjänstens nyckel inte går att öppna någon annanstans: förvara den som du skulle förvara hemligheterna själva. Kerberos-tjänstnycklar, registreringsnycklar och GNAP-makronnycklar exporteras aldrig.",
+  "ldif.export": "Exportera LDIF",
+  "ldif.importHeading": "Importera en applikation",
+  "ldif.importIntro": "Skapar en applikation i den här sfären från en LDIF-fil med en applikationspost, så som en export skriver den. Applikationen som filen namnger får inte redan finnas här: en import skriver aldrig över, så den kan inte ändra applikationen på den här sidan.",
+  "ldif.file": "LDIF-fil",
+  "ldif.paste": "eller klistra in LDIF",
+  "ldif.import": "Importera LDIF"
 }

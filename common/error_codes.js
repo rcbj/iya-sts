@@ -20702,6 +20702,48 @@ const CODES = [
       'object of lists, or the application is not declared for OAuth 2.0 ' +
       'or OpenID Connect.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  // #546: an application exported to, and imported from, an LDIF file.
+  { code: 'STS-REG-0345',
+    summary: 'An application export was refused: no application with that ' +
+      'identifier is recorded in this realm.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0346',
+    summary: 'An application export with credential material was refused: ' +
+      'a sealed credential on the entry will not open under this ' +
+      'process\'s key-encryption key, so it cannot be written in the ' +
+      'clear. Nothing was exported.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0347',
+    summary: 'An application import was refused: the file is not LDIF ' +
+      'holding exactly one record.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0348',
+    summary: 'An application import was refused: the record is not an ' +
+      'application entry (its DN is not cn=…,ou=applications,…, or it ' +
+      'carries no appIdentifier).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0349',
+    summary: 'An application import was refused: an application with that ' +
+      'identifier is already recorded in this realm. Nothing is ' +
+      'overwritten.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0350',
+    summary: 'An application import was refused: the record carries a ' +
+      'DERIVED attribute (a counter, a sighting, an observed value), which ' +
+      'records what happened to the application this service saw rather ' +
+      'than what an administrator configures.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0351',
+    summary: 'An application import was refused: the record carries an ' +
+      'attribute that is not in the application schema, or a credential ' +
+      'that no import can write (a Kerberos service key, an enrollment key ' +
+      'or challenge, a GNAP macaroon key).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0352',
+    summary: 'An application import created the entry but could not write ' +
+      'its client secrets (they would not seal, or the directory refused ' +
+      'the write). The application is there without them.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

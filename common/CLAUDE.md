@@ -843,6 +843,41 @@ does not parse is still read as the setting, with `STS-REG-0025` logged. They
 are `families: ['ssf']` and `'set'` in `EDITABLE`, so the field grid draws them
 in its Shared Signals group and `update-fields` writes them.
 
+## AN APPLICATION AS AN LDIF FILE: DECLARED ONLY, CREDENTIALS ON REQUEST, NEVER OVER AN ENTRY (#546, 2026-10-09)
+
+`exportApplicationLdif()` and `importApplicationLdif()` in `applications.js`,
+reached as `export-ldif` and `import-ldif` on the application page's Import /
+Export tab and at `/admin-api/applications/{action}` (rule 7). The file is
+`persistence/persistence_ldif.js`'s codec, one record. rcbj's four decisions
+(2026-10-09), argued in the header above the two functions:
+
+* **Declared attributes only** — the SCHEMA rows `editable` marks. A derived
+  attribute in an imported file is REFUSED (`STS-REG-0350`), not dropped: a
+  file that says when an application was first seen is claiming history this
+  realm did not record.
+* **No credential unless asked, and then UNENCRYPTED.** `PORTABLE_CREDENTIALS`
+  is the list an administrator could have typed (the client secret, the
+  registration access token, both assertion keys, the DID keys, a secret
+  destination's credential, a GNAP symmetric key); each sealed value is
+  OPENED for the file, and one that will not open refuses the export
+  (`STS-REG-0346`) rather than writing a sealed blob another realm's key
+  cannot open. The credentials a subsystem MINTS (Kerberos keys, an enrolled
+  certificate's key, an ACME EAB key, a SCEP challenge, a GNAP macaroon key)
+  are never exported and refused on import (`STS-REG-0351`): no import door
+  can write them, and a copy would be a credential nobody issued here.
+* **An existing identifier is refused** (`STS-REG-0349`); an import never
+  overwrites, so it cannot change the page's own application.
+* **The DN is the source's, and only its SHAPE is read** — `cn=…,
+  ou=applications,…` with `appIdentifier` — so a file from another realm or
+  deployment imports into the realm the console is in. The client secrets go
+  through `writeClientSecretRecords()` after the create, so several records
+  keep their ids and expiries; a failure there leaves the entry made and says
+  so (`STS-REG-0352`).
+
+Both acts are audited (`application.export`, `application.import`) with the
+attribute NAMES and never a value. `tests/application_ldif.js` and
+`tests/vendored/sts_application_ldif.js` hold it.
+
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
 Added 2026-09-10 for `/portal/applications`, which lists the applications a

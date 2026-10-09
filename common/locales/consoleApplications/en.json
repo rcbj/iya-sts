@@ -772,5 +772,18 @@
   "sc.clearTip": "Take the mapping off: granting this permission adds no claim.",
   "sc.clear": "Clear",
   "sc.stale": "Mapped but no longer exposed:",
-  "sc.staleRest": "These map nothing, and the next save on this tab drops them."
+  "sc.staleRest": "These map nothing, and the next save on this tab drops them.",
+  "ldif.tab": "Import / export",
+  "ldif.heading": "Import and export",
+  "ldif.needsWrite": "Exporting an application and importing one both need <strong>Admin Write</strong>.",
+  "ldif.exportHeading": "Export this application",
+  "ldif.exportIntro": "Saves this application as an LDIF file (RFC 2849) with one record: what an administrator configures on it, and nothing this service recorded about its use. Import the file on this tab in any realm to make a copy there.",
+  "ldif.withCredentials": "Include credential material (client secrets, private keys, the registration access token), <strong>unencrypted</strong>",
+  "ldif.credentialsWarning": "Left unticked, the file holds no credential material. Ticked, every secret on the application is written in the clear, because a file encrypted under this service&rsquo;s key opens nowhere else: keep it as you would keep the secrets themselves. Kerberos service keys, enrollment keys and GNAP macaroon keys are never exported.",
+  "ldif.export": "Export LDIF",
+  "ldif.importHeading": "Import an application",
+  "ldif.importIntro": "Creates an application in this realm from an LDIF file holding one application record, as an export writes it. The application named in the file must not already exist here: an import never overwrites, so it cannot change the application on this page.",
+  "ldif.file": "LDIF file",
+  "ldif.paste": "or paste the LDIF",
+  "ldif.import": "Import LDIF"
 }

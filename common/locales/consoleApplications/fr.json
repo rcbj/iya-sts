@@ -772,5 +772,18 @@
   "sc.clearTip": "Retirer l’association : accorder cette permission n’ajoute aucune revendication.",
   "sc.clear": "Effacer",
   "sc.stale": "Associés mais plus exposés :",
-  "sc.staleRest": "Ils n’associent plus rien, et le prochain enregistrement dans cet onglet les supprime."
+  "sc.staleRest": "Ils n’associent plus rien, et le prochain enregistrement dans cet onglet les supprime.",
+  "ldif.tab": "Importer / exporter",
+  "ldif.heading": "Importer et exporter",
+  "ldif.needsWrite": "Exporter une application comme en importer une nécessite <strong>Admin Write</strong>.",
+  "ldif.exportHeading": "Exporter cette application",
+  "ldif.exportIntro": "Enregistre cette application dans un fichier LDIF (RFC 2849) contenant un enregistrement : ce qu&rsquo;un administrateur y configure, et rien de ce que ce service a enregistré sur son utilisation. Importez le fichier dans cet onglet, dans n&rsquo;importe quel domaine, pour en faire une copie.",
+  "ldif.withCredentials": "Inclure les éléments d&rsquo;authentification (secrets client, clés privées, jeton d&rsquo;accès d&rsquo;enregistrement), <strong>non chiffrés</strong>",
+  "ldif.credentialsWarning": "Case décochée, le fichier ne contient aucun élément d&rsquo;authentification. Case cochée, chaque secret de l&rsquo;application est écrit en clair, car un fichier chiffré avec la clé de ce service ne s&rsquo;ouvre nulle part ailleurs : conservez-le comme vous conserveriez les secrets eux-mêmes. Les clés de service Kerberos, les clés d&rsquo;inscription et les clés de macaron GNAP ne sont jamais exportées.",
+  "ldif.export": "Exporter en LDIF",
+  "ldif.importHeading": "Importer une application",
+  "ldif.importIntro": "Crée une application dans ce domaine à partir d&rsquo;un fichier LDIF contenant un enregistrement d&rsquo;application, tel qu&rsquo;une exportation l&rsquo;écrit. L&rsquo;application nommée dans le fichier ne doit pas déjà exister ici : une importation n&rsquo;écrase jamais rien et ne peut donc pas modifier l&rsquo;application de cette page.",
+  "ldif.file": "Fichier LDIF",
+  "ldif.paste": "ou collez le LDIF",
+  "ldif.import": "Importer le LDIF"
 }
