@@ -1294,6 +1294,14 @@ so must `admin-ui/admin.ts`.
    is the answer for a service reached under several names. A token minted
    before `at+jwt` is refused once presented; access tokens live an hour.
 
+   **WHICH IDENTITY CLAIMS A TOKEN CARRIES (#395, `common/CLAUDE.md` 3cj).**
+   Section 2.2.2 leaves them to the authorization server; here they are
+   what the RESOURCE SERVER declares (`oauthAccessTokenClaim`,
+   `resourceServerClaims()`), combined with the client's set as it chose,
+   and only what the GRANT covered (`scopeClaims.gate()` over
+   `opts.granted_scope`). `preferred_username` is no longer added to every
+   person's token; `username` is.
+
    **WHAT A TOKEN MAY BE ADDRESSED TO — `audiencePlan()`, one decision behind
    `accessTokenPlan()` in `oauth2.ts`**, which classifies each scope value
    (an application's client_id, a delegated permission, an OIDC scope, or

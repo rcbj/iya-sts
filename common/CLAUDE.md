@@ -9873,6 +9873,9 @@ application, one JSON array of catalogue attribute names on its entry
 REPLACES the realm's selection** — a selection is a set, not a list of named
 rows, and "the application scope takes precedence" (rcbj) has to be able to
 DROP an attribute the realm ticks. Absent is the realm's; `[]` is none.
+**Since #395 (3cj) that is the UNSET choice**: an application may choose
+`application`, `union`, `intersection` or `realm` per set instead, for the
+rows and the selection alike.
 
 * **Which application:** `admin_stats.claimApplicationOf()`, lifted out of
   `effectiveClaimSet()` so the rows and the selection of one set can never
@@ -11573,3 +11576,57 @@ reasons for the shape:
   `ui_locales_supported` lists the offered locales.
 * Error codes `STS-I18N-0001` to `0009`. Their own subsystem, because every
   surface asks it.
+
+## 3cj. `scope_claims.ts`: WHICH CLAIMS A SCOPE COVERS, WHERE THEY GO, AND HOW TWO SETS COMBINE (#395, 2026-10-09)
+
+OIDC Core section 5.4's `profile`, `email`, `address` and `phone` request
+ACCESS to a fixed set of claims, answered at UserInfo, and in the ID Token
+only for `response_type=id_token` — which `oauth2.ts` held since #118. #395
+added what the ticket asked beyond that, with rcbj's answers to four
+questions and two follow-ups ("maximum flexibility, but still only allowing
+information that has been granted"):
+
+* **The gate (`gate()`).** A section 5.4 claim whose scope the grant did not
+  include is removed from EVERY configured layer — the realm's set, an
+  application's own, a resource server's declaration — of an access token,
+  an ID Token and a UserInfo response, in every mode. It is the GRANTED
+  scope (`opts.granted_scope`, set by `tokenSet()` and the implicit mint),
+  not the token's scope claim: RFC 9068's plan takes the OIDC scopes off a
+  token for an API while they stay granted. Two things pass: a claim the
+  client NAMED in a section 5.5 `claims` request (layered after the gate —
+  the request is its own grant), and a claim no scope covers (`groups`,
+  `roles`, a typed `tenant`). GNAP's ID Token assertion is minted on no scope,
+  so it carries none of these from configuration.
+* **A resource server's declaration.** `oauthAccessTokenClaim` (multi, the
+  section 5.4 claims only) on the application an access token's `aud`
+  resolves to (`forAudience()`, then `forClientId()`, then `get()`) —
+  `oauth2.ts`'s `resourceServerClaims()`. Only what EVERY audience declared
+  (an audience that declares nothing, this service's own resource server
+  among them, leaves nothing), only what was granted, resolved as UserInfo
+  resolves (`claimsNamed()`, lifted out of `scopeClaimsOf()`). No audience
+  declaring anything is NO layer, not an empty one. **`preferred_username`
+  went into every person's access token until #395**; it is now one of these
+  claims. `username` stays.
+* **Two pairs of sets, each combined as an application chooses.** The realm's
+  set against an application's own, per token type
+  (`COMBINE_ATTRIBUTES`: `oauthClaimsCombine{AccessToken,IdToken,Userinfo}`,
+  `saml2ClaimsCombine`, `saml11ClaimsCombine`) — `application`, `union`,
+  `intersection`, `realm`, applied to the rows in
+  `admin_stats.effectiveClaimSet()` and to the selection in
+  `claim_attributes.effectiveRows()`. **Unset keeps #495's two rules** (rows
+  added and winning by name; a selection replacing), because those were two
+  answers to two questions and one default could not keep both. The client's
+  access-token claims against a resource server's declaration
+  (`oauthAccessTokenClaimsCombine` on the resource server): `union` (unset),
+  `intersection`, `client`, `resource`, the client's value kept on a shared
+  name; resource servers that disagree are combined by `intersection`.
+  Holding nothing of its own is the realm's (or the client's) whatever the
+  mode says. Not the Kerberos PAC set: its merge is inside the vendored KDC.
+* **Where it lives.** A leaf requiring only `helpers.js`. `admin_stats.js`
+  requires it LAZILY, inside `effectiveClaimSet()`, because that module is in
+  the parent project's Kerberos COPY closure and the KDC never reaches the
+  line — so the closure did not grow. The seven attributes are ordinary
+  editable fields with closed choices (`ATTRIBUTE_CHOICES`,
+  `CHOICES_CHECKED_HERE`, `STS-REG-0203`), drawn in the field grid's *Claims
+  in tokens* and *Attributes in assertions* sections; no new action or
+  error code. `tests/scope_claims.js` holds it.

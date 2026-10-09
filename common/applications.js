@@ -2748,6 +2748,66 @@ const SCHEMA = {
             'the UserInfo response answered to it, a JSON array of ' +
             'catalogue attribute names, replacing the realm\'s selection ' +
             'when present.' },
+    // HOW THE REALM'S SET AND THE APPLICATION'S OWN ARE COMBINED, PER TOKEN
+    // TYPE (#395; `common/scope_claims.ts`). On the field grid, under the
+    // OAuth sub-tab's Claims in tokens section.
+    { name: 'oauthClaimsCombineAccessToken', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE REALM\'S ACCESS-TOKEN CLAIMS AND THIS ' +
+            'APPLICATION\'S OWN ARE COMBINED (#395), the typed rows ' +
+            'and the ticked directory attributes alike: application ' +
+            '(only this application\'s ' +
+            'own), union (the realm\'s and its own), intersection (only ' +
+            'what both hold) or realm (only the realm\'s). Unset, its ' +
+            'rows are added to the realm\'s and win by name, and its ' +
+            'selection replaces the realm\'s. An application holding ' +
+            'nothing of its own gets the realm\'s whatever this says.' },
+    { name: 'oauthClaimsCombineIdToken', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE REALM\'S ID TOKEN CLAIMS AND THIS ' +
+            'APPLICATION\'S OWN ARE COMBINED (#395), the typed rows ' +
+            'and the ticked directory attributes alike: application ' +
+            '(only this application\'s ' +
+            'own), union (the realm\'s and its own), intersection (only ' +
+            'what both hold) or realm (only the realm\'s). Unset, its ' +
+            'rows are added to the realm\'s and win by name, and its ' +
+            'selection replaces the realm\'s. An application holding ' +
+            'nothing of its own gets the realm\'s whatever this says.' },
+    { name: 'oauthClaimsCombineUserinfo', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE REALM\'S USERINFO CLAIMS AND THIS ' +
+            'APPLICATION\'S OWN ARE COMBINED (#395), the typed rows ' +
+            'and the ticked directory attributes alike: application ' +
+            '(only this application\'s ' +
+            'own), union (the realm\'s and its own), intersection (only ' +
+            'what both hold) or realm (only the realm\'s). Unset, its ' +
+            'rows are added to the realm\'s and win by name, and its ' +
+            'selection replaces the realm\'s. An application holding ' +
+            'nothing of its own gets the realm\'s whatever this says.' },
+    // WHAT A RESOURCE SERVER WANTS ON THE ACCESS TOKENS ADDRESSED TO IT
+    // (#395; RFC 9068 section 2.2.2). Read by `oauth2.ts`'s accessToken()
+    // for each audience the token names.
+    { name: 'oauthAccessTokenClaim', kind: 'multi',
+      from: 'the console, the management API, or by hand',
+      what: 'THE IDENTITY CLAIMS THIS RESOURCE SERVER WANTS on the ' +
+            'access tokens addressed to it (one of its oauthAudience ' +
+            'values, or its client_id named as a scope), from OpenID ' +
+            'Connect Core section 5.4\'s profile, email, address and ' +
+            'phone claims. Each is released only when the scope that ' +
+            'covers it was GRANTED, and on a token for several resource ' +
+            'servers only a claim every one of them declared goes in. ' +
+            'Absent, the token carries none of these claims from this ' +
+            'layer — preferred_username included.' },
+    { name: 'oauthAccessTokenClaimsCombine', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE CLIENT\'S ACCESS-TOKEN CLAIMS AND THIS RESOURCE ' +
+            'SERVER\'S DECLARED CLAIMS (oauthAccessTokenClaim) ARE ' +
+            'COMBINED on a token addressed to it: \'union\' (the ' +
+            'default), \'intersection\' (only claims both carry), ' +
+            '\'client\' (only the client\'s) or \'resource\' (only ' +
+            'the declared ones). Several resource servers that disagree ' +
+            'are combined by intersection. Nothing a grant did not ' +
+            'cover is released, whichever is chosen.' },
     { name: 'oauthRevokeRefreshOnLogout', kind: 'single', from: 'by hand',
       overrides: 'oauth2.revokeRefreshOnLogout',
       what: 'TRUE or FALSE: does signing out revoke this client\'s refresh ' +
@@ -3025,6 +3085,29 @@ const SCHEMA = {
             'for its SAML 1.1 assertions (SAML 1.1, WS-Federation, ' +
             'WS-Trust), a JSON array of catalogue attribute names, ' +
             'replacing the realm\'s selection when present.' },
+    // The SAML halves of #395's combine modes, as the OAuth ones.
+    { name: 'saml2ClaimsCombine', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE REALM\'S SAML 2.0 ATTRIBUTES AND THIS ' +
+            'APPLICATION\'S OWN ARE COMBINED (#395), the typed rows ' +
+            'and the ticked directory attributes alike: application ' +
+            '(only this application\'s ' +
+            'own), union (the realm\'s and its own), intersection (only ' +
+            'what both hold) or realm (only the realm\'s). Unset, its ' +
+            'rows are added to the realm\'s and win by name, and its ' +
+            'selection replaces the realm\'s. An application holding ' +
+            'nothing of its own gets the realm\'s whatever this says.' },
+    { name: 'saml11ClaimsCombine', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'HOW THE REALM\'S SAML 1.1 ATTRIBUTES AND THIS ' +
+            'APPLICATION\'S OWN ARE COMBINED (#395), the typed rows ' +
+            'and the ticked directory attributes alike: application ' +
+            '(only this application\'s ' +
+            'own), union (the realm\'s and its own), intersection (only ' +
+            'what both hold) or realm (only the realm\'s). Unset, its ' +
+            'rows are added to the realm\'s and win by name, and its ' +
+            'selection replaces the realm\'s. An application holding ' +
+            'nothing of its own gets the realm\'s whatever this says.' },
     // AN OPENID4VCI CLIENT'S OWN CREDENTIAL CLAIMS (#495): the realm's
     // Verifiable Credentials → Credential claims selection, for credentials
     // issued on an access token issued to this client (vc_claims.ts).
@@ -4396,6 +4479,15 @@ const EDITABLE = {
   saml2ClaimAttributes: 'set',
   saml11ClaimAttributes: 'set',
   vcCredentialClaimAttributes: 'set',
+  // How the realm's set and the application's own combine, per token type,
+  // and a resource server's access-token claims (#395).
+  oauthClaimsCombineAccessToken: 'set',
+  oauthClaimsCombineIdToken: 'set',
+  oauthClaimsCombineUserinfo: 'set',
+  saml2ClaimsCombine: 'set',
+  saml11ClaimsCombine: 'set',
+  oauthAccessTokenClaim: 'multi',
+  oauthAccessTokenClaimsCombine: 'set',
   didAlsoKnownAs: 'multi',
   // A secret push destination (#221 P3): each one value, an empty write
   // clearing it. The credential is write-only: sealed on the way in,
@@ -5371,6 +5463,19 @@ const ATTRIBUTE_CHOICES = {
   },
   secretDestPayload: function () {
     return require('./secrets').DESTINATION_PAYLOADS.slice(0);
+  },
+  // #395, from `scope_claims.ts`: how two sets of claims are combined, and
+  // the OpenID Connect section 5.4 claims a resource server may declare.
+  oauthClaimsCombineAccessToken: realmCombineModes,
+  oauthClaimsCombineIdToken: realmCombineModes,
+  oauthClaimsCombineUserinfo: realmCombineModes,
+  saml2ClaimsCombine: realmCombineModes,
+  saml11ClaimsCombine: realmCombineModes,
+  oauthAccessTokenClaim: function () {
+    return require('./scope_claims').DECLARABLE_CLAIMS.slice(0);
+  },
+  oauthAccessTokenClaimsCombine: function () {
+    return require('./scope_claims').RESOURCE_MODES.slice(0);
   }
 };
 
@@ -5379,6 +5484,14 @@ const ATTRIBUTE_CHOICES = {
 // outside one is refused (STS-REG-0203). `appAuthnMechanism` joined them
 // with #457, and `appMfaMechanism` with #475: enforced, a misspelt mechanism
 // would allow nothing.
+// The realm-vs-application combine modes (#395), lazily for the reason the
+// rest of this table reads its modules lazily.
+function realmCombineModes() {
+  log.debug("Entering realmCombineModes().");
+  log.debug("Leaving realmCombineModes().");
+  return require('./scope_claims').REALM_MODES.slice(0);
+}
+
 // The certificate profiles an enrollment family issues, from the module that
 // defines them (lazily: it is loaded after this one); `device` over EST and
 // SCEP only, as `cert_enrollment.ts` has it.
@@ -5396,7 +5509,12 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
   'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
   'secretDestProvider', 'secretDestPayload', 'appAuthnMechanism',
-  'appMfaMechanism'];
+  'appMfaMechanism',
+  // #395: a misspelt mode would silently be the default, and a misspelt
+  // claim would be one no token ever carries.
+  'oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
+  'oauthClaimsCombineUserinfo', 'saml2ClaimsCombine', 'saml11ClaimsCombine',
+  'oauthAccessTokenClaim', 'oauthAccessTokenClaimsCombine'];
 
 /**
  * The values a setting's own closed set allows (enumValues or csvValues),
@@ -5908,7 +6026,16 @@ const FIELD_SECTIONS = [
     attributes: ['appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
                  'appNotDelegated', 'appDelegationSemantics',
                  'appDefaultDelegationSemantics', 'appDelegationSubjectGroup',
-                 'appMayAct'] }
+                 'appMayAct'] },
+  // #395: which claims a token carries — the realm's set against this
+  // application's own, per token type, and what it wants as a resource
+  // server — on the OAuth and SAML sub-tabs.
+  { id: 'token-claims', label: 'Claims in tokens',
+    attributes: ['oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
+                 'oauthClaimsCombineUserinfo', 'oauthAccessTokenClaim',
+                 'oauthAccessTokenClaimsCombine'] },
+  { id: 'assertion-claims', label: 'Attributes in assertions',
+    attributes: ['saml2ClaimsCombine', 'saml11ClaimsCombine'] }
 ];
 
 // ---------------------------------------------------------------------------

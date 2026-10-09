@@ -128,7 +128,11 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6ImF0K2p3dCIsImtpZCI6InN0cy1mNzA0NTI0MWU2YjAiLCJ4NXUi
 Claims worth knowing:
 
 * `sub` is the person's stable subject, `urn:uuid:<entryUUID>`, never the
-  user name. The user name is in `username` and `preferred_username`.
+  user name. The user name is in `username`. **This sample was captured
+  before #395:** an access token no longer carries `preferred_username` (or
+  any other `profile`, `email`, `address` or `phone` claim) unless the
+  resource server it is addressed to declares it and its scope was granted
+  ([Applications](applications.md#identity-claims-a-resource-server-wants-in-its-access-tokens)).
 * `aud` is the default resource, `{issuer}/resource`, unless the request named
   one with `resource` ([RFC 8707](https://www.rfc-editor.org/rfc/rfc8707)).
   The token exchange sample below names another.
@@ -136,8 +140,8 @@ Claims worth knowing:
   read it to tell an access token from an ID Token or a refresh token, all
   three being signed by one key.
 * `auth_time`, `amr` and `acr` are copied from the session. A
-  `client_credentials` token has none of them, and no `username` or
-  `preferred_username` either: it is about no person. Its `sub` is the client
+  `client_credentials` token has none of them, and no `username` either:
+  it is about no person. Its `sub` is the client
   application (the `client_id`, or `urn:sts:client:<client_id>` in RFC 9700
   mode), and its `roles` are the roles the application holds as itself
   (`roleMemberApplication`), with the roles of the application it is for.

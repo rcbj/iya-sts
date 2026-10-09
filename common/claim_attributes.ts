@@ -136,6 +136,9 @@ import audit = require('./audit');
 // The registry of failure codes, a LEAF. A refused change carries its code on
 // the audit row and, NON-ENUMERABLY, on the result a caller serialises.
 import errorCodes = require('./error_codes');
+// How an application's selection combines with the realm's (#395). A
+// library that requires only helpers.js.
+import scopeClaims = require('./scope_claims');
 import InstanceSlot = require('./instance_slot');
 
 const { log } = helpers;
@@ -566,8 +569,10 @@ class ClaimAttributes {
   }
 
   /**
-   * Returns the catalogue rows in force for a set: an application's own
-   * selection when it holds one, else the realm's.
+   * Returns the catalogue rows in force for a set: the realm's selection and
+   * an application's own, combined as the application's mode for the set
+   * says (#395) — unset, its own replaces the realm's (#495). An application
+   * holding no selection gets the realm's whatever its mode.
    *
    * @param setId - the claim set id
    * @param application - the application's view, or null for the realm's
@@ -582,8 +587,14 @@ class ClaimAttributes {
       log.debug("Leaving ClaimAttributes.effectiveRows(). The realm's.");
       return this.selectedRows(setId);
     }
-    const keys = own.map(function (name) { return name.toLowerCase(); });
-    log.debug("Leaving ClaimAttributes.effectiveRows(). The application's.");
+    const mode = scopeClaims.realmModeOf(setId, application) ||
+      'application';
+    const keys = scopeClaims.combineNames(
+      this.selectedRows(setId).map(function (row) {
+        return row.ldap.toLowerCase();
+      }),
+      own.map(function (name) { return name.toLowerCase(); }), mode);
+    log.debug("Leaving ClaimAttributes.effectiveRows(). " + mode + ".");
     return CATALOGUE.filter(function (row) {
       return keys.indexOf(row.ldap.toLowerCase()) >= 0;
     });

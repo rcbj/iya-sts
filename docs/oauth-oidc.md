@@ -1134,8 +1134,13 @@ Rotation with replay detection belongs to [OAuth security](oauth-security.md).
 
 Every access token is a [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068) JWT
 access token, **in every mode**: header `typ: at+jwt`, the seven required claims,
-`preferred_username` for a person, and `auth_time`, `amr` and `acr` where an
-authentication is behind the grant. Every access token also carries a
+`username` for a person, and `auth_time`, `amr` and `acr` where an
+authentication is behind the grant. The `profile`, `email`, `address` and
+`phone` claims — `preferred_username` among them — are UserInfo's (OIDC Core
+section 5.4); an access token carries them only where the resource server it
+is for declares them and their scope was granted (#395, [Applications →
+Identity claims a resource server wants](applications.md#identity-claims-a-resource-server-wants-in-its-access-tokens)).
+Every access token also carries a
 `status` claim, `{ "status_list": { "idx", "uri" } }`
 ([Token Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/)
 section 6.1). It names the token's index in the realm's **access-token status
