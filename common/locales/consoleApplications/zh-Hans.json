@@ -772,5 +772,18 @@
   "sc.clearTip": "取消映射：授予此权限不再添加任何声明。",
   "sc.clear": "清除",
   "sc.stale": "已映射但不再公开：",
-  "sc.staleRest": "这些不再映射任何内容，本选项卡下次保存时会将其删除。"
+  "sc.staleRest": "这些不再映射任何内容，本选项卡下次保存时会将其删除。",
+  "ldif.tab": "导入 / 导出",
+  "ldif.heading": "导入和导出",
+  "ldif.needsWrite": "导出和导入应用程序都需要 <strong>Admin Write</strong>。",
+  "ldif.exportHeading": "导出此应用程序",
+  "ldif.exportIntro": "将此应用程序保存为包含一条记录的 LDIF 文件（RFC 2849）：只包含管理员对它的配置，不包含本服务记录的任何使用情况。在任意领域的此选项卡中导入该文件，即可在那里创建一份副本。",
+  "ldif.withCredentials": "包含凭据材料（客户端密钥、私钥、注册访问令牌），<strong>不加密</strong>",
+  "ldif.credentialsWarning": "不勾选时，文件不含任何凭据材料。勾选时，应用程序的每个密钥都以明文写入，因为用本服务的密钥加密的文件在别处无法打开：请像保管这些密钥本身一样保管该文件。Kerberos 服务密钥、注册密钥和 GNAP macaroon 密钥从不导出。",
+  "ldif.export": "导出 LDIF",
+  "ldif.importHeading": "导入应用程序",
+  "ldif.importIntro": "根据包含一条应用程序记录的 LDIF 文件（导出所写的格式）在此领域中创建应用程序。文件中指定的应用程序不得已存在于此：导入从不覆盖，因此不会更改本页的应用程序。",
+  "ldif.file": "LDIF 文件",
+  "ldif.paste": "或粘贴 LDIF",
+  "ldif.import": "导入 LDIF"
 }

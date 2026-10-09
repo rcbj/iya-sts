@@ -558,7 +558,8 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'remove-custom-claim', 'set-claim-attributes',
                              'inherit-claim-attributes', 'set-access-type',
                              'remove-access-type', 'set-permission-claims',
-                             'clear-permission-claims', 'forget'];
+                             'clear-permission-claims', 'export-ldif',
+                             'import-ldif', 'forget'];
 
 // ---------------------------------------------------------------------------
 // GET /admin/saml2, POST /admin/saml2 — THE SAML 2.0 IDENTITY PROVIDER.
@@ -4648,7 +4649,7 @@ class AdminActions {
                       'remove-custom-claim', 'set-claim-attributes',
                       'inherit-claim-attributes', 'set-access-type',
                       'remove-access-type', 'set-permission-claims',
-                      'clear-permission-claims', 'forget'];
+                      'clear-permission-claims', 'export-ldif', 'forget'];
     if (needsOne.indexOf(action) >= 0 && !identifier) {
       log.debug("Leaving AdminActions.applicationsAction(). No application " +
                 "named.");
@@ -5316,6 +5317,53 @@ class AdminActions {
     // client secret's id, or `registration-access-token`. A WRITE ROLE'S
     // ACT, because handing out a credential is one, and AUDITED with what was
     // revealed and never the value.
+    // THE APPLICATION AS AN LDIF FILE (#546). `applications.js` decides what
+    // goes in and what comes out; this is the transport: the file answered
+    // as a named attachment the console saves (`files`, as the key export
+    // answers) and as `ldif` for a script, and an import read from the
+    // console's file input (`file`, its name and text) or from `ldif`.
+    if (action === 'export-ldif') {
+      const credentials = body.credentials === true ||
+        ['true', 'on', '1'].indexOf(String(body.credentials || '')
+          .toLowerCase()) >= 0;
+      const exported = applications.exportApplicationLdif(identifier,
+        { credentials: credentials, actor: body.actor || '' });
+      if (!exported || exported.ok === false) {
+        log.debug("Leaving AdminActions.applicationsAction(). export-ldif " +
+                  "refused.");
+        return exported;
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). export-ldif.");
+      return { ok: true, changed: false, application: identifier,
+               credentials: exported.credentials,
+               attributes: exported.attributes, leftOut: exported.leftOut,
+               ldif: exported.ldif,
+               message: '"' + identifier + '" exported to ' +
+                        exported.fileName +
+                        (exported.credentials
+                          ? ', WITH its credential material, unencrypted.'
+                          : ', without credential material.'),
+               files: [{ name: exported.fileName, mime: 'text/plain',
+                         base64: Buffer.from(exported.ldif, 'utf8')
+                           .toString('base64') }] };
+    }
+    if (action === 'import-ldif') {
+      const file = body.file && typeof body.file === 'object'
+        ? String(body.file.text || '')
+        : (typeof body.file === 'string' ? body.file : '');
+      const text = String(body.ldif || '').trim() ? String(body.ldif) : file;
+      const imported = applications.importApplicationLdif(text,
+        { actor: body.actor || '' });
+      if (!imported || imported.ok === false) {
+        log.debug("Leaving AdminActions.applicationsAction(). import-ldif " +
+                  "refused.");
+        return imported;
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). import-ldif.");
+      return { ok: true, changed: true, application: imported.identifier,
+               message: '"' + imported.identifier + '" was imported.' };
+    }
+
     if (action === 'reveal-secret') {
       const entry = applications.get(identifier);
       const fields = (entry && entry.fields) || {};
