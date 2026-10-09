@@ -237,7 +237,7 @@ var config = {
     algorithms: "ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,RS256,RS384,RS512", // Algorithms offered
     insecureAlgorithms: false,                                                                                                                         // Use insecure algorithms (development only)
     pqcOnly: false,                                                                                                                                    // Request post-quantum algorithms only
-    userVerification: "preferred",                                                                                                                     // User verification
+    userVerification: "required",                                                                                                                      // User verification
     attestation: "direct",                                                                                                                             // Attestation conveyance
     attestationPolicy: "by-mode",                                                                                                                      // Attestation policy
     attestationTrustAnchors: "",                                                                                                                       // Attestation trust anchors (PEM)
@@ -671,7 +671,7 @@ var config = {
     organizationUrl: ""                                     // Metadata OrganizationURL
   },
 
-  // --- SAML 2.0 --------------------------------------------------------
+  // --- SAML 2.0 assertions ---------------------------------------------
   saml2: {
     assertionLifetimeMin: 60,                                              // Assertion lifetime (minutes)
     signAssertion: true,                                                   // Sign the assertion
@@ -697,7 +697,7 @@ var config = {
     mdqImportWithoutAnchors: false                                         // Allow an MDQ import with no trust anchor (product mode)
   },
 
-  // --- SAML 1.1 --------------------------------------------------------
+  // --- SAML 1.1 assertions ---------------------------------------------
   saml11: {
     assertionLifetimeMin: 60,                                              // Assertion lifetime (minutes)
     signAssertion: true,                                                   // Sign the assertion

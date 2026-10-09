@@ -500,9 +500,10 @@ Four things about that are load-bearing:
 * **WEBAUTHN IS TWO ROLES ON ONE SCREEN and the ceremony cannot tell them
   apart.** `use_webauthn` is the second factor after a password (session
   `amr ["pwd","hwk"]`, `acr "mfa"`); `webauthn_only` is the PRIMARY credential
-  with no password read at all (`amr ["hwk"]`, `acr "1"` — ONE factor, since
-  the ceremony asks for user verification as `preferred` rather than
-  `required`). Four things there are load-bearing. The choice is made at the
+  with no password read at all (`amr ["hwk"]`, `acr "1"` — ONE factor,
+  whatever `webauthn.userVerification` says: `required` by default since
+  2026-10-09, and RFC 8176 has no value for the authenticator having verified
+  the person that this service could honestly claim). Four things there are load-bearing. The choice is made at the
   password screen and CARRIED on the pending record, because the ceremony's own
   POST is the browser's result and nothing in it says what somebody chose a
   screen ago. `webauthn_only` WINS where a hand-made POST sets both, since the
