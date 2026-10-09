@@ -67,6 +67,8 @@ class WebShell {
     '<div class="pagehead"><h1>' + kit.esc(page.title) + '</h1>' +
       '<div class="pagetools">' + WebShell.refreshLink(shell, page) +
       WebShell.userMenu(shell) +
+      // THE LANGUAGE CHOOSER (#539 phase 5), last of the page's tools.
+      (page.t ? kit.languageChooser(page.t, shell.locale) : '') +
       '</div></div>' +
     WebShell.trailBar(page.active, page.up, page.title,
                       shell.navLabels) +

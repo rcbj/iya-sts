@@ -45,6 +45,10 @@
 // a page drawn here must be the page the console drew.
 // ---------------------------------------------------------------------------
 
+// THE CONSOLE'S TRANSLATOR (#539 phase 5): a `web_` module, as everything
+// here may require.
+import webMessages = require('./web_messages');
+
 // About one rendered line of `.note` text in this console's content column.
 // The column is 62rem at `.note`'s .78em, so a line is nearer 130 characters
 // than this; the number is deliberately under that, because the test worth
@@ -2284,14 +2288,50 @@ class WebKit {
    *
    * @param query - the page's query parameters, by name
    * @param write - whether the reader may write
-   * @returns `{ query, write }`, the query copied and `write` a boolean
+   * @param t - the page's translator (#539 phase 5): the runtime's, built
+   *   from `GET /admin-api/console`'s `locale`; without one, a translator
+   *   with no catalogs, which draws each message's key
+   * @returns `{ query, write, t }`, the query copied and `write` a boolean
    */
-  static context(query?, write?) {
+  static context(query?, write?, t?) {
     const copy = {};
     Object.keys(query || {}).forEach(function (name) {
       copy[name] = query[name];
     });
-    return { query: copy, write: write === true };
+    return { query: copy, write: write === true,
+             t: t || webMessages.WebTranslator.fromData(null) };
+  }
+
+  // THE CONSOLE'S LANGUAGE CHOOSER (#539 phase 5). A `<select>` and NO
+  // `<form>`: the console is a script, so a change is posted through the
+  // API (`web_runtime.ts`), and a form here would move every
+  // `document.forms[N]` the console's browser job counts by. The first
+  // option follows the browser; the rest are the offered locales, each in
+  // its own language.
+  /**
+   * Draws the console's language chooser.
+   *
+   * @param t - the page's translator
+   * @param locale - `GET /admin-api/console`'s `locale` member
+   * @returns the chooser as HTML, or '' when nothing is offered
+   */
+  static languageChooser(t, locale) {
+    const offered = (locale && locale.offered) || [];
+    if (!offered.length) {
+      return '';
+    }
+    const current = String(t.locale || '').toLowerCase();
+    return '<label class="langpick"><span>' +
+      t.html('console.shell.language') + '</span> <select ' +
+      'id="console-language" data-console-language="1">' +
+      '<option value="">' + t.html('console.shell.browserLanguage') +
+      '</option>' +
+      offered.map(function (one) {
+        return '<option value="' + WebKit.esc(one.tag) + '" lang="' +
+          WebKit.esc(one.tag) + '"' +
+          (String(one.tag).toLowerCase() === current ? ' selected' : '') +
+          '>' + WebKit.esc(one.name) + '</option>';
+      }).join('') + '</select></label>';
   }
 
   /**

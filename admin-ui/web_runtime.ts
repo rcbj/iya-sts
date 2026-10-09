@@ -58,6 +58,7 @@ import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
 import WebAnswers = require('./web_answers');
+import WebMessages = require('./web_messages');
 
 type Json = any;
 
@@ -98,6 +99,8 @@ class ConsoleRuntime {
   private publicJwk: Json;
   private nonce: string;
   private shell: Json;
+  // The console's translator (#539 phase 5), from the shell's `locale`.
+  private t: Json;
   private shellPrefix: string;
   private me: Json;
   private formTable: Json;
@@ -141,6 +144,7 @@ class ConsoleRuntime {
     this.publicJwk = null;
     this.nonce = '';
     this.shell = null;
+    this.t = kit.context().t;
     this.shellPrefix = '';
     this.me = null;
     this.formTable = null;
@@ -1164,6 +1168,45 @@ class ConsoleRuntime {
     return { status: res.status, json: json, res: res };
   }
 
+  // --- language (#539 phase 5) ---------------------------------------------
+
+  /**
+   * Builds the console's translator from the shell's `locale` member, and
+   * marks the document's language and direction.
+   *
+   * @param locale - `GET /admin-api/console`'s `locale`
+   * @returns nothing
+   */
+  applyLocale(locale: Json): void {
+    this.t = WebMessages.WebTranslator.fromData(locale);
+    const root = this.env.document && this.env.document.documentElement;
+    if (root && typeof root.setAttribute === 'function') {
+      root.setAttribute('lang', this.t.lang);
+      root.setAttribute('dir', this.t.dir);
+    }
+  }
+
+  /**
+   * Sets the signed-in administrator's language and draws the page again in
+   * it; an empty tag follows the browser. A refusal is said on the page.
+   *
+   * @param lang - a tag, or ''
+   * @returns nothing
+   */
+  async setLanguage(lang: string): Promise<void> {
+    const answer = await this.apiJson('POST', '/admin-api/console/language',
+                                      { lang: lang });
+    if (!answer || answer.status !== 200 || !answer.json) {
+      const why = answer && answer.json && answer.json.errors
+        ? answer.json.errors.join(' ') : 'The language could not be set.';
+      this.noteOnPage('<div class="err">' + kit.esc(why) + '</div>');
+      return;
+    }
+    this.shell.locale = answer.json.locale;
+    this.applyLocale(this.shell.locale);
+    await this.route();
+  }
+
   // --- drawing -------------------------------------------------------------
 
   /**
@@ -1191,6 +1234,7 @@ class ConsoleRuntime {
         return false;
       }
       this.shell = shell.json;
+      this.applyLocale(this.shell.locale);
       this.shellPrefix = this.prefix;
       const me = await this.apiJson('GET', '/admin-api/me');
       this.me = me && me.status === 200 ? me.json : {};
@@ -1238,7 +1282,7 @@ class ConsoleRuntime {
     this.env.document.body.innerHTML = ConsoleRuntime.realmLinks(
       WebShell.frame(shell, {
         title: title, active: active, up: up, inner: messages + inner,
-        path: this.here() }), this.prefix);
+        path: this.here(), t: this.t }), this.prefix);
     // EVERY DRAWING replaces the panels a tab's `:target` named — a page
     // routed to, a round trip, an act's answer — so the fragment is made
     // the target again (targetFragment()), and what was drawn is recorded
@@ -1434,7 +1478,7 @@ class ConsoleRuntime {
       ? Object.assign({}, this.view.json, { state: state })
       : this.view.json;
     const write = !!(this.me && this.me.write);
-    const ctx = kit.context(query, write);
+    const ctx = kit.context(query, write, this.t);
     const drilled = page.drill && query[page.drill.param];
     const up = drilled
       ? { href: page.path + kit.queryWith(kit.listViewOf(page.path, query),
@@ -2371,6 +2415,14 @@ class ConsoleRuntime {
     });
     this.env.document.addEventListener('focusin', function (event) {
       self.closeOtherSearches(event && event.target);
+    });
+    // THE LANGUAGE CHOOSER (#539 phase 5): a `<select>` with no form, so a
+    // change is the event.
+    this.env.document.addEventListener('change', function (event) {
+      const target = event && event.target;
+      if (target && target.id === 'console-language') {
+        self.setLanguage(String(target.value || ''));
+      }
     });
     if (this.env.window) {
       // THE EXPLORER'S WAY TO CALL (`admin_api_explorer.js`): this

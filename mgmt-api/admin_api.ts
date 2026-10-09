@@ -131,6 +131,11 @@ import app = require('../common/app');
 // The error-code registry, a leaf. A refusal here is MARKED on the response for
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
+// THE CONSOLE'S LANGUAGE (#539 phase 5): the catalogs and the negotiation,
+// and the hosted surfaces' table for the console's own client id. Libraries.
+import i18n = require('../common/i18n');
+import PageLocale = require('../common/page_locale');
+import oidcRp = require('../common/oidc_rp');
 import lingeringClose = require('../common/lingering_close');
 // Whether a create can race another node's, and the sentence a refused one
 // carries (#46 section 3). A LIBRARY that registers nothing.
@@ -5572,8 +5577,46 @@ class AdminApi {
           // its own, so who is signed in, and what they may see, is what
           // this API decided for the caller (`meJson()`).
           const gate = self.consoleGateOf(self.meJson(req, res));
-          self.sendJson(res, 200, admin.shellJson(req, gate, gate));
+          // AND THE LANGUAGE IT IS DRAWN IN (#539 phase 5): the negotiation
+          // for this administrator and the console's own client, and the
+          // console's catalogs along its chain, for the browser's translator.
+          self.sendJson(res, 200, Object.assign(
+            admin.shellJson(req, gate, gate),
+            { locale: self.consoleLocale(req, res) }));
           log.debug("Leaving the management API console shell endpoint.");
+        } },
+
+      // THE CONSOLE'S LANGUAGE CHOOSER (#539 phase 5): the signed-in
+      // administrator's own preferredLanguage, written through the person
+      // editor as the portal's and the sign-in screen's choosers write it,
+      // and the console's catalogs in the new language answered so the page
+      // is drawn again without a second request. An empty `lang` removes the
+      // preference and follows the browser. It needs the console role
+      // alone (the gate's frame list): it changes nothing but the caller's
+      // own entry. A refused tag is English, as every refusal is.
+      { method: 'POST', path: BASE + '/console/language', kind: 'console',
+        tag: 'Service',
+        operationId: 'setConsoleLanguage',
+        summary: 'Set the language the console is drawn in, for yourself',
+        description: 'Writes the signed-in person\'s own ' +
+                     '`preferredLanguage` (RFC 2798), or removes it when ' +
+                     '`lang` is empty, and answers the console\'s catalogs ' +
+                     'in the language now in force. A tag no catalog ' +
+                     'answers is refused (400, STS-I18N-0008).',
+        mirrors: 'GET /admin',
+        requestBody: {
+          type: 'object',
+          properties: {
+            lang: { type: 'string', description: 'A BCP 47 tag a catalog ' +
+                    'answers, such as `fr-CA`, or empty to follow the ' +
+                    'browser.' }
+          }
+        },
+        responseDescription: 'The console\'s language and catalogs.',
+        handler: function (req, res) {
+          log.debug("Entering the console language endpoint.");
+          self.consoleSetLanguage(req, res);
+          log.debug("Leaving the console language endpoint.");
         } },
 
       { method: 'GET', path: BASE + '/status', tag: 'Service',
@@ -22807,6 +22850,85 @@ class AdminApi {
    * @returns the caller, the authority, the scopes and roles, `read` and
    *   `write`, the roster's state and the console pages the caller may reach
    */
+  // THE CONSOLE'S LANGUAGE (#539 phase 5), for the signed-in person and the
+  // console's own client id.
+  /**
+   * Answers the console's `locale` member: the negotiation, the catalogs
+   * along its chain and the offered locales.
+   *
+   * @param req - the request
+   * @param res - the response, whose `locals.apiCaller` names the caller
+   * @returns the console's language data
+   */
+  consoleLocale(req, res) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.consoleLocale().");
+    const caller = (res && res.locals && res.locals.apiCaller) || null;
+    const out = PageLocale.consoleData(req, {
+      application: String(oidcRp.SURFACES.admin.clientId),
+      username: caller && caller.kind === 'person' ? String(caller.name) : ''
+    });
+    log.debug("Leaving AdminApi.consoleLocale(). " + out.negotiated.locale);
+    return out;
+  }
+
+  /**
+   * Handles `POST /admin-api/console/language`: writes or removes the
+   * caller's own preferredLanguage and answers the console's language data.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns nothing
+   */
+  consoleSetLanguage(req, res) {
+    const { log, parseBody } = this.deps;
+    log.debug("Entering AdminApi.consoleSetLanguage().");
+    const caller = (res && res.locals && res.locals.apiCaller) || null;
+    const asked = String((parseBody(req) || {}).lang || '').trim();
+    const tag = asked ? i18n.canonical(asked) : '';
+    if (asked && (!tag || !i18n.answers(tag))) {
+      errorCodes.mark(res, 'STS-I18N-0008');
+      this.sendJson(res, 400, { ok: false, errors: ['"' +
+        asked.slice(0, 64) + '" is not a language this service has a ' +
+        'catalog for.'] });
+      log.debug("Leaving AdminApi.consoleSetLanguage(). Not offered.");
+      return;
+    }
+    if (!caller || caller.kind !== 'person') {
+      errorCodes.mark(res, 'STS-I18N-0010');
+      this.sendJson(res, 400, { ok: false, errors: ['Only a person signed ' +
+        'in to the console has a language of their own to set.'] });
+      log.debug("Leaving AdminApi.consoleSetLanguage(). Not a person.");
+      return;
+    }
+    const who = String(caller.name);
+    const editor = require('../ldap/person_editor');
+    const current = String(require('../common/locale_policy')
+      .preferredLanguageOf(who) || '');
+    const written = tag
+      ? editor.update(who, { attribute: 'preferredLanguage', mode: 'set',
+                             value: tag },
+                      { actor: who, via: 'the admin console' })
+      : (current
+        ? editor.update(who, { attribute: 'preferredLanguage',
+                               mode: 'remove', value: current },
+                        { actor: who, via: 'the admin console' })
+        : { ok: true });
+    if (!written || !written.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(written) || 'STS-I18N-0009');
+      this.sendJson(res, 400, { ok: false,
+        errors: (written && written.errors) ||
+                ['The language could not be written.'] });
+      log.debug("Leaving AdminApi.consoleSetLanguage(). Refused.");
+      return;
+    }
+    if (tag) {
+      res.append('Set-Cookie', PageLocale.cookieLine(tag));
+    }
+    this.sendJson(res, 200, { ok: true, locale: this.consoleLocale(req, res) });
+    log.debug("Leaving AdminApi.consoleSetLanguage(). " + (tag || 'removed'));
+  }
+
   meJson(req, res) {
     const { log, config, realms, mode, adminScope } = this.deps;
     log.debug("Entering AdminApi.meJson().");
@@ -23365,7 +23487,10 @@ class AdminApi {
         // helper. `/me` is either kind's: who-am-I is the console's first
         // question and an integrator's.
         const path = String(req.path || '').replace(/\/+$/, '');
-        const frameOnly = path === '/console' || path === '/console/operations';
+        // `/console/language` (#539) is the caller's own preferredLanguage,
+        // and shows no realm data: the frame's terms.
+        const frameOnly = path === '/console' ||
+          path === '/console/operations' || path === '/console/language';
         const requiredRoles = mdmFeed ? ['DEVICE_COMPLIANCE']
           : (consoleOp ? ['ADMIN_CONSOLE']
             : (path === '/me' ? ['ADMIN_READ', 'ADMIN_CONSOLE']

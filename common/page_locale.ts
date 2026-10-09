@@ -233,6 +233,25 @@ class PageLocale {
   }
 
   /**
+   * The admin console's language (#539 phase 5): the negotiation for the
+   * signed-in administrator and the console's own application, its catalogs
+   * as data for the browser's `WebTranslator`, and the locales the chooser
+   * offers. `GET /admin-api/console` answers it as its `locale` member.
+   *
+   * @param req - the request
+   * @param page - the console's application and the administrator
+   * @returns `{ negotiated, catalogs, offered }`
+   */
+  static consoleData(req: any, page: PageFor) {
+    log.debug("Entering PageLocale.consoleData().");
+    const t = PageLocale.translatorFor(req, page);
+    const out = Object.assign(i18n.catalogData(t.negotiated, 'console'),
+                              { offered: i18n.offered() });
+    log.debug("Leaving PageLocale.consoleData(). " + t.locale);
+    return out;
+  }
+
+  /**
    * Holds a return path to a local path: one that starts with a single `/`,
    * names no scheme or host, and carries no control character or backslash.
    * Anything else is `/`.
