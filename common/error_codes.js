@@ -15381,10 +15381,11 @@ const CODES = [
     spec: 'log only' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
-    summary: 'A catalog file under common/locales could not be read or ' +
-      'parsed (or catalogs.json itself, in which case every page is drawn ' +
-      'in English); the messages it held fall back along their chain to ' +
-      'English, and the problem is listed on Directory > Policies (#539).',
+    summary: 'A catalog file under common/locales or a built-in mail ' +
+      'translation under common/mail_locales could not be read or parsed ' +
+      '(or catalogs.json itself, in which case every page is drawn in ' +
+      'English); the messages it held fall back along their chain to ' +
+      'English (#539).',
     spec: 'none — an error in the log' },
   { code: 'STS-I18N-0002',
     summary: 'A page asked for a message no catalog has, or one whose text ' +

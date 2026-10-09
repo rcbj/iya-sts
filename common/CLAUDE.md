@@ -11574,6 +11574,18 @@ reasons for the shape:
       not the person's application.
 * **`ui_locales`** is carried on the pending sign-in record, and discovery's
   `ui_locales_supported` lists the offered locales.
+* **Mail is translated too (phase 4).**
+  - The built-in templates are DATA in `common/mail_locales/<catalog
+    tag>.json`, not under `common/locales/`, because a template's
+    `{{placeholder}}` is not ICU. `MailTemplates.builtInFor()` walks the
+    catalog chain, and a realm's own wording in a language still wins.
+    `tests/mail_template_catalogs.js` holds every translation to
+    `problem()` and to the English placeholders.
+  - A VALUE a caller passes may be `{ i18n: 'mailValues.<key>', params }`
+    or `{ date }`. `Mail.resolveValues()` resolves it in the recipient's
+    language once the template is chosen, so a translated message carries
+    no English fragment. A plain string is data and is sent as it is.
+    CAEP's `reason_user` and an administrator's free text stay as written.
 * Error codes `STS-I18N-0001` to `0009`. Their own subsystem, because every
   surface asks it.
 

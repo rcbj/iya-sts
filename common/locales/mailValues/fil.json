@@ -1,0 +1,16 @@
+{
+  "requestedBy.recoveryCode": "ikaw, o isang taong nakaaalam ng pangalan ng iyong account, ng iyong address at ng isa sa iyong mga recovery code",
+  "requestedBy.signInScreen": "ikaw, o isang taong nakaaalam ng pangalan ng iyong account, sa screen ng pag-sign in",
+  "requestedBy.administrator": "isang administrator",
+  "requestedBy.administratorNamed": "isang administrator ({actor})",
+  "how.by": "ng {entity, select, user {user} admin {administrator} system {system} policy {isang patakaran} someone {isang tao} other {{entity}}}",
+  "credential.type": "{type, select, password {password} x509 {X.509 certificate} app {authenticator app} fido2-roaming {security key} fido2-platform {passkey} other {{type}}}",
+  "by.you": "iyong sarili",
+  "by.administrator": "isang administrator",
+  "by.administratorSessionsPage": "isang administrator (ang pahina ng mga session)",
+  "by.administratorConsoleLogout": "isang administrator (ang admin console sa /admin/logout)",
+  "act.credentialCompromised": "minarkahang nakompromiso ang credential",
+  "act.accountDisabled": "na-disable ang account",
+  "rights.access": "access",
+  "address.none": "(wala)"
+}

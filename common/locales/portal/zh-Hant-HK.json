@@ -1,0 +1,21 @@
+{
+  "nav.email.label": "電郵",
+  "nav.email.heading": "您的電郵地址與郵件",
+  "activate.totpNote": "來自 Google Authenticator、Microsoft Authenticator、Authy、1Password、Bitwarden、Aegis、FreeOTP 或任何實作 RFC 6238 之應用程式的六位數驗證碼。<strong>它是第二因素</strong>——與上方的密碼或密碼金鑰搭配使用，絕不能取代它們。剔選此項後，下一步會顯示 QR 碼；在您輸入從中產生的驗證碼之前，帳戶不算設定完成。",
+  "activateTotp.note": "在此驗證碼核對通過之前，不會儲存任何驗證器相關資訊，您的啟用連結也不會被用掉——因此若現在無法完成，請重新開啟連結，並且不要剔選驗證器選項。",
+  "key.promptPasskey": "您的瀏覽器即將詢問要將密碼金鑰儲存在哪裡——此裝置（Touch ID、Face ID、Windows Hello 或屏幕鎖定）、您的密碼管理工具，或您的手機。",
+  "ready.keyPrimary": "<strong>您的密碼金鑰已就緒，並將作為您的登入方式。</strong>在登入畫面輸入使用者名稱，剔選<em>使用密碼金鑰取代密碼登入</em>，並將密碼留空。登入後，請在「密碼金鑰」頁面再建立一個密碼金鑰，以免遺失這一個時帳戶遭鎖住。",
+  "directory.email": "電郵",
+  "keys.intro": "密碼金鑰可以建立並儲存在您的裝置（例如手機或手提電腦）或安全金鑰上。密碼金鑰是一把加密的數位金鑰，可用指紋、臉孔或屏幕鎖定解鎖；大多數會儲存在您的密碼管理工具中，因此您也能在其他裝置上登入。若存放在安全金鑰上，金鑰則只留在那一個小裝置上。",
+  "kind.passkeyWhat": "Touch ID、Face ID、Windows Hello、屏幕鎖定或您的密碼管理工具。大多數密碼金鑰在您的其他裝置上也能使用。",
+  "emailFactor.heading": "以電郵作為第二因素",
+  "emailFactor.unverified": "您的地址尚未驗證。請先在「電郵」頁面驗證。",
+  "emailFactor.unusedCode": "您選擇了以電郵傳送驗證碼，但目前並未使用：{why}。",
+  "emailFactor.unusedLink": "您選擇了以電郵傳送連結，但目前並未使用：{why}。",
+  "emailFactor.code": "以電郵傳送驗證碼給我",
+  "emailFactor.link": "以電郵傳送登入連結給我",
+  "emailFactor.weakest": "<strong>電郵是本服務提供的最弱第二因素。</strong>任何能讀取您信箱的人——往往只需您的電郵密碼——就能以您的身分完成登入，這也是 NIST SP 800-63B-4 不將電郵視為驗證器的原因。若您有驗證器應用程式或密碼金鑰，它們會更好；系統會優先要求使用它們。",
+  "tls.labelPlaceholder": "公司手提電腦",
+  "done.emailOn": "電郵現在是您在密碼之後的第二因素。",
+  "done.emailOff": "電郵不再是您的第二因素。"
+}

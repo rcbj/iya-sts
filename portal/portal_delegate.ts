@@ -60,6 +60,9 @@ interface PortalContext {
   audit: Json;
   errorCodes: Json;
   config: { value(key: string): any };
+  // The portal's translator for a page drawn for this session (#539
+  // phase 3): the portal's application and the person's own language.
+  translatorFor(session: Json): any;
 }
 
 interface PortalDelegateDeps {
@@ -94,39 +97,41 @@ class PortalDelegatePage {
     const { log, shell, esc, websecurity } = this.ctx;
     const { credentials } = this.deps;
     log.debug("Entering PortalDelegatePage.page().");
+    const t = this.ctx.translatorFor(session);
     const who = String(session.user.username);
     const facts = credentials.delegationFactsFor(who) || {};
     const csrf = websecurity.field(session.id);
+    // The DN is data and goes in as a parameter (#539); which of the three
+    // sentences is drawn is the code's choice, as it was.
     const current = facts.mayAct
-      ? '<p>The party who may act for you is <code>' + esc(facts.mayAct) +
-        '</code>' + (facts.delegate
-          ? ' (' + esc(facts.delegate.kind === 'person'
-            ? 'a person' : 'an application') + ').'
-          : ' — which names nothing in this directory now, so your tokens ' +
-            'carry no <code>may_act</code>.') + '</p>'
-      : '<p>You have named nobody. Your access tokens carry no ' +
-        '<code>may_act</code> claim.</p>';
-    const body = '<div class="card"><h2>Who may act for you</h2>' +
-      '<p class="sub">An application or a person you name here may ask this ' +
-      'service for a token in your name by exchanging one of yours (RFC 8693 ' +
-      'token exchange). Every access token issued about you says so in its ' +
-      '<code>may_act</code> claim, and an exchange of one by anybody ELSE is ' +
-      'refused. You may name one party.</p>' + current +
+      ? '<p>' + (facts.delegate
+          ? (facts.delegate.kind === 'person'
+            ? t.html('portalDelegate.currentPerson', { dn: facts.mayAct })
+            : t.html('portalDelegate.currentApplication',
+                     { dn: facts.mayAct }))
+          : t.html('portalDelegate.currentStale', { dn: facts.mayAct })) +
+        '</p>'
+      : '<p>' + t.html('portalDelegate.nobody') + '</p>';
+    const body = '<div class="card"><h2>' +
+      t.html('portalDelegate.heading') + '</h2>' +
+      '<p class="sub">' + t.html('portalDelegate.sub') + '</p>' + current +
       (facts.notDelegated
-        ? '<div class="err">An administrator has marked your account as one ' +
-          'that cannot be delegated, so nobody may act for you whatever ' +
-          'you name here.</div>' : '') +
+        ? '<div class="err">' + t.html('portalDelegate.notDelegated') +
+          '</div>' : '') +
       '<form method="post" action="' + this.PATH + '">' + csrf +
       '<input type="hidden" name="action" value="set">' +
-      '<p><label>Their directory name (DN) <input type="text" ' +
+      '<p><label>' + t.html('portalDelegate.dnLabel') +
+      ' <input type="text" ' +
       'name="delegate" size="60" maxlength="1024" required value="' +
       esc(facts.mayAct || '') + '" placeholder="uid=bob,ou=users,...">' +
       '</label>' +
-      '</p><p><button type="submit">Name them</button></p></form>' +
+      '</p><p><button type="submit">' + t.html('portalDelegate.name') +
+      '</button></p></form>' +
       (facts.mayAct
         ? '<form method="post" action="' + this.PATH + '">' + csrf +
           '<input type="hidden" name="action" value="clear">' +
-          '<p><button class="danger" type="submit">Name nobody</button></p>' +
+          '<p><button class="danger" type="submit">' +
+          t.html('portalDelegate.clear') + '</button></p>' +
           '</form>' : '') + '</div>';
     log.debug("Leaving PortalDelegatePage.page().");
     return shell(this.PATH, session, message, error, body);
@@ -202,8 +207,13 @@ class PortalDelegatePage {
         (result.errors || ['Not changed.'])[0]));
     }
     log.debug('Leaving POST ' + PATH + '. Written.');
+    // THE SUCCESS MESSAGE IN THE PERSON'S LANGUAGE (#539): it rides the
+    // redirect as text, so it is put into words here, with the translator
+    // the page it lands on is drawn with.
+    const t = ctx.translatorFor(session);
     res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      named ? 'Your delegate is set.' : 'You have named nobody.')).end();
+      named ? t.text('portalDelegate.doneSet')
+            : t.text('portalDelegate.doneCleared'))).end();
     return undefined;
   }
 

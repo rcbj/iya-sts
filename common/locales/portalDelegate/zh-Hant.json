@@ -1,0 +1,14 @@
+{
+  "heading": "誰可以代表您行事",
+  "sub": "您在此指定的應用程式或人員，可以透過交換您的權杖（RFC 8693 權杖交換），以您的名義向本服務要求權杖。簽發給您的每個存取權杖都會在其 <code>may_act</code> 宣告中註明這一點，任何其他人對此類權杖的交換都會被拒絕。您只能指定一方。",
+  "currentPerson": "可以代表您行事的一方是 <code>{dn}</code>（一個人）。",
+  "currentApplication": "可以代表您行事的一方是 <code>{dn}</code>（一個應用程式）。",
+  "currentStale": "可以代表您行事的一方是 <code>{dn}</code>——它現在在此目錄中不指向任何項目，因此您的權杖不帶 <code>may_act</code>。",
+  "nobody": "您尚未指定任何人。您的存取權杖不帶 <code>may_act</code> 宣告。",
+  "notDelegated": "管理員已將您的帳戶標記為不可委派，因此無論您在此指定誰，都沒有人可以代表您行事。",
+  "dnLabel": "對方的目錄名稱（DN）",
+  "name": "指定",
+  "clear": "不指定任何人",
+  "doneSet": "已設定您的代理人。",
+  "doneCleared": "您未指定任何人。"
+}

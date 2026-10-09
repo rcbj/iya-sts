@@ -55,7 +55,7 @@ started the sign-in.
 | Link an account | `/federation/link/…` | Joins a partner's account to one here at first sign-in. The person sees the sign-in screen, fixed to that account. | Yes |
 | Application sign-out (RP-initiated logout) | `/oauth2/logout` | Confirms signing out of an application, then sees "Signed out" | Yes |
 | Sign out of everything | `/logout` | Sees every live session and signs out of them | Yes |
-| Device sign-in (RFC 8628) | `/portal/device` | Types the code shown on a TV or console | Planned (phase 3, with the portal) |
+| Device sign-in (RFC 8628) | `/portal/device` | Types the code shown on a TV or console | Yes |
 | GNAP | `/gnap/code`, `/gnap/approve/…` | Types a user code; approves or refuses a grant | Yes |
 | The OP iframe | `/oauth2/check_session` | Nothing visible: a relying party's session check | n/a |
 
@@ -68,8 +68,12 @@ started the sign-in.
 
 ## The user portal
 
-A person's own account, at `/portal`. Every page is planned for **phase 3**.
-That phase also adds a language field to the person's own profile.
+A person's own account, at `/portal`. **Every page is translated**, with the
+language chooser in the header beside Refresh and Sign out, and on the pages
+drawn for nobody (activation, a password reset, address verification). The
+Overview has a **Language and region** card: it sets the person's own
+`preferredLanguage`, or removes it to follow the browser
+(`POST /portal/language`). Error text stays English.
 
 | Page | Path |
 |---|---|
@@ -107,15 +111,17 @@ and messages are planned for **phase 5**. Its long explanatory prose is
 
 | Message | Sent when | Language |
 |---|---|---|
-| Password reset link | A person asks on `/portal/forgot-password` | Planned (phase 4) |
-| Address verification | An address is added or changed | Planned (phase 4) |
-| Activation and other administrator links | An administrator sends one | Planned (phase 4) |
-| Emailed sign-in code or link | The sign-in uses one | Planned (phase 4) |
-| Security notices | A credential, address or session changes | Planned (phase 4) |
+| Password reset link | A person asks on `/portal/forgot-password` | Yes |
+| Address verification | An address is added or changed | Yes |
+| Activation and other administrator links | An administrator sends one | Yes |
+| Emailed sign-in code or link | The sign-in uses one | Yes |
+| Security notices | A credential, address or session changes | Yes |
 
-A message is already written in the recipient's `preferredLanguage` when the
-realm has written that language's template on `/admin/mail`. Phase 4 ships
-the built-in templates in every catalog language.
+A message is written in the recipient's language: the built-in wording ships
+in every catalog language, and a realm's own wording on `/admin/mail` wins
+over it in that language. The facts filled in (who, what kind, when) are
+translated too. A reason somebody typed is sent as written. See
+[Mail](mail.md#messages).
 
 ## In the browser's own dialogs
 

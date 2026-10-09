@@ -3601,7 +3601,7 @@ Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, aut
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-I18N-0001` | A catalog file under common/locales could not be read or parsed (or catalogs.json itself, in which case every page is drawn in English); the messages it held fall back along their chain to English, and the problem is listed on Directory > Policies (#539). | none — an error in the log |
+| `STS-I18N-0001` | A catalog file under common/locales or a built-in mail translation under common/mail_locales could not be read or parsed (or catalogs.json itself, in which case every page is drawn in English); the messages it held fall back along their chain to English (#539). | none — an error in the log |
 | `STS-I18N-0002` | A page asked for a message no catalog has, or one whose text is malformed; the key itself, or the text as written, was drawn. tests/i18n_catalogs.js is what keeps this from shipping (#539). | none — a warning in the log |
 | `STS-I18N-0003` | A locale policy profile name was refused: it is neither `default` nor a name of lower-case letters, digits and hyphens of at most 64 (#539). | HTTP 400 (management API) |
 | `STS-I18N-0004` | A locale policy save was refused: a field was missing, the default language was not a BCP 47 tag, a yes-or-no field was neither, or a named profile named no application or too many (#539). | HTTP 400 (management API) |

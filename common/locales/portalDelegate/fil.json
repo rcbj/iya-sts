@@ -1,0 +1,14 @@
+{
+  "heading": "Sino ang puwedeng kumilos para sa iyo",
+  "sub": "Ang application o taong itatalaga mo rito ay puwedeng humingi sa serbisyong ito ng token sa ngalan mo sa pamamagitan ng pagpapalit ng isa sa mga token mo (RFC 8693 token exchange). Sinasabi ito ng bawat access token na inisyu tungkol sa iyo sa <code>may_act</code> claim nito, at tinatanggihan ang pagpapalit nito ng SINUMANG IBA. Isang partido lang ang puwede mong italaga.",
+  "currentPerson": "Ang partidong puwedeng kumilos para sa iyo ay si <code>{dn}</code> (isang tao).",
+  "currentApplication": "Ang partidong puwedeng kumilos para sa iyo ay ang <code>{dn}</code> (isang application).",
+  "currentStale": "Ang partidong puwedeng kumilos para sa iyo ay ang <code>{dn}</code> — na wala nang tinutukoy sa directory na ito, kaya walang <code>may_act</code> ang mga token mo.",
+  "nobody": "Wala kang itinalaga. Walang <code>may_act</code> claim ang mga access token mo.",
+  "notDelegated": "Minarkahan ng isang administrator ang account mo bilang hindi puwedeng i-delegate, kaya walang puwedeng kumilos para sa iyo kahit sino pa ang italaga mo rito.",
+  "dnLabel": "Ang kanilang directory name (DN)",
+  "name": "Italaga sila",
+  "clear": "Walang italaga",
+  "doneSet": "Naitakda na ang iyong delegado.",
+  "doneCleared": "Wala kang itinalaga."
+}
