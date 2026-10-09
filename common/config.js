@@ -2528,8 +2528,10 @@ const SETTINGS = [
     label: 'User verification', path: 'webauthn.userVerification',
     env: 'STS_WEBAUTHN_USER_VERIFICATION', type: 'enum',
     enumValues: ['discouraged', 'preferred', 'required'],
-    dflt: 'preferred', runtime: true,
-    description: 'Whether the authenticator must verify the PERSON — a PIN, ' +
+    dflt: 'required', runtime: true,
+    description: '`required` by default in every mode (rcbj, 2026-10-09; it ' +
+                 'was `preferred`). ' +
+                 'Whether the authenticator must verify the PERSON — a PIN, ' +
                  'a fingerprint, a face — as well as prove possession of the ' +
                  'key. **THIS IS THE ONE CEREMONY SETTING THIS SERVICE ALSO ' +
                  'ENFORCES**: `required` is sent to the browser and the UV ' +

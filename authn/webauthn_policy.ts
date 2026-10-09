@@ -297,7 +297,7 @@ class WebauthnPolicy {
       algorithms: this.algorithmsOffered(),
       userVerification: this.oneOf(config.value('webauthn.userVerification'),
                                    ['discouraged', 'preferred', 'required'],
-                                   'preferred'),
+                                   'required'),
       attestation: this.oneOf(config.value('webauthn.attestation'),
                          ['none', 'indirect', 'direct', 'enterprise'],
                          'direct'),
