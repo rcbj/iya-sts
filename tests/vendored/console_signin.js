@@ -642,6 +642,26 @@ async function signInToTheConsole(base, user, log2, options) {
       const qs = new URLSearchParams(q).toString();
       return api("GET", operation + (qs ? "?" + qs : ""));
     },
+    // THE READER'S LANGUAGE FOR A BUNDLE A JOB LOADED ITSELF (#539): the
+    // shell's `locale` member, asked once, built into that bundle's
+    // translator and made its default, as the runtime's applyLocale() does.
+    // A job that draws with its own bundle calls this once before drawing.
+    localize: async function (table) {
+      if (this.localeData === undefined) {
+        const shell = await api("GET", "/admin-api/console");
+        this.localeData = shell.json && shell.json.locale
+          ? shell.json.locale : null;
+      }
+      if (!this.localeData || !table || !table.messages) {
+        return null;
+      }
+      const translator =
+        table.messages.WebTranslator.fromData(this.localeData);
+      table.messages.WebTranslator.setDefault(function () {
+        return translator;
+      });
+      return translator;
+    },
     // The page drawn, as the console draws it for this token's reader:
     // `{ status, json, html }`, `html` empty when the operation refused.
     draw: async function (path, query) {
