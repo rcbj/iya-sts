@@ -11642,3 +11642,19 @@ information that has been granted"):
   `CHOICES_CHECKED_HERE`, `STS-REG-0203`), drawn in the field grid's *Claims
   in tokens* and *Attributes in assertions* sections; no new action or
   error code. `tests/scope_claims.js` holds it.
+* **A resource server's own scopes map claims too (2026-10-09, rcbj's three
+  answers: its exposed permissions only, catalogue attributes only, the
+  scope is the grant).** `oauthPermissionClaims`, one JSON object on the
+  entry, `{"<oauthPermission name>": ["<catalogue ldap name>", ...]}`,
+  written by the application's own **Scope claims** tab through
+  `set-permission-claims` / `clear-permission-claims` (`admin_actions.ts`,
+  `/admin-api`), held at the write (`claim_attributes.permissionClaimsProblem()`,
+  `STS-REG-0344`) and read leniently at issuance (`permissionClaimsOf()`,
+  `STS-REG-0343`). `resourceServerClaims()` finds the audience's
+  application by `oauthAudience`, then by **permission base**
+  (`forPermissionBase()` — a scope naming a permission makes the base the
+  `aud`), then client_id or identifier; a permission counts as granted when
+  the GRANTED scope holds its whole identifier, or its bare name on a token
+  for one audience. Its mapped claims join the declared ones in the
+  every-audience intersection, and are returned as `grantedByPermission`,
+  which `gate()` passes: granting the permission granted them.

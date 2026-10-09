@@ -1331,6 +1331,13 @@ class ApplicationsPage {
         { id: 'tab-access-types', label: 'Access types',
           html: forFamilies(OAUTH.concat(['gnap']),
             ApplicationsPage.applicationAccessTypesSection(row, carryBack)) },
+        // THE CLAIMS ITS OWN SCOPES CARRY (2026-10-09): per permission it
+        // exposes as a resource server, the catalogue attributes an access
+        // token addressed to it carries when that permission is granted.
+        { id: 'tab-scope-claims', label: 'Scope claims',
+          html: forFamilies(OAUTH,
+            ApplicationsPage.applicationScopeClaimsSection(ctx, row,
+              carryBack)) },
         { id: 'tab-signals', label: 'Shared Signals',
           html: forFamilies(['ssf'],
             ApplicationsPage.applicationSignalsSection(json,
@@ -2869,6 +2876,97 @@ class ApplicationsPage {
    * @param carryBack - the hidden field that returns to the list's view
    * @returns the tab's HTML
    */
+  // A RESOURCE SERVER'S SCOPE CLAIMS (2026-10-09): for each permission it
+  // exposes, the catalogue's attributes as boxes, the ones mapped ticked,
+  // with Save and Clear. One form per permission, so a save names the one
+  // it changes and the others stay as held.
+  /**
+   * Draws the Scope claims tab: the claims each of a resource server's
+   * permissions carries on the access tokens addressed to it.
+   *
+   * @param ctx - the console context (`write`)
+   * @param row - the application's view, with its `page`
+   * @param carryBack - the hidden fields that return to this page
+   * @returns the markup
+   */
+  static applicationScopeClaimsSection(ctx, row, carryBack) {
+    const state = row.page.permissionClaims;
+    if (!state) {
+      return '';
+    }
+    const id = String(row.identifier || '');
+    const anchor = 'scope-claims';
+    const intro = kit.note('An access token addressed to this application ' +
+      '(as a resource server) on which one of its permissions was GRANTED ' +
+      'carries the person\'s values of the directory attributes mapped to ' +
+      'that permission, under the claim catalogue\'s names. Granting the ' +
+      'permission is the grant of those claims, a standard OpenID Connect ' +
+      'claim such as <code>email</code> included. They join the claims ' +
+      'declared in <code>oauthAccessTokenClaim</code> and combine with the ' +
+      'client\'s as <code>oauthAccessTokenClaimsCombine</code> says ' +
+      '(Configuration tab); on a token for several resource servers only ' +
+      'what every one wants goes in.');
+    if (!state.permissions.length) {
+      return '<h3 id="' + anchor + '">Scope claims</h3>' + intro +
+        kit.note('<span class="state-none">This application exposes no ' +
+          'permission</span>, so there is no scope of its own to map. ' +
+          'Define one on the Permissions tab (<code>oauthPermission</code>, ' +
+          'under <code>oauthPermissionBaseUri</code>).');
+    }
+    const formOpen = function (action, permission) {
+      return '<form method="post" action="/admin/applications#' + anchor +
+        '"' + (action === 'set-permission-claims' ? '' : ' class="inline"') +
+        '>' + carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="application" value="' + kit.esc(id) +
+        '"><input type="hidden" name="permission" value="' +
+        kit.esc(permission) + '">';
+    };
+    const html = state.permissions.map(function (p) {
+      const held = p.attributes.map(function (one) {
+        return one.toLowerCase();
+      });
+      const boxes = state.catalogue.map(function (one) {
+        const on = held.indexOf(one.ldap.toLowerCase()) >= 0;
+        return '<tr><td>' + (ctx.write
+          ? '<input type="checkbox" name="attributes" value="' +
+            kit.esc(one.ldap) + '"' + (on ? ' checked' : '') +
+            ' aria-label="' + kit.esc(one.ldap) + '">'
+          : (on ? 'yes' : '')) + '</td><td><code>' + kit.esc(one.ldap) +
+          '</code></td><td><code>' + kit.esc(one.claim) + '</code></td><td>' +
+          kit.esc(one.label || '') + '</td></tr>';
+      }).join('');
+      return '<h4>' + '<code>' + kit.esc(p.name) + '</code>' +
+        (p.description ? ' &mdash; ' + kit.esc(p.description) : '') +
+        '</h4>' + kit.note((p.id ? 'Asked for as <code>' + kit.esc(p.id) +
+          '</code>. ' : '<span class="state-none">No base URI, so no ' +
+          'client can ask for it yet.</span> ') + (p.attributes.length
+          ? 'Carries ' + kit.codeList(p.attributes) + '.'
+          : '<span class="state-none">Carries no claim.</span>')) +
+        (ctx.write ? formOpen('set-permission-claims', p.name) +
+          '<input type="hidden" name="attributes" value="">' : '') +
+        '<details class="fold"><summary>Directory attributes</summary>' +
+        '<table><tr><th>Mapped</th><th>LDAP attribute</th><th>Claim</th>' +
+        '<th>What it is</th></tr>' + boxes + '</table></details>' +
+        (ctx.write
+          ? '<div class="formrow"><button type="submit"' + kit.tip('Write ' +
+              'the ticked boxes as the claims this permission carries.') +
+            '>Save the claims of ' + kit.esc(p.name) + '</button></div>' +
+            '</form>' + (p.attributes.length ? '<div class="formrow">' +
+              formOpen('clear-permission-claims', p.name) +
+              '<button type="submit" class="secondary"' + kit.tip('Take ' +
+                'the mapping off: granting this permission adds no claim.') +
+              '>Clear</button></form></div>' : '')
+          : '');
+    }).join('');
+    const stale = state.stale.length
+      ? kit.note('<span class="state-revoked">Mapped but no longer ' +
+          'exposed:</span> ' + kit.codeList(state.stale) + '. These map ' +
+          'nothing, and the next save on this tab drops them.')
+      : '';
+    return '<h3 id="' + anchor + '">Scope claims</h3>' + intro + stale + html;
+  }
+
   static applicationAccessTypesSection(row, carryBack) {
     // Each declared type, read (`page.accessTypes`, #446).
     const held = row.page.accessTypes;
