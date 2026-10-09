@@ -788,6 +788,26 @@ Three details worth keeping:
   `dropSession()`. The `portal.signout` row is the ACT and does not count them
   again — rule 3c, read as it is everywhere else here.
 
+## A Refresh button beside Sign out (2026-10-09, #538)
+
+Every signed-in page draws **Refresh** to the left of Sign out
+(`Portal.refreshForm()`, called by `shell()`). The portal runs no script, so it
+is a GET form, and what it reloads is decided on the server from the ambient
+request (`audit.currentRequest()`):
+
+* **a GET of the page's own path** reloads that path with the same query, so a
+  paged list comes back on the same page, **less `done`**: that is the one-time
+  message a redirect after a write carries, and reloading it would announce the
+  write again;
+* **a page drawn in answer to a POST** (a refused write re-drawn with its
+  reason) loads its own path afresh and carries nothing. The browser's own
+  reload would repeat the POST, which a Refresh button must not do;
+* **a request for another path, or none**, loads the page's path.
+
+It reads `req.url`, not `originalUrl`: `app.js` puts the realm prefix back on
+every root-relative form action, as it does for every other form on the page.
+`tests/portal_refresh.js` holds all of it.
+
 ## `beginAuthentication()` and not a bare redirect
 
 **THAT RULE IS NOW ONE LAYER DOWN AND STILL DECIDES THE SHAPE.** `oidc_rp.js`
