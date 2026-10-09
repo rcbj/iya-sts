@@ -661,6 +661,16 @@ async function signInToTheConsole(base, user, log2, options) {
         this.translator = table.messages && shell.json && shell.json.locale
           ? table.messages.WebTranslator.fromData(shell.json.locale) : null;
       }
+      // AND IT IS THE DEFAULT, as the runtime's applyLocale() makes it: a
+      // helper the renderers call with no translator (the pager, a pane)
+      // falls back to it, and without this drew keys here and English in a
+      // browser. Set on every draw, because two clients share one bundle.
+      if (this.translator && table.messages) {
+        const translator = this.translator;
+        table.messages.WebTranslator.setDefault(function () {
+          return translator;
+        });
+      }
       const asked = Object.assign({}, query || {});
       delete asked.format;
       const html = answer.status === 200 && answer.json
