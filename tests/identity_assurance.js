@@ -352,8 +352,8 @@ function body(t) {
           /<option value="eidas">/.test(drawn),
           '8a. a person\'s page lists their verifications with a Remove ' +
           'each, and a form that records one');
-  const readOnly = UsersPage.mfaSection({ name: 'ida-alice' }, 'ida-alice',
-    { write: false }, '', mfaData);
+  const readOnly = UsersPage.mfaSection(ctxOf({}, false).t,
+    { name: 'ida-alice' }, 'ida-alice', { write: false }, '', mfaData);
   t.check(!/value="record-verification"/.test(readOnly) &&
           /needs <strong>Admin Write<\/strong>/.test(readOnly),
           '8b. and without Admin Write, no form');
